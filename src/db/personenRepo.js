@@ -25,5 +25,21 @@ export function upsertPerson(db, person) {
 export function getPersonById(db, id) {
   const row = db.prepare('SELECT * FROM personen WHERE churchtools_person_id = ?').get(id);
   if (!row) return null;
-  return { ...row, gruppen: JSON.parse(row.gruppen), aktiv: Boolean(row.aktiv) };
+  return { ...row, gruppen: JSON.parse(row.gruppen), aktiv: Boolean(row.aktiv), ct_person_unresolved: Boolean(row.ct_person_unresolved) };
+}
+
+export function getAllActivePersonIds(db) {
+  return db.prepare('SELECT churchtools_person_id FROM personen WHERE aktiv = 1').all().map((r) => r.churchtools_person_id);
+}
+
+export function deactivatePerson(db, id) {
+  db.prepare('UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = ?').run(id);
+}
+
+export function markUnresolved(db, id) {
+  db.prepare('UPDATE personen SET ct_person_unresolved = 1 WHERE churchtools_person_id = ?').run(id);
+}
+
+export function personExists(db, id) {
+  return db.prepare('SELECT 1 FROM personen WHERE churchtools_person_id = ?').get(id) != null;
 }

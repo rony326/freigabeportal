@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>Eskalationszeiten — Freigabeportal Admin</title></head>
+<body>
+  <%- include('../_header') %>
+  <%- include('./_nav') %>
+  <h1>Eskalationszeiten</h1>
+  <% if (errors.length > 0) { %>
+    <ul><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+  <% } %>
+  <form method="post" action="/admin/eskalation">
+    <label>Reminder nach (Stunden) <input type="number" name="reminderStunden" value="<%= reminderStunden %>" required></label><br>
+    <label>Eskalation nach (Stunden) <input type="number" name="eskalationStunden" value="<%= eskalationStunden %>" required></label><br>
+    <label>Eskalations-Fallback-E-Mail <input type="email" name="eskalationFallbackEmail" value="<%= eskalationFallbackEmail || '' %>" required></label><br>
+    <button type="submit">Speichern</button>
+  </form>
+</body>
+</html>

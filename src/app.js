@@ -10,6 +10,7 @@ import { loadBranding } from './middleware/branding.js';
 import { createBrandingRouter } from './routes/branding.js';
 import { createKontenRouter } from './routes/admin/konten.js';
 import { createZuweisungsregelnRouter } from './routes/admin/zuweisungsregeln.js';
+import { createEskalationRouter } from './routes/admin/eskalation.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +40,7 @@ export function createApp({ db, config }) {
   app.use('/branding', createBrandingRouter({ db }));
   app.use('/admin/konten', requireRole(config, 'portal-admin'), createKontenRouter({ db }));
   app.use('/admin/zuweisungsregeln', requireRole(config, 'portal-admin'), createZuweisungsregelnRouter({ db }));
+  app.use('/admin/eskalation', requireRole(config, 'portal-admin'), createEskalationRouter({ db }));
 
   app.use('/auth', createAuthRouter({ db, config }));
   app.use('/internal/cron', createCronRouter({ db, config }));

@@ -70,6 +70,31 @@ test('GET /auth/callback with a valid state logs the person in', async () => {
   db.close();
 });
 
+test('GET /auth/callback denies access and creates no person when the person belongs to no relevant group', async () => {
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/api/whoami', method: 'GET' })
+    .reply(200, { data: { id: 42, firstName: 'Kein', lastName: 'Zugriff', email: 'kein@example.org' } });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+
+  const res = await agent.get('/auth/callback').query({ code: 'the-code', state });
+  assert.equal(res.status, 403);
+  assert.match(res.text, /Kein Zugriff/);
+
+  const person = getPersonById(db, '42');
+  assert.equal(person, null);
+  db.close();
+});
+
 test('POST /auth/logout destroys the session', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });

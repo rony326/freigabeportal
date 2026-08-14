@@ -25,6 +25,12 @@ export function createAuthRouter({ db, config }) {
       const candidateGroupIds = [config.churchtools.groupIdBuchhaltung, config.churchtools.groupIdAdmin];
       const gruppen = await resolveMemberGroupIds(config.churchtools, token.access_token, profile.id, candidateGroupIds);
 
+      if (gruppen.length === 0) {
+        return res.status(403).render('error', {
+          message: 'Kein Zugriff. Diese ChurchTools-Person ist keiner für das Portal relevanten Gruppe zugeordnet.',
+        });
+      }
+
       upsertPerson(db, {
         id: String(profile.id),
         vorname: profile.firstName,

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
+import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { openDatabase } from '../../src/db/index.js';
 import { createApp } from '../../src/app.js';
 
@@ -31,13 +32,18 @@ test('an unmatched route returns a German 404 page', async () => {
   db.close();
 });
 
-test('a thrown error in a route is caught and rendered as a German 500 page', async () => {
+test('a ChurchTools failure mid-callback is caught and rendered as a German 500 page', async () => {
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(500, {});
+
   const db = openDatabase(':memory:');
-  const app = createApp({ db, config: testConfig() });
-  app.get('/__boom', () => {
-    throw new Error('kaboom');
-  });
-  const res = await request(app).get('/__boom');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+
+  const res = await agent.get('/auth/callback').query({ code: 'the-code', state });
   assert.equal(res.status, 500);
   assert.match(res.text, /unerwarteter Fehler/);
   db.close();

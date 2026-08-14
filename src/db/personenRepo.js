@@ -50,3 +50,7 @@ export function listActivePersons(db) {
     .prepare('SELECT churchtools_person_id, vorname, nachname, email FROM personen WHERE aktiv = 1 ORDER BY nachname, vorname')
     .all();
 }
+
+export function listAllPersons(db) {
+  return db.prepare('SELECT * FROM personen ORDER BY aktiv DESC, nachname, vorname').all();
+}

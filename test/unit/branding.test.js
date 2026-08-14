@@ -60,11 +60,21 @@ test('branding exposes primaryColor, secondaryColor and hasLogo', () => {
   db.close();
 });
 
-test('hasLogo is true once a logo path is configured', () => {
+test('hasLogo is true once both a logo path and mimetype are configured', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'branding_logo_pfad', '/data/branding/logo.png');
+  setConfigValue(db, 'branding_logo_mimetype', 'image/png');
+  const branding = runMiddleware(db, undefined);
+  assert.equal(branding.hasLogo, true);
+  db.close();
+});
+
+test('hasLogo stays false when only the logo path is configured but the mimetype is missing', () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   setConfigValue(db, 'branding_logo_pfad', '/data/branding/logo.png');
   const branding = runMiddleware(db, undefined);
-  assert.equal(branding.hasLogo, true);
+  assert.equal(branding.hasLogo, false);
   db.close();
 });

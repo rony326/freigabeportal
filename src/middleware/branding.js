@@ -17,6 +17,7 @@ export function loadBranding(db) {
     const secondaryColor = getConfigValue(db, 'branding_farbe_sekundaer');
     const themeDefault = getConfigValue(db, 'branding_theme_default') || 'system';
     const logoPfad = getConfigValue(db, 'branding_logo_pfad');
+    const logoMimetype = getConfigValue(db, 'branding_logo_mimetype');
 
     const userTheme = parseThemeCookie(req.headers.cookie);
     let themeAttr;
@@ -31,7 +32,7 @@ export function loadBranding(db) {
     res.locals.branding = {
       primaryColor,
       secondaryColor,
-      hasLogo: Boolean(logoPfad),
+      hasLogo: Boolean(logoPfad) && Boolean(logoMimetype),
       themeAttr,
     };
     next();

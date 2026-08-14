@@ -55,6 +55,29 @@ Anforderung: `ct_person_unresolved` soll "im Admin-Bereich als Warnung" sichtbar
   Alle vier Router werden in `src/app.js` unter `/admin` gemountet, hinter der
   `requireRole(config, 'portal-admin')`-Middleware.
 
+### Rechteprüfung: ausschliesslich serverseitig, kein Bypass über direkten URL-Zugriff
+
+Die Autorisierung ist **rein serverseitig** und greift auf jeder einzelnen Route — nicht nur auf
+Navigations-/Menü-Ebene. Konkret:
+
+- `requireRole(config, 'portal-admin')` wird als Middleware auf den **gemeinsamen `/admin`-Router**
+  gemountet (`app.use('/admin', requireRole(config, 'portal-admin'), adminRouter)`), sodass
+  **jede** Methode, jede Route und jeder Sub-Pfad unter `/admin/*` die Prüfung durchläuft, bevor
+  auch nur ein Route-Handler erreicht wird — inklusive GET-Listen, GET-Formulare, POST-Anlegen,
+  POST-Bearbeiten, POST-Deaktivieren/Löschen. Es gibt keinen Pfad unter `/admin/*`, der die
+  Middleware umgehen könnte, und keine Admin-Funktionalität, die sich allein auf verstecktes
+  UI (z.B. ausgeblendete Menüpunkte) statt auf eine serverseitige Prüfung verlässt.
+- Die Prüfung erfolgt bei **jedem Request neu** anhand der aktuell in `personen.gruppen`
+  gespeicherten Gruppenzugehörigkeit (siehe Phase A: keine Rollen-Caching in der Session) — ein
+  Admin, dem die "Portal-Admin"-Gruppenmitgliedschaft entzogen wird, verliert den Zugriff ab dem
+  nächsten Request, unabhängig von einer weiterhin gültigen Session.
+- Ein direkter POST an z.B. `/admin/konten` (ohne je die Liste oder das Formular geladen zu
+  haben) wird exakt gleich behandelt wie ein GET auf `/admin/konten` — beide durchlaufen dieselbe
+  Middleware, beide erhalten ohne gültige Portal-Admin-Session ein 403 mit deutscher Fehlerseite,
+  nie eine 200-Antwort mit Daten oder eine erfolgreiche Zustandsänderung.
+- Tests (siehe Abschnitt "Tests") decken explizit jede einzelne Route-Methode-Kombination ab, nicht
+  nur eine repräsentative Stichprobe — siehe dort.
+
 ## Datenmodell
 
 ```sql
@@ -149,7 +172,12 @@ keine Mocks der eigenen Business-Logik. Schwerpunkte:
 - Vier-Rollen-Validierung: alle Verstoss-Kombinationen (Pflichtfeld fehlt, zwei Rollen identisch,
   referenzierte Person inaktiv) werden abgelehnt; eine gültige Kombination wird akzeptiert.
 - Zuweisungsregeln-Uniqueness (Duplikat wird abgelehnt).
-- Zugriffsschutz: 403 ohne "Portal-Admin"-Gruppe für jede der vier `/admin/*`-Routen-Familien.
+- Zugriffsschutz: 403 ohne "Portal-Admin"-Gruppe für **jede einzelne Route-Methode-Kombination**
+  unter `/admin/*` (nicht nur stichprobenartig eine pro Bereich) — jede GET-Liste, jedes
+  GET-Formular, jedes POST-Anlegen/-Bearbeiten/-Deaktivieren/-Löschen in allen vier Bereichen
+  (Konten, Zuweisungsregeln, Eskalation, Personen-Übersicht). Zusätzlich: ein direkter POST ohne
+  vorheriges Laden der zugehörigen Seite verhält sich identisch (403, keine Zustandsänderung) —
+  es gibt keinen Pfad, der die Middleware umgeht.
 - Deaktivierte Konten und inaktive Personen verschwinden aus den jeweiligen Dropdowns/Listen,
   bleiben aber über direkten DB-Zugriff auffindbar (Audit-Trail-Erhalt).
 - `ct_person_unresolved = true` wird auf `/admin/personen` sichtbar dargestellt.

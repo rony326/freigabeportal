@@ -148,3 +148,24 @@ test('POST /admin/erscheinungsbild rejects a non-image file', async () => {
   db.close();
   rmSync(brandingDir, { recursive: true, force: true });
 });
+
+test('POST /admin/erscheinungsbild rejects a file whose declared Content-Type is spoofed as image/png but whose bytes are not a real PNG/JPEG', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+
+  const res = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .attach('logo', Buffer.from('not actually a png'), { filename: 'evil.png', contentType: 'image/png' });
+
+  assert.equal(res.status, 400);
+  assert.equal(getConfigValue(db, 'branding_logo_pfad'), null);
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});

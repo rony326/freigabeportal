@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function createApp({ db, config }) {
   const app = express();
-  app.locals.config = config;
+  app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
   app.set('views', join(__dirname, '..', 'views'));
   app.use(express.json());
@@ -21,7 +21,12 @@ export function createApp({ db, config }) {
       secret: config.sessionSecret,
       resave: false,
       saveUninitialized: false,
-      cookie: { httpOnly: true, secure: config.env === 'production', maxAge: 24 * 60 * 60 * 1000 },
+      cookie: {
+        httpOnly: true,
+        secure: config.env === 'production',
+        sameSite: 'lax',
+        maxAge: 24 * 60 * 60 * 1000,
+      },
     })
   );
   app.use(loadCurrentPerson(db));

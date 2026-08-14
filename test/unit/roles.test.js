@@ -7,8 +7,8 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 
 function buildTestApp(db) {
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   const app = express();
-  app.locals.config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use((req, res, next) => {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
@@ -16,8 +16,8 @@ function buildTestApp(db) {
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../views', import.meta.url).pathname);
   app.use(loadCurrentPerson(db));
-  app.get('/buchhaltung-only', requireRole('buchhaltung'), (req, res) => res.json({ ok: true }));
-  app.get('/admin-only', requireRole('portal-admin'), (req, res) => res.json({ ok: true }));
+  app.get('/buchhaltung-only', requireRole(config, 'buchhaltung'), (req, res) => res.json({ ok: true }));
+  app.get('/admin-only', requireRole(config, 'portal-admin'), (req, res) => res.json({ ok: true }));
   return app;
 }
 

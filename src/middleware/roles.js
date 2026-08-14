@@ -16,9 +16,8 @@ const GROUP_ID_KEY_BY_ROLE = {
   'portal-admin': 'groupIdAdmin',
 };
 
-export function requireRole(role) {
+export function requireRole(config, role) {
   return (req, res, next) => {
-    const config = req.app.locals.config;
     const groupId = config.churchtools[GROUP_ID_KEY_BY_ROLE[role]];
     const person = req.currentPerson;
 

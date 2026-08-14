@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { createKonto, updateKonto, deactivateKonto, getKontoById, listKonten, validateKontoRoles } from '../../db/kontenRepo.js';
-import { listActivePersons } from '../../db/personenRepo.js';
+import { listActivePersons, getPersonById } from '../../db/personenRepo.js';
+
+function personDisplayName(db, id) {
+  const person = getPersonById(db, id);
+  return person ? `${person.vorname} ${person.nachname}` : String(id);
+}
 
 function readRoleFields(body) {
   return {
@@ -17,8 +22,13 @@ export function createKontenRouter({ db }) {
   const router = Router();
 
   router.get('/', (req, res) => {
-    const konten = listKonten(db, { includeInactive: req.query.alle === '1' });
-    res.render('admin/konten-liste', { konten });
+    const zeigtAlle = req.query.alle === '1';
+    const konten = listKonten(db, { includeInactive: zeigtAlle }).map((konto) => ({
+      ...konto,
+      freigeber1Name: personDisplayName(db, konto.freigeber1_id),
+      freigeber2Name: personDisplayName(db, konto.freigeber2_id),
+    }));
+    res.render('admin/konten-liste', { konten, zeigtAlle });
   });
 
   router.get('/neu', (req, res) => {

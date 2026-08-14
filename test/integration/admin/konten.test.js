@@ -138,6 +138,35 @@ test('GET /admin/konten/:id/bearbeiten pre-fills the form, POST /admin/konten/:i
   db.close();
 });
 
+test('a deactivated Konto is hidden from the default list, shown with ?alle=1, and Freigeber names (not raw ids) are rendered', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  const app = buildTestApp(db);
+  await request(app)
+    .post('/admin/konten')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+
+  const listBefore = await request(app).get('/admin/konten').set('x-test-person-id', '99');
+  const idMatch = listBefore.text.match(/\/admin\/konten\/(\d+)\/deaktivieren/);
+  const id = idMatch[1];
+  // Freigeber names, resolved from the seeded persons, appear instead of raw ids.
+  assert.match(listBefore.text, /Person1 Muster/);
+  assert.match(listBefore.text, /Person3 Muster/);
+
+  const deactivateRes = await request(app).post(`/admin/konten/${id}/deaktivieren`).set('x-test-person-id', '99');
+  assert.equal(deactivateRes.status, 302);
+
+  const defaultList = await request(app).get('/admin/konten').set('x-test-person-id', '99');
+  assert.doesNotMatch(defaultList.text, /Unterhalt/, 'the deactivated Konto should not appear in the default list');
+
+  const allList = await request(app).get('/admin/konten?alle=1').set('x-test-person-id', '99');
+  assert.match(allList.text, /Unterhalt/, 'the deactivated Konto should appear when ?alle=1 is requested');
+  assert.match(allList.text, /Person1 Muster/);
+  db.close();
+});
+
 test('POST /admin/konten/:id/deaktivieren removes it from the default list but keeps the row', async () => {
   const db = openDatabase(':memory:');
   seedPersonen(db);

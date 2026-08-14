@@ -24,11 +24,11 @@ export function loadConfig(env = process.env) {
     cronSecret: required(env, 'CRON_SECRET'),
     n8nApiKey: required(env, 'N8N_API_KEY'),
     smtp: {
-      host: required(env, 'SMTP_HOST'),
+      host: env.SMTP_HOST,
       port: Number(env.SMTP_PORT) || 587,
-      user: required(env, 'SMTP_USER'),
-      pass: required(env, 'SMTP_PASS'),
-      from: required(env, 'SMTP_FROM'),
+      user: env.SMTP_USER,
+      pass: env.SMTP_PASS,
+      from: env.SMTP_FROM,
     },
   };
 }

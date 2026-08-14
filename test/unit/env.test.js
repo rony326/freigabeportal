@@ -38,3 +38,13 @@ test('loadConfig.env reflects NODE_ENV or defaults to development', () => {
   const withoutNode = loadConfig(FULL_ENV);
   assert.equal(withoutNode.env, 'development');
 });
+
+test('loadConfig succeeds when SMTP_* variables are absent, leaving smtp fields undefined', () => {
+  const { SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM, ...withoutSmtp } = FULL_ENV;
+  const config = loadConfig(withoutSmtp);
+  assert.equal(config.smtp.host, undefined);
+  assert.equal(config.smtp.user, undefined);
+  assert.equal(config.smtp.pass, undefined);
+  assert.equal(config.smtp.from, undefined);
+  assert.equal(config.smtp.port, 587);
+});

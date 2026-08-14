@@ -21,3 +21,11 @@ test('sendMail delivers via the configured transporter', async (t) => {
   assert.equal(captured.subject, 'Test');
   assert.equal(captured.text, 'Hallo');
 });
+
+test('createMailer throws when required SMTP settings are missing', () => {
+  assert.throws(() => createMailer({}), /SMTP ist nicht konfiguriert/);
+  assert.throws(
+    () => createMailer({ port: 587, user: 'u', pass: 'p', from: 'portal@example.org' }),
+    /SMTP ist nicht konfiguriert/
+  );
+});

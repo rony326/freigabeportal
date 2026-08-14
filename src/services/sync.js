@@ -7,7 +7,6 @@ export async function runPersonenSync(db, config, accessToken) {
   try {
     const candidateGroupIds = [config.groupIdBuchhaltung, config.groupIdAdmin];
     const personIdToGroups = new Map();
-
     for (const groupId of candidateGroupIds) {
       const memberIds = await fetchGroupMemberIds(config, accessToken, groupId);
       for (const personId of memberIds) {
@@ -17,20 +16,12 @@ export async function runPersonenSync(db, config, accessToken) {
       }
     }
 
-    let upserted = 0;
+    const resolvedProfiles = [];
     let unresolved = 0;
     for (const [personId, gruppen] of personIdToGroups) {
       try {
         const profile = await fetchPersonById(config, accessToken, personId);
-        upsertPerson(db, {
-          id: String(personId),
-          vorname: profile.firstName,
-          nachname: profile.lastName,
-          email: profile.email,
-          gruppen,
-          loggedInNow: false,
-        });
-        upserted += 1;
+        resolvedProfiles.push({ personId, gruppen, profile });
       } catch {
         if (personExists(db, personId)) {
           markUnresolved(db, personId);
@@ -40,12 +31,31 @@ export async function runPersonenSync(db, config, accessToken) {
     }
 
     const relevantIds = new Set(personIdToGroups.keys());
+    const toDeactivate = getAllActivePersonIds(db).filter((id) => !relevantIds.has(id));
+
+    let upserted = 0;
     let deactivated = 0;
-    for (const activeId of getAllActivePersonIds(db)) {
-      if (!relevantIds.has(activeId)) {
+    db.exec('BEGIN');
+    try {
+      for (const { personId, gruppen, profile } of resolvedProfiles) {
+        upsertPerson(db, {
+          id: String(personId),
+          vorname: profile.firstName,
+          nachname: profile.lastName,
+          email: profile.email,
+          gruppen,
+          loggedInNow: false,
+        });
+        upserted += 1;
+      }
+      for (const activeId of toDeactivate) {
         deactivatePerson(db, activeId);
         deactivated += 1;
       }
+      db.exec('COMMIT');
+    } catch (writeErr) {
+      db.exec('ROLLBACK');
+      throw writeErr;
     }
 
     finishSyncLog(db, syncLogId, {

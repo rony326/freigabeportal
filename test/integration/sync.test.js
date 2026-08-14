@@ -53,6 +53,31 @@ test('runPersonenSync marks an existing local person unresolved when their detai
   db.close();
 });
 
+test('runPersonenSync rolls back the entire write phase when one upsert fails partway through', async () => {
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 7 }, { personId: 8 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  client
+    .intercept({ path: '/api/persons/7', method: 'GET' })
+    .reply(200, { data: { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' } });
+  client
+    .intercept({ path: '/api/persons/8', method: 'GET' })
+    // vorname/nachname are NOT NULL in the schema: a null firstName here makes
+    // upsertPerson throw a real SQLite constraint error during the write phase.
+    .reply(200, { data: { id: 8, firstName: null, lastName: 'Ohnenamen', email: 'niemand@example.org' } });
+
+  const db = openDatabase(':memory:');
+
+  await assert.rejects(() => runPersonenSync(db, CT_CONFIG, 'service-token'));
+
+  assert.equal(getPersonById(db, '7'), null);
+  assert.equal(getPersonById(db, '8'), null);
+
+  const logRow = db.prepare("SELECT * FROM sync_log WHERE status = 'fehler'").get();
+  assert.ok(logRow);
+  db.close();
+});
+
 test('runPersonenSync records a failed run and leaves existing data untouched', async () => {
   const client = setupMockChurchTools(CT_CONFIG.baseUrl);
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(500, {});

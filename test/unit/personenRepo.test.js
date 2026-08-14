@@ -33,3 +33,15 @@ test('getPersonById returns null for an unknown id', () => {
   assert.equal(getPersonById(db, 'missing'), null);
   db.close();
 });
+
+test('upsertPerson clears a stale ct_person_unresolved flag once the person resolves again', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org', gruppen: ['10'], loggedInNow: false });
+  db.prepare('UPDATE personen SET ct_person_unresolved = 1 WHERE churchtools_person_id = ?').run('1');
+  assert.equal(getPersonById(db, '1').ct_person_unresolved, true);
+
+  upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org', gruppen: ['10'], loggedInNow: false });
+
+  assert.equal(getPersonById(db, '1').ct_person_unresolved, false);
+  db.close();
+});

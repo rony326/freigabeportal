@@ -9,6 +9,7 @@ export function upsertPerson(db, person) {
        email = excluded.email,
        aktiv = 1,
        gruppen = excluded.gruppen,
+       ct_person_unresolved = 0,
        last_synced_at = excluded.last_synced_at,
        last_login_at = COALESCE(excluded.last_login_at, personen.last_login_at)`
   ).run(

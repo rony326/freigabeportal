@@ -12,6 +12,7 @@ export function loadConfig(env = process.env) {
     port: Number(env.PORT) || 3000,
     sessionSecret: required(env, 'SESSION_SECRET'),
     dbPath: env.DB_PATH || './data/freigabeportal.sqlite',
+    brandingDir: env.BRANDING_DIR || './data/branding',
     churchtools: {
       baseUrl: required(env, 'CT_BASE_URL'),
       clientId: required(env, 'CT_CLIENT_ID'),

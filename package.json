@@ -1,0 +1,22 @@
+{
+  "name": "freigabeportal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "ejs": "^3.1.10",
+    "express": "^4.21.0",
+    "express-session": "^1.18.0",
+    "nodemailer": "^6.9.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0",
+    "undici": "^6.19.0"
+  }
+}

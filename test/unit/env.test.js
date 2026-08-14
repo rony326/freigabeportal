@@ -1,0 +1,32 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { loadConfig } from '../../src/config/env.js';
+
+const FULL_ENV = {
+  SESSION_SECRET: 'secret',
+  CT_BASE_URL: 'https://ct.example.org',
+  CT_CLIENT_ID: 'client-id',
+  CT_CLIENT_SECRET: 'client-secret',
+  CT_REDIRECT_URI: 'https://portal.example.org/auth/callback',
+  CT_GROUP_ID_BUCHHALTUNG: '10',
+  CT_GROUP_ID_ADMIN: '20',
+  CT_SYNC_SERVICE_TOKEN: 'sync-token',
+  CRON_SECRET: 'cron-secret',
+  N8N_API_KEY: 'n8n-key',
+  SMTP_HOST: 'smtp.example.org',
+  SMTP_USER: 'smtp-user',
+  SMTP_PASS: 'smtp-pass',
+  SMTP_FROM: 'portal@example.org',
+};
+
+test('loadConfig returns full config when all variables are set', () => {
+  const config = loadConfig(FULL_ENV);
+  assert.equal(config.churchtools.baseUrl, 'https://ct.example.org');
+  assert.equal(config.smtp.port, 587);
+  assert.equal(config.port, 3000);
+});
+
+test('loadConfig throws a German error when a required variable is missing', () => {
+  const { SESSION_SECRET, ...incomplete } = FULL_ENV;
+  assert.throws(() => loadConfig(incomplete), /Fehlende Umgebungsvariable: SESSION_SECRET/);
+});

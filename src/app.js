@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { SqliteSessionStore } from './db/sessionStore.js';
 import { createAuthRouter } from './routes/auth.js';
+import { createCronRouter } from './routes/cron.js';
 import { loadCurrentPerson } from './middleware/roles.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,7 @@ export function createApp({ db, config }) {
   app.use(loadCurrentPerson(db));
 
   app.use('/auth', createAuthRouter({ db, config }));
+  app.use('/internal/cron', createCronRouter({ db, config }));
 
   app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
 

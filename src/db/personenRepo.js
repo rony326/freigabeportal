@@ -44,3 +44,9 @@ export function markUnresolved(db, id) {
 export function personExists(db, id) {
   return db.prepare('SELECT 1 FROM personen WHERE churchtools_person_id = ?').get(id) != null;
 }
+
+export function listActivePersons(db) {
+  return db
+    .prepare('SELECT churchtools_person_id, vorname, nachname, email FROM personen WHERE aktiv = 1 ORDER BY nachname, vorname')
+    .all();
+}

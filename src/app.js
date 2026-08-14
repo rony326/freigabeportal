@@ -5,9 +5,10 @@ import { dirname, join } from 'node:path';
 import { SqliteSessionStore } from './db/sessionStore.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createCronRouter } from './routes/cron.js';
-import { loadCurrentPerson } from './middleware/roles.js';
+import { loadCurrentPerson, requireRole } from './middleware/roles.js';
 import { loadBranding } from './middleware/branding.js';
 import { createBrandingRouter } from './routes/branding.js';
+import { createKontenRouter } from './routes/admin/konten.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -17,6 +18,7 @@ export function createApp({ db, config }) {
   app.set('view engine', 'ejs');
   app.set('views', join(__dirname, '..', 'views'));
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
   app.use(
     session({
       store: new SqliteSessionStore(db),
@@ -34,6 +36,7 @@ export function createApp({ db, config }) {
   app.use(loadCurrentPerson(db));
   app.use(loadBranding(db));
   app.use('/branding', createBrandingRouter({ db }));
+  app.use('/admin/konten', requireRole(config, 'portal-admin'), createKontenRouter({ db }));
 
   app.use('/auth', createAuthRouter({ db, config }));
   app.use('/internal/cron', createCronRouter({ db, config }));

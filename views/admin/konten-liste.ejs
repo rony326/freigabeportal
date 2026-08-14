@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>Konten — Freigabeportal Admin</title></head>
+<body>
+  <%- include('../_header') %>
+  <%- include('./_nav') %>
+  <h1>Konten</h1>
+  <p><a href="/admin/konten/neu">Neues Konto anlegen</a></p>
+  <table>
+    <thead>
+      <tr><th>Kontonummer</th><th>Bezeichnung</th><th>Freigeber 1</th><th>Freigeber 2</th><th></th></tr>
+    </thead>
+    <tbody>
+      <% konten.forEach((konto) => { %>
+        <tr>
+          <td><%= konto.kontonummer %></td>
+          <td><%= konto.bezeichnung %></td>
+          <td><%= konto.freigeber1_id %></td>
+          <td><%= konto.freigeber2_id %></td>
+          <td>
+            <a href="/admin/konten/<%= konto.id %>/bearbeiten">Bearbeiten</a>
+            <form method="post" action="/admin/konten/<%= konto.id %>/deaktivieren" style="display:inline">
+              <button type="submit">Deaktivieren</button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</body>
+</html>

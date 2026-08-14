@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>Konto — Freigabeportal Admin</title></head>
+<body>
+  <%- include('../_header') %>
+  <%- include('./_nav') %>
+  <h1><%= konto ? 'Konto bearbeiten' : 'Neues Konto' %></h1>
+  <% if (errors.length > 0) { %>
+    <ul>
+      <% errors.forEach((error) => { %><li><%= error %></li><% }) %>
+    </ul>
+  <% } %>
+  <form method="post" action="<%= konto ? `/admin/konten/${konto.id}` : '/admin/konten' %>">
+    <label>Kontonummer <input type="text" name="kontonummer" value="<%= values.kontonummer || '' %>" required></label><br>
+    <label>Bezeichnung <input type="text" name="bezeichnung" value="<%= values.bezeichnung || '' %>" required></label><br>
+
+    <label>Freigeber 1
+      <select name="freigeber1Id" required>
+        <option value="">— wählen —</option>
+        <% personen.forEach((p) => { %>
+          <option value="<%= p.churchtools_person_id %>" <%= values.freigeber1Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+        <% }) %>
+      </select>
+    </label><br>
+
+    <label>Stellvertreter 1
+      <select name="stellvertreter1Id" required>
+        <option value="">— wählen —</option>
+        <% personen.forEach((p) => { %>
+          <option value="<%= p.churchtools_person_id %>" <%= values.stellvertreter1Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+        <% }) %>
+      </select>
+    </label><br>
+
+    <label>Freigeber 2
+      <select name="freigeber2Id" required>
+        <option value="">— wählen —</option>
+        <% personen.forEach((p) => { %>
+          <option value="<%= p.churchtools_person_id %>" <%= values.freigeber2Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+        <% }) %>
+      </select>
+    </label><br>
+
+    <label>Stellvertreter 2
+      <select name="stellvertreter2Id" required>
+        <option value="">— wählen —</option>
+        <% personen.forEach((p) => { %>
+          <option value="<%= p.churchtools_person_id %>" <%= values.stellvertreter2Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+        <% }) %>
+      </select>
+    </label><br>
+
+    <button type="submit">Speichern</button>
+  </form>
+</body>
+</html>

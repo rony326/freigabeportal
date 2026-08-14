@@ -14,6 +14,8 @@ Phase B baut den geschützten Admin-Bereich: Konten-Verwaltung (die vier Freigab
 inkl. Hart-Validierung), Zuweisungsregeln (Lieferant/Absender → Konto) und die
 Eskalationszeiten-Konfiguration. Ausserdem schliesst Phase B eine in Phase A offen gelassene
 Anforderung: `ct_person_unresolved` soll "im Admin-Bereich als Warnung" sichtbar werden.
+Zusätzlich liefert Phase B die visuelle Anpassbarkeit des Portals ans Corporate Design der
+Kirchgemeinde (Logo, Farben) sowie einen Dark/Light-Modus mit Admin-Vorgabe und Nutzer-Umschalter.
 
 ### Phasenplan (Kontext, aus Phase A übernommen)
 
@@ -39,10 +41,17 @@ Anforderung: `ct_person_unresolved` soll "im Admin-Bereich als Warnung" sichtbar
     konten.js
     zuweisungsregeln.js
     eskalation.js
+    erscheinungsbild.js
     personen.js         -- read-only
+  src/routes/
+    branding.js          -- GET /branding/logo (öffentlich, kein Admin-Gate)
   src/db/
     kontenRepo.js
     zuweisungsregelnRepo.js
+  src/middleware/
+    branding.js           -- loadBranding(db), global gemountet
+  views/
+    _header.ejs            -- gemeinsames Partial: Logo, Farb-/Theme-Style-Block, Umschalter
   views/admin/
     _nav.ejs             -- gemeinsame Navigation, per EJS-Include eingebunden
     konten-liste.ejs
@@ -50,10 +59,15 @@ Anforderung: `ct_person_unresolved` soll "im Admin-Bereich als Warnung" sichtbar
     zuweisungsregeln-liste.ejs
     zuweisungsregeln-form.ejs
     eskalation-form.ejs
+    erscheinungsbild-form.ejs
     personen-liste.ejs
   ```
-  Alle vier Router werden in `src/app.js` unter `/admin` gemountet, hinter der
-  `requireRole(config, 'portal-admin')`-Middleware.
+  Die fünf Admin-Router werden in `src/app.js` unter `/admin` gemountet, hinter der
+  `requireRole(config, 'portal-admin')`-Middleware. `loadBranding(db)` und die öffentliche
+  `GET /branding/logo`-Route werden **global** gemountet (auch Login-Seite, Startseite und
+  Fehlerseiten brauchen Logo/Farben/Theme).
+- Neue Abhängigkeit: `multer` (reines JS, keine native Kompilierung) für den
+  Multipart-Datei-Upload des Logos.
 
 ### Rechteprüfung: ausschliesslich serverseitig, kein Bypass über direkten URL-Zugriff
 
@@ -130,6 +144,65 @@ die bestehenden Tabellen).
 - `UNIQUE`-Constraint auf `absender_muster` verhindert doppelte Regeln.
 - `konto_id`-Dropdown zeigt nur aktive Konten.
 
+## Erscheinungsbild: Logo, Farben, Dark/Light Mode
+
+### Speicherung
+
+- Zwei neue `admin_config`-Keys für Farben: `branding_farbe_primaer`, `branding_farbe_sekundaer`
+  (Hex-Format `^#[0-9A-Fa-f]{6}$`), vorgeseedet mit neutralen Default-Werten bis der Admin die
+  echten CI-Farben einträgt.
+- Ein neuer `admin_config`-Key für den Farbmodus: `branding_theme_default` mit den Werten `hell`,
+  `dunkel` oder `system` (Default: `system`).
+- Logo: Datei-Upload via `multer`, gespeichert unter `data/branding/logo.<ext>` (gitignored, wie
+  die SQLite-DB). Bei jedem neuen Upload wird die vorherige Datei ersetzt. Pfad und Mimetype
+  werden in `admin_config` (`branding_logo_pfad`, `branding_logo_mimetype`) vermerkt.
+  **Nur PNG/JPEG erlaubt, kein SVG** — bewusste Vereinfachung, die jede Diskussion über
+  SVG-Script-Injection von vornherein vermeidet und praktisch jedes Kirchen-Logo abdeckt.
+  Max. Dateigrösse 2 MB, serverseitige Mimetype-Prüfung (nicht nur Dateiendung).
+
+### Ausgabe (gilt global, nicht nur im Admin-Bereich)
+
+- `GET /branding/logo` liefert die Logo-Datei mit korrektem `Content-Type` aus; ohne
+  konfiguriertes Logo → 404, Header-Partial zeigt dann nur den Gemeinde-Namen als Text-Fallback.
+  Diese Route ist bewusst **nicht** hinter `requireRole` — das Logo muss auch auf der
+  Login-Seite sichtbar sein, bevor überhaupt eine Session existiert.
+- `middleware/branding.js` (`loadBranding(db)`) wird **global** in `src/app.js` gemountet (vor
+  allen Routern) und setzt auf jedem Request `res.locals.branding = { primaryColor,
+  secondaryColor, hasLogo, themeAttr }`.
+- **Rangfolge für `themeAttr`** (serverseitig ausgewertet, verhindert Flackern beim Laden):
+  1. Nutzer-Cookie `theme` (Werte `hell`/`dunkel`, nicht-httpOnly, `sameSite=lax`, langlebig,
+     unabhängig von der Login-Session) gesetzt → dessen Wert gilt, immer stärker als die
+     Admin-Vorgabe.
+  2. Sonst `admin_config`-Wert `branding_theme_default` = `hell`/`dunkel` → gilt für alle ohne
+     eigene Wahl.
+  3. Sonst (`system`, oder kein Cookie und kein expliziter Admin-Default) → `themeAttr` ist
+     `null`, keine feste Vorgabe; CSS `prefers-color-scheme` entscheidet rein clientseitig
+     anhand der Geräteeinstellung.
+- `views/_header.ejs` setzt `data-theme="<%= branding.themeAttr %>"` auf `<html>` nur wenn
+  `themeAttr` nicht `null` ist, sowie einen `<style>`-Block mit den Farb-Custom-Properties
+  (`--brand-primary`, `--brand-secondary`). CSS-Tokens werden auf `:root` definiert, unter
+  `[data-theme="dunkel"]` und unter `prefers-color-scheme: dark` (geguarded durch
+  `:not([data-theme="hell"])`) überschrieben — ein expliziter Hell-Wunsch gewinnt auch bei
+  dunklem System-Theme.
+- Kleiner Umschalt-Button im Header (minimales Vanilla-JS, kein Framework, konsistent mit der
+  Phase-A-Entscheidung gegen ein Frontend-Framework): flippt `data-theme` sofort im DOM und
+  schreibt den `theme`-Cookie.
+- `views/_header.ejs` wird in alle bestehenden Views eingebunden (`home.ejs`, `error.ejs`) sowie
+  in alle neuen Admin-Views — spätere Phasen (C/D) erben Branding/Theme automatisch, sobald sie
+  dasselbe Partial verwenden.
+
+### Admin-UI
+
+- Neue Route `/admin/erscheinungsbild`: Formular mit zwei Farbfeldern (`<input type="color">` +
+  Hex-Textfeld als Fallback), einem Dropdown "Standard-Farbmodus" (Hell / Dunkel / Folgt
+  Geräteeinstellung) und einem Datei-Upload-Feld mit Vorschau des aktuellen Logos.
+- Validierung: Hex-Format für Farben, gültiger Wert für den Theme-Default, Mimetype/Grösse fürs
+  Logo — bei Fehler wird das Formular mit Fehlermeldung neu gerendert, bestehende
+  Farben/Theme/Logo bleiben unangetastet.
+- Gleiche serverseitige `requireRole(config, 'portal-admin')`-Absicherung wie die übrigen
+  Admin-Routen (siehe Abschnitt "Rechteprüfung" oben) — `GET /branding/logo` ist die einzige
+  Ausnahme, absichtlich öffentlich.
+
 ## Personen-Übersicht (read-only)
 
 Schliesst eine in Phase A offen gelassene Anforderung: `ct_person_unresolved` soll admin-sichtbar
@@ -152,6 +225,9 @@ Sync (Phase A); dieser Screen ist reine Diagnose-/Warnfläche für den Admin.
   aus Phase A (`getConfigValue`/`setConfigValue`). `reminder_stunden`/`eskalation_stunden` werden
   als positive Ganzzahlen validiert; `eskalation_fallback_email` auf ein plausibles
   E-Mail-Format (einfache Regex-Prüfung, kein Mailversand-Test).
+- **Erscheinungsbild**: Ein Formular für Farben, Theme-Default und Logo-Upload (siehe Abschnitt
+  "Erscheinungsbild: Logo, Farben, Dark/Light Mode" oben). Liest/schreibt ebenfalls über die
+  `admin_config`-Helper, das Logo zusätzlich als Datei unter `data/branding/`.
 
 ## Fehlerbehandlung
 
@@ -163,6 +239,8 @@ Sync (Phase A); dieser Screen ist reine Diagnose-/Warnfläche für den Admin.
 - Referenzierte `konto_id`/`churchtools_person_id` existiert nicht mehr (z.B. Race Condition
   durch parallele Bearbeitung) → generische deutsche Fehlerseite (zentrale Error-Middleware aus
   Phase A greift).
+- Logo-Upload mit falschem Mimetype oder zu grosser Datei → Formular mit deutscher
+  Fehlermeldung neu gerendert, bestehendes Logo bleibt unverändert (kein Teil-Upload).
 
 ## Tests
 
@@ -183,6 +261,15 @@ keine Mocks der eigenen Business-Logik. Schwerpunkte:
 - `ct_person_unresolved = true` wird auf `/admin/personen` sichtbar dargestellt.
 - Eskalationszeiten-Formular: gültige Werte werden persistiert und beim erneuten Laden
   vorausgefüllt angezeigt; ungültige Werte (negative Zahl, kaputte E-Mail) werden abgelehnt.
+- Erscheinungsbild: gültige Hex-Farben und Theme-Default-Werte werden persistiert; ungültige
+  Werte abgelehnt. Logo-Upload: gültiger PNG/JPEG-Upload wird gespeichert und über
+  `GET /branding/logo` mit korrektem `Content-Type` wieder ausgeliefert; zu grosse Datei oder
+  falscher Mimetype (z.B. `.exe` mit vorgetäuschter Endung) wird abgelehnt, bestehendes Logo
+  bleibt bestehen.
+- Theme-Rangfolge: Für alle drei Admin-Default-Werte (`hell`/`dunkel`/`system`) und mit/ohne
+  gesetztem `theme`-Cookie wird per supertest die tatsächlich gerenderte `data-theme`-Ausgabe
+  (vorhanden mit korrektem Wert, oder bewusst abwesend bei `system` ohne Cookie) geprüft — inkl.
+  des Falls, dass ein Nutzer-Cookie einen abweichenden Admin-Default überstimmt.
 
 ## Nicht Teil von Phase B
 
@@ -191,4 +278,7 @@ die Konfiguration dafür entsteht hier — das Versenden ist Teil von Phase D, s
 existieren), PDF-Verarbeitung, Freigabe-Workflow-UI, Rate-Limiting (Phase E). Die tatsächliche
 Absender→Zuweisungsregel-Matching-Logik (Domain- vs. Exakt-Treffer-Priorität) gehört ebenfalls zu
 Phase C, wenn eingehende Rechnungen real verarbeitet werden — Phase B liefert nur die
-Datenpflege-UI dafür.
+Datenpflege-UI dafür. Das clientseitige Umschalt-Verhalten des Dark/Light-Buttons selbst (DOM-
+Manipulation, Cookie-Schreiben im Browser) ist wie in Phase A kein Teil der automatisierten
+Node-Test-Suite — kein Browser-/E2E-Test in dieser Phase; getestet wird die serverseitige
+Rangfolge-Logik, die den initialen Zustand liefert.

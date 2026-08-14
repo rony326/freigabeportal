@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>Zuweisungsregel — Freigabeportal Admin</title></head>
+<body>
+  <%- include('../_header') %>
+  <%- include('./_nav') %>
+  <h1><%= regel ? 'Zuweisungsregel bearbeiten' : 'Neue Zuweisungsregel' %></h1>
+  <% if (errors.length > 0) { %>
+    <ul><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+  <% } %>
+  <form method="post" action="<%= regel ? `/admin/zuweisungsregeln/${regel.id}` : '/admin/zuweisungsregeln' %>">
+    <label>
+      Absender-Muster (volle E-Mail-Adresse oder Domain)
+      <input type="text" name="absenderMuster" value="<%= values.absenderMuster || '' %>" required>
+    </label><br>
+    <label>
+      Konto
+      <select name="kontoId" required>
+        <option value="">— wählen —</option>
+        <% konten.forEach((k) => { %>
+          <option value="<%= k.id %>" <%= String(values.kontoId) === String(k.id) ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+        <% }) %>
+      </select>
+    </label><br>
+    <button type="submit">Speichern</button>
+  </form>
+</body>
+</html>

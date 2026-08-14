@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>Zuweisungsregeln — Freigabeportal Admin</title></head>
+<body>
+  <%- include('../_header') %>
+  <%- include('./_nav') %>
+  <h1>Zuweisungsregeln</h1>
+  <p><a href="/admin/zuweisungsregeln/neu">Neue Regel anlegen</a></p>
+  <table>
+    <thead><tr><th>Absender-Muster</th><th>Konto</th><th></th></tr></thead>
+    <tbody>
+      <% regeln.forEach((regel) => { %>
+        <tr>
+          <td><%= regel.absender_muster %></td>
+          <td><%= regel.konto_id %></td>
+          <td>
+            <a href="/admin/zuweisungsregeln/<%= regel.id %>/bearbeiten">Bearbeiten</a>
+            <form method="post" action="/admin/zuweisungsregeln/<%= regel.id %>/loeschen" style="display:inline">
+              <button type="submit">Löschen</button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</body>
+</html>

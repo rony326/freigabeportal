@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { SqliteSessionStore } from './db/sessionStore.js';
 import { createAuthRouter } from './routes/auth.js';
+import { loadCurrentPerson } from './middleware/roles.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +23,7 @@ export function createApp({ db, config }) {
       cookie: { httpOnly: true, secure: config.env === 'production', maxAge: 24 * 60 * 60 * 1000 },
     })
   );
+  app.use(loadCurrentPerson(db));
 
   app.use('/auth', createAuthRouter({ db, config }));
 

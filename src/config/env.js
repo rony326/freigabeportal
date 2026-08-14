@@ -8,6 +8,7 @@ function required(env, name) {
 
 export function loadConfig(env = process.env) {
   return {
+    env: env.NODE_ENV || 'development',
     port: Number(env.PORT) || 3000,
     sessionSecret: required(env, 'SESSION_SECRET'),
     dbPath: env.DB_PATH || './data/freigabeportal.sqlite',

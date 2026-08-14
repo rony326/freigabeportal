@@ -30,3 +30,11 @@ test('loadConfig throws a German error when a required variable is missing', () 
   const { SESSION_SECRET, ...incomplete } = FULL_ENV;
   assert.throws(() => loadConfig(incomplete), /Fehlende Umgebungsvariable: SESSION_SECRET/);
 });
+
+test('loadConfig.env reflects NODE_ENV or defaults to development', () => {
+  const withNode = loadConfig({ ...FULL_ENV, NODE_ENV: 'production' });
+  assert.equal(withNode.env, 'production');
+
+  const withoutNode = loadConfig(FULL_ENV);
+  assert.equal(withoutNode.env, 'development');
+});

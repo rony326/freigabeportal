@@ -10,6 +10,7 @@ import { seedDefaults, getConfigValue } from '../../../src/db/adminConfigRepo.js
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
 import { createErscheinungsbildRouter } from '../../../src/routes/admin/erscheinungsbild.js';
+import { createBrandingRouter } from '../../../src/routes/branding.js';
 
 function buildTestApp(db, brandingDir) {
   const app = express();
@@ -26,6 +27,9 @@ function buildTestApp(db, brandingDir) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, brandingDir };
   app.use(loadCurrentPerson(db));
+  // Mounted unauthenticated, same as src/app.js does — GET /branding/logo is
+  // a public route served to unauthenticated callers too.
+  app.use('/branding', createBrandingRouter({ db }));
   app.use('/admin/erscheinungsbild', requireRole(config, 'portal-admin'), createErscheinungsbildRouter({ db, config }));
   return app;
 }
@@ -145,6 +149,72 @@ test('POST /admin/erscheinungsbild rejects a non-image file', async () => {
 
   assert.equal(res.status, 400);
   assert.equal(getConfigValue(db, 'branding_logo_pfad'), null);
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('a valid PNG upload is saved and then served back byte-for-byte via GET /branding/logo with the correct Content-Type', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+
+  const pngBytes = Buffer.from('89504e470d0a1a0a', 'hex');
+  const uploadRes = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .attach('logo', pngBytes, { filename: 'logo.png', contentType: 'image/png' });
+  assert.equal(uploadRes.status, 302);
+
+  const logoRes = await request(app).get('/branding/logo');
+  assert.equal(logoRes.status, 200);
+  assert.equal(logoRes.headers['content-type'], 'image/png');
+  assert.ok(Buffer.isBuffer(logoRes.body), 'expected a binary response body');
+  assert.ok(logoRes.body.equals(pngBytes), 'served bytes should exactly match the uploaded PNG bytes');
+
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('an oversized logo upload (> 2 MB) is rejected with a German message, and the existing logo config is left untouched', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+
+  const pngBytes = Buffer.from('89504e470d0a1a0a', 'hex');
+  const initialUpload = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .attach('logo', pngBytes, { filename: 'logo.png', contentType: 'image/png' });
+  assert.equal(initialUpload.status, 302);
+  const pfadBefore = getConfigValue(db, 'branding_logo_pfad');
+  const mimetypeBefore = getConfigValue(db, 'branding_logo_mimetype');
+  assert.ok(pfadBefore);
+  assert.equal(mimetypeBefore, 'image/png');
+
+  const oversizedBuffer = Buffer.alloc(2 * 1024 * 1024 + 1, 'A');
+  const oversizedRes = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .attach('logo', oversizedBuffer, { filename: 'huge.png', contentType: 'image/png' });
+
+  assert.equal(oversizedRes.status, 400);
+  assert.match(oversizedRes.text, /höchstens 2 MB/);
+  assert.equal(getConfigValue(db, 'branding_logo_pfad'), pfadBefore, 'the old logo path should be untouched');
+  assert.equal(getConfigValue(db, 'branding_logo_mimetype'), mimetypeBefore, 'the old logo mimetype should be untouched');
+
   db.close();
   rmSync(brandingDir, { recursive: true, force: true });
 });

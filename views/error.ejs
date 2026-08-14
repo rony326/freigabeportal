@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
 <head><meta charset="utf-8"><title>Fehler — Freigabeportal</title></head>
 <body>
+  <%- include('_header') %>
   <h1>Es ist ein Fehler aufgetreten</h1>
   <p><%= message %></p>
   <p><a href="/">Zurück zur Startseite</a></p>

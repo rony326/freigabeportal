@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
 <head><meta charset="utf-8"><title>Freigabeportal</title></head>
 <body>
+  <%- include('_header') %>
   <h1>Freigabeportal</h1>
   <% if (person) { %>
     <p>Angemeldet als <%= person.vorname %> <%= person.nachname %>.</p>

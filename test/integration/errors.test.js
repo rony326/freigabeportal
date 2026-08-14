@@ -48,3 +48,19 @@ test('a ChurchTools failure mid-callback is caught and rendered as a German 500 
   assert.match(res.text, /unerwarteter Fehler/);
   db.close();
 });
+
+test('malformed JSON body throws before body/session middleware runs, and still renders the German error page (not the Express default)', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app)
+    .post('/healthz')
+    .set('Content-Type', 'application/json')
+    .send('{bad json');
+  assert.equal(res.status, 500);
+  assert.match(res.text, /unerwarteter Fehler/);
+  // Express's default error handler would emit an HTML page containing the
+  // raw error stack / "Error:" prefix and no German copy at all — make sure
+  // we didn't fall through to that.
+  assert.doesNotMatch(res.text, /<pre>/);
+  db.close();
+});

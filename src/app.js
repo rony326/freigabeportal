@@ -21,6 +21,7 @@ export function createApp({ db, config }) {
   app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
   app.set('views', join(__dirname, '..', 'views'));
+  app.use(loadBranding(db));
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
   app.use(
@@ -38,13 +39,13 @@ export function createApp({ db, config }) {
     })
   );
   app.use(loadCurrentPerson(db));
-  app.use(loadBranding(db));
   app.use('/branding', createBrandingRouter({ db }));
-  app.use('/admin/konten', requireRole(config, 'portal-admin'), createKontenRouter({ db }));
-  app.use('/admin/zuweisungsregeln', requireRole(config, 'portal-admin'), createZuweisungsregelnRouter({ db }));
-  app.use('/admin/eskalation', requireRole(config, 'portal-admin'), createEskalationRouter({ db }));
-  app.use('/admin/erscheinungsbild', requireRole(config, 'portal-admin'), createErscheinungsbildRouter({ db, config }));
-  app.use('/admin/personen', requireRole(config, 'portal-admin'), createPersonenRouter({ db }));
+  app.use('/admin', requireRole(config, 'portal-admin'));
+  app.use('/admin/konten', createKontenRouter({ db }));
+  app.use('/admin/zuweisungsregeln', createZuweisungsregelnRouter({ db }));
+  app.use('/admin/eskalation', createEskalationRouter({ db }));
+  app.use('/admin/erscheinungsbild', createErscheinungsbildRouter({ db, config }));
+  app.use('/admin/personen', createPersonenRouter({ db }));
 
   app.use('/auth', createAuthRouter({ db, config }));
   app.use('/internal/cron', createCronRouter({ db, config }));
@@ -61,6 +62,7 @@ export function createApp({ db, config }) {
 
   app.use((err, req, res, next) => {
     console.error(err);
+    res.locals.branding ??= { primaryColor: null, secondaryColor: null, hasLogo: false, themeAttr: null };
     res.status(500).render('error', { message: 'Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es später erneut.' });
   });
 

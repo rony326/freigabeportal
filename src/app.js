@@ -35,5 +35,14 @@ export function createApp({ db, config }) {
     res.render('home', { person: req.currentPerson ?? null });
   });
 
+  app.use((req, res) => {
+    res.status(404).render('error', { message: 'Seite nicht gefunden.' });
+  });
+
+  app.use((err, req, res, next) => {
+    console.error(err);
+    res.status(500).render('error', { message: 'Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es später erneut.' });
+  });
+
   return app;
 }

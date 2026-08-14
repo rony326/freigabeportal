@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="utf-8"><title>Freigabeportal</title></head>
+<body>
+  <h1>Freigabeportal</h1>
+  <% if (person) { %>
+    <p>Angemeldet als <%= person.vorname %> <%= person.nachname %>.</p>
+  <% } else { %>
+    <p>Nicht angemeldet. <a href="/auth/login">Anmelden</a></p>
+  <% } %>
+</body>
+</html>

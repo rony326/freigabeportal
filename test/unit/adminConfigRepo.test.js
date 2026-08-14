@@ -33,3 +33,12 @@ test('setConfigValue upserts a value', () => {
   assert.equal(getConfigValue(db, 'custom_key'), 'second');
   db.close();
 });
+
+test('seedDefaults sets branding defaults', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'branding_farbe_primaer'), '#2f4858');
+  assert.equal(getConfigValue(db, 'branding_farbe_sekundaer'), '#4d7ea8');
+  assert.equal(getConfigValue(db, 'branding_theme_default'), 'system');
+  db.close();
+});

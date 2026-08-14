@@ -30,3 +30,20 @@ CREATE TABLE IF NOT EXISTS admin_config (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS konten (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kontonummer TEXT NOT NULL,
+  bezeichnung TEXT NOT NULL,
+  freigeber1_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  stellvertreter1_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  freigeber2_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  stellvertreter2_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  aktiv INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS zuweisungsregeln (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  absender_muster TEXT NOT NULL UNIQUE,
+  konto_id INTEGER NOT NULL REFERENCES konten(id)
+);

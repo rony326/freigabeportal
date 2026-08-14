@@ -1,6 +1,9 @@
 const DEFAULTS = {
   reminder_stunden: '24',
   eskalation_stunden: '48',
+  branding_farbe_primaer: '#2f4858',
+  branding_farbe_sekundaer: '#4d7ea8',
+  branding_theme_default: 'system',
 };
 
 export function seedDefaults(db) {

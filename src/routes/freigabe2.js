@@ -8,8 +8,9 @@ import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampAndFinalize } from '../services/pdfStamp.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
+import { sendNotification } from '../services/notify.js';
 
-export function createFreigabe2Router({ db, config }) {
+export function createFreigabe2Router({ db, config, mailer }) {
   const router = Router();
 
   function loadAuthorized(req, res) {
@@ -83,6 +84,16 @@ export function createFreigabe2Router({ db, config }) {
           db.exec('ROLLBACK');
           throw err;
         }
+        const stellvertreter2 = getPersonById(db, konto.stellvertreter2_id);
+        if (stellvertreter2) {
+          await sendNotification(db, mailer, {
+            to: stellvertreter2.email,
+            subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 2 – an dich übergeben',
+            text: `Eine Rechnung wurde dir zur Freigabe 2 übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
+            typ: 'zuweisung',
+            jobId: job.id,
+          });
+        }
         return res.redirect('/pool');
       }
 
@@ -113,6 +124,16 @@ export function createFreigabe2Router({ db, config }) {
         } catch (err) {
           db.exec('ROLLBACK');
           throw err;
+        }
+        const besitzer = getPersonById(db, job.zugewiesen_an);
+        if (besitzer) {
+          await sendNotification(db, mailer, {
+            to: besitzer.email,
+            subject: 'Freigabeportal: Rechnung abgelehnt',
+            text: `Deine Rechnung wurde abgelehnt: ${job.dateiname}\n\nGrund: ${begruendung}\n\nBitte im Freigabeportal anmelden, um sie zu überarbeiten: ${config.publicBaseUrl}/pool`,
+            typ: 'ablehnung',
+            jobId: job.id,
+          });
         }
         return res.redirect('/pool');
       }

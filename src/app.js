@@ -76,7 +76,7 @@ export function createApp({ db, config }) {
   app.use('/pool', requireRole(config, 'buchhaltung'), createPoolPageRouter({ db, config }));
   app.use('/downloads', createDownloadsRouter({ db, config }));
   app.use('/kontierung', requireRole(config, 'buchhaltung'), createKontierungRouter({ db, config, mailer }));
-  app.use('/freigabe2', requireRole(config, 'buchhaltung'), createFreigabe2Router({ db, config }));
+  app.use('/freigabe2', requireRole(config, 'buchhaltung'), createFreigabe2Router({ db, config, mailer }));
   app.use('/abgelehnt', requireRole(config, 'buchhaltung'), createAblehnungRouter({ db }));
 
   app.use('/auth', createAuthRouter({ db, config }));

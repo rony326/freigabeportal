@@ -13,7 +13,12 @@ import { createFreigabe2Router } from '../../src/routes/freigabe2.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import * as mupdf from 'mupdf';
 
-function buildTestApp(db, { withErrorHandler = false } = {}) {
+function createStubMailer() {
+  const sent = [];
+  return { sent, async sendMail(mail) { sent.push(mail); } };
+}
+
+function buildTestApp(db, { withErrorHandler = false, mailer } = {}) {
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../views', import.meta.url).pathname);
@@ -26,9 +31,9 @@ function buildTestApp(db, { withErrorHandler = false } = {}) {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret' };
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret', publicBaseUrl: 'https://portal.example.org' };
   app.use(loadCurrentPerson(db));
-  app.use('/freigabe2', requireRole(config, 'buchhaltung'), createFreigabe2Router({ db, config }));
+  app.use('/freigabe2', requireRole(config, 'buchhaltung'), createFreigabe2Router({ db, config, mailer }));
   if (withErrorHandler) {
     // Mirrors src/app.js's generic error middleware: anything reaching next(err) gets a
     // German 500 page instead of crashing the process.
@@ -47,7 +52,10 @@ async function seedFreigabe2Job(db, { pdfPfad }) {
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
   setKontierung(db, id, kontoId);
   createFreigabe(db, { jobId: id, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-15T08:30:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
-  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(id);
+  // zugewiesen_an mirrors what claimJob + Kontierung leave behind in the real flow (the owner
+  // who submitted Kontierung stays the job's owner through Freigabe 2, per kontierung.js /
+  // ablehnung.js's own reliance on this field) — Task 5's Ablehnungs-Benachrichtigung needs it.
+  db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(id);
   return { id, kontoId };
 }
 
@@ -508,5 +516,77 @@ test('POST /freigabe2/:id with aktion=ablehnen on a job someone else already han
   // access-control path as any other stale-status request — confirms no partial state change.
   assert.equal(res.status, 403);
   assert.equal(getJobById(db, id).status, 'abgeschlossen');
+  db.close();
+});
+
+test('POST /freigabe2/:id with a conflict sends a Zuweisungs-Mail to stellvertreter2', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' }); // freigeber2Id: '3', stellvertreter2Id: '4'
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, { mailer });
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'ja', begruendung: 'Befangen' });
+
+  assert.equal(res.status, 302);
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'p4@example.org');
+  db.close();
+});
+
+test('POST /freigabe2/:id with aktion=ablehnen sends an Ablehnungs-Benachrichtigung to the job owner, including the reason', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-mail-ablehnen-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  writeFileSync(pdfPfad, pdf);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, { mailer });
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: 'Falsches Konto gewählt' });
+
+  assert.equal(res.status, 302);
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'p1@example.org'); // seedFreigabe2Job's zugewiesen_an is person '1'
+  assert.match(mailer.sent[0].text, /Falsches Konto gewählt/);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /freigabe2/:id with aktion=freigeben (no conflict, no rejection) sends no mail — job completion needs no human notification', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-mail-freigeben-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  writeFileSync(pdfPfad, pdf);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, { mailer });
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'freigeben', interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 302);
+  assert.equal(mailer.sent.length, 0);
+
+  rmSync(dir, { recursive: true, force: true });
   db.close();
 });

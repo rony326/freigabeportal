@@ -29,10 +29,13 @@ function testConfig(jobsDir) {
     },
     cronSecret: 'cron-secret',
     n8nApiKey: 'n8n-key',
-    // Deliberately unreachable — proves the app's real, non-test-only fallback path (Task 3's
-    // try/catch around createMailer, plus sendNotification's own catch) handles every attempt
-    // gracefully, exactly as it would with a genuinely misconfigured production SMTP server.
-    smtp: { host: '203.0.113.1', port: 587, user: 'u', pass: 'p', from: 'portal@example.org' },
+    // Deliberately unresolvable (no DNS record) — proves the app's real, non-test-only fallback
+    // path (Task 3's try/catch around createMailer, plus sendNotification's own catch) handles
+    // every attempt gracefully, exactly as it would with a genuinely misconfigured production
+    // SMTP server. A hostname with no A/AAAA record fails fast via DNS ENOTFOUND, unlike a raw
+    // unreachable IP which would block on a multi-minute TCP connection timeout — matching the
+    // same host used by the pre-existing freigabeWorkflowEndToEnd/ablehnungRueckwegEndToEnd tests.
+    smtp: { host: 'smtp.example.org', port: 587, user: 'u', pass: 'p', from: 'portal@example.org' },
     publicBaseUrl: 'https://portal.example.org',
     brandingDir: jobsDir,
     jobsDir,

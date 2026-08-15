@@ -101,6 +101,50 @@ test('POST /api/n8n/jobs rejects an invalid quelle value', async () => {
   db.close();
 });
 
+test('POST /api/n8n/jobs rejects a PDF larger than 20 MB, creates nothing', async () => {
+  const { mkdtempSync, readdirSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir));
+
+  const oversized = Buffer.alloc(20 * 1024 * 1024 + 1, 0x25);
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .field('dateiname', 'huge.pdf')
+    .attach('pdf', oversized, { filename: 'huge.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /20 MB/);
+  assert.equal(readdirSync(jobsDir).length, 0);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs rejects a request missing dateiname, creates nothing', async () => {
+  const { mkdtempSync, readdirSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir));
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .attach('pdf', PDF_BYTES, { filename: 'scan.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 400);
+  assert.equal(readdirSync(jobsDir).length, 0);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
 test('POST /api/n8n/jobs applies Zuweisungsregel matching and reports the resulting status', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');

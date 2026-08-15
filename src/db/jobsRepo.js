@@ -104,11 +104,15 @@ export function setThumbnailPfad(db, id, thumbnailPfad) {
 // setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, and eskalierenFreigabe2 need no
 // WHERE-status guard: every route that calls them is a fully synchronous handler with no
 // `await` between its authorization/status check and COMMIT, so node:sqlite's synchronous
-// execution rules out interleaving with another request. abschliessenFreigabe2 is the one
-// exception — its route awaits stampAndFinalize before completing, which is why it alone
-// carries an explicit `AND status = 'freigabe2'` guard.
+// execution rules out interleaving with another request. abschliessenFreigabe2 is guarded
+// because its route awaits stampAndFinalize before completing. ablehnenJob is guarded too,
+// even though its own route path has no such await — it mirrors abschliessenFreigabe2's
+// "terminal transition with an honest boolean result" semantics rather than assuming success,
+// and costs nothing to keep consistent.
 export function setKontierung(db, jobId, kontoId) {
-  db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
+  const konto = getKontoById(db, kontoId);
+  db.prepare('UPDATE jobs SET konto_id = ?, zugewiesen_an = COALESCE(zugewiesen_an, ?) WHERE id = ?')
+    .run(kontoId, konto.freigeber1_id, jobId);
 }
 
 export function eskalierenFreigabe1(db, jobId, { eskaliertVon, grund, stellvertreterId }) {
@@ -149,6 +153,29 @@ export function releaseJob(db, jobId, personId) {
     )
     .run(jobId, personId);
   return result.changes > 0;
+}
+
+export function ablehnenJob(db, jobId, { abgelehntVon, grund }) {
+  const result = db
+    .prepare(
+      "UPDATE jobs SET status = 'abgelehnt', abgelehnt_von = ?, ablehnungsgrund = ? WHERE id = ? AND status = 'freigabe2'"
+    )
+    .run(abgelehntVon, grund, jobId);
+  return result.changes > 0;
+}
+
+export function wiederOeffnenJob(db, jobId, personId) {
+  const result = db
+    .prepare(
+      `UPDATE jobs SET status = 'zugewiesen', abgelehnt_von = NULL, ablehnungsgrund = NULL
+       WHERE id = ? AND zugewiesen_an = ? AND status = 'abgelehnt'`
+    )
+    .run(jobId, personId);
+  return result.changes > 0;
+}
+
+export function listAbgelehntJobsForPerson(db, personId) {
+  return db.prepare("SELECT * FROM jobs WHERE status = 'abgelehnt' AND zugewiesen_an = ? ORDER BY eingang_am").all(personId);
 }
 
 export function listZugewiesenJobsForPerson(db, personId) {

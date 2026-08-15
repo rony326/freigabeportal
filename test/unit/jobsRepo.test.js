@@ -4,7 +4,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -359,4 +359,91 @@ test('getEffectiveFreigeber2Id returns freigeber2_id normally, stellvertreter2_i
   const konto = { freigeber2_id: '3', stellvertreter2_id: '4' };
   assert.equal(getEffectiveFreigeber2Id({ freigabe2_eskaliert_von: null }, konto), '3');
   assert.equal(getEffectiveFreigeber2Id({ freigabe2_eskaliert_von: '3' }, konto), '4');
+});
+
+test('ablehnenJob sets status to abgelehnt with the rejection reason when the job is in freigabe2', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+
+  const result = ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'Falsches Konto' });
+  assert.equal(result, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'abgelehnt');
+  assert.equal(job.abgelehnt_von, '3');
+  assert.equal(job.ablehnungsgrund, 'Falsches Konto');
+  db.close();
+});
+
+test('ablehnenJob refuses to reject a job that is not in freigabe2', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const result = ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'zu spät' });
+  assert.equal(result, false);
+  assert.equal(getJobById(db, jobId).status, 'zugewiesen');
+  db.close();
+});
+
+test('wiederOeffnenJob resets an abgelehnt job to zugewiesen and clears the rejection fields', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'Falsches Konto' });
+
+  const result = wiederOeffnenJob(db, jobId, '1');
+  assert.equal(result, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.abgelehnt_von, null);
+  assert.equal(job.ablehnungsgrund, null);
+  assert.equal(job.konto_id, kontoId, 'konto_id must survive a reopen so the Kontierung form stays pre-filled');
+  db.close();
+});
+
+test('wiederOeffnenJob refuses to reopen a job for someone other than zugewiesen_an', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'Falsches Konto' });
+
+  const result = wiederOeffnenJob(db, jobId, '2');
+  assert.equal(result, false);
+  assert.equal(getJobById(db, jobId).status, 'abgelehnt');
+  db.close();
+});
+
+test('wiederOeffnenJob refuses to reopen a job that is not abgelehnt', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const result = wiederOeffnenJob(db, jobId, '1');
+  assert.equal(result, false);
+  db.close();
+});
+
+test('listAbgelehntJobsForPerson returns only abgelehnt jobs assigned to that person', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'Falsches Konto' });
+
+  const otherJobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+  claimJob(db, otherJobId, '1');
+
+  const rows = listAbgelehntJobsForPerson(db, '1');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, jobId);
+  assert.equal(listAbgelehntJobsForPerson(db, '2').length, 0);
+  db.close();
 });

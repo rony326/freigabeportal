@@ -262,11 +262,26 @@ test('abschliessenFreigabe2 sets status to abgeschlossen and clears the escalati
   const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
   eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Befangen' });
-  abschliessenFreigabe2(db, jobId);
+  const completed = abschliessenFreigabe2(db, jobId);
+  assert.equal(completed, true);
   const job = getJobById(db, jobId);
   assert.equal(job.status, 'abgeschlossen');
   assert.equal(job.freigabe2_eskaliert_von, null);
   assert.equal(job.freigabe2_eskalationsgrund, null);
+  db.close();
+});
+
+test('abschliessenFreigabe2 atomically guards against completing a job twice', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  const firstCompletion = abschliessenFreigabe2(db, jobId);
+  const secondCompletion = abschliessenFreigabe2(db, jobId);
+  assert.equal(firstCompletion, true);
+  assert.equal(secondCompletion, false);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'abgeschlossen');
   db.close();
 });
 

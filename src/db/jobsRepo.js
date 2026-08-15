@@ -122,9 +122,12 @@ export function eskalierenFreigabe2(db, jobId, { eskaliertVon, grund }) {
 }
 
 export function abschliessenFreigabe2(db, jobId) {
-  db.prepare(
-    "UPDATE jobs SET status = 'abgeschlossen', freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL WHERE id = ?"
-  ).run(jobId);
+  const result = db
+    .prepare(
+      "UPDATE jobs SET status = 'abgeschlossen', freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL WHERE id = ? AND status = 'freigabe2'"
+    )
+    .run(jobId);
+  return result.changes > 0;
 }
 
 export function releaseJob(db, jobId, personId) {

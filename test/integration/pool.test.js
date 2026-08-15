@@ -10,6 +10,12 @@ import { createPoolRouter } from '../../src/routes/pool.js';
 
 function buildTestApp(db) {
   const app = express();
+  app.set('view engine', 'ejs');
+  app.set('views', new URL('../../views', import.meta.url).pathname);
+  app.use((req, res, next) => {
+    res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null };
+    next();
+  });
   app.use((req, res, next) => {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();

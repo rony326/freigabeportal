@@ -24,3 +24,12 @@ test('jobs table has a thumbnail_pfad column', () => {
   assert.ok(columns.includes('thumbnail_pfad'), 'jobs table is missing thumbnail_pfad');
   db.close();
 });
+
+test('jobs table has the four Freigabe-Eskalation columns', () => {
+  const db = openDatabase(':memory:');
+  const columns = db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  for (const expected of ['freigabe1_eskaliert_von', 'freigabe1_eskalationsgrund', 'freigabe2_eskaliert_von', 'freigabe2_eskalationsgrund']) {
+    assert.ok(columns.includes(expected), `jobs table is missing ${expected}`);
+  }
+  db.close();
+});

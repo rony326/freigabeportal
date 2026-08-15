@@ -4,7 +4,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -207,4 +207,141 @@ test('setThumbnailPfad sets thumbnail_pfad on the job row', () => {
   setThumbnailPfad(db, id, `${jobsDir}/a.png`);
   assert.equal(getJobById(db, id).thumbnail_pfad, `${jobsDir}/a.png`);
   db.close();
+});
+
+test('setKontierung sets konto_id on the job', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  assert.equal(getJobById(db, jobId).konto_id, kontoId);
+  db.close();
+});
+
+test('eskalierenFreigabe1 reassigns zugewiesen_an and records the escalation', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  eskalierenFreigabe1(db, jobId, { eskaliertVon: '1', grund: 'Befangen', stellvertreterId: '2' });
+  const job = getJobById(db, jobId);
+  assert.equal(job.zugewiesen_an, '2');
+  assert.equal(job.freigabe1_eskaliert_von, '1');
+  assert.equal(job.freigabe1_eskalationsgrund, 'Befangen');
+  db.close();
+});
+
+test('abschliessenFreigabe1 sets status to freigabe2 and clears the escalation columns', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  eskalierenFreigabe1(db, jobId, { eskaliertVon: '1', grund: 'Befangen', stellvertreterId: '2' });
+  abschliessenFreigabe1(db, jobId);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.freigabe1_eskaliert_von, null);
+  assert.equal(job.freigabe1_eskalationsgrund, null);
+  db.close();
+});
+
+test('eskalierenFreigabe2 records the escalation without changing status', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Befangen' });
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.freigabe2_eskaliert_von, '3');
+  assert.equal(job.freigabe2_eskalationsgrund, 'Befangen');
+  db.close();
+});
+
+test('abschliessenFreigabe2 sets status to abgeschlossen and clears the escalation columns', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Befangen' });
+  abschliessenFreigabe2(db, jobId);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'abgeschlossen');
+  assert.equal(job.freigabe2_eskaliert_von, null);
+  assert.equal(job.freigabe2_eskalationsgrund, null);
+  db.close();
+});
+
+test('releaseJob puts a zugewiesen job claimed by this person back into the pool', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const released = releaseJob(db, jobId, '1');
+  assert.equal(released, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.zugewiesen_an, null);
+  assert.equal(job.konto_id, null);
+  db.close();
+});
+
+test('releaseJob refuses to release a job claimed by someone else', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const released = releaseJob(db, jobId, '2');
+  assert.equal(released, false);
+  assert.equal(getJobById(db, jobId).status, 'zugewiesen');
+  db.close();
+});
+
+test('releaseJob clears a leftover freigabe1 escalation so a fresh claim starts clean', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  eskalierenFreigabe1(db, jobId, { eskaliertVon: '1', grund: 'Befangen', stellvertreterId: '2' });
+  // person '2' (the stellvertreter this escalated to) decides they don't recognize it either
+  const released = releaseJob(db, jobId, '2');
+  assert.equal(released, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.freigabe1_eskaliert_von, null);
+  assert.equal(job.freigabe1_eskalationsgrund, null);
+  db.close();
+});
+
+test('listZugewiesenJobsForPerson returns only zugewiesen jobs assigned to that person', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  const otherJobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+  claimJob(db, jobId, '1');
+  claimJob(db, otherJobId, '2');
+  const rows = listZugewiesenJobsForPerson(db, '1');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, jobId);
+  db.close();
+});
+
+test('listFreigabe2JobsForPerson matches freigeber2_id when not escalated, stellvertreter2_id after escalation', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber2Id: '3', stellvertreter2Id: '4'
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+
+  assert.equal(listFreigabe2JobsForPerson(db, '3').length, 1);
+  assert.equal(listFreigabe2JobsForPerson(db, '4').length, 0);
+
+  eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Befangen' });
+  assert.equal(listFreigabe2JobsForPerson(db, '3').length, 0);
+  assert.equal(listFreigabe2JobsForPerson(db, '4').length, 1);
+  db.close();
+});
+
+test('getEffectiveFreigeber2Id returns freigeber2_id normally, stellvertreter2_id after escalation', () => {
+  const konto = { freigeber2_id: '3', stellvertreter2_id: '4' };
+  assert.equal(getEffectiveFreigeber2Id({ freigabe2_eskaliert_von: null }, konto), '3');
+  assert.equal(getEffectiveFreigeber2Id({ freigabe2_eskaliert_von: '3' }, konto), '4');
 });

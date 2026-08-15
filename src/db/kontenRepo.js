@@ -64,3 +64,9 @@ export function listKonten(db, { includeInactive = false } = {}) {
   }
   return db.prepare('SELECT * FROM konten WHERE aktiv = 1 ORDER BY kontonummer').all();
 }
+
+export function listKontenForPerson(db, personId) {
+  return db
+    .prepare('SELECT * FROM konten WHERE aktiv = 1 AND (freigeber1_id = ? OR stellvertreter1_id = ?) ORDER BY kontonummer')
+    .all(personId, personId);
+}

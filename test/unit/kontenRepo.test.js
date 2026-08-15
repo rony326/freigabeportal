@@ -9,6 +9,7 @@ import {
   getKontoById,
   listKonten,
   validateKontoRoles,
+  listKontenForPerson,
 } from '../../src/db/kontenRepo.js';
 
 function seedPersonen(db) {
@@ -109,5 +110,23 @@ test('validateKontoRoles accepts four distinct active persons', () => {
   seedPersonen(db);
   const errors = validateKontoRoles(db, { freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
   assert.deepEqual(errors, []);
+  db.close();
+});
+
+test('listKontenForPerson returns only active Konten where the person is freigeber1 or stellvertreter1', () => {
+  const db = openDatabase(':memory:');
+  for (const id of ['1', '2', '3', '4', '5']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoA = createKonto(db, { kontonummer: '3000', bezeichnung: 'A', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const kontoB = createKonto(db, { kontonummer: '3100', bezeichnung: 'B', freigeber1Id: '5', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const kontoC = createKonto(db, { kontonummer: '3200', bezeichnung: 'C', freigeber1Id: '5', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  deactivateKonto(db, kontoB);
+
+  const rows = listKontenForPerson(db, '1');
+  const ids = rows.map((r) => r.id);
+  assert.ok(ids.includes(kontoA), 'should include Konto where person is freigeber1');
+  assert.ok(!ids.includes(kontoB), 'should exclude an inactive Konto even if person is stellvertreter1');
+  assert.ok(!ids.includes(kontoC), 'should exclude a Konto the person has no role on');
   db.close();
 });

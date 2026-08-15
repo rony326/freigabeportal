@@ -64,7 +64,11 @@ CREATE TABLE IF NOT EXISTS jobs (
   abgelehnt_von TEXT REFERENCES personen(churchtools_person_id),
   ablehnungsgrund TEXT,
   fetched_by_n8n_at TEXT,
-  thumbnail_pfad TEXT
+  thumbnail_pfad TEXT,
+  freigabe1_eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+  freigabe1_eskalationsgrund TEXT,
+  freigabe2_eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+  freigabe2_eskalationsgrund TEXT
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (

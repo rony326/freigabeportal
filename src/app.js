@@ -16,6 +16,7 @@ import { createEskalationRouter } from './routes/admin/eskalation.js';
 import { createErscheinungsbildRouter } from './routes/admin/erscheinungsbild.js';
 import { createPersonenRouter } from './routes/admin/personen.js';
 import { createPoolRouter } from './routes/pool.js';
+import { createDownloadsRouter } from './routes/downloads.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -52,6 +53,7 @@ export function createApp({ db, config }) {
 
   app.use('/api/n8n/jobs', requireApiKey(config), createN8nJobsRouter({ db, config }));
   app.use('/api/pool', requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
+  app.use('/downloads', createDownloadsRouter({ db, config }));
 
   app.use('/auth', createAuthRouter({ db, config }));
   app.use('/internal/cron', createCronRouter({ db, config }));

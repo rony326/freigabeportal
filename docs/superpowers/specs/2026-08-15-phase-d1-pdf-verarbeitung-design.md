@@ -52,8 +52,8 @@ Infomaniak-Einschränkung:
 
 ## Architektur & Geltungsbereich
 
-- Zwei reine Service-Module, **keine neue Route, kein UI**: `src/services/thumbnail.js`
-  (Rendering) und `src/services/pdfStamp.js` (Stempelung).
+- Zwei reine Service-Module: `src/services/thumbnail.js` (Rendering) und
+  `src/services/pdfStamp.js` (Stempelung).
 - Thumbnail-Rendering wird **jetzt schon verdrahtet** — in die bestehende
   `POST /api/n8n/jobs`-Route (Phase C), da diese schon existiert und testbar ist.
 - Die Stempel-Funktion bleibt in D1 **unverdrahtet** (reine, isoliert getestete
@@ -62,21 +62,37 @@ Infomaniak-Einschränkung:
 - Beide Funktionen arbeiten rein mit Buffern (kein Datei-I/O in den Funktionen selbst) — der
   jeweilige Aufrufer entscheidet, wo/ob gespeichert wird. Hält die Funktionen klein, pur und
   leicht testbar.
+- **Eine neue Admin-Bereich-Seite** `GET/POST /admin/pdf-einstellungen`
+  (`requireRole(config, 'portal-admin')`), 1:1 nach dem in Phase B etablierten Muster von
+  `src/routes/admin/eskalation.js`: liest/schreibt den unten beschriebenen `admin_config`-Wert
+  über `getConfigValue`/`setConfigValue` (`src/db/adminConfigRepo.js`, Phase A). Neuer Nav-Link
+  in `views/admin/_nav.ejs`.
 
 ## Datenmodell
 
 - Neue Spalte `jobs.thumbnail_pfad` (nullable TEXT).
 - Kein neues Feld für "gestempeltes PDF" — das ist D2's Entscheidung, wie/wo das Ergebnis der
   Stempel-Funktion abgelegt wird.
+- Neuer `admin_config`-Key `visum_seite_position` (Werte `'erste'` | `'letzte'`), über
+  `seedDefaults` (`src/db/adminConfigRepo.js`) mit Default `'letzte'` vorbelegt — passend zum
+  Lastenheft-Wortlaut "n8n **hängt** eine Visum-Deckseite **an**". Kein neues env-Setting: die
+  Position der Visum-Seite ist im laufenden Betrieb über den Admin-Bereich änderbar, nicht nur
+  beim Deployment.
 
 ## Thumbnail-Rendering
 
-- `renderFirstPageThumbnail(pdfBuffer)` → PNG-Buffer. Via `mupdf`: öffnet das PDF aus dem Buffer,
-  lädt Seite 0, rendert als Pixmap mit fester, kleiner Skalierung (Ziel: ~200px Breite, passend
-  für eine Listen-Zeile), gibt PNG-Bytes zurück.
+- `renderFirstPageThumbnail(pdfBuffer, visumSeitePosition)` → PNG-Buffer. Via `mupdf`: öffnet
+  das PDF aus dem Buffer, rendert als Pixmap mit fester, kleiner Skalierung (Ziel: ~200px
+  Breite, passend für eine Listen-Zeile), gibt PNG-Bytes zurück.
+  - Bei `visumSeitePosition === 'letzte'`: rendert Seite 0 (Rechnungsinhalt steht am Anfang).
+  - Bei `visumSeitePosition === 'erste'`: rendert Seite 1 (die zweite Seite — der eigentliche
+    Rechnungsinhalt folgt direkt nach der vorangestellten Visum-Seite). Hat das PDF nur eine
+    Seite (unerwarteter Fall), wird als Fallback trotzdem Seite 0 gerendert statt zu scheitern.
+  - So zeigt das Pool-Thumbnail immer die Rechnung, nie die Visum-Seite.
 - Verdrahtung in `POST /api/n8n/jobs`: nach erfolgreicher PDF-Validierung (Magic-Bytes-Check)
-  wird das Thumbnail gerendert und unter `config.jobsDir` als `<gleicher-basisname>.png`
-  gespeichert; Pfad landet in `jobs.thumbnail_pfad`.
+  liest die Route `getConfigValue(db, 'visum_seite_position')` einmal aus, reicht den Wert an
+  `renderFirstPageThumbnail` durch. Ergebnis wird unter `config.jobsDir` als
+  `<gleicher-basisname>.png` gespeichert; Pfad landet in `jobs.thumbnail_pfad`.
 - **Fehlerbehandlung bewusst nicht blockierend**: Ein Rendering-Fehler (z.B. ein PDF, das die
   Magic-Bytes-Prüfung besteht, aber intern beschädigt ist) darf die Job-Erstellung **nicht**
   verhindern — das Thumbnail ist eine Komfort-Funktion für die spätere Pool-UI (D2), nicht Teil
@@ -86,9 +102,10 @@ Infomaniak-Einschränkung:
 
 ## PDF-Stempelung
 
-- `stampAndFinalize(pdfBuffer, stampData)` → gestempeltes PDF als Buffer. Via `pdf-lib`: lädt das
-  PDF, nimmt die **letzte Seite** (dort liegt laut n8n-Merge-Reihenfolge die Visum-Deckseite),
-  zeichnet Text in die zwei vorgesehenen Blöcke ("Geprüft und freigegeben von" — Freigeber1 und
+- `stampAndFinalize(pdfBuffer, stampData, visumSeitePosition)` → gestempeltes PDF als Buffer.
+  Via `pdf-lib`: lädt das PDF, nimmt bei `visumSeitePosition === 'letzte'` die letzte Seite,
+  bei `'erste'` die erste Seite (dort liegt je nach Konfiguration die Visum-Deckseite), zeichnet
+  Text in die zwei vorgesehenen Blöcke ("Geprüft und freigegeben von" — Freigeber1 und
   Freigeber2) an festen Koordinaten.
 - `stampData`-Form: `{ freigeber1: { name, identitaet, zeitpunkt, ip, interessenskonflikt,
   kommentar }, freigeber2: { ...gleiche Felder... } }`. `zeitpunkt` wird als UTC-ISO-String
@@ -96,6 +113,10 @@ Infomaniak-Einschränkung:
   Zeitzonen-Regel aus Phase A).
 - Da nie echte PDF-Formularfelder befüllt werden (bewusst, laut Lastenheft), ist das Ergebnis
   automatisch nicht-interaktiv — kein separater "Flatten"-Schritt nötig.
+- D1 liefert nur die Funktion; D2 liest `getConfigValue(db, 'visum_seite_position')` beim
+  Abschluss von Freigabe2 aus und reicht den Wert durch, analog zum Thumbnail-Rendering.
+  `renderFirstPageThumbnail` und `stampAndFinalize` selbst bleiben DB-frei und pur — sie kennen
+  weder `db` noch `config`, nur den bereits aufgelösten String.
 
 ## Fehlerbehandlung
 
@@ -109,19 +130,28 @@ Infomaniak-Einschränkung:
 ## Tests
 
 Wie in Phase A/B/C: echte PDF-Bytes (Magic-Bytes-Fixture, echte mehrseitige PDF-Fixture für
-Rendering-/Stempel-Tests), keine Mocks der eigenen Business-Logik.
+Rendering-/Stempel-Tests), echte HTTP-Requests via `supertest` für die Admin-Route, echte
+In-Memory-SQLite-DB, keine Mocks der eigenen Business-Logik.
 
 - **Thumbnail**: echte mehrseitige PDF-Fixture → PNG-Buffer mit korrektem PNG-Header
-  (`89 50 4E 47`); eine absichtlich kaputte PDF-Fixture → Funktion wirft einen definierten Error
-  (kein Crash, kein leeres/stilles Ergebnis); Integrationstest gegen `POST /api/n8n/jobs` prüft,
-  dass `thumbnail_pfad` gesetzt und die referenzierte Datei ein gültiges PNG ist, UND dass ein
+  (`89 50 4E 47`) sowohl für `visumSeitePosition = 'letzte'` (Seite 0) als auch `'erste'`
+  (Seite 1); eine einseitige PDF-Fixture mit `'erste'` → Fallback rendert Seite 0 statt zu
+  scheitern; eine absichtlich kaputte PDF-Fixture → Funktion wirft einen definierten Error (kein
+  Crash, kein leeres/stilles Ergebnis); Integrationstest gegen `POST /api/n8n/jobs` prüft, dass
+  `thumbnail_pfad` gesetzt und die referenzierte Datei ein gültiges PNG ist, UND dass ein
   absichtlich kaputtes "PDF" (gültiger `%PDF`-Header, aber sonst Datenmüll) den Job trotzdem mit
   `201` anlegt, nur ohne Thumbnail.
 - **Stempelung**: echte PDF-Fixture → Ergebnis ist ein gültiges, erneut mit `pdf-lib` ladbares
-  PDF mit unveränderter Seitenzahl; zusätzlich wird der Text der letzten Seite über `mupdf`
-  extrahiert (das ohnehin schon Dependency ist) und geprüft, dass Name, Zeitstempel-Bestandteile
-  und der Interessenskonflikt-Status beider Blöcke tatsächlich im extrahierten Text vorkommen —
-  ein aussagekräftiger Test statt nur "es warf keinen Fehler".
+  PDF mit unveränderter Seitenzahl, sowohl für `'letzte'` als auch `'erste'`; zusätzlich wird der
+  Text der jeweils gestempelten Seite über `mupdf` extrahiert (das ohnehin schon Dependency ist)
+  und geprüft, dass Name, Zeitstempel-Bestandteile und der Interessenskonflikt-Status beider
+  Blöcke tatsächlich im extrahierten Text vorkommen — ein aussagekräftiger Test statt nur "es
+  warf keinen Fehler".
+- **Admin-Seite `/admin/pdf-einstellungen`**: analog zum bestehenden Eskalation-Testmuster
+  (`test/integration/admin/eskalation.test.js`) — 401 ohne Session, 403 für eingeloggte
+  Nicht-Admins, `GET` zeigt den aktuell gespeicherten Wert vorselektiert (Default `'letzte'` bei
+  frisch geseedeter DB), `POST` mit `'erste'` oder `'letzte'` persistiert den Wert, `POST` mit
+  einem ungültigen Wert → 400, bestehender Wert bleibt unverändert.
 
 ## Nicht Teil von Sub-Phase D1
 

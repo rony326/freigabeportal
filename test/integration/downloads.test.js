@@ -103,3 +103,20 @@ test('a valid, unexpired signature for a job ID that was never created returns t
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('a stream error (pdf_pfad pointing at a directory) returns the same generic 403 instead of crashing', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  // existsSync(dir) is true (it's a directory), so the route passes the existence check
+  // and only fails when createReadStream actually tries to read it (EISDIR).
+  const id = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: dir });
+  const app = buildTestApp(db, config);
+
+  const res = await request(app).get(buildSignedDownloadUrl(config, id, 900));
+
+  assert.equal(res.status, 403);
+  assert.deepEqual(res.body, { error: 'Link ungültig oder abgelaufen.' });
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});

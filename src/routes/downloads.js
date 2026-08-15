@@ -21,8 +21,19 @@ export function createDownloadsRouter({ db, config }) {
       return res.status(403).json(GENERIC_DENIAL);
     }
 
+    const stream = createReadStream(job.pdf_pfad);
+    stream.on('error', () => {
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      // res.type() below already primed the Content-Type header for the happy path;
+      // reset it explicitly here so this error response is a real application/json
+      // 403 like every other denial, not application/pdf with a JSON body.
+      res.status(403).type('json').json(GENERIC_DENIAL);
+    });
     res.type('application/pdf');
-    createReadStream(job.pdf_pfad).pipe(res);
+    stream.pipe(res);
   });
 
   return router;

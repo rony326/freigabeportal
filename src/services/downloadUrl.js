@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 
+export const PDF_PREVIEW_TTL_SECONDS = 30 * 60;
+
 function sign(secret, jobId, expires) {
   return crypto.createHmac('sha256', secret).update(`${jobId}.${expires}`).digest('hex');
 }

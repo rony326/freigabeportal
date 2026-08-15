@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>Aufgaben — Freigabeportal</title></head>
+<body>
+  <%- include('_header') %>
+  <h1>Aufgaben</h1>
+
+  <h2>Pool</h2>
+  <% if (poolJobs.length === 0) { %>
+    <p>Keine offenen Rechnungen im Pool.</p>
+  <% } else { %>
+    <table>
+      <thead><tr><th>Vorschau</th><th>Dateiname</th><th>Eingang</th><th></th></tr></thead>
+      <tbody>
+        <% poolJobs.forEach((job) => { %>
+          <tr id="pool-row-<%= job.id %>">
+            <td><img class="thumbnail-preview" src="/api/pool/<%= job.id %>/thumbnail" data-preview-url="<%= job.previewUrl %>" alt="Vorschau" height="60" style="cursor:pointer"></td>
+            <td><%= job.dateiname %></td>
+            <td><%= job.eingang_am %></td>
+            <td><button type="button" class="beanspruchen-btn" data-job-id="<%= job.id %>">Beanspruchen</button></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+
+  <h2>Meine offenen Kontierungen</h2>
+  <% if (meineKontierungen.length === 0) { %>
+    <p>Keine offenen Kontierungen.</p>
+  <% } else { %>
+    <ul>
+      <% meineKontierungen.forEach((job) => { %>
+        <li><a href="/kontierung/<%= job.id %>"><%= job.dateiname %></a> (Eingang <%= job.eingang_am %>)</li>
+      <% }) %>
+    </ul>
+  <% } %>
+
+  <h2>Meine Freigaben</h2>
+  <% if (meineFreigaben.length === 0) { %>
+    <p>Keine offenen Freigaben.</p>
+  <% } else { %>
+    <ul>
+      <% meineFreigaben.forEach((job) => { %>
+        <li><a href="/freigabe2/<%= job.id %>"><%= job.dateiname %></a> (Eingang <%= job.eingang_am %>)</li>
+      <% }) %>
+    </ul>
+  <% } %>
+
+  <dialog id="preview-dialog">
+    <button type="button" id="preview-dialog-close">Schließen</button>
+    <iframe id="preview-frame" src="" style="width:80vw;height:80vh;border:none"></iframe>
+  </dialog>
+
+  <script>
+    document.querySelectorAll('.beanspruchen-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.jobId;
+        const res = await fetch(`/api/pool/${id}/beanspruchen`, { method: 'POST' });
+        if (res.ok) {
+          window.location.href = `/kontierung/${id}`;
+          return;
+        }
+        const body = await res.json().catch(() => ({}));
+        const row = document.getElementById(`pool-row-${id}`);
+        if (row) {
+          const msg = document.createElement('tr');
+          const cell = document.createElement('td');
+          cell.colSpan = 4;
+          cell.textContent = body.error || 'Job ist nicht mehr verfügbar.';
+          msg.appendChild(cell);
+          row.replaceWith(msg);
+        }
+      });
+    });
+
+    document.querySelectorAll('.thumbnail-preview').forEach((img) => {
+      img.addEventListener('click', () => {
+        document.getElementById('preview-frame').src = img.dataset.previewUrl;
+        document.getElementById('preview-dialog').showModal();
+      });
+    });
+    document.getElementById('preview-dialog-close').addEventListener('click', () => {
+      document.getElementById('preview-dialog').close();
+      document.getElementById('preview-frame').src = '';
+    });
+  </script>
+</body>
+</html>

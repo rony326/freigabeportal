@@ -19,6 +19,7 @@ import { createPdfEinstellungenRouter } from './routes/admin/pdf-einstellungen.j
 import { createPoolRouter } from './routes/pool.js';
 import { createPoolPageRouter } from './routes/poolPage.js';
 import { createDownloadsRouter } from './routes/downloads.js';
+import { createKontierungRouter } from './routes/kontierung.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -58,6 +59,7 @@ export function createApp({ db, config }) {
   app.use('/api/pool', requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
   app.use('/pool', requireRole(config, 'buchhaltung'), createPoolPageRouter({ db, config }));
   app.use('/downloads', createDownloadsRouter({ db, config }));
+  app.use('/kontierung', requireRole(config, 'buchhaltung'), createKontierungRouter({ db, config }));
 
   app.use('/auth', createAuthRouter({ db, config }));
   app.use('/internal/cron', createCronRouter({ db, config }));

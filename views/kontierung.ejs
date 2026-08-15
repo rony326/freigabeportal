@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>Kontierung — Freigabeportal</title></head>
+<body>
+  <%- include('_header') %>
+  <h1>Kontierung: <%= job.dateiname %></h1>
+
+  <iframe src="<%= previewUrl %>" style="width:100%;height:60vh;border:1px solid #ccc"></iframe>
+
+  <% if (errors.length > 0) { %>
+    <ul><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+  <% } %>
+
+  <form method="post" action="/kontierung/<%= job.id %>">
+    <label>Konto
+      <select name="kontoId" required>
+        <option value="">— wählen —</option>
+        <% konten.forEach((k) => { %>
+          <option value="<%= k.id %>" <%= String(k.id) === values.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+        <% }) %>
+      </select>
+    </label><br>
+
+    <label><input type="radio" name="interessenskonflikt" value="nein" <%= values.interessenskonflikt !== 'ja' ? 'checked' : '' %>> Kein Interessenskonflikt</label><br>
+    <label><input type="radio" name="interessenskonflikt" value="ja" <%= values.interessenskonflikt === 'ja' ? 'checked' : '' %>> Interessenskonflikt</label><br>
+    <label>Begründung <textarea name="begruendung"><%= values.begruendung || '' %></textarea></label><br>
+
+    <button type="submit">Kontieren und Freigabe 1 erteilen</button>
+  </form>
+
+  <form method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool">
+    <button type="submit">Zurück in den Pool legen</button>
+  </form>
+</body>
+</html>

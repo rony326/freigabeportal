@@ -115,6 +115,14 @@ export function createFreigabe2Router({ db, config }) {
       const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
       const freigeber1Person = getPersonById(db, freigabe1.person_id);
       const zeitpunkt = new Date().toISOString();
+      const freigeber2Eintrag = {
+        name: `${req.currentPerson.vorname} ${req.currentPerson.nachname}`,
+        identitaet: req.currentPerson.churchtools_person_id,
+        zeitpunkt,
+        ip: req.ip,
+        interessenskonflikt: false,
+        kommentar: null,
+      };
       const stampData = {
         freigeber1: {
           name: `${freigeber1Person.vorname} ${freigeber1Person.nachname}`,
@@ -124,26 +132,26 @@ export function createFreigabe2Router({ db, config }) {
           interessenskonflikt: Boolean(freigabe1.interessenskonflikt),
           kommentar: freigabe1.kommentar,
         },
-        freigeber2: {
-          name: `${req.currentPerson.vorname} ${req.currentPerson.nachname}`,
-          identitaet: req.currentPerson.churchtools_person_id,
-          zeitpunkt,
-          ip: req.ip,
-          interessenskonflikt: false,
-          kommentar: null,
-        },
-        verlauf: freigaben.map((f) => {
-          const person = getPersonById(db, f.person_id);
-          return {
-            rolleLabel: { freigeber1: 'Freigabe 1', freigeber2: 'Freigabe 2', ablehnung: 'Abgelehnt' }[f.rolle],
-            name: `${person.vorname} ${person.nachname}`,
-            identitaet: f.person_id,
-            zeitpunkt: f.zeitpunkt,
-            ip: f.ip,
-            interessenskonflikt: Boolean(f.interessenskonflikt),
-            kommentar: f.kommentar,
-          };
-        }),
+        freigeber2: freigeber2Eintrag,
+        // `freigaben` was loaded before this request's own freigeber2 approval is persisted
+        // (that insert happens later, atomically alongside abschliessenFreigabe2). Without
+        // appending it here, the Verlauf page on the final stamped PDF would omit the very
+        // approval that completed the job.
+        verlauf: [
+          ...freigaben.map((f) => {
+            const person = getPersonById(db, f.person_id);
+            return {
+              rolleLabel: { freigeber1: 'Freigabe 1', freigeber2: 'Freigabe 2', ablehnung: 'Abgelehnt' }[f.rolle],
+              name: `${person.vorname} ${person.nachname}`,
+              identitaet: f.person_id,
+              zeitpunkt: f.zeitpunkt,
+              ip: f.ip,
+              interessenskonflikt: Boolean(f.interessenskonflikt),
+              kommentar: f.kommentar,
+            };
+          }),
+          { rolleLabel: 'Freigabe 2', ...freigeber2Eintrag },
+        ],
       };
 
       const pdfBuffer = readFileSync(job.pdf_pfad);

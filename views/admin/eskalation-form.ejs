@@ -11,7 +11,12 @@
   <form method="post" action="/admin/eskalation">
     <label>Reminder nach (Stunden) <input type="number" name="reminderStunden" value="<%= reminderStunden %>" required></label><br>
     <label>Eskalation nach (Stunden) <input type="number" name="eskalationStunden" value="<%= eskalationStunden %>" required></label><br>
-    <label>Eskalations-Fallback-E-Mail <input type="email" name="eskalationFallbackEmail" value="<%= eskalationFallbackEmail || '' %>" required></label><br>
+    <label>Reminder-Empfänger (ein Ziel pro Zeile: E-Mail-Adresse oder "gruppe:buchhaltung")<br>
+      <textarea name="reminderEmpfaenger" rows="4" cols="50"><%= reminderEmpfaenger || '' %></textarea>
+    </label><br>
+    <label>Eskalations-Empfänger (ein Ziel pro Zeile: E-Mail-Adresse oder "gruppe:buchhaltung")<br>
+      <textarea name="eskalationEmpfaenger" rows="4" cols="50"><%= eskalationEmpfaenger || '' %></textarea>
+    </label><br>
     <button type="submit">Speichern</button>
   </form>
 </body>

@@ -2,6 +2,23 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const GRUPPE_TOKEN = 'gruppe:buchhaltung';
+
+function validateEmpfaengerListe(value, label, errors) {
+  const zeilen = (value || '')
+    .split('\n')
+    .map((zeile) => zeile.trim())
+    .filter(Boolean);
+  if (zeilen.length === 0) {
+    errors.push(`${label} braucht mindestens ein Ziel.`);
+    return;
+  }
+  for (const zeile of zeilen) {
+    if (zeile !== GRUPPE_TOKEN && !EMAIL_PATTERN.test(zeile)) {
+      errors.push(`${label}: "${zeile}" ist weder eine gültige E-Mail-Adresse noch "${GRUPPE_TOKEN}".`);
+    }
+  }
+}
 
 export function createEskalationRouter({ db }) {
   const router = Router();
@@ -10,13 +27,14 @@ export function createEskalationRouter({ db }) {
     res.render('admin/eskalation-form', {
       reminderStunden: getConfigValue(db, 'reminder_stunden'),
       eskalationStunden: getConfigValue(db, 'eskalation_stunden'),
-      eskalationFallbackEmail: getConfigValue(db, 'eskalation_fallback_email'),
+      reminderEmpfaenger: getConfigValue(db, 'reminder_empfaenger'),
+      eskalationEmpfaenger: getConfigValue(db, 'eskalation_empfaenger'),
       errors: [],
     });
   });
 
   router.post('/', (req, res) => {
-    const { reminderStunden, eskalationStunden, eskalationFallbackEmail } = req.body;
+    const { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger } = req.body;
     const errors = [];
 
     const reminderNum = Number(reminderStunden);
@@ -27,17 +45,17 @@ export function createEskalationRouter({ db }) {
     if (!Number.isInteger(eskalationNum) || eskalationNum <= 0) {
       errors.push('Eskalations-Stunden muss eine positive Ganzzahl sein.');
     }
-    if (!EMAIL_PATTERN.test(eskalationFallbackEmail || '')) {
-      errors.push('Eskalations-Fallback-E-Mail muss eine gültige E-Mail-Adresse sein.');
-    }
+    validateEmpfaengerListe(reminderEmpfaenger, 'Reminder-Empfänger', errors);
+    validateEmpfaengerListe(eskalationEmpfaenger, 'Eskalations-Empfänger', errors);
 
     if (errors.length > 0) {
-      return res.status(400).render('admin/eskalation-form', { reminderStunden, eskalationStunden, eskalationFallbackEmail, errors });
+      return res.status(400).render('admin/eskalation-form', { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger, errors });
     }
 
     setConfigValue(db, 'reminder_stunden', String(reminderNum));
     setConfigValue(db, 'eskalation_stunden', String(eskalationNum));
-    setConfigValue(db, 'eskalation_fallback_email', eskalationFallbackEmail);
+    setConfigValue(db, 'reminder_empfaenger', reminderEmpfaenger.trim());
+    setConfigValue(db, 'eskalation_empfaenger', eskalationEmpfaenger.trim());
     res.redirect('/admin/eskalation');
   });
 

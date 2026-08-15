@@ -36,12 +36,14 @@ const ESKALATION_ROUTES = [
   { method: 'post', path: '/admin/eskalation' },
 ];
 
+const VALID_BODY = { reminderStunden: '1', eskalationStunden: '2', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'x@example.org' };
+
 test('every Eskalation route returns 401 without any session, and config is untouched', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const app = buildTestApp(db);
   for (const { method, path } of ESKALATION_ROUTES) {
-    const res = await request(app)[method](path).type('form').send({ reminderStunden: '1', eskalationStunden: '2', eskalationFallbackEmail: 'x@example.org' });
+    const res = await request(app)[method](path).type('form').send(VALID_BODY);
     assert.equal(res.status, 401, `${method.toUpperCase()} ${path} should be 401 without a session`);
   }
   assert.equal(getConfigValue(db, 'reminder_stunden'), '24');
@@ -54,7 +56,7 @@ test('every Eskalation route returns 403 for a logged-in non-admin (buchhaltung 
   upsertPerson(db, { id: '77', vorname: 'Nur', nachname: 'Buchhaltung', email: 'b@example.org', gruppen: ['10'], loggedInNow: true });
   const app = buildTestApp(db);
   for (const { method, path } of ESKALATION_ROUTES) {
-    const res = await request(app)[method](path).set('x-test-person-id', '77').type('form').send({ reminderStunden: '1', eskalationStunden: '2', eskalationFallbackEmail: 'x@example.org' });
+    const res = await request(app)[method](path).set('x-test-person-id', '77').type('form').send(VALID_BODY);
     assert.equal(res.status, 403, `${method.toUpperCase()} ${path} should be 403 for a non-admin`);
   }
   db.close();
@@ -69,6 +71,7 @@ test('GET /admin/eskalation shows the seeded defaults pre-filled', async () => {
   assert.equal(res.status, 200);
   assert.match(res.text, /value="24"/);
   assert.match(res.text, /value="48"/);
+  assert.match(res.text, /gruppe:buchhaltung/);
   db.close();
 });
 
@@ -81,15 +84,16 @@ test('POST /admin/eskalation with valid values persists them', async () => {
     .post('/admin/eskalation')
     .set('x-test-person-id', '99')
     .type('form')
-    .send({ reminderStunden: '12', eskalationStunden: '36', eskalationFallbackEmail: 'kirchenpflege@musterkirche.ch' });
+    .send({ reminderStunden: '12', eskalationStunden: '36', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'kirchenpflege@musterkirche.ch\ngruppe:buchhaltung' });
   assert.equal(res.status, 302);
   assert.equal(getConfigValue(db, 'reminder_stunden'), '12');
   assert.equal(getConfigValue(db, 'eskalation_stunden'), '36');
-  assert.equal(getConfigValue(db, 'eskalation_fallback_email'), 'kirchenpflege@musterkirche.ch');
+  assert.equal(getConfigValue(db, 'reminder_empfaenger'), 'gruppe:buchhaltung');
+  assert.equal(getConfigValue(db, 'eskalation_empfaenger'), 'kirchenpflege@musterkirche.ch\ngruppe:buchhaltung');
   db.close();
 });
 
-test('POST /admin/eskalation with invalid values is rejected, existing config untouched', async () => {
+test('POST /admin/eskalation with invalid Stunden values is rejected, existing config untouched', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedAdmin(db);
@@ -98,8 +102,38 @@ test('POST /admin/eskalation with invalid values is rejected, existing config un
     .post('/admin/eskalation')
     .set('x-test-person-id', '99')
     .type('form')
-    .send({ reminderStunden: '-5', eskalationStunden: '36', eskalationFallbackEmail: 'nicht-valide' });
+    .send({ ...VALID_BODY, reminderStunden: '-5' });
   assert.equal(res.status, 400);
   assert.equal(getConfigValue(db, 'reminder_stunden'), '24');
+  db.close();
+});
+
+test('POST /admin/eskalation with an empty Empfänger list is rejected', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/eskalation')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ ...VALID_BODY, reminderEmpfaenger: '' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Reminder-Empfänger/);
+  db.close();
+});
+
+test('POST /admin/eskalation with an invalid Empfänger line (neither email nor gruppe:buchhaltung) is rejected', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/eskalation')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ ...VALID_BODY, eskalationEmpfaenger: 'nicht-valide' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /nicht-valide/);
   db.close();
 });

@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { listPoolJobs, claimJob } from '../db/jobsRepo.js';
+import { createReadStream, existsSync } from 'node:fs';
+import { listPoolJobs, claimJob, getJobById } from '../db/jobsRepo.js';
 
 export function createPoolRouter({ db }) {
   const router = Router();
@@ -24,6 +25,15 @@ export function createPoolRouter({ db }) {
       return res.status(409).json({ error: 'Job ist nicht mehr im Pool verfügbar.' });
     }
     res.json({ id: Number(req.params.id), status: 'zugewiesen' });
+  });
+
+  router.get('/:id/thumbnail', (req, res) => {
+    const job = getJobById(db, Number(req.params.id));
+    if (!job || !job.thumbnail_pfad || !existsSync(job.thumbnail_pfad)) {
+      return res.status(404).json({ error: 'Kein Thumbnail vorhanden.' });
+    }
+    res.type('image/png');
+    createReadStream(job.thumbnail_pfad).pipe(res);
   });
 
   return router;

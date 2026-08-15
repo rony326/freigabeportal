@@ -80,7 +80,7 @@ export function createApp({ db, config }) {
   app.use('/abgelehnt', requireRole(config, 'buchhaltung'), createAblehnungRouter({ db }));
 
   app.use('/auth', createAuthRouter({ db, config }));
-  app.use('/internal/cron', createCronRouter({ db, config }));
+  app.use('/internal/cron', createCronRouter({ db, config, mailer }));
 
   app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
 

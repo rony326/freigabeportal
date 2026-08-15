@@ -2,8 +2,11 @@ import { Router } from 'express';
 import { runPersonenSync } from '../services/sync.js';
 import { hasRecentRunningSync } from '../db/syncLogRepo.js';
 import { requireCronSecret } from '../middleware/cronAuth.js';
+import { getConfigValue } from '../db/adminConfigRepo.js';
+import { listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet } from '../db/jobsRepo.js';
+import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
 
-export function createCronRouter({ db, config }) {
+export function createCronRouter({ db, config, mailer }) {
   const router = Router();
 
   router.post('/sync-personen', requireCronSecret(config), async (req, res) => {
@@ -15,6 +18,47 @@ export function createCronRouter({ db, config }) {
       res.json({ status: 'erfolg', ...result });
     } catch (err) {
       res.status(500).json({ status: 'fehler', error: err.message });
+    }
+  });
+
+  router.post('/pool-erinnerungen', requireCronSecret(config), async (req, res, next) => {
+    try {
+      const reminderStunden = Number(getConfigValue(db, 'reminder_stunden'));
+      const eskalationStunden = Number(getConfigValue(db, 'eskalation_stunden'));
+
+      const reminderJobs = listPoolJobsForReminder(db, reminderStunden);
+      for (const job of reminderJobs) {
+        const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'reminder_empfaenger'));
+        for (const email of empfaenger) {
+          await sendNotification(db, mailer, {
+            to: email,
+            subject: 'Freigabeportal: Rechnung wartet im Pool',
+            text: `Diese Rechnung ist seit mehr als ${reminderStunden} Stunden unbeansprucht im Pool: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
+            typ: 'reminder',
+            jobId: job.id,
+          });
+        }
+        markReminderGesendet(db, job.id);
+      }
+
+      const eskalationJobs = listPoolJobsForEskalation(db, eskalationStunden);
+      for (const job of eskalationJobs) {
+        const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'eskalation_empfaenger'));
+        for (const email of empfaenger) {
+          await sendNotification(db, mailer, {
+            to: email,
+            subject: 'Freigabeportal: Eskalation – Rechnung seit langem unbeansprucht',
+            text: `Diese Rechnung ist seit mehr als ${eskalationStunden} Stunden unbeansprucht im Pool und wurde eskaliert: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
+            typ: 'eskalation',
+            jobId: job.id,
+          });
+        }
+        markEskalationGesendet(db, job.id);
+      }
+
+      res.json({ status: 'erfolg', reminder: reminderJobs.length, eskalation: eskalationJobs.length });
+    } catch (err) {
+      next(err);
     }
   });
 

@@ -13,6 +13,9 @@ function testConfig() {
       groupIdBuchhaltung: '10',
       groupIdAdmin: '20',
     },
+    n8nApiKey: 'test-n8n-key',
+    downloadSigningSecret: 'test-signing-secret',
+    jobsDir: '/tmp/freigabeportal-app-test-jobs',
   };
 }
 
@@ -31,5 +34,21 @@ test('GET / renders the German home page for an anonymous visitor', async () => 
   const res = await request(app).get('/');
   assert.equal(res.status, 200);
   assert.match(res.text, /Nicht angemeldet/);
+  db.close();
+});
+
+test('Phase C routes are gated exactly as wired in the real app', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+
+  const poolRes = await request(app).get('/api/pool');
+  assert.equal(poolRes.status, 401);
+
+  const abholRes = await request(app).get('/api/n8n/jobs/abholbereit');
+  assert.equal(abholRes.status, 401);
+
+  const downloadRes = await request(app).get('/downloads/1');
+  assert.equal(downloadRes.status, 403);
+
   db.close();
 });

@@ -187,6 +187,17 @@ function seedAbgeschlossenJobWithFile(db, jobsDir) {
   return { id, pdfPfad };
 }
 
+test('POST /api/n8n/jobs/:id/abholung-bestaetigen without a valid API key returns 401', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir));
+  const res = await request(app).post('/api/n8n/jobs/1/abholung-bestaetigen');
+  assert.equal(res.status, 401);
+  db.close();
+});
+
 test('GET /api/n8n/jobs/abholbereit without a valid API key returns 401', async () => {
   const { mkdtempSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');

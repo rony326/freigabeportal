@@ -44,6 +44,9 @@ export function createKontierungRouter({ db, config }) {
     if (hatKonflikt && !begruendung) {
       errors.push('Bei einem Interessenskonflikt ist eine Begründung Pflicht.');
     }
+    if (hatKonflikt && job.freigabe1_eskaliert_von) {
+      errors.push('Diese Aufgabe wurde bereits eskaliert und kann nicht erneut eskaliert werden. Bitte lege sie zurück in den Pool oder wende dich an den Portal-Admin.');
+    }
 
     if (errors.length > 0) {
       return res.status(400).render('kontierung', {

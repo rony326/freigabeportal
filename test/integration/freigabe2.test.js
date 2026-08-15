@@ -6,7 +6,7 @@ import { writeFileSync } from 'node:fs';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson, getPersonById } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, setKontierung, getJobById } from '../../src/db/jobsRepo.js';
+import { createJob, setKontierung, getJobById, eskalierenFreigabe2 } from '../../src/db/jobsRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
 import { createFreigabe2Router } from '../../src/routes/freigabe2.js';
@@ -194,6 +194,20 @@ test('two concurrent POST /freigabe2/:id requests for the same job complete it e
   const freigaben = listFreigabenByJob(db, id);
   assert.equal(freigaben.filter((f) => f.rolle === 'freigeber2').length, 1);
 
+  // Prove the fix for the ordering/tmp-path bug, not just the DB-level "exactly once" outcome:
+  // the file actually stamped and left on disk must be the WINNER's attempt, not the loser's.
+  // Before the fix, renameSync ran before the COMMIT guard, so whichever request's
+  // writeFileSync/renameSync happened to run last could clobber the file with the loser's
+  // stamp even though the winner's row is the one recorded in the DB.
+  const { readFileSync } = await import('node:fs');
+  const winnerIp = ctxA.res.redirectedTo === '/pool' ? '1.2.3.4' : '1.2.3.5';
+  const loserIp = winnerIp === '1.2.3.4' ? '1.2.3.5' : '1.2.3.4';
+  const stampedBytes = readFileSync(pdfPfad);
+  const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
+  const lastPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
+  assert.match(lastPageText, new RegExp(`IP: ${winnerIp.replace(/\./g, '\\.')}`), 'the stamped file on disk must carry the winning attempt\'s IP');
+  assert.doesNotMatch(lastPageText, new RegExp(`IP: ${loserIp.replace(/\./g, '\\.')}`), 'the stamped file on disk must not carry the losing attempt\'s IP');
+
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
@@ -224,6 +238,26 @@ test('POST /freigabe2/:id with a conflict reassigns to stellvertreter2, creates 
   db.close();
 });
 
+test('POST /freigabe2/:id from an already-escalated stellvertreter2 declaring another conflict is rejected, not re-escalated to self', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  eskalierenFreigabe2(db, id, { eskaliertVon: '3', grund: 'Erster Konflikt' });
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '4')
+    .type('form')
+    .send({ interessenskonflikt: 'ja', begruendung: 'Zweiter Konflikt' });
+
+  assert.equal(res.status, 400);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.freigabe2_eskaliert_von, '3');
+  assert.equal(job.freigabe2_eskalationsgrund, 'Erster Konflikt');
+  db.close();
+});
+
 test('POST /freigabe2/:id with an unstampable PDF leaves the job in freigabe2, creates no row', async () => {
   const { mkdtempSync, rmSync, writeFileSync: write } = await import('node:fs');
   const { tmpdir } = await import('node:os');
@@ -247,6 +281,26 @@ test('POST /freigabe2/:id with an unstampable PDF leaves the job in freigabe2, c
   assert.equal(listFreigabenByJob(db, id).length, 1);
 
   rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /freigabe2/:id with a missing source PDF forwards to error middleware (500) without leaking the file path', async () => {
+  const db = openDatabase(':memory:');
+  const pdfPfad = '/tmp/freigabe2-does-not-exist-' + Date.now() + '.pdf';
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  const app = buildTestApp(db, { withErrorHandler: true });
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 500);
+  assert.match(res.text, /unerwarteter Fehler/);
+  assert.doesNotMatch(res.text, new RegExp(pdfPfad.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'freigabe2');
   db.close();
 });
 

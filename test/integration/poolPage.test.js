@@ -5,7 +5,7 @@ import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, setKontierung } from '../../src/db/jobsRepo.js';
+import { createJob, claimJob, setKontierung, setThumbnailPfad } from '../../src/db/jobsRepo.js';
 import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
 import { createPoolPageRouter } from '../../src/routes/poolPage.js';
 
@@ -52,6 +52,7 @@ test('GET /pool lists an unzugewiesen job in the Pool section with a thumbnail s
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
+  setThumbnailPfad(db, id, '/tmp/a-thumb.png');
   const app = buildTestApp(db);
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
@@ -62,6 +63,19 @@ test('GET /pool lists an unzugewiesen job in the Pool section with a thumbnail s
   // in the actual page source — this asserts the real escaped form, not the raw URL string.
   assert.match(res.text, /\/downloads\/\d+\?expires=\d+&amp;signature=[0-9a-f]{64}/);
   assert.match(res.text, new RegExp(`data-job-id="${id}"`));
+  db.close();
+});
+
+test('GET /pool shows the fallback placeholder instead of an <img> for a job with no thumbnail', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'ohne-thumbnail.pdf', pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Keine Vorschau/);
+  assert.doesNotMatch(res.text, new RegExp(`/api/pool/${id}/thumbnail`));
   db.close();
 });
 

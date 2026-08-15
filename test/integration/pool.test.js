@@ -139,3 +139,24 @@ test('GET /api/pool/:id/thumbnail returns 404 for a nonexistent job id', async (
   assert.equal(res.status, 404);
   db.close();
 });
+
+test('a stream error (thumbnail_pfad pointing at a directory) returns 404 instead of crashing', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const dir = mkdtempSync(join(tmpdir(), 'thumb-error-test-'));
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  // existsSync(dir) is true (it's a directory), so the route passes the existence check
+  // and only fails when createReadStream actually tries to read it (EISDIR).
+  setThumbnailPfad(db, id, dir);
+  const app = buildTestApp(db);
+
+  const res = await request(app).get(`/api/pool/${id}/thumbnail`).set('x-test-person-id', '50');
+  assert.equal(res.status, 404);
+  assert.deepEqual(res.body, { error: 'Kein Thumbnail vorhanden.' });
+
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});

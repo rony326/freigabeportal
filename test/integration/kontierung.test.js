@@ -5,7 +5,7 @@ import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, getJobById } from '../../src/db/jobsRepo.js';
+import { createJob, claimJob, getJobById, eskalierenFreigabe1 } from '../../src/db/jobsRepo.js';
 import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
@@ -136,6 +136,27 @@ test('POST /kontierung/:id with a conflict reassigns to stellvertreter1, creates
   assert.equal(job.freigabe1_eskaliert_von, '1');
   assert.equal(job.freigabe1_eskalationsgrund, 'Befangen');
   assert.equal(listFreigabenByJob(db, id).length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring another conflict is rejected, not re-escalated to self', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  eskalierenFreigabe1(db, id, { eskaliertVon: '1', grund: 'Erster Konflikt', stellvertreterId: '2' });
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '2')
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Zweiter Konflikt' });
+
+  assert.equal(res.status, 400);
+  const job = getJobById(db, id);
+  assert.equal(job.freigabe1_eskaliert_von, '1');
+  assert.equal(job.status, 'zugewiesen');
   db.close();
 });
 

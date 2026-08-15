@@ -14,7 +14,13 @@
       <tbody>
         <% poolJobs.forEach((job) => { %>
           <tr id="pool-row-<%= job.id %>">
-            <td><img class="thumbnail-preview" src="/api/pool/<%= job.id %>/thumbnail" data-preview-url="<%= job.previewUrl %>" alt="Vorschau" height="60" style="cursor:pointer"></td>
+            <td>
+              <% if (job.thumbnail_pfad) { %>
+                <img class="thumbnail-preview" src="/api/pool/<%= job.id %>/thumbnail" data-preview-url="<%= job.previewUrl %>" alt="Vorschau" height="60" style="cursor:pointer">
+              <% } else { %>
+                <span class="thumbnail-placeholder">Keine Vorschau</span>
+              <% } %>
+            </td>
             <td><%= job.dateiname %></td>
             <td><%= job.eingang_am %></td>
             <td><button type="button" class="beanspruchen-btn" data-job-id="<%= job.id %>">Beanspruchen</button></td>

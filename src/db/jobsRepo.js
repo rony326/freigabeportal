@@ -101,6 +101,12 @@ export function setThumbnailPfad(db, id, thumbnailPfad) {
   db.prepare('UPDATE jobs SET thumbnail_pfad = ? WHERE id = ?').run(thumbnailPfad, id);
 }
 
+// setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, and eskalierenFreigabe2 need no
+// WHERE-status guard: every route that calls them is a fully synchronous handler with no
+// `await` between its authorization/status check and COMMIT, so node:sqlite's synchronous
+// execution rules out interleaving with another request. abschliessenFreigabe2 is the one
+// exception — its route awaits stampAndFinalize before completing, which is why it alone
+// carries an explicit `AND status = 'freigabe2'` guard.
 export function setKontierung(db, jobId, kontoId) {
   db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
 }

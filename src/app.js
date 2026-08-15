@@ -69,7 +69,10 @@ export function createApp({ db, config }) {
   app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
 
   app.get('/', (req, res) => {
-    res.render('home', { person: req.currentPerson ?? null });
+    const isBuchhaltung = Boolean(
+      req.currentPerson && req.currentPerson.gruppen.includes(String(config.churchtools.groupIdBuchhaltung))
+    );
+    res.render('home', { person: req.currentPerson ?? null, isBuchhaltung });
   });
 
   app.use((req, res) => {

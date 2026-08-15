@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { getJobById, eskalierenFreigabe2, abschliessenFreigabe2, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../db/freigabenRepo.js';
@@ -28,6 +29,9 @@ export function createFreigabe2Router({ db, config }) {
   function renderForm(req, res, status, { job, konto }, values, errors) {
     const freigaben = listFreigabenByJob(db, job.id);
     const freigabe1 = freigaben.find((f) => f.rolle === 'freigeber1');
+    if (!freigabe1) {
+      return res.status(500).render('error', { message: 'Freigabe 1 fehlt für diesen Job — bitte an den Portal-Admin wenden.' });
+    }
     const freigeber1Person = getPersonById(db, freigabe1.person_id);
     res.status(status).render('freigabe2', {
       job,
@@ -56,6 +60,12 @@ export function createFreigabe2Router({ db, config }) {
 
       if (hatKonflikt && !begruendung) {
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einem Interessenskonflikt ist eine Begründung Pflicht.']);
+      }
+
+      if (hatKonflikt && job.freigabe2_eskaliert_von) {
+        return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, [
+          'Diese Aufgabe wurde bereits eskaliert und kann nicht erneut eskaliert werden. Bitte wende dich an den Portal-Admin.',
+        ]);
       }
 
       if (hatKonflikt) {
@@ -93,18 +103,17 @@ export function createFreigabe2Router({ db, config }) {
         },
       };
 
+      const pdfBuffer = readFileSync(job.pdf_pfad);
       let stamped;
       try {
-        const pdfBuffer = readFileSync(job.pdf_pfad);
         const position = getConfigValue(db, 'visum_seite_position') || 'letzte';
         stamped = await stampAndFinalize(pdfBuffer, stampData, position);
       } catch (err) {
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, [err.message]);
       }
 
-      const tmpPfad = `${job.pdf_pfad}.tmp`;
+      const tmpPfad = `${job.pdf_pfad}.${randomUUID()}.tmp`;
       writeFileSync(tmpPfad, stamped);
-      renameSync(tmpPfad, job.pdf_pfad);
 
       db.exec('BEGIN');
       try {
@@ -121,6 +130,7 @@ export function createFreigabe2Router({ db, config }) {
         const abgeschlossen = abschliessenFreigabe2(db, job.id);
         if (!abgeschlossen) {
           db.exec('ROLLBACK');
+          try { unlinkSync(tmpPfad); } catch { /* best-effort cleanup of the losing attempt's tmp file */ }
           return renderForm(req, res, 409, result, { interessenskonflikt, begruendung }, [
             'Diese Freigabe wurde inzwischen bereits von einem anderen Vorgang abgeschlossen.',
           ]);
@@ -128,9 +138,11 @@ export function createFreigabe2Router({ db, config }) {
         db.exec('COMMIT');
       } catch (err) {
         db.exec('ROLLBACK');
+        try { unlinkSync(tmpPfad); } catch { /* best-effort cleanup */ }
         throw err;
       }
 
+      renameSync(tmpPfad, job.pdf_pfad);
       res.redirect('/pool');
     } catch (err) {
       next(err);

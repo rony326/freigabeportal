@@ -6,6 +6,9 @@
   <h1>Freigabeportal</h1>
   <% if (person) { %>
     <p>Angemeldet als <%= person.vorname %> <%= person.nachname %>.</p>
+    <% if (isBuchhaltung) { %>
+      <p><a href="/pool">Zum Freigabe-Pool</a></p>
+    <% } %>
   <% } else { %>
     <p>Nicht angemeldet. <a href="/auth/login">Anmelden</a></p>
   <% } %>

@@ -32,8 +32,16 @@ export function createPoolRouter({ db }) {
     if (!job || !job.thumbnail_pfad || !existsSync(job.thumbnail_pfad)) {
       return res.status(404).json({ error: 'Kein Thumbnail vorhanden.' });
     }
+    const stream = createReadStream(job.thumbnail_pfad);
+    stream.on('error', () => {
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      res.status(404).type('json').json({ error: 'Kein Thumbnail vorhanden.' });
+    });
     res.type('image/png');
-    createReadStream(job.thumbnail_pfad).pipe(res);
+    stream.pipe(res);
   });
 
   return router;

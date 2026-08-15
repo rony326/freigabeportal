@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { createJob, getJobById } from '../../db/jobsRepo.js';
+import { createJob, getJobById, listAbholbereitJobs, confirmAbholung } from '../../db/jobsRepo.js';
+import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
+const ABHOLEN_TTL_SECONDS = 15 * 60;
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_PDF_SIZE } });
 
@@ -47,6 +49,31 @@ export function createN8nJobsRouter({ db, config }) {
       const job = getJobById(db, id);
       res.status(201).json({ id: job.id, status: job.status });
     });
+  });
+
+  router.get('/abholbereit', (req, res) => {
+    const jobs = listAbholbereitJobs(db);
+    const payload = jobs.map((job) => ({
+      id: job.id,
+      eingang_am: job.eingang_am,
+      quelle: job.quelle,
+      absender: job.absender,
+      dateiname: job.dateiname,
+      konto_id: job.konto_id,
+      download_url: buildSignedDownloadUrl(config, job.id, ABHOLEN_TTL_SECONDS),
+    }));
+    res.json(payload);
+  });
+
+  router.post('/:id/abholung-bestaetigen', (req, res) => {
+    const job = confirmAbholung(db, Number(req.params.id));
+    if (!job) {
+      return res.status(409).json({ error: 'Job ist nicht im Status "abgeschlossen" oder bereits abgeholt.' });
+    }
+    if (job.pdf_pfad && existsSync(job.pdf_pfad)) {
+      unlinkSync(job.pdf_pfad);
+    }
+    res.json({ id: job.id, status: job.status });
   });
 
   return router;

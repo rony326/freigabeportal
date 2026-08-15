@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { openDatabase } from '../../../src/db/index.js';
-import { getJobById } from '../../../src/db/jobsRepo.js';
+import { createJob, getJobById } from '../../../src/db/jobsRepo.js';
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
 
@@ -16,7 +18,7 @@ function buildTestApp(db, config) {
 }
 
 function testConfig(jobsDir) {
-  return { n8nApiKey: 'n8n-key', jobsDir };
+  return { n8nApiKey: 'n8n-key', jobsDir, downloadSigningSecret: 'test-secret' };
 }
 
 test('POST /api/n8n/jobs without a valid API key returns 401 and creates nothing', async () => {
@@ -173,6 +175,69 @@ test('POST /api/n8n/jobs applies Zuweisungsregel matching and reports the result
 
   assert.equal(res.status, 201);
   assert.equal(res.body.status, 'zugewiesen');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+function seedAbgeschlossenJobWithFile(db, jobsDir) {
+  const pdfPfad = join(jobsDir, `seed-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+  writeFileSync(pdfPfad, PDF_BYTES);
+  const id = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(id);
+  return { id, pdfPfad };
+}
+
+test('GET /api/n8n/jobs/abholbereit without a valid API key returns 401', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir));
+  const res = await request(app).get('/api/n8n/jobs/abholbereit');
+  assert.equal(res.status, 401);
+  db.close();
+});
+
+test('GET /api/n8n/jobs/abholbereit returns an abgeschlossen job with a signed download URL, then omits it on an immediate second call', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir));
+
+  const { id } = seedAbgeschlossenJobWithFile(db, jobsDir);
+
+  const firstRes = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  assert.equal(firstRes.status, 200);
+  assert.equal(firstRes.body.length, 1);
+  assert.equal(firstRes.body[0].id, id);
+  assert.match(firstRes.body[0].download_url, /^\/downloads\/\d+\?expires=\d+&signature=[0-9a-f]{64}$/);
+
+  const secondRes = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  assert.equal(secondRes.body.length, 0);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs/:id/abholung-bestaetigen confirms pickup, deletes the file, and rejects a second confirmation', async () => {
+  const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir));
+
+  const { id, pdfPfad } = seedAbgeschlossenJobWithFile(db, jobsDir);
+  assert.ok(existsSync(pdfPfad));
+
+  const firstRes = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
+  assert.equal(firstRes.status, 200);
+  assert.equal(firstRes.body.status, 'abgeholt');
+  assert.equal(existsSync(pdfPfad), false);
+
+  const secondRes = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
+  assert.equal(secondRes.status, 409);
+
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });

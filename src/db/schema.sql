@@ -68,7 +68,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   freigabe1_eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
   freigabe1_eskalationsgrund TEXT,
   freigabe2_eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
-  freigabe2_eskalationsgrund TEXT
+  freigabe2_eskalationsgrund TEXT,
+  reminder_gesendet_at TEXT,
+  eskalation_gesendet_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (
@@ -81,4 +83,16 @@ CREATE TABLE IF NOT EXISTS freigaben (
   interessenskonflikt INTEGER NOT NULL DEFAULT 0,
   kommentar TEXT,
   eskaliert_von TEXT REFERENCES personen(churchtools_person_id)
+);
+
+CREATE TABLE IF NOT EXISTS mail_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung')),
+  job_id INTEGER REFERENCES jobs(id),
+  empfaenger TEXT NOT NULL,
+  betreff TEXT NOT NULL,
+  text TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen')),
+  fehler_details TEXT,
+  versucht_am TEXT NOT NULL
 );

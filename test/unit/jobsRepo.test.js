@@ -4,7 +4,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -468,5 +468,67 @@ test('listAbgelehntJobsForPerson returns only abgelehnt jobs assigned to that pe
   assert.equal(rows.length, 1);
   assert.equal(rows[0].id, jobId);
   assert.equal(listAbgelehntJobsForPerson(db, '2').length, 0);
+  db.close();
+});
+
+test('listPoolJobsForReminder returns only unzugewiesen jobs older than the threshold with no reminder sent yet', () => {
+  const db = openDatabase(':memory:');
+  const oldJobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  const freshJobId = createJob(db, { eingangAm: new Date().toISOString(), quelle: 'scanner', absender: null, dateiname: 'neu.pdf', pdfPfad: '/tmp/b.pdf' });
+
+  const results = listPoolJobsForReminder(db, 24);
+  const ids = results.map((r) => r.id);
+  assert.ok(ids.includes(oldJobId));
+  assert.ok(!ids.includes(freshJobId));
+  db.close();
+});
+
+test('listPoolJobsForReminder excludes a job whose reminder was already sent', () => {
+  const db = openDatabase(':memory:');
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  markReminderGesendet(db, jobId);
+  assert.equal(listPoolJobsForReminder(db, 24).length, 0);
+  db.close();
+});
+
+test('listPoolJobsForReminder excludes a claimed (non-pool) job even if old', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  assert.equal(listPoolJobsForReminder(db, 24).length, 0);
+  db.close();
+});
+
+test('listPoolJobsForEskalation returns only unzugewiesen jobs older than the threshold with no escalation sent yet', () => {
+  const db = openDatabase(':memory:');
+  const oldJobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  const results = listPoolJobsForEskalation(db, 48);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, oldJobId);
+  db.close();
+});
+
+test('markReminderGesendet and markEskalationGesendet each gate only their own list', () => {
+  const db = openDatabase(':memory:');
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  markReminderGesendet(db, jobId);
+  assert.equal(listPoolJobsForReminder(db, 24).length, 0, 'reminder list excludes it once marked');
+  assert.equal(listPoolJobsForEskalation(db, 48).length, 1, 'escalation list is independent, still includes it');
+  db.close();
+});
+
+test('releaseJob clears reminder_gesendet_at and eskalation_gesendet_at so a fresh pool cycle starts clean', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  markReminderGesendet(db, jobId);
+  markEskalationGesendet(db, jobId);
+  claimJob(db, jobId, '1');
+
+  releaseJob(db, jobId, '1');
+  const job = getJobById(db, jobId);
+  assert.equal(job.reminder_gesendet_at, null);
+  assert.equal(job.eskalation_gesendet_at, null);
   db.close();
 });

@@ -1,6 +1,8 @@
 const DEFAULTS = {
   reminder_stunden: '24',
   eskalation_stunden: '48',
+  reminder_empfaenger: 'gruppe:buchhaltung',
+  eskalation_empfaenger: 'gruppe:buchhaltung',
   branding_farbe_primaer: '#2f4858',
   branding_farbe_sekundaer: '#4d7ea8',
   branding_theme_default: 'system',

@@ -141,12 +141,16 @@ export function abschliessenFreigabe2(db, jobId) {
 export function releaseJob(db, jobId, personId) {
   // Also clears freigabe1_eskaliert_von/-grund: a stellvertreter1 who was escalated to can
   // release the job too (loadAuthorizedJob only checks current zugewiesen_an), and a fresh
-  // claimer must not inherit a stale escalation record from a previous claim cycle.
+  // claimer must not inherit a stale escalation record from a previous claim cycle. Also
+  // clears reminder_gesendet_at/eskalation_gesendet_at so a fresh pool cycle after release
+  // is eligible for its own reminder/escalation mail rather than being silently skipped
+  // because the *previous* cycle already sent one.
   const result = db
     .prepare(
       `UPDATE jobs
        SET status = 'unzugewiesen', zugewiesen_an = NULL, konto_id = NULL,
-           freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL
+           freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL,
+           reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL
        WHERE id = ? AND zugewiesen_an = ? AND status = 'zugewiesen'`
     )
     .run(jobId, personId);
@@ -180,6 +184,32 @@ export function wiederOeffnenJob(db, jobId, personId) {
 
 export function listAbgelehntJobsForPerson(db, personId) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'abgelehnt' AND zugewiesen_an = ? ORDER BY eingang_am").all(personId);
+}
+
+export function listPoolJobsForReminder(db, stunden) {
+  const schwelle = new Date(Date.now() - stunden * 60 * 60 * 1000).toISOString();
+  return db
+    .prepare(
+      "SELECT * FROM jobs WHERE status = 'unzugewiesen' AND reminder_gesendet_at IS NULL AND eingang_am < ? ORDER BY eingang_am"
+    )
+    .all(schwelle);
+}
+
+export function markReminderGesendet(db, jobId) {
+  db.prepare('UPDATE jobs SET reminder_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+}
+
+export function listPoolJobsForEskalation(db, stunden) {
+  const schwelle = new Date(Date.now() - stunden * 60 * 60 * 1000).toISOString();
+  return db
+    .prepare(
+      "SELECT * FROM jobs WHERE status = 'unzugewiesen' AND eskalation_gesendet_at IS NULL AND eingang_am < ? ORDER BY eingang_am"
+    )
+    .all(schwelle);
+}
+
+export function markEskalationGesendet(db, jobId) {
+  db.prepare('UPDATE jobs SET eskalation_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
 }
 
 export function listZugewiesenJobsForPerson(db, personId) {

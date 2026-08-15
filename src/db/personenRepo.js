@@ -51,6 +51,14 @@ export function listActivePersons(db) {
     .all();
 }
 
+export function listActivePersonsInGroup(db, groupId) {
+  return db
+    .prepare('SELECT * FROM personen WHERE aktiv = 1')
+    .all()
+    .map((row) => ({ ...row, gruppen: JSON.parse(row.gruppen) }))
+    .filter((person) => person.gruppen.includes(String(groupId)));
+}
+
 export function listAllPersons(db) {
   return db.prepare('SELECT * FROM personen ORDER BY aktiv DESC, nachname, vorname').all();
 }

@@ -49,3 +49,11 @@ test('seedDefaults sets visum_seite_position default', () => {
   assert.equal(getConfigValue(db, 'visum_seite_position'), 'letzte');
   db.close();
 });
+
+test('seedDefaults sets reminder_empfaenger and eskalation_empfaenger defaults', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'reminder_empfaenger'), 'gruppe:buchhaltung');
+  assert.equal(getConfigValue(db, 'eskalation_empfaenger'), 'gruppe:buchhaltung');
+  db.close();
+});

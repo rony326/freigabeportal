@@ -14,6 +14,7 @@ const FULL_ENV = {
   CRON_SECRET: 'cron-secret',
   N8N_API_KEY: 'n8n-key',
   DOWNLOAD_SIGNING_SECRET: 'download-signing-secret',
+  PUBLIC_BASE_URL: 'https://portal.example.org',
   SMTP_HOST: 'smtp.example.org',
   SMTP_USER: 'smtp-user',
   SMTP_PASS: 'smtp-pass',
@@ -55,4 +56,14 @@ test('loadConfig defaults jobsDir and requires downloadSigningSecret', () => {
   assert.equal(config.jobsDir, './data/jobs');
   const { DOWNLOAD_SIGNING_SECRET, ...incomplete } = FULL_ENV;
   assert.throws(() => loadConfig(incomplete), /Fehlende Umgebungsvariable: DOWNLOAD_SIGNING_SECRET/);
+});
+
+test('loadConfig throws a German error when PUBLIC_BASE_URL is missing', () => {
+  const { PUBLIC_BASE_URL, ...incomplete } = FULL_ENV;
+  assert.throws(() => loadConfig(incomplete), /Fehlende Umgebungsvariable: PUBLIC_BASE_URL/);
+});
+
+test('loadConfig exposes publicBaseUrl', () => {
+  const config = loadConfig(FULL_ENV);
+  assert.equal(config.publicBaseUrl, 'https://portal.example.org');
 });

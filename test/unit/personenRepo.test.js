@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson, getPersonById } from '../../src/db/personenRepo.js';
+import { upsertPerson, getPersonById, deactivatePerson, listActivePersonsInGroup } from '../../src/db/personenRepo.js';
 
 test('upsertPerson inserts a new person', () => {
   const db = openDatabase(':memory:');
@@ -43,5 +43,18 @@ test('upsertPerson clears a stale ct_person_unresolved flag once the person reso
   upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org', gruppen: ['10'], loggedInNow: false });
 
   assert.equal(getPersonById(db, '1').ct_person_unresolved, false);
+  db.close();
+});
+
+test('listActivePersonsInGroup returns only active persons who belong to the given group', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'In', nachname: 'Gruppe', email: 'in@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'Nicht', nachname: 'Gruppe', email: 'nicht@example.org', gruppen: ['20'], loggedInNow: false });
+  upsertPerson(db, { id: '3', vorname: 'Auch', nachname: 'Gruppe', email: 'auch@example.org', gruppen: ['10', '20'], loggedInNow: false });
+  deactivatePerson(db, '3');
+
+  const result = listActivePersonsInGroup(db, '10');
+  assert.equal(result.length, 1);
+  assert.equal(result[0].email, 'in@example.org');
   db.close();
 });

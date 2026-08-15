@@ -15,6 +15,7 @@ export function loadConfig(env = process.env) {
     brandingDir: env.BRANDING_DIR || './data/branding',
     jobsDir: env.JOBS_DIR || './data/jobs',
     downloadSigningSecret: required(env, 'DOWNLOAD_SIGNING_SECRET'),
+    publicBaseUrl: required(env, 'PUBLIC_BASE_URL'),
     churchtools: {
       baseUrl: required(env, 'CT_BASE_URL'),
       clientId: required(env, 'CT_CLIENT_ID'),

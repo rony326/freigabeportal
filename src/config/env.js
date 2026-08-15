@@ -13,6 +13,8 @@ export function loadConfig(env = process.env) {
     sessionSecret: required(env, 'SESSION_SECRET'),
     dbPath: env.DB_PATH || './data/freigabeportal.sqlite',
     brandingDir: env.BRANDING_DIR || './data/branding',
+    jobsDir: env.JOBS_DIR || './data/jobs',
+    downloadSigningSecret: required(env, 'DOWNLOAD_SIGNING_SECRET'),
     churchtools: {
       baseUrl: required(env, 'CT_BASE_URL'),
       clientId: required(env, 'CT_CLIENT_ID'),

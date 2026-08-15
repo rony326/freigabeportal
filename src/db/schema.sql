@@ -47,3 +47,33 @@ CREATE TABLE IF NOT EXISTS zuweisungsregeln (
   absender_muster TEXT NOT NULL UNIQUE,
   konto_id INTEGER NOT NULL REFERENCES konten(id)
 );
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  eingang_am TEXT NOT NULL,
+  quelle TEXT NOT NULL CHECK (quelle IN ('scanner', 'lieferant')),
+  absender TEXT,
+  dateiname TEXT NOT NULL,
+  pdf_pfad TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN (
+    'unzugewiesen','zugewiesen','kontiert','freigabe1','freigabe2',
+    'abgeschlossen','abgeholt','archiviert','abgelehnt'
+  )) DEFAULT 'unzugewiesen',
+  konto_id INTEGER REFERENCES konten(id),
+  zugewiesen_an TEXT REFERENCES personen(churchtools_person_id),
+  abgelehnt_von TEXT REFERENCES personen(churchtools_person_id),
+  ablehnungsgrund TEXT,
+  fetched_by_n8n_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS freigaben (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER NOT NULL REFERENCES jobs(id),
+  person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2')),
+  zeitpunkt TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  interessenskonflikt INTEGER NOT NULL DEFAULT 0,
+  kommentar TEXT,
+  eskaliert_von TEXT REFERENCES personen(churchtools_person_id)
+);

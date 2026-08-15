@@ -13,6 +13,7 @@ const FULL_ENV = {
   CT_SYNC_SERVICE_TOKEN: 'sync-token',
   CRON_SECRET: 'cron-secret',
   N8N_API_KEY: 'n8n-key',
+  DOWNLOAD_SIGNING_SECRET: 'download-signing-secret',
   SMTP_HOST: 'smtp.example.org',
   SMTP_USER: 'smtp-user',
   SMTP_PASS: 'smtp-pass',
@@ -47,4 +48,11 @@ test('loadConfig succeeds when SMTP_* variables are absent, leaving smtp fields 
   assert.equal(config.smtp.pass, undefined);
   assert.equal(config.smtp.from, undefined);
   assert.equal(config.smtp.port, 587);
+});
+
+test('loadConfig defaults jobsDir and requires downloadSigningSecret', () => {
+  const config = loadConfig(FULL_ENV);
+  assert.equal(config.jobsDir, './data/jobs');
+  const { DOWNLOAD_SIGNING_SECRET, ...incomplete } = FULL_ENV;
+  assert.throws(() => loadConfig(incomplete), /Fehlende Umgebungsvariable: DOWNLOAD_SIGNING_SECRET/);
 });

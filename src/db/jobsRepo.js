@@ -162,6 +162,12 @@ export function ablehnenJob(db, jobId, { abgelehntVon, grund }) {
   return result.changes > 0;
 }
 
+// wiederOeffnenJob deliberately does NOT clear freigabe2_eskaliert_von/-grund: if the job was
+// rejected by a stellvertreter2 who took over after a Freigabe-2 conflict escalation, that
+// conflict is still real after rework — the reopened job's next Freigabe-2 round should route
+// back to the same stellvertreter2, not silently reassign to the original (conflicted)
+// freigeber2_id. (freigabe1_eskaliert_von/-grund need no such note here: abschliessenFreigabe1
+// already clears them before a job can ever reach freigabe2/abgelehnt in the first place.)
 export function wiederOeffnenJob(db, jobId, personId) {
   const result = db
     .prepare(

@@ -262,6 +262,25 @@ test('POST /freigabe2/:id from an already-escalated stellvertreter2 declaring an
   db.close();
 });
 
+test('POST /freigabe2/:id declaring a conflict while also clicking Ablehnen is rejected, not silently escalated', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'ja', aktion: 'ablehnen', begruendung: 'Falsches Konto' });
+
+  assert.equal(res.status, 400);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.freigabe2_eskaliert_von, null);
+  assert.equal(job.abgelehnt_von, null);
+  db.close();
+});
+
 test('POST /freigabe2/:id with an unstampable PDF leaves the job in freigabe2, creates no row', async () => {
   const { mkdtempSync, rmSync, writeFileSync: write } = await import('node:fs');
   const { tmpdir } = await import('node:os');
@@ -471,7 +490,7 @@ test('after a rejected job is reworked and resubmitted through Kontierung, Freig
   db.close();
 });
 
-test('POST /freigabe2/:id with aktion=ablehnen on a job someone else already handled returns 409, no double transition', async () => {
+test('POST /freigabe2/:id with aktion=ablehnen on a job someone else already handled returns 403 via loadAuthorized, no double transition', async () => {
   const db = openDatabase(':memory:');
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);

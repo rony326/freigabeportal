@@ -423,6 +423,25 @@ test('wiederOeffnenJob refuses to reopen a job for someone other than zugewiesen
   db.close();
 });
 
+test('wiederOeffnenJob deliberately leaves a Freigabe-2 escalation in place across a reject/rework cycle', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber2Id: '3', stellvertreter2Id: '4'
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Befangen' });
+
+  ablehnenJob(db, jobId, { abgelehntVon: '4', grund: 'Falsches Konto' });
+  wiederOeffnenJob(db, jobId, '1');
+
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.freigabe2_eskaliert_von, '3', 'the Freigabe-2 escalation must survive rework — the conflict is still real');
+  assert.equal(job.freigabe2_eskalationsgrund, 'Befangen');
+  db.close();
+});
+
 test('wiederOeffnenJob refuses to reopen a job that is not abgelehnt', () => {
   const db = openDatabase(':memory:');
   seedKonto(db);

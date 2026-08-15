@@ -115,6 +115,40 @@ test('Verlauf longer than one page spills onto an additional appended page', asy
   assert.match(lastPageText, /Person 59/, 'the final entry must appear on the last page, proving nothing was silently dropped');
 });
 
+test('freigeber2 Kommentar longer than one line wraps instead of overflowing off the page', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  const stampData = sampleStampData();
+  const longKommentar =
+    'Dies ist eine sehr lange Begründung für die Ablehnung dieser Rechnung, die weit über die Breite ' +
+    'einer einzelnen Zeile im PDF hinausgeht und daher umgebrochen werden muss, damit sie vollständig sichtbar bleibt.';
+  stampData.freigeber2.kommentar = longKommentar;
+
+  const stamped = await stampAndFinalize(pdf, stampData, 'letzte');
+  const text = extractedText(stamped, 1);
+  const lastWord = longKommentar.trim().split(' ').at(-1);
+  assert.ok(text.includes(lastWord), 'the full long Kommentar must be present, not truncated');
+
+  // freigeber1 (4 fixed fields, no kommentar) + freigeber2's 4 fixed fields = 8 lines if the
+  // long Kommentar were (wrongly) drawn as a single unwrapped line. Wrapping must add more.
+  const lineCount = text.split('\n').filter((line) => line.trim().length > 0).length;
+  assert.ok(lineCount > 9, `expected the wrapped Kommentar to add extra lines, got ${lineCount} total lines`);
+});
+
+test('Verlauf entry with a long Kommentar wraps instead of overflowing off the page', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  const stampData = sampleStampData();
+  const longKommentar =
+    'Diese Rechnung wurde abgelehnt, weil die Kontierung nicht mit dem hinterlegten Konto übereinstimmt ' +
+    'und die Belegsumme deutlich von der ursprünglichen Bestellung abweicht, was eine erneute Prüfung erfordert.';
+  stampData.verlauf[1].kommentar = longKommentar;
+
+  const stamped = await stampAndFinalize(pdf, stampData, 'letzte');
+  const reloaded = await PDFDocument.load(stamped);
+  const verlaufText = extractedText(stamped, reloaded.getPageCount() - 1);
+  const lastWord = longKommentar.trim().split(' ').at(-1);
+  assert.ok(verlaufText.includes(lastWord), 'the full long Verlauf Kommentar must be present, not truncated');
+});
+
 test('throws a German-message Error for a PDF that cannot be loaded', async () => {
   await assert.rejects(
     () => stampAndFinalize(Buffer.alloc(0), sampleStampData(), 'letzte'),

@@ -47,6 +47,9 @@ export function createKontierungRouter({ db, config }) {
     if (hatKonflikt && job.freigabe1_eskaliert_von) {
       errors.push('Diese Aufgabe wurde bereits eskaliert und kann nicht erneut eskaliert werden. Bitte lege sie zurück in den Pool oder wende dich an den Portal-Admin.');
     }
+    if (hatKonflikt && konto && konto.stellvertreter1_id === req.currentPerson.churchtools_person_id) {
+      errors.push('Du bist bereits die Stellvertretung für dieses Konto und kannst nicht an dich selbst eskalieren. Bitte lege den Job zurück in den Pool oder wende dich an den Portal-Admin.');
+    }
 
     if (errors.length > 0) {
       return res.status(400).render('kontierung', {

@@ -6,6 +6,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, setKontierung, ablehnenJob, getJobById } from '../../src/db/jobsRepo.js';
+import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
 import { createAblehnungRouter } from '../../src/routes/ablehnung.js';
 
@@ -28,6 +29,8 @@ function buildTestApp(db) {
   return app;
 }
 
+const ABLEHNUNG_ZEITPUNKT = '2026-08-15T09:45:00.000Z';
+
 async function seedAbgelehntJob(db) {
   for (const id of ['1', '2', '3']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
@@ -37,6 +40,16 @@ async function seedAbgelehntJob(db) {
   setKontierung(db, id, kontoId);
   db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(id);
   ablehnenJob(db, id, { abgelehntVon: '3', grund: 'Falsches Konto gewählt' });
+  createFreigabe(db, {
+    jobId: id,
+    personId: '3',
+    rolle: 'ablehnung',
+    zeitpunkt: ABLEHNUNG_ZEITPUNKT,
+    ip: '9.9.9.9',
+    interessenskonflikt: false,
+    kommentar: 'Falsches Konto gewählt',
+    eskaliertVon: null,
+  });
   return { id, kontoId };
 }
 
@@ -68,6 +81,16 @@ test('GET /abgelehnt/:id shows the rejection reason and who rejected it', async 
   assert.equal(res.status, 200);
   assert.match(res.text, /Falsches Konto gewählt/);
   assert.match(res.text, /Person3/);
+  db.close();
+});
+
+test('GET /abgelehnt/:id shows when the rejection happened', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedAbgelehntJob(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/abgelehnt/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.ok(res.text.includes(ABLEHNUNG_ZEITPUNKT), 'expected the response body to include the rejection timestamp');
   db.close();
 });
 

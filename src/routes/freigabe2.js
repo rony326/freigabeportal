@@ -62,6 +62,12 @@ export function createFreigabe2Router({ db, config }) {
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einem Interessenskonflikt ist eine Begründung Pflicht.']);
       }
 
+      if (hatKonflikt && aktion === 'ablehnen') {
+        return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, [
+          'Bitte entweder einen Interessenskonflikt melden oder die Rechnung ablehnen — nicht beides gleichzeitig.',
+        ]);
+      }
+
       if (hatKonflikt && job.freigabe2_eskaliert_von) {
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, [
           'Diese Aufgabe wurde bereits eskaliert und kann nicht erneut eskaliert werden. Bitte wende dich an den Portal-Admin.',

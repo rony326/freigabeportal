@@ -160,6 +160,27 @@ test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring a
   db.close();
 });
 
+test('POST /kontierung/:id declaring a conflict while already being the Konto\'s own Stellvertretung is rejected, not self-reassigned', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2'
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  // Represents the post-rework state: person '2' (the Konto's own stellvertreter1) is now the
+  // current owner of this cycle's job, e.g. after reopening a rejected job they reworked.
+  claimJob(db, id, '2');
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '2')
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Befangen' });
+
+  assert.equal(res.status, 400);
+  const job = getJobById(db, id);
+  assert.equal(job.zugewiesen_an, '2', 'must not silently self-reassign the Stellvertretung to themselves');
+  db.close();
+});
+
 test('POST /kontierung/:id with a conflict but no Begründung is rejected, nothing persisted', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db);

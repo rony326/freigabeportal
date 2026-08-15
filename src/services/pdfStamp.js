@@ -3,12 +3,33 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 const VERLAUF_LINE_HEIGHT = 14;
 const VERLAUF_BOTTOM_MARGIN = 40;
 const VERLAUF_TOP_MARGIN = 50;
+const PAGE_MARGIN = 100; // 60pt left draw origin + 40pt right margin
 
 function formatZeitpunkt(isoUtc) {
   return new Date(isoUtc).toLocaleString('de-CH', { timeZone: 'Europe/Zurich', dateStyle: 'medium', timeStyle: 'short' });
 }
 
-function drawFreigabeBlock(page, font, freigabe, startY) {
+// Greedily wraps `text` into lines that each fit within `maxWidth` at `size` for `font`, so
+// long free-text fields (rejection reasons, comments) never render partially or fully outside
+// the page's MediaBox — pdf-lib's drawText() does not wrap or clip on its own.
+function wrapLine(font, text, size, maxWidth) {
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && font.widthOfTextAtSize(candidate, size) > maxWidth) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function drawFreigabeBlock(page, font, freigabe, startY, maxWidth) {
   const lines = [
     `${freigabe.name} (${freigabe.identitaet})`,
     `Zeitpunkt: ${formatZeitpunkt(freigabe.zeitpunkt)}`,
@@ -18,9 +39,13 @@ function drawFreigabeBlock(page, font, freigabe, startY) {
   if (freigabe.kommentar) {
     lines.push(`Kommentar: ${freigabe.kommentar}`);
   }
-  lines.forEach((line, index) => {
-    page.drawText(line, { x: 60, y: startY - index * 14, size: 10, font, color: rgb(0, 0, 0) });
-  });
+  let y = startY;
+  for (const line of lines) {
+    for (const wrapped of wrapLine(font, line, 10, maxWidth)) {
+      page.drawText(wrapped, { x: 60, y, size: 10, font, color: rgb(0, 0, 0) });
+      y -= 14;
+    }
+  }
 }
 
 function verlaufEntryLines(entry) {
@@ -34,7 +59,10 @@ function verlaufEntryLines(entry) {
 }
 
 function drawVerlauf(doc, font, verlauf, pageWidth, pageHeight) {
-  const allLines = verlauf.flatMap(verlaufEntryLines);
+  const maxWidth = pageWidth - PAGE_MARGIN;
+  const allLines = verlauf.flatMap((entry) =>
+    verlaufEntryLines(entry).flatMap((line) => wrapLine(font, line, 9, maxWidth))
+  );
 
   let page = doc.addPage([pageWidth, pageHeight]);
   page.drawText('Verlauf', { x: 60, y: pageHeight - VERLAUF_TOP_MARGIN + 20, size: 12, font, color: rgb(0, 0, 0) });
@@ -43,6 +71,7 @@ function drawVerlauf(doc, font, verlauf, pageWidth, pageHeight) {
   for (const line of allLines) {
     if (y < VERLAUF_BOTTOM_MARGIN) {
       page = doc.addPage([pageWidth, pageHeight]);
+      page.drawText('Verlauf (Fortsetzung)', { x: 60, y: pageHeight - VERLAUF_TOP_MARGIN + 20, size: 12, font, color: rgb(0, 0, 0) });
       y = pageHeight - VERLAUF_TOP_MARGIN;
     }
     page.drawText(line, { x: 60, y, size: 9, font, color: rgb(0, 0, 0) });
@@ -73,11 +102,11 @@ export async function stampAndFinalize(pdfBuffer, stampData, visumSeitePosition)
 
     const visumPage = visumSeitePosition === 'erste' ? pages[0] : pages[pages.length - 1];
     const font = await doc.embedFont(StandardFonts.Helvetica);
-
-    drawFreigabeBlock(visumPage, font, stampData.freigeber1, 650);
-    drawFreigabeBlock(visumPage, font, stampData.freigeber2, 450);
-
     const { width, height } = visumPage.getSize();
+    const maxWidth = width - PAGE_MARGIN;
+
+    drawFreigabeBlock(visumPage, font, stampData.freigeber1, 650, maxWidth);
+    drawFreigabeBlock(visumPage, font, stampData.freigeber2, 450, maxWidth);
     drawVerlauf(doc, font, stampData.verlauf, width, height);
 
     return Buffer.from(await doc.save());

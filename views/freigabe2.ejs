@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>Freigabe 2 — Freigabeportal</title></head>
+<body>
+  <%- include('_header') %>
+  <div style="display:flex;gap:1em">
+    <div style="flex:1;overflow:auto">
+      <iframe src="<%= previewUrl %>" style="width:100%;height:85vh;border:1px solid #ccc"></iframe>
+    </div>
+    <div style="width:320px;flex-shrink:0">
+      <h1>Freigabe 2</h1>
+      <p><strong>Konto:</strong> <%= konto.kontonummer %> — <%= konto.bezeichnung %></p>
+      <p><strong>Freigeber 1:</strong> <%= freigeber1Person.vorname %> <%= freigeber1Person.nachname %></p>
+      <p><strong>Interessenskonflikt Freigeber 1:</strong> <%= freigabe1.interessenskonflikt ? 'Ja' : 'Nein' %></p>
+      <% if (freigabe1.kommentar) { %><p><strong>Begründung:</strong> <%= freigabe1.kommentar %></p><% } %>
+
+      <% if (errors.length > 0) { %>
+        <ul><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      <% } %>
+
+      <form method="post" action="/freigabe2/<%= job.id %>">
+        <label><input type="radio" name="interessenskonflikt" value="nein" <%= values.interessenskonflikt !== 'ja' ? 'checked' : '' %>> Kein Interessenskonflikt</label><br>
+        <label><input type="radio" name="interessenskonflikt" value="ja" <%= values.interessenskonflikt === 'ja' ? 'checked' : '' %>> Interessenskonflikt</label><br>
+        <label>Begründung <textarea name="begruendung"><%= values.begruendung || '' %></textarea></label><br>
+        <button type="submit">Freigeben</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
+import { createJob } from '../../src/db/jobsRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { listMailLog } from '../../src/db/mailLogRepo.js';
 import { sendNotification, resolveEmpfaenger } from '../../src/services/notify.js';
@@ -18,8 +19,9 @@ function createStubMailer({ shouldFail = false } = {}) {
 
 test('sendNotification logs a versendet row on success and calls the mailer with the right fields', async () => {
   const db = openDatabase(':memory:');
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   const mailer = createStubMailer();
-  await sendNotification(db, mailer, { to: 'x@example.org', subject: 'Betreff', text: 'Text', typ: 'zuweisung', jobId: 5 });
+  await sendNotification(db, mailer, { to: 'x@example.org', subject: 'Betreff', text: 'Text', typ: 'zuweisung', jobId });
 
   assert.equal(mailer.sent.length, 1);
   assert.equal(mailer.sent[0].to, 'x@example.org');
@@ -30,7 +32,7 @@ test('sendNotification logs a versendet row on success and calls the mailer with
   assert.equal(rows.length, 1);
   assert.equal(rows[0].status, 'versendet');
   assert.equal(rows[0].typ, 'zuweisung');
-  assert.equal(rows[0].job_id, 5);
+  assert.equal(rows[0].job_id, jobId);
   db.close();
 });
 

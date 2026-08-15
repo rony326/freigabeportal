@@ -4,7 +4,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -196,5 +196,15 @@ test('confirmAbholung returns null on a second confirmation attempt', () => {
   const id = seedAbgeschlossenJob(db);
   confirmAbholung(db, id);
   assert.equal(confirmAbholung(db, id), null);
+  db.close();
+});
+
+test('setThumbnailPfad sets thumbnail_pfad on the job row', () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = '/tmp/does-not-need-to-exist';
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: `${jobsDir}/a.pdf` });
+  assert.equal(getJobById(db, id).thumbnail_pfad, null);
+  setThumbnailPfad(db, id, `${jobsDir}/a.png`);
+  assert.equal(getJobById(db, id).thumbnail_pfad, `${jobsDir}/a.png`);
   db.close();
 });

@@ -4,6 +4,7 @@ const DEFAULTS = {
   branding_farbe_primaer: '#2f4858',
   branding_farbe_sekundaer: '#4d7ea8',
   branding_theme_default: 'system',
+  visum_seite_position: 'letzte',
 };
 
 export function seedDefaults(db) {

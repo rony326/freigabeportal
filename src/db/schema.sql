@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   zugewiesen_an TEXT REFERENCES personen(churchtools_person_id),
   abgelehnt_von TEXT REFERENCES personen(churchtools_person_id),
   ablehnungsgrund TEXT,
-  fetched_by_n8n_at TEXT
+  fetched_by_n8n_at TEXT,
+  thumbnail_pfad TEXT
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (

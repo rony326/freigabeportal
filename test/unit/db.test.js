@@ -17,3 +17,10 @@ test('openDatabase is idempotent (safe to call schema twice)', () => {
   assert.doesNotThrow(() => db.exec('SELECT 1'));
   db.close();
 });
+
+test('jobs table has a thumbnail_pfad column', () => {
+  const db = openDatabase(':memory:');
+  const columns = db.prepare("PRAGMA table_info(jobs)").all().map((c) => c.name);
+  assert.ok(columns.includes('thumbnail_pfad'), 'jobs table is missing thumbnail_pfad');
+  db.close();
+});

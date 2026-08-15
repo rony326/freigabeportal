@@ -42,3 +42,10 @@ test('seedDefaults sets branding defaults', () => {
   assert.equal(getConfigValue(db, 'branding_theme_default'), 'system');
   db.close();
 });
+
+test('seedDefaults sets visum_seite_position default', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'visum_seite_position'), 'letzte');
+  db.close();
+});

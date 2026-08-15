@@ -96,3 +96,7 @@ export function confirmAbholung(db, id) {
   db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ?").run(id);
   return { ...job, status: 'abgeholt' };
 }
+
+export function setThumbnailPfad(db, id, thumbnailPfad) {
+  db.prepare('UPDATE jobs SET thumbnail_pfad = ? WHERE id = ?').run(thumbnailPfad, id);
+}

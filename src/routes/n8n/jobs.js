@@ -2,7 +2,9 @@ import { Router } from 'express';
 import multer from 'multer';
 import { writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { createJob, getJobById, listAbholbereitJobs, confirmAbholung } from '../../db/jobsRepo.js';
+import { createJob, getJobById, listAbholbereitJobs, confirmAbholung, setThumbnailPfad } from '../../db/jobsRepo.js';
+import { getConfigValue } from '../../db/adminConfigRepo.js';
+import { renderFirstPageThumbnail } from '../../services/thumbnail.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
@@ -46,6 +48,15 @@ export function createN8nJobsRouter({ db, config }) {
       writeFileSync(pdfPfad, req.file.buffer);
 
       const id = createJob(db, { eingangAm, quelle, absender: absender || null, dateiname, pdfPfad });
+      const visumSeitePosition = getConfigValue(db, 'visum_seite_position') || 'letzte';
+      try {
+        const thumbnailPng = renderFirstPageThumbnail(req.file.buffer, visumSeitePosition);
+        const thumbnailPfad = pdfPfad.replace(/\.pdf$/, '.png');
+        writeFileSync(thumbnailPfad, thumbnailPng);
+        setThumbnailPfad(db, id, thumbnailPfad);
+      } catch (err) {
+        console.error(`Thumbnail-Rendering fehlgeschlagen für Job ${id}:`, err.message);
+      }
       const job = getJobById(db, id);
       res.status(201).json({ id: job.id, status: job.status });
     });

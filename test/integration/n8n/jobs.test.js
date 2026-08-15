@@ -8,6 +8,7 @@ import { openDatabase } from '../../../src/db/index.js';
 import { createJob, getJobById } from '../../../src/db/jobsRepo.js';
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
+import { buildPdfFixture } from '../../helpers/pdfFixture.js';
 
 const PDF_BYTES = Buffer.from('%PDF-1.4\n%test-fixture-not-a-real-pdf-body\n');
 
@@ -248,6 +249,55 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen confirms pickup, deletes the f
 
   const secondRes = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
   assert.equal(secondRes.status, 409);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs with a real PDF sets thumbnail_pfad to a valid PNG file', async () => {
+  const { mkdtempSync, rmSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir));
+  const realPdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .field('dateiname', 'scan.pdf')
+    .attach('pdf', realPdf, { filename: 'scan.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 201);
+  const job = getJobById(db, res.body.id);
+  assert.ok(job.thumbnail_pfad, 'thumbnail_pfad should be set');
+  const pngBytes = readFileSync(job.thumbnail_pfad);
+  assert.equal(pngBytes.subarray(0, 4).toString('hex'), '89504e47');
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs still creates the job with 201 and thumbnail_pfad null when the PDF cannot be rendered as a thumbnail', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir));
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .field('dateiname', 'scan.pdf')
+    .attach('pdf', PDF_BYTES, { filename: 'scan.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 201);
+  const job = getJobById(db, res.body.id);
+  assert.equal(job.thumbnail_pfad, null);
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });

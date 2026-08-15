@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id INTEGER NOT NULL REFERENCES jobs(id),
   person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2')),
+  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung')),
   zeitpunkt TEXT NOT NULL,
   ip TEXT NOT NULL,
   interessenskonflikt INTEGER NOT NULL DEFAULT 0,

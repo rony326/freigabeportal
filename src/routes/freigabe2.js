@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { getJobById, eskalierenFreigabe2, abschliessenFreigabe2, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
+import { getJobById, eskalierenFreigabe2, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -28,7 +28,7 @@ export function createFreigabe2Router({ db, config }) {
 
   function renderForm(req, res, status, { job, konto }, values, errors) {
     const freigaben = listFreigabenByJob(db, job.id);
-    const freigabe1 = freigaben.find((f) => f.rolle === 'freigeber1');
+    const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
     if (!freigabe1) {
       return res.status(500).render('error', { message: 'Freigabe 1 fehlt für diesen Job — bitte an den Portal-Admin wenden.' });
     }
@@ -55,7 +55,7 @@ export function createFreigabe2Router({ db, config }) {
       const result = loadAuthorized(req, res);
       if (!result) return;
       const { job, konto } = result;
-      const { interessenskonflikt, begruendung } = req.body;
+      const { aktion, interessenskonflikt, begruendung } = req.body;
       const hatKonflikt = interessenskonflikt === 'ja';
 
       if (hatKonflikt && !begruendung) {
@@ -80,8 +80,39 @@ export function createFreigabe2Router({ db, config }) {
         return res.redirect('/pool');
       }
 
+      if (aktion === 'ablehnen') {
+        if (!begruendung) {
+          return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einer Ablehnung ist eine Begründung Pflicht.']);
+        }
+        db.exec('BEGIN');
+        try {
+          const abgelehnt = ablehnenJob(db, job.id, { abgelehntVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+          if (!abgelehnt) {
+            db.exec('ROLLBACK');
+            return renderForm(req, res, 409, result, { interessenskonflikt, begruendung }, [
+              'Diese Freigabe wurde inzwischen bereits von einem anderen Vorgang bearbeitet.',
+            ]);
+          }
+          createFreigabe(db, {
+            jobId: job.id,
+            personId: req.currentPerson.churchtools_person_id,
+            rolle: 'ablehnung',
+            zeitpunkt: new Date().toISOString(),
+            ip: req.ip,
+            interessenskonflikt: false,
+            kommentar: begruendung,
+            eskaliertVon: null,
+          });
+          db.exec('COMMIT');
+        } catch (err) {
+          db.exec('ROLLBACK');
+          throw err;
+        }
+        return res.redirect('/pool');
+      }
+
       const freigaben = listFreigabenByJob(db, job.id);
-      const freigabe1 = freigaben.find((f) => f.rolle === 'freigeber1');
+      const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
       const freigeber1Person = getPersonById(db, freigabe1.person_id);
       const zeitpunkt = new Date().toISOString();
       const stampData = {
@@ -101,6 +132,18 @@ export function createFreigabe2Router({ db, config }) {
           interessenskonflikt: false,
           kommentar: null,
         },
+        verlauf: freigaben.map((f) => {
+          const person = getPersonById(db, f.person_id);
+          return {
+            rolleLabel: { freigeber1: 'Freigabe 1', freigeber2: 'Freigabe 2', ablehnung: 'Abgelehnt' }[f.rolle],
+            name: `${person.vorname} ${person.nachname}`,
+            identitaet: f.person_id,
+            zeitpunkt: f.zeitpunkt,
+            ip: f.ip,
+            interessenskonflikt: Boolean(f.interessenskonflikt),
+            kommentar: f.kommentar,
+          };
+        }),
       };
 
       const pdfBuffer = readFileSync(job.pdf_pfad);

@@ -21,8 +21,9 @@
       <form method="post" action="/freigabe2/<%= job.id %>">
         <label><input type="radio" name="interessenskonflikt" value="nein" <%= values.interessenskonflikt !== 'ja' ? 'checked' : '' %>> Kein Interessenskonflikt</label><br>
         <label><input type="radio" name="interessenskonflikt" value="ja" <%= values.interessenskonflikt === 'ja' ? 'checked' : '' %>> Interessenskonflikt</label><br>
-        <label>Begründung <textarea name="begruendung"><%= values.begruendung || '' %></textarea></label><br>
-        <button type="submit">Freigeben</button>
+        <label>Begründung (bei Interessenskonflikt oder Ablehnung Pflicht) <textarea name="begruendung"><%= values.begruendung || '' %></textarea></label><br>
+        <button type="submit" name="aktion" value="freigeben">Freigeben</button>
+        <button type="submit" name="aktion" value="ablehnen">Ablehnen</button>
       </form>
     </div>
   </div>

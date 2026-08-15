@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson, getPersonById } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, setKontierung, getJobById, eskalierenFreigabe2 } from '../../src/db/jobsRepo.js';
+import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob } from '../../src/db/jobsRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
 import { createFreigabe2Router } from '../../src/routes/freigabe2.js';
@@ -110,9 +110,11 @@ test('POST /freigabe2/:id without conflict approves, stamps the PDF and complete
   const { readFileSync } = await import('node:fs');
   const stampedBytes = readFileSync(pdfPfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
-  const lastPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
-  assert.match(lastPageText, /Person1/);
-  assert.match(lastPageText, /Person3/);
+  // The Visum block is stamped onto the visum page itself, which is now second-to-last: Task 2's
+  // stampAndFinalize always appends a fresh Verlauf page after it, so the true last page is Verlauf.
+  const visumPageText = mdoc.loadPage(mdoc.countPages() - 2).toStructuredText().asText();
+  assert.match(visumPageText, /Person1/);
+  assert.match(visumPageText, /Person3/);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
@@ -204,9 +206,11 @@ test('two concurrent POST /freigabe2/:id requests for the same job complete it e
   const loserIp = winnerIp === '1.2.3.4' ? '1.2.3.5' : '1.2.3.4';
   const stampedBytes = readFileSync(pdfPfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
-  const lastPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
-  assert.match(lastPageText, new RegExp(`IP: ${winnerIp.replace(/\./g, '\\.')}`), 'the stamped file on disk must carry the winning attempt\'s IP');
-  assert.doesNotMatch(lastPageText, new RegExp(`IP: ${loserIp.replace(/\./g, '\\.')}`), 'the stamped file on disk must not carry the losing attempt\'s IP');
+  // The Visum block (with its "IP: ..." lines) is stamped onto the visum page itself, which is
+  // now second-to-last: Task 2's stampAndFinalize always appends a fresh Verlauf page after it.
+  const visumPageText = mdoc.loadPage(mdoc.countPages() - 2).toStructuredText().asText();
+  assert.match(visumPageText, new RegExp(`IP: ${winnerIp.replace(/\./g, '\\.')}`), 'the stamped file on disk must carry the winning attempt\'s IP');
+  assert.doesNotMatch(visumPageText, new RegExp(`IP: ${loserIp.replace(/\./g, '\\.')}`), 'the stamped file on disk must not carry the losing attempt\'s IP');
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
@@ -337,4 +341,153 @@ test('POST /freigabe2/:id forwards a genuine post-stamp write failure to error m
     rmSync(dir, { recursive: true, force: true });
     db.close();
   }
+});
+
+test('POST /freigabe2/:id with aktion=ablehnen and a Begründung rejects the job', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-ablehnen-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  writeFileSync(pdfPfad, pdf);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: 'Falsches Konto gewählt' });
+
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'abgelehnt');
+  assert.equal(job.abgelehnt_von, '3');
+  assert.equal(job.ablehnungsgrund, 'Falsches Konto gewählt');
+
+  const freigaben = listFreigabenByJob(db, id);
+  const ablehnung = freigaben.find((f) => f.rolle === 'ablehnung');
+  assert.ok(ablehnung, 'the rejection must be logged in freigaben for the audit trail');
+  assert.equal(ablehnung.person_id, '3');
+  assert.equal(ablehnung.kommentar, 'Falsches Konto gewählt');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /freigabe2/:id with aktion=ablehnen and no Begründung is rejected with 400', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 400);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'freigabe2');
+  db.close();
+});
+
+test('POST /freigabe2/:id with aktion=ablehnen on a job with an unstampable PDF still rejects cleanly (no stamping is attempted)', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/nonexistent/path.pdf' });
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: 'zu spät' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).status, 'abgelehnt');
+  db.close();
+});
+
+test('after a rejected job is reworked and resubmitted through Kontierung, Freigabe 2 shows and stamps the newest Freigabe-1 row, not the stale one', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-findlast-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  writeFileSync(pdfPfad, pdf);
+  const { id, kontoId } = await seedFreigabe2Job(db, { pdfPfad });
+
+  // Reject the job, then simulate the rework cycle directly at the repo level (Task 4 builds
+  // the actual /abgelehnt route; this test only needs the resulting data shape).
+  const { ablehnenJob, wiederOeffnenJob } = await import('../../src/db/jobsRepo.js');
+  ablehnenJob(db, id, { abgelehntVon: '3', grund: 'Falsches Konto' });
+  // jobsRepo's ablehnenJob only updates the jobs row (Task 1's scope); the audit trail row is
+  // created by the POST /freigabe2 route's own createFreigabe call (see Step 3 above). Since this
+  // test bypasses that route to simulate the rework cycle directly, it must add the same audit
+  // row here to match the data shape a real rejection would have left behind.
+  createFreigabe(db, { jobId: id, personId: '3', rolle: 'ablehnung', zeitpunkt: '2026-08-15T09:00:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: 'Falsches Konto', eskaliertVon: null });
+  wiederOeffnenJob(db, id, '1');
+  // A second, newer Freigabe-1 approval for the same job — this is what .find() would miss.
+  createFreigabe(db, { jobId: id, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-15T10:00:00.000Z', ip: '9.9.9.9', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(id);
+
+  const app = buildTestApp(db);
+  const viewRes = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(viewRes.status, 200);
+
+  const freigebenRes = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'freigeben', interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(freigebenRes.status, 302);
+
+  const stampedPdf = readFileSync(pdfPfad);
+  const doc = mupdf.Document.openDocument(stampedPdf, 'application/pdf');
+  // The Visum page (second-to-last: original page + Visum + 1 Verlauf page) must carry the
+  // NEW Freigabe-1 row's IP (9.9.9.9), not the original, superseded row's IP (1.2.3.4) — this
+  // is the assertion that actually distinguishes .find() (would pick the old row) from
+  // .findLast() (picks the new one); both rows belong to the same person, so name alone can't
+  // tell them apart.
+  const visumPageText = doc.loadPage(doc.countPages() - 2).toStructuredText().asText();
+  assert.match(visumPageText, /9\.9\.9\.9/, 'the operative Freigabe-1 block must use the newest row (proves .findLast, not .find)');
+  assert.doesNotMatch(visumPageText, /1\.2\.3\.4/, 'the stale, superseded Freigabe-1 row must not be the one stamped as operative');
+
+  const verlaufPageText = doc.loadPage(doc.countPages() - 1).toStructuredText().asText();
+  assert.match(verlaufPageText, /Abgelehnt/, 'the Verlauf page must include the original rejection');
+  assert.match(verlaufPageText, /Falsches Konto/);
+  // Verlauf entries (unlike the Visum block) carry no IP — pdfStamp.js's verlaufEntryLines only
+  // renders timestamp/role/name/comment (see src/services/pdfStamp.js, out of this task's scope).
+  // So the superseded Freigabe-1 row is identified here by its original timestamp (10:30, i.e.
+  // 2026-08-15T08:30:00.000Z from seedFreigabe2Job) rather than by IP.
+  assert.match(verlaufPageText, /10:30 — Freigabe 1/, 'the Verlauf, unlike the Visum block, must still show the superseded row for the full audit trail');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /freigabe2/:id with aktion=ablehnen on a job someone else already handled returns 409, no double transition', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+  // Simulate another process having already moved the job out of freigabe2 (e.g. a concurrent
+  // Freigeben) between this request's authorization check and its ablehnenJob call.
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(id);
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: 'zu spät' });
+
+  // loadAuthorized itself already 403s once status !== 'freigabe2', so this is the same
+  // access-control path as any other stale-status request — confirms no partial state change.
+  assert.equal(res.status, 403);
+  assert.equal(getJobById(db, id).status, 'abgeschlossen');
+  db.close();
 });

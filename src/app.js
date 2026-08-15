@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path';
 import { SqliteSessionStore } from './db/sessionStore.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createCronRouter } from './routes/cron.js';
+import { requireApiKey } from './middleware/apiKey.js';
+import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { loadCurrentPerson, requireRole } from './middleware/roles.js';
 import { loadBranding } from './middleware/branding.js';
 import { createBrandingRouter } from './routes/branding.js';
@@ -46,6 +48,8 @@ export function createApp({ db, config }) {
   app.use('/admin/eskalation', createEskalationRouter({ db }));
   app.use('/admin/erscheinungsbild', createErscheinungsbildRouter({ db, config }));
   app.use('/admin/personen', createPersonenRouter({ db }));
+
+  app.use('/api/n8n/jobs', requireApiKey(config), createN8nJobsRouter({ db, config }));
 
   app.use('/auth', createAuthRouter({ db, config }));
   app.use('/internal/cron', createCronRouter({ db, config }));

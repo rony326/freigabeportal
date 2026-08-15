@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>Abgelehnt — Freigabeportal</title></head>
+<body>
+  <%- include('_header') %>
+  <h1>Abgelehnt: <%= job.dateiname %></h1>
+  <p><strong>Abgelehnt von:</strong> <%= abgelehntVonPerson.vorname %> <%= abgelehntVonPerson.nachname %></p>
+  <p><strong>Grund:</strong> <%= job.ablehnungsgrund %></p>
+  <form method="post" action="/abgelehnt/<%= job.id %>/ueberarbeiten">
+    <button type="submit">Überarbeiten</button>
+  </form>
+</body>
+</html>

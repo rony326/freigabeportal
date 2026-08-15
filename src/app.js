@@ -21,6 +21,7 @@ import { createPoolPageRouter } from './routes/poolPage.js';
 import { createDownloadsRouter } from './routes/downloads.js';
 import { createKontierungRouter } from './routes/kontierung.js';
 import { createFreigabe2Router } from './routes/freigabe2.js';
+import { createAblehnungRouter } from './routes/ablehnung.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -62,6 +63,7 @@ export function createApp({ db, config }) {
   app.use('/downloads', createDownloadsRouter({ db, config }));
   app.use('/kontierung', requireRole(config, 'buchhaltung'), createKontierungRouter({ db, config }));
   app.use('/freigabe2', requireRole(config, 'buchhaltung'), createFreigabe2Router({ db, config }));
+  app.use('/abgelehnt', requireRole(config, 'buchhaltung'), createAblehnungRouter({ db }));
 
   app.use('/auth', createAuthRouter({ db, config }));
   app.use('/internal/cron', createCronRouter({ db, config }));

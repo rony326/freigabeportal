@@ -21,7 +21,7 @@ export function createCronRouter({ db, config, mailer }) {
     }
   });
 
-  router.post('/pool-erinnerungen', requireCronSecret(config), async (req, res, next) => {
+  router.post('/pool-erinnerungen', requireCronSecret(config), async (req, res) => {
     try {
       const reminderStunden = Number(getConfigValue(db, 'reminder_stunden'));
       const eskalationStunden = Number(getConfigValue(db, 'eskalation_stunden'));
@@ -38,7 +38,9 @@ export function createCronRouter({ db, config, mailer }) {
             jobId: job.id,
           });
         }
-        markReminderGesendet(db, job.id);
+        if (empfaenger.length > 0) {
+          markReminderGesendet(db, job.id);
+        }
       }
 
       const eskalationJobs = listPoolJobsForEskalation(db, eskalationStunden);
@@ -53,12 +55,14 @@ export function createCronRouter({ db, config, mailer }) {
             jobId: job.id,
           });
         }
-        markEskalationGesendet(db, job.id);
+        if (empfaenger.length > 0) {
+          markEskalationGesendet(db, job.id);
+        }
       }
 
       res.json({ status: 'erfolg', reminder: reminderJobs.length, eskalation: eskalationJobs.length });
     } catch (err) {
-      next(err);
+      res.status(500).json({ status: 'fehler', error: err.message });
     }
   });
 

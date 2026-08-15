@@ -8,7 +8,11 @@ export async function sendNotification(db, mailer, { to, subject, text, typ, job
     await mailer.sendMail({ to, subject, text });
     logMailAttempt(db, { typ, jobId, empfaenger: to, betreff: subject, text, status: 'versendet' });
   } catch (err) {
-    logMailAttempt(db, { typ, jobId, empfaenger: to, betreff: subject, text, status: 'fehlgeschlagen', fehlerDetails: err.message });
+    try {
+      logMailAttempt(db, { typ, jobId, empfaenger: to, betreff: subject, text, status: 'fehlgeschlagen', fehlerDetails: err.message });
+    } catch (logErr) {
+      console.error('sendNotification: logMailAttempt failed while recording a failed send', logErr);
+    }
   }
 }
 

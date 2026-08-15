@@ -5,7 +5,7 @@ import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, getJobById, eskalierenFreigabe1 } from '../../src/db/jobsRepo.js';
+import { createJob, claimJob, getJobById, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob } from '../../src/db/jobsRepo.js';
 import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
@@ -292,5 +292,48 @@ test('POST /kontierung/:id without a conflict sends a Zuweisungs-Mail to freigeb
   assert.equal(res.status, 302);
   assert.equal(mailer.sent.length, 1);
   assert.equal(mailer.sent[0].to, 'p3@example.org');
+  db.close();
+});
+
+test('POST /kontierung/:id after a Freigabe-2 conflict + rejection + rework emails the effective stellvertreter2, not the original (recused) freigeber2', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+
+  // Round 1: owner ('1') completes Kontierung without a conflict -> job advances to freigabe2,
+  // owner ('1') remains the job's zugewiesen_an for a later rework cycle.
+  const setupApp = buildTestApp(db, createStubMailer());
+  await request(setupApp)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+
+  // Freigeber2 ('3') declares a conflict -> the effective Freigabe-2 approver becomes
+  // stellvertreter2 ('4'), recorded via freigabe2_eskaliert_von.
+  eskalierenFreigabe2(db, id, { eskaliertVon: '3', grund: 'Befangen' });
+
+  // Stellvertreter2 ('4'), now the effective approver, rejects the job.
+  ablehnenJob(db, id, { abgelehntVon: '4', grund: 'Falsches Konto' });
+
+  // Owner ('1') reopens the rejected job for rework. wiederOeffnenJob deliberately does NOT
+  // clear freigabe2_eskaliert_von (see jobsRepo.js) -- the conflict is still real after rework.
+  wiederOeffnenJob(db, id, '1');
+  assert.equal(getJobById(db, id).freigabe2_eskaliert_von, '3', 'sanity: still set after reopening for rework');
+
+  // Owner redoes Kontierung, this time without declaring a conflict. The completion mail must
+  // go to the effective approver (stellvertreter2, '4'), not the recused freigeber2 ('3').
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 302);
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'p4@example.org', 'must notify the effective stellvertreter2, not the original recused freigeber2');
   db.close();
 });

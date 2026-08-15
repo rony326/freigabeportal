@@ -143,7 +143,7 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
   // the log and retries one -> a new fehlgeschlagen row is appended (proves the retry path
   // itself runs sendNotification again, without requiring a working SMTP server in this test).
   const allMails = listMailLog(db);
-  assert.ok(allMails.length >= 6, 'zuweisung x3 + ablehnung x1 + reminder x1 + eskalation x1');
+  assert.ok(allMails.length >= 6, 'zuweisung x4 + ablehnung x1 + reminder x1 + eskalation x1');
   assert.ok(allMails.every((m) => m.status === 'fehlgeschlagen'), 'unreachable SMTP host: every attempt failed, none crashed the app');
 
   const adminAgent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'] });

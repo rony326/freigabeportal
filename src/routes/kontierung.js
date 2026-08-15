@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getJobById, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, releaseJob } from '../db/jobsRepo.js';
+import { getJobById, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, releaseJob, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
 import { listKontenForPerson } from '../db/kontenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
@@ -100,7 +100,7 @@ export function createKontierungRouter({ db, config, mailer }) {
           });
         }
       } else {
-        const freigeber2 = getPersonById(db, konto.freigeber2_id);
+        const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(job, konto));
         if (freigeber2) {
           await sendNotification(db, mailer, {
             to: freigeber2.email,

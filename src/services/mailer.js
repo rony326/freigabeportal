@@ -10,6 +10,9 @@ export function createMailer(smtpConfig) {
     port: smtpConfig.port,
     secure: smtpConfig.port === 465,
     auth: { user: smtpConfig.user, pass: smtpConfig.pass },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
   });
 
   return {

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>PDF-Einstellungen — Freigabeportal Admin</title></head>
+<body>
+  <%- include('../_header') %>
+  <%- include('./_nav') %>
+  <h1>PDF-Einstellungen</h1>
+  <% if (errors.length > 0) { %>
+    <ul><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+  <% } %>
+  <form method="post" action="/admin/pdf-einstellungen">
+    <label>Position der Visum-Seite im PDF
+      <select name="visumSeitePosition">
+        <option value="letzte" <%= visumSeitePosition === 'letzte' ? 'selected' : '' %>>Letzte Seite</option>
+        <option value="erste" <%= visumSeitePosition === 'erste' ? 'selected' : '' %>>Erste Seite</option>
+      </select>
+    </label><br>
+    <button type="submit">Speichern</button>
+  </form>
+</body>
+</html>

@@ -4,8 +4,8 @@
 // portal-admin guard on every /admin/* route — not a hand-built test app
 // that mounts requireRole itself. src/app.js mounts a single blanket
 // `app.use('/admin', requireRole(config, 'portal-admin'))` in front of all
-// five admin router families; this test sweeps every known route/method
-// combination across all five families against the real app and confirms
+// six admin router families; this test sweeps every known route/method
+// combination across all six families against the real app and confirms
 // each returns 401 when no session/cookie is present at all.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -59,10 +59,13 @@ const ADMIN_ROUTES = [
   { method: 'post', path: '/admin/erscheinungsbild' },
   // personen (1)
   { method: 'get', path: '/admin/personen' },
+  // pdf-einstellungen (2)
+  { method: 'get', path: '/admin/pdf-einstellungen' },
+  { method: 'post', path: '/admin/pdf-einstellungen' },
 ];
 
-test('the real createApp wiring returns 401 on all 17 admin route/method combinations with no session present', async () => {
-  assert.equal(ADMIN_ROUTES.length, 17, 'sanity check: this sweep should cover exactly 17 route/method combinations');
+test('the real createApp wiring returns 401 on all 19 admin route/method combinations with no session present', async () => {
+  assert.equal(ADMIN_ROUTES.length, 19, 'sanity check: this sweep should cover exactly 19 route/method combinations');
 
   const db = openDatabase(':memory:');
   const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));

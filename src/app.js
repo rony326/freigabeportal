@@ -22,6 +22,7 @@ import { createDownloadsRouter } from './routes/downloads.js';
 import { createKontierungRouter } from './routes/kontierung.js';
 import { createFreigabe2Router } from './routes/freigabe2.js';
 import { createAblehnungRouter } from './routes/ablehnung.js';
+import { createMailer } from './services/mailer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -48,6 +49,19 @@ export function createApp({ db, config }) {
     })
   );
   app.use(loadCurrentPerson(db));
+
+  let mailer;
+  try {
+    mailer = createMailer(config.smtp);
+  } catch (err) {
+    console.error('Mailer konnte nicht initialisiert werden, E-Mail-Versand ist deaktiviert:', err.message);
+    mailer = {
+      async sendMail() {
+        throw new Error('SMTP ist nicht konfiguriert.');
+      },
+    };
+  }
+
   app.use('/branding', createBrandingRouter({ db }));
   app.use('/admin', requireRole(config, 'portal-admin'));
   app.use('/admin/konten', createKontenRouter({ db }));
@@ -57,7 +71,7 @@ export function createApp({ db, config }) {
   app.use('/admin/personen', createPersonenRouter({ db }));
   app.use('/admin/pdf-einstellungen', createPdfEinstellungenRouter({ db }));
 
-  app.use('/api/n8n/jobs', requireApiKey(config), createN8nJobsRouter({ db, config }));
+  app.use('/api/n8n/jobs', requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/pool', requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
   app.use('/pool', requireRole(config, 'buchhaltung'), createPoolPageRouter({ db, config }));
   app.use('/downloads', createDownloadsRouter({ db, config }));

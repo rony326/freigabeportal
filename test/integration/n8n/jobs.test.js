@@ -12,10 +12,15 @@ import { buildPdfFixture } from '../../helpers/pdfFixture.js';
 
 const PDF_BYTES = Buffer.from('%PDF-1.4\n%test-fixture-not-a-real-pdf-body\n');
 
-function buildTestApp(db, config) {
+function buildTestApp(db, config, mailer) {
   const app = express();
-  app.use('/api/n8n/jobs', requireApiKey(config), createN8nJobsRouter({ db, config }));
+  app.use('/api/n8n/jobs', requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   return app;
+}
+
+function createStubMailer() {
+  const sent = [];
+  return { sent, async sendMail(mail) { sent.push(mail); } };
 }
 
 function testConfig(jobsDir) {
@@ -28,7 +33,7 @@ test('POST /api/n8n/jobs without a valid API key returns 401 and creates nothing
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const res = await request(app)
     .post('/api/n8n/jobs')
@@ -46,7 +51,7 @@ test('POST /api/n8n/jobs with a valid PDF and API key creates a job', async () =
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const res = await request(app)
     .post('/api/n8n/jobs')
@@ -70,7 +75,7 @@ test('POST /api/n8n/jobs rejects a file that is not a real PDF, creates nothing'
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const res = await request(app)
     .post('/api/n8n/jobs')
@@ -91,7 +96,7 @@ test('POST /api/n8n/jobs rejects an invalid quelle value', async () => {
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const res = await request(app)
     .post('/api/n8n/jobs')
@@ -110,7 +115,7 @@ test('POST /api/n8n/jobs rejects a PDF larger than 20 MB, creates nothing', asyn
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const oversized = Buffer.alloc(20 * 1024 * 1024 + 1, 0x25);
 
@@ -134,7 +139,7 @@ test('POST /api/n8n/jobs rejects a request missing dateiname, creates nothing', 
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const res = await request(app)
     .post('/api/n8n/jobs')
@@ -164,7 +169,7 @@ test('POST /api/n8n/jobs applies Zuweisungsregel matching and reports the result
   createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
 
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const res = await request(app)
     .post('/api/n8n/jobs')
@@ -193,7 +198,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen without a valid API key return
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
   const res = await request(app).post('/api/n8n/jobs/1/abholung-bestaetigen');
   assert.equal(res.status, 401);
   db.close();
@@ -204,7 +209,7 @@ test('GET /api/n8n/jobs/abholbereit without a valid API key returns 401', async 
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
   const res = await request(app).get('/api/n8n/jobs/abholbereit');
   assert.equal(res.status, 401);
   db.close();
@@ -215,7 +220,7 @@ test('GET /api/n8n/jobs/abholbereit returns an abgeschlossen job with a signed d
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const { id } = seedAbgeschlossenJobWithFile(db, jobsDir);
 
@@ -237,7 +242,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen confirms pickup, deletes the f
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const { id, pdfPfad } = seedAbgeschlossenJobWithFile(db, jobsDir);
   assert.ok(existsSync(pdfPfad));
@@ -259,7 +264,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen also deletes the thumbnail fil
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const { id, pdfPfad } = seedAbgeschlossenJobWithFile(db, jobsDir);
   const thumbnailPfad = pdfPfad.replace(/\.pdf$/, '.png');
@@ -282,7 +287,7 @@ test('POST /api/n8n/jobs with a real PDF sets thumbnail_pfad to a valid PNG file
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
   const realPdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
 
   const res = await request(app)
@@ -308,7 +313,7 @@ test('POST /api/n8n/jobs still creates the job with 201 and thumbnail_pfad null 
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const app = buildTestApp(db, testConfig(jobsDir));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const res = await request(app)
     .post('/api/n8n/jobs')
@@ -323,4 +328,71 @@ test('POST /api/n8n/jobs still creates the job with 201 and thumbnail_pfad null 
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs with a matching Zuweisungsregel sends a Zuweisungs-Mail to freigeber1', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { upsertPerson } = await import('../../../src/db/personenRepo.js');
+  const { createKonto } = await import('../../../src/db/kontenRepo.js');
+  const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
+  const { listMailLog } = await import('../../../src/db/mailLogRepo.js');
+
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-mail-test-'));
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+
+  const config = { ...testConfig(jobsDir), publicBaseUrl: 'https://portal.example.org' };
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, config, mailer);
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'lieferant')
+    .field('absender', 'rechnungen@lieferant.ch')
+    .field('dateiname', 'rechnung.pdf')
+    .attach('pdf', PDF_BYTES, { filename: 'rechnung.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 201);
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'p1@example.org');
+  assert.match(mailer.sent[0].text, /rechnung\.pdf/);
+  assert.match(mailer.sent[0].text, /https:\/\/portal\.example\.org\/pool/);
+
+  const rows = listMailLog(db);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].typ, 'zuweisung');
+  assert.equal(rows[0].status, 'versendet');
+  db.close();
+});
+
+test('POST /api/n8n/jobs with no matching Zuweisungsregel sends no mail (job lands in the pool, no specific owner yet)', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { listMailLog } = await import('../../../src/db/mailLogRepo.js');
+
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-mail-test-'));
+  const config = { ...testConfig(jobsDir), publicBaseUrl: 'https://portal.example.org' };
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, config, mailer);
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .field('dateiname', 'scan.pdf')
+    .attach('pdf', PDF_BYTES, { filename: 'scan.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 201);
+  assert.equal(mailer.sent.length, 0);
+  assert.equal(listMailLog(db).length, 0);
+  db.close();
 });

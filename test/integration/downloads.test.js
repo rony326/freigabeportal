@@ -88,3 +88,18 @@ test('a valid signature for a job whose file no longer exists returns the same g
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('a valid, unexpired signature for a job ID that was never created returns the same generic 403', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  const app = buildTestApp(db, config);
+
+  const expiredRes = await request(app).get(buildSignedDownloadUrl(config, 1, -10));
+  const missingJobRes = await request(app).get(buildSignedDownloadUrl(config, 999999, 900));
+
+  assert.equal(missingJobRes.status, 403);
+  assert.deepEqual(missingJobRes.body, expiredRes.body);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});

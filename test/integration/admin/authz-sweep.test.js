@@ -62,10 +62,13 @@ const ADMIN_ROUTES = [
   // pdf-einstellungen (2)
   { method: 'get', path: '/admin/pdf-einstellungen' },
   { method: 'post', path: '/admin/pdf-einstellungen' },
+  // mails (2)
+  { method: 'get', path: '/admin/mails' },
+  { method: 'post', path: '/admin/mails/1/erneut-versenden' },
 ];
 
-test('the real createApp wiring returns 401 on all 19 admin route/method combinations with no session present', async () => {
-  assert.equal(ADMIN_ROUTES.length, 19, 'sanity check: this sweep should cover exactly 19 route/method combinations');
+test('the real createApp wiring returns 401 on all 21 admin route/method combinations with no session present', async () => {
+  assert.equal(ADMIN_ROUTES.length, 21, 'sanity check: this sweep should cover exactly 21 route/method combinations');
 
   const db = openDatabase(':memory:');
   const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));

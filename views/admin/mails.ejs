@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>Mail-Protokoll — Freigabeportal Admin</title></head>
+<body>
+  <%- include('../_header') %>
+  <%- include('./_nav') %>
+  <h1>Mail-Protokoll</h1>
+  <table>
+    <thead><tr><th>Zeitpunkt</th><th>Empfänger</th><th>Betreff</th><th>Typ</th><th>Status</th><th>Fehler</th><th></th></tr></thead>
+    <tbody>
+      <% mails.forEach((mail) => { %>
+        <tr>
+          <td><%= mail.versucht_am %></td>
+          <td><%= mail.empfaenger %></td>
+          <td><%= mail.betreff %></td>
+          <td><%= mail.typ %></td>
+          <td><%= mail.status %></td>
+          <td><%= mail.fehler_details || '' %></td>
+          <td>
+            <% if (mail.status === 'fehlgeschlagen') { %>
+              <form method="post" action="/admin/mails/<%= mail.id %>/erneut-versenden">
+                <button type="submit">Erneut versenden</button>
+              </form>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</body>
+</html>

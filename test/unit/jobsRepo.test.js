@@ -365,6 +365,7 @@ test('ablehnenJob sets status to abgelehnt with the rejection reason when the jo
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
   const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
   setKontierung(db, jobId, kontoId);
   db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
 
@@ -392,6 +393,7 @@ test('wiederOeffnenJob resets an abgelehnt job to zugewiesen and clears the reje
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
   const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
   setKontierung(db, jobId, kontoId);
   db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
   ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'Falsches Konto' });
@@ -410,6 +412,7 @@ test('wiederOeffnenJob refuses to reopen a job for someone other than zugewiesen
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
   const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
   setKontierung(db, jobId, kontoId);
   db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
   ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'Falsches Konto' });
@@ -434,6 +437,7 @@ test('listAbgelehntJobsForPerson returns only abgelehnt jobs assigned to that pe
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
   const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
   setKontierung(db, jobId, kontoId);
   db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
   ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'Falsches Konto' });

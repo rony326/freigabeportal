@@ -110,9 +110,7 @@ export function setThumbnailPfad(db, id, thumbnailPfad) {
 // "terminal transition with an honest boolean result" semantics rather than assuming success,
 // and costs nothing to keep consistent.
 export function setKontierung(db, jobId, kontoId) {
-  const konto = getKontoById(db, kontoId);
-  db.prepare('UPDATE jobs SET konto_id = ?, zugewiesen_an = COALESCE(zugewiesen_an, ?) WHERE id = ?')
-    .run(kontoId, konto.freigeber1_id, jobId);
+  db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
 }
 
 export function eskalierenFreigabe1(db, jobId, { eskaliertVon, grund, stellvertreterId }) {

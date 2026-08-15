@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listPoolJobs, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson } from '../db/jobsRepo.js';
+import { listPoolJobs, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, listAbgelehntJobsForPerson } from '../db/jobsRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 
 export function createPoolPageRouter({ db, config }) {
@@ -15,6 +15,7 @@ export function createPoolPageRouter({ db, config }) {
       poolJobs,
       meineKontierungen: listZugewiesenJobsForPerson(db, personId),
       meineFreigaben: listFreigabe2JobsForPerson(db, personId),
+      meineAbgelehnten: listAbgelehntJobsForPerson(db, personId),
     });
   });
 

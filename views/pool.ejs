@@ -52,6 +52,17 @@
     </ul>
   <% } %>
 
+  <h2>Meine abgelehnten Jobs</h2>
+  <% if (meineAbgelehnten.length === 0) { %>
+    <p>Keine abgelehnten Rechnungen.</p>
+  <% } else { %>
+    <ul>
+      <% meineAbgelehnten.forEach((job) => { %>
+        <li><a href="/abgelehnt/<%= job.id %>"><%= job.dateiname %></a> (Eingang <%= job.eingang_am %>)</li>
+      <% }) %>
+    </ul>
+  <% } %>
+
   <dialog id="preview-dialog">
     <button type="button" id="preview-dialog-close">Schließen</button>
     <iframe id="preview-frame" src="" style="width:80vw;height:80vh;border:none"></iframe>

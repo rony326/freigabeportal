@@ -5,7 +5,7 @@ import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, setKontierung, setThumbnailPfad } from '../../src/db/jobsRepo.js';
+import { createJob, claimJob, setKontierung, setThumbnailPfad, ablehnenJob } from '../../src/db/jobsRepo.js';
 import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
 import { createPoolPageRouter } from '../../src/routes/poolPage.js';
 
@@ -109,5 +109,35 @@ test('GET /pool lists a job awaiting this person\'s Freigabe 2 under "Meine Frei
   assert.equal(res.status, 200);
   assert.match(res.text, /freizugeben\.pdf/);
   assert.match(res.text, new RegExp(`/freigabe2/${id}`));
+  db.close();
+});
+
+test('GET /pool lists a job the current person can rework under "Meine abgelehnten Jobs"', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  for (const id of ['1', '2', '3']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '50', stellvertreter1Id: '1', freigeber2Id: '2', stellvertreter2Id: '3' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'abgelehnt.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '50' WHERE id = ?").run(id);
+  ablehnenJob(db, id, { abgelehntVon: '2', grund: 'Falsches Konto' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /abgelehnt\.pdf/);
+  assert.match(res.text, new RegExp(`/abgelehnt/${id}`));
+  db.close();
+});
+
+test('GET /pool shows the empty-state text when there are no abgelehnt jobs for this person', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Keine abgelehnten Rechnungen\./);
   db.close();
 });

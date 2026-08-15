@@ -5,7 +5,17 @@ export function createPoolRouter({ db }) {
   const router = Router();
 
   router.get('/', (req, res) => {
-    res.json(listPoolJobs(db));
+    const jobs = listPoolJobs(db).map((job) => ({
+      id: job.id,
+      eingang_am: job.eingang_am,
+      quelle: job.quelle,
+      absender: job.absender,
+      dateiname: job.dateiname,
+      status: job.status,
+      konto_id: job.konto_id,
+      zugewiesen_an: job.zugewiesen_an,
+    }));
+    res.json(jobs);
   });
 
   router.post('/:id/beanspruchen', (req, res) => {

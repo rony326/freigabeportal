@@ -65,6 +65,7 @@ test('GET /api/pool lists only unzugewiesen jobs', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.body.length, 1);
   assert.equal(res.body[0].id, id);
+  assert.equal(res.body[0].pdf_pfad, undefined);
   db.close();
 });
 

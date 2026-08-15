@@ -4,13 +4,18 @@ import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
-import { createKonto } from '../../src/db/kontenRepo.js';
+import { createKonto, getKontoById } from '../../src/db/kontenRepo.js';
 import { createJob, claimJob, getJobById, eskalierenFreigabe1 } from '../../src/db/jobsRepo.js';
 import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
 
-function buildTestApp(db) {
+function createStubMailer() {
+  const sent = [];
+  return { sent, async sendMail(mail) { sent.push(mail); } };
+}
+
+function buildTestApp(db, mailer) {
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../views', import.meta.url).pathname);
@@ -23,9 +28,9 @@ function buildTestApp(db) {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret' };
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret', publicBaseUrl: 'https://portal.example.org' };
   app.use(loadCurrentPerson(db));
-  app.use('/kontierung', requireRole(config, 'buchhaltung'), createKontierungRouter({ db, config }));
+  app.use('/kontierung', requireRole(config, 'buchhaltung'), createKontierungRouter({ db, config, mailer }));
   return app;
 }
 
@@ -41,7 +46,7 @@ test('GET /kontierung/:id returns 403 for a person the job is not assigned to', 
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '2');
   assert.equal(res.status, 403);
   db.close();
@@ -53,7 +58,7 @@ test('GET /kontierung/:id returns 403 once the job has left status zugewiesen', 
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ? WHERE id = ?").run(kontoId, id);
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 403);
   db.close();
@@ -64,7 +69,7 @@ test('GET /kontierung/:id shows only the assigned person\'s own Konten', async (
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
   assert.match(res.text, /3000/);
@@ -77,7 +82,7 @@ test('GET /kontierung/:id shows an empty Konto dropdown for a pool-claim by some
   upsertPerson(db, { id: '5', vorname: 'Ohne', nachname: 'Konto', email: 'p5@example.org', gruppen: ['10'], loggedInNow: true });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '5');
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
 
   const getRes = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '5');
   assert.equal(getRes.status, 200);
@@ -95,7 +100,7 @@ test('POST /kontierung/:id without a conflict creates the Freigabe-1 row and adv
   const kontoId = seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
 
   const res = await request(app)
     .post(`/kontierung/${id}`)
@@ -120,7 +125,7 @@ test('POST /kontierung/:id with a conflict reassigns to stellvertreter1, creates
   const kontoId = seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
 
   const res = await request(app)
     .post(`/kontierung/${id}`)
@@ -145,7 +150,7 @@ test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring a
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   eskalierenFreigabe1(db, id, { eskaliertVon: '1', grund: 'Erster Konflikt', stellvertreterId: '2' });
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
 
   const res = await request(app)
     .post(`/kontierung/${id}`)
@@ -167,7 +172,7 @@ test('POST /kontierung/:id declaring a conflict while already being the Konto\'s
   // Represents the post-rework state: person '2' (the Konto's own stellvertreter1) is now the
   // current owner of this cycle's job, e.g. after reopening a rejected job they reworked.
   claimJob(db, id, '2');
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
 
   const res = await request(app)
     .post(`/kontierung/${id}`)
@@ -186,7 +191,7 @@ test('POST /kontierung/:id with a conflict but no Begründung is rejected, nothi
   const kontoId = seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
 
   const res = await request(app)
     .post(`/kontierung/${id}`)
@@ -207,7 +212,7 @@ test('POST /kontierung/:id with a Konto the person has no role on is rejected, n
   const anderesKontoId = createKonto(db, { kontonummer: '9999', bezeichnung: 'Fremd', freigeber1Id: '3', stellvertreter1Id: '4', freigeber2Id: '1', stellvertreter2Id: '2' });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
 
   const res = await request(app)
     .post(`/kontierung/${id}`)
@@ -225,7 +230,7 @@ test('POST /kontierung/:id/zurueck-in-pool releases the job and redirects to /po
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
 
   const res = await request(app).post(`/kontierung/${id}/zurueck-in-pool`).set('x-test-person-id', '1');
   assert.equal(res.status, 302);
@@ -241,10 +246,51 @@ test('POST /kontierung/:id/zurueck-in-pool returns 403 for a person the job is n
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, createStubMailer());
 
   const res = await request(app).post(`/kontierung/${id}/zurueck-in-pool`).set('x-test-person-id', '2');
   assert.equal(res.status, 403);
   assert.equal(getJobById(db, id).status, 'zugewiesen');
+  db.close();
+});
+
+test('POST /kontierung/:id with a conflict sends a Zuweisungs-Mail to stellvertreter1', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Befangen' });
+
+  assert.equal(res.status, 302);
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'p2@example.org');
+  assert.match(mailer.sent[0].text, /rechnung\.pdf/);
+  db.close();
+});
+
+test('POST /kontierung/:id without a conflict sends a Zuweisungs-Mail to freigeber2', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 302);
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'p3@example.org');
   db.close();
 });

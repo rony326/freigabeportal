@@ -5,7 +5,7 @@ import request from 'supertest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openDatabase } from '../../../src/db/index.js';
-import { createJob, getJobById } from '../../../src/db/jobsRepo.js';
+import { createJob, getJobById, setThumbnailPfad } from '../../../src/db/jobsRepo.js';
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
@@ -249,6 +249,28 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen confirms pickup, deletes the f
 
   const secondRes = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
   assert.equal(secondRes.status, 409);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs/:id/abholung-bestaetigen also deletes the thumbnail file, and does not error when thumbnail_pfad is null', async () => {
+  const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir));
+
+  const { id, pdfPfad } = seedAbgeschlossenJobWithFile(db, jobsDir);
+  const thumbnailPfad = pdfPfad.replace(/\.pdf$/, '.png');
+  writeFileSync(thumbnailPfad, Buffer.from('89504e470d0a1a0a', 'hex'));
+  setThumbnailPfad(db, id, thumbnailPfad);
+  assert.ok(existsSync(thumbnailPfad));
+
+  const res = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
+  assert.equal(res.status, 200);
+  assert.equal(existsSync(pdfPfad), false);
+  assert.equal(existsSync(thumbnailPfad), false, 'thumbnail file should be deleted alongside the PDF on pickup confirmation');
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });

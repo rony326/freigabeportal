@@ -84,6 +84,9 @@ export function createN8nJobsRouter({ db, config }) {
     if (job.pdf_pfad && existsSync(job.pdf_pfad)) {
       unlinkSync(job.pdf_pfad);
     }
+    if (job.thumbnail_pfad && existsSync(job.thumbnail_pfad)) {
+      unlinkSync(job.thumbnail_pfad);
+    }
     res.json({ id: job.id, status: job.status });
   });
 

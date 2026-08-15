@@ -12,6 +12,10 @@ function sampleStampData() {
   };
 }
 
+// Same fixture shape used as PDF_BYTES in test/integration/n8n/jobs.test.js: pdf-lib's
+// PDFDocument.load() parses this leniently and succeeds, but it is not a real, usable PDF.
+const NOT_REALLY_A_PDF = Buffer.from('%PDF-1.4\n%test-fixture-not-a-real-pdf-body\n');
+
 function extractedText(stampedBytes, pageIndex) {
   const doc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
   try {
@@ -57,5 +61,33 @@ test('throws a German-message Error for a PDF that cannot be loaded', async () =
   await assert.rejects(
     () => stampAndFinalize(Buffer.alloc(0), sampleStampData(), 'letzte'),
     /PDF konnte nicht geladen werden/
+  );
+});
+
+test('throws a German-message Error (not a raw TypeError) for a PDF that loads leniently but has no real page tree', async () => {
+  await assert.rejects(
+    () => stampAndFinalize(NOT_REALLY_A_PDF, sampleStampData(), 'letzte'),
+    (err) => {
+      assert.ok(err instanceof Error);
+      assert.notEqual(err.constructor.name, 'TypeError');
+      assert.match(err.message, /PDF konnte nicht gestempelt werden/);
+      return true;
+    }
+  );
+});
+
+test('throws a German-message Error (not a raw pdf-lib WinAnsi error) when stamp text contains non-WinAnsi characters', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  const stampData = sampleStampData();
+  stampData.freigeber2.kommentar = '😀 nicht darstellbar';
+
+  await assert.rejects(
+    () => stampAndFinalize(pdf, stampData, 'letzte'),
+    (err) => {
+      assert.ok(err instanceof Error);
+      assert.doesNotMatch(err.message, /WinAnsi/);
+      assert.match(err.message, /PDF konnte nicht gestempelt werden/);
+      return true;
+    }
   );
 });

@@ -161,6 +161,16 @@ Treffer bleibt der Status `unzugewiesen`, der Job landet im Pool.
 - Eine kleine Hilfsfunktion `buildSignedDownloadUrl(config, jobId, gueltigkeitsSekunden)` erzeugt
   diese URLs; wird von `GET /api/n8n/jobs/abholbereit` verwendet und ist so gebaut, dass Phase D's
   Freigabe-UI sie später ebenfalls direkt wiederverwenden kann.
+- **`download_url` ist bewusst ein root-relativer Pfad** (`/downloads/42?...`), keine absolute URL
+  — das Portal kennt seinen eigenen öffentlichen Hostnamen zur Laufzeit nicht zuverlässig
+  (Infomaniak-Hosting, ggf. hinter einem Proxy). n8n kennt den Portal-Host bereits, weil es ihn
+  braucht, um `POST /api/n8n/jobs` und `GET /api/n8n/jobs/abholbereit` überhaupt aufzurufen — die
+  n8n-Workflow-Konfiguration löst den relativen Pfad gegen denselben, bereits konfigurierten Host
+  auf (Standard-Praxis für relative Links in einer REST-API-Antwort). Phase D's Freigabe-UI läuft
+  im Browser auf derselben Origin wie das Portal, für die ist ein root-relativer Pfad ohnehin
+  direkt verwendbar. Sollte sich das bei der n8n-Workflow-Umsetzung als unpraktisch erweisen, kann
+  eine spätere Phase eine `config.publicBaseUrl` ergänzen und absolute URLs ausgeben — das wäre
+  eine rückwärtskompatible Erweiterung, keine Breaking Change am bestehenden Vertrag.
 
 ## Fehlerbehandlung
 

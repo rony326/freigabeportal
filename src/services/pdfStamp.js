@@ -1,5 +1,9 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
+const VERLAUF_LINE_HEIGHT = 14;
+const VERLAUF_BOTTOM_MARGIN = 40;
+const VERLAUF_TOP_MARGIN = 50;
+
 function formatZeitpunkt(isoUtc) {
   return new Date(isoUtc).toLocaleString('de-CH', { timeZone: 'Europe/Zurich', dateStyle: 'medium', timeStyle: 'short' });
 }
@@ -19,6 +23,33 @@ function drawFreigabeBlock(page, font, freigabe, startY) {
   });
 }
 
+function verlaufEntryLines(entry) {
+  const lines = [
+    `${formatZeitpunkt(entry.zeitpunkt)} — ${entry.rolleLabel} — ${entry.name} (${entry.identitaet})${entry.interessenskonflikt ? ' [Interessenskonflikt]' : ''}`,
+  ];
+  if (entry.kommentar) {
+    lines.push(`   Kommentar: ${entry.kommentar}`);
+  }
+  return lines;
+}
+
+function drawVerlauf(doc, font, verlauf, pageWidth, pageHeight) {
+  const allLines = verlauf.flatMap(verlaufEntryLines);
+
+  let page = doc.addPage([pageWidth, pageHeight]);
+  page.drawText('Verlauf', { x: 60, y: pageHeight - VERLAUF_TOP_MARGIN + 20, size: 12, font, color: rgb(0, 0, 0) });
+  let y = pageHeight - VERLAUF_TOP_MARGIN;
+
+  for (const line of allLines) {
+    if (y < VERLAUF_BOTTOM_MARGIN) {
+      page = doc.addPage([pageWidth, pageHeight]);
+      y = pageHeight - VERLAUF_TOP_MARGIN;
+    }
+    page.drawText(line, { x: 60, y, size: 9, font, color: rgb(0, 0, 0) });
+    y -= VERLAUF_LINE_HEIGHT;
+  }
+}
+
 export async function stampAndFinalize(pdfBuffer, stampData, visumSeitePosition) {
   let doc;
   try {
@@ -30,8 +61,8 @@ export async function stampAndFinalize(pdfBuffer, stampData, visumSeitePosition)
   // Everything below is guarded by a single catch: pdf-lib's load() parses leniently and can
   // succeed on a file that is not really usable (e.g. only a "%PDF" header with garbage after
   // it), with the real failure only surfacing on getPages()/save(). Text drawn with the
-  // Helvetica standard font is also limited to WinAnsi and throws if freigabe.name or
-  // freigabe.kommentar contain characters outside that set (emoji, Cyrillic, Greek, ...).
+  // Helvetica standard font is also limited to WinAnsi and throws if any of the stamped or
+  // Verlauf text contains characters outside that set (emoji, Cyrillic, Greek, ...).
   // All of these are "this PDF could not be stamped" to a caller, so they share one
   // German-language error rather than leaking pdf-lib's raw English exception.
   try {
@@ -45,6 +76,9 @@ export async function stampAndFinalize(pdfBuffer, stampData, visumSeitePosition)
 
     drawFreigabeBlock(visumPage, font, stampData.freigeber1, 650);
     drawFreigabeBlock(visumPage, font, stampData.freigeber2, 450);
+
+    const { width, height } = visumPage.getSize();
+    drawVerlauf(doc, font, stampData.verlauf, width, height);
 
     return Buffer.from(await doc.save());
   } catch {

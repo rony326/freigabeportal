@@ -66,3 +66,33 @@ export function claimJob(db, id, personId) {
     .run(personId, id);
   return result.changes > 0;
 }
+
+// listAbholbereitJobs runs entirely synchronously (node:sqlite has no async I/O), so the
+// SELECT and the per-row claim UPDATE below cannot interleave with any other request in this
+// single Node process — safe without an explicit transaction. This would need one under a
+// multi-process deployment.
+export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000) {
+  const staleThreshold = new Date(Date.now() - staleAfterMs).toISOString();
+  const rows = db
+    .prepare(
+      `SELECT * FROM jobs WHERE status = 'abgeschlossen'
+       AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)`
+    )
+    .all(staleThreshold);
+
+  const now = new Date().toISOString();
+  for (const row of rows) {
+    db.prepare('UPDATE jobs SET fetched_by_n8n_at = ? WHERE id = ?').run(now, row.id);
+    row.fetched_by_n8n_at = now;
+  }
+  return rows;
+}
+
+export function confirmAbholung(db, id) {
+  const job = getJobById(db, id);
+  if (!job || job.status !== 'abgeschlossen') {
+    return null;
+  }
+  db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ?").run(id);
+  return { ...job, status: 'abgeholt' };
+}

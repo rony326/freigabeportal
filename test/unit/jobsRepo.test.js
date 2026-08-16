@@ -412,6 +412,29 @@ test('releaseJob clears freigabe1_eskaliert_an_admin, so a fresh claim by a non-
   db.close();
 });
 
+test('releaseJob clears stale freigabe2 escalation flags carried over from a prior cycle', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  // Simulate a job that reached freigabe2, got escalated to admin, was rejected, and reopened
+  // (wiederOeffnenJob deliberately preserves freigabe2_eskaliert_* across that cycle) — it now
+  // sits at status='zugewiesen' still carrying the stale Freigabe-2-stage flags.
+  db.prepare(
+    `UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', konto_id = ?,
+       freigabe2_eskaliert_von = '3', freigabe2_eskalationsgrund = 'Befangen', freigabe2_eskaliert_an_admin = 1
+     WHERE id = ?`
+  ).run(kontoId, jobId);
+
+  const released = releaseJob(db, jobId, '1');
+  assert.equal(released, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.freigabe2_eskaliert_von, null);
+  assert.equal(job.freigabe2_eskalationsgrund, null);
+  assert.equal(job.freigabe2_eskaliert_an_admin, 0);
+  db.close();
+});
+
 test('listZugewiesenJobsForPerson returns only zugewiesen jobs assigned to that person', () => {
   const db = openDatabase(':memory:');
   seedKonto(db);
@@ -422,6 +445,20 @@ test('listZugewiesenJobsForPerson returns only zugewiesen jobs assigned to that 
   const rows = listZugewiesenJobsForPerson(db, '1');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].id, jobId);
+  db.close();
+});
+
+test('listZugewiesenJobsForPerson excludes a job that has been admin-escalated past this person', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+  eskalierenFreigabe1AnAdmin(db, jobId, { eskaliertVon: '2', grund: 'Auch befangen' });
+
+  // zugewiesen_an still technically equals '2' (the excluded former actor), but the job is no
+  // longer theirs to act on once it's been escalated to Portal-Admin — it must not show up in
+  // their own /pool listing as a link that now 403s.
+  assert.equal(listZugewiesenJobsForPerson(db, '2').length, 0);
   db.close();
 });
 
@@ -438,6 +475,22 @@ test('listFreigabe2JobsForPerson matches freigeber2_id when not escalated, stell
   eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Befangen' });
   assert.equal(listFreigabe2JobsForPerson(db, '3').length, 0);
   assert.equal(listFreigabe2JobsForPerson(db, '4').length, 1);
+  db.close();
+});
+
+test('listFreigabe2JobsForPerson excludes a job that has been admin-escalated past the excluded stellvertreter2', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber2Id: '3', stellvertreter2Id: '4'
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Befangen' });
+  eskalierenFreigabe2AnAdmin(db, jobId, { eskaliertVon: '4', grund: 'Auch befangen' });
+
+  // Once escalated to admin, neither the original freigeber2 nor the excluded stellvertreter2
+  // should still see this job in their own /pool listing.
+  assert.equal(listFreigabe2JobsForPerson(db, '3').length, 0);
+  assert.equal(listFreigabe2JobsForPerson(db, '4').length, 0);
   db.close();
 });
 
@@ -774,6 +827,29 @@ test('forceReleaseJob resets a stalled abgelehnt job to unzugewiesen', () => {
   const job = getJobById(db, jobId);
   assert.equal(job.status, 'unzugewiesen');
   assert.equal(job.abgelehnt_von, null);
+  db.close();
+});
+
+test('forceReleaseJob clears stale freigabe2 escalation flags carried over from a prior cycle', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  // Simulate a job that reached freigabe2, got escalated to admin, was rejected, and reopened
+  // (wiederOeffnenJob deliberately preserves freigabe2_eskaliert_* across that cycle) — it now
+  // sits at status='zugewiesen' still carrying the stale Freigabe-2-stage flags.
+  db.prepare(
+    `UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', konto_id = ?,
+       freigabe2_eskaliert_von = '3', freigabe2_eskalationsgrund = 'Befangen', freigabe2_eskaliert_an_admin = 1
+     WHERE id = ?`
+  ).run(kontoId, jobId);
+
+  const result = forceReleaseJob(db, jobId);
+  assert.equal(result, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.freigabe2_eskaliert_von, null);
+  assert.equal(job.freigabe2_eskalationsgrund, null);
+  assert.equal(job.freigabe2_eskaliert_an_admin, 0);
   db.close();
 });
 

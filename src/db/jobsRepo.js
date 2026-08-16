@@ -214,6 +214,8 @@ export function releaseJob(db, jobId, personId) {
        SET status = 'unzugewiesen', zugewiesen_an = NULL, konto_id = NULL,
            freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL,
            freigabe1_eskaliert_an_admin = 0,
+           freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL,
+           freigabe2_eskaliert_an_admin = 0,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL
        WHERE id = ? AND zugewiesen_an = ? AND status = 'zugewiesen'`
     )
@@ -288,7 +290,11 @@ export function archivierenJob(db, id) {
 }
 
 export function listZugewiesenJobsForPerson(db, personId) {
-  return db.prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND zugewiesen_an = ? ORDER BY eingang_am").all(personId);
+  return db
+    .prepare(
+      "SELECT * FROM jobs WHERE status = 'zugewiesen' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 ORDER BY eingang_am"
+    )
+    .all(personId);
 }
 
 export function listFreigabe2JobsForPerson(db, personId) {
@@ -297,6 +303,7 @@ export function listFreigabe2JobsForPerson(db, personId) {
       `SELECT jobs.* FROM jobs
        JOIN konten ON konten.id = jobs.konto_id
        WHERE jobs.status = 'freigabe2'
+         AND jobs.freigabe2_eskaliert_an_admin = 0
          AND (
            (jobs.freigabe2_eskaliert_von IS NULL AND konten.freigeber2_id = ?)
            OR (jobs.freigabe2_eskaliert_von IS NOT NULL AND konten.stellvertreter2_id = ?)
@@ -348,6 +355,7 @@ export function forceReleaseJob(db, jobId) {
       `UPDATE jobs
        SET status = 'unzugewiesen', zugewiesen_an = NULL, konto_id = NULL,
            freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe1_eskaliert_an_admin = 0,
+           freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0,
            abgelehnt_von = NULL, ablehnungsgrund = NULL,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL
        WHERE id = ? AND status IN ('zugewiesen', 'abgelehnt')`

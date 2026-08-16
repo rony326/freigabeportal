@@ -105,7 +105,8 @@ test('a doubly-conflicted Freigabe-1 handoff reaches an admin, who takes it all 
 test('a mass-deactivation sync run aborts cleanly, and a subsequent normal run still works', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
-  const config = testConfig(mkdtempSync(join(tmpdir(), 'sync-robustheit-e2e-abort-test-')));
+  const jobsDir = mkdtempSync(join(tmpdir(), 'sync-robustheit-e2e-abort-test-'));
+  const config = testConfig(jobsDir);
   const app = createApp({ db, config });
   const client = setupMockChurchTools(config.churchtools.baseUrl);
 
@@ -137,4 +138,5 @@ test('a mass-deactivation sync run aborts cleanly, and a subsequent normal run s
   const okRes = await request(app).post('/internal/cron/sync-personen').set('X-Cron-Secret', 'cron-secret');
   assert.equal(okRes.body.status, 'erfolg');
   db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
 });

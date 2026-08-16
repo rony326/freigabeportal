@@ -176,6 +176,36 @@ test('runPersonenSync does NOT abort a small-population run even at 100% deactiv
   db.close();
 });
 
+test('runPersonenSync aborts a full-wipe run against a small population that never crosses the percent/absolute-count arms', async () => {
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  // ChurchTools returns nobody at all in either group (e.g. an outage) — this would deactivate
+  // all 9 pre-existing active people, 100% of the population. With the default absolute floor
+  // of 10, the percent arm is gated off (9 < 10) and the absolute-count arm can't fire either
+  // (9 is not > 10) — only the dedicated full-wipe arm can catch this.
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+  seedDefaults(db);
+  for (let i = 1; i <= 9; i++) {
+    upsertPerson(db, { id: String(i), vorname: `Person${i}`, nachname: 'Aktiv', email: `p${i}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+
+  const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
+
+  assert.equal(result.abgebrochen, true);
+  assert.equal(result.deactivated, 0);
+  assert.equal(result.upserted, 0);
+  for (let i = 1; i <= 9; i++) {
+    assert.equal(getPersonById(db, String(i)).aktiv, true, `person ${i} should still be active`);
+  }
+  const logRow = db.prepare("SELECT * FROM sync_log WHERE status = 'abgebrochen'").get();
+  assert.ok(logRow);
+  assert.match(logRow.fehler_details, /9 von 9/);
+  db.close();
+});
+
 test('runPersonenSync respects admin_config-configured thresholds', async () => {
   const client = setupMockChurchTools(CT_CONFIG.baseUrl);
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });

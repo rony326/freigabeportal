@@ -32,7 +32,8 @@ export async function runPersonenSync(db, config, accessToken) {
     }
 
     const relevantIds = new Set(personIdToGroups.keys());
-    const toDeactivate = getAllActivePersonIds(db).filter((id) => !relevantIds.has(id));
+    const aktivePersonenVorher = getAllActivePersonIds(db);
+    const toDeactivate = aktivePersonenVorher.filter((id) => !relevantIds.has(id));
 
     // SYNC-1: refuse to commit a sync run that would deactivate an abnormally large share of
     // the active roster in one shot (a ChurchTools-side outage or misconfiguration returning
@@ -40,14 +41,22 @@ export async function runPersonenSync(db, config, accessToken) {
     // only applies once the active population is at least as large as the absolute-count
     // threshold — below that, a single person's completely normal departure would otherwise be
     // 100% of a tiny population and trip a 50% guard on every ordinary sync in a small
-    // congregation, which is the scale this app is built for.
-    const aktiveVorher = getAllActivePersonIds(db).length;
+    // congregation, which is the scale this app is built for. Because this app's active
+    // population is normally at or below that same absolute-count threshold (a small
+    // congregation's Buchhaltung/Portal-Admin roster), neither the percent arm nor the
+    // absolute-count arm can ever trip in the expected production scale — so a dedicated,
+    // unconditional full-wipe arm catches the case both of them miss: this run would deactivate
+    // every currently active person. A population of exactly one is exempted, since a lone
+    // person's departure is a normal event, not a mass deactivation.
+    const aktiveVorher = aktivePersonenVorher.length;
     const maxProzent = Number(getConfigValue(db, 'sync_max_deaktivierung_prozent') || '50');
     const maxAnzahl = Number(getConfigValue(db, 'sync_max_deaktivierung_anzahl') || '10');
     const prozentDeaktiviert = aktiveVorher > 0 ? (toDeactivate.length / aktiveVorher) * 100 : 0;
     const prozentSchwelleAktiv = aktiveVorher >= maxAnzahl;
+    const totalWipe = aktiveVorher >= 2 && toDeactivate.length === aktiveVorher;
     const abbrechen =
-      toDeactivate.length > 0 && ((prozentSchwelleAktiv && prozentDeaktiviert > maxProzent) || toDeactivate.length > maxAnzahl);
+      toDeactivate.length > 0 &&
+      ((prozentSchwelleAktiv && prozentDeaktiviert > maxProzent) || toDeactivate.length > maxAnzahl || totalWipe);
 
     if (abbrechen) {
       const meldung = `Sync abgebrochen: ${toDeactivate.length} von ${aktiveVorher} aktiven Personen (${Math.round(prozentDeaktiviert)}%) würden deaktiviert — Schwelle ${maxProzent}%/${maxAnzahl}`;

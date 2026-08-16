@@ -161,6 +161,37 @@ test('GET / shows no link to /pool for a logged-in person without the buchhaltun
   db.close();
 });
 
+test('GET /pool returns 200 for a Portal-Admin who is not also a Buchhaltung member', async () => {
+  // SYNC-8: an admin-escalated job's notification email links straight into /kontierung or
+  // /freigabe2, and both of those redirect to /pool on successful submission — so /pool itself
+  // must not 403 a Portal-Admin, even though the homepage's /pool link is still Buchhaltung-only.
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/api/whoami', method: 'GET' })
+    .reply(200, { data: { id: 2, firstName: 'Admin', lastName: 'Only', email: 'admin@example.org' } });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [{ personId: 2 }] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get('/pool');
+  assert.equal(res.status, 200);
+  db.close();
+});
+
 test('Phase C routes are gated exactly as wired in the real app', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });

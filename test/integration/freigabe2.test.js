@@ -698,6 +698,10 @@ test('a Stellvertreter2 who is escalated to and ALSO has a conflict escalates to
 
   const adminMails = listMailLog(db).filter((m) => m.typ === 'zuweisung' && m.empfaenger === 'admin@example.org');
   assert.equal(adminMails.length, 1);
+  // The notification must link directly to the job, not the generic /pool page — a Portal-Admin
+  // clicking through from this email is the only realistic way they discover an escalated job.
+  assert.match(adminMails[0].text, new RegExp(`/freigabe2/${jobId}(?!\\d)`));
+  assert.doesNotMatch(adminMails[0].text, /\/pool/);
 
   const blockedAgent = await loginAs(app, client, { id: 4, vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'] });
   const blockedRes = await blockedAgent.get(`/freigabe2/${jobId}`);

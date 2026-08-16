@@ -103,7 +103,7 @@ export function createApp({ db, config }) {
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
-  app.use('/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolPageRouter({ db, config }));
+  app.use('/pool', sessionLimiter, requireAnyRole(config, ['buchhaltung', 'portal-admin']), createPoolPageRouter({ db, config }));
   app.use('/downloads', publicLimiter, createDownloadsRouter({ db, config }));
   app.use('/kontierung', sessionLimiter, requireAnyRole(config, ['buchhaltung', 'portal-admin']), createKontierungRouter({ db, config, mailer }));
   app.use('/freigabe2', sessionLimiter, requireAnyRole(config, ['buchhaltung', 'portal-admin']), createFreigabe2Router({ db, config, mailer }));

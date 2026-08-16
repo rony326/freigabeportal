@@ -424,6 +424,10 @@ test('a Stellvertreter1 who is escalated to and ALSO has a conflict escalates to
 
   const adminMails = listMailLog(db).filter((m) => m.typ === 'zuweisung' && m.empfaenger === 'admin@example.org');
   assert.equal(adminMails.length, 1);
+  // The notification must link directly to the job, not the generic /pool page — a Portal-Admin
+  // clicking through from this email is the only realistic way they discover an escalated job.
+  assert.match(adminMails[0].text, new RegExp(`/kontierung/${jobId}(?!\\d)`));
+  assert.doesNotMatch(adminMails[0].text, /\/pool/);
 
   // The (now-excluded) Stellvertreter1 can no longer act on this job...
   const blockedAgent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
@@ -437,7 +441,7 @@ test('a Stellvertreter1 who is escalated to and ALSO has a conflict escalates to
   db.close();
 });
 
-test('a plain second escalation attempt with no conflict is still blocked with the original message', async () => {
+test('a plain, non-conflict resubmission after a prior escalation succeeds normally', async () => {
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   const db = openDatabase(':memory:');

@@ -24,6 +24,7 @@ import { createKontierungRouter } from './routes/kontierung.js';
 import { createFreigabe2Router } from './routes/freigabe2.js';
 import { createAblehnungRouter } from './routes/ablehnung.js';
 import { createMailer } from './services/mailer.js';
+import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -63,8 +64,12 @@ export function createApp({ db, config }) {
     };
   }
 
-  app.use('/branding', createBrandingRouter({ db }));
-  app.use('/admin', requireRole(config, 'portal-admin'));
+  const publicLimiter = createPublicRateLimiter();
+  const sessionLimiter = createSessionRateLimiter();
+  const machineLimiter = createMachineRateLimiter();
+
+  app.use('/branding', publicLimiter, createBrandingRouter({ db }));
+  app.use('/admin', sessionLimiter, requireRole(config, 'portal-admin'));
   app.use('/admin/konten', createKontenRouter({ db }));
   app.use('/admin/zuweisungsregeln', createZuweisungsregelnRouter({ db }));
   app.use('/admin/eskalation', createEskalationRouter({ db }));
@@ -73,20 +78,20 @@ export function createApp({ db, config }) {
   app.use('/admin/pdf-einstellungen', createPdfEinstellungenRouter({ db }));
   app.use('/admin/mails', createMailsRouter({ db, mailer }));
 
-  app.use('/api/n8n/jobs', requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
-  app.use('/api/pool', requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
-  app.use('/pool', requireRole(config, 'buchhaltung'), createPoolPageRouter({ db, config }));
-  app.use('/downloads', createDownloadsRouter({ db, config }));
-  app.use('/kontierung', requireRole(config, 'buchhaltung'), createKontierungRouter({ db, config, mailer }));
-  app.use('/freigabe2', requireRole(config, 'buchhaltung'), createFreigabe2Router({ db, config, mailer }));
-  app.use('/abgelehnt', requireRole(config, 'buchhaltung'), createAblehnungRouter({ db }));
+  app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
+  app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
+  app.use('/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolPageRouter({ db, config }));
+  app.use('/downloads', publicLimiter, createDownloadsRouter({ db, config }));
+  app.use('/kontierung', sessionLimiter, requireRole(config, 'buchhaltung'), createKontierungRouter({ db, config, mailer }));
+  app.use('/freigabe2', sessionLimiter, requireRole(config, 'buchhaltung'), createFreigabe2Router({ db, config, mailer }));
+  app.use('/abgelehnt', sessionLimiter, requireRole(config, 'buchhaltung'), createAblehnungRouter({ db }));
 
-  app.use('/auth', createAuthRouter({ db, config }));
-  app.use('/internal/cron', createCronRouter({ db, config, mailer }));
+  app.use('/auth', publicLimiter, createAuthRouter({ db, config }));
+  app.use('/internal/cron', machineLimiter, createCronRouter({ db, config, mailer }));
 
   app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
 
-  app.get('/', (req, res) => {
+  app.get('/', publicLimiter, (req, res) => {
     const isBuchhaltung = Boolean(
       req.currentPerson && req.currentPerson.gruppen.includes(String(config.churchtools.groupIdBuchhaltung))
     );

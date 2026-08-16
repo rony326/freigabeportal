@@ -4,9 +4,14 @@ export function loadCurrentPerson(db) {
   return (req, res, next) => {
     if (!req.session.personId) {
       req.currentPerson = null;
+      res.locals.currentPerson = null;
       return next();
     }
     req.currentPerson = getPersonById(db, req.session.personId);
+    // Exposed as a template local (mirroring middleware/branding.js's res.locals.branding
+    // pattern) so views can render a logout link without every route handler needing to pass
+    // it through explicitly.
+    res.locals.currentPerson = req.currentPerson;
     next();
   };
 }

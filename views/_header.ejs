@@ -24,6 +24,11 @@
     <img src="/branding/logo" alt="Logo" height="48">
   <% } %>
   <button type="button" id="theme-toggle" aria-label="Farbmodus umschalten">🌓</button>
+  <% if (typeof currentPerson !== 'undefined' && currentPerson) { %>
+    <form method="post" action="/auth/logout" style="display:inline">
+      <button type="submit">Abmelden</button>
+    </form>
+  <% } %>
 </header>
 <script>
   document.getElementById('theme-toggle').addEventListener('click', function () {

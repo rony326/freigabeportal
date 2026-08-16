@@ -35,6 +35,35 @@ test('GET / renders the German home page for an anonymous visitor', async () => 
   const res = await request(app).get('/');
   assert.equal(res.status, 200);
   assert.match(res.text, /Nicht angemeldet/);
+  assert.doesNotMatch(res.text, /Abmelden/, 'an anonymous visitor should see no logout link');
+  db.close();
+});
+
+test('GET / shows a logout link for a logged-in person', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/api/whoami', method: 'GET' })
+    .reply(200, { data: { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' } });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get('/');
+  assert.match(res.text, /action="\/auth\/logout"/);
   db.close();
 });
 

@@ -57,3 +57,10 @@ test('seedDefaults sets reminder_empfaenger and eskalation_empfaenger defaults',
   assert.equal(getConfigValue(db, 'eskalation_empfaenger'), 'gruppe:buchhaltung');
   db.close();
 });
+
+test('seedDefaults sets mail_log_aufbewahrung_tage default', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'mail_log_aufbewahrung_tage'), '90');
+  db.close();
+});

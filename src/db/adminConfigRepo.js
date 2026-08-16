@@ -7,6 +7,7 @@ const DEFAULTS = {
   branding_farbe_sekundaer: '#4d7ea8',
   branding_theme_default: 'system',
   visum_seite_position: 'letzte',
+  mail_log_aufbewahrung_tage: '90',
 };
 
 export function seedDefaults(db) {

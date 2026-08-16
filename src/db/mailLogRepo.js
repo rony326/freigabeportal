@@ -15,3 +15,8 @@ export function listMailLog(db) {
 export function getMailLogById(db, id) {
   return db.prepare('SELECT * FROM mail_log WHERE id = ?').get(id) ?? null;
 }
+
+export function pruneMailLogOlderThan(db, isoThreshold) {
+  const result = db.prepare('DELETE FROM mail_log WHERE versucht_am < ?').run(isoThreshold);
+  return Number(result.changes);
+}

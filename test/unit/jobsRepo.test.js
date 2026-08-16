@@ -284,7 +284,7 @@ test('abschliessenFreigabe1 sets status to freigabe2 and clears the escalation c
   db.close();
 });
 
-test('abschliessenFreigabe1 clears freigabe1_eskaliert_an_admin, so a later rework cycle is not permanently locked to Portal-Admin', () => {
+test('abschliessenFreigabe1 preserves freigabe1_eskaliert_an_admin when set, so a later rework cycle stays locked to Portal-Admin (conflict-of-interest persists across attempts)', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
   const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -293,7 +293,7 @@ test('abschliessenFreigabe1 clears freigabe1_eskaliert_an_admin, so a later rewo
   abschliessenFreigabe1(db, jobId);
   const job = getJobById(db, jobId);
   assert.equal(job.status, 'freigabe2');
-  assert.equal(job.freigabe1_eskaliert_an_admin, 0);
+  assert.equal(job.freigabe1_eskaliert_an_admin, 1, 'the conflict-of-interest flag survives Freigabe 1 completion, so rework cycles stay admin-gated');
   db.close();
 });
 
@@ -607,6 +607,35 @@ test('listAbgelehntJobsForPerson returns only abgelehnt jobs assigned to that pe
   assert.equal(rows.length, 1);
   assert.equal(rows[0].id, jobId);
   assert.equal(listAbgelehntJobsForPerson(db, '2').length, 0);
+  db.close();
+});
+
+test('abschliessenFreigabe1 leaves freigabe1_eskaliert_an_admin set when it was already 1 (the exclusion survives Freigabe 1 completing)', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+  eskalierenFreigabe1AnAdmin(db, jobId, { eskaliertVon: '2', grund: 'Auch befangen' });
+
+  abschliessenFreigabe1(db, jobId);
+
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.freigabe1_eskaliert_von, null, 'the named-person escalation record is still cleared — only the admin-exclusion flag must survive');
+  assert.equal(job.freigabe1_eskaliert_an_admin, 1, 'the conflict-of-interest exclusion must survive Freigabe 1 completing, so a later reject+rework cycle stays admin-gated');
+  db.close();
+});
+
+test('abschliessenFreigabe1 leaves freigabe1_eskaliert_an_admin at 0 for a normal (non-escalated) completion', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+
+  abschliessenFreigabe1(db, jobId);
+
+  const job = getJobById(db, jobId);
+  assert.equal(job.freigabe1_eskaliert_an_admin, 0);
   db.close();
 });
 

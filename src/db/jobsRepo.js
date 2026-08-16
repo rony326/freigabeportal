@@ -148,14 +148,16 @@ export function eskalierenFreigabe1(db, jobId, { eskaliertVon, grund, stellvertr
 }
 
 export function abschliessenFreigabe1(db, jobId) {
-  // Also clears freigabe1_eskaliert_an_admin: this is the one place Freigabe 1 legitimately
-  // completes (regardless of whether an admin or a regular person did it), so it's the correct
-  // single source to reset the admin-only authorization gate (see loadAuthorizedJob in
-  // kontierung.js). Without this, a job that was ever escalated to admin would stay locked to
-  // Portal-Admin-only access permanently, even across later, unrelated rework cycles after
-  // wiederOeffnenJob re-enters status='zugewiesen'.
+  // freigabe1_eskaliert_an_admin is deliberately NOT reset here (Batch 4 correction — an
+  // earlier version of this function did clear it). A declared conflict of interest belongs to
+  // the invoice, not to one Kontierung attempt: if Freigabe 2 later rejects this job for an
+  // unrelated reason and it's reopened via wiederOeffnenJob, the excluded Stellvertreter1 must
+  // still be excluded — same principle already applied to freigabe2_eskaliert_von (see
+  // wiederOeffnenJob's own comment). The flag is only ever cleared by a genuine full reset to
+  // the pool (releaseJob, forceReleaseJob), where the job effectively starts over, possibly even
+  // under a different Konto.
   db.prepare(
-    "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe1_eskaliert_an_admin = 0 WHERE id = ?"
+    "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL WHERE id = ?"
   ).run(jobId);
 }
 

@@ -520,7 +520,7 @@ test('a person who picks a Konto where they are themselves the stellvertreter1 a
   db.close();
 });
 
-test('a job admin-escalated in Freigabe 1, then rejected in Freigabe 2 and reopened for rework, is not permanently locked to Portal-Admin', async () => {
+test('a job admin-escalated in Freigabe 1, then rejected in Freigabe 2 and reopened for rework, remains locked to Portal-Admin (conflict-of-interest persists)', async () => {
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   const db = openDatabase(':memory:');
@@ -569,7 +569,7 @@ test('a job admin-escalated in Freigabe 1, then rejected in Freigabe 2 and reope
   abschliessenFreigabe1(db, jobId);
   const afterFreigabe1 = getJobById(db, jobId);
   assert.equal(afterFreigabe1.status, 'freigabe2');
-  assert.equal(afterFreigabe1.freigabe1_eskaliert_an_admin, 0, 'flag must be cleared once Freigabe 1 legitimately completes');
+  assert.equal(afterFreigabe1.freigabe1_eskaliert_an_admin, 1, 'flag must survive Freigabe 1 completion — the conflict-of-interest belongs to the invoice, not one submission attempt');
   assert.equal(afterFreigabe1.zugewiesen_an, '2', 'zugewiesen_an is untouched throughout the admin-escalation path');
 
   // Freigabe 2 rejects the job; the owner ('2') reopens it for an unrelated rework cycle.
@@ -577,13 +577,13 @@ test('a job admin-escalated in Freigabe 1, then rejected in Freigabe 2 and reope
   wiederOeffnenJob(db, jobId, '2');
   const reopened = getJobById(db, jobId);
   assert.equal(reopened.status, 'zugewiesen');
-  assert.equal(reopened.freigabe1_eskaliert_an_admin, 0, 'a fresh rework cycle must not still be locked to Portal-Admin-only access');
+  assert.equal(reopened.freigabe1_eskaliert_an_admin, 1, 'a fresh rework cycle stays locked to Portal-Admin-only access because the conflict persists');
 
-  // The legitimately reassigned owner ('2'), who is not a Portal-Admin, must be able to open the
-  // job again -- not just have the DB flag be 0, but actually be authorized by loadAuthorizedJob.
+  // The original owner ('2'), who is not a Portal-Admin, cannot open the job anymore — it is
+  // legitimately excluded until a Portal-Admin releases it or the conflict is otherwise resolved.
   const ownerAgent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
   const ownerRes = await ownerAgent.get(`/kontierung/${jobId}`);
-  assert.equal(ownerRes.status, 200);
+  assert.equal(ownerRes.status, 403, 'owner is no longer authorized; the job is locked to Portal-Admin');
   db.close();
 });
 

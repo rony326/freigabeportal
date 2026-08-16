@@ -114,11 +114,19 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     if (!job) {
       return res.status(409).json({ error: 'Job ist nicht im Status "abgeschlossen" oder bereits abgeholt.' });
     }
-    if (job.pdf_pfad && existsSync(job.pdf_pfad)) {
-      unlinkSync(job.pdf_pfad);
+    try {
+      if (job.pdf_pfad && existsSync(job.pdf_pfad)) {
+        unlinkSync(job.pdf_pfad);
+      }
+    } catch (err) {
+      console.error(`Löschen der PDF für Job ${job.id} nach Abholung fehlgeschlagen:`, err.message);
     }
-    if (job.thumbnail_pfad && existsSync(job.thumbnail_pfad)) {
-      unlinkSync(job.thumbnail_pfad);
+    try {
+      if (job.thumbnail_pfad && existsSync(job.thumbnail_pfad)) {
+        unlinkSync(job.thumbnail_pfad);
+      }
+    } catch (err) {
+      console.error(`Löschen des Thumbnails für Job ${job.id} nach Abholung fehlgeschlagen:`, err.message);
     }
     res.json({ id: job.id, status: job.status });
   });

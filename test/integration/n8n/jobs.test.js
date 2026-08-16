@@ -441,3 +441,32 @@ test('POST /api/n8n/jobs with no matching Zuweisungsregel sends no mail (job lan
   assert.equal(listMailLog(db).length, 0);
   db.close();
 });
+
+test('POST /:id/abholung-bestaetigen still marks the job abgeholt even if deleting its PDF throws', async () => {
+  const { mkdtempSync, rmSync, mkdirSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'abholung-unlink-fail-test-'));
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const config = testConfig(jobsDir);
+  const db = openDatabase(':memory:');
+  const app = buildTestApp(db, config, createStubMailer());
+
+  // pdf_pfad points at a directory, not a file. unlinkSync() on a directory always throws
+  // EISDIR/EPERM on every platform and every user (including root, unlike a chmod-based
+  // permission-denial test, which root silently ignores) — a deterministic way to force the
+  // route's delete step to fail without relying on filesystem permissions.
+  const pdfPfad = join(dir, 'job-is-actually-a-dir.pdf');
+  mkdirSync(pdfPfad);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
+
+  const res = await request(app).post(`/api/n8n/jobs/${jobId}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, 'abgeholt');
+  assert.equal(getJobById(db, jobId).status, 'abgeholt');
+
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(jobsDir, { recursive: true, force: true });
+  db.close();
+});

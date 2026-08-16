@@ -122,7 +122,7 @@ export function createApp({ db, config }) {
   });
 
   app.use((err, req, res, next) => {
-    console.error(err);
+    console.error(err.stack || err.message);
     res.locals.branding ??= { primaryColor: null, secondaryColor: null, hasLogo: false, themeAttr: null };
     res.status(500).render('error', { message: 'Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es später erneut.' });
   });

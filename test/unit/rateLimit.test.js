@@ -94,3 +94,19 @@ test('createMachineRateLimiter returns 429 once its limit is exceeded', async ()
   assert.equal(res.status, 429);
   assert.deepEqual(res.body, RATE_LIMIT_MESSAGE);
 });
+
+test('createSessionRateLimiter buckets IPv6 addresses by /56 subnet when req.currentPerson is absent', async () => {
+  const app = express();
+  app.set('trust proxy', true);
+  app.get('/probe', createSessionRateLimiter({ limit: 1, windowMs: 60000 }), (req, res) => res.json({ ok: true }));
+
+  // Two IPv6 addresses in the same /56 subnet (share the first 56 bits: 2001:db8:1234:56)
+  const ipv6_subnet_first = await request(app).get('/probe').set('X-Forwarded-For', '2001:db8:1234:5600::1');
+  assert.equal(ipv6_subnet_first.status, 200);
+  const ipv6_subnet_second = await request(app).get('/probe').set('X-Forwarded-For', '2001:db8:1234:5601::1');
+  assert.equal(ipv6_subnet_second.status, 429, 'same IPv6 /56 subnet exceeded its shared limit');
+
+  // A different IPv6 subnet should have an independent counter
+  const ipv6_different_subnet = await request(app).get('/probe').set('X-Forwarded-For', '2001:db8:5678:9a00::1');
+  assert.equal(ipv6_different_subnet.status, 200, 'a different IPv6 /56 subnet has an independent counter, unaffected by the first subnet');
+});

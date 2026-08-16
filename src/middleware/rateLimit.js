@@ -1,4 +1,4 @@
-import { rateLimit } from 'express-rate-limit';
+import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
 
 export const RATE_LIMIT_MESSAGE = { error: 'Zu viele Anfragen, bitte später erneut versuchen.' };
 
@@ -25,7 +25,7 @@ export function createSessionRateLimiter(overrides = {}) {
   return rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 300,
-    keyGenerator: (req, res) => (req.currentPerson ? String(req.currentPerson.churchtools_person_id) : req.ip),
+    keyGenerator: (req) => (req.currentPerson ? String(req.currentPerson.churchtools_person_id) : ipKeyGenerator(req.ip)),
     ...COMMON_OPTIONS,
     ...overrides,
   });

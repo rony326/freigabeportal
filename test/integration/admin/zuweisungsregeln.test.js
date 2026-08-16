@@ -95,6 +95,20 @@ test('POST /admin/zuweisungsregeln with a duplicate pattern is rejected with a G
   db.close();
 });
 
+test('POST /admin/zuweisungsregeln with an invalid pattern (not a domain or email) is rejected with a German error', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/zuweisungsregeln')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ absenderMuster: 'ch', kontoId: String(kontoId) });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /gültige E-Mail-Adresse oder Domain/);
+  db.close();
+});
+
 test('edit and delete a Zuweisungsregel', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);

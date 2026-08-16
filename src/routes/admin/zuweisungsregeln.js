@@ -9,6 +9,13 @@ import {
 } from '../../db/zuweisungsregelnRepo.js';
 import { listKonten } from '../../db/kontenRepo.js';
 
+const EMAIL_MUSTER_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DOMAIN_MUSTER_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
+
+function isValidAbsenderMuster(muster) {
+  return muster.includes('@') ? EMAIL_MUSTER_PATTERN.test(muster) : DOMAIN_MUSTER_PATTERN.test(muster);
+}
+
 export function createZuweisungsregelnRouter({ db }) {
   const router = Router();
 
@@ -25,6 +32,9 @@ export function createZuweisungsregelnRouter({ db }) {
     const errors = [];
     if (!absenderMuster) errors.push('Absender-Muster ist ein Pflichtfeld.');
     if (!kontoId) errors.push('Konto ist ein Pflichtfeld.');
+    if (absenderMuster && !isValidAbsenderMuster(absenderMuster)) {
+      errors.push('Absender-Muster muss eine gültige E-Mail-Adresse oder Domain sein (z. B. "lieferant.ch" oder "rechnung@lieferant.ch").');
+    }
     if (absenderMuster && findZuweisungsregelByMuster(db, absenderMuster)) {
       errors.push('Dieses Absender-Muster ist bereits einem Konto zugewiesen.');
     }
@@ -61,6 +71,9 @@ export function createZuweisungsregelnRouter({ db }) {
     const errors = [];
     if (!absenderMuster) errors.push('Absender-Muster ist ein Pflichtfeld.');
     if (!kontoId) errors.push('Konto ist ein Pflichtfeld.');
+    if (absenderMuster && !isValidAbsenderMuster(absenderMuster)) {
+      errors.push('Absender-Muster muss eine gültige E-Mail-Adresse oder Domain sein (z. B. "lieferant.ch" oder "rechnung@lieferant.ch").');
+    }
     const existing = absenderMuster ? findZuweisungsregelByMuster(db, absenderMuster) : null;
     if (existing && existing.id !== id) {
       errors.push('Dieses Absender-Muster ist bereits einem Konto zugewiesen.');

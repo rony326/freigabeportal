@@ -607,3 +607,58 @@ test('a Portal-Admin authorized via the freigabe1_eskaliert_an_admin flag can re
   assert.equal(job.freigabe1_eskaliert_an_admin, 0, 'the admin-only lock must not survive back into the pool for the next claimer');
   db.close();
 });
+
+test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kontierung through the real form for a self-escalated job', async () => {
+  // Case B (self-escalation): the job's own Konto's stellvertreter1 IS the person who claims and
+  // Kontiert the job, so it escalates straight to admin. The admin who then gets authorized via
+  // loadAuthorizedJob's flag branch holds, BY DEFINITION, no freigeber1/stellvertreter1 role on
+  // that Konto -- listKontenForPerson alone would return an empty list for them, making the
+  // Konto dropdown unselectable and the POST handler's konten.find(...) always fail. This proves
+  // ladeKontenFuerJob's fix (appending the job's already-assigned Konto) makes the admin's own
+  // real HTTP resubmission actually succeed.
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  const db = openDatabase(':memory:');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+
+  upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
+  // Admin '99' is a Portal-Admin only -- no group '10' (Buchhaltung) membership, and no
+  // freigeber1/stellvertreter1/freigeber2/stellvertreter2 role on the Konto below.
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2' WHERE id = ?").run(jobId);
+
+  const app = createApp({ db, config });
+  const stellvertreterAgent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  await stellvertreterAgent
+    .post(`/kontierung/${jobId}`)
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+  const escalated = getJobById(db, jobId);
+  assert.equal(escalated.freigabe1_eskaliert_an_admin, 1, 'sanity: escalated to admin');
+  assert.equal(escalated.konto_id, kontoId, 'sanity: the job already carries the Konto the admin must resubmit');
+
+  const adminAgent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'] });
+
+  // Confirm the dropdown actually offers the Konto (not just that GET returns 200).
+  const getRes = await adminAgent.get(`/kontierung/${jobId}`);
+  assert.equal(getRes.status, 200);
+  assert.match(getRes.text, /3000/, 'the admin must be able to see/select the job\'s own Konto despite holding no role on it');
+
+  const postRes = await adminAgent
+    .post(`/kontierung/${jobId}`)
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(postRes.status, 302, 'the admin must be able to actually submit the form, not just view it');
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'freigabe2', 'Freigabe 1 must actually complete, not just redirect');
+  assert.equal(job.konto_id, kontoId);
+  db.close();
+});

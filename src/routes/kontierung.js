@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe1AnAdmin, abschliessenFreigabe1, releaseJob, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
-import { listKontenForPerson } from '../db/kontenRepo.js';
+import { listKontenForPerson, getKontoById } from '../db/kontenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -29,10 +29,28 @@ export function createKontierungRouter({ db, config, mailer }) {
     return job;
   }
 
+  // The form's existing pre-fill (values.kontoId defaults to job.konto_id) already assumes the
+  // job's currently-assigned Konto is the expected resubmission target. listKontenForPerson
+  // alone is role-filtered, though, and a Portal-Admin resolving a self-escalated job (case B in
+  // the POST handler below) holds no freigeber1/stellvertreter1 role on that Konto BY
+  // DEFINITION — that's exactly what made it a self-escalation. Without this, such an admin
+  // could view the form (200) but never submit it: the dropdown has nothing selectable and
+  // konten.find(...) in the POST handler always fails. Unconditional, not gated on
+  // freigabe1_eskaliert_an_admin, since it's a no-op for the normal case: the job's Konto is
+  // already in a legitimately-role-holding person's own listKontenForPerson result.
+  function ladeKontenFuerJob(req, job) {
+    const konten = listKontenForPerson(db, req.currentPerson.churchtools_person_id);
+    if (job.konto_id && !konten.some((k) => k.id === job.konto_id)) {
+      const bestehendes = getKontoById(db, job.konto_id);
+      if (bestehendes) konten.push(bestehendes);
+    }
+    return konten;
+  }
+
   router.get('/:id', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
-    const konten = listKontenForPerson(db, req.currentPerson.churchtools_person_id);
+    const konten = ladeKontenFuerJob(req, job);
     res.render('kontierung', {
       job,
       konten,
@@ -46,7 +64,7 @@ export function createKontierungRouter({ db, config, mailer }) {
     try {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
-      const konten = listKontenForPerson(db, req.currentPerson.churchtools_person_id);
+      const konten = ladeKontenFuerJob(req, job);
       const { kontoId, interessenskonflikt, begruendung } = req.body;
       const errors = [];
 

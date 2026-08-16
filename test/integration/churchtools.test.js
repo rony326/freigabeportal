@@ -28,7 +28,7 @@ test('buildAuthorizeUrl includes client id, redirect uri and state', () => {
 test('exchangeCodeForToken returns the parsed token response', async () => {
   const client = setupMockChurchTools(CONFIG.baseUrl);
   client
-    .intercept({ path: '/api/oauth/token', method: 'POST' })
+    .intercept({ path: '/oauth/access_token', method: 'POST' })
     .reply(200, { access_token: 'abc123', token_type: 'Bearer' });
 
   const result = await exchangeCodeForToken(CONFIG, 'the-code');
@@ -37,7 +37,7 @@ test('exchangeCodeForToken returns the parsed token response', async () => {
 
 test('exchangeCodeForToken throws on a non-ok response', async () => {
   const client = setupMockChurchTools(CONFIG.baseUrl);
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(401, {});
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(401, {});
   await assert.rejects(() => exchangeCodeForToken(CONFIG, 'bad-code'));
 });
 

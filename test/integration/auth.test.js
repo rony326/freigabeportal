@@ -47,7 +47,7 @@ test('GET /auth/callback rejects a mismatched state with a German error', async 
 test('GET /auth/callback with a valid state logs the person in', async () => {
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
     .intercept({ path: '/api/whoami', method: 'GET' })
     .reply(200, { data: { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' } });
@@ -73,7 +73,7 @@ test('GET /auth/callback with a valid state logs the person in', async () => {
 test('GET /auth/callback regenerates the session on login (prevents session fixation)', async () => {
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
     .intercept({ path: '/api/whoami', method: 'GET' })
     .reply(200, { data: { id: 8, firstName: 'Regen', lastName: 'Erate', email: 'regen@example.org' } });
@@ -101,7 +101,7 @@ test('GET /auth/callback regenerates the session on login (prevents session fixa
 test('GET /auth/callback creates a session and a person even when the person belongs to no relevant group (AUTH-WIDEN-1)', async () => {
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
     .intercept({ path: '/api/whoami', method: 'GET' })
     .reply(200, { data: { id: 42, firstName: 'Keine', lastName: 'Gruppe', email: 'keine@example.org' } });

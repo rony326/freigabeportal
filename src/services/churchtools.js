@@ -1,5 +1,5 @@
 export function buildAuthorizeUrl(config, state) {
-  const url = new URL('/api/oauth/authorize', config.baseUrl);
+  const url = new URL('/oauth/authorize', config.baseUrl);
   url.searchParams.set('client_id', config.clientId);
   url.searchParams.set('redirect_uri', config.redirectUri);
   url.searchParams.set('response_type', 'code');
@@ -15,7 +15,7 @@ async function parseOrThrow(response, label) {
 }
 
 export async function exchangeCodeForToken(config, code) {
-  const url = new URL('/api/oauth/token', config.baseUrl);
+  const url = new URL('/oauth/access_token', config.baseUrl);
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

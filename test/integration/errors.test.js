@@ -35,7 +35,7 @@ test('an unmatched route returns a German 404 page', async () => {
 test('a ChurchTools failure mid-callback is caught and rendered as a German 500 page', async () => {
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(500, {});
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(500, {});
 
   const db = openDatabase(':memory:');
   const app = createApp({ db, config });

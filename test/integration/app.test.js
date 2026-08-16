@@ -51,7 +51,7 @@ test('GET / shows a logout link for a logged-in person', async () => {
     redirectUri: 'https://portal.example.org/auth/callback',
   };
   const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
     .intercept({ path: '/api/whoami', method: 'GET' })
     .reply(200, { data: { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' } });
@@ -114,7 +114,7 @@ test('GET / shows a link to /pool for a logged-in buchhaltung member', async () 
     redirectUri: 'https://portal.example.org/auth/callback',
   };
   const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
     .intercept({ path: '/api/whoami', method: 'GET' })
     .reply(200, { data: { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' } });
@@ -143,7 +143,7 @@ test('GET / shows no link to /pool for a logged-in person without the buchhaltun
     redirectUri: 'https://portal.example.org/auth/callback',
   };
   const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
     .intercept({ path: '/api/whoami', method: 'GET' })
     .reply(200, { data: { id: 2, firstName: 'Admin', lastName: 'Only', email: 'admin@example.org' } });
@@ -176,7 +176,7 @@ test('GET /pool returns 200 for a Portal-Admin who is not also a Buchhaltung mem
     redirectUri: 'https://portal.example.org/auth/callback',
   };
   const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
     .intercept({ path: '/api/whoami', method: 'GET' })
     .reply(200, { data: { id: 2, firstName: 'Admin', lastName: 'Only', email: 'admin@example.org' } });
@@ -204,7 +204,7 @@ test('GET /kontierung/:id is reachable through the real app for the assigned per
     redirectUri: 'https://portal.example.org/auth/callback',
   };
   const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
     .intercept({ path: '/api/whoami', method: 'GET' })
     .reply(200, { data: { id: 5, firstName: 'Frei', lastName: 'Geber', email: 'frei@example.org' } });
@@ -242,7 +242,7 @@ test('a logged-in person with zero relevant ChurchTools groups is still refused 
     redirectUri: 'https://portal.example.org/auth/callback',
   };
   const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
     .intercept({ path: '/api/whoami', method: 'GET' })
     .reply(200, { data: { id: 42, firstName: 'Ohne', lastName: 'Gruppe', email: 'ohne@example.org' } });

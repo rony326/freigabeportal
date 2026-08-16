@@ -47,7 +47,7 @@ function testConfig() {
 }
 
 async function loginAs(app, client, { id, vorname, nachname, email, gruppen }) {
-  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: `tok-${id}` });
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: `tok-${id}` });
   client.intercept({ path: '/api/whoami', method: 'GET' }).reply(200, { data: { id, firstName: vorname, lastName: nachname, email } });
   client
     .intercept({ path: '/api/groups/10/members', method: 'GET' })

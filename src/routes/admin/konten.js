@@ -77,7 +77,13 @@ export function createKontenRouter({ db }) {
     }
 
     const values = readRoleFields(req.body);
-    const errors = validateKontoRoles(db, values);
+    const existingRoles = {
+      freigeber1Id: konto.freigeber1_id,
+      stellvertreter1Id: konto.stellvertreter1_id,
+      freigeber2Id: konto.freigeber2_id,
+      stellvertreter2Id: konto.stellvertreter2_id,
+    };
+    const errors = validateKontoRoles(db, values, existingRoles);
     if (!values.kontonummer) errors.push('Kontonummer ist ein Pflichtfeld.');
     if (!values.bezeichnung) errors.push('Bezeichnung ist ein Pflichtfeld.');
 

@@ -8,7 +8,13 @@ const ROLE_LABELS = {
   stellvertreter2Id: 'Stellvertreter 2',
 };
 
-export function validateKontoRoles(db, roles) {
+// `existingRoles` (optional) is the Konto's roles before this save, if any — an already-assigned
+// unresolved person (a ChurchTools person-merge casualty) is preserved rather than rejected,
+// matching the sync's own "warn, don't silently lose data" handling of the same situation.
+// Only a *newly* assigned unresolved person is blocked, since assigning a fresh approver whose
+// identity can no longer be resolved would be a Portal-Admin data-entry mistake, not a case
+// the audit trail needs to preserve.
+export function validateKontoRoles(db, roles, existingRoles = {}) {
   const errors = [];
 
   for (const key of ROLE_KEYS) {
@@ -27,6 +33,8 @@ export function validateKontoRoles(db, roles) {
     const person = getPersonById(db, roles[key]);
     if (!person || !person.aktiv) {
       errors.push(`${ROLE_LABELS[key]}: gewählte Person ist nicht (mehr) aktiv.`);
+    } else if (person.ct_person_unresolved && roles[key] !== existingRoles[key]) {
+      errors.push(`${ROLE_LABELS[key]}: gewählte Person ist in ChurchTools nicht mehr auflösbar und kann nicht neu zugewiesen werden.`);
     }
   }
 

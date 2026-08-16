@@ -113,6 +113,30 @@ test('validateKontoRoles accepts four distinct active persons', () => {
   db.close();
 });
 
+test('validateKontoRoles rejects a newly assigned person who is no longer resolvable in ChurchTools', async () => {
+  const { markUnresolved } = await import('../../src/db/personenRepo.js');
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  markUnresolved(db, '4');
+  const errors = validateKontoRoles(db, { freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  assert.ok(errors.some((e) => e.includes('nicht mehr auflösbar')));
+  db.close();
+});
+
+test('validateKontoRoles preserves an already-assigned unresolved person (does not force them out)', async () => {
+  const { markUnresolved } = await import('../../src/db/personenRepo.js');
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  markUnresolved(db, '4');
+  const errors = validateKontoRoles(
+    db,
+    { freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' },
+    { freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' }
+  );
+  assert.deepEqual(errors, []);
+  db.close();
+});
+
 test('listKontenForPerson returns only active Konten where the person is freigeber1 or stellvertreter1', () => {
   const db = openDatabase(':memory:');
   for (const id of ['1', '2', '3', '4', '5']) {

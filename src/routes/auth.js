@@ -40,8 +40,16 @@ export function createAuthRouter({ db, config }) {
         loggedInNow: true,
       });
 
-      req.session.personId = String(profile.id);
-      res.redirect('/');
+      // Regenerate the session on login (not just reuse the pre-login one) to prevent session
+      // fixation: a session ID issued before authentication must never become a valid,
+      // authenticated session ID after it. Nothing from the pre-login session is needed past
+      // this point — oauthState was already consumed above.
+      req.session.regenerate((err) => {
+        if (err) return next(err);
+        req.session.personId = String(profile.id);
+        res.redirect('/');
+      });
+      return;
     } catch (err) {
       next(err);
     }

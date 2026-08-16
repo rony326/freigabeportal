@@ -70,6 +70,34 @@ test('GET /auth/callback with a valid state logs the person in', async () => {
   db.close();
 });
 
+test('GET /auth/callback regenerates the session on login (prevents session fixation)', async () => {
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/api/whoami', method: 'GET' })
+    .reply(200, { data: { id: 8, firstName: 'Regen', lastName: 'Erate', email: 'regen@example.org' } });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 8 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const preLoginSid = loginRes.headers['set-cookie'][0].match(/connect\.sid=([^;]+)/)[1];
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+
+  const callbackRes = await agent.get('/auth/callback').query({ code: 'the-code', state });
+  assert.equal(callbackRes.status, 302);
+  const postLoginSid = callbackRes.headers['set-cookie'][0].match(/connect\.sid=([^;]+)/)[1];
+
+  assert.notEqual(preLoginSid, postLoginSid, 'session ID must change on login, not just gain new data');
+
+  const replayRes = await request(app).get('/pool').set('Cookie', `connect.sid=${preLoginSid}`);
+  assert.equal(replayRes.status, 401, 'the pre-login session must not be authenticated, even if planted in a victim beforehand');
+  db.close();
+});
+
 test('GET /auth/callback denies access and creates no person when the person belongs to no relevant group', async () => {
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);

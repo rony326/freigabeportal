@@ -64,3 +64,12 @@ test('seedDefaults sets mail_log_aufbewahrung_tage default', () => {
   assert.equal(getConfigValue(db, 'mail_log_aufbewahrung_tage'), '90');
   db.close();
 });
+
+test('seedDefaults sets the SYNC-1/SYNC-2 sync-robustness defaults', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'sync_max_deaktivierung_prozent'), '50');
+  assert.equal(getConfigValue(db, 'sync_max_deaktivierung_anzahl'), '10');
+  assert.equal(getConfigValue(db, 'sync_fehler_empfaenger'), 'gruppe:admin');
+  db.close();
+});

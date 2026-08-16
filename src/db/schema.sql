@@ -71,7 +71,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   freigabe2_eskalationsgrund TEXT,
   reminder_gesendet_at TEXT,
   eskalation_gesendet_at TEXT,
-  archiviert_am TEXT
+  archiviert_am TEXT,
+  freigabe1_eskaliert_an_admin INTEGER NOT NULL DEFAULT 0,
+  freigabe2_eskaliert_an_admin INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (
@@ -88,7 +90,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
 
 CREATE TABLE IF NOT EXISTS mail_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung')),
+  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler')),
   job_id INTEGER REFERENCES jobs(id),
   empfaenger TEXT NOT NULL,
   betreff TEXT NOT NULL,

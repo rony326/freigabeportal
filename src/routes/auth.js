@@ -23,13 +23,12 @@ export function createAuthRouter({ db, config }) {
       const token = await exchangeCodeForToken(config.churchtools, code);
       const profile = await fetchPerson(config.churchtools, token.access_token);
       const candidateGroupIds = [config.churchtools.groupIdBuchhaltung, config.churchtools.groupIdAdmin];
+      // AUTH-WIDEN-1: login no longer requires Buchhaltung/Admin membership — Freigeber1/2 and
+      // their Stellvertreter are account-based roles (AUTHZ-3) that may not be in either group.
+      // gruppen is still resolved and stored exactly as before; only the empty-array rejection
+      // is gone. Every route that matters is gated by its own per-job or per-group check
+      // downstream (requireRole/requireAnyRole for /pool and /admin, per-job checks elsewhere).
       const gruppen = await resolveMemberGroupIds(config.churchtools, token.access_token, profile.id, candidateGroupIds);
-
-      if (gruppen.length === 0) {
-        return res.status(403).render('error', {
-          message: 'Kein Zugriff. Diese ChurchTools-Person ist keiner für das Portal relevanten Gruppe zugeordnet.',
-        });
-      }
 
       upsertPerson(db, {
         id: String(profile.id),

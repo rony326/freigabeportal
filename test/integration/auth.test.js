@@ -98,13 +98,13 @@ test('GET /auth/callback regenerates the session on login (prevents session fixa
   db.close();
 });
 
-test('GET /auth/callback denies access and creates no person when the person belongs to no relevant group', async () => {
+test('GET /auth/callback creates a session and a person even when the person belongs to no relevant group (AUTH-WIDEN-1)', async () => {
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
     .intercept({ path: '/api/whoami', method: 'GET' })
-    .reply(200, { data: { id: 42, firstName: 'Kein', lastName: 'Zugriff', email: 'kein@example.org' } });
+    .reply(200, { data: { id: 42, firstName: 'Keine', lastName: 'Gruppe', email: 'keine@example.org' } });
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
 
@@ -115,11 +115,13 @@ test('GET /auth/callback denies access and creates no person when the person bel
   const state = new URL(loginRes.headers.location).searchParams.get('state');
 
   const res = await agent.get('/auth/callback').query({ code: 'the-code', state });
-  assert.equal(res.status, 403);
-  assert.match(res.text, /Kein Zugriff/);
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/');
 
   const person = getPersonById(db, '42');
-  assert.equal(person, null);
+  assert.ok(person, 'a person with no relevant group membership must still get a local session and a personen row');
+  assert.deepEqual(person.gruppen, []);
+  assert.equal(person.aktiv, true);
   db.close();
 });
 

@@ -92,3 +92,107 @@ test('runPersonenSync records a failed run and leaves existing data untouched', 
   assert.ok(logRow);
   db.close();
 });
+
+test('runPersonenSync aborts with nothing persisted when deactivations exceed the percent threshold (population large enough for percent to apply)', async () => {
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  // Only person 1 is still in ChurchTools; persons 2-20 (19 of the 20 pre-existing active
+  // people) would be deactivated — 95%, well over the 50% default threshold, and the active
+  // population (20) is well above the default absolute floor (10), so the percent check applies.
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/persons/1', method: 'GET' }).reply(200, { data: { id: 1, firstName: 'Bleibt', lastName: 'Da', email: 'bleibt@example.org' } });
+
+  const db = openDatabase(':memory:');
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+  seedDefaults(db);
+  for (let i = 1; i <= 20; i++) {
+    upsertPerson(db, { id: String(i), vorname: `Person${i}`, nachname: 'Aktiv', email: `p${i}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+
+  const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
+
+  assert.equal(result.abgebrochen, true);
+  assert.equal(result.deactivated, 0);
+  assert.equal(result.upserted, 0);
+  assert.match(result.meldung, /Schwelle/);
+  // Nothing was persisted: person 1's profile was never upserted (still shows the old, pre-sync name)...
+  assert.equal(getPersonById(db, '1').vorname, 'Person1');
+  // ...and nobody was deactivated.
+  for (let i = 1; i <= 20; i++) {
+    assert.equal(getPersonById(db, String(i)).aktiv, true, `person ${i} should still be active`);
+  }
+  const logRow = db.prepare("SELECT * FROM sync_log WHERE status = 'abgebrochen'").get();
+  assert.ok(logRow);
+  assert.match(logRow.fehler_details, /19 von 20/);
+  db.close();
+});
+
+test('runPersonenSync aborts on the absolute-count threshold even when the percent is under the percent threshold', async () => {
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  // 100 active people, only 85 still returned by ChurchTools -> 15 deactivated = 15%, well
+  // under the 50% default percent threshold, but 15 > the default absolute threshold of 10.
+  const stillActive = Array.from({ length: 85 }, (_, i) => ({ personId: i + 1 }));
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: stillActive });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  for (let i = 1; i <= 85; i++) {
+    client.intercept({ path: `/api/persons/${i}`, method: 'GET' }).reply(200, { data: { id: i, firstName: `Person${i}`, lastName: 'Aktiv', email: `p${i}@example.org` } });
+  }
+
+  const db = openDatabase(':memory:');
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+  seedDefaults(db);
+  for (let i = 1; i <= 100; i++) {
+    upsertPerson(db, { id: String(i), vorname: `Person${i}`, nachname: 'Aktiv', email: `p${i}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+
+  const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
+
+  assert.equal(result.abgebrochen, true);
+  assert.equal(result.deactivated, 0);
+  for (let i = 86; i <= 100; i++) {
+    assert.equal(getPersonById(db, String(i)).aktiv, true, `person ${i} should still be active — the run aborted before any deactivation`);
+  }
+  db.close();
+});
+
+test('runPersonenSync does NOT abort a small-population run even at 100% deactivation (percent threshold only applies once active count reaches the absolute floor)', async () => {
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 7 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/persons/7', method: 'GET' }).reply(200, { data: { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' } });
+
+  const db = openDatabase(':memory:');
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+  seedDefaults(db);
+  // Exactly one pre-existing active person, who will be deactivated this run (100% of the
+  // population) — with only the default absolute floor of 10, this must NOT trip the guard.
+  upsertPerson(db, { id: '99', vorname: 'Alt', nachname: 'Verlassen', email: 'alt@example.org', gruppen: ['10'], loggedInNow: false });
+
+  const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
+
+  assert.equal(result.abgebrochen, false);
+  assert.equal(result.deactivated, 1);
+  assert.equal(getPersonById(db, '99').aktiv, false);
+  db.close();
+});
+
+test('runPersonenSync respects admin_config-configured thresholds', async () => {
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const { seedDefaults, setConfigValue } = await import('../../src/db/adminConfigRepo.js');
+  seedDefaults(db);
+  // Lower the absolute threshold to 1 so a single deactivation now trips the guard.
+  setConfigValue(db, 'sync_max_deaktivierung_anzahl', '1');
+  upsertPerson(db, { id: '1', vorname: 'Wird', nachname: 'Deaktiviert', email: 'weg@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'Wird', nachname: 'Auch', email: 'auch@example.org', gruppen: ['10'], loggedInNow: false });
+  // Population is 2, below the default absolute floor used to gate the percent check, so this
+  // exercises the (now-lowered) absolute threshold specifically.
+
+  const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
+
+  assert.equal(result.abgebrochen, true);
+  db.close();
+});

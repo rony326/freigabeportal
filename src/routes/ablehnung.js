@@ -26,7 +26,10 @@ export function createAblehnungRouter({ db }) {
   router.post('/:id/ueberarbeiten', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
-    wiederOeffnenJob(db, job.id, req.currentPerson.churchtools_person_id);
+    const reopened = wiederOeffnenJob(db, job.id, req.currentPerson.churchtools_person_id);
+    if (!reopened) {
+      return res.status(409).render('error', { message: 'Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.' });
+    }
     res.redirect(`/kontierung/${job.id}`);
   });
 

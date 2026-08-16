@@ -125,9 +125,14 @@ export function createCronRouter({ db, config, mailer }) {
       console.error('Tmp-Sweep konnte jobsDir nicht lesen:', err.message);
     }
 
-    const aufbewahrungTage = Number(getConfigValue(db, 'mail_log_aufbewahrung_tage'));
-    const mailLogSchwelle = new Date(Date.now() - aufbewahrungTage * 24 * 60 * 60 * 1000).toISOString();
-    const mailLogGeloescht = pruneMailLogOlderThan(db, mailLogSchwelle);
+    let mailLogGeloescht = 0;
+    try {
+      const aufbewahrungTage = Number(getConfigValue(db, 'mail_log_aufbewahrung_tage'));
+      const mailLogSchwelle = new Date(Date.now() - aufbewahrungTage * 24 * 60 * 60 * 1000).toISOString();
+      mailLogGeloescht = pruneMailLogOlderThan(db, mailLogSchwelle);
+    } catch (err) {
+      console.error('Bereinigung von mail_log fehlgeschlagen:', err.message);
+    }
 
     res.json({ status: 'erfolg', archiviert, tmpGeloescht, mailLogGeloescht });
   });

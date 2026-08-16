@@ -353,3 +353,29 @@ test('POST /internal/cron/pdf-bereinigung is idempotent: a second run with nothi
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
+
+test('POST /internal/cron/pdf-bereinigung still returns 200 with the normal success shape when the mail_log prune step fails, reporting the other sweeps that already completed', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { seedDefaults, setConfigValue } = await import('../../src/db/adminConfigRepo.js');
+
+  const dir = mkdtempSync(join(tmpdir(), 'pdf-bereinigung-maillog-fehler-test-'));
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  // A non-numeric mail_log_aufbewahrung_tage makes Number(...) yield NaN, which makes
+  // new Date(NaN).toISOString() throw a RangeError inside the mail_log prune block --
+  // a realistic misconfiguration (e.g. a corrupted admin_config row).
+  setConfigValue(db, 'mail_log_aufbewahrung_tage', 'not-a-number');
+
+  const config = { ...testConfig(), jobsDir: dir };
+  const app = createApp({ db, config });
+  const res = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, 'erfolg');
+  assert.equal(res.body.mailLogGeloescht, 0);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});

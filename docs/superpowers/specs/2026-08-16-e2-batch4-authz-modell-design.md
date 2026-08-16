@@ -97,6 +97,21 @@ in `kontenRepo.js`. Ihre tatsächliche Gruppenmitgliedschaft (falls vorhanden)
 wird weiterhin normal aufgelöst und gespeichert; sie werden nur nicht mehr
 allein deswegen deaktiviert, weil sie keiner der beiden Gruppen angehören.
 
+**Veränderte Widerrufs-Semantik (aus dem finalen Review):** da `upsertPerson`
+`aktiv` bedingungslos auf `1` setzt, hält SYNC-WIDEN-1 eine Konto-referenzierte
+Person nicht nur vor Deaktivierung geschützt, sondern reaktiviert sie sogar
+aktiv bei jedem Lauf. Zwei praktische Folgen, beide kein Sicherheitsproblem
+(Login verlangt weiterhin ein erfolgreiches ChurchTools-OAuth, und es gibt
+keine manuelle Deaktivierungs-UI, die dadurch stillschweigend überschrieben
+würde — `admin/personen.js` ist rein lesend), aber ein verändertes
+Betriebsverhalten: (1) eine Person aus Buchhaltung/Admin in ChurchTools zu
+entfernen deaktiviert sie nicht mehr automatisch, solange sie noch auf einem
+aktiven Konto referenziert ist — ein Admin muss zusätzlich das Konto
+anpassen; (2) eine in ChurchTools gelöschte Person, die noch auf einem
+aktiven Konto steht, bleibt jetzt dauerhaft `aktiv = 1` (mit
+`ct_person_unresolved = 1`), statt wie bisher innerhalb eines Tages
+deaktiviert zu werden.
+
 **Bewusst nicht gelöst:** eine Person, die **noch nie** eingeloggt war und
 **nicht** in Buchhaltung/Admin ist, kann heute (und auch nach diesem Fix)
 nicht direkt in einem neuen Konto als Freigeber ausgewählt werden — das

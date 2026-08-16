@@ -84,10 +84,10 @@ test('GET /auth/callback resolves group membership using the sync service token,
     .intercept({ path: '/oauth/userinfo', method: 'GET' })
     .reply(200, { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' });
   client
-    .intercept({ path: '/api/groups/10/members', method: 'GET', headers: { authorization: 'Bearer sync-service-token' } })
+    .intercept({ path: '/api/groups/10/members', method: 'GET', headers: { authorization: 'Login sync-service-token' } })
     .reply(200, { data: [{ personId: 7 }] });
   client
-    .intercept({ path: '/api/groups/20/members', method: 'GET', headers: { authorization: 'Bearer sync-service-token' } })
+    .intercept({ path: '/api/groups/20/members', method: 'GET', headers: { authorization: 'Login sync-service-token' } })
     .reply(200, { data: [] });
 
   const db = openDatabase(':memory:');

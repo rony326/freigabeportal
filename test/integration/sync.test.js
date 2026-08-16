@@ -12,11 +12,16 @@ const CT_CONFIG = {
 };
 
 test('runPersonenSync upserts current members and deactivates people no longer in any group', async () => {
+  // Headers are asserted here specifically (not on every sync test) to lock in the ChurchTools
+  // Login-Token scheme: "Authorization: Login <token>", not "Bearer <token>" — the two auth
+  // schemes are not interchangeable (a Bearer-scheme request against these endpoints 401s
+  // outright on the real instance), and this was silently broken until caught in production
+  // because no test asserted on the actual header value before.
   const client = setupMockChurchTools(CT_CONFIG.baseUrl);
-  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 7 }] });
-  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET', headers: { authorization: 'Login service-token' } }).reply(200, { data: [{ personId: 7 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET', headers: { authorization: 'Login service-token' } }).reply(200, { data: [] });
   client
-    .intercept({ path: '/api/persons/7', method: 'GET' })
+    .intercept({ path: '/api/persons/7', method: 'GET', headers: { authorization: 'Login service-token' } })
     .reply(200, { data: { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' } });
 
   const db = openDatabase(':memory:');

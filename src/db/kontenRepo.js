@@ -78,3 +78,17 @@ export function listKontenForPerson(db, personId) {
     .prepare('SELECT * FROM konten WHERE aktiv = 1 AND (freigeber1_id = ? OR stellvertreter1_id = ?) ORDER BY kontonummer')
     .all(personId, personId);
 }
+
+export function listKontoReferencedPersonIds(db) {
+  const rows = db
+    .prepare('SELECT freigeber1_id, stellvertreter1_id, freigeber2_id, stellvertreter2_id FROM konten WHERE aktiv = 1')
+    .all();
+  const ids = new Set();
+  for (const row of rows) {
+    ids.add(row.freigeber1_id);
+    ids.add(row.stellvertreter1_id);
+    ids.add(row.freigeber2_id);
+    ids.add(row.stellvertreter2_id);
+  }
+  return [...ids];
+}

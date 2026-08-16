@@ -18,6 +18,29 @@ function seedPersonen(db) {
   }
 }
 
+test('listKontoReferencedPersonIds returns every role across all active Konten, deduplicated', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  createKonto(db, { kontonummer: '3001', bezeichnung: 'Miete', freigeber1Id: '5', stellvertreter1Id: '2', freigeber2Id: '1', stellvertreter2Id: '3' });
+
+  const { listKontoReferencedPersonIds } = await import('../../src/db/kontenRepo.js');
+  const ids = listKontoReferencedPersonIds(db);
+  assert.deepEqual([...ids].sort(), ['1', '2', '3', '4', '5']);
+  db.close();
+});
+
+test('listKontoReferencedPersonIds ignores deactivated Konten', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  deactivateKonto(db, kontoId);
+
+  const { listKontoReferencedPersonIds } = await import('../../src/db/kontenRepo.js');
+  assert.deepEqual(listKontoReferencedPersonIds(db), []);
+  db.close();
+});
+
 test('createKonto inserts and getKontoById reads it back', () => {
   const db = openDatabase(':memory:');
   seedPersonen(db);

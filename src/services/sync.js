@@ -1,5 +1,6 @@
 import { fetchGroupMemberIds, fetchPersonById } from './churchtools.js';
 import { upsertPerson, getAllActivePersonIds, deactivatePerson, markUnresolved, personExists } from '../db/personenRepo.js';
+import { listKontoReferencedPersonIds } from '../db/kontenRepo.js';
 import { startSyncLog, finishSyncLog } from '../db/syncLogRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
@@ -14,6 +15,17 @@ export async function runPersonenSync(db, config, accessToken) {
         const groups = personIdToGroups.get(personId) ?? [];
         groups.push(String(groupId));
         personIdToGroups.set(personId, groups);
+      }
+    }
+    // SYNC-WIDEN-1: also keep every person currently referenced as an approver role on an
+    // active Konto, even if ChurchTools reports no Buchhaltung/Admin membership for them —
+    // otherwise AUTH-WIDEN-1's login widening would be silently undone by the very next sync
+    // run (a person who logs in once but belongs to neither group would get deactivated again
+    // within 24h). Their real group membership, if any, is unaffected — this only prevents
+    // deactivation for a reason that no longer applies to account-based approvers.
+    for (const personId of listKontoReferencedPersonIds(db)) {
+      if (!personIdToGroups.has(personId)) {
+        personIdToGroups.set(personId, []);
       }
     }
 

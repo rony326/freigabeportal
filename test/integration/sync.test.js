@@ -226,3 +226,49 @@ test('runPersonenSync respects admin_config-configured thresholds', async () => 
   assert.equal(result.abgebrochen, true);
   db.close();
 });
+
+test('runPersonenSync does not deactivate persons referenced as approvers on an active Konto, even with no group membership', async () => {
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  for (const id of [50, 51, 52, 53]) {
+    client.intercept({ path: `/api/persons/${id}`, method: 'GET' }).reply(200, { data: { id, firstName: `Person${id}`, lastName: 'Muster', email: `p${id}@example.org` } });
+  }
+
+  const db = openDatabase(':memory:');
+  for (const id of ['50', '51', '52', '53']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '50', stellvertreter1Id: '51', freigeber2Id: '52', stellvertreter2Id: '53' });
+
+  const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
+
+  assert.equal(result.deactivated, 0);
+  assert.equal(getPersonById(db, '50').aktiv, true);
+  assert.equal(getPersonById(db, '53').aktiv, true);
+  db.close();
+});
+
+test('runPersonenSync deactivates a person referenced only on a deactivated Konto when they have no group membership', async () => {
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 99 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/persons/99', method: 'GET' }).reply(200, { data: { id: 99, firstName: 'Bleibt', lastName: 'Aktiv', email: 'bleibt@example.org' } });
+
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '99', vorname: 'Bleibt', nachname: 'Aktiv', email: 'bleibt@example.org', gruppen: ['10'], loggedInNow: false });
+  for (const id of ['50', '51', '52', '53']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  const { createKonto, deactivateKonto } = await import('../../src/db/kontenRepo.js');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '50', stellvertreter1Id: '51', freigeber2Id: '52', stellvertreter2Id: '53' });
+  deactivateKonto(db, kontoId);
+
+  const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
+
+  assert.equal(result.deactivated, 4);
+  assert.equal(getPersonById(db, '50').aktiv, false);
+  assert.equal(getPersonById(db, '99').aktiv, true);
+  db.close();
+});

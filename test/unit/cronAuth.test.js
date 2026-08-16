@@ -24,3 +24,8 @@ test('requireCronSecret calls next with the correct secret', async () => {
   const res = await request(buildTestApp()).post('/protected').set('X-Cron-Secret', 'correct-secret');
   assert.equal(res.status, 200);
 });
+
+test('requireCronSecret returns 401 (not a crash) when the provided secret is a different length', async () => {
+  const res = await request(buildTestApp()).post('/protected').set('X-Cron-Secret', 'a-much-longer-secret-than-expected');
+  assert.equal(res.status, 401);
+});

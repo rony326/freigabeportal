@@ -24,3 +24,8 @@ test('requireApiKey calls next when the key matches', async () => {
   const res = await request(buildTestApp()).get('/protected').set('X-API-Key', 'correct-key');
   assert.equal(res.status, 200);
 });
+
+test('requireApiKey returns 401 (not a crash) when the provided key is a different length', async () => {
+  const res = await request(buildTestApp()).get('/protected').set('X-API-Key', 'a-much-longer-key-than-expected');
+  assert.equal(res.status, 401);
+});

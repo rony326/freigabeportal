@@ -1,0 +1,179 @@
+# Sub-Phase E2, Batch 4 – Autorisierungsmodell-Entscheidung — Design
+
+## Kontext & Phasenplan
+
+Dies ist der vierte und letzte Teil der Sub-Phase E2 (Security-Review-Pass),
+nach Batch 1 (gebündelte Einzelfixes, gemerged), Batch 2 (PDF-Bereinigung,
+gemerged) und Batch 3 (ChurchTools-Sync-Robustheit, gemerged). Nach diesem
+Batch geht Phase E in E3 über (Infomaniak-Deployment).
+
+- **AUTHZ-3** (Audit-Finding, Important): `/kontierung`, `/freigabe2` und
+  `/abgelehnt` sind alle an ChurchTools-Gruppenmitgliedschaft
+  ("Buchhaltung", inzwischen für die ersten beiden auch "Portal-Admin")
+  gekoppelt. Freigeber 1/2 und ihre Stellvertreter sind aber
+  account-basierte Rollen — das Konto-Formular im Admin-Bereich befüllt die
+  vier Personen-Dropdowns aus jeder aktiven Person, unabhängig von deren
+  Gruppenzugehörigkeit. Ein Admin kann gültig eine Person zuweisen, die
+  nicht in Buchhaltung ist; diese Person bekommt dann einen dauerhaften 403
+  und wird vom nächtlichen Sync irgendwann sogar ganz deaktiviert (da sie in
+  keiner der beiden relevanten Gruppen steckt). Die Rechnung wird
+  dauerhaft nicht freigebbar, ohne Admin-Weg, das zu beheben.
+- Während der Analyse dieses Batches wurde ein direkt verwandter, bisher
+  unentdeckter Bug in `/abgelehnt` gefunden: SYNC-8s Eskalations-Flag
+  (`freigabe1_eskaliert_an_admin`, aus Batch 3) wurde in `kontierung.js` und
+  `freigabe2.js` berücksichtigt, aber nie in `ablehnung.js` — dem dritten der
+  drei in AUTHZ-3 genannten Routen. Dieser Batch schliesst beide Lücken in
+  einem Zug, weil sie dieselben drei Routen betreffen und derselbe
+  Autorisierungs-Umbau beide Fixes trägt.
+
+## AUTHZ-3 — Gruppen-Gate entfernen
+
+Die Entscheidung (siehe Audit-Text): entweder das Gruppen-Gate auf diesen
+drei Mounts fallen lassen und sich auf die bereits vorhandenen joblokalen
+Zuweisungsprüfungen verlassen, oder beim Konto-Speichern hart validieren,
+dass alle vier zugewiesenen Personen Buchhaltungsmitglieder sind. Dieser
+Batch wählt die erste Option — sie passt zum Lastenheft-Modell
+account-basierter Freigeber (Abschnitt 3: `freigeber1_id`, `freigeber2_id`,
+`stellvertreter1_id`, `stellvertreter2_id` sind Personen-IDs, keine
+Gruppenmitgliedschaften) und ist die vom Audit selbst empfohlene Richtung.
+
+`src/middleware/roles.js` erhält eine neue Funktion `requireLogin()`: prüft
+ausschliesslich "Session vorhanden und Person aktiv" (identischer erster
+Block wie in `requireRole`/`requireAnyRole`, aber ohne den anschliessenden
+Gruppen-Check). `src/app.js`s Mounts für `/kontierung`, `/freigabe2` und
+`/abgelehnt` wechseln von `requireAnyRole(config, [...])` bzw.
+`requireRole(config, 'buchhaltung')` auf `requireLogin()`.
+
+Die joblokalen Prüfungen (`loadAuthorizedJob` in `kontierung.js`/
+`ablehnung.js`, `loadAuthorized` in `freigabe2.js`) ändern sich inhaltlich
+nicht — sie haben nie auf das Gruppen-Gate zurückgegriffen, sondern immer
+exakt auf `job.zugewiesen_an`/die effektive Freigeber-2-ID (bzw. das
+Admin-Eskalations-Flag) verglichen. Das Entfernen des Mount-Gates ändert
+nur, wer überhaupt bis zu dieser Prüfung vordringt — nicht, was sie
+entscheidet.
+
+`/pool` und `/api/pool` bleiben unverändert bei
+`requireAnyRole(config, ['buchhaltung', 'portal-admin'])` bzw.
+`requireRole(config, 'buchhaltung')` — das Lastenheft verlangt explizit
+(Abschnitt 4, Schritt 4), dass der offene Pool nur für
+Buchhaltungsmitglieder sichtbar ist. Das ist ein Browse-viele-Zugriff auf
+eine geteilte Warteschlange, kein Handle-einen-zugewiesenen-Job-Zugriff —
+strukturell ein anderer Fall, den AUTHZ-3 nicht meint.
+
+## Verwandter Fund — `/abgelehnt` kennt das Eskalations-Flag nicht
+
+Drei koordinierte Fixes, alle nach bereits in Batch 3 etablierten Mustern:
+
+**1. `ablehnung.js`s `loadAuthorizedJob` wird flag-bewusst.** Bekommt
+dieselbe `isPortalAdmin(person)`-Hilfsfunktion wie `kontierung.js` und
+`freigabe2.js` (Konstruktion identisch: prüft
+`config.churchtools.groupIdAdmin`-Mitgliedschaft). Die Autorisierung wird zur
+selben Ternary-Form:
+
+```javascript
+const authorized = job.freigabe1_eskaliert_an_admin
+  ? isPortalAdmin(req.currentPerson)
+  : job.zugewiesen_an === req.currentPerson.churchtools_person_id;
+```
+
+`createAblehnungRouter` nimmt neu `{ db, config }` statt nur `{ db }` entgegen
+(analog zu `createKontierungRouter`); der Aufruf in `app.js` wird entsprechend
+angepasst.
+
+Nur `freigabe1_eskaliert_an_admin` ist hier relevant, nicht
+`freigabe2_eskaliert_an_admin` — wer die Rechnung kontiert/überarbeitet, wird
+beim Eintritt in Kontierung/Freigabe 1 festgelegt, nicht bei Freigabe 2.
+
+**2. `ablehnung.js`s `POST /:id/ueberarbeiten` behebt denselben Bug wie
+Batch 3s Task 7.** Der bestehende Aufruf
+`wiederOeffnenJob(db, job.id, req.currentPerson.churchtools_person_id)`
+würde für einen über das Flag autorisierten Admin niemals treffen — dessen
+eigene ID stimmt nie mit `job.zugewiesen_an` überein (das bleibt die ID der
+ursprünglich zugewiesenen, jetzt ausgeschlossenen Person).
+`wiederOeffnenJob`s WHERE-Klausel (`WHERE id = ? AND zugewiesen_an = ? AND
+status = 'abgelehnt'`) würde daher für den Admin still ins Leere laufen und
+den bestehenden 409-Pfad ("wurde inzwischen bereits von einem anderen
+Vorgang bearbeitet") fälschlich auslösen. Fix: `job.zugewiesen_an` statt
+`req.currentPerson.churchtools_person_id` übergeben — identisch zur bereits
+gemergten Korrektur in `kontierung.js`s `zurueck-in-pool`-Route, aus
+demselben Grund.
+
+**3. Die Ablehnungs-Benachrichtigung und die eigene Jobliste route(t)n
+korrekt.** `freigabe2.js`s Ablehnungs-Mailversand (aktuell: E-Mail immer an
+`getPersonById(db, job.zugewiesen_an)`) verzweigt:
+
+```javascript
+if (job.freigabe1_eskaliert_an_admin) {
+  const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
+  for (const email of empfaenger) {
+    await sendNotification(db, mailer, {
+      to: email,
+      subject: 'Freigabeportal: Rechnung abgelehnt (an Portal-Admin eskaliert)',
+      text: `Eine an die Portal-Admin-Gruppe eskalierte Rechnung wurde abgelehnt: ${job.dateiname}\n\nGrund: ${begruendung}\n\nBitte im Freigabeportal anmelden, um sie zu überarbeiten: ${config.publicBaseUrl}/abgelehnt/${job.id}`,
+      typ: 'ablehnung',
+      jobId: job.id,
+    });
+  }
+} else {
+  const besitzer = getPersonById(db, job.zugewiesen_an);
+  if (besitzer) {
+    await sendNotification(db, mailer, { /* unverändert */ });
+  }
+}
+```
+
+Direkter Link zu `/abgelehnt/<id>` statt generischem `/pool` — gleiches
+Muster wie Batch 3s Critical-Fix für die anderen beiden Eskalations-Mails.
+
+`jobsRepo.js`s `listAbgelehntJobsForPerson` bekommt den Filter
+`AND freigabe1_eskaliert_an_admin = 0` (gleiches Muster wie
+`listZugewiesenJobsForPerson`/`listFreigabe2JobsForPerson` aus Batch 3s
+Fix-Welle) — die ausgeschlossene Person sieht den Job dann auch auf der
+eigenen Pool-Seite nicht mehr unter "meine abgelehnten Rechnungen".
+
+Wie in Batch 3 bleibt volle `/pool`-Listen-Integration für Admins (ein
+Admin entdeckt einen eskalierten, abgelehnten Job nur über die E-Mail, nicht
+über eine eigene Liste im Portal) bewusst ausserhalb des Scopes — konsistent
+mit der dort bereits getroffenen Abgrenzung.
+
+## Datenmodell
+
+Keine Schemaänderungen. Keine neuen `admin_config`-Schlüssel. Rein
+strukturelle Änderungen an Middleware-Verkabelung und Routen-Logik.
+
+## Tests
+
+- **Unit**: `requireLogin()` (lässt aktive Session durch, blockiert fehlende
+  Session und inaktive Person, unabhängig von Gruppenmitgliedschaft);
+  `listAbgelehntJobsForPerson`s neuer Flag-Filter.
+- **Integration**: `/kontierung`, `/freigabe2`, `/abgelehnt` bleiben für eine
+  Person ohne jede Gruppenmitgliedschaft erreichbar, solange die joblokale
+  Prüfung zutrifft (ersetzt/ergänzt die bisherigen rollenbasierten Zugriffs-
+  Tests in `kontierung.test.js`/`freigabe2.test.js`/`ablehnung.test.js`);
+  eine fremde Person (weder zugewiesen noch Portal-Admin) bleibt weiterhin
+  mit 403 abgewiesen; `/abgelehnt` mit gesetztem
+  `freigabe1_eskaliert_an_admin`-Flag: die ausgeschlossene Person bekommt
+  403, ein Portal-Admin (unabhängig von Buchhaltungs-Mitgliedschaft) kann
+  den Job sehen und über `/ueberarbeiten` erfolgreich wieder öffnen; die
+  Ablehnungs-Mail geht bei gesetztem Flag an die Admin-Gruppe mit Link zu
+  `/abgelehnt/<id>`, sonst unverändert an den Besitzer.
+- **Ende-zu-Ende**: ein durchgängiges Szenario über echte Routen: Anlage →
+  Zuweisung → Freigabe-1-Eskalation an Admin (Batch 3s Mechanismus) → Admin
+  kontiert und gibt frei → Freigabe 2 lehnt ab → Admin (nicht die
+  ursprünglich zugewiesene, ausgeschlossene Person) erhält die
+  Ablehnungs-Mail, sieht den Job unter `/abgelehnt/<id>` und öffnet ihn
+  erfolgreich zur Überarbeitung wieder.
+
+## Nicht Teil von diesem Batch
+
+Keine Validierung beim Konto-Speichern, dass zugewiesene Personen
+Buchhaltungsmitglieder sind (das ist die verworfene Alternative zu AUTHZ-3s
+gewählter Lösung). Keine volle `/pool`-Listen-Integration für admin-
+eskalierte, abgelehnte Jobs (E-Mail-Link bleibt der einzige Entdeckungsweg,
+wie in Batch 3 für die anderen beiden Eskalationsstufen entschieden). Keine
+Änderung an `freigabe2_eskaliert_an_admin`s Verhalten — dieser Batch betrifft
+ausschliesslich die Kontierungs-/Freigabe-1-Eskalation, weil nur diese die
+"wer überarbeitet einen abgelehnten Job"-Frage berührt. AUTHZ-4 (Audit-Minor,
+`wiederOeffnenJob`s Rückgabewert wurde verworfen) ist bereits vor diesem
+Batch behoben (`ablehnung.js` prüft den Rückgabewert bereits und rendert bei
+`false` einen 409) — keine weitere Arbeit nötig.

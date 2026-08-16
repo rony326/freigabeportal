@@ -100,7 +100,10 @@ Redirect-nach-Aktion-Fall — "Erneut gesendet." statt "Gespeichert.").
 
 ## View-Behandlung
 
-Alle 11 Views + `_header.ejs` bekommen Bootstrap-Klassen und leichte
+Alle 16 Views mit eigenem `<head>` (`home.ejs`, `pool.ejs`, `kontierung.ejs`,
+`freigabe2.ejs`, `abgelehnt.ejs`, `error.ejs`, `admin/dashboard.ejs` sowie die
+9 bestehenden `admin/*-liste.ejs`/`admin/*-form.ejs`/`admin/mails.ejs`/
+`admin/sync.ejs`) + `_header.ejs` bekommen Bootstrap-Klassen und leichte
 Markup-Anpassungen (Grid/Utility-Klassen statt `<br>`-basiertem Abstand,
 `.table`, `.form-control`/`.form-check`, `.btn`/`.btn-primary`/`.btn-outline-*`,
 `.alert`, `.card` für die Split-View-Panels in `kontierung.ejs`/`freigabe2.ejs`).
@@ -109,6 +112,46 @@ bestehende IDs/Datenattribute, die von Inline-`<script>`-Blöcken referenziert
 werden (`#preview-dialog`, `.beanspruchen-btn`, `.thumbnail-preview` usw.),
 bleiben unverändert, damit die vorhandene Client-Logik ohne Anpassung
 weiterläuft.
+
+## Responsive Design
+
+Das Portal wird voraussichtlich auch auf Mobilgeräten genutzt (Nutzerwunsch).
+Bootstraps Grid/Utility-Klassen sind von Haus aus responsiv, greifen auf
+Mobilgeräten aber nicht, solange kein Viewport-Meta-Tag gesetzt ist — aktuell
+hat **keine** der 16 Views einen `<meta name="viewport">`-Tag (geprüft), der
+Browser rendert also bislang die Desktop-Breite verkleinert statt tatsächlich
+umzubrechen. Jede der 16 `<head>`-Blöcke bekommt daher zusätzlich zu den
+Bootstrap-Assets:
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1">
+```
+
+Darauf aufbauend, konkret pro Bereich:
+
+- **Tabellen** (`pool.ejs`, `admin/*-liste.ejs`, `admin/mails.ejs`,
+  `admin/sync.ejs`): jede `.table` bekommt einen umschliessenden
+  `<div class="table-responsive">`, sodass breite Tabellen auf schmalen
+  Bildschirmen horizontal scrollen statt das Layout zu sprengen.
+- **Formulare** (alle `admin/*-form.ejs`, `kontierung.ejs`, `freigabe2.ejs`):
+  Bootstraps Grid (`.row`/`.col-*`) mit Breakpoint-Klassen, z. B. zwei Spalten
+  nebeneinander ab `md` (`.col-md-6`), untereinander darunter (Default:
+  `.col-12`) — kein festes Nebeneinander, das auf Mobilgeräten zu schmal wird.
+- **Split-View-Panels** (`kontierung.ejs`/`freigabe2.ejs`, aktuell PDF-Vorschau
+  neben Formular): Bootstrap-Grid, das ab `lg` nebeneinander steht
+  (`.col-lg-6`) und darunter stapelt (`.col-12`) — auf einem Telefon ist eine
+  PDF-Vorschau neben einem Formular ohnehin nicht sinnvoll bedienbar, das
+  Stapeln ist hier die bessere Lösung, nicht nur die einfachere.
+- **Nav-Tabs** (`_header.ejs`): Bootstraps `nav-tabs` bricht bei sehr schmalen
+  Viewports selbst nicht um; da es hier nur bis zu zwei Einträge sind
+  (Aufgaben, Admin), reicht das ohne zusätzliche Collapse-Logik (kein
+  Hamburger-Menü nötig — wäre für zwei Einträge unverhältnismässig).
+- **Admin-Dashboard-Kacheln** (`admin/dashboard.ejs`): Bootstrap-Grid, mehrere
+  Kacheln pro Zeile ab `md` (`.col-md-4` o. ä.), eine pro Zeile darunter.
+
+Kein separates Mobile-Stylesheet, keine JS-basierte Breakpoint-Logik —
+ausschliesslich Bootstraps mitgelieferte responsive Klassen plus der fehlende
+Viewport-Tag.
 
 ## Tests
 
@@ -124,11 +167,16 @@ weiterläuft.
   Route, der auf `?gespeichert=1` im Redirect-Ziel prüft, plus ein Test, dass
   ein fehlgeschlagenes Speichern (400, Validierungsfehler) diesen Marker
   **nicht** setzt.
+  Responsive: ein Test pro View, der prüft, dass der gerenderte `<head>`
+  das Viewport-Meta-Tag enthält (verhindert eine stille Regression, falls
+  eine View künftig ohne `_header`/gemeinsame Head-Partial neu geschrieben
+  wird).
 - **Manuell/visuell**: da dies eine reine Darstellungsänderung ist, die von
   der bestehenden Testsuite nicht sinnvoll auf "sieht gut aus" geprüft werden
   kann, wird nach Abschluss jeder Implementierungs-Aufgabe eine kurze
-  Sichtprüfung im Browser (Light + Dark) empfohlen, bevor der finale
-  Review läuft.
+  Sichtprüfung im Browser empfohlen (Light + Dark, sowie mind. einmal in einer
+  schmalen/mobilen Fensterbreite via Browser-Devtools-Emulation), bevor der
+  finale Review läuft.
 
 ## Nicht Teil dieser Phase
 

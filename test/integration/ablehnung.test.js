@@ -25,7 +25,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use(loadCurrentPerson(db));
-  app.use('/abgelehnt', requireLogin(), createAblehnungRouter({ db }));
+  app.use('/abgelehnt', requireLogin(), createAblehnungRouter({ db, config }));
   return app;
 }
 
@@ -157,5 +157,51 @@ test('GET /abgelehnt/:id returns 401 without a session', async () => {
   const app = buildTestApp(db);
   const res = await request(app).get(`/abgelehnt/${id}`);
   assert.equal(res.status, 401);
+  db.close();
+});
+
+async function seedAbgelehntJobMitAdminEskalation(db) {
+  for (const id of ['1', '2', '3']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  upsertPerson(db, { id: '4', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '2' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(id);
+  const { eskalierenFreigabe1AnAdmin } = await import('../../src/db/jobsRepo.js');
+  eskalierenFreigabe1AnAdmin(db, id, { eskaliertVon: '2', grund: 'Auch befangen' });
+  ablehnenJob(db, id, { abgelehntVon: '3', grund: 'Falsches Konto gewählt' });
+  return { id, kontoId };
+}
+
+test('GET /abgelehnt/:id returns 403 for the originally-assigned person once freigabe1_eskaliert_an_admin is set', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedAbgelehntJobMitAdminEskalation(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/abgelehnt/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 403);
+  db.close();
+});
+
+test('GET /abgelehnt/:id grants access to a Portal-Admin once freigabe1_eskaliert_an_admin is set, even though they are not zugewiesen_an', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedAbgelehntJobMitAdminEskalation(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/abgelehnt/${id}`).set('x-test-person-id', '4');
+  assert.equal(res.status, 200);
+  db.close();
+});
+
+test('POST /abgelehnt/:id/ueberarbeiten reopens the job for a Portal-Admin acting via freigabe1_eskaliert_an_admin', async () => {
+  const db = openDatabase(':memory:');
+  const { id, kontoId } = await seedAbgelehntJobMitAdminEskalation(db);
+  const app = buildTestApp(db);
+  const res = await request(app).post(`/abgelehnt/${id}/ueberarbeiten`).set('x-test-person-id', '4');
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, `/kontierung/${id}`);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.konto_id, kontoId);
   db.close();
 });

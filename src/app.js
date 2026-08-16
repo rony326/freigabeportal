@@ -107,7 +107,7 @@ export function createApp({ db, config }) {
   app.use('/downloads', publicLimiter, createDownloadsRouter({ db, config }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer }));
   app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer }));
-  app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db }));
+  app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config }));
 
   app.use('/auth', publicLimiter, createAuthRouter({ db, config }));
   app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));

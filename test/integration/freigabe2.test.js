@@ -105,6 +105,21 @@ async function seedFreigabe2Job(db, { pdfPfad }) {
   return { id, kontoId };
 }
 
+async function seedFreigabe2JobMitAdminEskalation(db, { pdfPfad }) {
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  upsertPerson(db, { id: '5', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  setKontierung(db, id, kontoId);
+  createFreigabe(db, { jobId: id, personId: '2', rolle: 'freigeber1', zeitpunkt: '2026-08-15T08:30:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: '1' });
+  const { eskalierenFreigabe1AnAdmin } = await import('../../src/db/jobsRepo.js');
+  eskalierenFreigabe1AnAdmin(db, id, { eskaliertVon: '2', grund: 'Auch befangen' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '2' WHERE id = ?").run(id);
+  return { id, kontoId };
+}
+
 test('GET /freigabe2/:id is reachable for the effective freigeber2 with no group membership at all', async () => {
   const db = openDatabase(':memory:');
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
@@ -137,6 +152,23 @@ test('GET and POST /freigabe2/:id reject the person who already approved Freigab
 
   const job = getJobById(db, id);
   assert.equal(job.status, 'freigabe2', 'the job must not have been approved by the same person twice');
+  db.close();
+});
+
+test('POST /freigabe2/:id ablehnen sends the rejection email to the admin group with a direct /abgelehnt link when freigabe1_eskaliert_an_admin is set', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2JobMitAdminEskalation(db, { pdfPfad: '/tmp/a.pdf' });
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, { mailer });
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: 'Falsches Konto' });
+  assert.equal(res.status, 302);
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'admin@example.org');
+  assert.match(mailer.sent[0].text, new RegExp(`/abgelehnt/${id}`));
   db.close();
 });
 

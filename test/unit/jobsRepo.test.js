@@ -610,6 +610,22 @@ test('listAbgelehntJobsForPerson returns only abgelehnt jobs assigned to that pe
   db.close();
 });
 
+test('listAbgelehntJobsForPerson excludes a job that has been admin-escalated past this person', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  eskalierenFreigabe1AnAdmin(db, jobId, { eskaliertVon: '2', grund: 'Auch befangen' });
+  ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'Falsches Konto' });
+
+  // zugewiesen_an still equals '1', but the job was escalated to Portal-Admin before it ever
+  // reached Freigabe 2 — it must not show up in the excluded original assignee's own listing.
+  assert.equal(listAbgelehntJobsForPerson(db, '1').length, 0);
+  db.close();
+});
+
 test('abschliessenFreigabe1 leaves freigabe1_eskaliert_an_admin set when it was already 1 (the exclusion survives Freigabe 1 completing)', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);

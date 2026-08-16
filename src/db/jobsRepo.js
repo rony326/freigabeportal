@@ -251,7 +251,11 @@ export function wiederOeffnenJob(db, jobId, personId) {
 }
 
 export function listAbgelehntJobsForPerson(db, personId) {
-  return db.prepare("SELECT * FROM jobs WHERE status = 'abgelehnt' AND zugewiesen_an = ? ORDER BY eingang_am").all(personId);
+  return db
+    .prepare(
+      "SELECT * FROM jobs WHERE status = 'abgelehnt' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 ORDER BY eingang_am"
+    )
+    .all(personId);
 }
 
 export function listPoolJobsForReminder(db, stunden) {

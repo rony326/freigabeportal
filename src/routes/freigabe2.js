@@ -164,15 +164,28 @@ export function createFreigabe2Router({ db, config, mailer }) {
           db.exec('ROLLBACK');
           throw err;
         }
-        const besitzer = getPersonById(db, job.zugewiesen_an);
-        if (besitzer) {
-          await sendNotification(db, mailer, {
-            to: besitzer.email,
-            subject: 'Freigabeportal: Rechnung abgelehnt',
-            text: `Deine Rechnung wurde abgelehnt: ${job.dateiname}\n\nGrund: ${begruendung}\n\nBitte im Freigabeportal anmelden, um sie zu überarbeiten: ${config.publicBaseUrl}/pool`,
-            typ: 'ablehnung',
-            jobId: job.id,
-          });
+        if (job.freigabe1_eskaliert_an_admin) {
+          const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
+          for (const email of empfaenger) {
+            await sendNotification(db, mailer, {
+              to: email,
+              subject: 'Freigabeportal: Rechnung abgelehnt (an Portal-Admin eskaliert)',
+              text: `Eine an die Portal-Admin-Gruppe eskalierte Rechnung wurde abgelehnt: ${job.dateiname}\n\nGrund: ${begruendung}\n\nBitte im Freigabeportal anmelden, um sie zu überarbeiten: ${config.publicBaseUrl}/abgelehnt/${job.id}`,
+              typ: 'ablehnung',
+              jobId: job.id,
+            });
+          }
+        } else {
+          const besitzer = getPersonById(db, job.zugewiesen_an);
+          if (besitzer) {
+            await sendNotification(db, mailer, {
+              to: besitzer.email,
+              subject: 'Freigabeportal: Rechnung abgelehnt',
+              text: `Deine Rechnung wurde abgelehnt: ${job.dateiname}\n\nGrund: ${begruendung}\n\nBitte im Freigabeportal anmelden, um sie zu überarbeiten: ${config.publicBaseUrl}/pool`,
+              typ: 'ablehnung',
+              jobId: job.id,
+            });
+          }
         }
         return res.redirect('/pool');
       }

@@ -1,17 +1,28 @@
 import { Router } from 'express';
-import { getJobById, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, releaseJob, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
+import { getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe1AnAdmin, abschliessenFreigabe1, releaseJob, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
 import { listKontenForPerson } from '../db/kontenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
-import { sendNotification } from '../services/notify.js';
+import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
 
 export function createKontierungRouter({ db, config, mailer }) {
   const router = Router();
 
+  function isPortalAdmin(person) {
+    return Boolean(person && person.gruppen.includes(String(config.churchtools.groupIdAdmin)));
+  }
+
   function loadAuthorizedJob(req, res) {
     const job = getJobById(db, Number(req.params.id));
-    if (!job || job.zugewiesen_an !== req.currentPerson.churchtools_person_id || job.status !== 'zugewiesen') {
+    if (!job || job.status !== 'zugewiesen') {
+      res.status(403).render('error', { message: 'Dieser Job ist dir aktuell nicht zur Kontierung zugewiesen.' });
+      return null;
+    }
+    const authorized = job.freigabe1_eskaliert_an_admin
+      ? isPortalAdmin(req.currentPerson)
+      : job.zugewiesen_an === req.currentPerson.churchtools_person_id;
+    if (!authorized) {
       res.status(403).render('error', { message: 'Dieser Job ist dir aktuell nicht zur Kontierung zugewiesen.' });
       return null;
     }
@@ -47,12 +58,6 @@ export function createKontierungRouter({ db, config, mailer }) {
       if (hatKonflikt && !begruendung) {
         errors.push('Bei einem Interessenskonflikt ist eine Begründung Pflicht.');
       }
-      if (hatKonflikt && job.freigabe1_eskaliert_von) {
-        errors.push('Diese Aufgabe wurde bereits eskaliert und kann nicht erneut eskaliert werden. Bitte lege sie zurück in den Pool oder wende dich an den Portal-Admin.');
-      }
-      if (hatKonflikt && konto && konto.stellvertreter1_id === req.currentPerson.churchtools_person_id) {
-        errors.push('Du bist bereits die Stellvertretung für dieses Konto und kannst nicht an dich selbst eskalieren. Bitte lege den Job zurück in den Pool oder wende dich an den Portal-Admin.');
-      }
 
       if (errors.length > 0) {
         return res.status(400).render('kontierung', {
@@ -64,10 +69,20 @@ export function createKontierungRouter({ db, config, mailer }) {
         });
       }
 
+      // SYNC-8: a conflict-driven escalation has no distinct named person to hand off to in two
+      // cases — this job was already escalated once (so the only person who could even reach
+      // this line, per loadAuthorizedJob, is the previously-escalated Stellvertreter1, and they
+      // ALSO have a conflict), or the chosen Konto's stellvertreter1 IS the current person
+      // (escalating would target themselves). Both route to the Portal-Admin group instead of
+      // blocking with the old "go back to pool / contact admin" dead end.
+      const eskaliertAnAdmin = hatKonflikt && Boolean(job.freigabe1_eskaliert_von || konto.stellvertreter1_id === req.currentPerson.churchtools_person_id);
+
       db.exec('BEGIN');
       try {
         setKontierung(db, job.id, konto.id);
-        if (hatKonflikt) {
+        if (eskaliertAnAdmin) {
+          eskalierenFreigabe1AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+        } else if (hatKonflikt) {
           eskalierenFreigabe1(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung, stellvertreterId: konto.stellvertreter1_id });
         } else {
           createFreigabe(db, {
@@ -88,7 +103,18 @@ export function createKontierungRouter({ db, config, mailer }) {
         throw err;
       }
 
-      if (hatKonflikt) {
+      if (eskaliertAnAdmin) {
+        const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
+        for (const email of empfaenger) {
+          await sendNotification(db, mailer, {
+            to: email,
+            subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 1 – an Portal-Admin eskaliert',
+            text: `Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
+            typ: 'zuweisung',
+            jobId: job.id,
+          });
+        }
+      } else if (hatKonflikt) {
         const stellvertreter1 = getPersonById(db, konto.stellvertreter1_id);
         if (stellvertreter1) {
           await sendNotification(db, mailer, {

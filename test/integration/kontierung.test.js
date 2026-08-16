@@ -9,10 +9,56 @@ import { createJob, claimJob, getJobById, eskalierenFreigabe1, eskalierenFreigab
 import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
+import { createApp } from '../../src/app.js';
+import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 
 function createStubMailer() {
   const sent = [];
   return { sent, async sendMail(mail) { sent.push(mail); } };
+}
+
+// Full-app helpers (matching freigabeWorkflowEndToEnd.test.js conventions) — used by the SYNC-8
+// tests below, which need the real /auth login flow so a Portal-Admin (not necessarily in
+// Buchhaltung) can reach the route via requireAnyRole at the HTTP gate.
+// Deliberately omits publicBaseUrl: app.js derives the session cookie's Secure flag from it, and
+// express-session refuses to ever send Set-Cookie for a Secure cookie over the plain-HTTP
+// requests supertest makes, which would break the /auth/login + /auth/callback flow entirely.
+function testConfig() {
+  return {
+    sessionSecret: 'test-secret',
+    env: 'test',
+    churchtools: {
+      baseUrl: 'https://ct.example.org',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      redirectUri: 'https://portal.example.org/auth/callback',
+      groupIdBuchhaltung: '10',
+      groupIdAdmin: '20',
+      syncServiceToken: 'token',
+    },
+    cronSecret: 'cron-secret',
+    n8nApiKey: 'n8n-key',
+    smtp: { host: 'smtp.example.org', port: 587, user: 'user', pass: 'pass', from: 'portal@example.org' },
+    downloadSigningSecret: 'download-secret',
+  };
+}
+
+async function loginAs(app, client, { id, vorname, nachname, email, gruppen }) {
+  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: `tok-${id}` });
+  client.intercept({ path: '/api/whoami', method: 'GET' }).reply(200, { data: { id, firstName: vorname, lastName: nachname, email } });
+  client
+    .intercept({ path: '/api/groups/10/members', method: 'GET' })
+    .reply(200, { data: gruppen.includes('10') ? [{ personId: id }] : [] });
+  client
+    .intercept({ path: '/api/groups/20/members', method: 'GET' })
+    .reply(200, { data: gruppen.includes('20') ? [{ personId: id }] : [] });
+
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  const callbackRes = await agent.get('/auth/callback').query({ code: `code-${id}`, state });
+  assert.equal(callbackRes.status, 302, `login for person ${id} should succeed`);
+  return agent;
 }
 
 function buildTestApp(db, mailer) {
@@ -144,7 +190,7 @@ test('POST /kontierung/:id with a conflict reassigns to stellvertreter1, creates
   db.close();
 });
 
-test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring another conflict is rejected, not re-escalated to self', async () => {
+test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring another conflict now escalates to Portal-Admin instead of being rejected', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -158,14 +204,14 @@ test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring a
     .type('form')
     .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Zweiter Konflikt' });
 
-  assert.equal(res.status, 400);
+  assert.equal(res.status, 302);
   const job = getJobById(db, id);
-  assert.equal(job.freigabe1_eskaliert_von, '1');
+  assert.equal(job.freigabe1_eskaliert_an_admin, 1);
   assert.equal(job.status, 'zugewiesen');
   db.close();
 });
 
-test('POST /kontierung/:id declaring a conflict while already being the Konto\'s own Stellvertretung is rejected, not self-reassigned', async () => {
+test('POST /kontierung/:id declaring a conflict while already being the Konto\'s own Stellvertretung now escalates to Portal-Admin instead of self-reassigning', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2'
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -180,9 +226,10 @@ test('POST /kontierung/:id declaring a conflict while already being the Konto\'s
     .type('form')
     .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Befangen' });
 
-  assert.equal(res.status, 400);
+  assert.equal(res.status, 302);
   const job = getJobById(db, id);
-  assert.equal(job.zugewiesen_an, '2', 'must not silently self-reassign the Stellvertretung to themselves');
+  assert.equal(job.freigabe1_eskaliert_an_admin, 1);
+  assert.equal(job.zugewiesen_an, '2', 'must not silently self-reassign the Stellvertretung to themselves; zugewiesen_an is left untouched by the admin-escalation write');
   db.close();
 });
 
@@ -335,5 +382,121 @@ test('POST /kontierung/:id after a Freigabe-2 conflict + rejection + rework emai
   assert.equal(res.status, 302);
   assert.equal(mailer.sent.length, 1);
   assert.equal(mailer.sent[0].to, 'p4@example.org', 'must notify the effective stellvertreter2, not the original recused freigeber2');
+  db.close();
+});
+
+test('a Stellvertreter1 who is escalated to and ALSO has a conflict escalates to Portal-Admin instead of being blocked', async () => {
+  // Setup: freigeber1 (person 1) claims a job, picks a konto, declares a conflict -> escalates
+  // to stellvertreter1 (person 2). Then person 2 logs in, sees the same job, ALSO declares a
+  // conflict -> should now escalate to admin instead of hitting the old dead-end block.
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  const db = openDatabase(':memory:');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+
+  upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
+
+  const app = createApp({ db, config });
+  const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.' });
+  assert.equal(getJobById(db, jobId).zugewiesen_an, '2');
+
+  const stellvertreter1Agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  const res = await stellvertreter1Agent
+    .post(`/kontierung/${jobId}`)
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin auch befangen.' });
+
+  assert.equal(res.status, 302, 'the second escalation should succeed, not render the form with an error');
+  const job = getJobById(db, jobId);
+  assert.equal(job.freigabe1_eskaliert_an_admin, 1);
+  assert.equal(job.status, 'zugewiesen');
+
+  const adminMails = listMailLog(db).filter((m) => m.typ === 'zuweisung' && m.empfaenger === 'admin@example.org');
+  assert.equal(adminMails.length, 1);
+
+  // The (now-excluded) Stellvertreter1 can no longer act on this job...
+  const blockedAgent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  const blockedRes = await blockedAgent.get(`/kontierung/${jobId}`);
+  assert.equal(blockedRes.status, 403);
+
+  // ...but an admin can.
+  const adminAgent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'] });
+  const adminRes = await adminAgent.get(`/kontierung/${jobId}`);
+  assert.equal(adminRes.status, 200);
+  db.close();
+});
+
+test('a plain second escalation attempt with no conflict is still blocked with the original message', async () => {
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  const db = openDatabase(':memory:');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { createJob } = await import('../../src/db/jobsRepo.js');
+
+  upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
+
+  const app = createApp({ db, config });
+  const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.' });
+
+  const stellvertreter1Agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  // No conflict this time, just an ordinary attempt to escalate again (e.g. a stray double
+  // form submit) — still needs handling. This drives the branch that used to always error;
+  // now it goes through the normal non-conflict completion path since hatKonflikt is false.
+  const res = await stellvertreter1Agent
+    .post(`/kontierung/${jobId}`)
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res.status, 302);
+  db.close();
+});
+
+test('a person who picks a Konto where they are themselves the stellvertreter1 and declares a conflict escalates straight to admin', async () => {
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  const db = openDatabase(':memory:');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+
+  upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
+  // Person 2 is stellvertreter1 for THIS konto, but claims the job directly (listKontenForPerson
+  // includes konten where they're stellvertreter1 too).
+  upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2' WHERE id = ?").run(jobId);
+
+  const app = createApp({ db, config });
+  const agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  const res = await agent
+    .post(`/kontierung/${jobId}`)
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+
+  assert.equal(res.status, 302, 'this is a first-ever escalation for this job, but self-targeting -> should go straight to admin, not error');
+  const job = getJobById(db, jobId);
+  assert.equal(job.freigabe1_eskaliert_an_admin, 1);
   db.close();
 });

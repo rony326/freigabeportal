@@ -18,6 +18,7 @@ import { createErscheinungsbildRouter } from './routes/admin/erscheinungsbild.js
 import { createPersonenRouter } from './routes/admin/personen.js';
 import { createPdfEinstellungenRouter } from './routes/admin/pdf-einstellungen.js';
 import { createMailsRouter } from './routes/admin/mails.js';
+import { createSyncRouter } from './routes/admin/sync.js';
 import { createPoolRouter } from './routes/pool.js';
 import { createPoolPageRouter } from './routes/poolPage.js';
 import { createDownloadsRouter } from './routes/downloads.js';
@@ -98,6 +99,7 @@ export function createApp({ db, config }) {
   app.use('/admin/personen', createPersonenRouter({ db }));
   app.use('/admin/pdf-einstellungen', createPdfEinstellungenRouter({ db }));
   app.use('/admin/mails', createMailsRouter({ db, mailer }));
+  app.use('/admin/sync', createSyncRouter({ db }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db }));

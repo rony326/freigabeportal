@@ -2,9 +2,13 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const GRUPPE_TOKEN = 'gruppe:buchhaltung';
+// Both group tokens are accepted here (not just "gruppe:buchhaltung") because this validator is
+// shared with the /admin/sync route (Task 10), whose "Sync-Fehler-Empfänger" field defaults to
+// "gruppe:admin" — see adminConfigRepo's seeded default and notify.js's resolveEmpfaenger, which
+// already resolves both tokens.
+const GRUPPE_TOKENS = ['gruppe:buchhaltung', 'gruppe:admin'];
 
-function validateEmpfaengerListe(value, label, errors) {
+export function validateEmpfaengerListe(value, label, errors) {
   const zeilen = (value || '')
     .split('\n')
     .map((zeile) => zeile.trim())
@@ -14,8 +18,8 @@ function validateEmpfaengerListe(value, label, errors) {
     return;
   }
   for (const zeile of zeilen) {
-    if (zeile !== GRUPPE_TOKEN && !EMAIL_PATTERN.test(zeile)) {
-      errors.push(`${label}: "${zeile}" ist weder eine gültige E-Mail-Adresse noch "${GRUPPE_TOKEN}".`);
+    if (!GRUPPE_TOKENS.includes(zeile) && !EMAIL_PATTERN.test(zeile)) {
+      errors.push(`${label}: "${zeile}" ist weder eine gültige E-Mail-Adresse noch "${GRUPPE_TOKENS.join('"/"')}".`);
     }
   }
 }

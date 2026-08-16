@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
+<head><meta charset="utf-8"><title>Sync-Übersicht — Freigabeportal Admin</title></head>
+<body>
+  <%- include('../_header') %>
+  <%- include('./_nav') %>
+  <h1>Sync-Übersicht</h1>
+  <% if (errors.length > 0) { %>
+    <ul><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+  <% } %>
+
+  <h2>Massen-Deaktivierungs-Schutz</h2>
+  <form method="post" action="/admin/sync">
+    <label>Max. Deaktivierung (Prozent der aktiven Personen) <input type="number" name="maxDeaktivierungProzent" value="<%= maxDeaktivierungProzent %>" required></label><br>
+    <label>Max. Deaktivierung (absolute Anzahl) <input type="number" name="maxDeaktivierungAnzahl" value="<%= maxDeaktivierungAnzahl %>" required></label><br>
+    <label>Sync-Fehler-Empfänger (ein Ziel pro Zeile: E-Mail-Adresse oder "gruppe:admin")<br>
+      <textarea name="syncFehlerEmpfaenger" rows="4" cols="50"><%= syncFehlerEmpfaenger || '' %></textarea>
+    </label><br>
+    <button type="submit">Speichern</button>
+  </form>
+
+  <h2>Sync-Historie</h2>
+  <table>
+    <thead><tr><th>Gestartet</th><th>Beendet</th><th>Status</th><th>Upserted</th><th>Deaktiviert</th><th>Details</th></tr></thead>
+    <tbody>
+      <% syncLog.forEach((eintrag) => { %>
+        <tr>
+          <td><%= eintrag.gestartet_am %></td>
+          <td><%= eintrag.beendet_am || '' %></td>
+          <td><%= eintrag.status %></td>
+          <td><%= eintrag.anzahl_upserted ?? '' %></td>
+          <td><%= eintrag.anzahl_deaktiviert ?? '' %></td>
+          <td><%= eintrag.fehler_details || '' %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+
+  <h2>Feststeckende Jobs</h2>
+  <table>
+    <thead><tr><th>Datei</th><th>Status</th><th>Verantwortliche Person</th><th>Grund</th><th></th></tr></thead>
+    <tbody>
+      <% stalledJobs.forEach((eintrag) => { %>
+        <tr>
+          <td><%= eintrag.job.dateiname %></td>
+          <td><%= eintrag.job.status %></td>
+          <td><%= eintrag.akteurName %></td>
+          <td><%= eintrag.grund === 'inaktiv' ? 'Person deaktiviert' : 'Person in ChurchTools nicht auflösbar' %></td>
+          <td>
+            <form method="post" action="/admin/sync/stalled/<%= eintrag.job.id %>/freigeben">
+              <button type="submit">Freigeben</button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</body>
+</html>

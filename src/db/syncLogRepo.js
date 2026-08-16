@@ -14,3 +14,7 @@ export function hasRecentRunningSync(db, staleAfterMs = 10 * 60 * 1000) {
   if (!row) return false;
   return Date.now() - new Date(row.gestartet_am).getTime() < staleAfterMs;
 }
+
+export function listRecentSyncLogs(db, limit = 20) {
+  return db.prepare('SELECT * FROM sync_log ORDER BY id DESC LIMIT ?').all(limit);
+}

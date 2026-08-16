@@ -1,3 +1,5 @@
+const MIN_SECRET_LENGTH = 32;
+
 function required(env, name) {
   const value = env[name];
   if (!value) {
@@ -6,27 +8,40 @@ function required(env, name) {
   return value;
 }
 
+function requiredSecret(env, name) {
+  const value = required(env, name);
+  if (value.length < MIN_SECRET_LENGTH) {
+    throw new Error(`Umgebungsvariable ${name} ist zu kurz (mindestens ${MIN_SECRET_LENGTH} Zeichen erforderlich).`);
+  }
+  if (value.toLowerCase().includes('changeme')) {
+    throw new Error(
+      `Umgebungsvariable ${name} verwendet noch den Platzhalterwert aus .env.example — bitte durch einen echten, zufälligen Wert ersetzen.`
+    );
+  }
+  return value;
+}
+
 export function loadConfig(env = process.env) {
   return {
     env: env.NODE_ENV || 'development',
     port: Number(env.PORT) || 3000,
-    sessionSecret: required(env, 'SESSION_SECRET'),
+    sessionSecret: requiredSecret(env, 'SESSION_SECRET'),
     dbPath: env.DB_PATH || './data/freigabeportal.sqlite',
     brandingDir: env.BRANDING_DIR || './data/branding',
     jobsDir: env.JOBS_DIR || './data/jobs',
-    downloadSigningSecret: required(env, 'DOWNLOAD_SIGNING_SECRET'),
+    downloadSigningSecret: requiredSecret(env, 'DOWNLOAD_SIGNING_SECRET'),
     publicBaseUrl: required(env, 'PUBLIC_BASE_URL'),
     churchtools: {
       baseUrl: required(env, 'CT_BASE_URL'),
       clientId: required(env, 'CT_CLIENT_ID'),
-      clientSecret: required(env, 'CT_CLIENT_SECRET'),
+      clientSecret: requiredSecret(env, 'CT_CLIENT_SECRET'),
       redirectUri: required(env, 'CT_REDIRECT_URI'),
       groupIdBuchhaltung: required(env, 'CT_GROUP_ID_BUCHHALTUNG'),
       groupIdAdmin: required(env, 'CT_GROUP_ID_ADMIN'),
-      syncServiceToken: required(env, 'CT_SYNC_SERVICE_TOKEN'),
+      syncServiceToken: requiredSecret(env, 'CT_SYNC_SERVICE_TOKEN'),
     },
-    cronSecret: required(env, 'CRON_SECRET'),
-    n8nApiKey: required(env, 'N8N_API_KEY'),
+    cronSecret: requiredSecret(env, 'CRON_SECRET'),
+    n8nApiKey: requiredSecret(env, 'N8N_API_KEY'),
     smtp: {
       host: env.SMTP_HOST,
       port: Number(env.SMTP_PORT) || 587,

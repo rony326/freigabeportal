@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 import { loadConfig } from '../../src/config/env.js';
 
 const FULL_ENV = {
-  SESSION_SECRET: 'secret',
+  SESSION_SECRET: 'test-session-secret-please-ignore-1234567890',
   CT_BASE_URL: 'https://ct.example.org',
   CT_CLIENT_ID: 'client-id',
-  CT_CLIENT_SECRET: 'client-secret',
+  CT_CLIENT_SECRET: 'test-ct-client-secret-please-ignore-1234567890',
   CT_REDIRECT_URI: 'https://portal.example.org/auth/callback',
   CT_GROUP_ID_BUCHHALTUNG: '10',
   CT_GROUP_ID_ADMIN: '20',
-  CT_SYNC_SERVICE_TOKEN: 'sync-token',
-  CRON_SECRET: 'cron-secret',
-  N8N_API_KEY: 'n8n-key',
-  DOWNLOAD_SIGNING_SECRET: 'download-signing-secret',
+  CT_SYNC_SERVICE_TOKEN: 'test-ct-sync-service-token-please-ignore-1234567890',
+  CRON_SECRET: 'test-cron-secret-please-ignore-1234567890',
+  N8N_API_KEY: 'test-n8n-api-key-please-ignore-1234567890',
+  DOWNLOAD_SIGNING_SECRET: 'test-download-signing-secret-please-ignore-1234567890',
   PUBLIC_BASE_URL: 'https://portal.example.org',
   SMTP_HOST: 'smtp.example.org',
   SMTP_USER: 'smtp-user',
@@ -66,4 +66,21 @@ test('loadConfig throws a German error when PUBLIC_BASE_URL is missing', () => {
 test('loadConfig exposes publicBaseUrl', () => {
   const config = loadConfig(FULL_ENV);
   assert.equal(config.publicBaseUrl, 'https://portal.example.org');
+});
+
+test('loadConfig rejects a secret shorter than 32 characters', () => {
+  const tooShort = { ...FULL_ENV, SESSION_SECRET: 'short-secret' };
+  assert.throws(() => loadConfig(tooShort), /SESSION_SECRET ist zu kurz/);
+});
+
+test('loadConfig rejects the .env.example placeholder value, even if long enough', () => {
+  const placeholder = { ...FULL_ENV, CRON_SECRET: 'changeme-long-random-string-1234567890' };
+  assert.throws(() => loadConfig(placeholder), /CRON_SECRET verwendet noch den Platzhalterwert/);
+});
+
+test('loadConfig applies the strength check to every secret-shaped variable', () => {
+  for (const name of ['SESSION_SECRET', 'DOWNLOAD_SIGNING_SECRET', 'CT_CLIENT_SECRET', 'CT_SYNC_SERVICE_TOKEN', 'CRON_SECRET', 'N8N_API_KEY']) {
+    const tooShort = { ...FULL_ENV, [name]: 'x' };
+    assert.throws(() => loadConfig(tooShort), new RegExp(`${name} ist zu kurz`), `${name} should be validated as a secret`);
+  }
 });

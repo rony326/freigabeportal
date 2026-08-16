@@ -38,6 +38,16 @@ test('GET / renders the German home page for an anonymous visitor', async () => 
   db.close();
 });
 
+test('every response carries the baseline security headers', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/healthz');
+  assert.equal(res.headers['x-content-type-options'], 'nosniff');
+  assert.equal(res.headers['x-frame-options'], 'DENY');
+  assert.equal(res.headers['referrer-policy'], 'no-referrer');
+  db.close();
+});
+
 test('session cookie is marked Secure when publicBaseUrl is https', async () => {
   const db = openDatabase(':memory:');
   const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };

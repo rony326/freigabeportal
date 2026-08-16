@@ -33,6 +33,21 @@ export function createApp({ db, config }) {
   app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
   app.set('views', join(__dirname, '..', 'views'));
+  app.use((req, res, next) => {
+    // X-Content-Type-Options: the PDF magic-byte check on upload only validates the first 4
+    // bytes, so this stops a browser from sniffing a crafted upload into something other than
+    // its declared Content-Type when served back from /downloads or /branding.
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // X-Frame-Options: defense-in-depth: SameSite=Lax cookies already aren't sent on cross-site
+    // framed subresource requests, and no state change in this app is a single click.
+    res.setHeader('X-Frame-Options', 'DENY');
+    // Referrer-Policy: signed download URLs carry their signature in the query string
+    // (services/downloadUrl.js) and are embedded in <iframe> previews — without this, a link
+    // clicked inside a rendered invoice PDF could leak a live, still-valid download URL to a
+    // third party via the Referer header.
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    next();
+  });
   app.use(loadBranding(db));
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));

@@ -109,12 +109,9 @@ export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000) {
 }
 
 export function confirmAbholung(db, id) {
-  const job = getJobById(db, id);
-  if (!job || job.status !== 'abgeschlossen') {
-    return null;
-  }
-  db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ?").run(id);
-  return { ...job, status: 'abgeholt' };
+  const result = db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ? AND status = 'abgeschlossen'").run(id);
+  if (result.changes === 0) return null;
+  return getJobById(db, id);
 }
 
 export function setThumbnailPfad(db, id, thumbnailPfad) {

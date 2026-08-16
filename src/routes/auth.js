@@ -22,17 +22,22 @@ export function createAuthRouter({ db, config }) {
 
       const token = await exchangeCodeForToken(config.churchtools, code);
       const profile = await fetchPerson(config.churchtools, token.access_token);
-      // TEMPORARY DIAGNOSTIC — remove once we've confirmed the real shape of /oauth/userinfo's
-      // groups field in production logs (OAuth access tokens 403 against /api/groups/*, so we
-      // need to read group membership from userinfo itself instead).
-      console.log('DIAGNOSTIC /oauth/userinfo response:', JSON.stringify(profile));
       const candidateGroupIds = [config.churchtools.groupIdBuchhaltung, config.churchtools.groupIdAdmin];
       // AUTH-WIDEN-1: login no longer requires Buchhaltung/Admin membership — Freigeber1/2 and
       // their Stellvertreter are account-based roles (AUTHZ-3) that may not be in either group.
       // gruppen is still resolved and stored exactly as before; only the empty-array rejection
       // is gone. Every route that matters is gated by its own per-job or per-group check
       // downstream (requireRole/requireAnyRole for /pool and /admin, per-job checks elsewhere).
-      const gruppen = await resolveMemberGroupIds(config.churchtools, token.access_token, profile.id, candidateGroupIds);
+      //
+      // Uses the sync service account's Login-Token, not the freshly-obtained OAuth access
+      // token: ChurchTools' OAuth2 access tokens are only valid against the dedicated /oauth/*
+      // endpoints (authorize, access_token, userinfo) — /api/groups/*/members returns 403 for
+      // them, confirmed against the live instance. /oauth/userinfo's own `groups` field exists
+      // but only lists group *names*, which this app must never match against (see the
+      // Lastenheft's explicit "match by group ID, never by name" requirement — group renames in
+      // ChurchTools must not silently break access). The Login-Token already has the API access
+      // the nightly sync depends on, so it's reused here for the identical lookup at login time.
+      const gruppen = await resolveMemberGroupIds(config.churchtools, config.churchtools.syncServiceToken, profile.id, candidateGroupIds);
 
       upsertPerson(db, {
         id: String(profile.id),

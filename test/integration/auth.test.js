@@ -17,6 +17,7 @@ function testConfig() {
       redirectUri: 'https://portal.example.org/auth/callback',
       groupIdBuchhaltung: '10',
       groupIdAdmin: '20',
+      syncServiceToken: 'sync-service-token',
     },
   };
 }
@@ -67,6 +68,37 @@ test('GET /auth/callback with a valid state logs the person in', async () => {
   const person = getPersonById(db, '7');
   assert.equal(person.vorname, 'Max');
   assert.deepEqual(person.gruppen, ['10']);
+  db.close();
+});
+
+test('GET /auth/callback resolves group membership using the sync service token, not the OAuth access token', async () => {
+  // ChurchTools' OAuth2 access tokens are only valid against /oauth/* endpoints — a real request
+  // to /api/groups/*/members with an OAuth access token gets a 403 from the live instance. This
+  // test proves the login flow never even attempts that: the mock only accepts the sync service
+  // token's Authorization header on the group-lookup calls, so a regression back to using
+  // token.access_token would make the login flow fail with "no matching interceptor" here.
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'oauth-access-token' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' });
+  client
+    .intercept({ path: '/api/groups/10/members', method: 'GET', headers: { authorization: 'Bearer sync-service-token' } })
+    .reply(200, { data: [{ personId: 7 }] });
+  client
+    .intercept({ path: '/api/groups/20/members', method: 'GET', headers: { authorization: 'Bearer sync-service-token' } })
+    .reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+
+  const res = await agent.get('/auth/callback').query({ code: 'the-code', state });
+  assert.equal(res.status, 302);
+  assert.deepEqual(getPersonById(db, '7').gruppen, ['10']);
   db.close();
 });
 

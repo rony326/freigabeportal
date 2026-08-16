@@ -6,6 +6,7 @@ import { SqliteSessionStore } from './db/sessionStore.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createCronRouter } from './routes/cron.js';
 import { requireApiKey } from './middleware/apiKey.js';
+import { requireCronSecret } from './middleware/cronAuth.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { loadCurrentPerson, requireRole } from './middleware/roles.js';
 import { loadBranding } from './middleware/branding.js';
@@ -105,7 +106,7 @@ export function createApp({ db, config }) {
   app.use('/abgelehnt', sessionLimiter, requireRole(config, 'buchhaltung'), createAblehnungRouter({ db }));
 
   app.use('/auth', publicLimiter, createAuthRouter({ db, config }));
-  app.use('/internal/cron', machineLimiter, createCronRouter({ db, config, mailer }));
+  app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));
 
   app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
 

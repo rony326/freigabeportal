@@ -1,15 +1,17 @@
 import { Router } from 'express';
 import { runPersonenSync } from '../services/sync.js';
 import { hasRecentRunningSync } from '../db/syncLogRepo.js';
-import { requireCronSecret } from '../middleware/cronAuth.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet } from '../db/jobsRepo.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
 
+// requireCronSecret is applied once at the app.js mount, not per-route here — matching the
+// blanket-guard pattern /admin already uses, so a future route added to this router is
+// gated automatically rather than needing its own explicit guard.
 export function createCronRouter({ db, config, mailer }) {
   const router = Router();
 
-  router.post('/sync-personen', requireCronSecret(config), async (req, res) => {
+  router.post('/sync-personen', async (req, res) => {
     if (hasRecentRunningSync(db)) {
       return res.status(409).json({ error: 'Ein Sync-Lauf ist bereits aktiv' });
     }
@@ -21,7 +23,7 @@ export function createCronRouter({ db, config, mailer }) {
     }
   });
 
-  router.post('/pool-erinnerungen', requireCronSecret(config), async (req, res) => {
+  router.post('/pool-erinnerungen', async (req, res) => {
     try {
       const reminderStunden = Number(getConfigValue(db, 'reminder_stunden'));
       const eskalationStunden = Number(getConfigValue(db, 'eskalation_stunden'));

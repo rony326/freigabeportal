@@ -44,8 +44,8 @@ test('exchangeCodeForToken throws on a non-ok response', async () => {
 test('fetchPerson returns the whoami payload', async () => {
   const client = setupMockChurchTools(CONFIG.baseUrl);
   client
-    .intercept({ path: '/api/whoami', method: 'GET' })
-    .reply(200, { data: { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' } });
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' });
 
   const person = await fetchPerson(CONFIG, 'token');
   assert.equal(person.firstName, 'Max');

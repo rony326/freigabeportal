@@ -87,7 +87,7 @@ test('two different logged-in people hitting /pool do not throttle each other (s
 
   async function loginAs(id) {
     client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: `tok-${id}` });
-    client.intercept({ path: '/api/whoami', method: 'GET' }).reply(200, { data: { id, firstName: 'X', lastName: 'Y', email: `p${id}@example.org` } });
+    client.intercept({ path: '/oauth/userinfo', method: 'GET' }).reply(200, { id, firstName: 'X', lastName: 'Y', email: `p${id}@example.org` });
     client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: id }] });
     client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
     const agent = request.agent(app);

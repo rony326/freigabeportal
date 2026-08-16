@@ -31,10 +31,13 @@ export async function exchangeCodeForToken(config, code) {
 }
 
 export async function fetchPerson(config, accessToken) {
-  const url = new URL('/api/whoami', config.baseUrl);
+  // OAuth2 access tokens are only valid against the dedicated /oauth/* endpoints (authorize,
+  // access_token, userinfo) — not the general /api/* REST surface, which returns 403 for a
+  // Bearer-token request. /oauth/userinfo also returns the profile as a flat object, unlike
+  // /api/*'s { data: {...} } envelope.
+  const url = new URL('/oauth/userinfo', config.baseUrl);
   const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-  const data = await parseOrThrow(response, 'Profilabruf');
-  return data.data;
+  return parseOrThrow(response, 'Profilabruf');
 }
 
 export async function fetchPersonById(config, accessToken, personId) {

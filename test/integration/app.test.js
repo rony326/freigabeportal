@@ -53,8 +53,8 @@ test('GET / shows a logout link for a logged-in person', async () => {
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
-    .intercept({ path: '/api/whoami', method: 'GET' })
-    .reply(200, { data: { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' } });
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' });
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
 
@@ -116,8 +116,8 @@ test('GET / shows a link to /pool for a logged-in buchhaltung member', async () 
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
-    .intercept({ path: '/api/whoami', method: 'GET' })
-    .reply(200, { data: { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' } });
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' });
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
 
@@ -145,8 +145,8 @@ test('GET / shows no link to /pool for a logged-in person without the buchhaltun
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
-    .intercept({ path: '/api/whoami', method: 'GET' })
-    .reply(200, { data: { id: 2, firstName: 'Admin', lastName: 'Only', email: 'admin@example.org' } });
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 2, firstName: 'Admin', lastName: 'Only', email: 'admin@example.org' });
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [{ personId: 2 }] });
 
@@ -178,8 +178,8 @@ test('GET /pool returns 200 for a Portal-Admin who is not also a Buchhaltung mem
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
-    .intercept({ path: '/api/whoami', method: 'GET' })
-    .reply(200, { data: { id: 2, firstName: 'Admin', lastName: 'Only', email: 'admin@example.org' } });
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 2, firstName: 'Admin', lastName: 'Only', email: 'admin@example.org' });
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [{ personId: 2 }] });
 
@@ -206,8 +206,8 @@ test('GET /kontierung/:id is reachable through the real app for the assigned per
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
-    .intercept({ path: '/api/whoami', method: 'GET' })
-    .reply(200, { data: { id: 5, firstName: 'Frei', lastName: 'Geber', email: 'frei@example.org' } });
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 5, firstName: 'Frei', lastName: 'Geber', email: 'frei@example.org' });
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
 
@@ -244,8 +244,8 @@ test('a logged-in person with zero relevant ChurchTools groups is still refused 
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
-    .intercept({ path: '/api/whoami', method: 'GET' })
-    .reply(200, { data: { id: 42, firstName: 'Ohne', lastName: 'Gruppe', email: 'ohne@example.org' } });
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 42, firstName: 'Ohne', lastName: 'Gruppe', email: 'ohne@example.org' });
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
 

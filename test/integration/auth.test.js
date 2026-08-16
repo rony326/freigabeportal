@@ -49,8 +49,8 @@ test('GET /auth/callback with a valid state logs the person in', async () => {
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
-    .intercept({ path: '/api/whoami', method: 'GET' })
-    .reply(200, { data: { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' } });
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' });
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 7 }] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
 
@@ -75,8 +75,8 @@ test('GET /auth/callback regenerates the session on login (prevents session fixa
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
-    .intercept({ path: '/api/whoami', method: 'GET' })
-    .reply(200, { data: { id: 8, firstName: 'Regen', lastName: 'Erate', email: 'regen@example.org' } });
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 8, firstName: 'Regen', lastName: 'Erate', email: 'regen@example.org' });
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 8 }] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
 
@@ -103,8 +103,8 @@ test('GET /auth/callback creates a session and a person even when the person bel
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
-    .intercept({ path: '/api/whoami', method: 'GET' })
-    .reply(200, { data: { id: 42, firstName: 'Keine', lastName: 'Gruppe', email: 'keine@example.org' } });
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 42, firstName: 'Keine', lastName: 'Gruppe', email: 'keine@example.org' });
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
 

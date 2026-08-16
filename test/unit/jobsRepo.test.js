@@ -60,6 +60,34 @@ test('findMatchingZuweisungsregel: returns null without a sender or without any 
   db.close();
 });
 
+test('findMatchingZuweisungsregel: a display-name-plus-bracket sender still matches on the bracketed address', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const regel = findMatchingZuweisungsregel(db, '"Lieferant AG" <rechnung@lieferant.ch>');
+  assert.equal(regel.konto_id, kontoId);
+  db.close();
+});
+
+test('findMatchingZuweisungsregel: a comma-separated multi-address sender with no brackets matches nothing (refuses to guess)', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  // Naive lastIndexOf('@') parsing would have matched "lieferant.ch" here, letting an attacker
+  // steer an invoice to a chosen Konto/approver by appending a trailing legitimate-looking
+  // address after their own.
+  assert.equal(findMatchingZuweisungsregel(db, 'billing@attacker.example, buchhaltung@lieferant.ch'), null);
+  db.close();
+});
+
+test('findMatchingZuweisungsregel: a malformed sender with no "@" at all matches nothing', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  assert.equal(findMatchingZuweisungsregel(db, 'not-an-email-address'), null);
+  db.close();
+});
+
 test('createJob auto-assigns via a matching Zuweisungsregel', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);

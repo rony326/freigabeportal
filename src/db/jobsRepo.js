@@ -6,9 +6,29 @@ function extractDomain(email) {
   return at === -1 ? null : email.slice(at + 1).toLowerCase();
 }
 
-export function findMatchingZuweisungsregel(db, absender) {
+// n8n forwards absender as-is from the invoice mail's From: header, which may be a bare
+// address ("rechnung@lieferant.ch") or a display-name form ("Lieferant AG"
+// <rechnung@lieferant.ch>"). Naively taking the last "@" over the raw header lets a crafted
+// multi-address value (e.g. "billing@attacker.example, buchhaltung@lieferant.ch") match a
+// legitimate rule via whichever address happens to contain the last "@" — steering an
+// externally-supplied invoice to a chosen Konto/approver. Extract exactly one clean address
+// (preferring the last "<...>" if present) and refuse to guess when the result is still
+// ambiguous, falling through to no match (the job lands in the pool) rather than matching
+// the wrong thing.
+const EMAIL_PATTERN = /^[^\s@,<>"]+@[^\s@,<>"]+$/;
+
+function normalizeAbsender(absender) {
   if (!absender) return null;
-  const absenderLower = absender.toLowerCase();
+  const trimmed = absender.trim();
+  const angleMatch = trimmed.match(/<([^<>]+)>\s*$/);
+  const candidate = (angleMatch ? angleMatch[1] : trimmed).trim();
+  return EMAIL_PATTERN.test(candidate) ? candidate : null;
+}
+
+export function findMatchingZuweisungsregel(db, absender) {
+  const normalized = normalizeAbsender(absender);
+  if (!normalized) return null;
+  const absenderLower = normalized.toLowerCase();
   const domain = extractDomain(absenderLower);
   const regeln = listZuweisungsregeln(db);
 

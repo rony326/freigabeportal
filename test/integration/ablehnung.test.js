@@ -94,6 +94,28 @@ test('GET /abgelehnt/:id shows when the rejection happened', async () => {
   db.close();
 });
 
+test('GET /abgelehnt/:id renders without crashing when abgelehnt_von and the ablehnung audit row are inconsistent (defensive, not normally reachable)', async () => {
+  const db = openDatabase(':memory:');
+  for (const id of ['1', '2', '3']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '2' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(id);
+  // abgelehntVon is null (a foreign key allows NULL regardless of the referenced table, unlike
+  // a nonexistent id which the schema's FK constraint would reject outright), and no freigaben
+  // row of rolle 'ablehnung' is created — an inconsistent state that shouldn't occur through
+  // normal use, but the view must degrade gracefully rather than crash with a 500 if it ever does.
+  ablehnenJob(db, id, { abgelehntVon: null, grund: 'Falsches Konto gewählt' });
+
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/abgelehnt/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Unbekannt/);
+  db.close();
+});
+
 test('POST /abgelehnt/:id/ueberarbeiten reopens the job to zugewiesen and redirects to Kontierung', async () => {
   const db = openDatabase(':memory:');
   const { id, kontoId } = await seedAbgelehntJob(db);

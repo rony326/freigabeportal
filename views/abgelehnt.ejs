@@ -4,9 +4,9 @@
 <body>
   <%- include('_header') %>
   <h1>Abgelehnt: <%= job.dateiname %></h1>
-  <p><strong>Abgelehnt von:</strong> <%= abgelehntVonPerson.vorname %> <%= abgelehntVonPerson.nachname %></p>
+  <p><strong>Abgelehnt von:</strong> <%= abgelehntVonPerson ? `${abgelehntVonPerson.vorname} ${abgelehntVonPerson.nachname}` : 'Unbekannt' %></p>
   <p><strong>Grund:</strong> <%= job.ablehnungsgrund %></p>
-  <p><strong>Zeitpunkt:</strong> <%= ablehnung.zeitpunkt %></p>
+  <p><strong>Zeitpunkt:</strong> <%= ablehnung ? ablehnung.zeitpunkt : 'Unbekannt' %></p>
   <form method="post" action="/abgelehnt/<%= job.id %>/ueberarbeiten">
     <button type="submit">Überarbeiten</button>
   </form>

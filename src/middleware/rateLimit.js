@@ -7,6 +7,8 @@ function jsonRateLimitHandler(req, res) {
 }
 
 const COMMON_OPTIONS = {
+  // standardHeaders: true (draft-6 "split header" format) was deliberately chosen over draft-7's
+  // single combined RateLimit header, so tests can assert on separate RateLimit-Limit headers
   standardHeaders: true,
   legacyHeaders: false,
   handler: jsonRateLimitHandler,

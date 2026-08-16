@@ -49,7 +49,7 @@ test('createPublicRateLimiter sets modern RateLimit-* headers, never the legacy 
 
 test('createPublicRateLimiter keys by IP: two different IPs each get their own counter', async () => {
   const app = express();
-  app.set('trust proxy', true);
+  app.set('trust proxy', 1);
   app.get('/probe', createPublicRateLimiter({ limit: 1, windowMs: 60000 }), (req, res) => res.json({ ok: true }));
 
   const ipAFirst = await request(app).get('/probe').set('X-Forwarded-For', '203.0.113.10');
@@ -97,7 +97,7 @@ test('createMachineRateLimiter returns 429 once its limit is exceeded', async ()
 
 test('createSessionRateLimiter buckets IPv6 addresses by /56 subnet when req.currentPerson is absent', async () => {
   const app = express();
-  app.set('trust proxy', true);
+  app.set('trust proxy', 1);
   app.get('/probe', createSessionRateLimiter({ limit: 1, windowMs: 60000 }), (req, res) => res.json({ ok: true }));
 
   // Two IPv6 addresses in the same /56 subnet (share the first 56 bits: 2001:db8:1234:56)

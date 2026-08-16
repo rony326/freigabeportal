@@ -35,3 +35,20 @@ export function requireRole(config, role) {
     next();
   };
 }
+
+export function requireAnyRole(config, roles) {
+  return (req, res, next) => {
+    const person = req.currentPerson;
+    if (!person || !person.aktiv) {
+      return res.status(401).render('error', { message: 'Bitte melde dich an, um fortzufahren.' });
+    }
+    const erlaubt = roles.some((role) => {
+      const groupId = config.churchtools[GROUP_ID_KEY_BY_ROLE[role]];
+      return person.gruppen.includes(String(groupId));
+    });
+    if (!erlaubt) {
+      return res.status(403).render('error', { message: 'Du hast keine Berechtigung für diesen Bereich.' });
+    }
+    next();
+  };
+}

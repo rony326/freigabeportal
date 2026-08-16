@@ -230,6 +230,44 @@ test('GET /kontierung/:id is reachable through the real app for the assigned per
   db.close();
 });
 
+test('a logged-in person with zero relevant ChurchTools groups is still refused by /pool, /api/pool, and /admin/*', async () => {
+  // AUTHZ-3/AUTH-WIDEN-1 widened who can even get a session (a session no longer implies
+  // Buchhaltung/Portal-Admin membership) — but the group gates on these specific routes must
+  // still hold. This is a test-only check; it does not touch app.js's route wiring.
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/api/whoami', method: 'GET' })
+    .reply(200, { data: { id: 42, firstName: 'Ohne', lastName: 'Gruppe', email: 'ohne@example.org' } });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const poolRes = await agent.get('/pool');
+  assert.equal(poolRes.status, 403);
+
+  const apiPoolRes = await agent.get('/api/pool');
+  assert.equal(apiPoolRes.status, 403);
+
+  const adminRes = await agent.get('/admin/konten');
+  assert.equal(adminRes.status, 403);
+
+  db.close();
+});
+
 test('Phase C routes are gated exactly as wired in the real app', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });

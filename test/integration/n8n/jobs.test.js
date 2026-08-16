@@ -408,7 +408,7 @@ test('POST /api/n8n/jobs with a matching Zuweisungsregel sends a Zuweisungs-Mail
   assert.equal(mailer.sent.length, 1);
   assert.equal(mailer.sent[0].to, 'p1@example.org');
   assert.match(mailer.sent[0].text, /rechnung\.pdf/);
-  assert.match(mailer.sent[0].text, /https:\/\/portal\.example\.org\/pool/);
+  assert.match(mailer.sent[0].text, new RegExp(`https://portal\\.example\\.org/kontierung/${res.body.id}`));
 
   const rows = listMailLog(db);
   assert.equal(rows.length, 1);

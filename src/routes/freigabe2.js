@@ -127,7 +127,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
             await sendNotification(db, mailer, {
               to: stellvertreter2.email,
               subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 2 – an dich übergeben',
-              text: `Eine Rechnung wurde dir zur Freigabe 2 übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
+              text: `Eine Rechnung wurde dir zur Freigabe 2 übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/freigabe2/${job.id}`,
               typ: 'zuweisung',
               jobId: job.id,
             });
@@ -181,7 +181,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
             await sendNotification(db, mailer, {
               to: besitzer.email,
               subject: 'Freigabeportal: Rechnung abgelehnt',
-              text: `Deine Rechnung wurde abgelehnt: ${job.dateiname}\n\nGrund: ${begruendung}\n\nBitte im Freigabeportal anmelden, um sie zu überarbeiten: ${config.publicBaseUrl}/pool`,
+              text: `Deine Rechnung wurde abgelehnt: ${job.dateiname}\n\nGrund: ${begruendung}\n\nBitte im Freigabeportal anmelden, um sie zu überarbeiten: ${config.publicBaseUrl}/abgelehnt/${job.id}`,
               typ: 'ablehnung',
               jobId: job.id,
             });

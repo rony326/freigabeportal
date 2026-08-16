@@ -252,6 +252,35 @@ test('runPersonenSync does not deactivate persons referenced as approvers on an 
   db.close();
 });
 
+test('runPersonenSync does not overwrite real group membership for a person who is also referenced as an approver on an active Konto', async () => {
+  // SYNC-WIDEN-1's dedup guard (`if (!personIdToGroups.has(personId))`) must not run
+  // unconditionally: person 50 is a genuine Buchhaltung member AND is referenced as freigeber1
+  // on an active Konto. If the guard were removed, the Konto-referenced-persons loop would
+  // unconditionally overwrite personIdToGroups.set(50, []), silently wiping their real ['10']
+  // membership on the very next sync — and with it, their /pool, /api/pool, and /admin access.
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 50 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  for (const id of [50, 51, 52, 53]) {
+    client.intercept({ path: `/api/persons/${id}`, method: 'GET' }).reply(200, { data: { id, firstName: `Person${id}`, lastName: 'Muster', email: `p${id}@example.org` } });
+  }
+
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '50', vorname: 'Person50', nachname: 'Muster', email: 'p50@example.org', gruppen: ['10'], loggedInNow: false });
+  for (const id of ['51', '52', '53']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  // Person 50 is both a Buchhaltung group member (above) AND freigeber1 on this Konto.
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '50', stellvertreter1Id: '51', freigeber2Id: '52', stellvertreter2Id: '53' });
+
+  const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
+
+  assert.equal(result.abgebrochen, false);
+  assert.deepEqual(getPersonById(db, '50').gruppen, ['10'], "person 50's real group membership must survive the sync, not be overwritten with []");
+  db.close();
+});
+
 test('runPersonenSync deactivates a person referenced only on a deactivated Konto when they have no group membership', async () => {
   const client = setupMockChurchTools(CT_CONFIG.baseUrl);
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 99 }] });

@@ -334,6 +334,7 @@ test('POST /kontierung/:id with a conflict sends a Zuweisungs-Mail to stellvertr
   assert.equal(mailer.sent.length, 1);
   assert.equal(mailer.sent[0].to, 'p2@example.org');
   assert.match(mailer.sent[0].text, /rechnung\.pdf/);
+  assert.match(mailer.sent[0].text, new RegExp(`/kontierung/${id}`));
   db.close();
 });
 
@@ -354,6 +355,7 @@ test('POST /kontierung/:id without a conflict sends a Zuweisungs-Mail to freigeb
   assert.equal(res.status, 302);
   assert.equal(mailer.sent.length, 1);
   assert.equal(mailer.sent[0].to, 'p3@example.org');
+  assert.match(mailer.sent[0].text, new RegExp(`/freigabe2/${id}`));
   db.close();
 });
 

@@ -104,10 +104,21 @@ test('a Freigabe-1 conflict escalated to admin survives a Freigabe-2 rejection: 
   assert.equal(ueberarbeitenRes.status, 302);
   assert.equal(ueberarbeitenRes.headers.location, `/kontierung/${jobId}`);
   assert.equal(getJobById(db, jobId).status, 'zugewiesen');
+  assert.equal(getJobById(db, jobId).konto_id, kontoId, 'the reopen must preserve the Konto assignment, not lose it');
 
   // The excluded Stellvertreter1 still can't touch Kontierung after the reopen.
   const stellvertreter1StillBlockedRes = await stellvertreter1Agent.get(`/kontierung/${jobId}`);
   assert.equal(stellvertreter1StillBlockedRes.status, 403);
+
+  // Complete the rework end-to-end: the admin (still authorized via freigabe1_eskaliert_an_admin)
+  // resubmits Kontierung, proving the whole reopen-and-rework cycle genuinely works, not just
+  // the reopen step.
+  const reworkRes = await adminAgent
+    .post(`/kontierung/${jobId}`)
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(reworkRes.status, 302);
+  assert.equal(getJobById(db, jobId).status, 'freigabe2');
 
   db.close();
 });

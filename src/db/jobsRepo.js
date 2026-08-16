@@ -170,8 +170,10 @@ export function abschliessenFreigabe2(db, jobId) {
   // completes (regardless of whether an admin or a regular person did it), so it's the correct
   // single source to reset the admin-only authorization gate (see loadAuthorized in
   // freigabe2.js). Without this, a job that was ever escalated to admin would stay locked to
-  // Portal-Admin-only access permanently, even across later, unrelated rework cycles (mirrors
-  // abschliessenFreigabe1's equivalent fix for Freigabe 1's admin-escalation flag).
+  // Portal-Admin-only access permanently, even across later, unrelated rework cycles. (Freigabe
+  // 1's equivalent flag, freigabe1_eskaliert_an_admin, deliberately does NOT get the same
+  // treatment as of this batch — see abschliessenFreigabe1's own comment for why the two flags
+  // now behave differently.)
   const result = db
     .prepare(
       "UPDATE jobs SET status = 'abgeschlossen', freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0 WHERE id = ? AND status = 'freigabe2'"
@@ -204,12 +206,11 @@ export function releaseJob(db, jobId, personId) {
   // claimer must not inherit a stale escalation record from a previous claim cycle. Also
   // clears reminder_gesendet_at/eskalation_gesendet_at so a fresh pool cycle after release
   // is eligible for its own reminder/escalation mail rather than being silently skipped
-  // because the *previous* cycle already sent one. Also clears freigabe1_eskaliert_an_admin
-  // for the same reason: this is the one release/claim-cycle path (SYNC-8) where a job can
-  // re-enter status='zugewiesen' via a fresh claimJob() without ever passing through
-  // abschliessenFreigabe1 first (which normally resets the flag) — an admin-escalated job that
-  // gets sent back to the pool before Freigabe 1 completes must not carry the admin-only lock
-  // into the next, unrelated claimer's cycle.
+  // because the *previous* cycle already sent one. Also clears freigabe1_eskaliert_an_admin:
+  // unlike wiederOeffnenJob (which deliberately preserves the flag, since a rework cycle on the
+  // same job/Konto means the conflict is still real), releaseJob is a genuine fresh start — the
+  // job may be reassigned to an entirely different Konto, for which the old exclusion no longer
+  // applies.
   const result = db
     .prepare(
       `UPDATE jobs

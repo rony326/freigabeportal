@@ -138,7 +138,7 @@ export function createKontierungRouter({ db, config, mailer }) {
           await sendNotification(db, mailer, {
             to: stellvertreter1.email,
             subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 1 – Kontierung an dich übergeben',
-            text: `Eine Rechnung wurde dir zur Kontierung übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
+            text: `Eine Rechnung wurde dir zur Kontierung übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${job.id}`,
             typ: 'zuweisung',
             jobId: job.id,
           });
@@ -149,7 +149,7 @@ export function createKontierungRouter({ db, config, mailer }) {
           await sendNotification(db, mailer, {
             to: freigeber2.email,
             subject: 'Freigabeportal: Neue Rechnung zur Freigabe 2',
-            text: `Eine Rechnung wartet auf deine Freigabe 2: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
+            text: `Eine Rechnung wartet auf deine Freigabe 2: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/freigabe2/${job.id}`,
             typ: 'zuweisung',
             jobId: job.id,
           });

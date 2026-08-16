@@ -648,6 +648,7 @@ test('POST /freigabe2/:id with a conflict sends a Zuweisungs-Mail to stellvertre
   assert.equal(res.status, 302);
   assert.equal(mailer.sent.length, 1);
   assert.equal(mailer.sent[0].to, 'p4@example.org');
+  assert.match(mailer.sent[0].text, new RegExp(`/freigabe2/${id}`));
   db.close();
 });
 
@@ -674,6 +675,7 @@ test('POST /freigabe2/:id with aktion=ablehnen sends an Ablehnungs-Benachrichtig
   assert.equal(mailer.sent.length, 1);
   assert.equal(mailer.sent[0].to, 'p1@example.org'); // seedFreigabe2Job's zugewiesen_an is person '1'
   assert.match(mailer.sent[0].text, /Falsches Konto gewählt/);
+  assert.match(mailer.sent[0].text, new RegExp(`/abgelehnt/${id}`));
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

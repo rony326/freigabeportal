@@ -4,7 +4,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -571,5 +571,40 @@ test('releaseJob clears reminder_gesendet_at and eskalation_gesendet_at so a fre
   const job = getJobById(db, jobId);
   assert.equal(job.reminder_gesendet_at, null);
   assert.equal(job.eskalation_gesendet_at, null);
+  db.close();
+});
+
+test('listAbgeholtJobs returns only abgeholt jobs', () => {
+  const db = openDatabase(':memory:');
+  const abgeholtId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ?").run(abgeholtId);
+  createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+
+  const rows = listAbgeholtJobs(db);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, abgeholtId);
+  db.close();
+});
+
+test('archivierenJob transitions an abgeholt job to archiviert and sets archiviert_am', () => {
+  const db = openDatabase(':memory:');
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ?").run(jobId);
+
+  const result = archivierenJob(db, jobId);
+  assert.equal(result, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'archiviert');
+  assert.ok(job.archiviert_am);
+  db.close();
+});
+
+test('archivierenJob refuses to archive a job that is not abgeholt', () => {
+  const db = openDatabase(':memory:');
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+
+  const result = archivierenJob(db, jobId);
+  assert.equal(result, false);
+  assert.equal(getJobById(db, jobId).status, 'unzugewiesen');
   db.close();
 });

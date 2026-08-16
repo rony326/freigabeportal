@@ -70,7 +70,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   freigabe2_eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
   freigabe2_eskalationsgrund TEXT,
   reminder_gesendet_at TEXT,
-  eskalation_gesendet_at TEXT
+  eskalation_gesendet_at TEXT,
+  archiviert_am TEXT
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (

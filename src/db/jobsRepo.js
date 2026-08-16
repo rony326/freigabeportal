@@ -239,6 +239,17 @@ export function markEskalationGesendet(db, jobId) {
   db.prepare('UPDATE jobs SET eskalation_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
 }
 
+export function listAbgeholtJobs(db) {
+  return db.prepare("SELECT * FROM jobs WHERE status = 'abgeholt' ORDER BY id").all();
+}
+
+export function archivierenJob(db, id) {
+  const result = db
+    .prepare("UPDATE jobs SET status = 'archiviert', archiviert_am = ? WHERE id = ? AND status = 'abgeholt'")
+    .run(new Date().toISOString(), id);
+  return result.changes > 0;
+}
+
 export function listZugewiesenJobsForPerson(db, personId) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND zugewiesen_an = ? ORDER BY eingang_am").all(personId);
 }

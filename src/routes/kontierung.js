@@ -147,7 +147,14 @@ export function createKontierungRouter({ db, config, mailer }) {
   router.post('/:id/zurueck-in-pool', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
-    releaseJob(db, job.id, req.currentPerson.churchtools_person_id);
+    // Use job.zugewiesen_an, not req.currentPerson.churchtools_person_id: releaseJob's guard
+    // requires zugewiesen_an to match the person passed in, and for a Portal-Admin authorized
+    // via the freigabe1_eskaliert_an_admin branch, the admin's own ID never equals
+    // job.zugewiesen_an (still the excluded Stellvertreter1's ID) — passing the admin's ID would
+    // silently match zero rows while still redirecting to /pool as if it had succeeded. For the
+    // ordinary (non-admin) path this is definitionally identical, since loadAuthorizedJob already
+    // verified job.zugewiesen_an === req.currentPerson.churchtools_person_id to get here.
+    releaseJob(db, job.id, job.zugewiesen_an);
     res.redirect('/pool');
   });
 

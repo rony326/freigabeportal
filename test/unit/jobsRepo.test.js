@@ -284,6 +284,19 @@ test('abschliessenFreigabe1 sets status to freigabe2 and clears the escalation c
   db.close();
 });
 
+test('abschliessenFreigabe1 clears freigabe1_eskaliert_an_admin, so a later rework cycle is not permanently locked to Portal-Admin', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  eskalierenFreigabe1AnAdmin(db, jobId, { eskaliertVon: '2', grund: 'Auch befangen' });
+  assert.equal(getJobById(db, jobId).freigabe1_eskaliert_an_admin, 1);
+  abschliessenFreigabe1(db, jobId);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.freigabe1_eskaliert_an_admin, 0);
+  db.close();
+});
+
 test('eskalierenFreigabe2 records the escalation without changing status', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
@@ -364,6 +377,24 @@ test('releaseJob clears a leftover freigabe1 escalation so a fresh claim starts 
   assert.equal(job.status, 'unzugewiesen');
   assert.equal(job.freigabe1_eskaliert_von, null);
   assert.equal(job.freigabe1_eskalationsgrund, null);
+  db.close();
+});
+
+test('releaseJob clears freigabe1_eskaliert_an_admin, so a fresh claim by a non-admin is not permanently locked out', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  eskalierenFreigabe1AnAdmin(db, jobId, { eskaliertVon: '2', grund: 'Auch befangen' });
+  assert.equal(getJobById(db, jobId).freigabe1_eskaliert_an_admin, 1);
+  // an admin, authorized via the flag branch, sends it back to the pool before Freigabe 1 was
+  // ever completed -- this path never goes through abschliessenFreigabe1, so the flag must be
+  // cleared here too, or the next (non-admin) claimer would be locked out of their own claim.
+  const released = releaseJob(db, jobId, '1');
+  assert.equal(released, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.freigabe1_eskaliert_an_admin, 0);
   db.close();
 });
 

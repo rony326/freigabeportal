@@ -147,8 +147,14 @@ export function eskalierenFreigabe1(db, jobId, { eskaliertVon, grund, stellvertr
 }
 
 export function abschliessenFreigabe1(db, jobId) {
+  // Also clears freigabe1_eskaliert_an_admin: this is the one place Freigabe 1 legitimately
+  // completes (regardless of whether an admin or a regular person did it), so it's the correct
+  // single source to reset the admin-only authorization gate (see loadAuthorizedJob in
+  // kontierung.js). Without this, a job that was ever escalated to admin would stay locked to
+  // Portal-Admin-only access permanently, even across later, unrelated rework cycles after
+  // wiederOeffnenJob re-enters status='zugewiesen'.
   db.prepare(
-    "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL WHERE id = ?"
+    "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe1_eskaliert_an_admin = 0 WHERE id = ?"
   ).run(jobId);
 }
 
@@ -189,12 +195,18 @@ export function releaseJob(db, jobId, personId) {
   // claimer must not inherit a stale escalation record from a previous claim cycle. Also
   // clears reminder_gesendet_at/eskalation_gesendet_at so a fresh pool cycle after release
   // is eligible for its own reminder/escalation mail rather than being silently skipped
-  // because the *previous* cycle already sent one.
+  // because the *previous* cycle already sent one. Also clears freigabe1_eskaliert_an_admin
+  // for the same reason: this is the one release/claim-cycle path (SYNC-8) where a job can
+  // re-enter status='zugewiesen' via a fresh claimJob() without ever passing through
+  // abschliessenFreigabe1 first (which normally resets the flag) — an admin-escalated job that
+  // gets sent back to the pool before Freigabe 1 completes must not carry the admin-only lock
+  // into the next, unrelated claimer's cycle.
   const result = db
     .prepare(
       `UPDATE jobs
        SET status = 'unzugewiesen', zugewiesen_an = NULL, konto_id = NULL,
            freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL,
+           freigabe1_eskaliert_an_admin = 0,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL
        WHERE id = ? AND zugewiesen_an = ? AND status = 'zugewiesen'`
     )

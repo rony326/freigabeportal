@@ -500,3 +500,110 @@ test('a person who picks a Konto where they are themselves the stellvertreter1 a
   assert.equal(job.freigabe1_eskaliert_an_admin, 1);
   db.close();
 });
+
+test('a job admin-escalated in Freigabe 1, then rejected in Freigabe 2 and reopened for rework, is not permanently locked to Portal-Admin', async () => {
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  const db = openDatabase(':memory:');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { createJob, getJobById, setKontierung, ablehnenJob, wiederOeffnenJob, abschliessenFreigabe1 } = await import('../../src/db/jobsRepo.js');
+  const { createFreigabe } = await import('../../src/db/freigabenRepo.js');
+
+  upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  // Person 2 is the Konto's own stellvertreter1, so their first-ever conflict declaration on
+  // this Konto escalates straight to admin (the same case covered above).
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2' WHERE id = ?").run(jobId);
+
+  const app = createApp({ db, config });
+  const stellvertreterAgent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  await stellvertreterAgent
+    .post(`/kontierung/${jobId}`)
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+  const escalatedJob = getJobById(db, jobId);
+  assert.equal(escalatedJob.freigabe1_eskaliert_an_admin, 1, 'sanity: escalated to admin');
+
+  // The admin (authorized via the flag branch) completes Freigabe 1 (no further conflict). This
+  // reproduces exactly what the router's non-conflict completion branch does; done via direct
+  // repo calls here rather than an admin HTTP POST because listKontenForPerson (a separate,
+  // pre-existing constraint unrelated to this fix) only returns Konten the caller holds a role
+  // on, and a Portal-Admin resolving someone else's conflict generally holds no role on the
+  // job's Konto -- not something this task's authorization fix touches.
+  setKontierung(db, jobId, kontoId);
+  createFreigabe(db, {
+    jobId,
+    personId: '99',
+    rolle: 'freigeber1',
+    zeitpunkt: new Date().toISOString(),
+    ip: '127.0.0.1',
+    interessenskonflikt: false,
+    kommentar: null,
+    eskaliertVon: escalatedJob.freigabe1_eskaliert_von,
+  });
+  abschliessenFreigabe1(db, jobId);
+  const afterFreigabe1 = getJobById(db, jobId);
+  assert.equal(afterFreigabe1.status, 'freigabe2');
+  assert.equal(afterFreigabe1.freigabe1_eskaliert_an_admin, 0, 'flag must be cleared once Freigabe 1 legitimately completes');
+  assert.equal(afterFreigabe1.zugewiesen_an, '2', 'zugewiesen_an is untouched throughout the admin-escalation path');
+
+  // Freigabe 2 rejects the job; the owner ('2') reopens it for an unrelated rework cycle.
+  ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'Falsches Konto' });
+  wiederOeffnenJob(db, jobId, '2');
+  const reopened = getJobById(db, jobId);
+  assert.equal(reopened.status, 'zugewiesen');
+  assert.equal(reopened.freigabe1_eskaliert_an_admin, 0, 'a fresh rework cycle must not still be locked to Portal-Admin-only access');
+
+  // The legitimately reassigned owner ('2'), who is not a Portal-Admin, must be able to open the
+  // job again -- not just have the DB flag be 0, but actually be authorized by loadAuthorizedJob.
+  const ownerAgent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  const ownerRes = await ownerAgent.get(`/kontierung/${jobId}`);
+  assert.equal(ownerRes.status, 200);
+  db.close();
+});
+
+test('a Portal-Admin authorized via the freigabe1_eskaliert_an_admin flag can release the job back to the pool', async () => {
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  const db = openDatabase(':memory:');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+
+  upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2' WHERE id = ?").run(jobId);
+
+  const app = createApp({ db, config });
+  const stellvertreterAgent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  await stellvertreterAgent
+    .post(`/kontierung/${jobId}`)
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+  assert.equal(getJobById(db, jobId).freigabe1_eskaliert_an_admin, 1, 'sanity: escalated to admin');
+
+  // The admin (not a member of Buchhaltung, authorized only via the flag branch) decides to
+  // send the job back to the pool instead of completing it.
+  const adminAgent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'] });
+  const releaseRes = await adminAgent.post(`/kontierung/${jobId}/zurueck-in-pool`);
+  assert.equal(releaseRes.status, 302);
+  assert.equal(releaseRes.headers.location, '/pool');
+
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'unzugewiesen', 'the job must actually be released, not silently no-op');
+  assert.equal(job.zugewiesen_an, null);
+  assert.equal(job.konto_id, null);
+  assert.equal(job.freigabe1_eskaliert_an_admin, 0, 'the admin-only lock must not survive back into the pool for the next claimer');
+  db.close();
+});

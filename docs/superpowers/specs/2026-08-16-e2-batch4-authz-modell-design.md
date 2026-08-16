@@ -62,7 +62,57 @@ strukturell ein anderer Fall, den AUTHZ-3 nicht meint.
 
 ## Verwandter Fund — `/abgelehnt` kennt das Eskalations-Flag nicht
 
-Drei koordinierte Fixes, alle nach bereits in Batch 3 etablierten Mustern:
+**Korrektur gegenüber der ursprünglichen Analyse:** die erste Fassung dieses
+Abschnitts ging davon aus, `freigabe1_eskaliert_an_admin` bliebe bis
+`/abgelehnt` gesetzt. Tatsächlich löscht `abschliessenFreigabe1`
+(`jobsRepo.js`, aus Batch 3) das Flag bereits, sobald Freigabe 1
+abgeschlossen wird — auch wenn ein Admin sie über die Eskalations-Verzweigung
+abgeschlossen hat. Der Job erreicht `/abgelehnt` danach also bereits mit
+Flag `0`: eine reine Flag-Prüfung in `ablehnung.js` würde nie greifen. Das
+eigentliche Problem liegt tiefer — siehe Fix 0.
+
+Vier koordinierte Fixes, drei davon nach bereits in Batch 3 etablierten
+Mustern:
+
+**0. `jobsRepo.js`s `abschliessenFreigabe1` löscht
+`freigabe1_eskaliert_an_admin` nicht mehr.** Aktuell:
+
+```javascript
+export function abschliessenFreigabe1(db, jobId) {
+  db.prepare(
+    "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe1_eskaliert_an_admin = 0 WHERE id = ?"
+  ).run(jobId);
+}
+```
+
+Der erklärte Interessenskonflikt von Stellvertreter 1 betrifft die konkrete
+Rechnung, nicht den einzelnen Kontierungs-Versuch — er ist mit einer
+erfolgreichen Freigabe 1 nicht automatisch erledigt. Lehnt Freigabe 2 die
+Rechnung später aus einem völlig anderen Grund ab (z. B. falsches Konto) und
+wird sie über `wiederOeffnenJob` erneut geöffnet, muss der Ausschluss
+bestehen bleiben — exakt das gleiche Prinzip, das Batch 3 bereits für
+`freigabe2_eskaliert_von` anwendet ("die Eskalation bleibt bestehen, weil der
+Konflikt real bleibt"). Die Zeile wird zu:
+
+```javascript
+export function abschliessenFreigabe1(db, jobId) {
+  // freigabe1_eskaliert_an_admin wird hier bewusst NICHT zurückgesetzt: der
+  // erklärte Interessenskonflikt gilt für die Rechnung, nicht für den
+  // einzelnen Kontierungsversuch, und muss eine spätere Ablehnung + erneutes
+  // Öffnen überleben (gleiches Prinzip wie freigabe2_eskaliert_von). Wird nur
+  // bei einem echten Voll-Reset in den Pool gelöscht (releaseJob,
+  // forceReleaseJob) — dort beginnt der Job faktisch neu, ggf. sogar mit
+  // einem anderen Konto.
+  db.prepare(
+    "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL WHERE id = ?"
+  ).run(jobId);
+}
+```
+
+`releaseJob`/`forceReleaseJob` bleiben unverändert — sie löschen das Flag
+weiterhin bei einem vollständigen Reset in den Pool, was korrekt bleibt: dort
+beginnt der Job faktisch neu, ggf. sogar mit einem komplett anderen Konto,
+für das der ursprüngliche Konflikt gar nicht mehr gilt.
 
 **1. `ablehnung.js`s `loadAuthorizedJob` wird flag-bewusst.** Bekommt
 dieselbe `isPortalAdmin(person)`-Hilfsfunktion wie `kontierung.js` und
@@ -145,7 +195,11 @@ strukturelle Änderungen an Middleware-Verkabelung und Routen-Logik.
 
 - **Unit**: `requireLogin()` (lässt aktive Session durch, blockiert fehlende
   Session und inaktive Person, unabhängig von Gruppenmitgliedschaft);
-  `listAbgelehntJobsForPerson`s neuer Flag-Filter.
+  `abschliessenFreigabe1` lässt `freigabe1_eskaliert_an_admin` unverändert
+  gesetzt, wenn es vor dem Aufruf `1` war (Mutationstest: die alte Zeile
+  `freigabe1_eskaliert_an_admin = 0` versehentlich wieder einzufügen muss
+  genau diesen Test brechen); `listAbgelehntJobsForPerson`s neuer
+  Flag-Filter.
 - **Integration**: `/kontierung`, `/freigabe2`, `/abgelehnt` bleiben für eine
   Person ohne jede Gruppenmitgliedschaft erreichbar, solange die joblokale
   Prüfung zutrifft (ersetzt/ergänzt die bisherigen rollenbasierten Zugriffs-

@@ -1,9 +1,21 @@
 import { Router } from 'express';
+import { existsSync, unlinkSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { runPersonenSync } from '../services/sync.js';
 import { hasRecentRunningSync } from '../db/syncLogRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
-import { listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet } from '../db/jobsRepo.js';
+import {
+  listPoolJobsForReminder,
+  markReminderGesendet,
+  listPoolJobsForEskalation,
+  markEskalationGesendet,
+  listAbgeholtJobs,
+  archivierenJob,
+} from '../db/jobsRepo.js';
+import { pruneMailLogOlderThan } from '../db/mailLogRepo.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
+
+const TMP_MAX_ALTER_MS = 60 * 60 * 1000; // 1 Stunde
 
 // requireCronSecret is applied once at the app.js mount, not per-route here — matching the
 // blanket-guard pattern /admin already uses, so a future route added to this router is
@@ -66,6 +78,58 @@ export function createCronRouter({ db, config, mailer }) {
     } catch (err) {
       res.status(500).json({ status: 'fehler', error: err.message });
     }
+  });
+
+  router.post('/pdf-bereinigung', (req, res) => {
+    let archiviert = 0;
+    for (const job of listAbgeholtJobs(db)) {
+      let pdfWeg = true;
+      if (job.pdf_pfad) {
+        try {
+          if (existsSync(job.pdf_pfad)) unlinkSync(job.pdf_pfad);
+        } catch (err) {
+          console.error(`Löschen der PDF für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
+          pdfWeg = !existsSync(job.pdf_pfad);
+        }
+      }
+      let thumbnailWeg = true;
+      if (job.thumbnail_pfad) {
+        try {
+          if (existsSync(job.thumbnail_pfad)) unlinkSync(job.thumbnail_pfad);
+        } catch (err) {
+          console.error(`Löschen des Thumbnails für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
+          thumbnailWeg = !existsSync(job.thumbnail_pfad);
+        }
+      }
+      if (pdfWeg && thumbnailWeg) {
+        if (archivierenJob(db, job.id)) archiviert += 1;
+      }
+    }
+
+    let tmpGeloescht = 0;
+    try {
+      const schwelle = Date.now() - TMP_MAX_ALTER_MS;
+      for (const name of readdirSync(config.jobsDir)) {
+        if (!name.endsWith('.tmp')) continue;
+        const pfad = join(config.jobsDir, name);
+        try {
+          if (statSync(pfad).mtimeMs < schwelle) {
+            unlinkSync(pfad);
+            tmpGeloescht += 1;
+          }
+        } catch (err) {
+          console.error(`Löschen der verwaisten Tmp-Datei ${pfad} fehlgeschlagen:`, err.message);
+        }
+      }
+    } catch (err) {
+      console.error('Tmp-Sweep konnte jobsDir nicht lesen:', err.message);
+    }
+
+    const aufbewahrungTage = Number(getConfigValue(db, 'mail_log_aufbewahrung_tage'));
+    const mailLogSchwelle = new Date(Date.now() - aufbewahrungTage * 24 * 60 * 60 * 1000).toISOString();
+    const mailLogGeloescht = pruneMailLogOlderThan(db, mailLogSchwelle);
+
+    res.json({ status: 'erfolg', archiviert, tmpGeloescht, mailLogGeloescht });
   });
 
   return router;

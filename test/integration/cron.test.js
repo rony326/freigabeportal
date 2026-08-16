@@ -166,3 +166,190 @@ test('POST /internal/cron/pool-erinnerungen returns a JSON error body (not an HT
   assert.equal(res.type, 'application/json');
   db.close();
 });
+
+test('POST /internal/cron/pdf-bereinigung without the secret is rejected', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).post('/internal/cron/pdf-bereinigung');
+  assert.equal(res.status, 401);
+  db.close();
+});
+
+test('POST /internal/cron/pdf-bereinigung archives an abgeholt job once its PDF and thumbnail are deleted', async () => {
+  const { mkdtempSync, rmSync, writeFileSync, existsSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+
+  const dir = mkdtempSync(join(tmpdir(), 'pdf-bereinigung-test-'));
+  const pdfPfad = join(dir, 'job.pdf');
+  const thumbPfad = join(dir, 'job.png');
+  writeFileSync(pdfPfad, 'pdf-bytes');
+  writeFileSync(thumbPfad, 'png-bytes');
+
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'abgeholt', thumbnail_pfad = ? WHERE id = ?").run(thumbPfad, jobId);
+
+  const config = { ...testConfig(), jobsDir: dir };
+  const app = createApp({ db, config });
+  const res = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, 'erfolg');
+  assert.equal(res.body.archiviert, 1);
+  assert.equal(existsSync(pdfPfad), false);
+  assert.equal(existsSync(thumbPfad), false);
+  assert.equal(getJobById(db, jobId).status, 'archiviert');
+  assert.ok(getJobById(db, jobId).archiviert_am);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /internal/cron/pdf-bereinigung archives an abgeholt job immediately if its files are already gone (idempotent, covers pre-existing orphans)', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+
+  const dir = mkdtempSync(join(tmpdir(), 'pdf-bereinigung-gone-test-'));
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  // pdf_pfad points at a file that never existed on disk — simulates a pre-Batch-2 orphan
+  // whose file was already deleted (or never written) by the time the sweep first runs.
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: join(dir, 'missing.pdf') });
+  db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ?").run(jobId);
+
+  const config = { ...testConfig(), jobsDir: dir };
+  const app = createApp({ db, config });
+  const res = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.archiviert, 1);
+  assert.equal(getJobById(db, jobId).status, 'archiviert');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /internal/cron/pdf-bereinigung never touches an abgelehnt job', async () => {
+  const { mkdtempSync, rmSync, writeFileSync, existsSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+
+  const dir = mkdtempSync(join(tmpdir(), 'pdf-bereinigung-abgelehnt-test-'));
+  const pdfPfad = join(dir, 'job.pdf');
+  writeFileSync(pdfPfad, 'pdf-bytes');
+
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'abgelehnt' WHERE id = ?").run(jobId);
+
+  const config = { ...testConfig(), jobsDir: dir };
+  const app = createApp({ db, config });
+  const res = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.archiviert, 0);
+  assert.equal(existsSync(pdfPfad), true);
+  assert.equal(getJobById(db, jobId).status, 'abgelehnt');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /internal/cron/pdf-bereinigung deletes .tmp files older than 1 hour but leaves recent ones', async () => {
+  const { mkdtempSync, rmSync, writeFileSync, existsSync, utimesSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+
+  const dir = mkdtempSync(join(tmpdir(), 'pdf-bereinigung-tmp-test-'));
+  const oldTmp = join(dir, 'job-1.pdf.old-uuid.tmp');
+  const freshTmp = join(dir, 'job-2.pdf.fresh-uuid.tmp');
+  writeFileSync(oldTmp, 'stale-stamped-pdf');
+  writeFileSync(freshTmp, 'fresh-stamped-pdf');
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  utimesSync(oldTmp, twoHoursAgo, twoHoursAgo);
+
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const config = { ...testConfig(), jobsDir: dir };
+  const app = createApp({ db, config });
+  const res = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.tmpGeloescht, 1);
+  assert.equal(existsSync(oldTmp), false);
+  assert.equal(existsSync(freshTmp), true);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /internal/cron/pdf-bereinigung prunes mail_log rows older than mail_log_aufbewahrung_tage', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { seedDefaults, setConfigValue } = await import('../../src/db/adminConfigRepo.js');
+  const { logMailAttempt, listMailLog } = await import('../../src/db/mailLogRepo.js');
+
+  const dir = mkdtempSync(join(tmpdir(), 'pdf-bereinigung-maillog-test-'));
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'mail_log_aufbewahrung_tage', '30');
+  const oldId = logMailAttempt(db, { typ: 'reminder', jobId: null, empfaenger: 'old@example.org', betreff: 'B', text: 'T', status: 'versendet' });
+  db.prepare('UPDATE mail_log SET versucht_am = ? WHERE id = ?').run('2020-01-01T00:00:00.000Z', oldId);
+  logMailAttempt(db, { typ: 'reminder', jobId: null, empfaenger: 'new@example.org', betreff: 'B', text: 'T', status: 'versendet' });
+
+  const config = { ...testConfig(), jobsDir: dir };
+  const app = createApp({ db, config });
+  const res = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.mailLogGeloescht, 1);
+  assert.equal(listMailLog(db).length, 1);
+  assert.equal(listMailLog(db)[0].empfaenger, 'new@example.org');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /internal/cron/pdf-bereinigung is idempotent: a second run with nothing new to do reports all zeros', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createJob } = await import('../../src/db/jobsRepo.js');
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+
+  const dir = mkdtempSync(join(tmpdir(), 'pdf-bereinigung-idempotent-test-'));
+  const pdfPfad = join(dir, 'job.pdf');
+  writeFileSync(pdfPfad, 'pdf-bytes');
+
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ?").run(jobId);
+
+  const config = { ...testConfig(), jobsDir: dir };
+  const app = createApp({ db, config });
+
+  const res1 = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(res1.body.archiviert, 1);
+
+  const res2 = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(res2.status, 200);
+  assert.equal(res2.body.archiviert, 0);
+  assert.equal(res2.body.tmpGeloescht, 0);
+  assert.equal(res2.body.mailLogGeloescht, 0);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});

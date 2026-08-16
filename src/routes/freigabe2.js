@@ -1,17 +1,21 @@
 import { Router } from 'express';
 import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { getJobById, eskalierenFreigabe2, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
+import { getJobById, eskalierenFreigabe2, eskalierenFreigabe2AnAdmin, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampAndFinalize } from '../services/pdfStamp.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
-import { sendNotification } from '../services/notify.js';
+import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
 
 export function createFreigabe2Router({ db, config, mailer }) {
   const router = Router();
+
+  function isPortalAdmin(person) {
+    return Boolean(person && person.gruppen.includes(String(config.churchtools.groupIdAdmin)));
+  }
 
   function loadAuthorized(req, res) {
     const job = getJobById(db, Number(req.params.id));
@@ -20,7 +24,12 @@ export function createFreigabe2Router({ db, config, mailer }) {
       return null;
     }
     const konto = getKontoById(db, job.konto_id);
-    if (!konto || getEffectiveFreigeber2Id(job, konto) !== req.currentPerson.churchtools_person_id) {
+    const authorized =
+      konto &&
+      (job.freigabe2_eskaliert_an_admin
+        ? isPortalAdmin(req.currentPerson)
+        : getEffectiveFreigeber2Id(job, konto) === req.currentPerson.churchtools_person_id);
+    if (!authorized) {
       res.status(403).render('error', { message: 'Du bist für die Freigabe 2 dieses Jobs nicht zuständig.' });
       return null;
     }
@@ -81,30 +90,48 @@ export function createFreigabe2Router({ db, config, mailer }) {
         ]);
       }
 
-      if (hatKonflikt && job.freigabe2_eskaliert_von) {
-        return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, [
-          'Diese Aufgabe wurde bereits eskaliert und kann nicht erneut eskaliert werden. Bitte wende dich an den Portal-Admin.',
-        ]);
-      }
-
       if (hatKonflikt) {
+        // SYNC-8: job.freigabe2_eskaliert_von being already set here means this job was already
+        // escalated once — and per loadAuthorized, the only person who could reach this line for
+        // an already-escalated job is that Tier-1 escalated Stellvertreter2 themselves, now also
+        // declaring their own conflict. Route to Portal-Admin instead of blocking.
+        const eskaliertAnAdmin = Boolean(job.freigabe2_eskaliert_von);
+
         db.exec('BEGIN');
         try {
-          eskalierenFreigabe2(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+          if (eskaliertAnAdmin) {
+            eskalierenFreigabe2AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+          } else {
+            eskalierenFreigabe2(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+          }
           db.exec('COMMIT');
         } catch (err) {
           db.exec('ROLLBACK');
           throw err;
         }
-        const stellvertreter2 = getPersonById(db, konto.stellvertreter2_id);
-        if (stellvertreter2) {
-          await sendNotification(db, mailer, {
-            to: stellvertreter2.email,
-            subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 2 – an dich übergeben',
-            text: `Eine Rechnung wurde dir zur Freigabe 2 übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
-            typ: 'zuweisung',
-            jobId: job.id,
-          });
+
+        if (eskaliertAnAdmin) {
+          const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
+          for (const email of empfaenger) {
+            await sendNotification(db, mailer, {
+              to: email,
+              subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 2 – an Portal-Admin eskaliert',
+              text: `Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
+              typ: 'zuweisung',
+              jobId: job.id,
+            });
+          }
+        } else {
+          const stellvertreter2 = getPersonById(db, konto.stellvertreter2_id);
+          if (stellvertreter2) {
+            await sendNotification(db, mailer, {
+              to: stellvertreter2.email,
+              subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 2 – an dich übergeben',
+              text: `Eine Rechnung wurde dir zur Freigabe 2 übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
+              typ: 'zuweisung',
+              jobId: job.id,
+            });
+          }
         }
         return res.redirect('/pool');
       }

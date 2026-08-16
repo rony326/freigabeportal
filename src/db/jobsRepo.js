@@ -165,6 +165,24 @@ export function abschliessenFreigabe2(db, jobId) {
   return result.changes > 0;
 }
 
+// SYNC-8: a second-tier escalation, triggered when the person already escalated to (Tier 1)
+// also has their own conflict of interest — routes the job to any active Portal-Admin instead
+// of blocking. zugewiesen_an is deliberately left untouched: once this flag is set, job
+// authorization stops checking zugewiesen_an for this stage entirely (see kontierung.js/
+// freigabe2.js), so the field just stays as a historical record of the last named person in
+// the chain rather than needing a sentinel value.
+export function eskalierenFreigabe1AnAdmin(db, jobId, { eskaliertVon, grund }) {
+  db.prepare(
+    'UPDATE jobs SET freigabe1_eskaliert_an_admin = 1, freigabe1_eskaliert_von = ?, freigabe1_eskalationsgrund = ? WHERE id = ?'
+  ).run(eskaliertVon, grund, jobId);
+}
+
+export function eskalierenFreigabe2AnAdmin(db, jobId, { eskaliertVon, grund }) {
+  db.prepare(
+    'UPDATE jobs SET freigabe2_eskaliert_an_admin = 1, freigabe2_eskaliert_von = ?, freigabe2_eskalationsgrund = ? WHERE id = ?'
+  ).run(eskaliertVon, grund, jobId);
+}
+
 export function releaseJob(db, jobId, personId) {
   // Also clears freigabe1_eskaliert_von/-grund: a stellvertreter1 who was escalated to can
   // release the job too (loadAuthorizedJob only checks current zugewiesen_an), and a fresh

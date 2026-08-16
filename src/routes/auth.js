@@ -22,6 +22,10 @@ export function createAuthRouter({ db, config }) {
 
       const token = await exchangeCodeForToken(config.churchtools, code);
       const profile = await fetchPerson(config.churchtools, token.access_token);
+      // TEMPORARY DIAGNOSTIC — remove once we've confirmed the real shape of /oauth/userinfo's
+      // groups field in production logs (OAuth access tokens 403 against /api/groups/*, so we
+      // need to read group membership from userinfo itself instead).
+      console.log('DIAGNOSTIC /oauth/userinfo response:', JSON.stringify(profile));
       const candidateGroupIds = [config.churchtools.groupIdBuchhaltung, config.churchtools.groupIdAdmin];
       // AUTH-WIDEN-1: login no longer requires Buchhaltung/Admin membership — Freigeber1/2 and
       // their Stellvertreter are account-based roles (AUTHZ-3) that may not be in either group.

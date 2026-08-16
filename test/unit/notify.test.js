@@ -97,3 +97,32 @@ test('resolveEmpfaenger ignores blank lines', () => {
   assert.deepEqual(result, ['x@example.org']);
   db.close();
 });
+
+test('resolveEmpfaenger resolves "gruppe:admin" to the email addresses of active Portal-Admin group members', () => {
+  const db = openDatabase(':memory:');
+  const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  upsertPerson(db, { id: '1', vorname: 'Admina', nachname: 'Eins', email: 'admin1@example.org', gruppen: ['20'], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'Nur', nachname: 'Buchhaltung', email: 'buch@example.org', gruppen: ['10'], loggedInNow: false });
+
+  const empfaenger = resolveEmpfaenger(db, CONFIG, 'gruppe:admin');
+  assert.deepEqual(empfaenger, ['admin1@example.org']);
+  db.close();
+});
+
+test('resolveEmpfaenger still resolves "gruppe:buchhaltung" and plain email lines as before', () => {
+  const db = openDatabase(':memory:');
+  const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  upsertPerson(db, { id: '1', vorname: 'Buch', nachname: 'Halter', email: 'buch@example.org', gruppen: ['10'], loggedInNow: false });
+
+  const empfaenger = resolveEmpfaenger(db, CONFIG, 'gruppe:buchhaltung\nextra@example.org');
+  assert.deepEqual(new Set(empfaenger), new Set(['buch@example.org', 'extra@example.org']));
+  db.close();
+});
+
+test('resolveEmpfaenger returns an empty array for an empty config value', () => {
+  const db = openDatabase(':memory:');
+  const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  assert.deepEqual(resolveEmpfaenger(db, CONFIG, ''), []);
+  assert.deepEqual(resolveEmpfaenger(db, CONFIG, null), []);
+  db.close();
+});

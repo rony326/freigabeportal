@@ -325,6 +325,20 @@ test('abschliessenFreigabe2 sets status to abgeschlossen and clears the escalati
   db.close();
 });
 
+test('abschliessenFreigabe2 clears freigabe2_eskaliert_an_admin, so a later rework cycle is not permanently locked to Portal-Admin', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  eskalierenFreigabe2AnAdmin(db, jobId, { eskaliertVon: '4', grund: 'Auch befangen' });
+  assert.equal(getJobById(db, jobId).freigabe2_eskaliert_an_admin, 1);
+  abschliessenFreigabe2(db, jobId);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'abgeschlossen');
+  assert.equal(job.freigabe2_eskaliert_an_admin, 0);
+  db.close();
+});
+
 test('abschliessenFreigabe2 atomically guards against completing a job twice', () => {
   const db = openDatabase(':memory:');
   seedKonto(db);

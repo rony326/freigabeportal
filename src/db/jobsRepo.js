@@ -163,9 +163,15 @@ export function eskalierenFreigabe2(db, jobId, { eskaliertVon, grund }) {
 }
 
 export function abschliessenFreigabe2(db, jobId) {
+  // Also clears freigabe2_eskaliert_an_admin: this is the one place Freigabe 2 legitimately
+  // completes (regardless of whether an admin or a regular person did it), so it's the correct
+  // single source to reset the admin-only authorization gate (see loadAuthorized in
+  // freigabe2.js). Without this, a job that was ever escalated to admin would stay locked to
+  // Portal-Admin-only access permanently, even across later, unrelated rework cycles (mirrors
+  // abschliessenFreigabe1's equivalent fix for Freigabe 1's admin-escalation flag).
   const result = db
     .prepare(
-      "UPDATE jobs SET status = 'abgeschlossen', freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL WHERE id = ? AND status = 'freigabe2'"
+      "UPDATE jobs SET status = 'abgeschlossen', freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0 WHERE id = ? AND status = 'freigabe2'"
     )
     .run(jobId);
   return result.changes > 0;

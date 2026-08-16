@@ -244,6 +244,8 @@ test('runPersonenSync does not deactivate persons referenced as approvers on an 
 
   const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
 
+  assert.equal(result.abgebrochen, false);
+  assert.equal(result.upserted, 4);
   assert.equal(result.deactivated, 0);
   assert.equal(getPersonById(db, '50').aktiv, true);
   assert.equal(getPersonById(db, '53').aktiv, true);

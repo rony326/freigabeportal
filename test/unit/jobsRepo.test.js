@@ -4,7 +4,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -682,5 +682,123 @@ test('eskalierenFreigabe2AnAdmin sets the admin-escalation flag and records who/
   assert.equal(job.freigabe2_eskaliert_an_admin, 1);
   assert.equal(job.freigabe2_eskaliert_von, '4');
   assert.equal(job.freigabe2_eskalationsgrund, 'Auch ein Interessenskonflikt');
+  db.close();
+});
+
+test('listStalledJobs finds a zugewiesen job whose actor was deactivated', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+  db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '1'").run();
+
+  const stalled = listStalledJobs(db);
+  assert.equal(stalled.length, 1);
+  assert.equal(stalled[0].job.id, jobId);
+  assert.equal(stalled[0].akteurId, '1');
+  assert.equal(stalled[0].grund, 'inaktiv');
+  db.close();
+});
+
+test('listStalledJobs finds an abgelehnt job whose actor is not auflösbar', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'abgelehnt', zugewiesen_an = '1', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+  db.prepare("UPDATE personen SET ct_person_unresolved = 1 WHERE churchtools_person_id = '1'").run();
+
+  const stalled = listStalledJobs(db);
+  assert.equal(stalled.length, 1);
+  assert.equal(stalled[0].grund, 'nicht_aufloesbar');
+  db.close();
+});
+
+test('listStalledJobs finds a freigabe2 job whose effective freigeber2 is inactive', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+  db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '3'").run();
+
+  const stalled = listStalledJobs(db);
+  assert.equal(stalled.length, 1);
+  assert.equal(stalled[0].akteurId, '3');
+  db.close();
+});
+
+test('listStalledJobs excludes a freigabe2 job already escalated to admin', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_eskaliert_an_admin = 1 WHERE id = ?").run(kontoId, jobId);
+  db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '3'").run();
+  db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '4'").run();
+
+  assert.equal(listStalledJobs(db).length, 0);
+  db.close();
+});
+
+test('listStalledJobs excludes a healthy job with an active, resolvable actor', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+
+  assert.equal(listStalledJobs(db).length, 0);
+  db.close();
+});
+
+test('forceReleaseJob resets a stalled zugewiesen job to unzugewiesen', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+
+  const result = forceReleaseJob(db, jobId);
+  assert.equal(result, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.zugewiesen_an, null);
+  assert.equal(job.konto_id, null);
+  db.close();
+});
+
+test('forceReleaseJob resets a stalled abgelehnt job to unzugewiesen', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'abgelehnt', zugewiesen_an = '1', konto_id = ?, abgelehnt_von = '3', ablehnungsgrund = 'x' WHERE id = ?").run(kontoId, jobId);
+
+  const result = forceReleaseJob(db, jobId);
+  assert.equal(result, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.abgelehnt_von, null);
+  db.close();
+});
+
+test('forceReleaseJob refuses a job that is not in a force-releasable status', () => {
+  const db = openDatabase(':memory:');
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  assert.equal(forceReleaseJob(db, jobId), false);
+  db.close();
+});
+
+test('forceEskalierenFreigabe2AnAdmin sets the admin flag on a stalled freigabe2 job', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+
+  const result = forceEskalierenFreigabe2AnAdmin(db, jobId);
+  assert.equal(result, true);
+  assert.equal(getJobById(db, jobId).freigabe2_eskaliert_an_admin, 1);
+  db.close();
+});
+
+test('forceEskalierenFreigabe2AnAdmin refuses a job not in freigabe2 or already escalated', () => {
+  const db = openDatabase(':memory:');
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  assert.equal(forceEskalierenFreigabe2AnAdmin(db, jobId), false);
   db.close();
 });

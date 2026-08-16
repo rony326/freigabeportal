@@ -1,4 +1,5 @@
 import { getKontoById } from './kontenRepo.js';
+import { getPersonById } from './personenRepo.js';
 import { listZuweisungsregeln } from './zuweisungsregelnRepo.js';
 
 function extractDomain(email) {
@@ -307,4 +308,61 @@ export function listFreigabe2JobsForPerson(db, personId) {
 
 export function getEffectiveFreigeber2Id(job, konto) {
   return job.freigabe2_eskaliert_von ? konto.stellvertreter2_id : konto.freigeber2_id;
+}
+
+// SYNC-3: a job "stalls" when its current required actor can no longer act — deactivated or
+// no longer resolvable in ChurchTools, both set by the person sync. Checked per status: for
+// 'zugewiesen'/'abgelehnt', the actor is zugewiesen_an directly; for 'freigabe2', it's the
+// effective freigeber2, unless the job already carries SYNC-8's admin-escalation flag — an
+// admin-routed job is never "stalled" by this definition (a simultaneous outage of the entire
+// Portal-Admin group is out of scope).
+export function listStalledJobs(db) {
+  const ergebnisse = [];
+
+  for (const job of db.prepare("SELECT * FROM jobs WHERE status IN ('zugewiesen', 'abgelehnt')").all()) {
+    const akteur = getPersonById(db, job.zugewiesen_an);
+    if (!akteur || !akteur.aktiv || akteur.ct_person_unresolved) {
+      ergebnisse.push({ job, akteurId: job.zugewiesen_an, grund: !akteur || !akteur.aktiv ? 'inaktiv' : 'nicht_aufloesbar' });
+    }
+  }
+
+  for (const job of db.prepare("SELECT * FROM jobs WHERE status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0").all()) {
+    const konto = getKontoById(db, job.konto_id);
+    if (!konto) continue;
+    const akteurId = getEffectiveFreigeber2Id(job, konto);
+    const akteur = getPersonById(db, akteurId);
+    if (!akteur || !akteur.aktiv || akteur.ct_person_unresolved) {
+      ergebnisse.push({ job, akteurId, grund: !akteur || !akteur.aktiv ? 'inaktiv' : 'nicht_aufloesbar' });
+    }
+  }
+
+  return ergebnisse;
+}
+
+// Resets a stalled 'zugewiesen'/'abgelehnt' job to 'unzugewiesen' so anyone can reclaim it —
+// nothing irreversible has happened yet at these stages (no Freigabe-1/2 approval recorded),
+// so a full reset is safe. Clears the same fields releaseJob/wiederOeffnenJob already clear.
+export function forceReleaseJob(db, jobId) {
+  const result = db
+    .prepare(
+      `UPDATE jobs
+       SET status = 'unzugewiesen', zugewiesen_an = NULL, konto_id = NULL,
+           freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe1_eskaliert_an_admin = 0,
+           abgelehnt_von = NULL, ablehnungsgrund = NULL,
+           reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL
+       WHERE id = ? AND status IN ('zugewiesen', 'abgelehnt')`
+    )
+    .run(jobId);
+  return result.changes > 0;
+}
+
+// A stalled 'freigabe2' job does NOT get released to the pool — that would discard the
+// already-completed, already-recorded Freigabe-1 approval and force kontierung + Freigabe 1 to
+// be redone for no reason. Instead it gets the same admin-escalation flag SYNC-8 introduces,
+// which is the correct next legitimate actor for a job already past Freigabe 1.
+export function forceEskalierenFreigabe2AnAdmin(db, jobId) {
+  const result = db
+    .prepare("UPDATE jobs SET freigabe2_eskaliert_an_admin = 1 WHERE id = ? AND status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0")
+    .run(jobId);
+  return result.changes > 0;
 }

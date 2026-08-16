@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { loadCurrentPerson, requireRole, requireAnyRole } from '../../src/middleware/roles.js';
+import { loadCurrentPerson, requireRole, requireAnyRole, requireLogin } from '../../src/middleware/roles.js';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 
@@ -105,6 +105,49 @@ test('requireAnyRole rejects a person in neither role with 403', async () => {
 test('requireAnyRole rejects an unauthenticated request with 401', async () => {
   const db = openDatabase(':memory:');
   const result = await runMiddleware(db, undefined, ['buchhaltung', 'portal-admin']);
+  assert.equal(result.statusCode, 401);
+  db.close();
+});
+
+function runRequireLogin(db, personId) {
+  return new Promise((resolve) => {
+    const req = { session: { personId }, currentPerson: null };
+    const res = {
+      locals: {},
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      render(view, locals) {
+        resolve({ statusCode: this.statusCode, view, locals });
+      },
+    };
+    loadCurrentPerson(db)(req, res, () => {
+      requireLogin()(req, res, () => resolve({ statusCode: 200, next: true }));
+    });
+  });
+}
+
+test('requireLogin allows a logged-in active person with no group memberships at all', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: false });
+  const result = await runRequireLogin(db, '1');
+  assert.equal(result.next, true);
+  db.close();
+});
+
+test('requireLogin returns 401 when nobody is logged in', async () => {
+  const db = openDatabase(':memory:');
+  const result = await runRequireLogin(db, undefined);
+  assert.equal(result.statusCode, 401);
+  db.close();
+});
+
+test('requireLogin returns 401 for a deactivated person', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'A', nachname: 'B', email: 'a@b.ch', gruppen: [], loggedInNow: true });
+  db.prepare('UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = ?').run('1');
+  const result = await runRequireLogin(db, '1');
   assert.equal(result.statusCode, 401);
   db.close();
 });

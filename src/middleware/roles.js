@@ -52,3 +52,13 @@ export function requireAnyRole(config, roles) {
     next();
   };
 }
+
+export function requireLogin() {
+  return (req, res, next) => {
+    const person = req.currentPerson;
+    if (!person || !person.aktiv) {
+      return res.status(401).render('error', { message: 'Bitte melde dich an, um fortzufahren.' });
+    }
+    next();
+  };
+}

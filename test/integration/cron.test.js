@@ -265,6 +265,39 @@ test('POST /internal/cron/pdf-bereinigung never touches an abgelehnt job', async
   db.close();
 });
 
+test('POST /internal/cron/pdf-bereinigung never archives a job while its PDF still exists on disk', async () => {
+  const { mkdtempSync, rmSync, mkdirSync, existsSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+
+  const dir = mkdtempSync(join(tmpdir(), 'pdf-bereinigung-guard-test-'));
+  // pdf_pfad points at a directory, not a file. unlinkSync() on a directory always throws
+  // EISDIR/EPERM on every platform and every user (including root, unlike a chmod-based
+  // permission-denial test, which root silently ignores) — a deterministic way to force the
+  // sweep's delete step to fail without relying on filesystem permissions.
+  const pdfPfad = join(dir, 'job-is-actually-a-dir.pdf');
+  mkdirSync(pdfPfad);
+
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ?").run(jobId);
+
+  const config = { ...testConfig(), jobsDir: dir };
+  const app = createApp({ db, config });
+  const res = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.archiviert, 0, 'the job must NOT be archived while its PDF still exists on disk');
+  assert.equal(getJobById(db, jobId).status, 'abgeholt');
+  assert.equal(existsSync(pdfPfad), true, 'the delete attempt failed, so the file must still be there');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
 test('POST /internal/cron/pdf-bereinigung deletes .tmp files older than 1 hour but leaves recent ones', async () => {
   const { mkdtempSync, rmSync, writeFileSync, existsSync, utimesSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');

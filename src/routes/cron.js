@@ -82,28 +82,32 @@ export function createCronRouter({ db, config, mailer }) {
 
   router.post('/pdf-bereinigung', (req, res) => {
     let archiviert = 0;
-    for (const job of listAbgeholtJobs(db)) {
-      let pdfWeg = true;
-      if (job.pdf_pfad) {
-        try {
-          if (existsSync(job.pdf_pfad)) unlinkSync(job.pdf_pfad);
-        } catch (err) {
-          console.error(`Löschen der PDF für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
-          pdfWeg = !existsSync(job.pdf_pfad);
+    try {
+      for (const job of listAbgeholtJobs(db)) {
+        let pdfWeg = true;
+        if (job.pdf_pfad) {
+          try {
+            if (existsSync(job.pdf_pfad)) unlinkSync(job.pdf_pfad);
+          } catch (err) {
+            console.error(`Löschen der PDF für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
+            pdfWeg = !existsSync(job.pdf_pfad);
+          }
+        }
+        let thumbnailWeg = true;
+        if (job.thumbnail_pfad) {
+          try {
+            if (existsSync(job.thumbnail_pfad)) unlinkSync(job.thumbnail_pfad);
+          } catch (err) {
+            console.error(`Löschen des Thumbnails für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
+            thumbnailWeg = !existsSync(job.thumbnail_pfad);
+          }
+        }
+        if (pdfWeg && thumbnailWeg) {
+          if (archivierenJob(db, job.id)) archiviert += 1;
         }
       }
-      let thumbnailWeg = true;
-      if (job.thumbnail_pfad) {
-        try {
-          if (existsSync(job.thumbnail_pfad)) unlinkSync(job.thumbnail_pfad);
-        } catch (err) {
-          console.error(`Löschen des Thumbnails für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
-          thumbnailWeg = !existsSync(job.thumbnail_pfad);
-        }
-      }
-      if (pdfWeg && thumbnailWeg) {
-        if (archivierenJob(db, job.id)) archiviert += 1;
-      }
+    } catch (err) {
+      console.error('Archivierungs-Sweep fehlgeschlagen:', err.message);
     }
 
     let tmpGeloescht = 0;

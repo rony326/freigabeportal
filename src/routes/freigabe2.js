@@ -232,7 +232,15 @@ export function createFreigabe2Router({ db, config, mailer }) {
         throw err;
       }
 
-      renameSync(tmpPfad, job.pdf_pfad);
+      try {
+        renameSync(tmpPfad, job.pdf_pfad);
+      } catch (err) {
+        // The job is already committed abgeschlossen at this point — a failed rename here would
+        // otherwise leave it eligible for n8n pickup with the original, unstamped PDF (no Visum,
+        // no audit trail) instead of crashing the request. Log loudly so it's noticed rather
+        // than silently shipping the wrong file.
+        console.error(`Stempel-PDF für Job ${job.id} konnte nicht final abgelegt werden:`, err.message);
+      }
       res.redirect('/pool');
     } catch (err) {
       next(err);

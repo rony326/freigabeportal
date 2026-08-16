@@ -8,7 +8,7 @@ import { createCronRouter } from './routes/cron.js';
 import { requireApiKey } from './middleware/apiKey.js';
 import { requireCronSecret } from './middleware/cronAuth.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
-import { loadCurrentPerson, requireRole, requireAnyRole } from './middleware/roles.js';
+import { loadCurrentPerson, requireRole, requireAnyRole, requireLogin } from './middleware/roles.js';
 import { loadBranding } from './middleware/branding.js';
 import { createBrandingRouter } from './routes/branding.js';
 import { createKontenRouter } from './routes/admin/konten.js';
@@ -105,9 +105,9 @@ export function createApp({ db, config }) {
   app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
   app.use('/pool', sessionLimiter, requireAnyRole(config, ['buchhaltung', 'portal-admin']), createPoolPageRouter({ db, config }));
   app.use('/downloads', publicLimiter, createDownloadsRouter({ db, config }));
-  app.use('/kontierung', sessionLimiter, requireAnyRole(config, ['buchhaltung', 'portal-admin']), createKontierungRouter({ db, config, mailer }));
-  app.use('/freigabe2', sessionLimiter, requireAnyRole(config, ['buchhaltung', 'portal-admin']), createFreigabe2Router({ db, config, mailer }));
-  app.use('/abgelehnt', sessionLimiter, requireRole(config, 'buchhaltung'), createAblehnungRouter({ db }));
+  app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer }));
+  app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer }));
+  app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db }));
 
   app.use('/auth', publicLimiter, createAuthRouter({ db, config }));
   app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));

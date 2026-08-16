@@ -4,6 +4,9 @@ import request from 'supertest';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { openDatabase } from '../../src/db/index.js';
 import { createApp } from '../../src/app.js';
+import { upsertPerson } from '../../src/db/personenRepo.js';
+import { createKonto } from '../../src/db/kontenRepo.js';
+import { createJob, claimJob } from '../../src/db/jobsRepo.js';
 
 function testConfig() {
   return {
@@ -188,6 +191,41 @@ test('GET /pool returns 200 for a Portal-Admin who is not also a Buchhaltung mem
   await agent.get('/auth/callback').query({ code: 'the-code', state });
 
   const res = await agent.get('/pool');
+  assert.equal(res.status, 200);
+  db.close();
+});
+
+test('GET /kontierung/:id is reachable through the real app for the assigned person, even without Buchhaltung or Portal-Admin group membership', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/api/whoami', method: 'GET' })
+    .reply(200, { data: { id: 5, firstName: 'Frei', lastName: 'Geber', email: 'frei@example.org' } });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  for (const id of ['5', '6', '7']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '5', stellvertreter1Id: '6', freigeber2Id: '7', stellvertreter2Id: '6' });
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '5');
+
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get(`/kontierung/${jobId}`);
   assert.equal(res.status, 200);
   db.close();
 });

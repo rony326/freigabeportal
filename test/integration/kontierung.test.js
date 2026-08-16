@@ -7,7 +7,7 @@ import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById } from '../../src/db/kontenRepo.js';
 import { createJob, claimJob, getJobById, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob } from '../../src/db/jobsRepo.js';
 import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
-import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
+import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
@@ -18,8 +18,8 @@ function createStubMailer() {
 }
 
 // Full-app helpers (matching freigabeWorkflowEndToEnd.test.js conventions) — used by the SYNC-8
-// tests below, which need the real /auth login flow so a Portal-Admin (not necessarily in
-// Buchhaltung) can reach the route via requireAnyRole at the HTTP gate.
+// tests below, which need the real /auth login flow so a Portal-Admin (verified via group
+// membership inside the route's own per-job authorization) can reach an admin-escalated job.
 // Deliberately omits publicBaseUrl: app.js derives the session cookie's Secure flag from it, and
 // express-session refuses to ever send Set-Cookie for a Secure cookie over the plain-HTTP
 // requests supertest makes, which would break the /auth/login + /auth/callback flow entirely.
@@ -76,7 +76,7 @@ function buildTestApp(db, mailer) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret', publicBaseUrl: 'https://portal.example.org' };
   app.use(loadCurrentPerson(db));
-  app.use('/kontierung', requireRole(config, 'buchhaltung'), createKontierungRouter({ db, config, mailer }));
+  app.use('/kontierung', requireLogin(), createKontierungRouter({ db, config, mailer }));
   return app;
 }
 
@@ -86,6 +86,21 @@ function seedKontoAndPersonen(db) {
   }
   return createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
 }
+
+test('GET /kontierung/:id is reachable for the assigned person with no group membership at all', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
+  for (const id of ['2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  db.close();
+});
 
 test('GET /kontierung/:id returns 403 for a person the job is not assigned to', async () => {
   const db = openDatabase(':memory:');

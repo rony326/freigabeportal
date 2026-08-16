@@ -8,7 +8,7 @@ import { upsertPerson, getPersonById } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob } from '../../src/db/jobsRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
-import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
+import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createFreigabe2Router } from '../../src/routes/freigabe2.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import * as mupdf from 'mupdf';
@@ -21,8 +21,8 @@ function createStubMailer() {
 }
 
 // Full-app helpers (matching kontierung.test.js conventions) — used by the SYNC-8 test below,
-// which needs the real /auth login flow so a Portal-Admin (not necessarily in Buchhaltung) can
-// reach the route via requireAnyRole at the HTTP gate.
+// which needs the real /auth login flow so a Portal-Admin (verified via group
+// membership inside the route's own per-job authorization) can reach an admin-escalated job.
 // Deliberately omits publicBaseUrl: app.js derives the session cookie's Secure flag from it, and
 // express-session refuses to ever send Set-Cookie for a Secure cookie over the plain-HTTP
 // requests supertest makes, which would break the /auth/login + /auth/callback flow entirely.
@@ -79,7 +79,7 @@ function buildTestApp(db, { withErrorHandler = false, mailer } = {}) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret', publicBaseUrl: 'https://portal.example.org' };
   app.use(loadCurrentPerson(db));
-  app.use('/freigabe2', requireRole(config, 'buchhaltung'), createFreigabe2Router({ db, config, mailer }));
+  app.use('/freigabe2', requireLogin(), createFreigabe2Router({ db, config, mailer }));
   if (withErrorHandler) {
     // Mirrors src/app.js's generic error middleware: anything reaching next(err) gets a
     // German 500 page instead of crashing the process.
@@ -104,6 +104,16 @@ async function seedFreigabe2Job(db, { pdfPfad }) {
   db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(id);
   return { id, kontoId };
 }
+
+test('GET /freigabe2/:id is reachable for the effective freigeber2 with no group membership at all', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  upsertPerson(db, { id: '3', vorname: 'Person3', nachname: 'Muster', email: 'p3@example.org', gruppen: [], loggedInNow: true });
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  db.close();
+});
 
 test('GET and POST /freigabe2/:id reject the person who already approved Freigabe 1 on this job, even if the Konto is edited to resolve them as Freigabe-2 approver (Vier-Augen-Prinzip)', async () => {
   const { updateKonto } = await import('../../src/db/kontenRepo.js');

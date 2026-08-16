@@ -7,7 +7,7 @@ import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, setKontierung, ablehnenJob, getJobById } from '../../src/db/jobsRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
-import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
+import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createAblehnungRouter } from '../../src/routes/ablehnung.js';
 
 function buildTestApp(db) {
@@ -25,7 +25,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use(loadCurrentPerson(db));
-  app.use('/abgelehnt', requireRole(config, 'buchhaltung'), createAblehnungRouter({ db }));
+  app.use('/abgelehnt', requireLogin(), createAblehnungRouter({ db }));
   return app;
 }
 
@@ -52,6 +52,16 @@ async function seedAbgelehntJob(db) {
   });
   return { id, kontoId };
 }
+
+test('GET /abgelehnt/:id is reachable for zugewiesen_an with no group membership at all', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedAbgelehntJob(db);
+  upsertPerson(db, { id: '1', vorname: 'Person1', nachname: 'Muster', email: 'p1@example.org', gruppen: [], loggedInNow: true });
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/abgelehnt/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  db.close();
+});
 
 test('GET /abgelehnt/:id returns 403 for a person other than zugewiesen_an', async () => {
   const db = openDatabase(':memory:');

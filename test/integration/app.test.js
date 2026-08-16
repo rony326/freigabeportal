@@ -38,6 +38,28 @@ test('GET / renders the German home page for an anonymous visitor', async () => 
   db.close();
 });
 
+test('session cookie is marked Secure when publicBaseUrl is https', async () => {
+  const db = openDatabase(':memory:');
+  const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
+  const app = createApp({ db, config });
+  // express-session refuses to emit Set-Cookie for a `secure: true` cookie unless the request
+  // is itself detected as secure — app.js sets `trust proxy: 1`, so X-Forwarded-Proto (exactly
+  // what Infomaniak's TLS-terminating reverse proxy sends in production) makes req.secure true.
+  const res = await request(app).get('/auth/login').set('X-Forwarded-Proto', 'https');
+  const cookie = res.headers['set-cookie'][0];
+  assert.match(cookie, /Secure/);
+  db.close();
+});
+
+test('session cookie is not marked Secure when publicBaseUrl is not https (or is absent)', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/auth/login');
+  const cookie = res.headers['set-cookie'][0];
+  assert.doesNotMatch(cookie, /Secure/);
+  db.close();
+});
+
 test('GET / shows a link to /pool for a logged-in buchhaltung member', async () => {
   const config = testConfig();
   config.churchtools = {

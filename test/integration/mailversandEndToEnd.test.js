@@ -36,7 +36,12 @@ function testConfig(jobsDir) {
     // unreachable IP which would block on a multi-minute TCP connection timeout — matching the
     // same host used by the pre-existing freigabeWorkflowEndToEnd/ablehnungRueckwegEndToEnd tests.
     smtp: { host: 'smtp.example.org', port: 587, user: 'u', pass: 'p', from: 'portal@example.org' },
-    publicBaseUrl: 'https://portal.example.org',
+    // http, not https: this test drives real login round-trips through supertest's in-process
+    // agent, which — correctly, matching real browser behavior — will not resend a cookie the
+    // server marked Secure back over a connection it doesn't consider secure (supertest always
+    // talks plain HTTP internally). A Secure-cookie round-trip is instead covered directly,
+    // without a multi-request round-trip, in test/integration/app.test.js.
+    publicBaseUrl: 'http://portal.example.org',
     brandingDir: jobsDir,
     jobsDir,
     downloadSigningSecret: 'download-secret',

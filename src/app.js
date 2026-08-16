@@ -44,7 +44,10 @@ export function createApp({ db, config }) {
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
-        secure: config.env === 'production',
+        // Derived from publicBaseUrl (always required in production via env.js) rather than
+        // NODE_ENV, which nothing enforces being set correctly on the host — an unset NODE_ENV
+        // would otherwise silently boot the app without the Secure flag on a TLS-required deployment.
+        secure: Boolean(config.publicBaseUrl?.startsWith('https://')),
         sameSite: 'lax',
         maxAge: 24 * 60 * 60 * 1000,
       },

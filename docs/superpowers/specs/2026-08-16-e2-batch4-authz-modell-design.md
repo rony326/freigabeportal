@@ -60,6 +60,54 @@ Buchhaltungsmitglieder sichtbar ist. Das ist ein Browse-viele-Zugriff auf
 eine geteilte Warteschlange, kein Handle-einen-zugewiesenen-Job-Zugriff —
 strukturell ein anderer Fall, den AUTHZ-3 nicht meint.
 
+## Zweiter Fund während Task 2 — Login und Sync gaten ebenfalls auf Buchhaltung/Admin
+
+Task 2s eigener neuer Integrationstest deckte auf, dass das Entfernen des
+Routen-Gates allein AUTHZ-3s Deadlock nicht auflöst: `src/routes/auth.js`s
+`/callback` verweigert die Session-Erstellung komplett (`403`, kein
+`upsertPerson`-Aufruf), wenn `resolveMemberGroupIds` für die Person keine
+Mitgliedschaft in `groupIdBuchhaltung`/`groupIdAdmin` findet.
+`src/services/sync.js`s `runPersonenSync` zieht Personen über exakt dieselben
+zwei Kandidaten-Gruppen. Da FK-Constraints eine existierende
+`personen`-Zeile voraussetzen und `admin/konten.js`s Freigeber-Dropdown aus
+`listActivePersons(db)` gespeist wird, kann eine Person ausserhalb dieser
+beiden Gruppen heute weder sich einloggen noch je in einem
+Konto-Formular auswählbar werden — der von AUTHZ-3 beschriebene Deadlock
+tritt bereits eine Ebene früher ein, nicht erst am Routen-Gate.
+
+**AUTH-WIDEN-1 — Login gated nicht mehr auf Gruppenmitgliedschaft.**
+`src/routes/auth.js`s `/callback`: der Block
+`if (gruppen.length === 0) { return res.status(403)... }` entfällt ersatzlos.
+Jede erfolgreich authentifizierte ChurchTools-Identität bekommt eine lokale
+Session und eine `personen`-Zeile. `gruppen` wird weiterhin exakt wie bisher
+berechnet (Mitgliedschaft in `groupIdBuchhaltung`/`groupIdAdmin` — dieser
+Wert bleibt die Grundlage für `requireRole`/`requireAnyRole` an anderer
+Stelle), nur die Ablehnung bei leerem Array entfällt.
+
+**SYNC-WIDEN-1 — Der nächtliche Sync hält auch Konto-referenzierte Personen
+aktiv.** Ohne diese zweite Änderung würde AUTH-WIDEN-1 nichts dauerhaft
+bewirken: eine Person, die sich einmalig einloggt, aber in keiner der beiden
+Gruppen ist, würde vom nächsten nächtlichen Sync-Lauf sofort wieder
+deaktiviert (`runPersonenSync`s `relevantIds` kennt bisher nur
+Gruppenmitglieder). `src/services/sync.js`s `personIdToGroups`-Aufbau
+erweitert sich um jede Person, die auf einem **aktiven** Konto als
+`freigeber1_id`/`stellvertreter1_id`/`freigeber2_id`/`stellvertreter2_id`
+eingetragen ist — über eine neue Funktion `listKontoReferencedPersonIds(db)`
+in `kontenRepo.js`. Ihre tatsächliche Gruppenmitgliedschaft (falls vorhanden)
+wird weiterhin normal aufgelöst und gespeichert; sie werden nur nicht mehr
+allein deswegen deaktiviert, weil sie keiner der beiden Gruppen angehören.
+
+**Bewusst nicht gelöst:** eine Person, die **noch nie** eingeloggt war und
+**nicht** in Buchhaltung/Admin ist, kann heute (und auch nach diesem Fix)
+nicht direkt in einem neuen Konto als Freigeber ausgewählt werden — das
+Konto-Formular befüllt sein Dropdown aus `listActivePersons(db)`, und die
+FK-Constraint verlangt eine bereits existierende `personen`-Zeile. Diese
+Person muss sich einmalig einloggen (wodurch AUTH-WIDEN-1 ihre Zeile
+anlegt), bevor ein Admin sie zuweisen kann. Das ist ein einmaliger
+operativer Schritt, kein Deadlock mehr — und bewusst ausserhalb des Scopes
+dieses Batches, eine Selbstauskunft/Vorab-Erfassung neuer Personen ohne
+Login würde eine eigene Design-Entscheidung erfordern.
+
 ## Verwandter Fund — `/abgelehnt` kennt das Eskalations-Flag nicht
 
 **Korrektur gegenüber der ursprünglichen Analyse:** die erste Fassung dieses
@@ -199,7 +247,19 @@ strukturelle Änderungen an Middleware-Verkabelung und Routen-Logik.
   gesetzt, wenn es vor dem Aufruf `1` war (Mutationstest: die alte Zeile
   `freigabe1_eskaliert_an_admin = 0` versehentlich wieder einzufügen muss
   genau diesen Test brechen); `listAbgelehntJobsForPerson`s neuer
-  Flag-Filter.
+  Flag-Filter; `listKontoReferencedPersonIds` (findet alle vier Rollen über
+  mehrere Konten, ignoriert deaktivierte Konten, dedupliziert eine Person,
+  die auf mehreren Konten/Rollen referenziert ist).
+- **Integration (Login/Sync)**: `POST /auth/callback` erstellt eine Session
+  auch für eine Person mit leerem `gruppen`-Array (kein 403 mehr); die
+  bestehenden Tests, dass eine gruppenlose Person auf der Startseite keinen
+  `/pool`-Link sieht, bleiben unverändert grün (Autorisierung ändert sich
+  nicht, nur die Fähigkeit, sich überhaupt einzuloggen).
+  `POST /internal/cron/sync-personen` deaktiviert eine zuvor aktive, auf
+  einem aktiven Konto referenzierte Person **nicht**, obwohl ChurchTools sie
+  in keiner der beiden Kandidaten-Gruppen zurückgibt; dieselbe Person auf
+  einem **deaktivierten** Konto wird weiterhin ganz normal deaktiviert,
+  wenn sie aus keiner Gruppe mehr kommt.
 - **Integration**: `/kontierung`, `/freigabe2`, `/abgelehnt` bleiben für eine
   Person ohne jede Gruppenmitgliedschaft erreichbar, solange die joblokale
   Prüfung zutrifft (ersetzt/ergänzt die bisherigen rollenbasierten Zugriffs-
@@ -230,4 +290,10 @@ ausschliesslich die Kontierungs-/Freigabe-1-Eskalation, weil nur diese die
 "wer überarbeitet einen abgelehnten Job"-Frage berührt. AUTHZ-4 (Audit-Minor,
 `wiederOeffnenJob`s Rückgabewert wurde verworfen) ist bereits vor diesem
 Batch behoben (`ablehnung.js` prüft den Rückgabewert bereits und rendert bei
-`false` einen 409) — keine weitere Arbeit nötig.
+`false` einen 409) — keine weitere Arbeit nötig. Keine Selbstauskunft/
+Vorab-Erfassung für eine Person, die noch nie eingeloggt war und nicht in
+Buchhaltung/Admin ist — sie muss sich einmal einloggen, bevor ein Admin sie
+einem Konto zuweisen kann (siehe "Bewusst nicht gelöst" oben). Kein
+Sync-Pull über die ganze ChurchTools-Personendatenbank hinweg —
+`listKontoReferencedPersonIds` bleibt auf tatsächlich referenzierte
+Personen beschränkt, keine offene Erweiterung der Kandidaten-Gruppen.

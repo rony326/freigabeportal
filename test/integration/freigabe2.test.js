@@ -59,6 +59,31 @@ async function seedFreigabe2Job(db, { pdfPfad }) {
   return { id, kontoId };
 }
 
+test('GET and POST /freigabe2/:id reject the person who already approved Freigabe 1 on this job, even if the Konto is edited to resolve them as Freigabe-2 approver (Vier-Augen-Prinzip)', async () => {
+  const { updateKonto } = await import('../../src/db/kontenRepo.js');
+  const db = openDatabase(':memory:');
+  const { id, kontoId } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  // Simulate an admin editing the Konto after Freigabe 1 completed, so person '1' (who already
+  // approved Freigabe 1) is now also resolved as freigeber2 for this Konto.
+  updateKonto(db, kontoId, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '1', stellvertreter2Id: '4' });
+  const app = buildTestApp(db);
+
+  const getRes = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '1');
+  assert.equal(getRes.status, 403);
+  assert.match(getRes.text, /Vier-Augen-Prinzip/);
+
+  const postRes = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ aktion: 'freigeben', interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(postRes.status, 403);
+
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'freigabe2', 'the job must not have been approved by the same person twice');
+  db.close();
+});
+
 test('GET /freigabe2/:id returns 403 for the wrong person even with the buchhaltung role', async () => {
   const db = openDatabase(':memory:');
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });

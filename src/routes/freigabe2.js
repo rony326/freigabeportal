@@ -24,6 +24,18 @@ export function createFreigabe2Router({ db, config, mailer }) {
       res.status(403).render('error', { message: 'Du bist für die Freigabe 2 dieses Jobs nicht zuständig.' });
       return null;
     }
+    // Vier-Augen-Prinzip: the Konto's role assignment is only checked at admin-edit time
+    // (validateKontoRoles), which is a point-in-time check on the Konto row, not on this
+    // specific job. If the Konto is edited while a job sits in freigabe2 — or the same person
+    // holds both Buchhaltung and Portal-Admin — the person who already approved Freigabe 1
+    // could otherwise end up as the resolved Freigabe-2 approver too. Re-check per job.
+    const freigabe1 = listFreigabenByJob(db, job.id).findLast((f) => f.rolle === 'freigeber1');
+    if (freigabe1 && freigabe1.person_id === req.currentPerson.churchtools_person_id) {
+      res.status(403).render('error', {
+        message: 'Du hast diese Rechnung bereits in Freigabe 1 freigegeben und kannst sie nicht auch in Freigabe 2 freigeben (Vier-Augen-Prinzip).',
+      });
+      return null;
+    }
     return { job, konto };
   }
 

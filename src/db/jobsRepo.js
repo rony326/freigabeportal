@@ -21,7 +21,17 @@ function normalizeAbsender(absender) {
   if (!absender) return null;
   const trimmed = absender.trim();
   const angleMatch = trimmed.match(/<([^<>]+)>\s*$/);
-  const candidate = (angleMatch ? angleMatch[1] : trimmed).trim();
+  if (!angleMatch) {
+    return EMAIL_PATTERN.test(trimmed) ? trimmed : null;
+  }
+  // Reject if anything before the final "<...>" still looks like it could hide another
+  // address — a bare "@" or a "," separating multiple addresses — once quoted display names
+  // are stripped out. Without this, "billing@attacker.example <buchhaltung@lieferant.ch>"
+  // would extract only the trailing bracketed address and silently ignore the leading one,
+  // exactly the ambiguity this function exists to refuse rather than guess at.
+  const prefix = trimmed.slice(0, angleMatch.index).replace(/"[^"]*"/g, '');
+  if (/[@,]/.test(prefix)) return null;
+  const candidate = angleMatch[1].trim();
   return EMAIL_PATTERN.test(candidate) ? candidate : null;
 }
 

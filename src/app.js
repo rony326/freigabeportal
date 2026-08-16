@@ -39,9 +39,11 @@ export function createApp({ db, config }) {
     // bytes, so this stops a browser from sniffing a crafted upload into something other than
     // its declared Content-Type when served back from /downloads or /branding.
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    // X-Frame-Options: defense-in-depth: SameSite=Lax cookies already aren't sent on cross-site
-    // framed subresource requests, and no state change in this app is a single click.
-    res.setHeader('X-Frame-Options', 'DENY');
+    // X-Frame-Options: SAMEORIGIN, not DENY — kontierung.ejs, freigabe2.ejs, and pool.ejs all
+    // embed the signed-download-URL PDF preview in a same-origin <iframe>, and DENY blocks
+    // framing even from the same origin. SameSite=Lax cookies already aren't sent on cross-site
+    // framed subresource requests, so SAMEORIGIN still closes the cross-site framing case.
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     // Referrer-Policy: signed download URLs carry their signature in the query string
     // (services/downloadUrl.js) and are embedded in <iframe> previews — without this, a link
     // clicked inside a rendered invoice PDF could leak a live, still-valid download URL to a
@@ -122,7 +124,7 @@ export function createApp({ db, config }) {
   });
 
   app.use((err, req, res, next) => {
-    console.error(err.stack || err.message);
+    console.error(err.stack || err);
     res.locals.branding ??= { primaryColor: null, secondaryColor: null, hasLogo: false, themeAttr: null };
     res.status(500).render('error', { message: 'Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es später erneut.' });
   });

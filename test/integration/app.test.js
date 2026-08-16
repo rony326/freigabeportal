@@ -72,7 +72,10 @@ test('every response carries the baseline security headers', async () => {
   const app = createApp({ db, config: testConfig() });
   const res = await request(app).get('/healthz');
   assert.equal(res.headers['x-content-type-options'], 'nosniff');
-  assert.equal(res.headers['x-frame-options'], 'DENY');
+  // SAMEORIGIN, not DENY: kontierung.ejs/freigabe2.ejs/pool.ejs all embed the PDF preview in a
+  // same-origin <iframe>, and DENY would blank every one of them — this value is load-bearing,
+  // not a style preference, do not "harden" it back to DENY.
+  assert.equal(res.headers['x-frame-options'], 'SAMEORIGIN');
   assert.equal(res.headers['referrer-policy'], 'no-referrer');
   db.close();
 });

@@ -80,6 +80,19 @@ test('findMatchingZuweisungsregel: a comma-separated multi-address sender with n
   db.close();
 });
 
+test('findMatchingZuweisungsregel: a multi-address sender where the legitimate address is bracketed still matches nothing', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  // Extracting only the last "<...>" without checking what precedes it would have let an
+  // attacker recover the bracket-extraction bypass: prepend their own address before the
+  // legitimate-looking bracketed one.
+  assert.equal(findMatchingZuweisungsregel(db, 'billing@attacker.example, <buchhaltung@lieferant.ch>'), null);
+  assert.equal(findMatchingZuweisungsregel(db, 'billing@attacker.example <buchhaltung@lieferant.ch>'), null);
+  assert.equal(findMatchingZuweisungsregel(db, 'a@evil.com <x@y.ch>, b@c.ch <rechnung@lieferant.ch>'), null);
+  db.close();
+});
+
 test('findMatchingZuweisungsregel: a malformed sender with no "@" at all matches nothing', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);

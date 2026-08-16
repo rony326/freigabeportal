@@ -38,6 +38,25 @@ Node.js-Webhosting.
 
 ### Umgebungsvariablen
 
+**Bevorzugter Weg**: über die Umgebungsvariablen-Konfiguration im
+Infomaniak Manager (Site-Konfigurationsseite, dieselbe Stelle wie
+Start-/Build-Kommando und Node-Version). Dort gesetzte Werte haben Vorrang
+vor allem anderen.
+
+**Fallback, falls diese UI auf dem gebuchten Plan nicht verfügbar ist**:
+`npm start`/`npm run dev` laden automatisch eine `.env`-Datei im
+Ausführungsordner, sofern vorhanden (`node --env-file-if-exists=.env`,
+Node ≥22.9.0, kein zusätzliches Paket wie `dotenv` nötig). Bereits über die
+Plattform gesetzte Variablen haben weiterhin Vorrang vor Werten aus der
+Datei. `.env` ist in `.gitignore` — niemals committen. Die Datei muss im
+selben Dateisystem liegen, das der laufende Prozess tatsächlich sieht — bei
+manchen Infomaniak-Node.js-Plänen ist das **nicht** dasselbe Verzeichnis,
+das über die allgemeine Hosting-SSH sichtbar ist (dort kann `~/sites/<domain>`
+leer erscheinen, während die App aus einem eigenen, isolierten
+Ausführungsbereich läuft) — im Zweifel die tatsächlich aktive `.env` über
+die Ausführungskonsole/App-eigene SSH-Zugriffsmöglichkeit des Node.js-Sites
+verifizieren, nicht über die generische Hosting-SSH.
+
 Vollständige Liste inkl. Format-Anforderungen in `.env.example`. Alle
 `*_SECRET`/`*_TOKEN`/`*_KEY`-Werte müssen mindestens 32 Zeichen lang sein
 und dürfen nicht `changeme` enthalten — die App verweigert sonst den Start

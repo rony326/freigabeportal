@@ -130,6 +130,32 @@ test('GET /api/pool/:id/thumbnail returns 404 when the job has no thumbnail', as
   db.close();
 });
 
+test('GET /api/pool/:id/thumbnail returns 404 for a job assigned to someone else (not IDOR-enumerable)', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  upsertPerson(db, { id: '51', vorname: 'Andere', nachname: 'Person', email: 'andere@example.org', gruppen: ['10'], loggedInNow: true });
+  const dir = mkdtempSync(join(tmpdir(), 'thumb-idor-test-'));
+  const thumbnailPfad = join(dir, 'a.png');
+  writeFileSync(thumbnailPfad, Buffer.from('89504e470d0a1a0a', 'hex'));
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setThumbnailPfad(db, id, thumbnailPfad);
+  const app = buildTestApp(db);
+  // '51' claims the job, taking it out of the pool and assigning it to themselves.
+  await request(app).post(`/api/pool/${id}/beanspruchen`).set('x-test-person-id', '51');
+
+  const res = await request(app).get(`/api/pool/${id}/thumbnail`).set('x-test-person-id', '50');
+  assert.equal(res.status, 404, 'a job assigned to a different person must not be visible via thumbnail enumeration');
+
+  const ownRes = await request(app).get(`/api/pool/${id}/thumbnail`).set('x-test-person-id', '51');
+  assert.equal(ownRes.status, 200, 'the assigned person can still see their own thumbnail');
+
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('GET /api/pool/:id/thumbnail returns 404 for a nonexistent job id', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db);

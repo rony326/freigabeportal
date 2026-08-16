@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Remove the Buchhaltung/Portal-Admin group gate from `/kontierung`, `/freigabe2`, and `/abgelehnt` (relying on the existing per-job assignment checks instead), and fix a related bug where a Stellvertreter1's declared conflict of interest doesn't survive a Freigabe-2 rejection and rework cycle.
+**Goal:** Remove the Buchhaltung/Portal-Admin group gate from `/kontierung`, `/freigabe2`, and `/abgelehnt` (relying on the existing per-job assignment checks instead), extend the same relief to login and the nightly sync (both of which independently gated on the same two groups, discovered mid-implementation), and fix a related bug where a Stellvertreter1's declared conflict of interest doesn't survive a Freigabe-2 rejection and rework cycle.
 
-**Architecture:** A new `requireLogin()` middleware replaces the group-based mount gate on the three routes. `abschliessenFreigabe1` stops clearing the SYNC-8 admin-exclusion flag on completion, so it persists for the life of the job. `ablehnung.js` becomes flag-aware like its sibling routes, and the rejection notification + the assignee's own job list both route correctly once the flag is set.
+**Architecture:** A new `requireLogin()` middleware replaces the group-based mount gate on the three routes. `auth.js`'s login callback and `sync.js`'s nightly sync both stop requiring Buchhaltung/Admin membership to create/keep a local `personen` row (AUTH-WIDEN-1, SYNC-WIDEN-1) — without this, the route-gate fix alone wouldn't matter, since such a person could never log in or survive the next sync. `abschliessenFreigabe1` stops clearing the SYNC-8 admin-exclusion flag on completion, so it persists for the life of the job. `ablehnung.js` becomes flag-aware like its sibling routes, and the rejection notification + the assignee's own job list both route correctly once the flag is set.
 
 **Tech Stack:** Node.js, Express, `node:sqlite` (synchronous, FK constraints enforced), EJS views, `node:test` + `supertest` for tests (`npm test` runs `node --test 'test/**/*.test.js'`).
 
@@ -353,7 +353,322 @@ git commit -m "fix(authz): drop Buchhaltung/Portal-Admin group gate from /kontie
 
 ---
 
-### Task 3: `abschliessenFreigabe1` stops clearing the admin-exclusion flag
+### Task 3: AUTH-WIDEN-1 — login no longer gates on group membership
+
+**Files:**
+- Modify: `src/routes/auth.js`
+- Modify: `test/integration/auth.test.js`
+
+**Interfaces:**
+- Produces: no new exports. `POST /auth/callback` (well, `GET`, but semantically the login completion step) now creates a session and a `personen` row for any authenticated ChurchTools identity, not only members of `groupIdBuchhaltung`/`groupIdAdmin`. `gruppen` is still computed the same way (only membership in those two groups is ever recorded), so every existing `requireRole`/`requireAnyRole` check downstream is unaffected — only the ability to obtain a session at all changes.
+
+- [ ] **Step 1: Rewrite the now-wrong test and add a new one**
+
+`test/integration/auth.test.js` currently has a test (lines 101-124) asserting the OPPOSITE of the new required behavior — it must be rewritten, not just supplemented. Replace this entire test:
+
+```javascript
+test('GET /auth/callback denies access and creates no person when the person belongs to no relevant group', async () => {
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/api/whoami', method: 'GET' })
+    .reply(200, { data: { id: 42, firstName: 'Kein', lastName: 'Zugriff', email: 'kein@example.org' } });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+
+  const res = await agent.get('/auth/callback').query({ code: 'the-code', state });
+  assert.equal(res.status, 403);
+  assert.match(res.text, /Kein Zugriff/);
+
+  const person = getPersonById(db, '42');
+  assert.equal(person, null);
+  db.close();
+});
+```
+
+with this one:
+
+```javascript
+test('GET /auth/callback creates a session and a person even when the person belongs to no relevant group (AUTH-WIDEN-1)', async () => {
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/api/oauth/token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/api/whoami', method: 'GET' })
+    .reply(200, { data: { id: 42, firstName: 'Keine', lastName: 'Gruppe', email: 'keine@example.org' } });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+
+  const res = await agent.get('/auth/callback').query({ code: 'the-code', state });
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/');
+
+  const person = getPersonById(db, '42');
+  assert.ok(person, 'a person with no relevant group membership must still get a local session and a personen row');
+  assert.deepEqual(person.gruppen, []);
+  assert.equal(person.aktiv, true);
+  db.close();
+});
+```
+
+`getPersonById` and `createApp` are already imported at the top of the file.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npm test -- --test-name-pattern="AUTH-WIDEN-1"`
+Expected: FAIL — the current code still returns 403 and creates no person.
+
+- [ ] **Step 3: Implement the fix**
+
+In `src/routes/auth.js`, remove the group-check block from the `/callback` handler. Change:
+
+```javascript
+      const token = await exchangeCodeForToken(config.churchtools, code);
+      const profile = await fetchPerson(config.churchtools, token.access_token);
+      const candidateGroupIds = [config.churchtools.groupIdBuchhaltung, config.churchtools.groupIdAdmin];
+      const gruppen = await resolveMemberGroupIds(config.churchtools, token.access_token, profile.id, candidateGroupIds);
+
+      if (gruppen.length === 0) {
+        return res.status(403).render('error', {
+          message: 'Kein Zugriff. Diese ChurchTools-Person ist keiner für das Portal relevanten Gruppe zugeordnet.',
+        });
+      }
+
+      upsertPerson(db, {
+```
+
+to:
+
+```javascript
+      const token = await exchangeCodeForToken(config.churchtools, code);
+      const profile = await fetchPerson(config.churchtools, token.access_token);
+      const candidateGroupIds = [config.churchtools.groupIdBuchhaltung, config.churchtools.groupIdAdmin];
+      // AUTH-WIDEN-1: login no longer requires Buchhaltung/Admin membership — Freigeber1/2 and
+      // their Stellvertreter are account-based roles (AUTHZ-3) that may not be in either group.
+      // gruppen is still resolved and stored exactly as before; only the empty-array rejection
+      // is gone. Every route that matters is gated by its own per-job or per-group check
+      // downstream (requireRole/requireAnyRole for /pool and /admin, per-job checks elsewhere).
+      const gruppen = await resolveMemberGroupIds(config.churchtools, token.access_token, profile.id, candidateGroupIds);
+
+      upsertPerson(db, {
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `npm test`
+Expected: PASS, full suite green. In particular confirm the pre-existing `'GET / shows no link to /pool for a logged-in person without the buchhaltung group'` test in `test/integration/app.test.js` still passes unchanged — that test already logs in a zero-Buchhaltung person successfully (it was never blocked by the old gate, since that person WAS in `groupIdAdmin`), so it's a useful regression check that this change doesn't alter authorization for people who already had a group.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/routes/auth.js test/integration/auth.test.js
+git commit -m "fix(auth): stop rejecting login for people outside Buchhaltung/Admin (AUTH-WIDEN-1)"
+```
+
+---
+
+### Task 4: SYNC-WIDEN-1 — nightly sync keeps Konto-referenced persons active
+
+**Files:**
+- Modify: `src/db/kontenRepo.js`
+- Modify: `src/services/sync.js`
+- Test: `test/unit/kontenRepo.test.js`
+- Test: `test/integration/sync.test.js`
+
+**Interfaces:**
+- Consumes: nothing from Task 3 directly (independent fix, same underlying problem).
+- Produces: `listKontoReferencedPersonIds(db)` — returns a deduplicated array of person-ID strings (matching `personen.churchtools_person_id`'s TEXT type) for every person referenced as `freigeber1_id`/`stellvertreter1_id`/`freigeber2_id`/`stellvertreter2_id` on an **active** (`aktiv = 1`) Konto. No later task consumes this directly, but Task 8's end-to-end test relies on the combined behavior of Tasks 3 and 4 together.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `test/unit/kontenRepo.test.js`, after the existing `seedPersonen` helper and before the first `test(...)` block:
+
+```javascript
+test('listKontoReferencedPersonIds returns every role across all active Konten, deduplicated', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  createKonto(db, { kontonummer: '3001', bezeichnung: 'Miete', freigeber1Id: '5', stellvertreter1Id: '2', freigeber2Id: '1', stellvertreter2Id: '3' });
+
+  const { listKontoReferencedPersonIds } = await import('../../src/db/kontenRepo.js');
+  const ids = listKontoReferencedPersonIds(db);
+  assert.deepEqual([...ids].sort(), ['1', '2', '3', '4', '5']);
+  db.close();
+});
+
+test('listKontoReferencedPersonIds ignores deactivated Konten', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  deactivateKonto(db, kontoId);
+
+  const { listKontoReferencedPersonIds } = await import('../../src/db/kontenRepo.js');
+  assert.deepEqual(listKontoReferencedPersonIds(db), []);
+  db.close();
+});
+```
+
+`createKonto` and `deactivateKonto` are already imported at the top of the file. (The dynamic `await import(...)` for `listKontoReferencedPersonIds` matches this file's own existing convention of importing new functions inline until they exist — see other test files in this codebase; feel free to add it to the static top-of-file import list instead if you prefer, as long as the test itself passes.)
+
+Add to `test/integration/sync.test.js`, after the last existing test in the file:
+
+```javascript
+test('runPersonenSync does not deactivate persons referenced as approvers on an active Konto, even with no group membership', async () => {
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  for (const id of [50, 51, 52, 53]) {
+    client.intercept({ path: `/api/persons/${id}`, method: 'GET' }).reply(200, { data: { id, firstName: `Person${id}`, lastName: 'Muster', email: `p${id}@example.org` } });
+  }
+
+  const db = openDatabase(':memory:');
+  for (const id of ['50', '51', '52', '53']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '50', stellvertreter1Id: '51', freigeber2Id: '52', stellvertreter2Id: '53' });
+
+  const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
+
+  assert.equal(result.deactivated, 0);
+  assert.equal(getPersonById(db, '50').aktiv, true);
+  assert.equal(getPersonById(db, '53').aktiv, true);
+  db.close();
+});
+
+test('runPersonenSync deactivates a person referenced only on a deactivated Konto when they have no group membership', async () => {
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 99 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/persons/99', method: 'GET' }).reply(200, { data: { id: 99, firstName: 'Bleibt', lastName: 'Aktiv', email: 'bleibt@example.org' } });
+
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '99', vorname: 'Bleibt', nachname: 'Aktiv', email: 'bleibt@example.org', gruppen: ['10'], loggedInNow: false });
+  for (const id of ['50', '51', '52', '53']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  const { createKonto, deactivateKonto } = await import('../../src/db/kontenRepo.js');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '50', stellvertreter1Id: '51', freigeber2Id: '52', stellvertreter2Id: '53' });
+  deactivateKonto(db, kontoId);
+
+  const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
+
+  assert.equal(result.deactivated, 4);
+  assert.equal(getPersonById(db, '50').aktiv, false);
+  assert.equal(getPersonById(db, '99').aktiv, true);
+  db.close();
+});
+```
+
+`upsertPerson`, `getPersonById`, `runPersonenSync`, and `CT_CONFIG` are already available at the top of this file (see its existing tests).
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `npm test -- --test-name-pattern="listKontoReferencedPersonIds|referenced as approvers|referenced only on a deactivated"`
+Expected: FAIL — `listKontoReferencedPersonIds` doesn't exist yet; the sync tests currently deactivate all four Konto-referenced persons regardless of Konto status (`result.deactivated` would be 4 in the first sync test too, not 0).
+
+- [ ] **Step 3: Implement the fix**
+
+In `src/db/kontenRepo.js`, add after `listKontenForPerson` (the file's last function):
+
+```javascript
+export function listKontoReferencedPersonIds(db) {
+  const rows = db
+    .prepare('SELECT freigeber1_id, stellvertreter1_id, freigeber2_id, stellvertreter2_id FROM konten WHERE aktiv = 1')
+    .all();
+  const ids = new Set();
+  for (const row of rows) {
+    ids.add(row.freigeber1_id);
+    ids.add(row.stellvertreter1_id);
+    ids.add(row.freigeber2_id);
+    ids.add(row.stellvertreter2_id);
+  }
+  return [...ids];
+}
+```
+
+In `src/services/sync.js`, add the import and extend `personIdToGroups`. Change the import line from:
+
+```javascript
+import { upsertPerson, getAllActivePersonIds, deactivatePerson, markUnresolved, personExists } from '../db/personenRepo.js';
+```
+
+to:
+
+```javascript
+import { upsertPerson, getAllActivePersonIds, deactivatePerson, markUnresolved, personExists } from '../db/personenRepo.js';
+import { listKontoReferencedPersonIds } from '../db/kontenRepo.js';
+```
+
+Then change the `personIdToGroups` construction block from:
+
+```javascript
+    const candidateGroupIds = [config.groupIdBuchhaltung, config.groupIdAdmin];
+    const personIdToGroups = new Map();
+    for (const groupId of candidateGroupIds) {
+      const memberIds = await fetchGroupMemberIds(config, accessToken, groupId);
+      for (const personId of memberIds) {
+        const groups = personIdToGroups.get(personId) ?? [];
+        groups.push(String(groupId));
+        personIdToGroups.set(personId, groups);
+      }
+    }
+```
+
+to:
+
+```javascript
+    const candidateGroupIds = [config.groupIdBuchhaltung, config.groupIdAdmin];
+    const personIdToGroups = new Map();
+    for (const groupId of candidateGroupIds) {
+      const memberIds = await fetchGroupMemberIds(config, accessToken, groupId);
+      for (const personId of memberIds) {
+        const groups = personIdToGroups.get(personId) ?? [];
+        groups.push(String(groupId));
+        personIdToGroups.set(personId, groups);
+      }
+    }
+    // SYNC-WIDEN-1: also keep every person currently referenced as an approver role on an
+    // active Konto, even if ChurchTools reports no Buchhaltung/Admin membership for them —
+    // otherwise AUTH-WIDEN-1's login widening would be silently undone by the very next sync
+    // run (a person who logs in once but belongs to neither group would get deactivated again
+    // within 24h). Their real group membership, if any, is unaffected — this only prevents
+    // deactivation for a reason that no longer applies to account-based approvers.
+    for (const personId of listKontoReferencedPersonIds(db)) {
+      if (!personIdToGroups.has(personId)) {
+        personIdToGroups.set(personId, []);
+      }
+    }
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `npm test`
+Expected: PASS, full suite green.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/db/kontenRepo.js src/services/sync.js test/unit/kontenRepo.test.js test/integration/sync.test.js
+git commit -m "fix(sync): keep Konto-referenced persons active regardless of group membership (SYNC-WIDEN-1)"
+```
+
+---
+
+### Task 5: `abschliessenFreigabe1` stops clearing the admin-exclusion flag
 
 **Files:**
 - Modify: `src/db/jobsRepo.js`
@@ -455,7 +770,7 @@ git commit -m "fix(jobsRepo): stop clearing freigabe1_eskaliert_an_admin on Frei
 
 ---
 
-### Task 4: `ablehnung.js` becomes flag-aware
+### Task 6: `ablehnung.js` becomes flag-aware
 
 **Files:**
 - Modify: `src/routes/ablehnung.js`
@@ -463,7 +778,7 @@ git commit -m "fix(jobsRepo): stop clearing freigabe1_eskaliert_an_admin on Frei
 - Test: `test/integration/ablehnung.test.js`
 
 **Interfaces:**
-- Consumes: `job.freigabe1_eskaliert_an_admin` (persists correctly now, per Task 3), `config.churchtools.groupIdAdmin` (already available wherever `config` is passed).
+- Consumes: `job.freigabe1_eskaliert_an_admin` (persists correctly now, per Task 5), `config.churchtools.groupIdAdmin` (already available wherever `config` is passed).
 - Produces: `createAblehnungRouter({ db, config })` — signature change from `{ db }`. Later tasks don't depend on this directly, but any future caller must pass `config`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -629,7 +944,7 @@ git commit -m "fix(ablehnung): recognize freigabe1_eskaliert_an_admin, fix ueber
 
 ---
 
-### Task 5: Rejection notification and job-list routing for the excluded person
+### Task 7: Rejection notification and job-list routing for the excluded person
 
 **Files:**
 - Modify: `src/routes/freigabe2.js`
@@ -787,13 +1102,13 @@ git commit -m "fix(freigabe2): route rejection notice and pool listing to admin 
 
 ---
 
-### Task 6: End-to-end test across real routes
+### Task 8: End-to-end test across real routes
 
 **Files:**
 - Create: `test/integration/authzModellEndToEnd.test.js`
 
 **Interfaces:**
-- Consumes: `createApp`, the full real HTTP stack, everything built in Tasks 1-5. No new exports.
+- Consumes: `createApp`, the full real HTTP stack, everything built in Tasks 1-7. No new exports.
 
 - [ ] **Step 1: Write the test**
 
@@ -918,7 +1233,7 @@ test('a Freigabe-1 conflict escalated to admin survives a Freigabe-2 rejection: 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `npm test test/integration/authzModellEndToEnd.test.js` (or `npm test -- --test-name-pattern="survives a Freigabe-2 rejection"` if your runner doesn't accept a file path)
-Expected: on a clean checkout of Tasks 1-5, this should already PASS — it's a confirmation test, not a TDD-driver for new production code. If it fails, that means one of Tasks 1-5's fixes has a gap; investigate before proceeding rather than adjusting the test to match broken behavior.
+Expected: on a clean checkout of Tasks 1-7, this should already PASS — it's a confirmation test, not a TDD-driver for new production code. If it fails, that means one of Tasks 1-7's fixes has a gap; investigate before proceeding rather than adjusting the test to match broken behavior.
 
 - [ ] **Step 3: Run the full suite**
 

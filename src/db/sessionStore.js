@@ -4,6 +4,10 @@ export class SqliteSessionStore extends Store {
   constructor(db) {
     super();
     this.db = db;
+    // Expired rows are otherwise only pruned when that exact sid is read again — a session
+    // that never comes back leaves its row forever. A boot-time sweep bounds that growth
+    // without adding a dedicated cron endpoint for it.
+    this.db.prepare('DELETE FROM sessions WHERE expires < ?').run(new Date().toISOString());
   }
 
   get(sid, callback) {

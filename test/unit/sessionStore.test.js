@@ -34,6 +34,26 @@ test('get returns null for an expired session and deletes it', () => {
   });
 });
 
+test('constructing a store sweeps already-expired rows left over from a previous run', () => {
+  const db = openDatabase(':memory:');
+  db.prepare('INSERT INTO sessions (sid, sess, expires) VALUES (?, ?, ?)').run(
+    'stale-sid',
+    JSON.stringify({ personId: '1' }),
+    new Date(Date.now() - 60000).toISOString()
+  );
+  db.prepare('INSERT INTO sessions (sid, sess, expires) VALUES (?, ?, ?)').run(
+    'fresh-sid',
+    JSON.stringify({ personId: '2' }),
+    new Date(Date.now() + 60000).toISOString()
+  );
+
+  new SqliteSessionStore(db);
+
+  assert.equal(db.prepare('SELECT * FROM sessions WHERE sid = ?').get('stale-sid'), undefined);
+  assert.notEqual(db.prepare('SELECT * FROM sessions WHERE sid = ?').get('fresh-sid'), undefined);
+  db.close();
+});
+
 test('destroy removes the session', () => {
   const db = openDatabase(':memory:');
   const store = new SqliteSessionStore(db);

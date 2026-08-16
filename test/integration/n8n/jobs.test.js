@@ -69,6 +69,51 @@ test('POST /api/n8n/jobs with a valid PDF and API key creates a job', async () =
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('POST /api/n8n/jobs stores a valid eingang_am, normalized to ISO', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .field('dateiname', 'scan.pdf')
+    .field('eingang_am', '2026-08-15T08:00:00.000Z')
+    .attach('pdf', PDF_BYTES, { filename: 'scan.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 201);
+  const job = getJobById(db, res.body.id);
+  assert.equal(job.eingang_am, '2026-08-15T08:00:00.000Z');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs rejects a malformed eingang_am, creates nothing', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .field('dateiname', 'scan.pdf')
+    .field('eingang_am', 'nicht-ein-datum')
+    .attach('pdf', PDF_BYTES, { filename: 'scan.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /eingang_am/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
 test('POST /api/n8n/jobs rejects a file that is not a real PDF, creates nothing', async () => {
   const { mkdtempSync, readdirSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');

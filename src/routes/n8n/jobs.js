@@ -44,7 +44,20 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           return res.status(400).json({ error: 'dateiname ist ein Pflichtfeld.' });
         }
 
-        const eingangAm = req.body.eingang_am || new Date().toISOString();
+        let eingangAm;
+        if (req.body.eingang_am) {
+          const parsed = new Date(req.body.eingang_am);
+          if (Number.isNaN(parsed.getTime())) {
+            return res.status(400).json({ error: 'eingang_am ist kein gültiges Datum.' });
+          }
+          // Store the normalized ISO form, not the raw input — the reminder/escalation sweeps
+          // compare eingang_am as a plain string against an ISO threshold, so a malformed-but-
+          // parseable value (e.g. non-ISO format) stored raw could otherwise make a job
+          // invisible to those comparisons forever.
+          eingangAm = parsed.toISOString();
+        } else {
+          eingangAm = new Date().toISOString();
+        }
 
         mkdirSync(config.jobsDir, { recursive: true });
         const pdfPfad = join(config.jobsDir, `job-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);

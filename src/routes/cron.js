@@ -29,11 +29,29 @@ export function createCronRouter({ db, config, mailer }) {
     }
     try {
       const result = await runPersonenSync(db, config.churchtools, config.churchtools.syncServiceToken);
+      if (result.abgebrochen) {
+        await benachrichtigeSyncFehler(result.meldung);
+        return res.json({ status: 'abgebrochen', meldung: result.meldung });
+      }
       res.json({ status: 'erfolg', ...result });
     } catch (err) {
+      await benachrichtigeSyncFehler(err.message);
       res.status(500).json({ status: 'fehler', error: err.message });
     }
   });
+
+  async function benachrichtigeSyncFehler(meldung) {
+    const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'sync_fehler_empfaenger'));
+    for (const email of empfaenger) {
+      await sendNotification(db, mailer, {
+        to: email,
+        subject: 'Freigabeportal: ChurchTools-Sync fehlgeschlagen',
+        text: `Der ChurchTools-Personen-Sync konnte nicht erfolgreich abgeschlossen werden: ${meldung}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/admin/sync`,
+        typ: 'sync-fehler',
+        jobId: null,
+      });
+    }
+  }
 
   router.post('/pool-erinnerungen', async (req, res) => {
     try {

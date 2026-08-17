@@ -1,31 +1,55 @@
 <!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
-<head><meta charset="utf-8"><title>Freigabe 2 — Freigabeportal</title></head>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Freigabe 2 — Freigabeportal</title>
+</head>
 <body>
   <%- include('_header') %>
-  <div style="display:flex;gap:1em">
-    <div style="flex:1;overflow:auto">
-      <iframe src="<%= previewUrl %>" style="width:100%;height:85vh;border:1px solid #ccc"></iframe>
-    </div>
-    <div style="width:320px;flex-shrink:0">
-      <h1>Freigabe 2</h1>
-      <p><strong>Konto:</strong> <%= konto.kontonummer %> — <%= konto.bezeichnung %></p>
-      <p><strong>Freigeber 1:</strong> <%= freigeber1Person.vorname %> <%= freigeber1Person.nachname %></p>
-      <p><strong>Interessenskonflikt Freigeber 1:</strong> <%= freigabe1.interessenskonflikt ? 'Ja' : 'Nein' %></p>
-      <% if (freigabe1.kommentar) { %><p><strong>Begründung:</strong> <%= freigabe1.kommentar %></p><% } %>
+  <main class="container-fluid py-4">
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <iframe src="<%= previewUrl %>" class="w-100 border rounded" style="height:85vh"></iframe>
+      </div>
+      <div class="col-lg-6 col-xl-4">
+        <div class="card">
+          <div class="card-body">
+            <h1 class="h3">Freigabe 2</h1>
+            <p><strong>Konto:</strong> <%= konto.kontonummer %> — <%= konto.bezeichnung %></p>
+            <p><strong>Freigeber 1:</strong> <%= freigeber1Person.vorname %> <%= freigeber1Person.nachname %></p>
+            <p><strong>Interessenskonflikt Freigeber 1:</strong> <%= freigabe1.interessenskonflikt ? 'Ja' : 'Nein' %></p>
+            <% if (freigabe1.kommentar) { %><p><strong>Begründung:</strong> <%= freigabe1.kommentar %></p><% } %>
 
-      <% if (errors.length > 0) { %>
-        <ul><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
-      <% } %>
+            <% if (errors.length > 0) { %>
+              <div class="alert alert-danger">
+                <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+              </div>
+            <% } %>
 
-      <form method="post" action="/freigabe2/<%= job.id %>">
-        <label><input type="radio" name="interessenskonflikt" value="nein" <%= values.interessenskonflikt !== 'ja' ? 'checked' : '' %>> Kein Interessenskonflikt</label><br>
-        <label><input type="radio" name="interessenskonflikt" value="ja" <%= values.interessenskonflikt === 'ja' ? 'checked' : '' %>> Interessenskonflikt</label><br>
-        <label>Begründung (bei Interessenskonflikt oder Ablehnung Pflicht) <textarea name="begruendung"><%= values.begruendung || '' %></textarea></label><br>
-        <button type="submit" name="aktion" value="freigeben">Freigeben</button>
-        <button type="submit" name="aktion" value="ablehnen">Ablehnen</button>
-      </form>
+            <form method="post" action="/freigabe2/<%= job.id %>">
+              <div class="mb-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="interessenskonflikt" id="f2konfliktNein" value="nein" <%= values.interessenskonflikt !== 'ja' ? 'checked' : '' %>>
+                  <label class="form-check-label" for="f2konfliktNein">Kein Interessenskonflikt</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="interessenskonflikt" id="f2konfliktJa" value="ja" <%= values.interessenskonflikt === 'ja' ? 'checked' : '' %>>
+                  <label class="form-check-label" for="f2konfliktJa">Interessenskonflikt</label>
+                </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="f2begruendung">Begründung (bei Interessenskonflikt oder Ablehnung Pflicht)</label>
+                <textarea class="form-control" id="f2begruendung" name="begruendung"><%= values.begruendung || '' %></textarea>
+              </div>
+              <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2">Freigeben</button>
+              <button type="submit" name="aktion" value="ablehnen" class="btn btn-outline-danger">Ablehnen</button>
+            </form>
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
+  </main>
 </body>
 </html>

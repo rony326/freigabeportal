@@ -39,6 +39,17 @@ test('GET /pool returns 401 without a session', async () => {
   db.close();
 });
 
+test('GET /pool carries a viewport meta tag and wraps the Pool table in table-responsive', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.match(res.text, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
+  assert.match(res.text, /<div class="table-responsive">/);
+  db.close();
+});
+
 test('GET /pool returns 403 for a logged-in person without the buchhaltung group', async () => {
   const db = openDatabase(':memory:');
   upsertPerson(db, { id: '77', vorname: 'Admin', nachname: 'Only', email: 'a@example.org', gruppen: ['20'], loggedInNow: true });

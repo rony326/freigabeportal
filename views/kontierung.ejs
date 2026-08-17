@@ -1,35 +1,61 @@
 <!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
-<head><meta charset="utf-8"><title>Kontierung — Freigabeportal</title></head>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Kontierung — Freigabeportal</title>
+</head>
 <body>
   <%- include('_header') %>
-  <h1>Kontierung: <%= job.dateiname %></h1>
+  <main class="container-fluid py-4">
+    <h1>Kontierung: <%= job.dateiname %></h1>
 
-  <iframe src="<%= previewUrl %>" style="width:100%;height:60vh;border:1px solid #ccc"></iframe>
+    <iframe src="<%= previewUrl %>" class="w-100 border rounded mb-3" style="height:60vh"></iframe>
 
-  <% if (errors.length > 0) { %>
-    <ul><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
-  <% } %>
+    <div class="card" style="max-width:40rem">
+      <div class="card-body">
+        <% if (errors.length > 0) { %>
+          <div class="alert alert-danger">
+            <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+          </div>
+        <% } %>
 
-  <form method="post" action="/kontierung/<%= job.id %>">
-    <label>Konto
-      <select name="kontoId" required>
-        <option value="">— wählen —</option>
-        <% konten.forEach((k) => { %>
-          <option value="<%= k.id %>" <%= String(k.id) === values.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
-        <% }) %>
-      </select>
-    </label><br>
+        <form method="post" action="/kontierung/<%= job.id %>">
+          <div class="mb-3">
+            <label class="form-label" for="kontoId">Konto</label>
+            <select class="form-select" id="kontoId" name="kontoId" required>
+              <option value="">— wählen —</option>
+              <% konten.forEach((k) => { %>
+                <option value="<%= k.id %>" <%= String(k.id) === values.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+              <% }) %>
+            </select>
+          </div>
 
-    <label><input type="radio" name="interessenskonflikt" value="nein" <%= values.interessenskonflikt !== 'ja' ? 'checked' : '' %>> Kein Interessenskonflikt</label><br>
-    <label><input type="radio" name="interessenskonflikt" value="ja" <%= values.interessenskonflikt === 'ja' ? 'checked' : '' %>> Interessenskonflikt</label><br>
-    <label>Begründung <textarea name="begruendung"><%= values.begruendung || '' %></textarea></label><br>
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="interessenskonflikt" id="konfliktNein" value="nein" <%= values.interessenskonflikt !== 'ja' ? 'checked' : '' %>>
+              <label class="form-check-label" for="konfliktNein">Kein Interessenskonflikt</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="interessenskonflikt" id="konfliktJa" value="ja" <%= values.interessenskonflikt === 'ja' ? 'checked' : '' %>>
+              <label class="form-check-label" for="konfliktJa">Interessenskonflikt</label>
+            </div>
+          </div>
 
-    <button type="submit">Kontieren und Freigabe 1 erteilen</button>
-  </form>
+          <div class="mb-3">
+            <label class="form-label" for="begruendung">Begründung</label>
+            <textarea class="form-control" id="begruendung" name="begruendung"><%= values.begruendung || '' %></textarea>
+          </div>
 
-  <form method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool">
-    <button type="submit">Zurück in den Pool legen</button>
-  </form>
+          <button type="submit" class="btn btn-primary">Kontieren und Freigabe 1 erteilen</button>
+        </form>
+
+        <form method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool" class="mt-3">
+          <button type="submit" class="btn btn-outline-secondary">Zurück in den Pool legen</button>
+        </form>
+      </div>
+    </div>
+  </main>
 </body>
 </html>

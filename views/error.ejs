@@ -1,10 +1,17 @@
 <!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
-<head><meta charset="utf-8"><title>Fehler — Freigabeportal</title></head>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Fehler — Freigabeportal</title>
+</head>
 <body>
   <%- include('_header') %>
-  <h1>Es ist ein Fehler aufgetreten</h1>
-  <p><%= message %></p>
-  <p><a href="/">Zurück zur Startseite</a></p>
+  <main class="container py-4">
+    <h1>Es ist ein Fehler aufgetreten</h1>
+    <p class="alert alert-danger"><%= message %></p>
+    <p><a href="/" class="btn btn-outline-secondary">Zurück zur Startseite</a></p>
+  </main>
 </body>
 </html>

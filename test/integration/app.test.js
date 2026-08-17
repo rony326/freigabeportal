@@ -50,6 +50,16 @@ test('GET /vendor/bootstrap/bootstrap.bundle.min.js is served as a static asset'
   db.close();
 });
 
+test('every top-level view carries a viewport meta tag', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const homeRes = await request(app).get('/');
+  assert.match(homeRes.text, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
+  const errorRes = await request(app).get('/nonexistent-route-xyz');
+  assert.match(errorRes.text, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
+  db.close();
+});
+
 test('GET / renders the German home page for an anonymous visitor', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });

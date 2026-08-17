@@ -68,12 +68,24 @@ test('POST /admin/mails/:id/erneut-versenden resends and appends a new versendet
 
   const res = await request(app).post(`/admin/mails/${id}/erneut-versenden`).set('x-test-person-id', '99');
   assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/admin/mails?gespeichert=1');
   assert.equal(mailer.sent.length, 1);
   assert.equal(mailer.sent[0].to, 'x@example.org');
 
   const rows = listMailLog(db);
   assert.equal(rows.length, 2, 'the original failed row stays, a new row is appended');
   assert.equal(rows[0].status, 'versendet', 'the newest row (retry) is versendet');
+  db.close();
+});
+
+test('GET /admin/mails?gespeichert=1 shows "Erneut gesendet."; without it, it does not', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const withMarker = await request(app).get('/admin/mails?gespeichert=1').set('x-test-person-id', '99');
+  assert.match(withMarker.text, /Erneut gesendet\./);
+  const withoutMarker = await request(app).get('/admin/mails').set('x-test-person-id', '99');
+  assert.doesNotMatch(withoutMarker.text, /Erneut gesendet\./);
   db.close();
 });
 

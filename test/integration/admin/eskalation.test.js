@@ -86,10 +86,23 @@ test('POST /admin/eskalation with valid values persists them', async () => {
     .type('form')
     .send({ reminderStunden: '12', eskalationStunden: '36', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'kirchenpflege@musterkirche.ch\ngruppe:buchhaltung' });
   assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/admin/eskalation?gespeichert=1');
   assert.equal(getConfigValue(db, 'reminder_stunden'), '12');
   assert.equal(getConfigValue(db, 'eskalation_stunden'), '36');
   assert.equal(getConfigValue(db, 'reminder_empfaenger'), 'gruppe:buchhaltung');
   assert.equal(getConfigValue(db, 'eskalation_empfaenger'), 'kirchenpflege@musterkirche.ch\ngruppe:buchhaltung');
+  db.close();
+});
+
+test('GET /admin/eskalation?gespeichert=1 shows the save confirmation; without it, it does not', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const withMarker = await request(app).get('/admin/eskalation?gespeichert=1').set('x-test-person-id', '99');
+  assert.match(withMarker.text, /Gespeichert\./);
+  const withoutMarker = await request(app).get('/admin/eskalation').set('x-test-person-id', '99');
+  assert.doesNotMatch(withoutMarker.text, /Gespeichert\./);
   db.close();
 });
 

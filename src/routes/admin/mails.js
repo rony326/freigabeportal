@@ -6,7 +6,7 @@ export function createMailsRouter({ db, mailer }) {
   const router = Router();
 
   router.get('/', (req, res) => {
-    res.render('admin/mails', { mails: listMailLog(db) });
+    res.render('admin/mails', { mails: listMailLog(db), gespeichert: req.query.gespeichert === '1' });
   });
 
   router.post('/:id/erneut-versenden', async (req, res, next) => {
@@ -22,7 +22,7 @@ export function createMailsRouter({ db, mailer }) {
         typ: eintrag.typ,
         jobId: eintrag.job_id,
       });
-      res.redirect('/admin/mails');
+      res.redirect('/admin/mails?gespeichert=1');
     } catch (err) {
       next(err);
     }

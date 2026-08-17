@@ -3,7 +3,7 @@ import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Both group tokens are accepted here (not just "gruppe:buchhaltung") because this validator is
-// shared with the /admin/sync route (Task 10), whose "Sync-Fehler-Empfänger" field defaults to
+// shared with the /admin/sync route, whose "Sync-Fehler-Empfänger" field defaults to
 // "gruppe:admin" — see adminConfigRepo's seeded default and notify.js's resolveEmpfaenger, which
 // already resolves both tokens.
 const GRUPPE_TOKENS = ['gruppe:buchhaltung', 'gruppe:admin'];
@@ -34,6 +34,7 @@ export function createEskalationRouter({ db }) {
       reminderEmpfaenger: getConfigValue(db, 'reminder_empfaenger'),
       eskalationEmpfaenger: getConfigValue(db, 'eskalation_empfaenger'),
       errors: [],
+      gespeichert: req.query.gespeichert === '1',
     });
   });
 
@@ -53,14 +54,14 @@ export function createEskalationRouter({ db }) {
     validateEmpfaengerListe(eskalationEmpfaenger, 'Eskalations-Empfänger', errors);
 
     if (errors.length > 0) {
-      return res.status(400).render('admin/eskalation-form', { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger, errors });
+      return res.status(400).render('admin/eskalation-form', { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger, errors, gespeichert: false });
     }
 
     setConfigValue(db, 'reminder_stunden', String(reminderNum));
     setConfigValue(db, 'eskalation_stunden', String(eskalationNum));
     setConfigValue(db, 'reminder_empfaenger', reminderEmpfaenger.trim());
     setConfigValue(db, 'eskalation_empfaenger', eskalationEmpfaenger.trim());
-    res.redirect('/admin/eskalation');
+    res.redirect('/admin/eskalation?gespeichert=1');
   });
 
   return router;

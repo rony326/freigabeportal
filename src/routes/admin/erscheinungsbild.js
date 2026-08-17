@@ -46,7 +46,7 @@ export function createErscheinungsbildRouter({ db, config }) {
   }
 
   router.get('/', (req, res) => {
-    res.render('admin/erscheinungsbild-form', { ...currentState(), errors: [] });
+    res.render('admin/erscheinungsbild-form', { ...currentState(), errors: [], gespeichert: req.query.gespeichert === '1' });
   });
 
   router.post('/', (req, res) => {
@@ -59,6 +59,7 @@ export function createErscheinungsbildRouter({ db, config }) {
           themeDefault: req.body.themeDefault,
           hasLogo: currentState().hasLogo,
           errors: [message],
+          gespeichert: false,
         });
       }
 
@@ -81,6 +82,7 @@ export function createErscheinungsbildRouter({ db, config }) {
           themeDefault,
           hasLogo: currentState().hasLogo,
           errors,
+          gespeichert: false,
         });
       }
 
@@ -101,7 +103,7 @@ export function createErscheinungsbildRouter({ db, config }) {
         setConfigValue(db, 'branding_logo_mimetype', req.file.mimetype);
       }
 
-      res.redirect('/admin/erscheinungsbild');
+      res.redirect('/admin/erscheinungsbild?gespeichert=1');
     });
   });
 

@@ -84,8 +84,23 @@ test('POST /admin/erscheinungsbild with valid colors and theme persists them, no
     .field('secondaryColor', '#abcdef')
     .field('themeDefault', 'dunkel');
   assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/admin/erscheinungsbild?gespeichert=1');
   assert.equal(getConfigValue(db, 'branding_farbe_primaer'), '#123456');
   assert.equal(getConfigValue(db, 'branding_theme_default'), 'dunkel');
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('GET /admin/erscheinungsbild?gespeichert=1 shows the save confirmation; without it, it does not', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const withMarker = await request(app).get('/admin/erscheinungsbild?gespeichert=1').set('x-test-person-id', '99');
+  assert.match(withMarker.text, /Gespeichert\./);
+  const withoutMarker = await request(app).get('/admin/erscheinungsbild').set('x-test-person-id', '99');
+  assert.doesNotMatch(withoutMarker.text, /Gespeichert\./);
   db.close();
   rmSync(brandingDir, { recursive: true, force: true });
 });

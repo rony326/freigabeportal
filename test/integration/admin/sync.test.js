@@ -75,8 +75,21 @@ test('POST /admin/sync updates the three config values', async () => {
     .type('form')
     .send({ maxDeaktivierungProzent: '40', maxDeaktivierungAnzahl: '5', syncFehlerEmpfaenger: 'gruppe:admin' });
   assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/admin/sync?gespeichert=1');
   assert.equal(getConfigValue(db, 'sync_max_deaktivierung_prozent'), '40');
   assert.equal(getConfigValue(db, 'sync_max_deaktivierung_anzahl'), '5');
+  db.close();
+});
+
+test('GET /admin/sync?gespeichert=1 shows the save confirmation; without it, it does not', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const withMarker = await request(app).get('/admin/sync?gespeichert=1').set('x-test-person-id', '99');
+  assert.match(withMarker.text, /Gespeichert\./);
+  const withoutMarker = await request(app).get('/admin/sync').set('x-test-person-id', '99');
+  assert.doesNotMatch(withoutMarker.text, /Gespeichert\./);
   db.close();
 });
 

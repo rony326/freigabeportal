@@ -82,7 +82,20 @@ test('POST /admin/pdf-einstellungen with "erste" persists it', async () => {
     .type('form')
     .send({ visumSeitePosition: 'erste' });
   assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/admin/pdf-einstellungen?gespeichert=1');
   assert.equal(getConfigValue(db, 'visum_seite_position'), 'erste');
+  db.close();
+});
+
+test('GET /admin/pdf-einstellungen?gespeichert=1 shows the save confirmation; without it, it does not', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const withMarker = await request(app).get('/admin/pdf-einstellungen?gespeichert=1').set('x-test-person-id', '99');
+  assert.match(withMarker.text, /Gespeichert\./);
+  const withoutMarker = await request(app).get('/admin/pdf-einstellungen').set('x-test-person-id', '99');
+  assert.doesNotMatch(withoutMarker.text, /Gespeichert\./);
   db.close();
 });
 

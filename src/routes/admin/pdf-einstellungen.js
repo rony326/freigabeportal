@@ -10,6 +10,7 @@ export function createPdfEinstellungenRouter({ db }) {
     res.render('admin/pdf-einstellungen-form', {
       visumSeitePosition: getConfigValue(db, 'visum_seite_position'),
       errors: [],
+      gespeichert: req.query.gespeichert === '1',
     });
   });
 
@@ -20,11 +21,12 @@ export function createPdfEinstellungenRouter({ db }) {
       return res.status(400).render('admin/pdf-einstellungen-form', {
         visumSeitePosition,
         errors: ['Position der Visum-Seite muss "erste" oder "letzte" sein.'],
+        gespeichert: false,
       });
     }
 
     setConfigValue(db, 'visum_seite_position', visumSeitePosition);
-    res.redirect('/admin/pdf-einstellungen');
+    res.redirect('/admin/pdf-einstellungen?gespeichert=1');
   });
 
   return router;

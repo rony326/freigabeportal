@@ -27,6 +27,7 @@ export function createSyncRouter({ db }) {
       syncLog: listRecentSyncLogs(db, 20),
       stalledJobs: ladeStalledJobsMitNamen(db),
       errors: [],
+      gespeichert: req.query.gespeichert === '1',
     });
   });
 
@@ -52,13 +53,14 @@ export function createSyncRouter({ db }) {
         syncLog: listRecentSyncLogs(db, 20),
         stalledJobs: ladeStalledJobsMitNamen(db),
         errors,
+        gespeichert: false,
       });
     }
 
     setConfigValue(db, 'sync_max_deaktivierung_prozent', String(prozentNum));
     setConfigValue(db, 'sync_max_deaktivierung_anzahl', String(anzahlNum));
     setConfigValue(db, 'sync_fehler_empfaenger', syncFehlerEmpfaenger.trim());
-    res.redirect('/admin/sync');
+    res.redirect('/admin/sync?gespeichert=1');
   });
 
   router.post('/stalled/:jobId/freigeben', (req, res) => {

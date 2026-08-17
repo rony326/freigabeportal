@@ -6,6 +6,7 @@ const DEFAULTS = {
   branding_farbe_primaer: '#2f4858',
   branding_farbe_sekundaer: '#4d7ea8',
   branding_theme_default: 'system',
+  footer_text: 'Freigabeportal',
   visum_seite_position: 'letzte',
   mail_log_aufbewahrung_tage: '90',
   sync_max_deaktivierung_prozent: '50',

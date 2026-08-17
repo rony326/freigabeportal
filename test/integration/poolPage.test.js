@@ -133,6 +133,8 @@ test('GET /pool lists a job assigned to the current person under "Meine offenen 
   assert.equal(res.status, 200);
   assert.match(res.text, /zu-kontieren\.pdf/);
   assert.match(res.text, new RegExp(`/kontierung/${id}`));
+  assert.match(res.text, new RegExp(`id="kontierung-row-${id}"`));
+  assert.match(res.text, />Kontieren</);
   db.close();
 });
 
@@ -152,6 +154,8 @@ test('GET /pool lists a job awaiting this person\'s Freigabe 2 under "Meine Frei
   assert.equal(res.status, 200);
   assert.match(res.text, /freizugeben\.pdf/);
   assert.match(res.text, new RegExp(`/freigabe2/${id}`));
+  assert.match(res.text, new RegExp(`id="freigabe2-row-${id}"`));
+  assert.match(res.text, />Freigeben</);
   db.close();
 });
 
@@ -172,6 +176,31 @@ test('GET /pool lists a job the current person can rework under "Meine abgelehnt
   assert.equal(res.status, 200);
   assert.match(res.text, /abgelehnt\.pdf/);
   assert.match(res.text, new RegExp(`/abgelehnt/${id}`));
+  assert.match(res.text, new RegExp(`id="abgelehnt-row-${id}"`));
+  assert.match(res.text, />Ansehen</);
+  db.close();
+});
+
+test('GET /pool wires the thumbnail preview through the PDF.js viewer, not the raw download URL', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
+  setThumbnailPfad(db, id, '/tmp/a-thumb.png');
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /'\/vendor\/pdfjs\/web\/viewer\.html\?file=' \+ encodeURIComponent\(img\.dataset\.previewUrl\)/);
+  db.close();
+});
+
+test('GET /pool renders the footer', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<footer/);
   db.close();
 });
 

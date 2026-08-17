@@ -102,6 +102,23 @@ test('GET /kontierung/:id is reachable for the assigned person with no group mem
   db.close();
 });
 
+test('GET /kontierung/:id embeds the preview through the PDF.js viewer, not a raw /downloads iframe', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
+  for (const id of ['2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<iframe src="\/vendor\/pdfjs\/web\/viewer\.html\?file=/);
+  assert.match(res.text, /file=%2Fdownloads%2F/);
+  db.close();
+});
+
 test('GET /kontierung/:id shows the quelle and absender that n8n submitted with the job', async () => {
   const db = openDatabase(':memory:');
   seedKontoAndPersonen(db);

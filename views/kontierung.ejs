@@ -13,7 +13,7 @@
     <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %> · Absender: <%= job.absender %><% } %></p>
     <div class="row g-3">
       <div class="col-lg-6">
-        <iframe src="<%= previewUrl %>" class="w-100 border rounded" style="height:85vh"></iframe>
+        <iframe src="/vendor/pdfjs/web/viewer.html?file=<%= encodeURIComponent(previewUrl) %>" class="w-100 border rounded" style="height:85vh"></iframe>
       </div>
       <div class="col-lg-6 col-xl-4">
         <div class="card">
@@ -63,5 +63,6 @@
       </div>
     </div>
   </main>
+  <%- include('_footer') %>
 </body>
 </html>

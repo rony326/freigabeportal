@@ -202,6 +202,17 @@ test('GET /freigabe2/:id shows the Kontierung summary to the correct freigeber2'
   db.close();
 });
 
+test('GET /freigabe2/:id embeds the preview through the PDF.js viewer, not a raw /downloads iframe', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<iframe src="\/vendor\/pdfjs\/web\/viewer\.html\?file=/);
+  assert.match(res.text, /file=%2Fdownloads%2F/);
+  db.close();
+});
+
 test('GET /freigabe2/:id shows an Audit-Log with the Freigabe 1 entry', async () => {
   const db = openDatabase(':memory:');
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });

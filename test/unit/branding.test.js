@@ -79,6 +79,22 @@ test('hasLogo stays false when only the logo path is configured but the mimetype
   db.close();
 });
 
+test('branding exposes the configured footerText', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'footer_text', 'Life Church Schaffhausen');
+  const branding = runMiddleware(db, undefined);
+  assert.equal(branding.footerText, 'Life Church Schaffhausen');
+  db.close();
+});
+
+test('branding falls back to "Freigabeportal" for footerText when unset (no seedDefaults)', () => {
+  const db = openDatabase(':memory:');
+  const branding = runMiddleware(db, undefined);
+  assert.equal(branding.footerText, 'Freigabeportal');
+  db.close();
+});
+
 test('bsThemeAttr maps dunkel to dark and hell to light, and stays null when themeAttr is null', () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);

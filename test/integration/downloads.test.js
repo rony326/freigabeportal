@@ -42,6 +42,7 @@ test('a valid, unexpired signed URL serves the PDF bytes', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.headers['content-type'], 'application/pdf');
   assert.equal(res.headers['content-disposition'], 'inline; filename="a.pdf"');
+  assert.equal(res.headers['content-length'], String(PDF_BYTES.length));
   assert.ok(Buffer.from(res.body).equals(PDF_BYTES) || res.text === PDF_BYTES.toString());
   db.close();
   rmSync(dir, { recursive: true, force: true });

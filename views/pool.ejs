@@ -12,66 +12,16 @@
     <h1>Aufgaben</h1>
 
     <h2 class="h4 mt-4">Pool</h2>
-    <% if (poolJobs.length === 0) { %>
-      <p>Keine offenen Rechnungen im Pool.</p>
-    <% } else { %>
-      <div class="table-responsive">
-        <table class="table align-middle">
-          <thead><tr><th>Vorschau</th><th>Dateiname</th><th>Quelle</th><th>Absender</th><th>Eingang</th><th></th></tr></thead>
-          <tbody>
-            <% poolJobs.forEach((job) => { %>
-              <tr id="pool-row-<%= job.id %>">
-                <td>
-                  <% if (job.thumbnail_pfad) { %>
-                    <img class="thumbnail-preview" src="/api/pool/<%= job.id %>/thumbnail" data-preview-url="<%= job.previewUrl %>" alt="Vorschau" height="60" style="cursor:pointer">
-                  <% } else { %>
-                    <span class="thumbnail-placeholder text-muted">Keine Vorschau</span>
-                  <% } %>
-                </td>
-                <td><%= job.dateiname %></td>
-                <td><%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></td>
-                <td><%= job.absender || '—' %></td>
-                <td><%= job.eingang_am %></td>
-                <td><button type="button" class="beanspruchen-btn btn btn-primary btn-sm" data-job-id="<%= job.id %>">Beanspruchen</button></td>
-              </tr>
-            <% }) %>
-          </tbody>
-        </table>
-      </div>
-    <% } %>
+    <%- include('_job_table', { jobs: poolJobs, idPrefix: 'pool', leerText: 'Keine offenen Rechnungen im Pool.' }) %>
 
     <h2 class="h4 mt-4">Meine offenen Kontierungen</h2>
-    <% if (meineKontierungen.length === 0) { %>
-      <p>Keine offenen Kontierungen.</p>
-    <% } else { %>
-      <ul class="list-group mb-3">
-        <% meineKontierungen.forEach((job) => { %>
-          <li class="list-group-item"><a href="/kontierung/<%= job.id %>"><%= job.dateiname %></a> (<%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %>, <%= job.absender %><% } %>, Eingang <%= job.eingang_am %>)</li>
-        <% }) %>
-      </ul>
-    <% } %>
+    <%- include('_job_table', { jobs: meineKontierungen, idPrefix: 'kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren', leerText: 'Keine offenen Kontierungen.' }) %>
 
     <h2 class="h4 mt-4">Meine Freigaben</h2>
-    <% if (meineFreigaben.length === 0) { %>
-      <p>Keine offenen Freigaben.</p>
-    <% } else { %>
-      <ul class="list-group mb-3">
-        <% meineFreigaben.forEach((job) => { %>
-          <li class="list-group-item"><a href="/freigabe2/<%= job.id %>"><%= job.dateiname %></a> (<%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %>, <%= job.absender %><% } %>, Eingang <%= job.eingang_am %>)</li>
-        <% }) %>
-      </ul>
-    <% } %>
+    <%- include('_job_table', { jobs: meineFreigaben, idPrefix: 'freigabe2', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben', leerText: 'Keine offenen Freigaben.' }) %>
 
     <h2 class="h4 mt-4">Meine abgelehnten Jobs</h2>
-    <% if (meineAbgelehnten.length === 0) { %>
-      <p>Keine abgelehnten Rechnungen.</p>
-    <% } else { %>
-      <ul class="list-group mb-3">
-        <% meineAbgelehnten.forEach((job) => { %>
-          <li class="list-group-item"><a href="/abgelehnt/<%= job.id %>"><%= job.dateiname %></a> (<%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %>, <%= job.absender %><% } %>, Eingang <%= job.eingang_am %>)</li>
-        <% }) %>
-      </ul>
-    <% } %>
+    <%- include('_job_table', { jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen', leerText: 'Keine abgelehnten Rechnungen.' }) %>
 
     <dialog id="preview-dialog" class="p-0 border-0 rounded">
       <div class="d-flex justify-content-end p-2 bg-body border-bottom">
@@ -105,7 +55,12 @@
 
     document.querySelectorAll('.thumbnail-preview').forEach((img) => {
       img.addEventListener('click', () => {
-        document.getElementById('preview-frame').src = img.dataset.previewUrl;
+        // Rendered via PDF.js (public/vendor/pdfjs), not the browser's native PDF plugin:
+        // Chrome's "Download PDFs instead of automatically opening them" setting blocks native
+        // inline rendering inside an <iframe> entirely (shows an Open-button placeholder that
+        // downloads instead of previewing), regardless of Content-Disposition. PDF.js renders
+        // via canvas/JS and is unaffected by that setting.
+        document.getElementById('preview-frame').src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(img.dataset.previewUrl);
         document.getElementById('preview-dialog').showModal();
       });
     });
@@ -114,5 +69,6 @@
       document.getElementById('preview-frame').src = '';
     });
   </script>
+  <%- include('_footer') %>
 </body>
 </html>

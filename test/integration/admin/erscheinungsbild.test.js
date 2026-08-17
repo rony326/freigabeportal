@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../../src/db/index.js';
-import { seedDefaults, getConfigValue } from '../../../src/db/adminConfigRepo.js';
+import { seedDefaults, getConfigValue, setConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
 import { createErscheinungsbildRouter } from '../../../src/routes/admin/erscheinungsbild.js';
@@ -82,11 +82,65 @@ test('POST /admin/erscheinungsbild with valid colors and theme persists them, no
     .set('x-test-person-id', '99')
     .field('primaryColor', '#123456')
     .field('secondaryColor', '#abcdef')
-    .field('themeDefault', 'dunkel');
+    .field('themeDefault', 'dunkel')
+    .field('footerText', 'Life Church Schaffhausen');
   assert.equal(res.status, 302);
   assert.equal(res.headers.location, '/admin/erscheinungsbild?gespeichert=1');
   assert.equal(getConfigValue(db, 'branding_farbe_primaer'), '#123456');
   assert.equal(getConfigValue(db, 'branding_theme_default'), 'dunkel');
+  assert.equal(getConfigValue(db, 'footer_text'), 'Life Church Schaffhausen');
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('GET /admin/erscheinungsbild shows the configured footerText pre-filled, and the footer itself uses it', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  setConfigValue(db, 'footer_text', 'Life Church Schaffhausen');
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await request(app).get('/admin/erscheinungsbild').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /value="Life Church Schaffhausen"/);
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('POST /admin/erscheinungsbild rejects a footerText longer than 200 characters, config untouched', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .field('footerText', 'x'.repeat(201));
+  assert.equal(res.status, 400);
+  assert.equal(getConfigValue(db, 'footer_text'), 'Freigabeportal');
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('POST /admin/erscheinungsbild can clear footerText to empty', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .field('footerText', '');
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'footer_text'), '');
   db.close();
   rmSync(brandingDir, { recursive: true, force: true });
 });

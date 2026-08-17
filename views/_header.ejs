@@ -46,6 +46,15 @@
     --bs-btn-disabled-border-color: var(--brand-primary);
   }
 </style>
+<style>
+  /* Scoped to only render alongside the menu itself: an anonymous visitor gets no menu at all,
+     so this selector must not appear in the unconditional <style> block above. Bootstrap's
+     .dropdown-item.active otherwise falls back to its own default blue, not this app's brand
+     color — same reasoning as the .btn-primary/.btn-outline-primary overrides above. */
+  .dropdown-item.active, .dropdown-item:active {
+    background-color: var(--brand-primary);
+  }
+</style>
 <header class="d-flex justify-content-between align-items-center p-3 border-bottom mb-3">
   <div class="d-flex align-items-center gap-3">
     <% if (branding.hasLogo) { %>
@@ -65,26 +74,19 @@
 <% const navIsPortalAdmin = typeof isPortalAdmin !== 'undefined' && isPortalAdmin; %>
 <% const navAktuellerPfad = typeof currentPath !== 'undefined' ? currentPath : ''; %>
 <% if (navIsBuchhaltung || navIsPortalAdmin) { %>
-  <style>
-    /* Scoped to only render alongside the nav-tabs bar itself: an anonymous visitor gets no
-       tabs at all, so this selector (and the literal class name it targets) must not appear
-       in the unconditional <style> block above, or it would always be present in the markup
-       even when no tabs are rendered. */
-    .nav-tabs .nav-link.active {
-      color: var(--brand-primary);
-      border-bottom: 2px solid var(--brand-primary);
-    }
-  </style>
-  <ul class="nav nav-tabs container mb-3">
-    <li class="nav-item">
-      <a class="nav-link<%= navAktuellerPfad === '/pool' ? ' active' : '' %>" href="/pool">Aufgaben</a>
-    </li>
-    <% if (navIsPortalAdmin) { %>
-      <li class="nav-item">
-        <a class="nav-link<%= navAktuellerPfad.startsWith('/admin') ? ' active' : '' %>" href="/admin">Admin</a>
-      </li>
-    <% } %>
-  </ul>
+  <nav class="container mb-3">
+    <div class="dropdown">
+      <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="hauptmenue-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+        Menü
+      </button>
+      <ul class="dropdown-menu" aria-labelledby="hauptmenue-toggle">
+        <li><a class="dropdown-item<%= navAktuellerPfad === '/pool' ? ' active' : '' %>" href="/pool">Aufgaben</a></li>
+        <% if (navIsPortalAdmin) { %>
+          <li><a class="dropdown-item<%= navAktuellerPfad.startsWith('/admin') ? ' active' : '' %>" href="/admin">Admin</a></li>
+        <% } %>
+      </ul>
+    </div>
+  </nav>
 <% } %>
 <script>
   document.getElementById('theme-toggle').addEventListener('click', function () {

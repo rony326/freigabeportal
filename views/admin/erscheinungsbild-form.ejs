@@ -40,6 +40,11 @@
         <label class="form-label" for="logo">Logo (PNG oder JPEG, max. 2 MB)</label>
         <input type="file" class="form-control" id="logo" name="logo" accept="image/png,image/jpeg">
       </div>
+      <div class="mb-3">
+        <label class="form-label" for="footerText">Footer-Text</label>
+        <input type="text" class="form-control" id="footerText" name="footerText" value="<%= footerText %>" maxlength="200" placeholder="z.B. Kirchenname oder Kontakt-Mail">
+        <div class="form-text">Wird im Footer als „© <%= new Date().getFullYear() %> …“ angezeigt. Leer lassen für kein Text.</div>
+      </div>
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>
         <div class="alert alert-success alert-dismissible fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">
@@ -49,5 +54,6 @@
       <% } %>
     </form>
   </main>
+  <%- include('../_footer') %>
 </body>
 </html>

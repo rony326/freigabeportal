@@ -43,6 +43,13 @@ test('seedDefaults sets branding defaults', () => {
   db.close();
 });
 
+test('seedDefaults sets footer_text default', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'footer_text'), 'Freigabeportal');
+  db.close();
+});
+
 test('seedDefaults sets visum_seite_position default', () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);

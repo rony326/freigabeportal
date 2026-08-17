@@ -111,7 +111,7 @@ test('every response carries the baseline security headers', async () => {
   db.close();
 });
 
-test('nav-tabs shows only the Aufgaben tab for a Buchhaltung-only member, active on /pool', async () => {
+test('Hauptmenü shows only the Aufgaben entry for a Buchhaltung-only member, active on /pool', async () => {
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -135,12 +135,12 @@ test('nav-tabs shows only the Aufgaben tab for a Buchhaltung-only member, active
   await agent.get('/auth/callback').query({ code: 'the-code', state });
 
   const res = await agent.get('/pool');
-  assert.match(res.text, /class="nav-link active" href="\/pool"/);
+  assert.match(res.text, /class="dropdown-item active" href="\/pool"/);
   assert.doesNotMatch(res.text, /href="\/admin"/);
   db.close();
 });
 
-test('nav-tabs shows both Aufgaben and Admin tabs for a Portal-Admin, Admin tab active on /admin', async () => {
+test('Hauptmenü shows both Aufgaben and Admin entries for a Portal-Admin, Admin active on /admin', async () => {
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -165,15 +165,16 @@ test('nav-tabs shows both Aufgaben and Admin tabs for a Portal-Admin, Admin tab 
 
   const res = await agent.get('/admin');
   assert.match(res.text, /href="\/pool">Aufgaben/);
-  assert.match(res.text, /class="nav-link active" href="\/admin">Admin/);
+  assert.match(res.text, /class="dropdown-item active" href="\/admin">Admin/);
   db.close();
 });
 
-test('nav-tabs renders no tabs at all for an anonymous visitor', async () => {
+test('Hauptmenü renders no menu at all for an anonymous visitor', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });
   const res = await request(app).get('/');
-  assert.doesNotMatch(res.text, /nav-tabs/);
+  assert.doesNotMatch(res.text, /dropdown-menu/);
+  assert.doesNotMatch(res.text, />Aufgaben</);
   db.close();
 });
 

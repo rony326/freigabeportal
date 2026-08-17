@@ -5,17 +5,17 @@ import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/dow
 export function createPoolPageRouter({ db, config }) {
   const router = Router();
 
+  function mitPreviewUrl(jobs) {
+    return jobs.map((job) => ({ ...job, previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS) }));
+  }
+
   router.get('/', (req, res) => {
     const personId = req.currentPerson.churchtools_person_id;
-    const poolJobs = listPoolJobs(db).map((job) => ({
-      ...job,
-      previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
-    }));
     res.render('pool', {
-      poolJobs,
-      meineKontierungen: listZugewiesenJobsForPerson(db, personId),
-      meineFreigaben: listFreigabe2JobsForPerson(db, personId),
-      meineAbgelehnten: listAbgelehntJobsForPerson(db, personId),
+      poolJobs: mitPreviewUrl(listPoolJobs(db)),
+      meineKontierungen: mitPreviewUrl(listZugewiesenJobsForPerson(db, personId)),
+      meineFreigaben: mitPreviewUrl(listFreigabe2JobsForPerson(db, personId)),
+      meineAbgelehnten: mitPreviewUrl(listAbgelehntJobsForPerson(db, personId)),
     });
   });
 

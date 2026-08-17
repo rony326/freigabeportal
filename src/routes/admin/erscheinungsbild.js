@@ -41,6 +41,7 @@ export function createErscheinungsbildRouter({ db, config }) {
       primaryColor: getConfigValue(db, 'branding_farbe_primaer'),
       secondaryColor: getConfigValue(db, 'branding_farbe_sekundaer'),
       themeDefault: getConfigValue(db, 'branding_theme_default'),
+      footerText: getConfigValue(db, 'footer_text') ?? '',
       hasLogo: Boolean(getConfigValue(db, 'branding_logo_pfad')),
     };
   }
@@ -57,6 +58,7 @@ export function createErscheinungsbildRouter({ db, config }) {
           primaryColor: req.body.primaryColor,
           secondaryColor: req.body.secondaryColor,
           themeDefault: req.body.themeDefault,
+          footerText: req.body.footerText || '',
           hasLogo: currentState().hasLogo,
           errors: [message],
           gespeichert: false,
@@ -64,10 +66,12 @@ export function createErscheinungsbildRouter({ db, config }) {
       }
 
       const { primaryColor, secondaryColor, themeDefault } = req.body;
+      const footerText = (req.body.footerText || '').trim();
       const errors = [];
       if (!HEX_COLOR_PATTERN.test(primaryColor || '')) errors.push('Primärfarbe muss ein gültiger Hex-Farbwert sein (z.B. #2f4858).');
       if (!HEX_COLOR_PATTERN.test(secondaryColor || '')) errors.push('Sekundärfarbe muss ein gültiger Hex-Farbwert sein (z.B. #4d7ea8).');
       if (!VALID_THEME_DEFAULTS.has(themeDefault)) errors.push('Ungültiger Standard-Farbmodus.');
+      if (footerText.length > 200) errors.push('Footer-Text darf höchstens 200 Zeichen lang sein.');
       if (req.file) {
         const detectedMimetype = detectImageMimetype(req.file.buffer);
         if (!ALLOWED_MIMETYPES[req.file.mimetype] || !detectedMimetype || detectedMimetype !== req.file.mimetype) {
@@ -80,6 +84,7 @@ export function createErscheinungsbildRouter({ db, config }) {
           primaryColor,
           secondaryColor,
           themeDefault,
+          footerText,
           hasLogo: currentState().hasLogo,
           errors,
           gespeichert: false,
@@ -89,6 +94,7 @@ export function createErscheinungsbildRouter({ db, config }) {
       setConfigValue(db, 'branding_farbe_primaer', primaryColor);
       setConfigValue(db, 'branding_farbe_sekundaer', secondaryColor);
       setConfigValue(db, 'branding_theme_default', themeDefault);
+      setConfigValue(db, 'footer_text', footerText);
 
       if (req.file) {
         const ext = ALLOWED_MIMETYPES[req.file.mimetype];

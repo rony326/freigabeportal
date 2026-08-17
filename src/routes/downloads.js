@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import { getJobById } from '../db/jobsRepo.js';
 import { verifySignedDownload } from '../services/downloadUrl.js';
 
@@ -39,6 +39,10 @@ export function createDownloadsRouter({ db, config }) {
     // filename (CR/LF stripped, quotes escaped) makes every browser render it in place.
     const safeName = job.dateiname.replace(/[\r\n"]/g, '');
     res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+    // A chunked response with no Content-Length is a known trigger for some PDF viewers
+    // (notably Safari/iOS) to fall back to a download prompt instead of rendering inline —
+    // setting it explicitly removes that ambiguity for every browser.
+    res.setHeader('Content-Length', statSync(job.pdf_pfad).size);
     stream.pipe(res);
   });
 

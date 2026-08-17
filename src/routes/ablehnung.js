@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getJobById, wiederOeffnenJob } from '../db/jobsRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { listFreigabenByJob } from '../db/freigabenRepo.js';
+import { buildAuditLog } from '../services/auditLog.js';
 
 export function createAblehnungRouter({ db, config }) {
   const router = Router();
@@ -31,7 +32,7 @@ export function createAblehnungRouter({ db, config }) {
     if (!job) return;
     const abgelehntVonPerson = getPersonById(db, job.abgelehnt_von);
     const ablehnung = listFreigabenByJob(db, job.id).findLast((f) => f.rolle === 'ablehnung');
-    res.render('abgelehnt', { job, abgelehntVonPerson, ablehnung });
+    res.render('abgelehnt', { job, abgelehntVonPerson, ablehnung, auditLog: buildAuditLog(db, job.id) });
   });
 
   router.post('/:id/ueberarbeiten', (req, res) => {

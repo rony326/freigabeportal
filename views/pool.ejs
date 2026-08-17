@@ -17,7 +17,7 @@
     <% } else { %>
       <div class="table-responsive">
         <table class="table align-middle">
-          <thead><tr><th>Vorschau</th><th>Dateiname</th><th>Eingang</th><th></th></tr></thead>
+          <thead><tr><th>Vorschau</th><th>Dateiname</th><th>Quelle</th><th>Absender</th><th>Eingang</th><th></th></tr></thead>
           <tbody>
             <% poolJobs.forEach((job) => { %>
               <tr id="pool-row-<%= job.id %>">
@@ -29,6 +29,8 @@
                   <% } %>
                 </td>
                 <td><%= job.dateiname %></td>
+                <td><%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></td>
+                <td><%= job.absender || '—' %></td>
                 <td><%= job.eingang_am %></td>
                 <td><button type="button" class="beanspruchen-btn btn btn-primary btn-sm" data-job-id="<%= job.id %>">Beanspruchen</button></td>
               </tr>
@@ -44,7 +46,7 @@
     <% } else { %>
       <ul class="list-group mb-3">
         <% meineKontierungen.forEach((job) => { %>
-          <li class="list-group-item"><a href="/kontierung/<%= job.id %>"><%= job.dateiname %></a> (Eingang <%= job.eingang_am %>)</li>
+          <li class="list-group-item"><a href="/kontierung/<%= job.id %>"><%= job.dateiname %></a> (<%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %>, <%= job.absender %><% } %>, Eingang <%= job.eingang_am %>)</li>
         <% }) %>
       </ul>
     <% } %>
@@ -55,7 +57,7 @@
     <% } else { %>
       <ul class="list-group mb-3">
         <% meineFreigaben.forEach((job) => { %>
-          <li class="list-group-item"><a href="/freigabe2/<%= job.id %>"><%= job.dateiname %></a> (Eingang <%= job.eingang_am %>)</li>
+          <li class="list-group-item"><a href="/freigabe2/<%= job.id %>"><%= job.dateiname %></a> (<%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %>, <%= job.absender %><% } %>, Eingang <%= job.eingang_am %>)</li>
         <% }) %>
       </ul>
     <% } %>
@@ -66,7 +68,7 @@
     <% } else { %>
       <ul class="list-group mb-3">
         <% meineAbgelehnten.forEach((job) => { %>
-          <li class="list-group-item"><a href="/abgelehnt/<%= job.id %>"><%= job.dateiname %></a> (Eingang <%= job.eingang_am %>)</li>
+          <li class="list-group-item"><a href="/abgelehnt/<%= job.id %>"><%= job.dateiname %></a> (<%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %>, <%= job.absender %><% } %>, Eingang <%= job.eingang_am %>)</li>
         <% }) %>
       </ul>
     <% } %>

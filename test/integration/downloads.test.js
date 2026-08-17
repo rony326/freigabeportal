@@ -41,7 +41,31 @@ test('a valid, unexpired signed URL serves the PDF bytes', async () => {
 
   assert.equal(res.status, 200);
   assert.equal(res.headers['content-type'], 'application/pdf');
+  assert.equal(res.headers['content-disposition'], 'inline; filename="a.pdf"');
   assert.ok(Buffer.from(res.body).equals(PDF_BYTES) || res.text === PDF_BYTES.toString());
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('Content-Disposition strips CR/LF and quotes from the filename to prevent header injection', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  const pdfPfad = join(dir, `f-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+  writeFileSync(pdfPfad, PDF_BYTES);
+  const id = createJob(db, {
+    eingangAm: '2026-08-14T10:00:00.000Z',
+    quelle: 'scanner',
+    absender: null,
+    dateiname: 'evil"\r\nX-Injected: yes.pdf',
+    pdfPfad,
+  });
+  const app = buildTestApp(db, config);
+
+  const res = await request(app).get(buildSignedDownloadUrl(config, id, 900));
+
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['content-disposition'], 'inline; filename="evilX-Injected: yes.pdf"');
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });

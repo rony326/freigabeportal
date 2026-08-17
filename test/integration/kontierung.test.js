@@ -5,8 +5,8 @@ import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, getJobById, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob } from '../../src/db/jobsRepo.js';
-import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
+import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob } from '../../src/db/jobsRepo.js';
+import { listFreigabenByJob, createFreigabe } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
 import { createApp } from '../../src/app.js';
@@ -99,6 +99,44 @@ test('GET /kontierung/:id is reachable for the assigned person with no group mem
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
+  db.close();
+});
+
+test('GET /kontierung/:id shows the quelle and absender that n8n submitted with the job', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const id = createJob(db, {
+    eingangAm: '2026-08-15T08:00:00.000Z',
+    quelle: 'lieferant',
+    absender: 'buchhaltung@lieferant.example',
+    dateiname: 'a.pdf',
+    pdfPfad: '/tmp/a.pdf',
+  });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Lieferant/);
+  assert.match(res.text, /buchhaltung@lieferant\.example/);
+  db.close();
+});
+
+test('GET /kontierung/:id shows an Audit-Log with the prior Freigabe 1 and Ablehnung history after Überarbeiten', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  createFreigabe(db, { jobId: id, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-15T09:00:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(id);
+  ablehnenJob(db, id, { abgelehntVon: '3', grund: 'Falsches Konto' });
+  createFreigabe(db, { jobId: id, personId: '3', rolle: 'ablehnung', zeitpunkt: '2026-08-15T10:00:00.000Z', ip: '5.6.7.8', interessenskonflikt: false, kommentar: 'Falsches Konto', eskaliertVon: null });
+  wiederOeffnenJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Audit-Log/);
+  assert.match(res.text, /Freigabe 1 erteilt/);
+  assert.match(res.text, /Abgelehnt/);
   db.close();
 });
 

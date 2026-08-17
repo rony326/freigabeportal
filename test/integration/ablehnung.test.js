@@ -126,6 +126,18 @@ test('GET /abgelehnt/:id renders without crashing when abgelehnt_von and the abl
   db.close();
 });
 
+test('GET /abgelehnt/:id shows an Audit-Log with the rejection entry', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedAbgelehntJob(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/abgelehnt/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Audit-Log/);
+  assert.match(res.text, /Abgelehnt/);
+  assert.match(res.text, /Person3/);
+  db.close();
+});
+
 test('POST /abgelehnt/:id/ueberarbeiten reopens the job to zugewiesen and redirects to Kontierung', async () => {
   const db = openDatabase(':memory:');
   const { id, kontoId } = await seedAbgelehntJob(db);

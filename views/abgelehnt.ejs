@@ -10,12 +10,14 @@
   <%- include('_header') %>
   <main class="container py-4">
     <h1>Abgelehnt: <%= job.dateiname %></h1>
+    <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %> · Absender: <%= job.absender %><% } %></p>
     <p><strong>Abgelehnt von:</strong> <%= abgelehntVonPerson ? `${abgelehntVonPerson.vorname} ${abgelehntVonPerson.nachname}` : 'Unbekannt' %></p>
     <p><strong>Grund:</strong> <%= job.ablehnungsgrund %></p>
     <p><strong>Zeitpunkt:</strong> <%= ablehnung ? ablehnung.zeitpunkt : 'Unbekannt' %></p>
     <form method="post" action="/abgelehnt/<%= job.id %>/ueberarbeiten">
       <button type="submit" class="btn btn-primary">Überarbeiten</button>
     </form>
+    <%- include('_audit_log') %>
   </main>
 </body>
 </html>

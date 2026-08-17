@@ -202,6 +202,42 @@ test('GET /freigabe2/:id shows the Kontierung summary to the correct freigeber2'
   db.close();
 });
 
+test('GET /freigabe2/:id shows an Audit-Log with the Freigabe 1 entry', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Audit-Log/);
+  assert.match(res.text, /Freigabe 1 erteilt/);
+  assert.match(res.text, /Person1/);
+  db.close();
+});
+
+test('GET /freigabe2/:id shows the quelle and absender that n8n submitted with the job', async () => {
+  const db = openDatabase(':memory:');
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const id = createJob(db, {
+    eingangAm: '2026-08-15T08:00:00.000Z',
+    quelle: 'lieferant',
+    absender: 'buchhaltung@lieferant.example',
+    dateiname: 'a.pdf',
+    pdfPfad: '/tmp/a.pdf',
+  });
+  setKontierung(db, id, kontoId);
+  createFreigabe(db, { jobId: id, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-15T08:30:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(id);
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Lieferant/);
+  assert.match(res.text, /buchhaltung@lieferant\.example/);
+  db.close();
+});
+
 test('POST /freigabe2/:id without conflict approves, stamps the PDF and completes the job', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');

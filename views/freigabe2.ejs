@@ -16,7 +16,8 @@
       <div class="col-lg-6 col-xl-4">
         <div class="card">
           <div class="card-body">
-            <h1 class="h3">Freigabe 2</h1>
+            <h1 class="h3">Freigabe 2: <%= job.dateiname %></h1>
+            <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %> · Absender: <%= job.absender %><% } %></p>
             <p><strong>Konto:</strong> <%= konto.kontonummer %> — <%= konto.bezeichnung %></p>
             <p><strong>Freigeber 1:</strong> <%= freigeber1Person.vorname %> <%= freigeber1Person.nachname %></p>
             <p><strong>Interessenskonflikt Freigeber 1:</strong> <%= freigabe1.interessenskonflikt ? 'Ja' : 'Nein' %></p>
@@ -48,6 +49,7 @@
             </form>
           </div>
         </div>
+        <%- include('_audit_log') %>
       </div>
     </div>
   </main>

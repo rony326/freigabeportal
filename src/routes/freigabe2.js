@@ -9,6 +9,7 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampAndFinalize } from '../services/pdfStamp.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
+import { buildAuditLog } from '../services/auditLog.js';
 
 export function createFreigabe2Router({ db, config, mailer }) {
   const router = Router();
@@ -63,6 +64,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values,
       errors,
+      auditLog: buildAuditLog(db, job.id),
     });
   }
 

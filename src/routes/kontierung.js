@@ -5,6 +5,7 @@ import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
+import { buildAuditLog } from '../services/auditLog.js';
 
 export function createKontierungRouter({ db, config, mailer }) {
   const router = Router();
@@ -57,6 +58,7 @@ export function createKontierungRouter({ db, config, mailer }) {
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values: { kontoId: job.konto_id ? String(job.konto_id) : '', interessenskonflikt: '', begruendung: '' },
       errors: [],
+      auditLog: buildAuditLog(db, job.id),
     });
   });
 
@@ -84,6 +86,7 @@ export function createKontierungRouter({ db, config, mailer }) {
           previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
           values: { kontoId, interessenskonflikt, begruendung },
           errors,
+          auditLog: buildAuditLog(db, job.id),
         });
       }
 

@@ -33,6 +33,12 @@ export function createDownloadsRouter({ db, config }) {
       res.status(403).type('json').json(GENERIC_DENIAL);
     });
     res.type('application/pdf');
+    // Without an explicit Content-Disposition, some browsers (and browser/OS PDF-handling
+    // policies) fall back to downloading the file instead of rendering it in the <iframe>
+    // preview used by pool.ejs, kontierung.ejs, and freigabe2.ejs. "inline" plus a sanitized
+    // filename (CR/LF stripped, quotes escaped) makes every browser render it in place.
+    const safeName = job.dateiname.replace(/[\r\n"]/g, '');
+    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
     stream.pipe(res);
   });
 

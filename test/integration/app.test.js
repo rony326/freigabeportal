@@ -101,6 +101,72 @@ test('every response carries the baseline security headers', async () => {
   db.close();
 });
 
+test('nav-tabs shows only the Aufgaben tab for a Buchhaltung-only member, active on /pool', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get('/pool');
+  assert.match(res.text, /class="nav-link active" href="\/pool"/);
+  assert.doesNotMatch(res.text, /href="\/admin"/);
+  db.close();
+});
+
+test('nav-tabs shows both Aufgaben and Admin tabs for a Portal-Admin, Admin tab active on /admin', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 2, firstName: 'Admin', lastName: 'Only', email: 'admin@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [{ personId: 2 }] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get('/admin');
+  assert.match(res.text, /href="\/pool">Aufgaben/);
+  assert.match(res.text, /class="nav-link active" href="\/admin">Admin/);
+  db.close();
+});
+
+test('nav-tabs renders no tabs at all for an anonymous visitor', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/');
+  assert.doesNotMatch(res.text, /nav-tabs/);
+  db.close();
+});
+
 test('session cookie is marked Secure when publicBaseUrl is https', async () => {
   const db = openDatabase(':memory:');
   const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
@@ -152,7 +218,7 @@ test('GET / shows a link to /pool for a logged-in buchhaltung member', async () 
   db.close();
 });
 
-test('GET / shows no link to /pool for a logged-in person without the buchhaltung group', async () => {
+test('GET / shows a link to /pool for a logged-in Portal-Admin who is not also in Buchhaltung (nav-tabs mirrors /pool\'s requireAnyRole gate)', async () => {
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -178,7 +244,37 @@ test('GET / shows no link to /pool for a logged-in person without the buchhaltun
   const res = await agent.get('/');
   assert.equal(res.status, 200);
   assert.match(res.text, /Angemeldet als Admin Only/);
+  assert.match(res.text, /href="\/pool"/);
+  db.close();
+});
+
+test('GET / shows no /pool or /admin link for a logged-in person in neither Buchhaltung nor Portal-Admin', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 30, firstName: 'Ohne', lastName: 'Gruppe', email: 'ohne@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get('/');
+  assert.equal(res.status, 200);
   assert.doesNotMatch(res.text, /href="\/pool"/);
+  assert.doesNotMatch(res.text, /href="\/admin"/);
   db.close();
 });
 

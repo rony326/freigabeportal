@@ -1,16 +1,20 @@
 <!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
-<head><meta charset="utf-8"><title>Freigabeportal</title></head>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Freigabeportal</title>
+</head>
 <body>
   <%- include('_header') %>
-  <h1>Freigabeportal</h1>
-  <% if (person) { %>
-    <p>Angemeldet als <%= person.vorname %> <%= person.nachname %>.</p>
-    <% if (isBuchhaltung) { %>
-      <p><a href="/pool">Zum Freigabe-Pool</a></p>
+  <main class="container py-4">
+    <h1>Freigabeportal</h1>
+    <% if (person) { %>
+      <p>Angemeldet als <%= person.vorname %> <%= person.nachname %>.</p>
+    <% } else { %>
+      <p>Nicht angemeldet. <a href="/auth/login" class="btn btn-primary">Anmelden</a></p>
     <% } %>
-  <% } else { %>
-    <p>Nicht angemeldet. <a href="/auth/login">Anmelden</a></p>
-  <% } %>
+  </main>
 </body>
 </html>

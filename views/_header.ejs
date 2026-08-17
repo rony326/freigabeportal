@@ -1,3 +1,5 @@
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
 <style>
   :root {
     --brand-primary: <%= branding.primaryColor || '#2f4858' %>;
@@ -18,23 +20,78 @@
   body { background: var(--bg); color: var(--fg); }
   a { color: var(--brand-primary); }
   button { border-color: var(--brand-secondary); }
+  /* Bootstrap's compiled CSS bakes literal hex values into each .btn-* and active-tab-link
+     variant's own custom properties (not a reference to --bs-primary), so this app's
+     per-instance branding colors must override those component-level variables directly to
+     actually reach rendered buttons and the active tab indicator — setting --bs-primary alone
+     has no effect. */
+  .btn-primary {
+    --bs-btn-bg: var(--brand-primary);
+    --bs-btn-border-color: var(--brand-primary);
+    --bs-btn-hover-bg: var(--brand-secondary);
+    --bs-btn-hover-border-color: var(--brand-secondary);
+    --bs-btn-active-bg: var(--brand-secondary);
+    --bs-btn-active-border-color: var(--brand-secondary);
+    --bs-btn-disabled-bg: var(--brand-primary);
+    --bs-btn-disabled-border-color: var(--brand-primary);
+  }
+  .btn-outline-primary {
+    --bs-btn-color: var(--brand-primary);
+    --bs-btn-border-color: var(--brand-primary);
+    --bs-btn-hover-bg: var(--brand-primary);
+    --bs-btn-hover-border-color: var(--brand-primary);
+    --bs-btn-active-bg: var(--brand-primary);
+    --bs-btn-active-border-color: var(--brand-primary);
+    --bs-btn-disabled-color: var(--brand-primary);
+    --bs-btn-disabled-border-color: var(--brand-primary);
+  }
 </style>
-<header>
-  <% if (branding.hasLogo) { %>
-    <img src="/branding/logo" alt="Logo" height="48">
-  <% } %>
-  <button type="button" id="theme-toggle" aria-label="Farbmodus umschalten">🌓</button>
-  <% if (typeof currentPerson !== 'undefined' && currentPerson) { %>
-    <form method="post" action="/auth/logout" style="display:inline">
-      <button type="submit">Abmelden</button>
-    </form>
-  <% } %>
+<header class="d-flex justify-content-between align-items-center p-3 border-bottom mb-3">
+  <div class="d-flex align-items-center gap-3">
+    <% if (branding.hasLogo) { %>
+      <img src="/branding/logo" alt="Logo" height="48">
+    <% } %>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <button type="button" id="theme-toggle" class="btn btn-outline-secondary btn-sm" aria-label="Farbmodus umschalten">🌓</button>
+    <% if (typeof currentPerson !== 'undefined' && currentPerson) { %>
+      <form method="post" action="/auth/logout" class="d-inline">
+        <button type="submit" class="btn btn-outline-secondary btn-sm">Abmelden</button>
+      </form>
+    <% } %>
+  </div>
 </header>
+<% const navIsBuchhaltung = typeof isBuchhaltung !== 'undefined' && isBuchhaltung; %>
+<% const navIsPortalAdmin = typeof isPortalAdmin !== 'undefined' && isPortalAdmin; %>
+<% const navAktuellerPfad = typeof currentPath !== 'undefined' ? currentPath : ''; %>
+<% if (navIsBuchhaltung || navIsPortalAdmin) { %>
+  <style>
+    /* Scoped to only render alongside the nav-tabs bar itself: an anonymous visitor gets no
+       tabs at all, so this selector (and the literal class name it targets) must not appear
+       in the unconditional <style> block above, or it would always be present in the markup
+       even when no tabs are rendered. */
+    .nav-tabs .nav-link.active {
+      color: var(--brand-primary);
+      border-bottom: 2px solid var(--brand-primary);
+    }
+  </style>
+  <ul class="nav nav-tabs container mb-3">
+    <li class="nav-item">
+      <a class="nav-link<%= navAktuellerPfad === '/pool' ? ' active' : '' %>" href="/pool">Aufgaben</a>
+    </li>
+    <% if (navIsPortalAdmin) { %>
+      <li class="nav-item">
+        <a class="nav-link<%= navAktuellerPfad.startsWith('/admin') ? ' active' : '' %>" href="/admin">Admin</a>
+      </li>
+    <% } %>
+  </ul>
+<% } %>
 <script>
   document.getElementById('theme-toggle').addEventListener('click', function () {
     var root = document.documentElement;
     var next = root.getAttribute('data-theme') === 'dunkel' ? 'hell' : 'dunkel';
     root.setAttribute('data-theme', next);
+    root.setAttribute('data-bs-theme', next === 'dunkel' ? 'dark' : 'light');
     document.cookie = 'theme=' + next + ';path=/;max-age=31536000;samesite=lax';
   });
 </script>

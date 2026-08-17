@@ -371,7 +371,7 @@ test('GET /pool returns 200 for a Portal-Admin who is not also a Buchhaltung mem
   db.close();
 });
 
-test('GET /admin renders a dashboard with links to all nine admin areas for a Portal-Admin', async () => {
+test('GET /admin renders a dashboard with links to all ten admin areas for a Portal-Admin', async () => {
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -396,7 +396,7 @@ test('GET /admin renders a dashboard with links to all nine admin areas for a Po
 
   const res = await agent.get('/admin');
   assert.equal(res.status, 200);
-  for (const path of ['/admin/konten', '/admin/debitoren', '/admin/eskalation', '/admin/erscheinungsbild', '/admin/personen', '/admin/pdf-einstellungen', '/admin/mails', '/admin/sync', '/admin/abgelehnt']) {
+  for (const path of ['/admin/konten', '/admin/debitoren', '/admin/eskalation', '/admin/erscheinungsbild', '/admin/personen', '/admin/pdf-einstellungen', '/admin/mails', '/admin/sync', '/admin/geplante-jobs', '/admin/abgelehnt']) {
     assert.match(res.text, new RegExp(`href="${path}"`), `expected a link to ${path}`);
   }
   db.close();

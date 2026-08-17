@@ -10,7 +10,7 @@ test('openDatabase creates all expected tables', () => {
   const db = openDatabase(':memory:');
   const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
   const names = rows.map((r) => r.name);
-  for (const expected of ['personen', 'sessions', 'sync_log', 'admin_config', 'konten', 'zuweisungsregeln', 'jobs', 'freigaben', 'mail_log', 'job_loeschungen']) {
+  for (const expected of ['personen', 'sessions', 'sync_log', 'admin_config', 'konten', 'zuweisungsregeln', 'jobs', 'freigaben', 'mail_log', 'job_loeschungen', 'cron_log']) {
     assert.ok(names.includes(expected), `missing table ${expected}`);
   }
   db.close();

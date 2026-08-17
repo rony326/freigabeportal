@@ -80,15 +80,28 @@ ChurchTools bereits Mitglied der Portal-Admin-Gruppe sein — sonst kann sich
 zwar jeder einloggen (Login ist seit Batch 4 nicht mehr gruppengebunden),
 aber niemand erreicht `/admin`, um z. B. das erste Konto anzulegen.
 
-### Task Scheduler (Manager → Website → Advanced Tools → Task Scheduler)
+### Zeitgesteuerte Jobs — laufen im Node-Prozess selbst
 
-Drei Einträge, je ein `POST` mit Header `X-Cron-Secret: <CRON_SECRET>`:
+Kein externer Task Scheduler nötig: Solange der Node-Prozess läuft (Infomaniaks
+Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App die drei
+Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 
-| Route | Empfohlene Frequenz | Zweck |
+| Job | Zeitplan | Zweck |
 |---|---|---|
-| `/internal/cron/sync-personen` | täglich (nachts) | ChurchTools-Personen-/Gruppen-Sync |
-| `/internal/cron/pool-erinnerungen` | stündlich | Reminder-/Eskalations-Mails für unbeanspruchte Pool-Rechnungen (Schwellen in Stunden, admin-konfigurierbar, Default 24h/48h — stündlich hält die Verzögerung gegenüber der Schwelle klein, ohne unnötig oft zu laufen) |
-| `/internal/cron/pdf-bereinigung` | täglich | Archivierung abgeholter Jobs, Aufräumen alter `.tmp`-Stempeldateien, Mail-Log-Retention |
+| `sync-personen` | täglich, Default 02:00 (Europe/Zürich) | ChurchTools-Personen-/Gruppen-Sync |
+| `pool-erinnerungen` | Intervall, Default alle 60 Min. | Reminder-/Eskalations-Mails für unbeanspruchte Pool-Rechnungen (Schwellen in Stunden, admin-konfigurierbar, Default 24h/48h — separat unter Eskalationszeiten) |
+| `pdf-bereinigung` | täglich, Default 02:30 (Europe/Zürich) | Archivierung abgeholter Jobs, Aufräumen alter `.tmp`-Stempeldateien, Mail-Log-Retention |
+
+**Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan aller drei Jobs
+einstellen (wirkt ab dem nächsten planmässigen Lauf, kein Neustart nötig),
+jeden Job manuell sofort auslösen, und den Verlauf der letzten Läufe
+(Erfolg/Fehler samt Details) einsehen — sowohl geplante als auch manuell
+ausgelöste Läufe landen im selben Verlauf.
+
+Die zugehörigen `POST /internal/cron/*`-Routen (Header `X-Cron-Secret:
+<CRON_SECRET>`) existieren weiterhin — nützlich für die Go-Live-Checkliste
+unten oder falls doch noch ein externer Scheduler eingerichtet wird.
+`CRON_SECRET` bleibt daher Pflicht, auch ohne Infomaniak Task Scheduler.
 
 ### Domain & TLS
 

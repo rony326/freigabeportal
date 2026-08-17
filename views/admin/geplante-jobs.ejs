@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Geplante Jobs — Freigabeportal Admin</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <h1>Geplante Jobs</h1>
+    <p class="text-muted">Diese drei Jobs laufen automatisch im laufenden Node-Prozess, kein externer Task Scheduler nötig. Zeiten gelten in Lokalzeit (Europe/Zürich); eine Zeitplan-Änderung greift ab dem nächsten planmässigen Lauf.</p>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger">
+        <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+
+    <form method="post" action="/admin/geplante-jobs" class="col-12 col-lg-8">
+      <h2 class="h5 mt-3">ChurchTools-Personen-Sync</h2>
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="syncPersonenStunde">Stunde (0–23)</label>
+          <input type="number" min="0" max="23" class="form-control" id="syncPersonenStunde" name="syncPersonenStunde" value="<%= cronSyncPersonenStunde %>" required>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="syncPersonenMinute">Minute (0–59)</label>
+          <input type="number" min="0" max="59" class="form-control" id="syncPersonenMinute" name="syncPersonenMinute" value="<%= cronSyncPersonenMinute %>" required>
+        </div>
+      </div>
+
+      <h2 class="h5 mt-3">Pool-Erinnerungen &amp; Eskalation</h2>
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="poolErinnerungenIntervallMinuten">Intervall (Minuten)</label>
+          <input type="number" min="1" class="form-control" id="poolErinnerungenIntervallMinuten" name="poolErinnerungenIntervallMinuten" value="<%= cronPoolErinnerungenIntervallMinuten %>" required>
+        </div>
+      </div>
+      <p class="text-muted small">Die Reminder-/Eskalations-<strong>Schwellen</strong> (ab wann eine Rechnung als überfällig gilt) werden separat unter <a href="/admin/eskalation">Eskalationszeiten</a> eingestellt — hier nur, wie oft diese Prüfung läuft.</p>
+
+      <h2 class="h5 mt-3">PDF-Bereinigung &amp; Mail-Log-Retention</h2>
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="pdfBereinigungStunde">Stunde (0–23)</label>
+          <input type="number" min="0" max="23" class="form-control" id="pdfBereinigungStunde" name="pdfBereinigungStunde" value="<%= cronPdfBereinigungStunde %>" required>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="pdfBereinigungMinute">Minute (0–59)</label>
+          <input type="number" min="0" max="59" class="form-control" id="pdfBereinigungMinute" name="pdfBereinigungMinute" value="<%= cronPdfBereinigungMinute %>" required>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Speichern</button>
+      <% if (gespeichert) { %>
+        <div class="alert alert-success alert-dismissible fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">
+          Gespeichert.
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
+        </div>
+      <% } %>
+    </form>
+
+    <hr class="my-4">
+
+    <h2 class="h4">ChurchTools-Personen-Sync — Verlauf</h2>
+    <form method="post" action="/admin/geplante-jobs/sync-personen/jetzt-ausfuehren" class="mb-2">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
+    </form>
+    <% if (getriggert === 'sync-personen') { %>
+      <% const letzterSync = syncLog[0]; %>
+      <% if (letzterSync) { %>
+        <div class="alert <%= letzterSync.status === 'erfolg' ? 'alert-success' : letzterSync.status === 'laufend' ? 'alert-info' : 'alert-danger' %>">
+          <% if (letzterSync.status === 'erfolg') { %>
+            Erfolgreich ausgeführt. Upserted: <%= letzterSync.anzahl_upserted %>, Deaktiviert: <%= letzterSync.anzahl_deaktiviert %>
+          <% } else if (letzterSync.status === 'laufend') { %>
+            Ein Sync-Lauf war bereits aktiv — dieser Trigger wurde übersprungen. Vollständige Historie: <a href="/admin/sync">Sync-Übersicht</a>.
+          <% } else { %>
+            Fehlgeschlagen: <%= letzterSync.fehler_details || letzterSync.status %>
+          <% } %>
+        </div>
+      <% } %>
+    <% } %>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Gestartet</th><th>Beendet</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody>
+          <% syncLog.forEach((eintrag) => { %>
+            <tr>
+              <td><%= eintrag.gestartet_am %></td>
+              <td><%= eintrag.beendet_am || '' %></td>
+              <td><%= eintrag.status %></td>
+              <td><%= eintrag.fehler_details || (eintrag.anzahl_upserted != null ? `Upserted: ${eintrag.anzahl_upserted}, Deaktiviert: ${eintrag.anzahl_deaktiviert}` : '') %></td>
+            </tr>
+          <% }) %>
+          <% if (syncLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+    <p><a href="/admin/sync">Vollständige Sync-Historie &amp; feststeckende Jobs</a></p>
+
+    <h2 class="h4 mt-4">Pool-Erinnerungen — Verlauf</h2>
+    <form method="post" action="/admin/geplante-jobs/pool-erinnerungen/jetzt-ausfuehren" class="mb-2">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
+    </form>
+    <% if (getriggert === 'pool-erinnerungen' && poolErinnerungenLog.length > 0) { %>
+      <% const letzterErinnerung = poolErinnerungenLog[0]; %>
+      <div class="alert <%= letzterErinnerung.status === 'erfolg' ? 'alert-success' : 'alert-danger' %>">
+        <%= letzterErinnerung.status === 'erfolg' ? 'Erfolgreich ausgeführt. ' + letzterErinnerung.details : 'Fehlgeschlagen: ' + letzterErinnerung.details %>
+      </div>
+    <% } %>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Gestartet</th><th>Beendet</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody>
+          <% poolErinnerungenLog.forEach((eintrag) => { %>
+            <tr>
+              <td><%= eintrag.gestartet_am %></td>
+              <td><%= eintrag.beendet_am %></td>
+              <td><%= eintrag.status %></td>
+              <td><%= eintrag.details || '' %></td>
+            </tr>
+          <% }) %>
+          <% if (poolErinnerungenLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="h4 mt-4">PDF-Bereinigung — Verlauf</h2>
+    <form method="post" action="/admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren" class="mb-2">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
+    </form>
+    <% if (getriggert === 'pdf-bereinigung' && pdfBereinigungLog.length > 0) { %>
+      <% const letzteBereinigung = pdfBereinigungLog[0]; %>
+      <div class="alert <%= letzteBereinigung.status === 'erfolg' ? 'alert-success' : 'alert-danger' %>">
+        <%= letzteBereinigung.status === 'erfolg' ? 'Erfolgreich ausgeführt. ' + letzteBereinigung.details : 'Fehlgeschlagen: ' + letzteBereinigung.details %>
+      </div>
+    <% } %>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Gestartet</th><th>Beendet</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody>
+          <% pdfBereinigungLog.forEach((eintrag) => { %>
+            <tr>
+              <td><%= eintrag.gestartet_am %></td>
+              <td><%= eintrag.beendet_am %></td>
+              <td><%= eintrag.status %></td>
+              <td><%= eintrag.details || '' %></td>
+            </tr>
+          <% }) %>
+          <% if (pdfBereinigungLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

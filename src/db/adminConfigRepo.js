@@ -14,6 +14,11 @@ const DEFAULTS = {
   sync_max_deaktivierung_anzahl: '10',
   sync_fehler_empfaenger: 'gruppe:admin',
   audit_log_lokale_zeit: '0',
+  cron_sync_personen_stunde: '2',
+  cron_sync_personen_minute: '0',
+  cron_pdf_bereinigung_stunde: '2',
+  cron_pdf_bereinigung_minute: '30',
+  cron_pool_erinnerungen_intervall_minuten: '60',
 };
 
 export function seedDefaults(db) {

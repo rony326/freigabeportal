@@ -72,10 +72,16 @@ const ADMIN_ROUTES = [
   { method: 'get', path: '/admin/abgelehnt' },
   { method: 'get', path: '/admin/abgelehnt/1' },
   { method: 'post', path: '/admin/abgelehnt/1/loeschen' },
+  // geplante-jobs (5)
+  { method: 'get', path: '/admin/geplante-jobs' },
+  { method: 'post', path: '/admin/geplante-jobs' },
+  { method: 'post', path: '/admin/geplante-jobs/sync-personen/jetzt-ausfuehren' },
+  { method: 'post', path: '/admin/geplante-jobs/pool-erinnerungen/jetzt-ausfuehren' },
+  { method: 'post', path: '/admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren' },
 ];
 
-test('the real createApp wiring returns 401 on all 27 admin route/method combinations with no session present', async () => {
-  assert.equal(ADMIN_ROUTES.length, 27, 'sanity check: this sweep should cover exactly 27 route/method combinations');
+test('the real createApp wiring returns 401 on all 32 admin route/method combinations with no session present', async () => {
+  assert.equal(ADMIN_ROUTES.length, 32, 'sanity check: this sweep should cover exactly 32 route/method combinations');
 
   const db = openDatabase(':memory:');
   const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));

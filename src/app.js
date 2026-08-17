@@ -21,13 +21,14 @@ import { createPdfEinstellungenRouter } from './routes/admin/pdf-einstellungen.j
 import { createMailsRouter } from './routes/admin/mails.js';
 import { createSyncRouter } from './routes/admin/sync.js';
 import { createAdminAbgelehntRouter } from './routes/admin/abgelehnt.js';
+import { createGeplanteJobsRouter } from './routes/admin/geplanteJobs.js';
 import { createPoolRouter } from './routes/pool.js';
 import { createPoolPageRouter } from './routes/poolPage.js';
 import { createDownloadsRouter } from './routes/downloads.js';
 import { createKontierungRouter } from './routes/kontierung.js';
 import { createFreigabe2Router } from './routes/freigabe2.js';
 import { createAblehnungRouter } from './routes/ablehnung.js';
-import { createMailer } from './services/mailer.js';
+import { createMailerOrFallback } from './services/mailer.js';
 import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -78,17 +79,7 @@ export function createApp({ db, config }) {
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(config));
 
-  let mailer;
-  try {
-    mailer = createMailer(config.smtp);
-  } catch (err) {
-    console.error('Mailer konnte nicht initialisiert werden, E-Mail-Versand ist deaktiviert:', err.message);
-    mailer = {
-      async sendMail() {
-        throw new Error('SMTP ist nicht konfiguriert.');
-      },
-    };
-  }
+  const mailer = createMailerOrFallback(config.smtp);
 
   const publicLimiter = createPublicRateLimiter();
   const sessionLimiter = createSessionRateLimiter();
@@ -108,6 +99,7 @@ export function createApp({ db, config }) {
   app.use('/admin/mails', createMailsRouter({ db, mailer }));
   app.use('/admin/sync', createSyncRouter({ db }));
   app.use('/admin/abgelehnt', createAdminAbgelehntRouter({ db }));
+  app.use('/admin/geplante-jobs', createGeplanteJobsRouter({ db, config, mailer }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db }));

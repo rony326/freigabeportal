@@ -21,3 +21,20 @@ export function createMailer(smtpConfig) {
     },
   };
 }
+
+// SMTP is optional until final production credentials exist (see .env.example) — both app.js
+// (request-time mail sending) and index.js (the in-process scheduler) need the same
+// "log and fall back to an always-failing mailer" behavior rather than crashing the whole
+// process on a missing/incomplete SMTP config, so it lives here once instead of twice.
+export function createMailerOrFallback(smtpConfig) {
+  try {
+    return createMailer(smtpConfig);
+  } catch (err) {
+    console.error('Mailer konnte nicht initialisiert werden, E-Mail-Versand ist deaktiviert:', err.message);
+    return {
+      async sendMail() {
+        throw new Error('SMTP ist nicht konfiguriert.');
+      },
+    };
+  }
+}

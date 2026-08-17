@@ -31,6 +31,18 @@ CREATE TABLE IF NOT EXISTS admin_config (
   value TEXT NOT NULL
 );
 
+-- Execution history for the scheduled/manually-triggered pool-erinnerungen and pdf-bereinigung
+-- jobs (services/cronJobs.js) -- sync-personen keeps its own richer sync_log above (upserted/
+-- deaktiviert counts), so it isn't duplicated in here.
+CREATE TABLE IF NOT EXISTS cron_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung')),
+  gestartet_am TEXT NOT NULL,
+  beendet_am TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler')),
+  details TEXT
+);
+
 CREATE TABLE IF NOT EXISTS konten (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kontonummer TEXT NOT NULL,

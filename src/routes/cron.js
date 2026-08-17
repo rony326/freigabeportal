@@ -1,162 +1,35 @@
 import { Router } from 'express';
-import { existsSync, unlinkSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-import { runPersonenSync } from '../services/sync.js';
-import { hasRecentRunningSync } from '../db/syncLogRepo.js';
-import { getConfigValue } from '../db/adminConfigRepo.js';
-import {
-  listPoolJobsForReminder,
-  markReminderGesendet,
-  listPoolJobsForEskalation,
-  markEskalationGesendet,
-  listAbgeholtJobs,
-  archivierenJob,
-} from '../db/jobsRepo.js';
-import { pruneMailLogOlderThan } from '../db/mailLogRepo.js';
-import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob } from '../services/cronJobs.js';
 
-const TMP_MAX_ALTER_MS = 60 * 60 * 1000; // 1 Stunde
+function httpStatusFuer(status) {
+  if (status === 'uebersprungen') return 409;
+  if (status === 'fehler') return 500;
+  return 200;
+}
 
 // requireCronSecret is applied once at the app.js mount, not per-route here — matching the
 // blanket-guard pattern /admin already uses, so a future route added to this router is
 // gated automatically rather than needing its own explicit guard.
+//
+// The in-process scheduler (services/scheduler.js) now runs these same jobs on its own timers —
+// these endpoints stay in place for on-demand/manual triggering (see README's go-live checklist)
+// and as a fallback for anyone who does have a working external scheduler.
 export function createCronRouter({ db, config, mailer }) {
   const router = Router();
 
   router.post('/sync-personen', async (req, res) => {
-    if (hasRecentRunningSync(db)) {
-      return res.status(409).json({ error: 'Ein Sync-Lauf ist bereits aktiv' });
-    }
-    try {
-      const result = await runPersonenSync(db, config.churchtools, config.churchtools.syncServiceToken);
-      if (result.abgebrochen) {
-        await benachrichtigeSyncFehler(result.meldung);
-        return res.json({ status: 'abgebrochen', meldung: result.meldung });
-      }
-      res.json({ status: 'erfolg', ...result });
-    } catch (err) {
-      await benachrichtigeSyncFehler(err.message);
-      res.status(500).json({ status: 'fehler', error: err.message });
-    }
+    const result = await runSyncPersonenJob(db, config, mailer);
+    res.status(httpStatusFuer(result.status)).json(result);
   });
-
-  async function benachrichtigeSyncFehler(meldung) {
-    const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'sync_fehler_empfaenger'));
-    for (const email of empfaenger) {
-      await sendNotification(db, mailer, {
-        to: email,
-        subject: 'Freigabeportal: ChurchTools-Sync fehlgeschlagen',
-        text: `Der ChurchTools-Personen-Sync konnte nicht erfolgreich abgeschlossen werden: ${meldung}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/admin/sync`,
-        typ: 'sync-fehler',
-        jobId: null,
-      });
-    }
-  }
 
   router.post('/pool-erinnerungen', async (req, res) => {
-    try {
-      const reminderStunden = Number(getConfigValue(db, 'reminder_stunden'));
-      const eskalationStunden = Number(getConfigValue(db, 'eskalation_stunden'));
-
-      const reminderJobs = listPoolJobsForReminder(db, reminderStunden);
-      for (const job of reminderJobs) {
-        const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'reminder_empfaenger'));
-        for (const email of empfaenger) {
-          await sendNotification(db, mailer, {
-            to: email,
-            subject: 'Freigabeportal: Rechnung wartet im Pool',
-            text: `Diese Rechnung ist seit mehr als ${reminderStunden} Stunden unbeansprucht im Pool: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
-            typ: 'reminder',
-            jobId: job.id,
-          });
-        }
-        if (empfaenger.length > 0) {
-          markReminderGesendet(db, job.id);
-        }
-      }
-
-      const eskalationJobs = listPoolJobsForEskalation(db, eskalationStunden);
-      for (const job of eskalationJobs) {
-        const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'eskalation_empfaenger'));
-        for (const email of empfaenger) {
-          await sendNotification(db, mailer, {
-            to: email,
-            subject: 'Freigabeportal: Eskalation – Rechnung seit langem unbeansprucht',
-            text: `Diese Rechnung ist seit mehr als ${eskalationStunden} Stunden unbeansprucht im Pool und wurde eskaliert: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
-            typ: 'eskalation',
-            jobId: job.id,
-          });
-        }
-        if (empfaenger.length > 0) {
-          markEskalationGesendet(db, job.id);
-        }
-      }
-
-      res.json({ status: 'erfolg', reminder: reminderJobs.length, eskalation: eskalationJobs.length });
-    } catch (err) {
-      res.status(500).json({ status: 'fehler', error: err.message });
-    }
+    const result = await runPoolErinnerungenJob(db, config, mailer);
+    res.status(httpStatusFuer(result.status)).json(result);
   });
 
-  router.post('/pdf-bereinigung', (req, res) => {
-    let archiviert = 0;
-    try {
-      for (const job of listAbgeholtJobs(db)) {
-        let pdfWeg = true;
-        if (job.pdf_pfad) {
-          try {
-            if (existsSync(job.pdf_pfad)) unlinkSync(job.pdf_pfad);
-          } catch (err) {
-            console.error(`Löschen der PDF für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
-            pdfWeg = !existsSync(job.pdf_pfad);
-          }
-        }
-        let thumbnailWeg = true;
-        if (job.thumbnail_pfad) {
-          try {
-            if (existsSync(job.thumbnail_pfad)) unlinkSync(job.thumbnail_pfad);
-          } catch (err) {
-            console.error(`Löschen des Thumbnails für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
-            thumbnailWeg = !existsSync(job.thumbnail_pfad);
-          }
-        }
-        if (pdfWeg && thumbnailWeg) {
-          if (archivierenJob(db, job.id)) archiviert += 1;
-        }
-      }
-    } catch (err) {
-      console.error('Archivierungs-Sweep fehlgeschlagen:', err.message);
-    }
-
-    let tmpGeloescht = 0;
-    try {
-      const schwelle = Date.now() - TMP_MAX_ALTER_MS;
-      for (const name of readdirSync(config.jobsDir)) {
-        if (!name.endsWith('.tmp')) continue;
-        const pfad = join(config.jobsDir, name);
-        try {
-          if (statSync(pfad).mtimeMs < schwelle) {
-            unlinkSync(pfad);
-            tmpGeloescht += 1;
-          }
-        } catch (err) {
-          console.error(`Löschen der verwaisten Tmp-Datei ${pfad} fehlgeschlagen:`, err.message);
-        }
-      }
-    } catch (err) {
-      console.error('Tmp-Sweep konnte jobsDir nicht lesen:', err.message);
-    }
-
-    let mailLogGeloescht = 0;
-    try {
-      const aufbewahrungTage = Number(getConfigValue(db, 'mail_log_aufbewahrung_tage'));
-      const mailLogSchwelle = new Date(Date.now() - aufbewahrungTage * 24 * 60 * 60 * 1000).toISOString();
-      mailLogGeloescht = pruneMailLogOlderThan(db, mailLogSchwelle);
-    } catch (err) {
-      console.error('Bereinigung von mail_log fehlgeschlagen:', err.message);
-    }
-
-    res.json({ status: 'erfolg', archiviert, tmpGeloescht, mailLogGeloescht });
+  router.post('/pdf-bereinigung', async (req, res) => {
+    const result = await runPdfBereinigungJob(db, config);
+    res.status(httpStatusFuer(result.status)).json(result);
   });
 
   return router;

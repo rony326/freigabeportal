@@ -121,7 +121,6 @@ test('GET /pool lists an unzugewiesen job in the Pool section with a thumbnail s
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
   assert.match(res.text, new RegExp(`/api/pool/${id}/thumbnail`));
-  assert.match(res.text, /rechnung\.pdf/);
   // EJS's <%= %> HTML-escapes output, so the "&" between query params is rendered as "&amp;"
   // in the actual page source — this asserts the real escaped form, not the raw URL string.
   assert.match(res.text, /\/downloads\/\d+\?expires=\d+&amp;signature=[0-9a-f]{64}/);
@@ -151,7 +150,6 @@ test('GET /pool lists a job assigned to the current person under "Meine offenen 
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.match(res.text, /zu-kontieren\.pdf/);
   assert.match(res.text, new RegExp(`/kontierung/${id}`));
   assert.match(res.text, new RegExp(`id="kontierung-row-${id}"`));
   assert.match(res.text, />Kontieren</);
@@ -198,7 +196,6 @@ test('GET /pool lists a job awaiting this person\'s Freigabe 2 under "Meine Frei
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.match(res.text, /freizugeben\.pdf/);
   assert.match(res.text, new RegExp(`/freigabe2/${id}`));
   assert.match(res.text, new RegExp(`id="freigabe2-row-${id}"`));
   assert.match(res.text, />Freigeben</);
@@ -220,7 +217,6 @@ test('GET /pool lists a job the current person can rework under "Meine abgelehnt
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.match(res.text, /abgelehnt\.pdf/);
   assert.match(res.text, new RegExp(`/abgelehnt/${id}`));
   assert.match(res.text, new RegExp(`id="abgelehnt-row-${id}"`));
   assert.match(res.text, />Ansehen</);

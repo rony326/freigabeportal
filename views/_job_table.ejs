@@ -3,7 +3,7 @@
 <% } else { %>
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>Vorschau</th><th>Dateiname</th><th>Quelle</th><th>Absender</th><th>Debitor</th><th>Konto</th><th>Eingang</th><th></th></tr></thead>
+      <thead><tr><th>Vorschau</th><th>Quelle</th><th>Absender</th><th>Debitor</th><th>Konto</th><th>Eingang</th><th></th></tr></thead>
       <tbody>
         <% jobs.forEach((job) => { %>
           <tr id="<%= idPrefix %>-row-<%= job.id %>">
@@ -14,7 +14,6 @@
                 <span class="thumbnail-placeholder text-muted">Keine Vorschau</span>
               <% } %>
             </td>
-            <td><%= job.dateiname %></td>
             <td><%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></td>
             <td><%= job.absender || '—' %></td>
             <td><%= job.lieferant || '—' %></td>

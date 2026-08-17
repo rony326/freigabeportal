@@ -85,7 +85,6 @@ test('Kontierung → Freigabe 2 Ablehnen → Meine abgelehnten Jobs → Überarb
   assert.equal(ablehnenRes.status, 302);
 
   const poolResAfterAblehnung = await freigeber1Agent.get('/pool');
-  assert.match(poolResAfterAblehnung.text, /rechnung\.pdf/);
   assert.match(poolResAfterAblehnung.text, new RegExp(`/abgelehnt/${jobId}`));
 
   const ueberarbeitenRes = await freigeber1Agent.post(`/abgelehnt/${jobId}/ueberarbeiten`);

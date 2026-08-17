@@ -105,17 +105,15 @@ test('Kontierung → Freigabe 2 Ablehnen → Meine abgelehnten Jobs → Überarb
   const downloadRes = await request(app).get(abholbereitRes.body[0].download_url);
   assert.equal(downloadRes.status, 200);
   const mdoc = mupdf.Document.openDocument(downloadRes.body, 'application/pdf');
-  assert.ok(mdoc.countPages() >= 3, 'expected the original page + Visum page + at least one appended Verlauf page');
+  assert.equal(mdoc.countPages(), 3, 'expected the original 2 pages + 1 appended stamp page (Freigaben + Verlauf)');
 
-  const verlaufText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
-  assert.match(verlaufText, /Abgelehnt/);
-  assert.match(verlaufText, /Rechnungsnummer stimmt nicht/);
-  assert.match(verlaufText, /Freigabe 1/);
-  assert.match(verlaufText, /Freigabe 2/);
-
-  const visumText = mdoc.loadPage(mdoc.countPages() - 2).toStructuredText().asText();
-  assert.match(visumText, /Eins/);
-  assert.match(visumText, /Zwei/);
+  const stampText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
+  assert.match(stampText, /Abgelehnt/);
+  assert.match(stampText, /Rechnungsnummer stimmt nicht/);
+  assert.match(stampText, /Freigabe 1/);
+  assert.match(stampText, /Freigabe 2/);
+  assert.match(stampText, /Eins/);
+  assert.match(stampText, /Zwei/);
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });

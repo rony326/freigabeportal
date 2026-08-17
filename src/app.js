@@ -17,7 +17,6 @@ import { createDebitorenRouter } from './routes/admin/debitoren.js';
 import { createEskalationRouter } from './routes/admin/eskalation.js';
 import { createErscheinungsbildRouter } from './routes/admin/erscheinungsbild.js';
 import { createPersonenRouter } from './routes/admin/personen.js';
-import { createPdfEinstellungenRouter } from './routes/admin/pdf-einstellungen.js';
 import { createMailsRouter } from './routes/admin/mails.js';
 import { createSyncRouter } from './routes/admin/sync.js';
 import { createAdminAbgelehntRouter } from './routes/admin/abgelehnt.js';
@@ -95,7 +94,6 @@ export function createApp({ db, config }) {
   app.use('/admin/eskalation', createEskalationRouter({ db }));
   app.use('/admin/erscheinungsbild', createErscheinungsbildRouter({ db, config }));
   app.use('/admin/personen', createPersonenRouter({ db }));
-  app.use('/admin/pdf-einstellungen', createPdfEinstellungenRouter({ db }));
   app.use('/admin/mails', createMailsRouter({ db, mailer }));
   app.use('/admin/sync', createSyncRouter({ db }));
   app.use('/admin/abgelehnt', createAdminAbgelehntRouter({ db }));

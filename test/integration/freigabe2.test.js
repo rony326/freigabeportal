@@ -301,11 +301,10 @@ test('POST /freigabe2/:id without conflict approves, stamps the PDF and complete
   const { readFileSync } = await import('node:fs');
   const stampedBytes = readFileSync(pdfPfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
-  // The Visum block is stamped onto the visum page itself, which is now second-to-last: Task 2's
-  // stampAndFinalize always appends a fresh Verlauf page after it, so the true last page is Verlauf.
-  const visumPageText = mdoc.loadPage(mdoc.countPages() - 2).toStructuredText().asText();
-  assert.match(visumPageText, /Person1/);
-  assert.match(visumPageText, /Person3/);
+  // stampAndFinalize appends one new page carrying both the Freigaben and the Verlauf, always last.
+  const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
+  assert.match(stampPageText, /Person1/);
+  assert.match(stampPageText, /Person3/);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
@@ -397,11 +396,11 @@ test('two concurrent POST /freigabe2/:id requests for the same job complete it e
   const loserIp = winnerIp === '1.2.3.4' ? '1.2.3.5' : '1.2.3.4';
   const stampedBytes = readFileSync(pdfPfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
-  // The Visum block (with its "IP: ..." lines) is stamped onto the visum page itself, which is
-  // now second-to-last: Task 2's stampAndFinalize always appends a fresh Verlauf page after it.
-  const visumPageText = mdoc.loadPage(mdoc.countPages() - 2).toStructuredText().asText();
-  assert.match(visumPageText, new RegExp(`IP: ${winnerIp.replace(/\./g, '\\.')}`), 'the stamped file on disk must carry the winning attempt\'s IP');
-  assert.doesNotMatch(visumPageText, new RegExp(`IP: ${loserIp.replace(/\./g, '\\.')}`), 'the stamped file on disk must not carry the losing attempt\'s IP');
+  // stampAndFinalize appends one new page carrying the Freigaben (with their "IP: ..." lines) and
+  // the Verlauf, always last.
+  const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
+  assert.match(stampPageText, new RegExp(`IP: ${winnerIp.replace(/\./g, '\\.')}`), 'the stamped file on disk must carry the winning attempt\'s IP');
+  assert.doesNotMatch(stampPageText, new RegExp(`IP: ${loserIp.replace(/\./g, '\\.')}`), 'the stamped file on disk must not carry the losing attempt\'s IP');
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
@@ -660,23 +659,22 @@ test('after a rejected job is reworked and resubmitted through Kontierung, Freig
 
   const stampedPdf = readFileSync(pdfPfad);
   const doc = mupdf.Document.openDocument(stampedPdf, 'application/pdf');
-  // The Visum page (second-to-last: original page + Visum + 1 Verlauf page) must carry the
-  // NEW Freigabe-1 row's IP (9.9.9.9), not the original, superseded row's IP (1.2.3.4) — this
-  // is the assertion that actually distinguishes .find() (would pick the old row) from
-  // .findLast() (picks the new one); both rows belong to the same person, so name alone can't
-  // tell them apart.
-  const visumPageText = doc.loadPage(doc.countPages() - 2).toStructuredText().asText();
-  assert.match(visumPageText, /9\.9\.9\.9/, 'the operative Freigabe-1 block must use the newest row (proves .findLast, not .find)');
-  assert.doesNotMatch(visumPageText, /1\.2\.3\.4/, 'the stale, superseded Freigabe-1 row must not be the one stamped as operative');
+  // stampAndFinalize appends one new last page carrying both the Freigabe blocks and the Verlauf.
+  // The Freigabe-1 block must carry the NEW row's IP (9.9.9.9), not the original, superseded
+  // row's IP (1.2.3.4) — this is the assertion that actually distinguishes .find() (would pick
+  // the old row) from .findLast() (picks the new one); both rows belong to the same person, so
+  // name alone can't tell them apart.
+  const stampPageText = doc.loadPage(doc.countPages() - 1).toStructuredText().asText();
+  assert.match(stampPageText, /9\.9\.9\.9/, 'the operative Freigabe-1 block must use the newest row (proves .findLast, not .find)');
+  assert.doesNotMatch(stampPageText, /1\.2\.3\.4/, 'the stale, superseded Freigabe-1 row must not be the one stamped as operative');
 
-  const verlaufPageText = doc.loadPage(doc.countPages() - 1).toStructuredText().asText();
-  assert.match(verlaufPageText, /Abgelehnt/, 'the Verlauf page must include the original rejection');
-  assert.match(verlaufPageText, /Falsches Konto/);
-  // Verlauf entries (unlike the Visum block) carry no IP — pdfStamp.js's verlaufEntryLines only
+  assert.match(stampPageText, /Abgelehnt/, 'the Verlauf section must include the original rejection');
+  assert.match(stampPageText, /Falsches Konto/);
+  // Verlauf entries (unlike the Freigabe block) carry no IP — pdfStamp.js's verlaufEntryLines only
   // renders timestamp/role/name/comment (see src/services/pdfStamp.js, out of this task's scope).
   // So the superseded Freigabe-1 row is identified here by its original timestamp (10:30, i.e.
   // 2026-08-15T08:30:00.000Z from seedFreigabe2Job) rather than by IP.
-  assert.match(verlaufPageText, /10:30 — Freigabe 1/, 'the Verlauf, unlike the Visum block, must still show the superseded row for the full audit trail');
+  assert.match(stampPageText, /10:30 — Freigabe 1/, 'the Verlauf, unlike the Freigabe block, must still show the superseded row for the full audit trail');
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

@@ -105,7 +105,7 @@ test('Pool → Beanspruchen → Kontierung → Freigabe 2 completes the job with
   const downloadRes = await request(app).get(abholbereitRes.body[0].download_url);
   assert.equal(downloadRes.status, 200);
   const mdoc = mupdf.Document.openDocument(downloadRes.body, 'application/pdf');
-  const lastPageText = mdoc.loadPage(mdoc.countPages() - 2).toStructuredText().asText();
+  const lastPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
   assert.match(lastPageText, /Eins/);
   assert.match(lastPageText, /Zwei/);
 

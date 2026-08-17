@@ -62,9 +62,6 @@ const ADMIN_ROUTES = [
   { method: 'post', path: '/admin/erscheinungsbild' },
   // personen (1)
   { method: 'get', path: '/admin/personen' },
-  // pdf-einstellungen (2)
-  { method: 'get', path: '/admin/pdf-einstellungen' },
-  { method: 'post', path: '/admin/pdf-einstellungen' },
   // mails (2)
   { method: 'get', path: '/admin/mails' },
   { method: 'post', path: '/admin/mails/1/erneut-versenden' },
@@ -81,7 +78,7 @@ const ADMIN_ROUTES = [
 ];
 
 test('the real createApp wiring returns 401 on all 32 admin route/method combinations with no session present', async () => {
-  assert.equal(ADMIN_ROUTES.length, 32, 'sanity check: this sweep should cover exactly 32 route/method combinations');
+  assert.equal(ADMIN_ROUTES.length, 30, 'sanity check: this sweep should cover exactly 30 route/method combinations');
 
   const db = openDatabase(':memory:');
   const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));

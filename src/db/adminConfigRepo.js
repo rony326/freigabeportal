@@ -9,7 +9,6 @@ const DEFAULTS = {
   branding_logo_ausrichtung: 'links',
   footer_text: 'Freigabeportal',
   seiten_titel: 'Freigabeportal',
-  visum_seite_position: 'letzte',
   mail_log_aufbewahrung_tage: '90',
   sync_max_deaktivierung_prozent: '50',
   sync_max_deaktivierung_anzahl: '10',

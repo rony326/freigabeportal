@@ -50,13 +50,6 @@ test('seedDefaults sets footer_text default', () => {
   db.close();
 });
 
-test('seedDefaults sets visum_seite_position default', () => {
-  const db = openDatabase(':memory:');
-  seedDefaults(db);
-  assert.equal(getConfigValue(db, 'visum_seite_position'), 'letzte');
-  db.close();
-});
-
 test('seedDefaults sets reminder_empfaenger and eskalation_empfaenger defaults', () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);

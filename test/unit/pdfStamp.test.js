@@ -42,39 +42,41 @@ function extractedText(stampedBytes, pageIndex) {
   }
 }
 
-test('stamps the last page when visumSeitePosition is "letzte", appends one Verlauf page', async () => {
-  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Rechnung Seite 2', 'Visum / Rechnungsfreigabe']);
-  const stamped = await stampAndFinalize(pdf, sampleStampData(), 'letzte');
+test('appends exactly one new page (not merged into existing content) carrying both Freigaben and the Verlauf', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Rechnung Seite 2']);
+  const stamped = await stampAndFinalize(pdf, sampleStampData());
 
   const reloaded = await PDFDocument.load(stamped);
-  assert.equal(reloaded.getPageCount(), 4, 'original 3 pages + 1 appended Verlauf page');
+  assert.equal(reloaded.getPageCount(), 3, 'original 2 pages + 1 appended stamp page');
 
-  const text = extractedText(stamped, 2);
-  assert.match(text, /Max Muster/);
-  assert.match(text, /Erika Beispiel/);
-  assert.match(text, /Interessenskonflikt: Nein/);
-  assert.match(text, /Interessenskonflikt: Ja/);
-  assert.match(text, /Verwandtschaft mit Lieferant/);
+  const original = extractedText(stamped, 0);
+  assert.doesNotMatch(original, /Max Muster/, 'the original content page must be untouched');
+
+  const stampText = extractedText(stamped, 2);
+  assert.match(stampText, /Max Muster/);
+  assert.match(stampText, /Erika Beispiel/);
+  assert.match(stampText, /Interessenskonflikt: Nein/);
+  assert.match(stampText, /Interessenskonflikt: Ja/);
+  assert.match(stampText, /Verwandtschaft mit Lieferant/);
+  assert.match(stampText, /Verlauf/, 'the audit-log Verlauf section starts on the same page as the Freigaben');
+  assert.match(stampText, /Freigabe 1/);
+  assert.match(stampText, /Freigabe 2/);
 });
 
-test('stamps the first page when visumSeitePosition is "erste", still appends the Verlauf page at the end', async () => {
-  const pdf = await buildPdfFixture(['Visum / Rechnungsfreigabe', 'Rechnung Seite 1', 'Rechnung Seite 2']);
-  const stamped = await stampAndFinalize(pdf, sampleStampData(), 'erste');
+test('the appended stamp page reuses the original document\'s page size', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const original = await PDFDocument.load(pdf);
+  const { width: originalWidth, height: originalHeight } = original.getPage(0).getSize();
 
+  const stamped = await stampAndFinalize(pdf, sampleStampData());
   const reloaded = await PDFDocument.load(stamped);
-  assert.equal(reloaded.getPageCount(), 4);
-
-  const text = extractedText(stamped, 0);
-  assert.match(text, /Max Muster/);
-  assert.match(text, /Erika Beispiel/);
-
-  const verlaufText = extractedText(stamped, 3);
-  assert.match(verlaufText, /Freigabe 1/);
-  assert.match(verlaufText, /Freigabe 2/);
+  const stampPage = reloaded.getPage(reloaded.getPageCount() - 1);
+  assert.equal(stampPage.getWidth(), originalWidth);
+  assert.equal(stampPage.getHeight(), originalHeight);
 });
 
 test('Verlauf page lists every entry with its rolleLabel, name, and kommentar', async () => {
-  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const stampData = sampleStampData();
   stampData.verlauf = [
     { rolleLabel: 'Freigabe 1', name: 'Hans Erst', identitaet: 'ct-1', zeitpunkt: '2026-08-01T08:00:00.000Z', ip: '1.1.1.1', interessenskonflikt: false, kommentar: null },
@@ -83,20 +85,19 @@ test('Verlauf page lists every entry with its rolleLabel, name, and kommentar', 
     { rolleLabel: 'Freigabe 2', name: 'Erika Beispiel', identitaet: 'ct-456', zeitpunkt: '2026-08-04T08:00:00.000Z', ip: '5.6.7.8', interessenskonflikt: false, kommentar: null },
   ];
 
-  const stamped = await stampAndFinalize(pdf, stampData, 'letzte');
+  const stamped = await stampAndFinalize(pdf, stampData);
   const reloaded = await PDFDocument.load(stamped);
-  const verlaufText = extractedText(stamped, reloaded.getPageCount() - 1);
-  assert.match(verlaufText, /Hans Erst/);
-  assert.match(verlaufText, /Peter Zweit/);
-  assert.match(verlaufText, /Abgelehnt/);
-  assert.match(verlaufText, /Falsches Konto/);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
+  assert.match(stampText, /Hans Erst/);
+  assert.match(stampText, /Peter Zweit/);
+  assert.match(stampText, /Abgelehnt/);
+  assert.match(stampText, /Falsches Konto/);
 });
 
 test('Verlauf longer than one page spills onto an additional appended page', async () => {
-  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const stampData = sampleStampData();
-  // 60 two-line entries is comfortably more than fits on one page at 14pt line height
-  // starting at y = pageHeight - 50 with a y >= 40 cutoff (about 55 lines per page).
+  // 60 two-line entries is comfortably more than fits below the two Freigabe blocks on one page.
   stampData.verlauf = Array.from({ length: 60 }, (_, i) => ({
     rolleLabel: 'Freigabe 1',
     name: `Person ${i}`,
@@ -107,58 +108,54 @@ test('Verlauf longer than one page spills onto an additional appended page', asy
     kommentar: `Zeile ${i}`,
   }));
 
-  const stamped = await stampAndFinalize(pdf, stampData, 'letzte');
+  const stamped = await stampAndFinalize(pdf, stampData);
   const reloaded = await PDFDocument.load(stamped);
-  assert.ok(reloaded.getPageCount() >= 4, `expected at least 2 Verlauf pages beyond the original 2, got ${reloaded.getPageCount()} total pages`);
+  assert.ok(reloaded.getPageCount() >= 3, `expected at least one Verlauf continuation page beyond the original 1 + stamp page, got ${reloaded.getPageCount()} total pages`);
 
   const lastPageText = extractedText(stamped, reloaded.getPageCount() - 1);
   assert.match(lastPageText, /Person 59/, 'the final entry must appear on the last page, proving nothing was silently dropped');
 });
 
 test('freigeber2 Kommentar longer than one line wraps instead of overflowing off the page', async () => {
-  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const stampData = sampleStampData();
   const longKommentar =
     'Dies ist eine sehr lange Begründung für die Ablehnung dieser Rechnung, die weit über die Breite ' +
     'einer einzelnen Zeile im PDF hinausgeht und daher umgebrochen werden muss, damit sie vollständig sichtbar bleibt.';
   stampData.freigeber2.kommentar = longKommentar;
 
-  const stamped = await stampAndFinalize(pdf, stampData, 'letzte');
-  const text = extractedText(stamped, 1);
+  const stamped = await stampAndFinalize(pdf, stampData);
+  const reloaded = await PDFDocument.load(stamped);
+  const text = extractedText(stamped, reloaded.getPageCount() - 1);
   const lastWord = longKommentar.trim().split(' ').at(-1);
   assert.ok(text.includes(lastWord), 'the full long Kommentar must be present, not truncated');
-
-  // freigeber1 (4 fixed fields, no kommentar) + freigeber2's 4 fixed fields = 8 lines if the
-  // long Kommentar were (wrongly) drawn as a single unwrapped line. Wrapping must add more.
-  const lineCount = text.split('\n').filter((line) => line.trim().length > 0).length;
-  assert.ok(lineCount > 9, `expected the wrapped Kommentar to add extra lines, got ${lineCount} total lines`);
 });
 
 test('Verlauf entry with a long Kommentar wraps instead of overflowing off the page', async () => {
-  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const stampData = sampleStampData();
   const longKommentar =
     'Diese Rechnung wurde abgelehnt, weil die Kontierung nicht mit dem hinterlegten Konto übereinstimmt ' +
     'und die Belegsumme deutlich von der ursprünglichen Bestellung abweicht, was eine erneute Prüfung erfordert.';
   stampData.verlauf[1].kommentar = longKommentar;
 
-  const stamped = await stampAndFinalize(pdf, stampData, 'letzte');
+  const stamped = await stampAndFinalize(pdf, stampData);
   const reloaded = await PDFDocument.load(stamped);
-  const verlaufText = extractedText(stamped, reloaded.getPageCount() - 1);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
   const lastWord = longKommentar.trim().split(' ').at(-1);
-  assert.ok(verlaufText.includes(lastWord), 'the full long Verlauf Kommentar must be present, not truncated');
+  assert.ok(stampText.includes(lastWord), 'the full long Verlauf Kommentar must be present, not truncated');
 });
 
 test('throws a German-message Error for a PDF that cannot be loaded', async () => {
   await assert.rejects(
-    () => stampAndFinalize(Buffer.alloc(0), sampleStampData(), 'letzte'),
+    () => stampAndFinalize(Buffer.alloc(0), sampleStampData()),
     /PDF konnte nicht geladen werden/
   );
 });
 
 test('throws a German-message Error (not a raw TypeError) for a PDF that loads leniently but has no real page tree', async () => {
   await assert.rejects(
-    () => stampAndFinalize(NOT_REALLY_A_PDF, sampleStampData(), 'letzte'),
+    () => stampAndFinalize(NOT_REALLY_A_PDF, sampleStampData()),
     (err) => {
       assert.ok(err instanceof Error);
       assert.notEqual(err.constructor.name, 'TypeError');
@@ -169,12 +166,12 @@ test('throws a German-message Error (not a raw TypeError) for a PDF that loads l
 });
 
 test('throws a German-message Error (not a raw pdf-lib WinAnsi error) when stamp text contains non-WinAnsi characters', async () => {
-  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const stampData = sampleStampData();
   stampData.freigeber2.kommentar = '😀 nicht darstellbar';
 
   await assert.rejects(
-    () => stampAndFinalize(pdf, stampData, 'letzte'),
+    () => stampAndFinalize(pdf, stampData),
     (err) => {
       assert.ok(err instanceof Error);
       assert.doesNotMatch(err.message, /WinAnsi/);
@@ -185,12 +182,12 @@ test('throws a German-message Error (not a raw pdf-lib WinAnsi error) when stamp
 });
 
 test('throws a German-message Error when a Verlauf entry contains non-WinAnsi characters', async () => {
-  const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const stampData = sampleStampData();
   stampData.verlauf[0].kommentar = '😀 nicht darstellbar';
 
   await assert.rejects(
-    () => stampAndFinalize(pdf, stampData, 'letzte'),
+    () => stampAndFinalize(pdf, stampData),
     /PDF konnte nicht gestempelt werden/
   );
 });

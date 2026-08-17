@@ -5,7 +5,6 @@ import { getJobById, eskalierenFreigabe2, eskalierenFreigabe2AnAdmin, abschliess
 import { getKontoById } from '../db/kontenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
-import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampAndFinalize } from '../services/pdfStamp.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
@@ -238,8 +237,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
       const pdfBuffer = readFileSync(job.pdf_pfad);
       let stamped;
       try {
-        const position = getConfigValue(db, 'visum_seite_position') || 'letzte';
-        stamped = await stampAndFinalize(pdfBuffer, stampData, position);
+        stamped = await stampAndFinalize(pdfBuffer, stampData);
       } catch (err) {
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, [err.message]);
       }

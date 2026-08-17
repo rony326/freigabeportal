@@ -2,8 +2,9 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 const VERLAUF_LINE_HEIGHT = 14;
 const VERLAUF_BOTTOM_MARGIN = 40;
-const VERLAUF_TOP_MARGIN = 50;
 const PAGE_MARGIN = 100; // 60pt left draw origin + 40pt right margin
+const BLOCK_HEADING_GAP = 18;
+const BLOCK_GAP = 30;
 
 function formatZeitpunkt(isoUtc) {
   return new Date(isoUtc).toLocaleString('de-CH', { timeZone: 'Europe/Zurich', dateStyle: 'medium', timeStyle: 'short' });
@@ -29,7 +30,14 @@ function wrapLine(font, text, size, maxWidth) {
   return lines;
 }
 
-function drawFreigabeBlock(page, font, freigabe, startY, maxWidth) {
+// Draws a heading plus the Freigabe's fields starting at `startY`, and returns the y position
+// right after the last drawn line — the caller stacks blocks by feeding that back in as the
+// next block's startY, rather than relying on fixed, unrelated-to-content offsets.
+function drawFreigabeBlock(page, font, heading, freigabe, startY, maxWidth) {
+  let y = startY;
+  page.drawText(heading, { x: 60, y, size: 11, font, color: rgb(0, 0, 0) });
+  y -= BLOCK_HEADING_GAP;
+
   const lines = [
     `${freigabe.name} (${freigabe.identitaet})`,
     `Zeitpunkt: ${formatZeitpunkt(freigabe.zeitpunkt)}`,
@@ -39,13 +47,13 @@ function drawFreigabeBlock(page, font, freigabe, startY, maxWidth) {
   if (freigabe.kommentar) {
     lines.push(`Kommentar: ${freigabe.kommentar}`);
   }
-  let y = startY;
   for (const line of lines) {
     for (const wrapped of wrapLine(font, line, 10, maxWidth)) {
       page.drawText(wrapped, { x: 60, y, size: 10, font, color: rgb(0, 0, 0) });
       y -= 14;
     }
   }
+  return y;
 }
 
 function verlaufEntryLines(entry) {
@@ -58,28 +66,34 @@ function verlaufEntryLines(entry) {
   return lines;
 }
 
-function drawVerlauf(doc, font, verlauf, pageWidth, pageHeight) {
+// Draws the Verlauf heading and every entry starting at (page, startY), overflowing onto freshly
+// appended same-size pages whenever a line would fall below VERLAUF_BOTTOM_MARGIN.
+function drawVerlauf(doc, font, verlauf, page, startY, pageWidth, pageHeight) {
   const maxWidth = pageWidth - PAGE_MARGIN;
   const allLines = verlauf.flatMap((entry) =>
     verlaufEntryLines(entry).flatMap((line) => wrapLine(font, line, 9, maxWidth))
   );
 
-  let page = doc.addPage([pageWidth, pageHeight]);
-  page.drawText('Verlauf', { x: 60, y: pageHeight - VERLAUF_TOP_MARGIN + 20, size: 12, font, color: rgb(0, 0, 0) });
-  let y = pageHeight - VERLAUF_TOP_MARGIN;
+  let currentPage = page;
+  let y = startY;
+  currentPage.drawText('Verlauf', { x: 60, y: y + 20, size: 12, font, color: rgb(0, 0, 0) });
 
   for (const line of allLines) {
     if (y < VERLAUF_BOTTOM_MARGIN) {
-      page = doc.addPage([pageWidth, pageHeight]);
-      page.drawText('Verlauf (Fortsetzung)', { x: 60, y: pageHeight - VERLAUF_TOP_MARGIN + 20, size: 12, font, color: rgb(0, 0, 0) });
-      y = pageHeight - VERLAUF_TOP_MARGIN;
+      currentPage = doc.addPage([pageWidth, pageHeight]);
+      y = pageHeight - 50;
+      currentPage.drawText('Verlauf (Fortsetzung)', { x: 60, y: y + 20, size: 12, font, color: rgb(0, 0, 0) });
     }
-    page.drawText(line, { x: 60, y, size: 9, font, color: rgb(0, 0, 0) });
+    currentPage.drawText(line, { x: 60, y, size: 9, font, color: rgb(0, 0, 0) });
     y -= VERLAUF_LINE_HEIGHT;
   }
 }
 
-export async function stampAndFinalize(pdfBuffer, stampData, visumSeitePosition) {
+// Appends one new page to the PDF itself — carrying both Freigaben (top) and the full audit-log
+// Verlauf (below, continuing onto further appended pages if it doesn't fit) — instead of relying
+// on a blank "Visum" page n8n pre-merged into the document before upload. The stamped page is
+// always the last one; there is no longer a position to choose.
+export async function stampAndFinalize(pdfBuffer, stampData) {
   let doc;
   try {
     doc = await PDFDocument.load(pdfBuffer);
@@ -100,14 +114,19 @@ export async function stampAndFinalize(pdfBuffer, stampData, visumSeitePosition)
       throw new Error('PDF enthält keine Seiten und kann nicht gestempelt werden.');
     }
 
-    const visumPage = visumSeitePosition === 'erste' ? pages[0] : pages[pages.length - 1];
+    // New page reuses the size of the document's existing last page for visual consistency with
+    // the rest of the file, rather than assuming a fixed standard size.
+    const { width, height } = pages[pages.length - 1].getSize();
     const font = await doc.embedFont(StandardFonts.Helvetica);
-    const { width, height } = visumPage.getSize();
     const maxWidth = width - PAGE_MARGIN;
 
-    drawFreigabeBlock(visumPage, font, stampData.freigeber1, 650, maxWidth);
-    drawFreigabeBlock(visumPage, font, stampData.freigeber2, 450, maxWidth);
-    drawVerlauf(doc, font, stampData.verlauf, width, height);
+    const stampPage = doc.addPage([width, height]);
+    let y = height - 50;
+    y = drawFreigabeBlock(stampPage, font, 'Freigabe 1', stampData.freigeber1, y, maxWidth);
+    y -= BLOCK_GAP;
+    y = drawFreigabeBlock(stampPage, font, 'Freigabe 2', stampData.freigeber2, y, maxWidth);
+    y -= BLOCK_GAP;
+    drawVerlauf(doc, font, stampData.verlauf, stampPage, y, width, height);
 
     return Buffer.from(await doc.save());
   } catch {

@@ -4,7 +4,6 @@ import { writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import crypto from 'node:crypto';
 import { createJob, getJobById, findJobByDateiHash, listAbholbereitJobs, confirmAbholung, setThumbnailPfad } from '../../db/jobsRepo.js';
-import { getConfigValue } from '../../db/adminConfigRepo.js';
 import { renderFirstPageThumbnail } from '../../services/thumbnail.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
 import { getPersonById } from '../../db/personenRepo.js';
@@ -76,9 +75,8 @@ export function createN8nJobsRouter({ db, config, mailer }) {
         writeFileSync(pdfPfad, req.file.buffer);
 
         const id = createJob(db, { eingangAm, quelle, absender: absender || null, dateiname, pdfPfad, dateiHash });
-        const visumSeitePosition = getConfigValue(db, 'visum_seite_position') || 'letzte';
         try {
-          const thumbnailPng = renderFirstPageThumbnail(req.file.buffer, visumSeitePosition);
+          const thumbnailPng = renderFirstPageThumbnail(req.file.buffer);
           const thumbnailPfad = pdfPfad.replace(/\.pdf$/, '.png');
           writeFileSync(thumbnailPfad, thumbnailPng);
           setThumbnailPfad(db, id, thumbnailPfad);

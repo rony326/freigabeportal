@@ -396,7 +396,7 @@ test('GET /admin renders a dashboard with links to all ten admin areas for a Por
 
   const res = await agent.get('/admin');
   assert.equal(res.status, 200);
-  for (const path of ['/admin/konten', '/admin/debitoren', '/admin/eskalation', '/admin/erscheinungsbild', '/admin/personen', '/admin/pdf-einstellungen', '/admin/mails', '/admin/sync', '/admin/geplante-jobs', '/admin/abgelehnt']) {
+  for (const path of ['/admin/konten', '/admin/debitoren', '/admin/eskalation', '/admin/erscheinungsbild', '/admin/personen', '/admin/mails', '/admin/sync', '/admin/geplante-jobs', '/admin/abgelehnt']) {
     assert.match(res.text, new RegExp(`href="${path}"`), `expected a link to ${path}`);
   }
   db.close();

@@ -52,6 +52,15 @@ test('GET /pool carries a viewport meta tag and wraps the Pool table in table-re
   db.close();
 });
 
+test('GET /pool renders the nav bar as container-fluid, matching the dashboard\'s own full-width main so they stay left-aligned with each other', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.match(res.text, /<nav class="container-fluid px-4 mb-3/);
+  db.close();
+});
+
 test('GET /pool shows a reload button linking back to /pool', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db);

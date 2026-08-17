@@ -32,7 +32,7 @@
 <% const navAktuellerPfad = typeof currentPath !== 'undefined' ? currentPath : ''; %>
 <% const navZeigeZurueck = navAktuellerPfad.startsWith('/kontierung'); %>
 <% if (navIsBuchhaltung || navIsPortalAdmin || navZeigeZurueck) { %>
-  <nav class="container mb-3 d-flex align-items-center gap-2">
+  <nav class="<%= typeof navContainerClass !== 'undefined' ? navContainerClass : 'container' %> mb-3 d-flex align-items-center gap-2">
     <% if (navIsBuchhaltung || navIsPortalAdmin) { %>
       <div class="dropdown">
         <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="hauptmenue-toggle" data-bs-toggle="dropdown" aria-expanded="false">

@@ -7,7 +7,7 @@
   <title>Rechnung aufsplitten — Freigabeportal</title>
 </head>
 <body>
-  <%- include('_header') %>
+  <%- include('_brand_styles') %>
   <main class="container py-4">
     <h1 class="h3">Rechnung aufsplitten: <%= job.dateiname %></h1>
     <p class="text-muted">Vorgangsnummer: <%= job.id %></p>
@@ -84,6 +84,5 @@
       });
     })();
   </script>
-  <%- include('_footer') %>
 </body>
 </html>

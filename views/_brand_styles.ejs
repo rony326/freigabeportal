@@ -1,0 +1,70 @@
+<style>
+  :root {
+    --brand-primary: <%= branding.primaryColor || '#2f4858' %>;
+    --brand-secondary: <%= branding.secondaryColor || '#4d7ea8' %>;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="hell"]) {
+      --bg: #1a1a1a;
+      --fg: #f0f0f0;
+    }
+  }
+  :root[data-theme="dunkel"] {
+    --bg: #1a1a1a;
+    --fg: #f0f0f0;
+  }
+  body { background: var(--bg); color: var(--fg); }
+  a { color: var(--brand-primary); }
+  button { border-color: var(--brand-secondary); }
+  /* Bootstrap's default .border is a light grey (--bs-border-color) that all but disappears
+     against a light/white page background, making the PDF preview frame's edges hard to see in
+     light mode. A solid black border fixes that; in dark mode Bootstrap's own border color
+     already reads fine against the dark background, so this only overrides the light case. */
+  .pdf-preview {
+    border: 2px solid #000;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="hell"]) .pdf-preview {
+      border: 1px solid var(--bs-border-color);
+    }
+  }
+  :root[data-theme="dunkel"] .pdf-preview {
+    border: 1px solid var(--bs-border-color);
+  }
+  /* Bootstrap's compiled CSS bakes literal hex values into each .btn-* and active-tab-link
+     variant's own custom properties (not a reference to --bs-primary), so this app's
+     per-instance branding colors must override those component-level variables directly to
+     actually reach rendered buttons and the active tab indicator — setting --bs-primary alone
+     has no effect. */
+  .btn-primary {
+    --bs-btn-bg: var(--brand-primary);
+    --bs-btn-border-color: var(--brand-primary);
+    --bs-btn-hover-bg: var(--brand-secondary);
+    --bs-btn-hover-border-color: var(--brand-secondary);
+    --bs-btn-active-bg: var(--brand-secondary);
+    --bs-btn-active-border-color: var(--brand-secondary);
+    --bs-btn-disabled-bg: var(--brand-primary);
+    --bs-btn-disabled-border-color: var(--brand-primary);
+  }
+  .btn-outline-primary {
+    --bs-btn-color: var(--brand-primary);
+    --bs-btn-border-color: var(--brand-primary);
+    --bs-btn-hover-bg: var(--brand-primary);
+    --bs-btn-hover-border-color: var(--brand-primary);
+    --bs-btn-active-bg: var(--brand-primary);
+    --bs-btn-active-border-color: var(--brand-primary);
+    --bs-btn-disabled-color: var(--brand-primary);
+    --bs-btn-disabled-border-color: var(--brand-primary);
+  }
+</style>
+<style>
+  /* Scoped to only render alongside the menu itself: an anonymous visitor gets no menu at all,
+     so this selector must not appear in the unconditional <style> block above. Bootstrap's
+     .dropdown-item.active otherwise falls back to its own default blue, not this app's brand
+     color — same reasoning as the .btn-primary/.btn-outline-primary overrides above. */
+  .dropdown-item.active, .dropdown-item:active {
+    background-color: var(--brand-primary);
+  }
+</style>

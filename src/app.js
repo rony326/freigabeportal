@@ -8,7 +8,7 @@ import { createCronRouter } from './routes/cron.js';
 import { requireApiKey } from './middleware/apiKey.js';
 import { requireCronSecret } from './middleware/cronAuth.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
-import { loadCurrentPerson, requireRole, requireAnyRole, requireLogin } from './middleware/roles.js';
+import { loadCurrentPerson, requireRole, requireLogin } from './middleware/roles.js';
 import { loadNavFlags } from './middleware/nav.js';
 import { loadBranding } from './middleware/branding.js';
 import { createBrandingRouter } from './routes/branding.js';
@@ -111,7 +111,12 @@ export function createApp({ db, config }) {
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
-  app.use('/pool', sessionLimiter, requireAnyRole(config, ['buchhaltung', 'portal-admin']), createPoolPageRouter({ db, config }));
+  // Dashboard for every logged-in person, not just Buchhaltung/Portal-Admin: "/" always redirects
+  // here now that the old landing page is gone, and a Freigeber1/2-only person (no group
+  // membership, AUTH-WIDEN-1) needs somewhere to land too. The pool-of-unassigned-invoices
+  // section itself stays restricted inside pool.ejs (gated on isBuchhaltung/isPortalAdmin from
+  // loadNavFlags) — only the route-level gate widens, not who can see the company-wide pool.
+  app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config }));
   app.use('/downloads', publicLimiter, createDownloadsRouter({ db, config }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer }));
   app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer }));
@@ -122,8 +127,10 @@ export function createApp({ db, config }) {
 
   app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
 
+  // No standalone landing page: every visit to "/" goes straight to the dashboard (/pool) for a
+  // logged-in person, or to login for an anonymous one.
   app.get('/', publicLimiter, (req, res) => {
-    res.render('home', { person: req.currentPerson ?? null });
+    res.redirect(req.currentPerson ? '/pool' : '/auth/login');
   });
 
   app.use((req, res) => {

@@ -48,15 +48,9 @@ export function createAuthRouter({ db, config }) {
         loggedInNow: true,
       });
 
-      // Phase F: skip the extra click through the home page for the common case — a person who
-      // can actually do something on /pool (Buchhaltung or Portal-Admin) is sent there directly.
-      // Freigeber1/2 and their Stellvertreter (AUTH-WIDEN-1, no group membership required) still
-      // land on / as before, since /pool would correctly 403 them.
-      const kannPool =
-        gruppen.includes(String(config.churchtools.groupIdBuchhaltung)) ||
-        gruppen.includes(String(config.churchtools.groupIdAdmin));
-      const zielUrl = kannPool ? '/pool' : '/';
-
+      // /pool is now the dashboard for every logged-in person, not just Buchhaltung/Portal-Admin
+      // (see app.js's /pool mount) — every login lands there directly, no landing page in between.
+      //
       // Regenerate the session on login (not just reuse the pre-login one) to prevent session
       // fixation: a session ID issued before authentication must never become a valid,
       // authenticated session ID after it. Nothing from the pre-login session is needed past
@@ -64,7 +58,7 @@ export function createAuthRouter({ db, config }) {
       req.session.regenerate((err) => {
         if (err) return next(err);
         req.session.personId = String(profile.id);
-        res.redirect(zielUrl);
+        res.redirect('/pool');
       });
       return;
     } catch (err) {

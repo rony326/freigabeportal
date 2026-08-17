@@ -11,8 +11,10 @@
   <main class="container py-4">
     <h1>Aufgaben</h1>
 
-    <h2 class="h4 mt-4">Pool</h2>
-    <%- include('_job_table', { jobs: poolJobs, idPrefix: 'pool', leerText: 'Keine offenen Rechnungen im Pool.' }) %>
+    <% if (typeof isBuchhaltung !== 'undefined' && (isBuchhaltung || isPortalAdmin)) { %>
+      <h2 class="h4 mt-4">Pool</h2>
+      <%- include('_job_table', { jobs: poolJobs, idPrefix: 'pool', leerText: 'Keine offenen Rechnungen im Pool.' }) %>
+    <% } %>
 
     <h2 class="h4 mt-4">Meine offenen Kontierungen</h2>
     <%- include('_job_table', { jobs: meineKontierungen, idPrefix: 'kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren', leerText: 'Keine offenen Kontierungen.' }) %>

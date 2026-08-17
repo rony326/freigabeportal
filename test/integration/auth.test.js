@@ -170,7 +170,7 @@ test('GET /auth/callback creates a session and a person even when the person bel
 
   const res = await agent.get('/auth/callback').query({ code: 'the-code', state });
   assert.equal(res.status, 302);
-  assert.equal(res.headers.location, '/');
+  assert.equal(res.headers.location, '/pool');
 
   const person = getPersonById(db, '42');
   assert.ok(person, 'a person with no relevant group membership must still get a local session and a personen row');

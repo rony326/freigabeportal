@@ -47,11 +47,23 @@
       <button type="button" id="zeile-hinzufuegen" class="btn btn-outline-secondary btn-sm mb-3">+ Teilbetrag hinzufügen</button>
       <div class="d-flex flex-wrap gap-2">
         <button type="submit" class="btn btn-primary">Aufsplitten und Freigabe 1 erteilen</button>
-        <a href="/kontierung/<%= job.id %>" class="btn btn-outline-secondary">Abbrechen</a>
+        <a href="/kontierung/<%= job.id %>" id="abbrechen-link" class="btn btn-outline-secondary">Abbrechen</a>
       </div>
     </form>
   </main>
   <script>
+    (function () {
+      // Reached both standalone (direct navigation) and embedded in an <iframe> inside a Bootstrap
+      // modal on kontierung.ejs. Embedded, "Abbrechen" must close the modal, not navigate the
+      // iframe to a full standalone page — there's no way to reach the parent's Bootstrap modal
+      // API directly (different document), so this posts a message the parent listens for instead.
+      if (window.parent !== window) {
+        document.getElementById('abbrechen-link').addEventListener('click', function (e) {
+          e.preventDefault();
+          window.parent.postMessage('aufsplitten-abbrechen', window.location.origin);
+        });
+      }
+    })();
     (function () {
       var kontoOptionsHtml = document.querySelector('.teil-zeile select').innerHTML;
       function zeileEntfernenBinden(zeile) {

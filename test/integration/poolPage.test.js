@@ -6,7 +6,8 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, claimJob, setKontierung, setThumbnailPfad, ablehnenJob } from '../../src/db/jobsRepo.js';
-import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
+import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
+import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createPoolPageRouter } from '../../src/routes/poolPage.js';
 
 function buildTestApp(db) {
@@ -23,7 +24,8 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret' };
   app.use(loadCurrentPerson(db));
-  app.use('/pool', requireRole(config, 'buchhaltung'), createPoolPageRouter({ db, config }));
+  app.use(loadNavFlags(config));
+  app.use('/pool', requireLogin(), createPoolPageRouter({ db, config }));
   return app;
 }
 
@@ -82,12 +84,14 @@ test('GET /pool shows an em dash for absender when n8n did not submit one', asyn
   db.close();
 });
 
-test('GET /pool returns 403 for a logged-in person without the buchhaltung group', async () => {
+test('GET /pool returns 200 for a logged-in person without the buchhaltung or portal-admin group, but hides the Pool section', async () => {
   const db = openDatabase(':memory:');
-  upsertPerson(db, { id: '77', vorname: 'Admin', nachname: 'Only', email: 'a@example.org', gruppen: ['20'], loggedInNow: true });
+  upsertPerson(db, { id: '77', vorname: 'Frei', nachname: 'Geber', email: 'a@example.org', gruppen: [], loggedInNow: true });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '77');
-  assert.equal(res.status, 403);
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /<h2 class="h4 mt-4">Pool<\/h2>/);
+  assert.match(res.text, /Meine offenen Kontierungen/);
   db.close();
 });
 

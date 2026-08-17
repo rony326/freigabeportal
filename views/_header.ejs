@@ -85,6 +85,9 @@
     <% if (branding.hasLogo && branding.logoAusrichtung === 'rechts') { %>
       <img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2">
     <% } %>
+    <% if (typeof currentPerson !== 'undefined' && currentPerson) { %>
+      <span class="text-muted small">Angemeldet als <%= currentPerson.vorname %> <%= currentPerson.nachname %></span>
+    <% } %>
     <button type="button" id="theme-toggle" class="btn btn-outline-secondary btn-sm" aria-label="Farbmodus umschalten">🌓</button>
     <% if (typeof currentPerson !== 'undefined' && currentPerson) { %>
       <form method="post" action="/auth/logout" class="d-inline">

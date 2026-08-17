@@ -13,11 +13,11 @@ function testConfig() {
   };
 }
 
-test('GET / renders with no data-theme attribute when default is system and no cookie is set', async () => {
+test('GET /nonexistent-route-xyz renders with no data-theme attribute when default is system and no cookie is set', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });
-  const res = await request(app).get('/');
-  assert.equal(res.status, 200);
+  const res = await request(app).get('/nonexistent-route-xyz');
+  assert.equal(res.status, 404);
   // Anchored to the <html> tag itself, not just "data-theme=" anywhere in the
   // document — the shared header partial's CSS unconditionally contains
   // `:root[data-theme="dunkel"]` / `:root:not([data-theme="hell"])`, so an
@@ -27,11 +27,11 @@ test('GET / renders with no data-theme attribute when default is system and no c
   db.close();
 });
 
-test('GET / renders data-theme="dunkel" when a theme cookie is set', async () => {
+test('GET /nonexistent-route-xyz renders data-theme="dunkel" when a theme cookie is set', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });
-  const res = await request(app).get('/').set('Cookie', 'theme=dunkel');
-  assert.equal(res.status, 200);
+  const res = await request(app).get('/nonexistent-route-xyz').set('Cookie', 'theme=dunkel');
+  assert.equal(res.status, 404);
   assert.match(res.text, /<html lang="de" data-theme="dunkel"/);
   db.close();
 });

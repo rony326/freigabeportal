@@ -54,49 +54,21 @@ test('GET /vendor/bootstrap/bootstrap.bundle.min.js is served as a static asset'
 test('every top-level view carries a viewport meta tag', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });
-  const homeRes = await request(app).get('/');
-  assert.match(homeRes.text, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
   const errorRes = await request(app).get('/nonexistent-route-xyz');
   assert.match(errorRes.text, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
   db.close();
 });
 
-test('GET / renders the German home page for an anonymous visitor', async () => {
+test('GET / redirects an anonymous visitor to /auth/login (no standalone landing page)', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });
   const res = await request(app).get('/');
-  assert.equal(res.status, 200);
-  assert.match(res.text, /Nicht angemeldet/);
-  assert.doesNotMatch(res.text, /Abmelden/, 'an anonymous visitor should see no logout link');
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/auth/login');
   db.close();
 });
 
-test('GET / renders the logo in the centered header cell when logoAusrichtung is "mitte"', async () => {
-  const db = openDatabase(':memory:');
-  setConfigValue(db, 'branding_logo_pfad', '/data/branding/logo.png');
-  setConfigValue(db, 'branding_logo_mimetype', 'image/png');
-  setConfigValue(db, 'branding_logo_ausrichtung', 'mitte');
-  const app = createApp({ db, config: testConfig() });
-  const res = await request(app).get('/');
-  assert.equal(res.status, 200);
-  assert.match(res.text, /<div class="text-center">\s*<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2">/);
-  assert.doesNotMatch(res.text, /<div class="text-start">\s*<img/, 'the left cell should stay empty when alignment is "mitte"');
-  db.close();
-});
-
-test('GET / renders the logo in the right header cell alongside the theme toggle when logoAusrichtung is "rechts"', async () => {
-  const db = openDatabase(':memory:');
-  setConfigValue(db, 'branding_logo_pfad', '/data/branding/logo.png');
-  setConfigValue(db, 'branding_logo_mimetype', 'image/png');
-  setConfigValue(db, 'branding_logo_ausrichtung', 'rechts');
-  const app = createApp({ db, config: testConfig() });
-  const res = await request(app).get('/');
-  assert.equal(res.status, 200);
-  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2">\s*<button type="button" id="theme-toggle"/);
-  db.close();
-});
-
-test('GET / shows a logout link for a logged-in person', async () => {
+test('GET / redirects a logged-in person straight to /pool, the only dashboard', async () => {
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -120,6 +92,79 @@ test('GET / shows a logout link for a logged-in person', async () => {
   await agent.get('/auth/callback').query({ code: 'the-code', state });
 
   const res = await agent.get('/');
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+  db.close();
+});
+
+test('GET /pool renders the logo in the centered header cell when logoAusrichtung is "mitte"', async () => {
+  const db = openDatabase(':memory:');
+  setConfigValue(db, 'branding_logo_pfad', '/data/branding/logo.png');
+  setConfigValue(db, 'branding_logo_mimetype', 'image/png');
+  setConfigValue(db, 'branding_logo_ausrichtung', 'mitte');
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get('/pool');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<div class="text-center">\s*<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2">/);
+  assert.doesNotMatch(res.text, /<div class="text-start">\s*<img/, 'the left cell should stay empty when alignment is "mitte"');
+  db.close();
+});
+
+test('GET /nonexistent-route-xyz renders the logo in the right header cell alongside the theme toggle when logoAusrichtung is "rechts" (anonymous)', async () => {
+  const db = openDatabase(':memory:');
+  setConfigValue(db, 'branding_logo_pfad', '/data/branding/logo.png');
+  setConfigValue(db, 'branding_logo_mimetype', 'image/png');
+  setConfigValue(db, 'branding_logo_ausrichtung', 'rechts');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/nonexistent-route-xyz');
+  assert.equal(res.status, 404);
+  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2">\s*<button type="button" id="theme-toggle"/);
+  db.close();
+});
+
+test('GET /pool shows a logout link for a logged-in person', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get('/pool');
   assert.match(res.text, /action="\/auth\/logout"/);
   db.close();
 });
@@ -198,7 +243,7 @@ test('Hauptmenü shows both Aufgaben and Admin entries for a Portal-Admin, Admin
 test('Hauptmenü renders no menu at all for an anonymous visitor', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });
-  const res = await request(app).get('/');
+  const res = await request(app).get('/nonexistent-route-xyz');
   assert.doesNotMatch(res.text, /dropdown-menu/);
   assert.doesNotMatch(res.text, />Aufgaben</);
   db.close();
@@ -226,36 +271,7 @@ test('session cookie is not marked Secure when publicBaseUrl is not https (or is
   db.close();
 });
 
-test('GET / shows a link to /pool for a logged-in buchhaltung member', async () => {
-  const config = testConfig();
-  config.churchtools = {
-    ...config.churchtools,
-    clientId: 'client-id',
-    clientSecret: 'client-secret',
-    redirectUri: 'https://portal.example.org/auth/callback',
-  };
-  const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
-  client
-    .intercept({ path: '/oauth/userinfo', method: 'GET' })
-    .reply(200, { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' });
-  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
-  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
-
-  const db = openDatabase(':memory:');
-  const app = createApp({ db, config });
-  const agent = request.agent(app);
-  const loginRes = await agent.get('/auth/login');
-  const state = new URL(loginRes.headers.location).searchParams.get('state');
-  await agent.get('/auth/callback').query({ code: 'the-code', state });
-
-  const res = await agent.get('/');
-  assert.equal(res.status, 200);
-  assert.match(res.text, /href="\/pool"/);
-  db.close();
-});
-
-test('GET / shows a link to /pool for a logged-in Portal-Admin who is not also in Buchhaltung (nav-tabs mirrors /pool\'s requireAnyRole gate)', async () => {
+test('GET / redirects a logged-in Portal-Admin (not also in Buchhaltung) to /pool, which shows their name in the header', async () => {
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -279,13 +295,18 @@ test('GET / shows a link to /pool for a logged-in Portal-Admin who is not also i
   await agent.get('/auth/callback').query({ code: 'the-code', state });
 
   const res = await agent.get('/');
-  assert.equal(res.status, 200);
-  assert.match(res.text, /Angemeldet als Admin Only/);
-  assert.match(res.text, /href="\/pool"/);
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+
+  const poolRes = await agent.get('/pool');
+  assert.equal(poolRes.status, 200);
+  assert.match(poolRes.text, /Angemeldet als Admin Only/);
   db.close();
 });
 
-test('GET / shows no /pool or /admin link for a logged-in person in neither Buchhaltung nor Portal-Admin', async () => {
+test('GET / redirects a logged-in person in neither Buchhaltung nor Portal-Admin to /pool too, where the Pool section and /admin link are hidden', async () => {
+  // AUTH-WIDEN-1: Freigeber1/2 need no group membership at all. Since the old landing page is
+  // gone, /pool is now their dashboard as well — just without the company-wide Pool section.
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -309,16 +330,20 @@ test('GET / shows no /pool or /admin link for a logged-in person in neither Buch
   await agent.get('/auth/callback').query({ code: 'the-code', state });
 
   const res = await agent.get('/');
-  assert.equal(res.status, 200);
-  assert.doesNotMatch(res.text, /href="\/pool"/);
-  assert.doesNotMatch(res.text, /href="\/admin"/);
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+
+  const poolRes = await agent.get('/pool');
+  assert.equal(poolRes.status, 200);
+  assert.doesNotMatch(poolRes.text, /<h2 class="h4 mt-4">Pool<\/h2>/);
+  assert.doesNotMatch(poolRes.text, /href="\/admin"/);
   db.close();
 });
 
 test('GET /pool returns 200 for a Portal-Admin who is not also a Buchhaltung member', async () => {
   // SYNC-8: an admin-escalated job's notification email links straight into /kontierung or
   // /freigabe2, and both of those redirect to /pool on successful submission — so /pool itself
-  // must not 403 a Portal-Admin, even though the homepage's /pool link is still Buchhaltung-only.
+  // must not 403 a Portal-Admin.
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -521,10 +546,11 @@ test('the Zurück button does not appear on /pool itself', async () => {
   db.close();
 });
 
-test('a logged-in person with zero relevant ChurchTools groups is still refused by /pool, /api/pool, and /admin/*', async () => {
+test('a logged-in person with zero relevant ChurchTools groups reaches /pool (their dashboard) but is still refused by /api/pool and /admin/*', async () => {
   // AUTHZ-3/AUTH-WIDEN-1 widened who can even get a session (a session no longer implies
-  // Buchhaltung/Portal-Admin membership) — but the group gates on these specific routes must
-  // still hold. This is a test-only check; it does not touch app.js's route wiring.
+  // Buchhaltung/Portal-Admin membership). /pool itself is now everyone's dashboard (no landing
+  // page left to fall back to) — but the company-wide pool data (/api/pool) and admin areas stay
+  // group-gated. This is a test-only check; it does not touch app.js's route wiring.
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -548,7 +574,7 @@ test('a logged-in person with zero relevant ChurchTools groups is still refused 
   await agent.get('/auth/callback').query({ code: 'the-code', state });
 
   const poolRes = await agent.get('/pool');
-  assert.equal(poolRes.status, 403);
+  assert.equal(poolRes.status, 200);
 
   const apiPoolRes = await agent.get('/api/pool');
   assert.equal(apiPoolRes.status, 403);

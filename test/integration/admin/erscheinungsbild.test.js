@@ -202,6 +202,54 @@ test('POST /admin/erscheinungsbild can clear footerText to empty', async () => {
   rmSync(brandingDir, { recursive: true, force: true });
 });
 
+test('POST /admin/erscheinungsbild persists audit_log_lokale_zeit as "1" when the checkbox is sent, "0" when omitted', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+
+  const checked = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
+    .field('footerText', '')
+    .field('auditLogLokaleZeit', 'on');
+  assert.equal(checked.status, 302);
+  assert.equal(getConfigValue(db, 'audit_log_lokale_zeit'), '1');
+
+  const unchecked = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
+    .field('footerText', '');
+  assert.equal(unchecked.status, 302);
+  assert.equal(getConfigValue(db, 'audit_log_lokale_zeit'), '0', 'an omitted checkbox field must clear the flag, not leave the old value in place');
+
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('GET /admin/erscheinungsbild shows the audit_log_lokale_zeit checkbox pre-checked when enabled', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  setConfigValue(db, 'audit_log_lokale_zeit', '1');
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await request(app).get('/admin/erscheinungsbild').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auditLogLokaleZeit"[^>]*checked/);
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
 test('GET /admin/erscheinungsbild?gespeichert=1 shows the save confirmation; without it, it does not', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);

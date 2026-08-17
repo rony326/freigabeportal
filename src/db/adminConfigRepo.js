@@ -13,6 +13,7 @@ const DEFAULTS = {
   sync_max_deaktivierung_prozent: '50',
   sync_max_deaktivierung_anzahl: '10',
   sync_fehler_empfaenger: 'gruppe:admin',
+  audit_log_lokale_zeit: '0',
 };
 
 export function seedDefaults(db) {

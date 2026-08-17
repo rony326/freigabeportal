@@ -53,6 +53,11 @@
         <input type="text" class="form-control" id="footerText" name="footerText" value="<%= footerText %>" maxlength="200" placeholder="z.B. Kirchenname oder Kontakt-Mail">
         <div class="form-text">Wird im Footer als „© <%= new Date().getFullYear() %> …“ angezeigt. Leer lassen für kein Text.</div>
       </div>
+      <div class="mb-3 form-check">
+        <input type="checkbox" class="form-check-input" id="auditLogLokaleZeit" name="auditLogLokaleZeit" <%= auditLogLokaleZeit ? 'checked' : '' %>>
+        <label class="form-check-label" for="auditLogLokaleZeit">Audit-Log-Zeiten in Lokalzeit (Europe/Zürich) anzeigen</label>
+        <div class="form-text">In der Datenbank wird weiterhin UTC gespeichert — diese Einstellung wirkt sich nur auf die Anzeige im Audit-Log aus.</div>
+      </div>
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>
         <div class="alert alert-success alert-dismissible fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">

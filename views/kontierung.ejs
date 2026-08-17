@@ -27,7 +27,7 @@
               </div>
             <% } %>
 
-            <form method="post" action="/kontierung/<%= job.id %>">
+            <form id="kontierung-form" method="post" action="/kontierung/<%= job.id %>">
               <div class="mb-3">
                 <label class="form-label" for="kontoId">Konto</label>
                 <select class="form-select" id="kontoId" name="kontoId" required>
@@ -86,16 +86,13 @@
                 <textarea class="form-control" id="begruendung" name="begruendung"><%= values.begruendung || '' %></textarea>
               </div>
 
-              <div class="d-flex gap-2">
-                <button type="submit" name="aktion" value="kontieren" class="btn btn-primary btn-sm">Kontieren</button>
-                <button type="submit" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger btn-sm">Ablehnen</button>
-              </div>
             </form>
+            <form id="zurueck-in-pool-form" method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool"></form>
 
-            <div class="d-flex gap-2 mt-3">
-              <form method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool" class="m-0">
-                <button type="submit" class="btn btn-outline-secondary btn-sm">Zurück in den Pool legen</button>
-              </form>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary btn-sm">Kontieren</button>
+              <button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger btn-sm">Ablehnen</button>
+              <button type="submit" form="zurueck-in-pool-form" class="btn btn-outline-secondary btn-sm">Zurück in den Pool legen</button>
               <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#aufsplitten-modal">Rechnung aufsplitten</button>
             </div>
           </div>

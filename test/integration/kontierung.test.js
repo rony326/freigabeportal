@@ -159,7 +159,7 @@ test('GET /kontierung/:id drops the Konto select\'s required attribute on click 
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
   assert.match(res.text, /<select class="form-select" id="kontoId" name="kontoId" required>/);
-  assert.match(res.text, /<button type="submit" name="aktion" value="ablehnen" id="ablehnen-btn"/);
+  assert.match(res.text, /<button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn"/);
   assert.match(res.text, /getElementById\('ablehnen-btn'\)\.addEventListener\('click', function \(\) \{\s*document\.getElementById\('kontoId'\)\.required = false;/);
   db.close();
 });

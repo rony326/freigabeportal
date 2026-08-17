@@ -52,6 +52,15 @@ test('GET /pool carries a viewport meta tag and wraps the Pool table in table-re
   db.close();
 });
 
+test('GET /pool shows a reload button linking back to /pool', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.match(res.text, /<a href="\/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">/);
+  db.close();
+});
+
 test('GET /pool shows the quelle and absender that n8n submitted with the job', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db);

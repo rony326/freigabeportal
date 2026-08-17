@@ -8,8 +8,11 @@
 </head>
 <body>
   <%- include('_header') %>
-  <main class="container-fluid px-4 py-4" style="max-width: 1600px; margin-inline: auto;">
-    <h1>Aufgaben</h1>
+  <main class="container-fluid px-4 py-4">
+    <div class="d-flex align-items-center gap-2">
+      <h1 class="mb-0">Aufgaben</h1>
+      <a href="/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">🔄 Neu laden</a>
+    </div>
 
     <% if (typeof isBuchhaltung !== 'undefined' && (isBuchhaltung || isPortalAdmin)) { %>
       <h2 class="h4 mt-4">Pool</h2>

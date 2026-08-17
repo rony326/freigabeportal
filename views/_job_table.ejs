@@ -9,7 +9,7 @@
           <tr id="<%= idPrefix %>-row-<%= job.id %>">
             <td>
               <% if (job.thumbnail_pfad) { %>
-                <img class="thumbnail-preview pdf-preview rounded" src="/api/pool/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau" height="60" style="cursor:pointer">
+                <img class="thumbnail-preview pdf-preview rounded" src="/downloads/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau" height="60" style="cursor:pointer">
               <% } else { %>
                 <span class="thumbnail-placeholder text-muted">Keine Vorschau</span>
               <% } %>

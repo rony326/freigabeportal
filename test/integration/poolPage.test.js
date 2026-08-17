@@ -141,7 +141,7 @@ test('GET /pool lists an unzugewiesen job in the Pool section with a thumbnail s
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.match(res.text, new RegExp(`/api/pool/${id}/thumbnail`));
+  assert.match(res.text, new RegExp(`/downloads/${id}/thumbnail`));
   // EJS's <%= %> HTML-escapes output, so the "&" between query params is rendered as "&amp;"
   // in the actual page source — this asserts the real escaped form, not the raw URL string.
   assert.match(res.text, /\/downloads\/\d+\?expires=\d+&amp;signature=[0-9a-f]{64}/);
@@ -158,7 +158,7 @@ test('GET /pool shows the fallback placeholder instead of an <img> for a job wit
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
   assert.match(res.text, /Keine Vorschau/);
-  assert.doesNotMatch(res.text, new RegExp(`/api/pool/${id}/thumbnail`));
+  assert.doesNotMatch(res.text, new RegExp(`/downloads/${id}/thumbnail`));
   db.close();
 });
 

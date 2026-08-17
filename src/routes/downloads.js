@@ -1,27 +1,11 @@
 import { Router } from 'express';
 import { createReadStream, existsSync, statSync } from 'node:fs';
-import { getJobById, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
-import { getKontoById } from '../db/kontenRepo.js';
+import { getJobById } from '../db/jobsRepo.js';
 import { buildSignedDownloadUrl, verifySignedDownload, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
-import { requireLogin, personHasRole } from '../middleware/roles.js';
+import { requireLogin } from '../middleware/roles.js';
+import { canViewJobPdf } from '../services/jobAuthorization.js';
 
 const GENERIC_DENIAL = { error: 'Link ungültig oder abgelaufen.' };
-
-// Mirrors the per-page authorization each job-detail route already enforces (loadAuthorizedJob
-// in kontierung.js/ablehnung.js, loadAuthorized in freigabe2.js, the Pool gate in poolPage.js) —
-// this only decides whether a fresh preview link may be minted for the *current* session, it does
-// not replace those routes' own checks.
-function canViewJobPdf(db, config, currentPerson, job) {
-  if (personHasRole(currentPerson, config, 'portal-admin')) return true;
-  if (job.status === 'unzugewiesen') return personHasRole(currentPerson, config, 'buchhaltung');
-  const personId = currentPerson.churchtools_person_id;
-  if (job.zugewiesen_an === personId) return true;
-  if (job.konto_id) {
-    const konto = getKontoById(db, job.konto_id);
-    if (konto && getEffectiveFreigeber2Id(job, konto) === personId) return true;
-  }
-  return false;
-}
 
 export function createDownloadsRouter({ db, config }) {
   const router = Router();
@@ -39,6 +23,28 @@ export function createDownloadsRouter({ db, config }) {
       return res.status(403).json({ error: 'Kein Zugriff auf diesen Job.' });
     }
     res.json({ url: buildSignedDownloadUrl(config, jobId, PDF_PREVIEW_TTL_SECONDS) });
+  });
+
+  // Same authorization as /:jobId/refresh-url — any session that may see this job's PDF may
+  // also see its thumbnail (dashboard table, Pool section included). Session-authenticated,
+  // unlike the PDF stream below (which uses a signed URL so n8n can fetch it without a session).
+  router.get('/:jobId/thumbnail', requireLogin(), (req, res) => {
+    const jobId = Number(req.params.jobId);
+    const job = getJobById(db, jobId);
+    const authorized = job && canViewJobPdf(db, config, req.currentPerson, job);
+    if (!authorized || !job.thumbnail_pfad || !existsSync(job.thumbnail_pfad)) {
+      return res.status(404).json({ error: 'Kein Thumbnail vorhanden.' });
+    }
+    const stream = createReadStream(job.thumbnail_pfad);
+    stream.on('error', () => {
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      res.status(404).type('json').json({ error: 'Kein Thumbnail vorhanden.' });
+    });
+    res.type('image/png');
+    stream.pipe(res);
   });
 
   router.get('/:jobId', (req, res) => {

@@ -4,7 +4,7 @@ import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
-import { createJob, getJobById, setThumbnailPfad } from '../../src/db/jobsRepo.js';
+import { createJob } from '../../src/db/jobsRepo.js';
 import { loadCurrentPerson, requireRole } from '../../src/middleware/roles.js';
 import { createPoolRouter } from '../../src/routes/pool.js';
 
@@ -33,7 +33,6 @@ function seedBuchhaltungPerson(db) {
 const POOL_ROUTES = [
   { method: 'get', path: '/api/pool' },
   { method: 'post', path: '/api/pool/1/beanspruchen' },
-  { method: 'get', path: '/api/pool/1/thumbnail' },
 ];
 
 test('every pool route returns 401 without any session', async () => {
@@ -94,95 +93,4 @@ test('a second beanspruchen attempt on the same job returns 409', async () => {
   assert.equal(firstRes.status, 200);
   assert.equal(secondRes.status, 409);
   db.close();
-});
-
-test('GET /api/pool/:id/thumbnail serves the PNG bytes when a thumbnail exists', async () => {
-  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const db = openDatabase(':memory:');
-  seedBuchhaltungPerson(db);
-  const dir = mkdtempSync(join(tmpdir(), 'thumb-test-'));
-  const thumbnailPfad = join(dir, 'a.png');
-  const pngBytes = Buffer.from('89504e470d0a1a0a', 'hex');
-  writeFileSync(thumbnailPfad, pngBytes);
-  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
-  setThumbnailPfad(db, id, thumbnailPfad);
-  const app = buildTestApp(db);
-
-  const res = await request(app).get(`/api/pool/${id}/thumbnail`).set('x-test-person-id', '50');
-  assert.equal(res.status, 200);
-  assert.equal(res.headers['content-type'], 'image/png');
-  assert.equal(Buffer.compare(res.body, pngBytes), 0);
-
-  db.close();
-  rmSync(dir, { recursive: true, force: true });
-});
-
-test('GET /api/pool/:id/thumbnail returns 404 when the job has no thumbnail', async () => {
-  const db = openDatabase(':memory:');
-  seedBuchhaltungPerson(db);
-  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
-  const app = buildTestApp(db);
-
-  const res = await request(app).get(`/api/pool/${id}/thumbnail`).set('x-test-person-id', '50');
-  assert.equal(res.status, 404);
-  db.close();
-});
-
-test('GET /api/pool/:id/thumbnail returns 404 for a job assigned to someone else (not IDOR-enumerable)', async () => {
-  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const db = openDatabase(':memory:');
-  seedBuchhaltungPerson(db);
-  upsertPerson(db, { id: '51', vorname: 'Andere', nachname: 'Person', email: 'andere@example.org', gruppen: ['10'], loggedInNow: true });
-  const dir = mkdtempSync(join(tmpdir(), 'thumb-idor-test-'));
-  const thumbnailPfad = join(dir, 'a.png');
-  writeFileSync(thumbnailPfad, Buffer.from('89504e470d0a1a0a', 'hex'));
-  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
-  setThumbnailPfad(db, id, thumbnailPfad);
-  const app = buildTestApp(db);
-  // '51' claims the job, taking it out of the pool and assigning it to themselves.
-  await request(app).post(`/api/pool/${id}/beanspruchen`).set('x-test-person-id', '51');
-
-  const res = await request(app).get(`/api/pool/${id}/thumbnail`).set('x-test-person-id', '50');
-  assert.equal(res.status, 404, 'a job assigned to a different person must not be visible via thumbnail enumeration');
-
-  const ownRes = await request(app).get(`/api/pool/${id}/thumbnail`).set('x-test-person-id', '51');
-  assert.equal(ownRes.status, 200, 'the assigned person can still see their own thumbnail');
-
-  db.close();
-  rmSync(dir, { recursive: true, force: true });
-});
-
-test('GET /api/pool/:id/thumbnail returns 404 for a nonexistent job id', async () => {
-  const db = openDatabase(':memory:');
-  seedBuchhaltungPerson(db);
-  const app = buildTestApp(db);
-
-  const res = await request(app).get('/api/pool/999999/thumbnail').set('x-test-person-id', '50');
-  assert.equal(res.status, 404);
-  db.close();
-});
-
-test('a stream error (thumbnail_pfad pointing at a directory) returns 404 instead of crashing', async () => {
-  const { mkdtempSync, rmSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const db = openDatabase(':memory:');
-  seedBuchhaltungPerson(db);
-  const dir = mkdtempSync(join(tmpdir(), 'thumb-error-test-'));
-  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
-  // existsSync(dir) is true (it's a directory), so the route passes the existence check
-  // and only fails when createReadStream actually tries to read it (EISDIR).
-  setThumbnailPfad(db, id, dir);
-  const app = buildTestApp(db);
-
-  const res = await request(app).get(`/api/pool/${id}/thumbnail`).set('x-test-person-id', '50');
-  assert.equal(res.status, 404);
-  assert.deepEqual(res.body, { error: 'Kein Thumbnail vorhanden.' });
-
-  db.close();
-  rmSync(dir, { recursive: true, force: true });
 });

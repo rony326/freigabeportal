@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
-import { createJob, setKontierung } from '../../src/db/jobsRepo.js';
+import { createJob, setKontierung, setThumbnailPfad } from '../../src/db/jobsRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { loadCurrentPerson } from '../../src/middleware/roles.js';
@@ -285,4 +285,130 @@ test('GET /downloads/:jobId/refresh-url returns 404 for an unknown job id', asyn
   const res = await request(app).get('/downloads/999999/refresh-url').set('x-test-person-id', '99');
   assert.equal(res.status, 404);
   db.close();
+});
+
+test('GET /downloads/:jobId/thumbnail returns 401 without a session', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  const { id } = seedJobWithFile(db, dir);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/thumbnail`);
+  assert.equal(res.status, 401);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/thumbnail serves the PNG bytes for the person the job is assigned to (Kontierung)', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  upsertPerson(db, { id: '1', vorname: 'Kon', nachname: 'Tierer', email: 'k@example.org', gruppen: [], loggedInNow: true });
+  const { id } = seedJobWithFile(db, dir);
+  const thumbnailPfad = join(dir, 'a.png');
+  const pngBytes = Buffer.from('89504e470d0a1a0a', 'hex');
+  writeFileSync(thumbnailPfad, pngBytes);
+  setThumbnailPfad(db, id, thumbnailPfad);
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(id);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/thumbnail`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['content-type'], 'image/png');
+  assert.equal(Buffer.compare(res.body, pngBytes), 0);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/thumbnail serves the PNG bytes to the effective Freigeber2 for a freigabe2 job (the reported bug: "Meine Freigaben" showed a broken image)', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const { id } = seedJobWithFile(db, dir);
+  const thumbnailPfad = join(dir, 'a.png');
+  const pngBytes = Buffer.from('89504e470d0a1a0a', 'hex');
+  writeFileSync(thumbnailPfad, pngBytes);
+  setThumbnailPfad(db, id, thumbnailPfad);
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(id);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/thumbnail`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.equal(Buffer.compare(res.body, pngBytes), 0);
+
+  const unrelatedRes = await request(app).get(`/downloads/${id}/thumbnail`).set('x-test-person-id', '2');
+  assert.equal(unrelatedRes.status, 404);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/thumbnail returns 404 when the job has no thumbnail', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const { id } = seedJobWithFile(db, dir);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/thumbnail`).set('x-test-person-id', '99');
+  assert.equal(res.status, 404);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/thumbnail returns 404 for a job assigned to someone else (not IDOR-enumerable)', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  upsertPerson(db, { id: '1', vorname: 'Kon', nachname: 'Tierer', email: 'k@example.org', gruppen: [], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'Ander', nachname: 'Person', email: 'a@example.org', gruppen: [], loggedInNow: true });
+  const { id } = seedJobWithFile(db, dir);
+  const thumbnailPfad = join(dir, 'a.png');
+  writeFileSync(thumbnailPfad, Buffer.from('89504e470d0a1a0a', 'hex'));
+  setThumbnailPfad(db, id, thumbnailPfad);
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(id);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/thumbnail`).set('x-test-person-id', '2');
+  assert.equal(res.status, 404, 'a job assigned to a different person must not be visible via thumbnail enumeration');
+
+  const ownRes = await request(app).get(`/downloads/${id}/thumbnail`).set('x-test-person-id', '1');
+  assert.equal(ownRes.status, 200, 'the assigned person can still see their own thumbnail');
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/thumbnail returns 404 for a nonexistent job id', async () => {
+  const db = openDatabase(':memory:');
+  const config = testConfig();
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get('/downloads/999999/thumbnail').set('x-test-person-id', '99');
+  assert.equal(res.status, 404);
+  db.close();
+});
+
+test('GET /downloads/:jobId/thumbnail: a stream error (thumbnail_pfad pointing at a directory) returns 404 instead of crashing', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const { id } = seedJobWithFile(db, dir);
+  // existsSync(dir) is true (it's a directory), so the route passes the existence check
+  // and only fails when createReadStream actually tries to read it (EISDIR).
+  setThumbnailPfad(db, id, dir);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/thumbnail`).set('x-test-person-id', '99');
+  assert.equal(res.status, 404);
+  assert.deepEqual(res.body, { error: 'Kein Thumbnail vorhanden.' });
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
 });

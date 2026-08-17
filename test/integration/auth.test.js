@@ -45,7 +45,7 @@ test('GET /auth/callback rejects a mismatched state with a German error', async 
   db.close();
 });
 
-test('GET /auth/callback with a valid state logs the person in', async () => {
+test('GET /auth/callback logs the person in and redirects straight to /pool for a Buchhaltung member', async () => {
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
@@ -63,11 +63,33 @@ test('GET /auth/callback with a valid state logs the person in', async () => {
 
   const res = await agent.get('/auth/callback').query({ code: 'the-code', state });
   assert.equal(res.status, 302);
-  assert.equal(res.headers.location, '/');
+  assert.equal(res.headers.location, '/pool');
 
   const person = getPersonById(db, '7');
   assert.equal(person.vorname, 'Max');
   assert.deepEqual(person.gruppen, ['10']);
+  db.close();
+});
+
+test('GET /auth/callback redirects a Portal-Admin (not also Buchhaltung) straight to /pool', async () => {
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 20, firstName: 'Portal', lastName: 'Admin', email: 'portaladmin@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [{ personId: 20 }] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+
+  const res = await agent.get('/auth/callback').query({ code: 'the-code', state });
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
   db.close();
 });
 

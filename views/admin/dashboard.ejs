@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Admin — Freigabeportal</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <h1>Admin</h1>
+    <div class="row row-cols-1 row-cols-md-3 g-3">
+      <div class="col">
+        <a href="/admin/konten" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Konten</h2>
+            <p class="card-text text-body-secondary">Konten und ihre Freigeber verwalten.</p>
+          </div>
+        </a>
+      </div>
+      <div class="col">
+        <a href="/admin/zuweisungsregeln" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Zuweisungsregeln</h2>
+            <p class="card-text text-body-secondary">Absender-Muster einem Konto zuordnen.</p>
+          </div>
+        </a>
+      </div>
+      <div class="col">
+        <a href="/admin/eskalation" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Eskalationszeiten</h2>
+            <p class="card-text text-body-secondary">Reminder- und Eskalationsfristen einstellen.</p>
+          </div>
+        </a>
+      </div>
+      <div class="col">
+        <a href="/admin/erscheinungsbild" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Erscheinungsbild</h2>
+            <p class="card-text text-body-secondary">Farben, Logo und Standard-Farbmodus.</p>
+          </div>
+        </a>
+      </div>
+      <div class="col">
+        <a href="/admin/personen" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Personen</h2>
+            <p class="card-text text-body-secondary">Synchronisierte Personen und ihr Status.</p>
+          </div>
+        </a>
+      </div>
+      <div class="col">
+        <a href="/admin/pdf-einstellungen" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">PDF-Einstellungen</h2>
+            <p class="card-text text-body-secondary">Position der Visum-Seite im PDF.</p>
+          </div>
+        </a>
+      </div>
+      <div class="col">
+        <a href="/admin/mails" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Mail-Protokoll</h2>
+            <p class="card-text text-body-secondary">Versendete und fehlgeschlagene E-Mails.</p>
+          </div>
+        </a>
+      </div>
+      <div class="col">
+        <a href="/admin/sync" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Sync-Übersicht</h2>
+            <p class="card-text text-body-secondary">ChurchTools-Sync-Historie und feststeckende Jobs.</p>
+          </div>
+        </a>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

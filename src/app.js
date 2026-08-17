@@ -95,6 +95,9 @@ export function createApp({ db, config }) {
 
   app.use('/branding', publicLimiter, createBrandingRouter({ db }));
   app.use('/admin', sessionLimiter, requireRole(config, 'portal-admin'));
+  app.get('/admin', (req, res) => {
+    res.render('admin/dashboard');
+  });
   app.use('/admin/konten', createKontenRouter({ db }));
   app.use('/admin/zuweisungsregeln', createZuweisungsregelnRouter({ db }));
   app.use('/admin/eskalation', createEskalationRouter({ db }));

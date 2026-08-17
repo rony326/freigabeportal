@@ -61,12 +61,15 @@ test('GET /pool renders the nav bar as container-fluid, matching the dashboard\'
   db.close();
 });
 
-test('GET /pool shows a reload button linking back to /pool', async () => {
+test('GET /pool shows a reload button in the nav bar, next to the Menü button', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
-  assert.match(res.text, /<a href="\/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">/);
+  const navMatch = res.text.match(/<nav[^>]*>[\s\S]*?<\/nav>/);
+  assert.ok(navMatch, 'expected a <nav> element');
+  assert.match(navMatch[0], /id="hauptmenue-toggle"/, 'nav should contain the Menü dropdown button');
+  assert.match(navMatch[0], /<a href="\/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">/, 'reload button should be inside the nav bar');
   db.close();
 });
 

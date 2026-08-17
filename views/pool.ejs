@@ -9,10 +9,7 @@
 <body>
   <%- include('_header', { navContainerClass: 'container-fluid px-4' }) %>
   <main class="container-fluid px-4 py-4">
-    <div class="d-flex align-items-center gap-2">
-      <h1 class="mb-0">Aufgaben</h1>
-      <a href="/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">🔄 Neu laden</a>
-    </div>
+    <h1>Aufgaben</h1>
 
     <% if (typeof isBuchhaltung !== 'undefined' && (isBuchhaltung || isPortalAdmin)) { %>
       <h2 class="h4 mt-4">Pool</h2>

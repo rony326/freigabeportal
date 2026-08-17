@@ -49,6 +49,9 @@
     <% if (navZeigeZurueck) { %>
       <a href="/pool" class="btn btn-primary btn-sm">← Zurück</a>
     <% } %>
+    <% if (navAktuellerPfad === '/pool') { %>
+      <a href="/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">🔄 Neu laden</a>
+    <% } %>
   </nav>
 <% } %>
 <script>

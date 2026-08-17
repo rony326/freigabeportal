@@ -283,6 +283,25 @@ test('POST /kontierung/:id without a conflict creates the Freigabe-1 row and adv
   db.close();
 });
 
+test('POST /kontierung/:id without a conflict still saves an optional Begründung as the Freigabe-1 Kommentar', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: 'Rechnung geprüft, alles korrekt.' });
+
+  assert.equal(res.status, 302);
+  const freigaben = listFreigabenByJob(db, id);
+  assert.equal(freigaben[0].kommentar, 'Rechnung geprüft, alles korrekt.');
+  db.close();
+});
+
 test('POST /kontierung/:id persists an edited absender plus betrag, zahlungsziel, rechnungsnummer and the selected Debitor as lieferant', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db);

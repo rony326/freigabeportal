@@ -310,6 +310,37 @@ test('POST /freigabe2/:id without conflict approves, stamps the PDF and complete
   db.close();
 });
 
+test('POST /freigabe2/:id without a conflict still saves an optional Begründung as the Freigabe-2 Kommentar, and it appears on the stamped PDF', async () => {
+  const { mkdtempSync, rmSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  writeFileSync(pdfPfad, pdf);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: 'Betrag und Konto passen, Freigabe erteilt.' });
+
+  assert.equal(res.status, 302);
+  const freigaben = listFreigabenByJob(db, id);
+  assert.equal(freigaben[1].kommentar, 'Betrag und Konto passen, Freigabe erteilt.');
+
+  const stampedBytes = readFileSync(pdfPfad);
+  const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
+  const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
+  assert.match(stampPageText, /Betrag und Konto passen, Freigabe erteilt\./);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
 // Fires two requests for the same job "concurrently" (Promise.all), mirroring the pattern used
 // for the analogous claimJob race in test/integration/pool.test.js. Real HTTP requests via
 // supertest were tried first, but two independent connections to a local Express server reliably

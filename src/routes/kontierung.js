@@ -233,7 +233,7 @@ export function createKontierungRouter({ db, config, mailer }) {
             zeitpunkt: new Date().toISOString(),
             ip: req.ip,
             interessenskonflikt: false,
-            kommentar: null,
+            kommentar: begruendung || null,
             eskaliertVon: job.freigabe1_eskaliert_von,
           });
           abschliessenFreigabe1(db, job.id);

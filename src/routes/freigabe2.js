@@ -201,7 +201,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
         zeitpunkt,
         ip: req.ip,
         interessenskonflikt: false,
-        kommentar: null,
+        kommentar: begruendung || null,
       };
       const stampData = {
         freigeber1: {
@@ -254,7 +254,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
           zeitpunkt,
           ip: req.ip,
           interessenskonflikt: false,
-          kommentar: null,
+          kommentar: begruendung || null,
           eskaliertVon: job.freigabe2_eskaliert_von,
         });
         const abgeschlossen = abschliessenFreigabe2(db, job.id);

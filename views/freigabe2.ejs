@@ -19,6 +19,10 @@
             <h1 class="h3">Freigabe 2: <%= job.dateiname %></h1>
             <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %> · Absender: <%= job.absender %><% } %></p>
             <p><strong>Konto:</strong> <%= konto.kontonummer %> — <%= konto.bezeichnung %></p>
+            <% if (job.lieferant) { %><p><strong>Lieferant:</strong> <%= job.lieferant %></p><% } %>
+            <% if (job.rechnungsnummer) { %><p><strong>Rechnungsnummer:</strong> <%= job.rechnungsnummer %></p><% } %>
+            <% if (job.betrag) { %><p><strong>Betrag:</strong> <%= job.betrag %></p><% } %>
+            <% if (job.zahlungsziel) { %><p><strong>Zahlungsziel:</strong> <%= job.zahlungsziel %></p><% } %>
             <p><strong>Freigeber 1:</strong> <%= freigeber1Person.vorname %> <%= freigeber1Person.nachname %></p>
             <p><strong>Interessenskonflikt Freigeber 1:</strong> <%= freigabe1.interessenskonflikt ? 'Ja' : 'Nein' %></p>
             <% if (freigabe1.kommentar) { %><p><strong>Begründung:</strong> <%= freigabe1.kommentar %></p><% } %>

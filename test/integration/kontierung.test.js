@@ -236,6 +236,124 @@ test('POST /kontierung/:id without a conflict creates the Freigabe-1 row and adv
   db.close();
 });
 
+test('POST /kontierung/:id persists an edited absender plus betrag, zahlungsziel, rechnungsnummer and lieferant', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'alt@example.org', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      kontoId: String(kontoId),
+      interessenskonflikt: 'nein',
+      begruendung: '',
+      absender: 'neu@example.org',
+      betrag: '123,45',
+      zahlungsziel: '2026-09-01',
+      rechnungsnummer: 'RE-2026-042',
+      lieferant: 'Muster AG',
+    });
+
+  assert.equal(res.status, 302);
+  const job = getJobById(db, id);
+  assert.equal(job.absender, 'neu@example.org');
+  assert.equal(job.betrag, '123.45', 'a comma decimal separator should be normalized to a dot');
+  assert.equal(job.zahlungsziel, '2026-09-01');
+  assert.equal(job.rechnungsnummer, 'RE-2026-042');
+  assert.equal(job.lieferant, 'Muster AG');
+  db.close();
+});
+
+test('POST /kontierung/:id rejects an invalid betrag, nothing persisted', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '', betrag: 'nicht-eine-zahl' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Betrag muss eine gültige Zahl sein/);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.betrag, null);
+  db.close();
+});
+
+test('POST /kontierung/:id rejects an invalid zahlungsziel, nothing persisted', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '', zahlungsziel: 'nicht-ein-datum' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Zahlungsziel ist kein gültiges Datum/);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.zahlungsziel, null);
+  db.close();
+});
+
+test('POST /kontierung/:id aktion=ablehnen rejects the job directly from the Kontierung stage, no Konto needed', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ aktion: 'ablehnen', begruendung: 'Duplikat, bereits bezahlt' });
+
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'abgelehnt');
+  assert.equal(job.abgelehnt_von, '1');
+  assert.equal(job.ablehnungsgrund, 'Duplikat, bereits bezahlt');
+  const freigaben = listFreigabenByJob(db, id);
+  assert.equal(freigaben.length, 1);
+  assert.equal(freigaben[0].rolle, 'ablehnung');
+  db.close();
+});
+
+test('POST /kontierung/:id aktion=ablehnen without a Begründung is rejected, job untouched', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ aktion: 'ablehnen', begruendung: '' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bei einer Ablehnung ist eine Begründung Pflicht/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  db.close();
+});
+
 test('POST /kontierung/:id with a conflict reassigns to stellvertreter1, creates no Freigabe row', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db);

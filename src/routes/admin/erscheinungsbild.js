@@ -6,6 +6,7 @@ import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
 const VALID_THEME_DEFAULTS = new Set(['hell', 'dunkel', 'system']);
+const VALID_LOGO_AUSRICHTUNGEN = new Set(['links', 'mitte', 'rechts']);
 const ALLOWED_MIMETYPES = { 'image/png': 'png', 'image/jpeg': 'jpg' };
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
@@ -41,6 +42,7 @@ export function createErscheinungsbildRouter({ db, config }) {
       primaryColor: getConfigValue(db, 'branding_farbe_primaer'),
       secondaryColor: getConfigValue(db, 'branding_farbe_sekundaer'),
       themeDefault: getConfigValue(db, 'branding_theme_default'),
+      logoAusrichtung: getConfigValue(db, 'branding_logo_ausrichtung') || 'links',
       footerText: getConfigValue(db, 'footer_text') ?? '',
       hasLogo: Boolean(getConfigValue(db, 'branding_logo_pfad')),
     };
@@ -58,6 +60,7 @@ export function createErscheinungsbildRouter({ db, config }) {
           primaryColor: req.body.primaryColor,
           secondaryColor: req.body.secondaryColor,
           themeDefault: req.body.themeDefault,
+          logoAusrichtung: req.body.logoAusrichtung || 'links',
           footerText: req.body.footerText || '',
           hasLogo: currentState().hasLogo,
           errors: [message],
@@ -65,12 +68,13 @@ export function createErscheinungsbildRouter({ db, config }) {
         });
       }
 
-      const { primaryColor, secondaryColor, themeDefault } = req.body;
+      const { primaryColor, secondaryColor, themeDefault, logoAusrichtung } = req.body;
       const footerText = (req.body.footerText || '').trim();
       const errors = [];
       if (!HEX_COLOR_PATTERN.test(primaryColor || '')) errors.push('Primärfarbe muss ein gültiger Hex-Farbwert sein (z.B. #2f4858).');
       if (!HEX_COLOR_PATTERN.test(secondaryColor || '')) errors.push('Sekundärfarbe muss ein gültiger Hex-Farbwert sein (z.B. #4d7ea8).');
       if (!VALID_THEME_DEFAULTS.has(themeDefault)) errors.push('Ungültiger Standard-Farbmodus.');
+      if (!VALID_LOGO_AUSRICHTUNGEN.has(logoAusrichtung)) errors.push('Ungültige Logo-Ausrichtung.');
       if (footerText.length > 200) errors.push('Footer-Text darf höchstens 200 Zeichen lang sein.');
       if (req.file) {
         const detectedMimetype = detectImageMimetype(req.file.buffer);
@@ -84,6 +88,7 @@ export function createErscheinungsbildRouter({ db, config }) {
           primaryColor,
           secondaryColor,
           themeDefault,
+          logoAusrichtung,
           footerText,
           hasLogo: currentState().hasLogo,
           errors,
@@ -94,6 +99,7 @@ export function createErscheinungsbildRouter({ db, config }) {
       setConfigValue(db, 'branding_farbe_primaer', primaryColor);
       setConfigValue(db, 'branding_farbe_sekundaer', secondaryColor);
       setConfigValue(db, 'branding_theme_default', themeDefault);
+      setConfigValue(db, 'branding_logo_ausrichtung', logoAusrichtung);
       setConfigValue(db, 'footer_text', footerText);
 
       if (req.file) {

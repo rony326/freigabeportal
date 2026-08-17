@@ -5,7 +5,7 @@ import request from 'supertest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openDatabase } from '../../../src/db/index.js';
-import { createJob, getJobById, setThumbnailPfad } from '../../../src/db/jobsRepo.js';
+import { createJob, getJobById, setThumbnailPfad, updateKontierungMetadaten } from '../../../src/db/jobsRepo.js';
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
@@ -277,6 +277,33 @@ test('GET /api/n8n/jobs/abholbereit returns an abgeschlossen job with a signed d
 
   const secondRes = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   assert.equal(secondRes.body.length, 0);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /api/n8n/jobs/abholbereit includes lieferant, rechnungsnummer, betrag and zahlungsziel for downstream Paperless/Bexio handoff', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const { id } = seedAbgeschlossenJobWithFile(db, jobsDir);
+  updateKontierungMetadaten(db, id, {
+    absender: 'lieferant@example.org',
+    lieferant: 'Muster AG',
+    rechnungsnummer: 'RE-2026-042',
+    betrag: '123.45',
+    zahlungsziel: '2026-09-01',
+  });
+
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  assert.equal(res.status, 200);
+  assert.equal(res.body[0].lieferant, 'Muster AG');
+  assert.equal(res.body[0].rechnungsnummer, 'RE-2026-042');
+  assert.equal(res.body[0].betrag, '123.45');
+  assert.equal(res.body[0].zahlungsziel, '2026-09-01');
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });

@@ -83,12 +83,67 @@ test('POST /admin/erscheinungsbild with valid colors and theme persists them, no
     .field('primaryColor', '#123456')
     .field('secondaryColor', '#abcdef')
     .field('themeDefault', 'dunkel')
+    .field('logoAusrichtung', 'links')
     .field('footerText', 'Life Church Schaffhausen');
   assert.equal(res.status, 302);
   assert.equal(res.headers.location, '/admin/erscheinungsbild?gespeichert=1');
   assert.equal(getConfigValue(db, 'branding_farbe_primaer'), '#123456');
   assert.equal(getConfigValue(db, 'branding_theme_default'), 'dunkel');
   assert.equal(getConfigValue(db, 'footer_text'), 'Life Church Schaffhausen');
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('POST /admin/erscheinungsbild persists logoAusrichtung as "mitte"', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'mitte')
+    .field('footerText', '');
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'branding_logo_ausrichtung'), 'mitte');
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('GET /admin/erscheinungsbild shows the configured logoAusrichtung pre-selected', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  setConfigValue(db, 'branding_logo_ausrichtung', 'rechts');
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await request(app).get('/admin/erscheinungsbild').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<option value="rechts" selected>Rechtsbündig<\/option>/);
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('POST /admin/erscheinungsbild rejects an invalid logoAusrichtung, config untouched', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'diagonal')
+    .field('footerText', '');
+  assert.equal(res.status, 400);
+  assert.equal(getConfigValue(db, 'branding_logo_ausrichtung'), 'links');
   db.close();
   rmSync(brandingDir, { recursive: true, force: true });
 });
@@ -119,6 +174,7 @@ test('POST /admin/erscheinungsbild rejects a footerText longer than 200 characte
     .field('primaryColor', '#2f4858')
     .field('secondaryColor', '#4d7ea8')
     .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
     .field('footerText', 'x'.repeat(201));
   assert.equal(res.status, 400);
   assert.equal(getConfigValue(db, 'footer_text'), 'Freigabeportal');
@@ -138,6 +194,7 @@ test('POST /admin/erscheinungsbild can clear footerText to empty', async () => {
     .field('primaryColor', '#2f4858')
     .field('secondaryColor', '#4d7ea8')
     .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
     .field('footerText', '');
   assert.equal(res.status, 302);
   assert.equal(getConfigValue(db, 'footer_text'), '');
@@ -170,7 +227,8 @@ test('POST /admin/erscheinungsbild with an invalid hex color is rejected, config
     .set('x-test-person-id', '99')
     .field('primaryColor', 'not-a-color')
     .field('secondaryColor', '#abcdef')
-    .field('themeDefault', 'system');
+    .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links');
   assert.equal(res.status, 400);
   assert.equal(getConfigValue(db, 'branding_farbe_primaer'), '#2f4858');
   db.close();
@@ -191,6 +249,7 @@ test('POST /admin/erscheinungsbild with a valid PNG logo saves it and it is serv
     .field('primaryColor', '#2f4858')
     .field('secondaryColor', '#4d7ea8')
     .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
     .attach('logo', pngBytes, { filename: 'logo.png', contentType: 'image/png' });
 
   assert.equal(res.status, 302);
@@ -214,6 +273,7 @@ test('POST /admin/erscheinungsbild rejects a non-image file', async () => {
     .field('primaryColor', '#2f4858')
     .field('secondaryColor', '#4d7ea8')
     .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
     .attach('logo', Buffer.from('not an image'), { filename: 'evil.txt', contentType: 'text/plain' });
 
   assert.equal(res.status, 400);
@@ -236,6 +296,7 @@ test('a valid PNG upload is saved and then served back byte-for-byte via GET /br
     .field('primaryColor', '#2f4858')
     .field('secondaryColor', '#4d7ea8')
     .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
     .attach('logo', pngBytes, { filename: 'logo.png', contentType: 'image/png' });
   assert.equal(uploadRes.status, 302);
 
@@ -263,6 +324,7 @@ test('an oversized logo upload (> 2 MB) is rejected with a German message, and t
     .field('primaryColor', '#2f4858')
     .field('secondaryColor', '#4d7ea8')
     .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
     .attach('logo', pngBytes, { filename: 'logo.png', contentType: 'image/png' });
   assert.equal(initialUpload.status, 302);
   const pfadBefore = getConfigValue(db, 'branding_logo_pfad');
@@ -277,6 +339,7 @@ test('an oversized logo upload (> 2 MB) is rejected with a German message, and t
     .field('primaryColor', '#2f4858')
     .field('secondaryColor', '#4d7ea8')
     .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
     .attach('logo', oversizedBuffer, { filename: 'huge.png', contentType: 'image/png' });
 
   assert.equal(oversizedRes.status, 400);
@@ -301,6 +364,7 @@ test('POST /admin/erscheinungsbild rejects a file whose declared Content-Type is
     .field('primaryColor', '#2f4858')
     .field('secondaryColor', '#4d7ea8')
     .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
     .attach('logo', Buffer.from('not actually a png'), { filename: 'evil.png', contentType: 'image/png' });
 
   assert.equal(res.status, 400);

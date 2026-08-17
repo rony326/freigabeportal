@@ -95,6 +95,22 @@ test('branding falls back to "Freigabeportal" for footerText when unset (no seed
   db.close();
 });
 
+test('branding exposes the configured logoAusrichtung', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'branding_logo_ausrichtung', 'mitte');
+  const branding = runMiddleware(db, undefined);
+  assert.equal(branding.logoAusrichtung, 'mitte');
+  db.close();
+});
+
+test('branding falls back to "links" for logoAusrichtung when unset (no seedDefaults)', () => {
+  const db = openDatabase(':memory:');
+  const branding = runMiddleware(db, undefined);
+  assert.equal(branding.logoAusrichtung, 'links');
+  db.close();
+});
+
 test('bsThemeAttr maps dunkel to dark and hell to light, and stays null when themeAttr is null', () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);

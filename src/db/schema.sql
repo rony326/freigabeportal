@@ -73,7 +73,11 @@ CREATE TABLE IF NOT EXISTS jobs (
   eskalation_gesendet_at TEXT,
   archiviert_am TEXT,
   freigabe1_eskaliert_an_admin INTEGER NOT NULL DEFAULT 0,
-  freigabe2_eskaliert_an_admin INTEGER NOT NULL DEFAULT 0
+  freigabe2_eskaliert_an_admin INTEGER NOT NULL DEFAULT 0,
+  betrag TEXT,
+  zahlungsziel TEXT,
+  rechnungsnummer TEXT,
+  lieferant TEXT
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (

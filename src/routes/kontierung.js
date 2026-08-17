@@ -1,11 +1,14 @@
 import { Router } from 'express';
-import { getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe1AnAdmin, abschliessenFreigabe1, releaseJob, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
+import { getJobById, setKontierung, updateKontierungMetadaten, ablehnenJob, eskalierenFreigabe1, eskalierenFreigabe1AnAdmin, abschliessenFreigabe1, releaseJob, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById } from '../db/kontenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
 import { buildAuditLog } from '../services/auditLog.js';
+
+const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
+const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export function createKontierungRouter({ db, config, mailer }) {
   const router = Router();
@@ -56,7 +59,16 @@ export function createKontierungRouter({ db, config, mailer }) {
       job,
       konten,
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
-      values: { kontoId: job.konto_id ? String(job.konto_id) : '', interessenskonflikt: '', begruendung: '' },
+      values: {
+        kontoId: job.konto_id ? String(job.konto_id) : '',
+        interessenskonflikt: '',
+        begruendung: '',
+        absender: job.absender || '',
+        betrag: job.betrag || '',
+        zahlungsziel: job.zahlungsziel || '',
+        rechnungsnummer: job.rechnungsnummer || '',
+        lieferant: job.lieferant || '',
+      },
       errors: [],
       auditLog: buildAuditLog(db, job.id),
     });
@@ -67,7 +79,70 @@ export function createKontierungRouter({ db, config, mailer }) {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
       const konten = ladeKontenFuerJob(req, job);
-      const { kontoId, interessenskonflikt, begruendung } = req.body;
+      const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, lieferant, aktion } = req.body;
+      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, lieferant };
+
+      if (aktion === 'ablehnen') {
+        if (!begruendung) {
+          return res.status(400).render('kontierung', {
+            job,
+            konten,
+            previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
+            values,
+            errors: ['Bei einer Ablehnung ist eine Begründung Pflicht.'],
+            auditLog: buildAuditLog(db, job.id),
+          });
+        }
+
+        db.exec('BEGIN');
+        let abgelehnt;
+        try {
+          abgelehnt = ablehnenJob(db, job.id, { abgelehntVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+          if (abgelehnt) {
+            createFreigabe(db, {
+              jobId: job.id,
+              personId: req.currentPerson.churchtools_person_id,
+              rolle: 'ablehnung',
+              zeitpunkt: new Date().toISOString(),
+              ip: req.ip,
+              interessenskonflikt: false,
+              kommentar: begruendung,
+              eskaliertVon: null,
+            });
+          }
+          db.exec('COMMIT');
+        } catch (err) {
+          db.exec('ROLLBACK');
+          throw err;
+        }
+
+        if (!abgelehnt) {
+          return res.status(409).render('kontierung', {
+            job,
+            konten,
+            previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
+            values,
+            errors: ['Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.'],
+            auditLog: buildAuditLog(db, job.id),
+          });
+        }
+
+        if (job.freigabe1_eskaliert_an_admin) {
+          const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
+          for (const email of empfaenger) {
+            await sendNotification(db, mailer, {
+              to: email,
+              subject: 'Freigabeportal: Rechnung abgelehnt (an Portal-Admin eskaliert)',
+              text: `Eine an die Portal-Admin-Gruppe eskalierte Rechnung wurde abgelehnt: ${job.dateiname}\n\nGrund: ${begruendung}\n\nBitte im Freigabeportal anmelden, um sie zu überarbeiten: ${config.publicBaseUrl}/abgelehnt/${job.id}`,
+              typ: 'ablehnung',
+              jobId: job.id,
+            });
+          }
+        }
+
+        return res.redirect('/pool');
+      }
+
       const errors = [];
 
       const konto = konten.find((k) => String(k.id) === kontoId);
@@ -78,13 +153,19 @@ export function createKontierungRouter({ db, config, mailer }) {
       if (hatKonflikt && !begruendung) {
         errors.push('Bei einem Interessenskonflikt ist eine Begründung Pflicht.');
       }
+      if (betrag && !BETRAG_PATTERN.test(betrag)) {
+        errors.push('Betrag muss eine gültige Zahl sein (z.B. 123.45).');
+      }
+      if (zahlungsziel && (!ZAHLUNGSZIEL_PATTERN.test(zahlungsziel) || Number.isNaN(new Date(zahlungsziel).getTime()))) {
+        errors.push('Zahlungsziel ist kein gültiges Datum.');
+      }
 
       if (errors.length > 0) {
         return res.status(400).render('kontierung', {
           job,
           konten,
           previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
-          values: { kontoId, interessenskonflikt, begruendung },
+          values,
           errors,
           auditLog: buildAuditLog(db, job.id),
         });
@@ -101,6 +182,13 @@ export function createKontierungRouter({ db, config, mailer }) {
       db.exec('BEGIN');
       try {
         setKontierung(db, job.id, konto.id);
+        updateKontierungMetadaten(db, job.id, {
+          absender,
+          betrag: betrag ? betrag.replace(',', '.') : null,
+          zahlungsziel,
+          rechnungsnummer,
+          lieferant,
+        });
         if (eskaliertAnAdmin) {
           eskalierenFreigabe1AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
         } else if (hatKonflikt) {

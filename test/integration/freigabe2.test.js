@@ -202,6 +202,27 @@ test('GET /freigabe2/:id shows the Kontierung summary to the correct freigeber2'
   db.close();
 });
 
+test('GET /freigabe2/:id shows betrag, zahlungsziel, lieferant and rechnungsnummer captured during Kontierung', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const { updateKontierungMetadaten } = await import('../../src/db/jobsRepo.js');
+  updateKontierungMetadaten(db, id, {
+    absender: 'lieferant@example.org',
+    betrag: '123.45',
+    zahlungsziel: '2026-09-01',
+    lieferant: 'Muster AG',
+    rechnungsnummer: 'RE-2026-042',
+  });
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /123\.45/);
+  assert.match(res.text, /2026-09-01/);
+  assert.match(res.text, /Muster AG/);
+  assert.match(res.text, /RE-2026-042/);
+  db.close();
+});
+
 test('GET /freigabe2/:id embeds the preview through the PDF.js viewer, not a raw /downloads iframe', async () => {
   const db = openDatabase(':memory:');
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });

@@ -141,6 +141,17 @@ export function setKontierung(db, jobId, kontoId) {
   db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
 }
 
+export function updateKontierungMetadaten(db, jobId, { absender, betrag, zahlungsziel, rechnungsnummer, lieferant }) {
+  db.prepare('UPDATE jobs SET absender = ?, betrag = ?, zahlungsziel = ?, rechnungsnummer = ?, lieferant = ? WHERE id = ?').run(
+    absender || null,
+    betrag || null,
+    zahlungsziel || null,
+    rechnungsnummer || null,
+    lieferant || null,
+    jobId
+  );
+}
+
 export function eskalierenFreigabe1(db, jobId, { eskaliertVon, grund, stellvertreterId }) {
   db.prepare(
     'UPDATE jobs SET zugewiesen_an = ?, freigabe1_eskaliert_von = ?, freigabe1_eskalationsgrund = ? WHERE id = ?'
@@ -226,10 +237,14 @@ export function releaseJob(db, jobId, personId) {
   return result.changes > 0;
 }
 
+// Accepts both 'freigabe2' (the original Freigabe-2 rejection) and 'zugewiesen' (rejection
+// directly at the Kontierung/Freigabe-1 stage, added later — an invoice can be invalid or a
+// duplicate before anyone has even chosen a Konto for it, so waiting until Freigabe 2 to allow
+// rejecting it would be a dead end for the person doing the Kontierung).
 export function ablehnenJob(db, jobId, { abgelehntVon, grund }) {
   const result = db
     .prepare(
-      "UPDATE jobs SET status = 'abgelehnt', abgelehnt_von = ?, ablehnungsgrund = ? WHERE id = ? AND status = 'freigabe2'"
+      "UPDATE jobs SET status = 'abgelehnt', abgelehnt_von = ?, ablehnungsgrund = ? WHERE id = ? AND status IN ('freigabe2', 'zugewiesen')"
     )
     .run(abgelehntVon, grund, jobId);
   return result.changes > 0;

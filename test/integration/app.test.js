@@ -7,6 +7,7 @@ import { createApp } from '../../src/app.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, claimJob } from '../../src/db/jobsRepo.js';
+import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 
 function testConfig() {
   return {
@@ -67,6 +68,31 @@ test('GET / renders the German home page for an anonymous visitor', async () => 
   assert.equal(res.status, 200);
   assert.match(res.text, /Nicht angemeldet/);
   assert.doesNotMatch(res.text, /Abmelden/, 'an anonymous visitor should see no logout link');
+  db.close();
+});
+
+test('GET / renders the logo in the centered header cell when logoAusrichtung is "mitte"', async () => {
+  const db = openDatabase(':memory:');
+  setConfigValue(db, 'branding_logo_pfad', '/data/branding/logo.png');
+  setConfigValue(db, 'branding_logo_mimetype', 'image/png');
+  setConfigValue(db, 'branding_logo_ausrichtung', 'mitte');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<div class="text-center">\s*<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2">/);
+  assert.doesNotMatch(res.text, /<div class="text-start">\s*<img/, 'the left cell should stay empty when alignment is "mitte"');
+  db.close();
+});
+
+test('GET / renders the logo in the right header cell alongside the theme toggle when logoAusrichtung is "rechts"', async () => {
+  const db = openDatabase(':memory:');
+  setConfigValue(db, 'branding_logo_pfad', '/data/branding/logo.png');
+  setConfigValue(db, 'branding_logo_mimetype', 'image/png');
+  setConfigValue(db, 'branding_logo_ausrichtung', 'rechts');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2">\s*<button type="button" id="theme-toggle"/);
   db.close();
 });
 
@@ -421,7 +447,47 @@ test('GET /kontierung/:id is reachable through the real app for the assigned per
   assert.equal(res.status, 200);
   // The Zurück button must show on /kontierung even for a person with no Buchhaltung/Portal-Admin
   // group membership (no Menü dropdown for them at all) — it's gated on the current path, not on role.
-  assert.match(res.text, /<a href="\/pool" class="btn btn-outline-secondary btn-sm">← Zurück<\/a>/);
+  assert.match(res.text, /<a href="\/pool" class="btn btn-primary btn-sm">← Zurück<\/a>/);
+  db.close();
+});
+
+test('on /kontierung, the Zurück button renders to the right of the Menü dropdown', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Buch', nachname: 'Halter', email: 'buch@example.org', gruppen: ['10'], loggedInNow: false });
+  for (const id of ['2', '3']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '2' });
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get(`/kontierung/${jobId}`);
+  assert.equal(res.status, 200);
+  const menuIndex = res.text.indexOf('hauptmenue-toggle');
+  const zurueckIndex = res.text.indexOf('← Zurück');
+  assert.ok(menuIndex >= 0 && zurueckIndex >= 0, 'both the Menü dropdown and the Zurück button should be present');
+  assert.ok(menuIndex < zurueckIndex, 'Menü dropdown should render before (to the left of) the Zurück button');
   db.close();
 });
 

@@ -3,7 +3,7 @@
 <% } else { %>
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>Vorschau</th><th>Dateiname</th><th>Quelle</th><th>Absender</th><th>Eingang</th><th></th></tr></thead>
+      <thead><tr><th>Vorschau</th><th>Dateiname</th><th>Quelle</th><th>Absender</th><th>Konto</th><th>Eingang</th><th></th></tr></thead>
       <tbody>
         <% jobs.forEach((job) => { %>
           <tr id="<%= idPrefix %>-row-<%= job.id %>">
@@ -17,12 +17,18 @@
             <td><%= job.dateiname %></td>
             <td><%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></td>
             <td><%= job.absender || '—' %></td>
+            <td><%= job.kontonummer || '—' %></td>
             <td><%= job.eingang_am %></td>
             <td>
               <% if (idPrefix === 'pool') { %>
                 <button type="button" class="beanspruchen-btn btn btn-primary btn-sm" data-job-id="<%= job.id %>">Beanspruchen</button>
               <% } else { %>
                 <a href="<%= linkPrefix %>/<%= job.id %>" class="btn btn-outline-primary btn-sm"><%= aktionLabel %></a>
+                <% if (idPrefix === 'kontierung') { %>
+                  <form method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool" class="d-inline">
+                    <button type="submit" class="btn btn-outline-secondary btn-sm">In den Pool legen</button>
+                  </form>
+                <% } %>
               <% } %>
             </td>
           </tr>

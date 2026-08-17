@@ -138,6 +138,32 @@ test('GET /pool lists a job assigned to the current person under "Meine offenen 
   db.close();
 });
 
+test('GET /pool shows an "In den Pool legen" button next to Kontieren, posting to the existing zurueck-in-pool route', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'zu-kontieren.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '50');
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, new RegExp(`action="/kontierung/${id}/zurueck-in-pool"`));
+  assert.match(res.text, />In den Pool legen</);
+  db.close();
+});
+
+test('GET /pool shows an em dash for Konto when a Pool job has not been kontiert yet', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<td>—<\/td>\s*<td>/);
+  db.close();
+});
+
 test('GET /pool lists a job awaiting this person\'s Freigabe 2 under "Meine Freigaben"', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db, '50');

@@ -55,13 +55,21 @@
     background-color: var(--brand-primary);
   }
 </style>
-<header class="d-flex justify-content-between align-items-center p-3 border-bottom mb-3">
-  <div class="d-flex align-items-center gap-3">
-    <% if (branding.hasLogo) { %>
-      <img src="/branding/logo" alt="Logo" height="48">
+<header class="p-3 border-bottom mb-3" style="display:grid; grid-template-columns: 1fr 1fr 1fr; align-items:center;">
+  <div class="text-start">
+    <% if (branding.hasLogo && branding.logoAusrichtung === 'links') { %>
+      <img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2">
     <% } %>
   </div>
-  <div class="d-flex align-items-center gap-2">
+  <div class="text-center">
+    <% if (branding.hasLogo && branding.logoAusrichtung === 'mitte') { %>
+      <img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2">
+    <% } %>
+  </div>
+  <div class="d-flex justify-content-end align-items-center gap-2">
+    <% if (branding.hasLogo && branding.logoAusrichtung === 'rechts') { %>
+      <img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2">
+    <% } %>
     <button type="button" id="theme-toggle" class="btn btn-outline-secondary btn-sm" aria-label="Farbmodus umschalten">🌓</button>
     <% if (typeof currentPerson !== 'undefined' && currentPerson) { %>
       <form method="post" action="/auth/logout" class="d-inline">
@@ -76,9 +84,6 @@
 <% const navZeigeZurueck = navAktuellerPfad.startsWith('/kontierung'); %>
 <% if (navIsBuchhaltung || navIsPortalAdmin || navZeigeZurueck) { %>
   <nav class="container mb-3 d-flex align-items-center gap-2">
-    <% if (navZeigeZurueck) { %>
-      <a href="/pool" class="btn btn-outline-secondary btn-sm">← Zurück</a>
-    <% } %>
     <% if (navIsBuchhaltung || navIsPortalAdmin) { %>
       <div class="dropdown">
         <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="hauptmenue-toggle" data-bs-toggle="dropdown" aria-expanded="false">
@@ -91,6 +96,9 @@
           <% } %>
         </ul>
       </div>
+    <% } %>
+    <% if (navZeigeZurueck) { %>
+      <a href="/pool" class="btn btn-primary btn-sm">← Zurück</a>
     <% } %>
   </nav>
 <% } %>

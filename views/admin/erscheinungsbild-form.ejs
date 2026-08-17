@@ -41,6 +41,14 @@
         <input type="file" class="form-control" id="logo" name="logo" accept="image/png,image/jpeg">
       </div>
       <div class="mb-3">
+        <label class="form-label" for="logoAusrichtung">Logo-Ausrichtung</label>
+        <select class="form-select" id="logoAusrichtung" name="logoAusrichtung">
+          <option value="links" <%= logoAusrichtung === 'links' ? 'selected' : '' %>>Linksbündig</option>
+          <option value="mitte" <%= logoAusrichtung === 'mitte' ? 'selected' : '' %>>Mittig</option>
+          <option value="rechts" <%= logoAusrichtung === 'rechts' ? 'selected' : '' %>>Rechtsbündig</option>
+        </select>
+      </div>
+      <div class="mb-3">
         <label class="form-label" for="footerText">Footer-Text</label>
         <input type="text" class="form-control" id="footerText" name="footerText" value="<%= footerText %>" maxlength="200" placeholder="z.B. Kirchenname oder Kontakt-Mail">
         <div class="form-text">Wird im Footer als „© <%= new Date().getFullYear() %> …“ angezeigt. Leer lassen für kein Text.</div>

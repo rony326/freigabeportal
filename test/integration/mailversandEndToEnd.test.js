@@ -127,13 +127,17 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
   assert.equal(ablehnungMails[0].empfaenger, 's1@example.org', 'notifies the current job owner (stellvertreter1), not the original freigeber1');
 
   // 6. Reminder/Eskalation sweep against a separately-seeded, very stale, still-unclaimed job.
+  // Uses its own PDF fixture, not the step-1 one: byte-identical content would now be treated as
+  // a duplicate resubmission of the same document (see the n8n duplicate-detection feature) and
+  // short-circuit to the existing job instead of creating this scenario's own fresh job.
+  const stalePdf = await buildPdfFixture(['Ganz andere alte Rechnung']);
   const staleJobRes = await request(app)
     .post('/api/n8n/jobs')
     .set('X-API-Key', 'n8n-key')
     .field('quelle', 'scanner')
     .field('dateiname', 'altfall.pdf')
     .field('eingang_am', '2020-01-01T00:00:00.000Z')
-    .attach('pdf', pdf, { filename: 'altfall.pdf', contentType: 'application/pdf' });
+    .attach('pdf', stalePdf, { filename: 'altfall.pdf', contentType: 'application/pdf' });
   assert.equal(staleJobRes.status, 201);
 
   const sweepRes1 = await request(app).post('/internal/cron/pool-erinnerungen').set('X-Cron-Secret', 'cron-secret');

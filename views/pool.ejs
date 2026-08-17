@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Aufgaben — Freigabeportal</title>
+  <title>Aufgaben — <%= branding.seitenTitel %></title>
 </head>
 <body>
   <%- include('_header') %>
-  <main class="container py-4">
+  <main class="container-fluid px-4 py-4">
     <h1>Aufgaben</h1>
 
     <% if (typeof isBuchhaltung !== 'undefined' && (isBuchhaltung || isPortalAdmin)) { %>
@@ -55,21 +55,32 @@
       });
     });
 
+    function oeffneVorschau(relativeUrl) {
+      // Rendered via PDF.js (public/vendor/pdfjs), not the browser's native PDF plugin:
+      // Chrome's "Download PDFs instead of automatically opening them" setting blocks native
+      // inline rendering inside an <iframe> entirely (shows an Open-button placeholder that
+      // downloads instead of previewing), regardless of Content-Disposition. PDF.js renders
+      // via canvas/JS and is unaffected by that setting.
+      // The file= value must be an absolute URL: PDF.js's viewer runs `new URL(file)` with no
+      // base, which throws for a relative path like ours — its fallback then treats the whole
+      // string (query string included) as a literal filename, so expires/signature never reach
+      // the server as real query params and every preview 403s. Resolving against
+      // location.origin here keeps it a real, absolute, still-relative-to-this-host URL.
+      const absoluteUrl = new URL(relativeUrl, window.location.origin).href;
+      document.getElementById('preview-frame').src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(absoluteUrl);
+      document.getElementById('preview-dialog').showModal();
+    }
+
     document.querySelectorAll('.thumbnail-preview').forEach((img) => {
       img.addEventListener('click', () => {
-        // Rendered via PDF.js (public/vendor/pdfjs), not the browser's native PDF plugin:
-        // Chrome's "Download PDFs instead of automatically opening them" setting blocks native
-        // inline rendering inside an <iframe> entirely (shows an Open-button placeholder that
-        // downloads instead of previewing), regardless of Content-Disposition. PDF.js renders
-        // via canvas/JS and is unaffected by that setting.
-        // The file= value must be an absolute URL: PDF.js's viewer runs `new URL(file)` with no
-        // base, which throws for a relative path like ours — its fallback then treats the whole
-        // string (query string included) as a literal filename, so expires/signature never reach
-        // the server as real query params and every preview 403s. Resolving against
-        // location.origin here keeps it a real, absolute, still-relative-to-this-host URL.
-        const absoluteUrl = new URL(img.dataset.previewUrl, window.location.origin).href;
-        document.getElementById('preview-frame').src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(absoluteUrl);
-        document.getElementById('preview-dialog').showModal();
+        // The preview URL baked into the page at render time may already have expired if the
+        // dashboard has been open for a while (signed links are short-lived, see
+        // PDF_PREVIEW_TTL_SECONDS) — fetch a freshly-signed one for this click instead of
+        // reusing the stale one, falling back to it only if the refresh itself fails.
+        fetch(`/downloads/${img.dataset.jobId}/refresh-url`)
+          .then((res) => (res.ok ? res.json() : Promise.reject()))
+          .then((data) => oeffneVorschau(data.url))
+          .catch(() => oeffneVorschau(img.dataset.previewUrl));
       });
     });
     document.getElementById('preview-dialog-close').addEventListener('click', () => {

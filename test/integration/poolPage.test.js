@@ -5,7 +5,7 @@ import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, setKontierung, setThumbnailPfad, ablehnenJob } from '../../src/db/jobsRepo.js';
+import { createJob, claimJob, setKontierung, setThumbnailPfad, ablehnenJob, updateKontierungMetadaten } from '../../src/db/jobsRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createPoolPageRouter } from '../../src/routes/poolPage.js';
@@ -68,6 +68,22 @@ test('GET /pool shows the quelle and absender that n8n submitted with the job', 
   assert.equal(res.status, 200);
   assert.match(res.text, /Lieferant/);
   assert.match(res.text, /buchhaltung@lieferant\.example/);
+  db.close();
+});
+
+test('GET /pool shows the Debitor (Lieferant) name in its own column, and an em dash when unset', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const zugewiesenId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'mit-debitor.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '50' WHERE id = ?").run(zugewiesenId);
+  updateKontierungMetadaten(db, zugewiesenId, { absender: null, betrag: null, zahlungsziel: null, rechnungsnummer: null, lieferant: 'ACME Grosshandel', debitorId: null });
+  createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'ohne-debitor.pdf', pdfPfad: '/tmp/b.pdf' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<th>Debitor<\/th>/);
+  assert.match(res.text, /ACME Grosshandel/);
   db.close();
 });
 
@@ -211,6 +227,19 @@ test('GET /pool lists a job the current person can rework under "Meine abgelehnt
   db.close();
 });
 
+test('GET /pool re-fetches a fresh signed URL via /downloads/:jobId/refresh-url on thumbnail click, instead of only reusing the one baked in at render time', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
+  setThumbnailPfad(db, id, '/tmp/a-thumb.png');
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, new RegExp(`data-job-id="${id}"`));
+  assert.match(res.text, /fetch\(`\/downloads\/\$\{img\.dataset\.jobId\}\/refresh-url`\)/);
+  db.close();
+});
+
 test('GET /pool wires the thumbnail preview through the PDF.js viewer, not the raw download URL', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db);
@@ -220,7 +249,7 @@ test('GET /pool wires the thumbnail preview through the PDF.js viewer, not the r
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.match(res.text, /new URL\(img\.dataset\.previewUrl, window\.location\.origin\)\.href/);
+  assert.match(res.text, /new URL\(relativeUrl, window\.location\.origin\)\.href/);
   assert.match(res.text, /'\/vendor\/pdfjs\/web\/viewer\.html\?file=' \+ encodeURIComponent\(absoluteUrl\)/);
   db.close();
 });

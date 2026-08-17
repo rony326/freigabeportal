@@ -6,8 +6,11 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
-import { createJob } from '../../src/db/jobsRepo.js';
-import { buildSignedDownloadUrl } from '../../src/services/downloadUrl.js';
+import { createJob, setKontierung } from '../../src/db/jobsRepo.js';
+import { createKonto } from '../../src/db/kontenRepo.js';
+import { upsertPerson } from '../../src/db/personenRepo.js';
+import { loadCurrentPerson } from '../../src/middleware/roles.js';
+import { buildSignedDownloadUrl, verifySignedDownload } from '../../src/services/downloadUrl.js';
 import { createDownloadsRouter } from '../../src/routes/downloads.js';
 
 const PDF_BYTES = Buffer.from('%PDF-1.4\n%test-fixture\n');
@@ -18,8 +21,28 @@ function buildTestApp(db, config) {
   return app;
 }
 
+function buildTestAppWithSession(db, config) {
+  const app = express();
+  app.set('view engine', 'ejs');
+  app.set('views', new URL('../../views', import.meta.url).pathname);
+  app.use((req, res, next) => {
+    res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null, seitenTitel: 'Freigabeportal' };
+    next();
+  });
+  app.use((req, res, next) => {
+    req.session = { personId: req.headers['x-test-person-id'] };
+    next();
+  });
+  app.use(loadCurrentPerson(db));
+  app.use('/downloads', createDownloadsRouter({ db, config }));
+  return app;
+}
+
 function testConfig() {
-  return { downloadSigningSecret: 'test-secret' };
+  return {
+    downloadSigningSecret: 'test-secret',
+    churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' },
+  };
 }
 
 function seedJobWithFile(db, dir) {
@@ -144,4 +167,122 @@ test('a stream error (pdf_pfad pointing at a directory) returns the same generic
   assert.deepEqual(res.body, { error: 'Link ungültig oder abgelaufen.' });
   db.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/refresh-url returns 401 without a session', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  const { id } = seedJobWithFile(db, dir);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/refresh-url`);
+  assert.equal(res.status, 401);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/refresh-url mints a fresh, valid signature for the person the job is assigned to (Kontierung)', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  upsertPerson(db, { id: '1', vorname: 'Kon', nachname: 'Tierer', email: 'k@example.org', gruppen: [], loggedInNow: true });
+  const { id, pdfPfad } = seedJobWithFile(db, dir);
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(id);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/refresh-url`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.ok(res.body.url.startsWith(`/downloads/${id}?`));
+  const url = new URL(res.body.url, 'http://localhost');
+  assert.ok(verifySignedDownload(config, id, url.searchParams.get('expires'), url.searchParams.get('signature')));
+
+  const previewRes = await request(app).get(res.body.url);
+  assert.equal(previewRes.status, 200);
+  assert.ok(Buffer.from(previewRes.body).equals(PDF_BYTES));
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/refresh-url returns 403 for a person the job is not assigned to', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  upsertPerson(db, { id: '1', vorname: 'Kon', nachname: 'Tierer', email: 'k@example.org', gruppen: [], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'Ander', nachname: 'Person', email: 'a@example.org', gruppen: [], loggedInNow: true });
+  const { id } = seedJobWithFile(db, dir);
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(id);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/refresh-url`).set('x-test-person-id', '2');
+  assert.equal(res.status, 403);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/refresh-url allows a portal-admin regardless of job assignment', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  upsertPerson(db, { id: '1', vorname: 'Kon', nachname: 'Tierer', email: 'k@example.org', gruppen: [], loggedInNow: true });
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const { id } = seedJobWithFile(db, dir);
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(id);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/refresh-url`).set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/refresh-url allows buchhaltung for an unzugewiesen Pool job, but not an unrelated logged-in person', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  upsertPerson(db, { id: '10', vorname: 'Buch', nachname: 'Halter', email: 'b@example.org', gruppen: ['10'], loggedInNow: true });
+  upsertPerson(db, { id: '11', vorname: 'Irrelevant', nachname: 'Person', email: 'i@example.org', gruppen: [], loggedInNow: true });
+  const { id } = seedJobWithFile(db, dir);
+  const app = buildTestAppWithSession(db, config);
+
+  const buchhaltungRes = await request(app).get(`/downloads/${id}/refresh-url`).set('x-test-person-id', '10');
+  assert.equal(buchhaltungRes.status, 200);
+
+  const irrelevantRes = await request(app).get(`/downloads/${id}/refresh-url`).set('x-test-person-id', '11');
+  assert.equal(irrelevantRes.status, 403);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/refresh-url allows the effective Freigeber2 (Stellvertreter2) for a freigabe2 job', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const { id } = seedJobWithFile(db, dir);
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(id);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/refresh-url`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+
+  const unrelatedRes = await request(app).get(`/downloads/${id}/refresh-url`).set('x-test-person-id', '2');
+  assert.equal(unrelatedRes.status, 403);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/refresh-url returns 404 for an unknown job id', async () => {
+  const db = openDatabase(':memory:');
+  const config = testConfig();
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get('/downloads/999999/refresh-url').set('x-test-person-id', '99');
+  assert.equal(res.status, 404);
+  db.close();
 });

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createKonto, updateKonto, deactivateKonto, getKontoById, listKonten, validateKontoRoles } from '../../db/kontenRepo.js';
+import { createKonto, updateKonto, deactivateKonto, activateKonto, getKontoById, listKonten, validateKontoRoles } from '../../db/kontenRepo.js';
 import { listActivePersons, getPersonById } from '../../db/personenRepo.js';
 
 function personDisplayName(db, id) {
@@ -98,6 +98,11 @@ export function createKontenRouter({ db }) {
   router.post('/:id/deaktivieren', (req, res) => {
     deactivateKonto(db, Number(req.params.id));
     res.redirect('/admin/konten');
+  });
+
+  router.post('/:id/aktivieren', (req, res) => {
+    activateKonto(db, Number(req.params.id));
+    res.redirect('/admin/konten?alle=1');
   });
 
   return router;

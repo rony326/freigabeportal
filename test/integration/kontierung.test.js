@@ -143,6 +143,8 @@ test('GET /kontierung/:id embeds the preview through the PDF.js viewer, not a ra
   assert.equal(res.status, 200);
   assert.match(res.text, /id="kontierung-preview-frame" data-preview-url="\/downloads\/\d+\?expires=\d+&amp;signature=[0-9a-f]{64}"/);
   assert.match(res.text, /'\/vendor\/pdfjs\/web\/viewer\.html\?file=' \+ encodeURIComponent\(absoluteUrl\)/);
+  assert.match(res.text, /id="preview-refresh-btn"/);
+  assert.match(res.text, new RegExp(`/downloads/${id}/refresh-url`));
   db.close();
 });
 

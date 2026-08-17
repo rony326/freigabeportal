@@ -20,6 +20,7 @@ export function loadBranding(db) {
     const logoMimetype = getConfigValue(db, 'branding_logo_mimetype');
     const logoAusrichtung = getConfigValue(db, 'branding_logo_ausrichtung') || 'links';
     const footerText = getConfigValue(db, 'footer_text') ?? 'Freigabeportal';
+    const seitenTitel = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
 
     const userTheme = parseThemeCookie(req.headers.cookie);
     let themeAttr;
@@ -38,6 +39,7 @@ export function loadBranding(db) {
       logoAusrichtung,
       themeAttr,
       footerText,
+      seitenTitel,
       // Bootstrap 5.3's native dark-mode attribute is a separate value from this app's own
       // data-theme="dunkel"/"hell" — computed here once so every view's <html> tag can set both
       // from the same toggle without duplicating the dunkel/dark mapping in 17 places.

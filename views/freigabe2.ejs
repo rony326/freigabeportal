@@ -4,13 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Freigabe 2 — Freigabeportal</title>
+  <title>Freigabe 2 — <%= branding.seitenTitel %></title>
 </head>
 <body>
   <%- include('_header') %>
   <main class="container-fluid py-4">
     <div class="row g-3 justify-content-center">
       <div class="col-lg-6">
+        <div class="d-flex justify-content-end mb-1">
+          <button type="button" id="preview-refresh-btn" class="btn btn-outline-secondary btn-sm">Vorschau neu laden</button>
+        </div>
         <iframe id="freigabe2-preview-frame" data-preview-url="<%= previewUrl %>" src="" class="w-100 rounded pdf-preview" style="height:85vh"></iframe>
       </div>
       <div class="col-lg-6 col-xl-4">
@@ -61,8 +64,26 @@
     // See pool.ejs's thumbnail-click handler for why file= must be resolved to an absolute URL.
     (function () {
       var frame = document.getElementById('freigabe2-preview-frame');
-      var absoluteUrl = new URL(frame.dataset.previewUrl, window.location.origin).href;
-      frame.src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(absoluteUrl);
+      function ladeVorschau() {
+        var absoluteUrl = new URL(frame.dataset.previewUrl, window.location.origin).href;
+        frame.src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(absoluteUrl);
+      }
+      ladeVorschau();
+      // Signed preview links are short-lived (see PDF_PREVIEW_TTL_SECONDS) — if this page has
+      // been open longer than that, the embedded PDF stops loading with no obvious way to
+      // recover short of a full reload. This button re-authorizes the session and mints a fresh
+      // link instead.
+      document.getElementById('preview-refresh-btn').addEventListener('click', function () {
+        fetch('/downloads/<%= job.id %>/refresh-url')
+          .then(function (res) { return res.ok ? res.json() : Promise.reject(); })
+          .then(function (data) {
+            frame.dataset.previewUrl = data.url;
+            ladeVorschau();
+          })
+          .catch(function () {
+            alert('Vorschau konnte nicht neu geladen werden.');
+          });
+      });
     })();
   </script>
   <%- include('_footer') %>

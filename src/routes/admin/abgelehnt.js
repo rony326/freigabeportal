@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { existsSync, unlinkSync } from 'node:fs';
 import { getJobById, listAlleAbgelehntenJobs, loeschenJob } from '../../db/jobsRepo.js';
 import { getPersonById } from '../../db/personenRepo.js';
 import { logJobLoeschung } from '../../db/jobLoeschungenRepo.js';
@@ -20,6 +19,9 @@ export function createAdminAbgelehntRouter({ db }) {
     if (!job || job.status !== 'abgelehnt') {
       return res.status(404).render('error', { message: 'Diese Rechnung ist nicht (mehr) abgelehnt oder existiert nicht.' });
     }
+    if (job.abgelehnt_von === req.currentPerson.churchtools_person_id) {
+      return res.status(403).render('error', { message: 'Sie haben diese Rechnung selbst abgelehnt und können sie daher nicht selbst löschen.' });
+    }
     res.render('admin/abgelehnt-loeschen', { job, errors: [], begruendung: '' });
   });
 
@@ -28,6 +30,9 @@ export function createAdminAbgelehntRouter({ db }) {
       const job = getJobById(db, Number(req.params.id));
       if (!job || job.status !== 'abgelehnt') {
         return res.status(404).render('error', { message: 'Diese Rechnung ist nicht (mehr) abgelehnt oder existiert nicht.' });
+      }
+      if (job.abgelehnt_von === req.currentPerson.churchtools_person_id) {
+        return res.status(403).render('error', { message: 'Sie haben diese Rechnung selbst abgelehnt und können sie daher nicht selbst löschen.' });
       }
 
       const { begruendung, bestaetigung } = req.body;
@@ -62,17 +67,6 @@ export function createAdminAbgelehntRouter({ db }) {
 
       if (!geloescht) {
         return res.status(409).render('error', { message: 'Diese Rechnung wurde inzwischen bereits anderweitig bearbeitet (z.B. überarbeitet).' });
-      }
-
-      try {
-        if (geloescht.pdf_pfad && existsSync(geloescht.pdf_pfad)) unlinkSync(geloescht.pdf_pfad);
-      } catch (err) {
-        console.error(`Löschen der PDF für Job ${geloescht.id} fehlgeschlagen:`, err.message);
-      }
-      try {
-        if (geloescht.thumbnail_pfad && existsSync(geloescht.thumbnail_pfad)) unlinkSync(geloescht.thumbnail_pfad);
-      } catch (err) {
-        console.error(`Löschen des Thumbnails für Job ${geloescht.id} fehlgeschlagen:`, err.message);
       }
 
       res.redirect('/admin/abgelehnt?gespeichert=1');

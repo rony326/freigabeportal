@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Konten — Freigabeportal Admin</title>
+  <title>Konten — <%= branding.seitenTitel %> Admin</title>
 </head>
 <body>
   <%- include('../_header') %>
@@ -40,9 +40,15 @@
               <td><%= konto.aktiv ? 'Ja' : 'Nein' %></td>
               <td>
                 <a href="/admin/konten/<%= konto.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
-                <form method="post" action="/admin/konten/<%= konto.id %>/deaktivieren" class="d-inline">
-                  <button type="submit" class="btn btn-outline-danger btn-sm">Deaktivieren</button>
-                </form>
+                <% if (konto.aktiv) { %>
+                  <form method="post" action="/admin/konten/<%= konto.id %>/deaktivieren" class="d-inline">
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Deaktivieren</button>
+                  </form>
+                <% } else { %>
+                  <form method="post" action="/admin/konten/<%= konto.id %>/aktivieren" class="d-inline">
+                    <button type="submit" class="btn btn-outline-success btn-sm">Reaktivieren</button>
+                  </form>
+                <% } %>
               </td>
             </tr>
           <% }) %>

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson, getPersonById, deactivatePerson, listActivePersonsInGroup } from '../../src/db/personenRepo.js';
+import { upsertPerson, getPersonById, deactivatePerson, listActivePersonsInGroup, listAllPersons } from '../../src/db/personenRepo.js';
 
 test('upsertPerson inserts a new person', () => {
   const db = openDatabase(':memory:');
@@ -11,6 +11,16 @@ test('upsertPerson inserts a new person', () => {
   assert.deepEqual(person.gruppen, ['10']);
   assert.equal(person.aktiv, true);
   assert.ok(person.last_login_at);
+  db.close();
+});
+
+test('listAllPersons parses gruppen back into an array for every row', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org', gruppen: ['10', '20'], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'bo@example.org', gruppen: [], loggedInNow: true });
+  const persons = listAllPersons(db);
+  assert.deepEqual(persons.find((p) => p.churchtools_person_id === '1').gruppen, ['10', '20']);
+  assert.deepEqual(persons.find((p) => p.churchtools_person_id === '2').gruppen, []);
   db.close();
 });
 

@@ -40,6 +40,7 @@ const KONTEN_ROUTES = [
   { method: 'get', path: '/admin/konten/1/bearbeiten' },
   { method: 'post', path: '/admin/konten/1' },
   { method: 'post', path: '/admin/konten/1/deaktivieren' },
+  { method: 'post', path: '/admin/konten/1/aktivieren' },
 ];
 
 test('every Konten route returns 401 without any session, and no Konto is created', async () => {
@@ -166,6 +167,35 @@ test('a deactivated Konto is hidden from the default list, shown with ?alle=1, a
   const allList = await request(app).get('/admin/konten?alle=1').set('x-test-person-id', '99');
   assert.match(allList.text, /Unterhalt/, 'the deactivated Konto should appear when ?alle=1 is requested');
   assert.match(allList.text, /Person1 Muster/);
+  db.close();
+});
+
+test('POST /admin/konten/:id/aktivieren reactivates a deactivated Konto, which then reappears in the default list', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  const app = buildTestApp(db);
+  await request(app)
+    .post('/admin/konten')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+
+  const listRes = await request(app).get('/admin/konten').set('x-test-person-id', '99');
+  const idMatch = listRes.text.match(/\/admin\/konten\/(\d+)\/deaktivieren/);
+  const id = idMatch[1];
+  await request(app).post(`/admin/konten/${id}/deaktivieren`).set('x-test-person-id', '99');
+
+  const allListAfterDeactivate = await request(app).get('/admin/konten?alle=1').set('x-test-person-id', '99');
+  assert.match(allListAfterDeactivate.text, new RegExp(`/admin/konten/${id}/aktivieren`), 'a Reaktivieren form should be rendered for the inactive Konto');
+  assert.doesNotMatch(allListAfterDeactivate.text, new RegExp(`/admin/konten/${id}/deaktivieren`), 'no Deaktivieren form should be rendered for the inactive Konto');
+
+  const reactivateRes = await request(app).post(`/admin/konten/${id}/aktivieren`).set('x-test-person-id', '99');
+  assert.equal(reactivateRes.status, 302);
+
+  const row = db.prepare('SELECT * FROM konten WHERE id = ?').get(Number(id));
+  assert.equal(row.aktiv, 1);
+  const defaultListAfter = await request(app).get('/admin/konten').set('x-test-person-id', '99');
+  assert.match(defaultListAfter.text, /Unterhalt/, 'the reactivated Konto should reappear in the default list');
   db.close();
 });
 

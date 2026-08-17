@@ -2,7 +2,8 @@ import { Router } from 'express';
 import multer from 'multer';
 import { writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { createJob, getJobById, listAbholbereitJobs, confirmAbholung, setThumbnailPfad } from '../../db/jobsRepo.js';
+import crypto from 'node:crypto';
+import { createJob, getJobById, findJobByDateiHash, listAbholbereitJobs, confirmAbholung, setThumbnailPfad } from '../../db/jobsRepo.js';
 import { getConfigValue } from '../../db/adminConfigRepo.js';
 import { renderFirstPageThumbnail } from '../../services/thumbnail.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
@@ -36,6 +37,17 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           return res.status(400).json({ error: 'Datei ist keine gültige PDF-Datei.' });
         }
 
+        // Catches the same PDF bytes being submitted twice (an n8n retry, or an IMAP trigger
+        // firing more than once for the same message) — the byte-identical file always hashes
+        // identically, while two genuinely different invoices never do. Returns the existing
+        // job instead of creating a duplicate, so a retried submission is idempotent rather
+        // than an error n8n would need to handle specially.
+        const dateiHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+        const vorhandenerJob = findJobByDateiHash(db, dateiHash);
+        if (vorhandenerJob) {
+          return res.status(200).json({ id: vorhandenerJob.id, status: vorhandenerJob.status, duplikat: true });
+        }
+
         const { quelle, absender, dateiname } = req.body;
         if (!VALID_QUELLEN.has(quelle)) {
           return res.status(400).json({ error: 'quelle muss "scanner" oder "lieferant" sein.' });
@@ -63,7 +75,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
         const pdfPfad = join(config.jobsDir, `job-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
         writeFileSync(pdfPfad, req.file.buffer);
 
-        const id = createJob(db, { eingangAm, quelle, absender: absender || null, dateiname, pdfPfad });
+        const id = createJob(db, { eingangAm, quelle, absender: absender || null, dateiname, pdfPfad, dateiHash });
         const visumSeitePosition = getConfigValue(db, 'visum_seite_position') || 'letzte';
         try {
           const thumbnailPng = renderFirstPageThumbnail(req.file.buffer, visumSeitePosition);

@@ -62,6 +62,10 @@ export function deactivateKonto(db, id) {
   db.prepare('UPDATE konten SET aktiv = 0 WHERE id = ?').run(id);
 }
 
+export function activateKonto(db, id) {
+  db.prepare('UPDATE konten SET aktiv = 1 WHERE id = ?').run(id);
+}
+
 export function getKontoById(db, id) {
   return db.prepare('SELECT * FROM konten WHERE id = ?').get(id) ?? null;
 }

@@ -69,6 +69,67 @@ test('POST /api/n8n/jobs with a valid PDF and API key creates a job', async () =
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('POST /api/n8n/jobs submitting the exact same PDF bytes twice returns the original job instead of creating a duplicate', async () => {
+  const { mkdtempSync, rmSync, readdirSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const first = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .field('dateiname', 'scan.pdf')
+    .attach('pdf', PDF_BYTES, { filename: 'scan.pdf', contentType: 'application/pdf' });
+  assert.equal(first.status, 201);
+
+  const retry = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .field('dateiname', 'scan.pdf')
+    .attach('pdf', PDF_BYTES, { filename: 'scan.pdf', contentType: 'application/pdf' });
+
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.id, first.body.id);
+  assert.equal(retry.body.duplikat, true);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 1, 'no second job row should have been created');
+  assert.equal(readdirSync(jobsDir).length, 1, 'no second PDF file should have been written to disk');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs with different PDF bytes (even with identical metadata) creates a separate job', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const first = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .field('dateiname', 'scan.pdf')
+    .attach('pdf', PDF_BYTES, { filename: 'scan.pdf', contentType: 'application/pdf' });
+
+  const second = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .field('dateiname', 'scan.pdf')
+    .attach('pdf', Buffer.from('%PDF-1.4\n%ein-anderes-dokument\n'), { filename: 'scan.pdf', contentType: 'application/pdf' });
+
+  assert.equal(second.status, 201);
+  assert.notEqual(second.body.id, first.body.id);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 2);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
 test('POST /api/n8n/jobs stores a valid eingang_am, normalized to ISO', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');

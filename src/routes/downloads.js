@@ -1,12 +1,45 @@
 import { Router } from 'express';
 import { createReadStream, existsSync, statSync } from 'node:fs';
-import { getJobById } from '../db/jobsRepo.js';
-import { verifySignedDownload } from '../services/downloadUrl.js';
+import { getJobById, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
+import { getKontoById } from '../db/kontenRepo.js';
+import { buildSignedDownloadUrl, verifySignedDownload, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
+import { requireLogin, personHasRole } from '../middleware/roles.js';
 
 const GENERIC_DENIAL = { error: 'Link ungültig oder abgelaufen.' };
 
+// Mirrors the per-page authorization each job-detail route already enforces (loadAuthorizedJob
+// in kontierung.js/ablehnung.js, loadAuthorized in freigabe2.js, the Pool gate in poolPage.js) —
+// this only decides whether a fresh preview link may be minted for the *current* session, it does
+// not replace those routes' own checks.
+function canViewJobPdf(db, config, currentPerson, job) {
+  if (personHasRole(currentPerson, config, 'portal-admin')) return true;
+  if (job.status === 'unzugewiesen') return personHasRole(currentPerson, config, 'buchhaltung');
+  const personId = currentPerson.churchtools_person_id;
+  if (job.zugewiesen_an === personId) return true;
+  if (job.konto_id) {
+    const konto = getKontoById(db, job.konto_id);
+    if (konto && getEffectiveFreigeber2Id(job, konto) === personId) return true;
+  }
+  return false;
+}
+
 export function createDownloadsRouter({ db, config }) {
   const router = Router();
+
+  // Used by the "Neu laden" button next to an expired PDF preview: re-authorizes the current
+  // session against the job (not the old signature) and mints a fresh short-lived signed URL,
+  // so a browser idle past PDF_PREVIEW_TTL_SECONDS doesn't need a full page reload.
+  router.get('/:jobId/refresh-url', requireLogin(), (req, res) => {
+    const jobId = Number(req.params.jobId);
+    const job = getJobById(db, jobId);
+    if (!job) {
+      return res.status(404).json({ error: 'Job nicht gefunden.' });
+    }
+    if (!canViewJobPdf(db, config, req.currentPerson, job)) {
+      return res.status(403).json({ error: 'Kein Zugriff auf diesen Job.' });
+    }
+    res.json({ url: buildSignedDownloadUrl(config, jobId, PDF_PREVIEW_TTL_SECONDS) });
+  });
 
   router.get('/:jobId', (req, res) => {
     const jobId = Number(req.params.jobId);

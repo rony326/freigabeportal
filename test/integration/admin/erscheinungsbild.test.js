@@ -17,7 +17,7 @@ function buildTestApp(db, brandingDir) {
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../../views', import.meta.url).pathname);
   app.use((req, res, next) => {
-    res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null };
+    res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null, seitenTitel: 'Freigabeportal' };
     next();
   });
   app.use(express.urlencoded({ extended: false }));
@@ -260,6 +260,83 @@ test('GET /admin/erscheinungsbild?gespeichert=1 shows the save confirmation; wit
   assert.match(withMarker.text, /Gespeichert\./);
   const withoutMarker = await request(app).get('/admin/erscheinungsbild').set('x-test-person-id', '99');
   assert.doesNotMatch(withoutMarker.text, /Gespeichert\./);
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('GET /admin/erscheinungsbild shows the configured seitenTitel pre-filled, and the page <title> uses it', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  setConfigValue(db, 'seiten_titel', 'Life Church Portal');
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await request(app).get('/admin/erscheinungsbild').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /value="Life Church Portal"/);
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('POST /admin/erscheinungsbild persists a custom seitenTitel', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
+    .field('footerText', '')
+    .field('seitenTitel', 'Life Church Portal');
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'seiten_titel'), 'Life Church Portal');
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('POST /admin/erscheinungsbild rejects a seitenTitel longer than 60 characters, config untouched', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
+    .field('footerText', '')
+    .field('seitenTitel', 'x'.repeat(61));
+  assert.equal(res.status, 400);
+  assert.equal(getConfigValue(db, 'seiten_titel'), 'Freigabeportal');
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('POST /admin/erscheinungsbild with an empty seitenTitel falls back to "Freigabeportal"', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links')
+    .field('footerText', '')
+    .field('seitenTitel', '');
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'seiten_titel'), 'Freigabeportal');
   db.close();
   rmSync(brandingDir, { recursive: true, force: true });
 });

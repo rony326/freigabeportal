@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Erscheinungsbild — Freigabeportal Admin</title>
+  <title>Erscheinungsbild — <%= branding.seitenTitel %> Admin</title>
 </head>
 <body>
   <%- include('../_header') %>
@@ -47,6 +47,11 @@
           <option value="mitte" <%= logoAusrichtung === 'mitte' ? 'selected' : '' %>>Mittig</option>
           <option value="rechts" <%= logoAusrichtung === 'rechts' ? 'selected' : '' %>>Rechtsbündig</option>
         </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="seitenTitel">Seitentitel</label>
+        <input type="text" class="form-control" id="seitenTitel" name="seitenTitel" value="<%= seitenTitel %>" maxlength="60" placeholder="Freigabeportal">
+        <div class="form-text">Erscheint im Browser-Tab-Titel jeder Seite (z.B. „Aufgaben — &lt;Seitentitel&gt;“). Leer lassen für „Freigabeportal“.</div>
       </div>
       <div class="mb-3">
         <label class="form-label" for="footerText">Footer-Text</label>

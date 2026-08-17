@@ -59,7 +59,11 @@ export function findMatchingZuweisungsregel(db, absender) {
   return null;
 }
 
-export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad }) {
+export function findJobByDateiHash(db, dateiHash) {
+  return db.prepare('SELECT * FROM jobs WHERE datei_hash = ? ORDER BY id LIMIT 1').get(dateiHash) ?? null;
+}
+
+export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad, dateiHash }) {
   const regel = findMatchingZuweisungsregel(db, absender);
   let kontoId = null;
   let zugewiesenAn = null;
@@ -87,10 +91,10 @@ export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad 
 
   const result = db
     .prepare(
-      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an, debitor_id, lieferant)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an, debitor_id, lieferant, datei_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn, debitorId, lieferant);
+    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn, debitorId, lieferant, dateiHash ?? null);
 
   return Number(result.lastInsertRowid);
 }
@@ -308,11 +312,12 @@ export function listAlleAbgelehntenJobs(db) {
 // is deliberately restricted to already-rejected invoices, never an open/active one. Also
 // deletes the job's freigaben rows: they reference job_id without an enforced foreign key, but
 // leaving them behind as orphans once the job is gone serves no purpose.
+// Soft-delete: the row and its PDF/Thumbnail survive with status 'geloescht' for
+// compliance/audit purposes (see job_loeschungen) instead of being hard-deleted.
 export function loeschenJob(db, jobId) {
   const job = getJobById(db, jobId);
   if (!job || job.status !== 'abgelehnt') return null;
-  db.prepare('DELETE FROM freigaben WHERE job_id = ?').run(jobId);
-  db.prepare('DELETE FROM jobs WHERE id = ?').run(jobId);
+  db.prepare("UPDATE jobs SET status = 'geloescht' WHERE id = ?").run(jobId);
   return job;
 }
 

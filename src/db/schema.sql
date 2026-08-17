@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   pdf_pfad TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN (
     'unzugewiesen','zugewiesen','kontiert','freigabe1','freigabe2',
-    'abgeschlossen','abgeholt','archiviert','abgelehnt','aufgesplittet'
+    'abgeschlossen','abgeholt','archiviert','abgelehnt','aufgesplittet','geloescht'
   )) DEFAULT 'unzugewiesen',
   konto_id INTEGER REFERENCES konten(id),
   zugewiesen_an TEXT REFERENCES personen(churchtools_person_id),
@@ -98,7 +98,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   rechnungsnummer TEXT,
   lieferant TEXT,
   debitor_id INTEGER REFERENCES debitoren(id),
-  aufgesplittet_von INTEGER REFERENCES jobs(id)
+  aufgesplittet_von INTEGER REFERENCES jobs(id),
+  datei_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (

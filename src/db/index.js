@@ -18,6 +18,7 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'lieferant', ddl: 'ALTER TABLE jobs ADD COLUMN lieferant TEXT' },
   { column: 'debitor_id', ddl: 'ALTER TABLE jobs ADD COLUMN debitor_id INTEGER REFERENCES debitoren(id)' },
   { column: 'aufgesplittet_von', ddl: 'ALTER TABLE jobs ADD COLUMN aufgesplittet_von INTEGER REFERENCES jobs(id)' },
+  { column: 'datei_hash', ddl: 'ALTER TABLE jobs ADD COLUMN datei_hash TEXT' },
 ];
 
 function migrateJobsTable(db) {
@@ -27,6 +28,7 @@ function migrateJobsTable(db) {
       db.exec(ddl);
     }
   }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_datei_hash ON jobs(datei_hash)');
 }
 
 export function openDatabase(dbPath) {

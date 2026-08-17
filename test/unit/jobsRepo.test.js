@@ -6,7 +6,7 @@ import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -142,6 +142,23 @@ test('createJob leaves a job unzugewiesen when no Zuweisungsregel matches', () =
   assert.equal(job.status, 'unzugewiesen');
   assert.equal(job.konto_id, null);
   assert.equal(job.zugewiesen_an, null);
+  db.close();
+});
+
+test('createJob stores an optional dateiHash, and findJobByDateiHash finds it back', () => {
+  const db = openDatabase(':memory:');
+  const id = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'scan.pdf', pdfPfad: '/tmp/y.pdf', dateiHash: 'abc123' });
+  const job = getJobById(db, id);
+  assert.equal(job.datei_hash, 'abc123');
+  const found = findJobByDateiHash(db, 'abc123');
+  assert.equal(found.id, id);
+  db.close();
+});
+
+test('findJobByDateiHash returns null when no job has that hash, and ignores jobs with a null hash', () => {
+  const db = openDatabase(':memory:');
+  createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'scan.pdf', pdfPfad: '/tmp/y.pdf' });
+  assert.equal(findJobByDateiHash(db, 'does-not-exist'), null);
   db.close();
 });
 
@@ -731,7 +748,7 @@ test('listAlleAbgelehntenJobs returns abgelehnt jobs regardless of who they are 
   db.close();
 });
 
-test('loeschenJob deletes the job and its freigaben, returning the pre-deletion row', () => {
+test('loeschenJob soft-deletes the job (status "geloescht"), keeps its freigaben, and returns the pre-deletion row', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
   const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -744,8 +761,10 @@ test('loeschenJob deletes the job and its freigaben, returning the pre-deletion 
   const result = loeschenJob(db, jobId);
   assert.equal(result.id, jobId);
   assert.equal(result.dateiname, 'a.pdf');
-  assert.equal(getJobById(db, jobId), null);
-  assert.equal(listFreigabenByJob(db, jobId).length, 0);
+  const job = getJobById(db, jobId);
+  assert.ok(job, 'the job row should survive a "deletion" as an archived record');
+  assert.equal(job.status, 'geloescht');
+  assert.equal(listFreigabenByJob(db, jobId).length, 1, 'the freigaben audit trail should be kept');
   db.close();
 });
 

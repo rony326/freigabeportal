@@ -95,6 +95,31 @@ test('branding falls back to "Freigabeportal" for footerText when unset (no seed
   db.close();
 });
 
+test('branding exposes the configured seitenTitel', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'seiten_titel', 'Life Church Portal');
+  const branding = runMiddleware(db, undefined);
+  assert.equal(branding.seitenTitel, 'Life Church Portal');
+  db.close();
+});
+
+test('branding falls back to "Freigabeportal" for seitenTitel when unset (no seedDefaults)', () => {
+  const db = openDatabase(':memory:');
+  const branding = runMiddleware(db, undefined);
+  assert.equal(branding.seitenTitel, 'Freigabeportal');
+  db.close();
+});
+
+test('branding falls back to "Freigabeportal" for seitenTitel when explicitly set to an empty string', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'seiten_titel', '');
+  const branding = runMiddleware(db, undefined);
+  assert.equal(branding.seitenTitel, 'Freigabeportal');
+  db.close();
+});
+
 test('branding exposes the configured logoAusrichtung', () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);

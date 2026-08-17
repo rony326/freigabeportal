@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Personen — Freigabeportal Admin</title>
+  <title>Personen — <%= branding.seitenTitel %> Admin</title>
 </head>
 <body>
   <%- include('../_header') %>
@@ -20,7 +20,10 @@
               <td><%= p.vorname %> <%= p.nachname %></td>
               <td><%= p.email %></td>
               <td><span class="badge <%= p.aktiv ? 'text-bg-success' : 'text-bg-secondary' %>"><%= p.aktiv ? 'Aktiv' : 'Inaktiv' %></span></td>
-              <td><% if (p.ct_person_unresolved) { %><span class="text-warning">⚠️ Person in ChurchTools nicht auflösbar (nicht auflösbar)</span><% } %></td>
+              <td>
+                <% if (p.ct_person_unresolved) { %><span class="text-warning d-block">⚠️ Person in ChurchTools nicht auflösbar (nicht auflösbar)</span><% } %>
+                <% if (p.aktiv && p.gruppen.length === 0) { %><span class="text-warning d-block">⚠️ Nicht mehr in einer ChurchTools-Gruppe, aber weiterhin als Freigeber/Stellvertreter auf einem Konto hinterlegt</span><% } %>
+              </td>
             </tr>
           <% }) %>
         </tbody>

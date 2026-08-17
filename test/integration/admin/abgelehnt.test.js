@@ -118,7 +118,7 @@ test('GET /admin/abgelehnt/:id returns 404 for a job that is not (or no longer) 
   db.close();
 });
 
-test('POST /admin/abgelehnt/:id/loeschen deletes the job, its files, its freigaben, and logs the deletion', async () => {
+test('POST /admin/abgelehnt/:id/loeschen soft-deletes the job (status "geloescht"), keeps its files and freigaben, and logs the deletion', async () => {
   const db = openDatabase(':memory:');
   seedAdmin(db);
   const dir = mkdtempSync(join(tmpdir(), 'abgelehnt-test-'));
@@ -133,10 +133,15 @@ test('POST /admin/abgelehnt/:id/loeschen deletes the job, its files, its freigab
 
   assert.equal(res.status, 302);
   assert.equal(res.headers.location, '/admin/abgelehnt?gespeichert=1');
-  assert.equal(getJobById(db, id), null);
-  assert.equal(listFreigabenByJob(db, id).length, 0);
-  assert.equal(existsSync(pdfPfad), false, 'the PDF file should have been deleted');
-  assert.equal(existsSync(thumbnailPfad), false, 'the thumbnail file should have been deleted');
+  const job = getJobById(db, id);
+  assert.ok(job, 'the job row should survive a "deletion" as an archived record');
+  assert.equal(job.status, 'geloescht');
+  assert.equal(listFreigabenByJob(db, id).length, 1, 'the freigaben audit trail should be kept, not deleted');
+  assert.equal(existsSync(pdfPfad), true, 'the PDF file should be kept, not deleted');
+  assert.equal(existsSync(thumbnailPfad), true, 'the thumbnail file should be kept, not deleted');
+
+  const listAfter = await request(app).get('/admin/abgelehnt').set('x-test-person-id', '99');
+  assert.doesNotMatch(listAfter.text, /rechnung\.pdf/, 'a geloescht job should no longer appear in the abgelehnt list');
 
   const log = listJobLoeschungen(db);
   assert.equal(log.length, 1);
@@ -144,6 +149,36 @@ test('POST /admin/abgelehnt/:id/loeschen deletes the job, its files, its freigab
   assert.equal(log[0].dateiname, 'rechnung.pdf');
   assert.equal(log[0].geloescht_von, '99');
   assert.equal(log[0].begruendung, 'Duplikat, versehentlich zweimal hochgeladen');
+  db.close();
+});
+
+test('GET and POST /admin/abgelehnt/:id/loeschen are blocked with 403 when the acting admin is the one who rejected the job', async () => {
+  const db = openDatabase(':memory:');
+  for (const id of ['1', '2', '3']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  upsertPerson(db, { id: '20', vorname: 'Selbst', nachname: 'Admin', email: 'selbst@example.org', gruppen: ['10', '20'], loggedInNow: true });
+  const dir = mkdtempSync(join(tmpdir(), 'abgelehnt-test-'));
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '2' });
+  const pdfPfad = join(dir, `a-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(id);
+  ablehnenJob(db, id, { abgelehntVon: '20', grund: 'Falsches Konto' });
+  const app = buildTestApp(db);
+
+  const getRes = await request(app).get(`/admin/abgelehnt/${id}`).set('x-test-person-id', '20');
+  assert.equal(getRes.status, 403);
+
+  const postRes = await request(app)
+    .post(`/admin/abgelehnt/${id}/loeschen`)
+    .set('x-test-person-id', '20')
+    .type('form')
+    .send({ begruendung: 'Duplikat', bestaetigung: 'ja' });
+  assert.equal(postRes.status, 403);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'abgelehnt', 'the job must not be deleted by the person who rejected it');
   db.close();
 });
 

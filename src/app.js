@@ -131,7 +131,7 @@ export function createApp({ db, config }) {
 
   app.use((err, req, res, next) => {
     console.error(err.stack || err);
-    res.locals.branding ??= { primaryColor: null, secondaryColor: null, hasLogo: false, themeAttr: null };
+    res.locals.branding ??= { primaryColor: null, secondaryColor: null, hasLogo: false, themeAttr: null, seitenTitel: 'Freigabeportal' };
     res.status(500).render('error', { message: 'Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es später erneut.' });
   });
 

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Rechnung aufsplitten — Freigabeportal</title>
+</head>
+<body>
+  <%- include('_header') %>
+  <main class="container py-4">
+    <h1 class="h3">Rechnung aufsplitten: <%= job.dateiname %></h1>
+    <p class="text-muted">Vorgangsnummer: <%= job.id %> · Ursprünglicher Betrag: <%= job.betrag %></p>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger">
+        <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+    <p>Jede Zeile wird zu einer eigenständigen Rechnung mit eigenem Konto und Teilbetrag. Zahlungsziel, Lieferant, Absender und Rechnungsnummer werden übernommen. Freigabe 1 gilt für jeden Teil als durch dich erteilt.</p>
+
+    <form method="post" action="/kontierung/<%= job.id %>/aufsplitten" class="col-12 col-md-10 col-lg-8">
+      <div id="teile-container">
+        <% teile.forEach((teil) => { %>
+          <div class="row g-2 mb-2 align-items-center teil-zeile">
+            <div class="col-6">
+              <select class="form-select" name="teilKontoId">
+                <option value="">— Konto wählen —</option>
+                <% konten.forEach((k) => { %>
+                  <option value="<%= k.id %>" <%= String(k.id) === teil.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-4">
+              <input type="text" inputmode="decimal" class="form-control" name="teilBetrag" value="<%= teil.betrag %>" placeholder="Teilbetrag, z.B. 61.75">
+            </div>
+            <div class="col-2">
+              <button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+      <button type="button" id="zeile-hinzufuegen" class="btn btn-outline-secondary btn-sm mb-3">+ Teilbetrag hinzufügen</button>
+      <div class="d-flex flex-wrap gap-2">
+        <button type="submit" class="btn btn-primary">Aufsplitten und Freigabe 1 erteilen</button>
+        <a href="/kontierung/<%= job.id %>" class="btn btn-outline-secondary">Abbrechen</a>
+      </div>
+    </form>
+  </main>
+  <script>
+    (function () {
+      var kontoOptionsHtml = document.querySelector('.teil-zeile select').innerHTML;
+      function zeileEntfernenBinden(zeile) {
+        zeile.querySelector('.zeile-entfernen').addEventListener('click', function () {
+          zeile.remove();
+        });
+      }
+      document.querySelectorAll('.teil-zeile').forEach(zeileEntfernenBinden);
+      document.getElementById('zeile-hinzufuegen').addEventListener('click', function () {
+        var zeile = document.createElement('div');
+        zeile.className = 'row g-2 mb-2 align-items-center teil-zeile';
+        zeile.innerHTML =
+          '<div class="col-6"><select class="form-select" name="teilKontoId">' + kontoOptionsHtml + '</select></div>' +
+          '<div class="col-4"><input type="text" inputmode="decimal" class="form-control" name="teilBetrag" placeholder="Teilbetrag, z.B. 61.75"></div>' +
+          '<div class="col-2"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
+        document.getElementById('teile-container').appendChild(zeile);
+        zeileEntfernenBinden(zeile);
+      });
+    })();
+  </script>
+  <%- include('_footer') %>
+</body>
+</html>

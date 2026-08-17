@@ -346,7 +346,7 @@ test('GET /pool returns 200 for a Portal-Admin who is not also a Buchhaltung mem
   db.close();
 });
 
-test('GET /admin renders a dashboard with links to all eight admin areas for a Portal-Admin', async () => {
+test('GET /admin renders a dashboard with links to all nine admin areas for a Portal-Admin', async () => {
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -371,7 +371,7 @@ test('GET /admin renders a dashboard with links to all eight admin areas for a P
 
   const res = await agent.get('/admin');
   assert.equal(res.status, 200);
-  for (const path of ['/admin/konten', '/admin/zuweisungsregeln', '/admin/eskalation', '/admin/erscheinungsbild', '/admin/personen', '/admin/pdf-einstellungen', '/admin/mails', '/admin/sync']) {
+  for (const path of ['/admin/konten', '/admin/debitoren', '/admin/eskalation', '/admin/erscheinungsbild', '/admin/personen', '/admin/pdf-einstellungen', '/admin/mails', '/admin/sync', '/admin/abgelehnt']) {
     assert.match(res.text, new RegExp(`href="${path}"`), `expected a link to ${path}`);
   }
   db.close();
@@ -488,6 +488,8 @@ test('on /kontierung, the Zurück button renders to the right of the Menü dropd
   const zurueckIndex = res.text.indexOf('← Zurück');
   assert.ok(menuIndex >= 0 && zurueckIndex >= 0, 'both the Menü dropdown and the Zurück button should be present');
   assert.ok(menuIndex < zurueckIndex, 'Menü dropdown should render before (to the left of) the Zurück button');
+  assert.match(res.text, /class="btn btn-outline-secondary btn-sm dropdown-toggle"/, 'Menü button should be btn-sm, matching Zurück');
+  assert.match(res.text, /class="btn btn-primary btn-sm">← Zurück/, 'Zurück button should be btn-sm, matching Menü');
   db.close();
 });
 

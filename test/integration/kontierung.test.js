@@ -2,10 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
+import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob } from '../../src/db/jobsRepo.js';
+import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob, listSplitKinder, updateKontierungMetadaten } from '../../src/db/jobsRepo.js';
 import { listFreigabenByJob, createFreigabe } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
@@ -87,6 +90,30 @@ function seedKontoAndPersonen(db) {
   return createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
 }
 
+function buildTestAppMitDateien(db, mailer, jobsDir) {
+  const app = express();
+  app.set('view engine', 'ejs');
+  app.set('views', new URL('../../views', import.meta.url).pathname);
+  app.use((req, res, next) => {
+    res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null };
+    next();
+  });
+  app.use(express.urlencoded({ extended: false }));
+  app.use((req, res, next) => {
+    req.session = { personId: req.headers['x-test-person-id'] };
+    next();
+  });
+  const config = {
+    churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' },
+    downloadSigningSecret: 'test-secret',
+    publicBaseUrl: 'https://portal.example.org',
+    jobsDir,
+  };
+  app.use(loadCurrentPerson(db));
+  app.use('/kontierung', requireLogin(), createKontierungRouter({ db, config, mailer }));
+  return app;
+}
+
 test('GET /kontierung/:id is reachable for the assigned person with no group membership at all', async () => {
   const db = openDatabase(':memory:');
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
@@ -116,6 +143,24 @@ test('GET /kontierung/:id embeds the preview through the PDF.js viewer, not a ra
   assert.equal(res.status, 200);
   assert.match(res.text, /id="kontierung-preview-frame" data-preview-url="\/downloads\/\d+\?expires=\d+&amp;signature=[0-9a-f]{64}"/);
   assert.match(res.text, /'\/vendor\/pdfjs\/web\/viewer\.html\?file=' \+ encodeURIComponent\(absoluteUrl\)/);
+  db.close();
+});
+
+test('GET /kontierung/:id drops the Konto select\'s required attribute on click of Ablehnen, so the browser does not block that submission', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
+  for (const id of ['2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<select class="form-select" id="kontoId" name="kontoId" required>/);
+  assert.match(res.text, /<button type="submit" name="aktion" value="ablehnen" id="ablehnen-btn"/);
+  assert.match(res.text, /getElementById\('ablehnen-btn'\)\.addEventListener\('click', function \(\) \{\s*document\.getElementById\('kontoId'\)\.required = false;/);
   db.close();
 });
 
@@ -236,9 +281,11 @@ test('POST /kontierung/:id without a conflict creates the Freigabe-1 row and adv
   db.close();
 });
 
-test('POST /kontierung/:id persists an edited absender plus betrag, zahlungsziel, rechnungsnummer and lieferant', async () => {
+test('POST /kontierung/:id persists an edited absender plus betrag, zahlungsziel, rechnungsnummer and the selected Debitor as lieferant', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db);
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'alt@example.org', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -255,7 +302,7 @@ test('POST /kontierung/:id persists an edited absender plus betrag, zahlungsziel
       betrag: '123,45',
       zahlungsziel: '2026-09-01',
       rechnungsnummer: 'RE-2026-042',
-      lieferant: 'Muster AG',
+      debitorId: String(debitorId),
     });
 
   assert.equal(res.status, 302);
@@ -265,6 +312,7 @@ test('POST /kontierung/:id persists an edited absender plus betrag, zahlungsziel
   assert.equal(job.zahlungsziel, '2026-09-01');
   assert.equal(job.rechnungsnummer, 'RE-2026-042');
   assert.equal(job.lieferant, 'Muster AG');
+  assert.equal(job.debitor_id, debitorId);
   db.close();
 });
 
@@ -855,4 +903,157 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
   assert.equal(job.status, 'freigabe2', 'Freigabe 1 must actually complete, not just redirect');
   assert.equal(job.konto_id, kontoId);
   db.close();
+});
+
+function seedJobMitDateien(db, jobsDir, { betrag = '200.00' } = {}) {
+  const kontoId = seedKontoAndPersonen(db);
+  const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
+  claimJob(db, id, '1');
+  updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag, zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId: null });
+  return { id, kontoId, pdfPfad };
+}
+
+test('GET /kontierung/:id/aufsplitten shows an error when the job has no Betrag yet', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 400);
+  assert.match(res.text, /zuerst einen Betrag/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /kontierung/:id/aufsplitten shows the dynamic split form when a Betrag is set', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir);
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /name="teilKontoId"/);
+  assert.match(res.text, /name="teilBetrag"/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten creates independent split jobs, each with its own file, Freigabe 1 already granted, marks the parent aufgesplittet', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId, pdfPfad } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+    });
+
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+
+  const parent = getJobById(db, id);
+  assert.equal(parent.status, 'aufgesplittet');
+  assert.ok(existsSync(pdfPfad), 'the parent PDF must survive — children get their own copies');
+
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  const betraege = kinder.map((k) => k.betrag).sort();
+  assert.deepEqual(betraege, ['120.00', '80.00'].sort());
+  for (const kind of kinder) {
+    assert.equal(kind.status, 'freigabe2', 'Freigabe 1 should already be granted for each split part');
+    assert.equal(kind.konto_id, kontoId);
+    assert.equal(kind.zahlungsziel, '2026-09-01');
+    assert.equal(kind.lieferant, 'Muster AG');
+    assert.equal(kind.rechnungsnummer, 'RE-1');
+    assert.equal(kind.aufgesplittet_von, id);
+    assert.notEqual(kind.pdf_pfad, pdfPfad, 'each split part must own its own copy of the PDF, not share the parent\'s');
+    assert.ok(existsSync(kind.pdf_pfad));
+    const freigaben = listFreigabenByJob(db, kind.id);
+    assert.equal(freigaben.length, 1);
+    assert.equal(freigaben[0].rolle, 'freigeber1');
+    assert.equal(freigaben[0].person_id, '1');
+  }
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten rejects Teilbeträge that do not sum to the original Betrag, nothing persisted', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '90.00'],
+    });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Summe der Teilbeträge/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listSplitKinder(db, id).length, 0);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten rejects fewer than two Teilbeträge', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      teilKontoId: [String(kontoId)],
+      teilBetrag: ['200.00'],
+    });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Mindestens zwei Teilbeträge/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten rejects a Konto the person is not authorized on', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  upsertPerson(db, { id: '9', vorname: 'Fremd', nachname: 'Person', email: 'fremd@example.org', gruppen: ['10'], loggedInNow: true });
+  upsertPerson(db, { id: '10', vorname: 'Fremd2', nachname: 'Person', email: 'fremd2@example.org', gruppen: ['10'], loggedInNow: true });
+  const fremdKontoId = createKonto(db, { kontonummer: '9999', bezeichnung: 'Fremdkonto', freigeber1Id: '9', stellvertreter1Id: '10', freigeber2Id: '9', stellvertreter2Id: '10' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      teilKontoId: [String(kontoId), String(fremdKontoId)],
+      teilBetrag: ['100.00', '100.00'],
+    });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /gültiges Konto/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
 });

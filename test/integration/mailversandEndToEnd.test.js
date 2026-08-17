@@ -8,6 +8,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
+import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { listMailLog } from '../../src/db/mailLogRepo.js';
 import { createApp } from '../../src/app.js';
@@ -80,7 +81,8 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
 
   // 1. Job creation with a matching Zuweisungsregel -> auto-assignment mail to freigeber1.
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);

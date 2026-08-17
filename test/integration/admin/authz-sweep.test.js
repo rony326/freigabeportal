@@ -44,13 +44,16 @@ const ADMIN_ROUTES = [
   { method: 'get', path: '/admin/konten/1/bearbeiten' },
   { method: 'post', path: '/admin/konten/1' },
   { method: 'post', path: '/admin/konten/1/deaktivieren' },
-  // zuweisungsregeln (6)
-  { method: 'get', path: '/admin/zuweisungsregeln' },
-  { method: 'get', path: '/admin/zuweisungsregeln/neu' },
-  { method: 'post', path: '/admin/zuweisungsregeln' },
-  { method: 'get', path: '/admin/zuweisungsregeln/1/bearbeiten' },
-  { method: 'post', path: '/admin/zuweisungsregeln/1' },
-  { method: 'post', path: '/admin/zuweisungsregeln/1/loeschen' },
+  // debitoren (9)
+  { method: 'get', path: '/admin/debitoren' },
+  { method: 'post', path: '/admin/debitoren' },
+  { method: 'get', path: '/admin/debitoren/1/bearbeiten' },
+  { method: 'post', path: '/admin/debitoren/1' },
+  { method: 'post', path: '/admin/debitoren/1/deaktivieren' },
+  { method: 'post', path: '/admin/debitoren/regeln' },
+  { method: 'get', path: '/admin/debitoren/regeln/1/bearbeiten' },
+  { method: 'post', path: '/admin/debitoren/regeln/1' },
+  { method: 'post', path: '/admin/debitoren/regeln/1/loeschen' },
   // eskalation (2)
   { method: 'get', path: '/admin/eskalation' },
   { method: 'post', path: '/admin/eskalation' },
@@ -65,10 +68,14 @@ const ADMIN_ROUTES = [
   // mails (2)
   { method: 'get', path: '/admin/mails' },
   { method: 'post', path: '/admin/mails/1/erneut-versenden' },
+  // abgelehnt (3)
+  { method: 'get', path: '/admin/abgelehnt' },
+  { method: 'get', path: '/admin/abgelehnt/1' },
+  { method: 'post', path: '/admin/abgelehnt/1/loeschen' },
 ];
 
-test('the real createApp wiring returns 401 on all 21 admin route/method combinations with no session present', async () => {
-  assert.equal(ADMIN_ROUTES.length, 21, 'sanity check: this sweep should cover exactly 21 route/method combinations');
+test('the real createApp wiring returns 401 on all 27 admin route/method combinations with no session present', async () => {
+  assert.equal(ADMIN_ROUTES.length, 27, 'sanity check: this sweep should cover exactly 27 route/method combinations');
 
   const db = openDatabase(':memory:');
   const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));

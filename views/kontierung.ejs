@@ -12,11 +12,11 @@
     <div class="row g-3 justify-content-center">
       <div class="col-lg-12 col-xl-10">
         <h1 class="h3">Kontierung: <%= job.dateiname %></h1>
-        <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></p>
+        <p class="text-muted">Vorgangsnummer: <%= job.id %> · Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></p>
       </div>
       <div class="w-100"></div>
       <div class="col-lg-6">
-        <iframe id="kontierung-preview-frame" data-preview-url="<%= previewUrl %>" src="" class="w-100 border rounded" style="height:85vh"></iframe>
+        <iframe id="kontierung-preview-frame" data-preview-url="<%= previewUrl %>" src="" class="w-100 rounded pdf-preview" style="height:85vh"></iframe>
       </div>
       <div class="col-lg-6 col-xl-4">
         <div class="card">
@@ -44,8 +44,13 @@
                   <input type="text" class="form-control" id="absender" name="absender" value="<%= values.absender || '' %>">
                 </div>
                 <div class="col-6">
-                  <label class="form-label" for="lieferant">Lieferant</label>
-                  <input type="text" class="form-control" id="lieferant" name="lieferant" value="<%= values.lieferant || '' %>">
+                  <label class="form-label" for="debitorId">Lieferant</label>
+                  <select class="form-select" id="debitorId" name="debitorId">
+                    <option value="">— wählen —</option>
+                    <% debitoren.forEach((d) => { %>
+                      <option value="<%= d.id %>" <%= String(d.id) === values.debitorId ? 'selected' : '' %>><%= d.name %></option>
+                    <% }) %>
+                  </select>
                 </div>
               </div>
 
@@ -81,13 +86,17 @@
                 <textarea class="form-control" id="begruendung" name="begruendung"><%= values.begruendung || '' %></textarea>
               </div>
 
-              <button type="submit" name="aktion" value="kontieren" class="btn btn-primary me-2">Kontieren und Freigabe 1 erteilen</button>
-              <button type="submit" name="aktion" value="ablehnen" class="btn btn-outline-danger">Ablehnen</button>
+              <div class="d-flex flex-wrap gap-2">
+                <button type="submit" name="aktion" value="kontieren" class="btn btn-primary">Kontieren und Freigabe 1 erteilen</button>
+                <button type="submit" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger">Ablehnen</button>
+              </div>
             </form>
 
             <form method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool" class="mt-3">
               <button type="submit" class="btn btn-outline-secondary">Zurück in den Pool legen</button>
             </form>
+
+            <a href="/kontierung/<%= job.id %>/aufsplitten" class="btn btn-outline-secondary mt-2">Rechnung aufsplitten</a>
           </div>
         </div>
         <%- include('_audit_log') %>
@@ -101,6 +110,14 @@
       var absoluteUrl = new URL(frame.dataset.previewUrl, window.location.origin).href;
       frame.src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(absoluteUrl);
     })();
+    // Ablehnen deliberately needs no Konto (the server-side handler skips that check for
+    // aktion=ablehnen) — but the Konto <select>'s HTML `required` attribute is enforced by the
+    // browser before the form is even submitted, regardless of which button triggered it. Drop
+    // it the moment Ablehnen is clicked so the browser lets an empty Konto through; a fresh page
+    // load (any validation error re-renders the page) restores the attribute from the template.
+    document.getElementById('ablehnen-btn').addEventListener('click', function () {
+      document.getElementById('kontoId').required = false;
+    });
   </script>
   <%- include('_footer') %>
 </body>

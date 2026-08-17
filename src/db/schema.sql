@@ -42,10 +42,17 @@ CREATE TABLE IF NOT EXISTS konten (
   aktiv INTEGER NOT NULL DEFAULT 1
 );
 
+CREATE TABLE IF NOT EXISTS debitoren (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  konto_id INTEGER REFERENCES konten(id),
+  aktiv INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS zuweisungsregeln (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   absender_muster TEXT NOT NULL UNIQUE,
-  konto_id INTEGER NOT NULL REFERENCES konten(id)
+  debitor_id INTEGER NOT NULL REFERENCES debitoren(id)
 );
 
 CREATE TABLE IF NOT EXISTS jobs (
@@ -57,7 +64,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   pdf_pfad TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN (
     'unzugewiesen','zugewiesen','kontiert','freigabe1','freigabe2',
-    'abgeschlossen','abgeholt','archiviert','abgelehnt'
+    'abgeschlossen','abgeholt','archiviert','abgelehnt','aufgesplittet'
   )) DEFAULT 'unzugewiesen',
   konto_id INTEGER REFERENCES konten(id),
   zugewiesen_an TEXT REFERENCES personen(churchtools_person_id),
@@ -77,7 +84,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   betrag TEXT,
   zahlungsziel TEXT,
   rechnungsnummer TEXT,
-  lieferant TEXT
+  lieferant TEXT,
+  debitor_id INTEGER REFERENCES debitoren(id),
+  aufgesplittet_von INTEGER REFERENCES jobs(id)
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (
@@ -102,4 +111,16 @@ CREATE TABLE IF NOT EXISTS mail_log (
   status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen')),
   fehler_details TEXT,
   versucht_am TEXT NOT NULL
+);
+
+-- job_id is deliberately NOT a foreign key: the whole point of this table is to keep a record
+-- after the jobs row it refers to has been permanently deleted (see loeschenJob). dateiname is
+-- duplicated here for the same reason — it would otherwise be unrecoverable once the job is gone.
+CREATE TABLE IF NOT EXISTS job_loeschungen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER NOT NULL,
+  dateiname TEXT NOT NULL,
+  geloescht_von TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  begruendung TEXT NOT NULL,
+  zeitpunkt TEXT NOT NULL
 );

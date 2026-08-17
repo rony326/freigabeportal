@@ -204,6 +204,7 @@ test('POST /api/n8n/jobs applies Zuweisungsregel matching and reports the result
   const { join } = await import('node:path');
   const { upsertPerson } = await import('../../../src/db/personenRepo.js');
   const { createKonto } = await import('../../../src/db/kontenRepo.js');
+  const { createDebitor } = await import('../../../src/db/debitorenRepo.js');
   const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
 
   const db = openDatabase(':memory:');
@@ -211,7 +212,8 @@ test('POST /api/n8n/jobs applies Zuweisungsregel matching and reports the result
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
 
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
@@ -408,6 +410,7 @@ test('POST /api/n8n/jobs with a matching Zuweisungsregel sends a Zuweisungs-Mail
   const { join } = await import('node:path');
   const { upsertPerson } = await import('../../../src/db/personenRepo.js');
   const { createKonto } = await import('../../../src/db/kontenRepo.js');
+  const { createDebitor } = await import('../../../src/db/debitorenRepo.js');
   const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
   const { listMailLog } = await import('../../../src/db/mailLogRepo.js');
 
@@ -417,7 +420,8 @@ test('POST /api/n8n/jobs with a matching Zuweisungsregel sends a Zuweisungs-Mail
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
 
   const config = { ...testConfig(jobsDir), publicBaseUrl: 'https://portal.example.org' };
   const mailer = createStubMailer();

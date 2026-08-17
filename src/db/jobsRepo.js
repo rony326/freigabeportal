@@ -1,6 +1,7 @@
 import { getKontoById } from './kontenRepo.js';
 import { getPersonById } from './personenRepo.js';
 import { listZuweisungsregeln } from './zuweisungsregelnRepo.js';
+import { getDebitorById } from './debitorenRepo.js';
 
 function extractDomain(email) {
   const at = email.lastIndexOf('@');
@@ -63,22 +64,33 @@ export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad 
   let kontoId = null;
   let zugewiesenAn = null;
   let status = 'unzugewiesen';
+  let debitorId = null;
+  let lieferant = null;
 
   if (regel) {
-    const konto = getKontoById(db, regel.konto_id);
-    if (konto && konto.aktiv) {
-      kontoId = konto.id;
-      zugewiesenAn = konto.freigeber1_id;
-      status = 'zugewiesen';
+    const debitor = getDebitorById(db, regel.debitor_id);
+    if (debitor && debitor.aktiv) {
+      debitorId = debitor.id;
+      lieferant = debitor.name;
+      // A Debitor without its own default Konto still auto-fills Lieferant, but there's no
+      // Konto to resolve a Freigeber1 from — the job stays unzugewiesen, same as no match at all.
+      if (debitor.konto_id) {
+        const konto = getKontoById(db, debitor.konto_id);
+        if (konto && konto.aktiv) {
+          kontoId = konto.id;
+          zugewiesenAn = konto.freigeber1_id;
+          status = 'zugewiesen';
+        }
+      }
     }
   }
 
   const result = db
     .prepare(
-      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an, debitor_id, lieferant)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn);
+    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn, debitorId, lieferant);
 
   return Number(result.lastInsertRowid);
 }
@@ -141,13 +153,14 @@ export function setKontierung(db, jobId, kontoId) {
   db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
 }
 
-export function updateKontierungMetadaten(db, jobId, { absender, betrag, zahlungsziel, rechnungsnummer, lieferant }) {
-  db.prepare('UPDATE jobs SET absender = ?, betrag = ?, zahlungsziel = ?, rechnungsnummer = ?, lieferant = ? WHERE id = ?').run(
+export function updateKontierungMetadaten(db, jobId, { absender, betrag, zahlungsziel, rechnungsnummer, lieferant, debitorId }) {
+  db.prepare('UPDATE jobs SET absender = ?, betrag = ?, zahlungsziel = ?, rechnungsnummer = ?, lieferant = ?, debitor_id = ? WHERE id = ?').run(
     absender || null,
     betrag || null,
     zahlungsziel || null,
     rechnungsnummer || null,
     lieferant || null,
+    debitorId || null,
     jobId
   );
 }
@@ -274,6 +287,26 @@ export function listAbgelehntJobsForPerson(db, personId) {
     .all(personId);
 }
 
+// Admin-wide, unlike listAbgelehntJobsForPerson: a Portal-Admin cleaning up rejected invoices
+// needs to see all of them, not just ones assigned to (or escalated to) them personally.
+export function listAlleAbgelehntenJobs(db) {
+  return db.prepare("SELECT * FROM jobs WHERE status = 'abgelehnt' ORDER BY eingang_am").all();
+}
+
+// Returns the job row as it was immediately before deletion (its pdf_pfad/thumbnail_pfad/
+// dateiname are needed by the caller for file cleanup and the job_loeschungen log entry, which
+// can no longer be looked up afterwards), or null if it wasn't in status 'abgelehnt' — deletion
+// is deliberately restricted to already-rejected invoices, never an open/active one. Also
+// deletes the job's freigaben rows: they reference job_id without an enforced foreign key, but
+// leaving them behind as orphans once the job is gone serves no purpose.
+export function loeschenJob(db, jobId) {
+  const job = getJobById(db, jobId);
+  if (!job || job.status !== 'abgelehnt') return null;
+  db.prepare('DELETE FROM freigaben WHERE job_id = ?').run(jobId);
+  db.prepare('DELETE FROM jobs WHERE id = ?').run(jobId);
+  return job;
+}
+
 export function listPoolJobsForReminder(db, stunden) {
   const schwelle = new Date(Date.now() - stunden * 60 * 60 * 1000).toISOString();
   return db
@@ -395,4 +428,47 @@ export function forceEskalierenFreigabe2AnAdmin(db, jobId) {
     .prepare("UPDATE jobs SET freigabe2_eskaliert_an_admin = 1 WHERE id = ? AND status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0")
     .run(jobId);
   return result.changes > 0;
+}
+
+// The parent stays in the table (never deleted) as a historical reference — its own approval
+// chain is superseded by its split children, so it must leave every active list (Pool,
+// Kontierung, Freigabe 1/2) without pretending it was ever itself approved or rejected.
+export function markJobAufgesplittet(db, jobId) {
+  const result = db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ? AND status = 'zugewiesen'").run(jobId);
+  return result.changes > 0;
+}
+
+// Each split line becomes its own fully independent job — own file, own approval chain, own
+// lifecycle (so deleting/rejecting one split part can never affect another). eingang_am, quelle,
+// absender, dateiname, zahlungsziel, rechnungsnummer, lieferant and debitor_id are carried over
+// from the parent; konto_id, betrag, zugewiesen_an are specific to this one split line.
+export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId, betrag, zugewiesenAn }) {
+  const result = db
+    .prepare(
+      `INSERT INTO jobs (
+         eingang_am, quelle, absender, dateiname, pdf_pfad, thumbnail_pfad, status,
+         konto_id, zugewiesen_an, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id, aufgesplittet_von
+       ) VALUES (?, ?, ?, ?, ?, ?, 'zugewiesen', ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      parentJob.eingang_am,
+      parentJob.quelle,
+      parentJob.absender,
+      parentJob.dateiname,
+      pdfPfad,
+      thumbnailPfad ?? null,
+      kontoId,
+      zugewiesenAn,
+      betrag,
+      parentJob.zahlungsziel,
+      parentJob.rechnungsnummer,
+      parentJob.lieferant,
+      parentJob.debitor_id,
+      parentJob.id
+    );
+  return Number(result.lastInsertRowid);
+}
+
+export function listSplitKinder(db, parentJobId) {
+  return db.prepare('SELECT * FROM jobs WHERE aufgesplittet_von = ? ORDER BY id').all(parentJobId);
 }

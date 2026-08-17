@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Debitoren — Freigabeportal Admin</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <h1>Debitoren</h1>
+    <% if (gespeichert) { %>
+      <div class="alert alert-success alert-dismissible fade show" role="alert">
+        Gespeichert.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
+      </div>
+    <% } %>
+
+    <h2 class="h4 mt-4">Debitoren</h2>
+    <% if (debitorErrors.length > 0) { %>
+      <div class="alert alert-danger">
+        <ul class="mb-0"><% debitorErrors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+    <div class="table-responsive mb-3">
+      <table class="table align-middle">
+        <thead><tr><th>Name</th><th>Standard-Konto</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <% debitoren.forEach((debitor) => { %>
+            <tr>
+              <td><%= debitor.name %></td>
+              <td><%= debitor.konto ? `${debitor.konto.kontonummer} — ${debitor.konto.bezeichnung}` : '—' %></td>
+              <td><%= debitor.aktiv ? 'Aktiv' : 'Inaktiv' %></td>
+              <td>
+                <a href="/admin/debitoren/<%= debitor.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
+                <% if (debitor.aktiv) { %>
+                  <form method="post" action="/admin/debitoren/<%= debitor.id %>/deaktivieren" class="d-inline">
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Deaktivieren</button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <form method="post" action="/admin/debitoren" class="row g-2 align-items-end mb-4">
+      <div class="col-auto">
+        <label class="form-label" for="debitorName">Name</label>
+        <input type="text" class="form-control" id="debitorName" name="name" value="<%= debitorValues.name || '' %>" required>
+      </div>
+      <div class="col-auto">
+        <label class="form-label" for="debitorKontoId">Standard-Konto (optional)</label>
+        <select class="form-select" id="debitorKontoId" name="kontoId">
+          <option value="">— keins —</option>
+          <% konten.forEach((k) => { %>
+            <option value="<%= k.id %>" <%= String(k.id) === String(debitorValues.kontoId) ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Debitor anlegen</button>
+      </div>
+    </form>
+
+    <h2 class="h4 mt-4">Zuweisungsregeln</h2>
+    <p class="text-muted">Ordnet einen Absender (E-Mail-Adresse oder Domain) automatisch einem Debitor zu. Trägt der Debitor ein Standard-Konto, wird die Rechnung zusätzlich direkt diesem Konto samt Freigeber 1 zugewiesen.</p>
+    <% if (regelErrors.length > 0) { %>
+      <div class="alert alert-danger">
+        <ul class="mb-0"><% regelErrors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+    <div class="table-responsive mb-3">
+      <table class="table align-middle">
+        <thead><tr><th>Absender-Muster</th><th>Debitor</th><th></th></tr></thead>
+        <tbody>
+          <% regeln.forEach((regel) => { %>
+            <tr>
+              <td><%= regel.absender_muster %></td>
+              <td><%= regel.debitor ? regel.debitor.name : '—' %></td>
+              <td>
+                <a href="/admin/debitoren/regeln/<%= regel.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
+                <form method="post" action="/admin/debitoren/regeln/<%= regel.id %>/loeschen" class="d-inline">
+                  <button type="submit" class="btn btn-outline-danger btn-sm">Löschen</button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <form method="post" action="/admin/debitoren/regeln" class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label" for="regelAbsenderMuster">Absender-Muster</label>
+        <input type="text" class="form-control" id="regelAbsenderMuster" name="absenderMuster" value="<%= regelValues.absenderMuster || '' %>" placeholder="z.B. lieferant.ch" required>
+      </div>
+      <div class="col-auto">
+        <label class="form-label" for="regelDebitorId">Debitor</label>
+        <select class="form-select" id="regelDebitorId" name="debitorId" required>
+          <option value="">— wählen —</option>
+          <% aktiveDebitoren.forEach((d) => { %>
+            <option value="<%= d.id %>" <%= String(d.id) === String(regelValues.debitorId) ? 'selected' : '' %>><%= d.name %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Regel anlegen</button>
+      </div>
+    </form>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

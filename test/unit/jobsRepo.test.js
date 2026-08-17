@@ -4,7 +4,9 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin } from '../../src/db/jobsRepo.js';
+import { createDebitor } from '../../src/db/debitorenRepo.js';
+import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -13,28 +15,38 @@ function seedKonto(db) {
   return createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
 }
 
+// Zuweisungsregeln match Absender -> Debitor; the Debitor optionally carries a default Konto
+// that the auto-assignment then resolves through. Most tests here just need "a Debitor pointing
+// at this Konto", so this wraps both steps.
+function seedDebitorMitKonto(db, kontoId, name = 'Muster AG') {
+  return createDebitor(db, { name, kontoId });
+}
+
 test('findMatchingZuweisungsregel: exact email address matches', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
-  createZuweisungsregel(db, { absenderMuster: 'rechnungen@lieferant.ch', kontoId });
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  createZuweisungsregel(db, { absenderMuster: 'rechnungen@lieferant.ch', debitorId });
   const regel = findMatchingZuweisungsregel(db, 'rechnungen@lieferant.ch');
-  assert.equal(regel.konto_id, kontoId);
+  assert.equal(regel.debitor_id, debitorId);
   db.close();
 });
 
 test('findMatchingZuweisungsregel: domain pattern matches a subdomain sender', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
   const regel = findMatchingZuweisungsregel(db, 'rechnungen@sub.lieferant.ch');
-  assert.equal(regel.konto_id, kontoId);
+  assert.equal(regel.debitor_id, debitorId);
   db.close();
 });
 
 test('findMatchingZuweisungsregel: domain pattern does not match an unrelated domain sharing a suffix', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
   assert.equal(findMatchingZuweisungsregel(db, 'rechnungen@notlieferant.ch'), null);
   db.close();
 });
@@ -45,10 +57,12 @@ test('findMatchingZuweisungsregel: exact address wins over a domain rule that wo
   upsertPerson(db, { id: '5', vorname: 'P5', nachname: 'Muster', email: 'p5@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '6', vorname: 'P6', nachname: 'Muster', email: 'p6@example.org', gruppen: ['10'], loggedInNow: false });
   const kontoId2 = createKonto(db, { kontonummer: '3001', bezeichnung: 'Spezial', freigeber1Id: '5', stellvertreter1Id: '6', freigeber2Id: '1', stellvertreter2Id: '2' });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId: kontoId1 });
-  createZuweisungsregel(db, { absenderMuster: 'rechnungen@lieferant.ch', kontoId: kontoId2 });
+  const debitorId1 = seedDebitorMitKonto(db, kontoId1, 'Debitor 1');
+  const debitorId2 = seedDebitorMitKonto(db, kontoId2, 'Debitor 2');
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId: debitorId1 });
+  createZuweisungsregel(db, { absenderMuster: 'rechnungen@lieferant.ch', debitorId: debitorId2 });
   const regel = findMatchingZuweisungsregel(db, 'rechnungen@lieferant.ch');
-  assert.equal(regel.konto_id, kontoId2);
+  assert.equal(regel.debitor_id, debitorId2);
   db.close();
 });
 
@@ -63,16 +77,18 @@ test('findMatchingZuweisungsregel: returns null without a sender or without any 
 test('findMatchingZuweisungsregel: a display-name-plus-bracket sender still matches on the bracketed address', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
   const regel = findMatchingZuweisungsregel(db, '"Lieferant AG" <rechnung@lieferant.ch>');
-  assert.equal(regel.konto_id, kontoId);
+  assert.equal(regel.debitor_id, debitorId);
   db.close();
 });
 
 test('findMatchingZuweisungsregel: a comma-separated multi-address sender with no brackets matches nothing (refuses to guess)', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
   // Naive lastIndexOf('@') parsing would have matched "lieferant.ch" here, letting an attacker
   // steer an invoice to a chosen Konto/approver by appending a trailing legitimate-looking
   // address after their own.
@@ -83,7 +99,8 @@ test('findMatchingZuweisungsregel: a comma-separated multi-address sender with n
 test('findMatchingZuweisungsregel: a multi-address sender where the legitimate address is bracketed still matches nothing', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
   // Extracting only the last "<...>" without checking what precedes it would have let an
   // attacker recover the bracket-extraction bypass: prepend their own address before the
   // legitimate-looking bracketed one.
@@ -96,20 +113,24 @@ test('findMatchingZuweisungsregel: a multi-address sender where the legitimate a
 test('findMatchingZuweisungsregel: a malformed sender with no "@" at all matches nothing', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
   assert.equal(findMatchingZuweisungsregel(db, 'not-an-email-address'), null);
   db.close();
 });
 
-test('createJob auto-assigns via a matching Zuweisungsregel', () => {
+test('createJob auto-assigns via a matching Zuweisungsregel, and fills lieferant/debitor_id from the Debitor', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
   const id = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'lieferant', absender: 'rechnungen@lieferant.ch', dateiname: 'rechnung.pdf', pdfPfad: '/tmp/x.pdf' });
   const job = getJobById(db, id);
   assert.equal(job.status, 'zugewiesen');
   assert.equal(job.konto_id, kontoId);
   assert.equal(job.zugewiesen_an, '1');
+  assert.equal(job.debitor_id, debitorId);
+  assert.equal(job.lieferant, 'Muster AG');
   db.close();
 });
 
@@ -124,15 +145,31 @@ test('createJob leaves a job unzugewiesen when no Zuweisungsregel matches', () =
   db.close();
 });
 
-test('createJob falls back to the pool when the matched Konto is inactive', () => {
+test('createJob falls back to the pool when the matched Konto is inactive, but still fills lieferant from the Debitor', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
   deactivateKonto(db, kontoId);
   const id = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'lieferant', absender: 'rechnungen@lieferant.ch', dateiname: 'rechnung.pdf', pdfPfad: '/tmp/z.pdf' });
   const job = getJobById(db, id);
   assert.equal(job.status, 'unzugewiesen');
   assert.equal(job.konto_id, null);
+  assert.equal(job.lieferant, 'Muster AG');
+  db.close();
+});
+
+test('createJob leaves a job unzugewiesen when the matching Debitor has no default Konto, but still fills lieferant', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const debitorId = createDebitor(db, { name: 'Kein Konto AG', kontoId: null });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
+  const id = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'lieferant', absender: 'rechnungen@lieferant.ch', dateiname: 'rechnung.pdf', pdfPfad: '/tmp/z.pdf' });
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.konto_id, null);
+  assert.equal(job.debitor_id, debitorId);
+  assert.equal(job.lieferant, 'Kein Konto AG');
   db.close();
 });
 
@@ -146,7 +183,8 @@ test('listPoolJobs returns only unzugewiesen jobs', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
   const poolId = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kontoId });
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
   createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'lieferant', absender: 'rechnungen@lieferant.ch', dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
   const jobs = listPoolJobs(db);
   assert.equal(jobs.length, 1);
@@ -671,6 +709,57 @@ test('listAbgelehntJobsForPerson excludes a job that has been admin-escalated pa
   db.close();
 });
 
+test('listAlleAbgelehntenJobs returns abgelehnt jobs regardless of who they are assigned to (admin-wide)', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId1 = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId1, '1');
+  setKontierung(db, jobId1, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId1);
+  ablehnenJob(db, jobId1, { abgelehntVon: '3', grund: 'Falsches Konto' });
+
+  const jobId2 = createJob(db, { eingangAm: '2026-08-15T09:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+  claimJob(db, jobId2, '2');
+  ablehnenJob(db, jobId2, { abgelehntVon: '2', grund: 'Duplikat' });
+
+  const openJobId = createJob(db, { eingangAm: '2026-08-15T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'c.pdf', pdfPfad: '/tmp/c.pdf' });
+  claimJob(db, openJobId, '1');
+
+  const rows = listAlleAbgelehntenJobs(db);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map((r) => r.id).sort(), [jobId1, jobId2].sort());
+  db.close();
+});
+
+test('loeschenJob deletes the job and its freigaben, returning the pre-deletion row', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'Falsches Konto' });
+  createFreigabe(db, { jobId, personId: '3', rolle: 'ablehnung', zeitpunkt: '2026-08-15T09:00:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: 'Falsches Konto', eskaliertVon: null });
+
+  const result = loeschenJob(db, jobId);
+  assert.equal(result.id, jobId);
+  assert.equal(result.dateiname, 'a.pdf');
+  assert.equal(getJobById(db, jobId), null);
+  assert.equal(listFreigabenByJob(db, jobId).length, 0);
+  db.close();
+});
+
+test('loeschenJob refuses to delete a job that is not abgelehnt', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: false });
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const result = loeschenJob(db, jobId);
+  assert.equal(result, null);
+  assert.ok(getJobById(db, jobId));
+  db.close();
+});
+
 test('abschliessenFreigabe1 leaves freigabe1_eskaliert_an_admin set when it was already 1 (the exclusion survives Freigabe 1 completing)', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
@@ -966,5 +1055,47 @@ test('forceEskalierenFreigabe2AnAdmin refuses a job not in freigabe2 or already 
   const db = openDatabase(':memory:');
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   assert.equal(forceEskalierenFreigabe2AnAdmin(db, jobId), false);
+  db.close();
+});
+
+test('markJobAufgesplittet sets status to aufgesplittet only from zugewiesen', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: false });
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  assert.equal(markJobAufgesplittet(db, jobId), true);
+  assert.equal(getJobById(db, jobId).status, 'aufgesplittet');
+  assert.equal(markJobAufgesplittet(db, jobId), false, 'a job already aufgesplittet cannot be split again');
+  db.close();
+});
+
+test('createSplitJob creates an independent job carrying over the parent\'s shared fields, and listSplitKinder finds it', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
+  updateKontierungMetadaten(db, parentId, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId });
+  const parentJob = getJobById(db, parentId);
+
+  const kindId = createSplitJob(db, parentJob, { pdfPfad: '/tmp/split-a.pdf', thumbnailPfad: '/tmp/split-a.png', kontoId, betrag: '100.00', zugewiesenAn: '1' });
+  const kind = getJobById(db, kindId);
+
+  assert.equal(kind.status, 'zugewiesen');
+  assert.equal(kind.pdf_pfad, '/tmp/split-a.pdf');
+  assert.equal(kind.thumbnail_pfad, '/tmp/split-a.png');
+  assert.equal(kind.konto_id, kontoId);
+  assert.equal(kind.zugewiesen_an, '1');
+  assert.equal(kind.betrag, '100.00');
+  assert.equal(kind.zahlungsziel, '2026-09-01');
+  assert.equal(kind.rechnungsnummer, 'RE-1');
+  assert.equal(kind.lieferant, 'Muster AG');
+  assert.equal(kind.debitor_id, debitorId);
+  assert.equal(kind.aufgesplittet_von, parentId);
+  assert.equal(kind.dateiname, 'rechnung.pdf');
+  assert.equal(kind.absender, 'lief@example.org');
+
+  const kinder = listSplitKinder(db, parentId);
+  assert.equal(kinder.length, 1);
+  assert.equal(kinder[0].id, kindId);
   db.close();
 });

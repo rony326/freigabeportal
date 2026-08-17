@@ -1,6 +1,21 @@
 import { Router } from 'express';
-import { getJobById, setKontierung, updateKontierungMetadaten, ablehnenJob, eskalierenFreigabe1, eskalierenFreigabe1AnAdmin, abschliessenFreigabe1, releaseJob, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
+import { mkdirSync, copyFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  getJobById,
+  setKontierung,
+  updateKontierungMetadaten,
+  ablehnenJob,
+  eskalierenFreigabe1,
+  eskalierenFreigabe1AnAdmin,
+  abschliessenFreigabe1,
+  releaseJob,
+  getEffectiveFreigeber2Id,
+  markJobAufgesplittet,
+  createSplitJob,
+} from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById } from '../db/kontenRepo.js';
+import { listDebitoren, getDebitorById } from '../db/debitorenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -9,6 +24,14 @@ import { buildAuditLog } from '../services/auditLog.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function neuerDateipfad(jobsDir, quelldatei) {
+  mkdirSync(jobsDir, { recursive: true });
+  const endung = quelldatei.slice(quelldatei.lastIndexOf('.'));
+  const zielPfad = join(jobsDir, `job-${Date.now()}-${Math.random().toString(36).slice(2)}${endung}`);
+  copyFileSync(quelldatei, zielPfad);
+  return zielPfad;
+}
 
 export function createKontierungRouter({ db, config, mailer }) {
   const router = Router();
@@ -58,6 +81,7 @@ export function createKontierungRouter({ db, config, mailer }) {
     res.render('kontierung', {
       job,
       konten,
+      debitoren: listDebitoren(db),
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values: {
         kontoId: job.konto_id ? String(job.konto_id) : '',
@@ -67,7 +91,7 @@ export function createKontierungRouter({ db, config, mailer }) {
         betrag: job.betrag || '',
         zahlungsziel: job.zahlungsziel || '',
         rechnungsnummer: job.rechnungsnummer || '',
-        lieferant: job.lieferant || '',
+        debitorId: job.debitor_id ? String(job.debitor_id) : '',
       },
       errors: [],
       auditLog: buildAuditLog(db, job.id),
@@ -79,14 +103,16 @@ export function createKontierungRouter({ db, config, mailer }) {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
       const konten = ladeKontenFuerJob(req, job);
-      const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, lieferant, aktion } = req.body;
-      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, lieferant };
+      const debitoren = listDebitoren(db);
+      const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId, aktion } = req.body;
+      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId };
 
       if (aktion === 'ablehnen') {
         if (!begruendung) {
           return res.status(400).render('kontierung', {
             job,
             konten,
+            debitoren,
             previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
             values,
             errors: ['Bei einer Ablehnung ist eine Begründung Pflicht.'],
@@ -120,6 +146,7 @@ export function createKontierungRouter({ db, config, mailer }) {
           return res.status(409).render('kontierung', {
             job,
             konten,
+            debitoren,
             previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
             values,
             errors: ['Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.'],
@@ -164,12 +191,15 @@ export function createKontierungRouter({ db, config, mailer }) {
         return res.status(400).render('kontierung', {
           job,
           konten,
+          debitoren,
           previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
           values,
           errors,
           auditLog: buildAuditLog(db, job.id),
         });
       }
+
+      const debitor = debitorId ? getDebitorById(db, debitorId) : null;
 
       // SYNC-8: a conflict-driven escalation has no distinct named person to hand off to in two
       // cases — this job was already escalated once (so the only person who could even reach
@@ -187,7 +217,8 @@ export function createKontierungRouter({ db, config, mailer }) {
           betrag: betrag ? betrag.replace(',', '.') : null,
           zahlungsziel,
           rechnungsnummer,
-          lieferant,
+          lieferant: debitor ? debitor.name : null,
+          debitorId: debitor ? debitor.id : null,
         });
         if (eskaliertAnAdmin) {
           eskalierenFreigabe1AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
@@ -265,6 +296,125 @@ export function createKontierungRouter({ db, config, mailer }) {
     // verified job.zugewiesen_an === req.currentPerson.churchtools_person_id to get here.
     releaseJob(db, job.id, job.zugewiesen_an);
     res.redirect('/pool');
+  });
+
+  function renderAufsplittenForm(req, res, status, job, konten, teile, errors) {
+    res.status(status).render('kontierung-aufsplitten', { job, konten, teile, errors });
+  }
+
+  router.get('/:id/aufsplitten', (req, res) => {
+    const job = loadAuthorizedJob(req, res);
+    if (!job) return;
+    if (!job.betrag) {
+      return res.status(400).render('error', { message: 'Bitte zuerst einen Betrag für die Rechnung erfassen (auf der Kontierungs-Seite), bevor sie aufgesplittet wird.' });
+    }
+    const konten = ladeKontenFuerJob(req, job);
+    renderAufsplittenForm(req, res, 200, job, konten, [
+      { kontoId: '', betrag: '' },
+      { kontoId: '', betrag: '' },
+    ], []);
+  });
+
+  router.post('/:id/aufsplitten', async (req, res, next) => {
+    try {
+      const job = loadAuthorizedJob(req, res);
+      if (!job) return;
+      if (!job.betrag) {
+        return res.status(400).render('error', { message: 'Für diese Rechnung ist kein Betrag erfasst — Aufsplitten ist nicht möglich.' });
+      }
+      const konten = ladeKontenFuerJob(req, job);
+
+      const kontoIds = [].concat(req.body.teilKontoId || []);
+      const betraege = [].concat(req.body.teilBetrag || []);
+      const teileEingabe = kontoIds.map((kontoId, i) => ({ kontoId, betrag: betraege[i] || '' }));
+
+      const errors = [];
+      if (teileEingabe.filter((t) => t.kontoId || t.betrag).length < 2) {
+        errors.push('Mindestens zwei Teilbeträge sind nötig, um aufzusplitten.');
+      }
+
+      const aufgeloesteTeile = [];
+      for (const teil of teileEingabe) {
+        if (!teil.kontoId && !teil.betrag) continue;
+        const konto = konten.find((k) => String(k.id) === teil.kontoId);
+        if (!konto) {
+          errors.push('Bitte für jede Zeile ein gültiges Konto auswählen.');
+          continue;
+        }
+        if (!teil.betrag || !BETRAG_PATTERN.test(teil.betrag)) {
+          errors.push('Jede Zeile braucht einen gültigen Betrag (z.B. 123.45).');
+          continue;
+        }
+        aufgeloesteTeile.push({ konto, betrag: teil.betrag.replace(',', '.') });
+      }
+
+      if (errors.length === 0) {
+        const summe = aufgeloesteTeile.reduce((sum, t) => sum + Number(t.betrag), 0);
+        const original = Number(job.betrag.replace(',', '.'));
+        if (Math.abs(summe - original) > 0.005) {
+          errors.push(`Die Summe der Teilbeträge (${summe.toFixed(2)}) muss dem ursprünglichen Betrag (${original.toFixed(2)}) entsprechen.`);
+        }
+      }
+
+      if (errors.length > 0) {
+        return renderAufsplittenForm(req, res, 400, job, konten, teileEingabe, errors);
+      }
+
+      db.exec('BEGIN');
+      const kinder = [];
+      try {
+        const markiert = markJobAufgesplittet(db, job.id);
+        if (!markiert) {
+          db.exec('ROLLBACK');
+          return res.status(409).render('error', { message: 'Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.' });
+        }
+        for (const teil of aufgeloesteTeile) {
+          const pdfPfad = neuerDateipfad(config.jobsDir, job.pdf_pfad);
+          const thumbnailPfad = job.thumbnail_pfad ? neuerDateipfad(config.jobsDir, job.thumbnail_pfad) : null;
+          const kindId = createSplitJob(db, job, {
+            pdfPfad,
+            thumbnailPfad,
+            kontoId: teil.konto.id,
+            betrag: teil.betrag,
+            zugewiesenAn: req.currentPerson.churchtools_person_id,
+          });
+          createFreigabe(db, {
+            jobId: kindId,
+            personId: req.currentPerson.churchtools_person_id,
+            rolle: 'freigeber1',
+            zeitpunkt: new Date().toISOString(),
+            ip: req.ip,
+            interessenskonflikt: false,
+            kommentar: null,
+            eskaliertVon: null,
+          });
+          abschliessenFreigabe1(db, kindId);
+          kinder.push({ id: kindId, konto: teil.konto });
+        }
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+
+      for (const { id: kindId, konto } of kinder) {
+        const kindJob = getJobById(db, kindId);
+        const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(kindJob, konto));
+        if (freigeber2) {
+          await sendNotification(db, mailer, {
+            to: freigeber2.email,
+            subject: 'Freigabeportal: Neue Rechnung zur Freigabe 2',
+            text: `Eine Rechnung wartet auf deine Freigabe 2: ${kindJob.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/freigabe2/${kindJob.id}`,
+            typ: 'zuweisung',
+            jobId: kindJob.id,
+          });
+        }
+      }
+
+      res.redirect('/pool');
+    } catch (err) {
+      next(err);
+    }
   });
 
   return router;

@@ -427,9 +427,9 @@ test('nav-tabs shows both Aufgaben and Admin tabs for a Portal-Admin, Admin tab 
   const state = new URL(loginRes.headers.location).searchParams.get('state');
   await agent.get('/auth/callback').query({ code: 'the-code', state });
 
-  const res = await agent.get('/pool');
+  const res = await agent.get('/admin');
   assert.match(res.text, /href="\/pool">Aufgaben/);
-  assert.match(res.text, /class="nav-link" href="\/admin">Admin/);
+  assert.match(res.text, /class="nav-link active" href="\/admin">Admin/);
   db.close();
 });
 

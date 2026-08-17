@@ -78,3 +78,12 @@ test('hasLogo stays false when only the logo path is configured but the mimetype
   assert.equal(branding.hasLogo, false);
   db.close();
 });
+
+test('bsThemeAttr maps dunkel to dark and hell to light, and stays null when themeAttr is null', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(runMiddleware(db, 'theme=dunkel').bsThemeAttr, 'dark');
+  assert.equal(runMiddleware(db, 'theme=hell').bsThemeAttr, 'light');
+  assert.equal(runMiddleware(db, undefined).bsThemeAttr, null);
+  db.close();
+});

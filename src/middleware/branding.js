@@ -34,6 +34,10 @@ export function loadBranding(db) {
       secondaryColor,
       hasLogo: Boolean(logoPfad) && Boolean(logoMimetype),
       themeAttr,
+      // Bootstrap 5.3's native dark-mode attribute is a separate value from this app's own
+      // data-theme="dunkel"/"hell" — computed here once so every view's <html> tag can set both
+      // from the same toggle without duplicating the dunkel/dark mapping in 17 places.
+      bsThemeAttr: themeAttr === 'dunkel' ? 'dark' : themeAttr === 'hell' ? 'light' : null,
     };
     next();
   };

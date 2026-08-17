@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { loadCurrentPerson, requireRole, requireAnyRole, requireLogin } from '../../src/middleware/roles.js';
+import { loadCurrentPerson, requireRole, requireAnyRole, requireLogin, personHasRole } from '../../src/middleware/roles.js';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 
@@ -150,4 +150,16 @@ test('requireLogin returns 401 for a deactivated person', async () => {
   const result = await runRequireLogin(db, '1');
   assert.equal(result.statusCode, 401);
   db.close();
+});
+
+test('personHasRole returns false for a null person', () => {
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  assert.equal(personHasRole(null, config, 'buchhaltung'), false);
+});
+
+test('personHasRole checks membership by the role\'s own configured group id', () => {
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const person = { gruppen: ['20'] };
+  assert.equal(personHasRole(person, config, 'buchhaltung'), false);
+  assert.equal(personHasRole(person, config, 'portal-admin'), true);
 });

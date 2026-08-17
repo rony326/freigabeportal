@@ -9,6 +9,7 @@ import { requireApiKey } from './middleware/apiKey.js';
 import { requireCronSecret } from './middleware/cronAuth.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { loadCurrentPerson, requireRole, requireAnyRole, requireLogin } from './middleware/roles.js';
+import { loadNavFlags } from './middleware/nav.js';
 import { loadBranding } from './middleware/branding.js';
 import { createBrandingRouter } from './routes/branding.js';
 import { createKontenRouter } from './routes/admin/konten.js';
@@ -74,6 +75,7 @@ export function createApp({ db, config }) {
     })
   );
   app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(config));
 
   let mailer;
   try {

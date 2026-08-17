@@ -915,7 +915,7 @@ function seedJobMitDateien(db, jobsDir, { betrag = '200.00' } = {}) {
   return { id, kontoId, pdfPfad };
 }
 
-test('GET /kontierung/:id/aufsplitten shows an error when the job has no Betrag yet', async () => {
+test('GET /kontierung/:id/aufsplitten works even when the job has no Betrag yet, with an empty Gesamtbetrag field to fill in', async () => {
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   seedKontoAndPersonen(db);
@@ -924,22 +924,24 @@ test('GET /kontierung/:id/aufsplitten shows an error when the job has no Betrag 
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
 
   const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
-  assert.equal(res.status, 400);
-  assert.match(res.text, /zuerst einen Betrag/);
+  assert.equal(res.status, 200);
+  assert.match(res.text, /name="gesamtbetrag"/);
+  assert.match(res.text, /id="gesamtbetrag"[^>]*value=""/);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('GET /kontierung/:id/aufsplitten shows the dynamic split form when a Betrag is set', async () => {
+test('GET /kontierung/:id/aufsplitten pre-fills Gesamtbetrag from the job when one is already set', async () => {
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
-  const { id } = seedJobMitDateien(db, jobsDir);
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
 
   const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
   assert.match(res.text, /name="teilKontoId"/);
   assert.match(res.text, /name="teilBetrag"/);
+  assert.match(res.text, /id="gesamtbetrag"[^>]*value="200\.00"/);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
@@ -955,6 +957,7 @@ test('POST /kontierung/:id/aufsplitten creates independent split jobs, each with
     .set('x-test-person-id', '1')
     .type('form')
     .send({
+      gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
     });
@@ -999,6 +1002,7 @@ test('POST /kontierung/:id/aufsplitten rejects Teilbeträge that do not sum to t
     .set('x-test-person-id', '1')
     .type('form')
     .send({
+      gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '90.00'],
     });
@@ -1007,6 +1011,61 @@ test('POST /kontierung/:id/aufsplitten rejects Teilbeträge that do not sum to t
   assert.match(res.text, /Summe der Teilbeträge/);
   assert.equal(getJobById(db, id).status, 'zugewiesen');
   assert.equal(listSplitKinder(db, id).length, 0);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten rejects a missing or invalid Gesamtbetrag, nothing persisted', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+    });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /gültigen Gesamtbetrag/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listSplitKinder(db, id).length, 0);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten succeeds for a job that never had a Betrag saved — the Gesamtbetrag field on the split page itself is enough, no prior save step needed', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const kontoId = seedKontoAndPersonen(db);
+  const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
+  claimJob(db, id, '1');
+  assert.equal(getJobById(db, id).betrag, null, 'sanity check: no Betrag has ever been saved for this job');
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '150.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['100.00', '50.00'],
+    });
+
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+  const parent = getJobById(db, id);
+  assert.equal(parent.status, 'aufgesplittet');
+  assert.equal(parent.betrag, '150.00', 'the Gesamtbetrag entered on the split page should be saved onto the parent too');
+  assert.equal(listSplitKinder(db, id).length, 2);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
@@ -1022,6 +1081,7 @@ test('POST /kontierung/:id/aufsplitten rejects fewer than two Teilbeträge', asy
     .set('x-test-person-id', '1')
     .type('form')
     .send({
+      gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId)],
       teilBetrag: ['200.00'],
     });
@@ -1047,6 +1107,7 @@ test('POST /kontierung/:id/aufsplitten rejects a Konto the person is not authori
     .set('x-test-person-id', '1')
     .type('form')
     .send({
+      gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(fremdKontoId)],
       teilBetrag: ['100.00', '100.00'],
     });

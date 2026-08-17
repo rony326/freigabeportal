@@ -13,6 +13,7 @@ import {
   getEffectiveFreigeber2Id,
   markJobAufgesplittet,
   createSplitJob,
+  setJobBetrag,
 } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById } from '../db/kontenRepo.js';
 import { listDebitoren, getDebitorById } from '../db/debitorenRepo.js';
@@ -298,18 +299,15 @@ export function createKontierungRouter({ db, config, mailer }) {
     res.redirect('/pool');
   });
 
-  function renderAufsplittenForm(req, res, status, job, konten, teile, errors) {
-    res.status(status).render('kontierung-aufsplitten', { job, konten, teile, errors });
+  function renderAufsplittenForm(req, res, status, job, konten, gesamtbetrag, teile, errors) {
+    res.status(status).render('kontierung-aufsplitten', { job, konten, gesamtbetrag, teile, errors });
   }
 
   router.get('/:id/aufsplitten', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
-    if (!job.betrag) {
-      return res.status(400).render('error', { message: 'Bitte zuerst einen Betrag für die Rechnung erfassen (auf der Kontierungs-Seite), bevor sie aufgesplittet wird.' });
-    }
     const konten = ladeKontenFuerJob(req, job);
-    renderAufsplittenForm(req, res, 200, job, konten, [
+    renderAufsplittenForm(req, res, 200, job, konten, job.betrag || '', [
       { kontoId: '', betrag: '' },
       { kontoId: '', betrag: '' },
     ], []);
@@ -319,16 +317,17 @@ export function createKontierungRouter({ db, config, mailer }) {
     try {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
-      if (!job.betrag) {
-        return res.status(400).render('error', { message: 'Für diese Rechnung ist kein Betrag erfasst — Aufsplitten ist nicht möglich.' });
-      }
       const konten = ladeKontenFuerJob(req, job);
 
+      const gesamtbetrag = req.body.gesamtbetrag || '';
       const kontoIds = [].concat(req.body.teilKontoId || []);
       const betraege = [].concat(req.body.teilBetrag || []);
       const teileEingabe = kontoIds.map((kontoId, i) => ({ kontoId, betrag: betraege[i] || '' }));
 
       const errors = [];
+      if (!gesamtbetrag || !BETRAG_PATTERN.test(gesamtbetrag)) {
+        errors.push('Bitte einen gültigen Gesamtbetrag erfassen (z.B. 200.00).');
+      }
       if (teileEingabe.filter((t) => t.kontoId || t.betrag).length < 2) {
         errors.push('Mindestens zwei Teilbeträge sind nötig, um aufzusplitten.');
       }
@@ -350,19 +349,25 @@ export function createKontierungRouter({ db, config, mailer }) {
 
       if (errors.length === 0) {
         const summe = aufgeloesteTeile.reduce((sum, t) => sum + Number(t.betrag), 0);
-        const original = Number(job.betrag.replace(',', '.'));
+        const original = Number(gesamtbetrag.replace(',', '.'));
         if (Math.abs(summe - original) > 0.005) {
-          errors.push(`Die Summe der Teilbeträge (${summe.toFixed(2)}) muss dem ursprünglichen Betrag (${original.toFixed(2)}) entsprechen.`);
+          errors.push(`Die Summe der Teilbeträge (${summe.toFixed(2)}) muss dem Gesamtbetrag (${original.toFixed(2)}) entsprechen.`);
         }
       }
 
       if (errors.length > 0) {
-        return renderAufsplittenForm(req, res, 400, job, konten, teileEingabe, errors);
+        return renderAufsplittenForm(req, res, 400, job, konten, gesamtbetrag, teileEingabe, errors);
       }
+
+      // Persisted on the parent even though it's about to be retired: the parent may never have
+      // had a Betrag saved before (that's exactly the gap this Gesamtbetrag field closes), and
+      // its own record should reflect the real total the split was based on, not stay empty.
+      job.betrag = gesamtbetrag.replace(',', '.');
 
       db.exec('BEGIN');
       const kinder = [];
       try {
+        setJobBetrag(db, job.id, job.betrag);
         const markiert = markJobAufgesplittet(db, job.id);
         if (!markiert) {
           db.exec('ROLLBACK');

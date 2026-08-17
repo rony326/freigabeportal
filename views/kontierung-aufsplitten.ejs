@@ -10,7 +10,7 @@
   <%- include('_header') %>
   <main class="container py-4">
     <h1 class="h3">Rechnung aufsplitten: <%= job.dateiname %></h1>
-    <p class="text-muted">Vorgangsnummer: <%= job.id %> · Ursprünglicher Betrag: <%= job.betrag %></p>
+    <p class="text-muted">Vorgangsnummer: <%= job.id %></p>
     <% if (errors.length > 0) { %>
       <div class="alert alert-danger">
         <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
@@ -19,6 +19,11 @@
     <p>Jede Zeile wird zu einer eigenständigen Rechnung mit eigenem Konto und Teilbetrag. Zahlungsziel, Lieferant, Absender und Rechnungsnummer werden übernommen. Freigabe 1 gilt für jeden Teil als durch dich erteilt.</p>
 
     <form method="post" action="/kontierung/<%= job.id %>/aufsplitten" class="col-12 col-md-10 col-lg-8">
+      <div class="mb-3 col-6 col-md-4">
+        <label class="form-label" for="gesamtbetrag">Gesamtbetrag</label>
+        <input type="text" inputmode="decimal" class="form-control" id="gesamtbetrag" name="gesamtbetrag" value="<%= gesamtbetrag %>" placeholder="z.B. 200.00" required>
+        <div class="form-text">Die Teilbeträge unten müssen exakt diese Summe ergeben.</div>
+      </div>
       <div id="teile-container">
         <% teile.forEach((teil) => { %>
           <div class="row g-2 mb-2 align-items-center teil-zeile">

@@ -153,6 +153,15 @@ export function setKontierung(db, jobId, kontoId) {
   db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
 }
 
+// Narrow, single-field update — deliberately separate from updateKontierungMetadaten, which
+// requires every field and would null out absender/zahlungsziel/etc. if called with only a
+// betrag. Used by the Aufsplitten flow to capture a Betrag that was never saved on the main
+// Kontierung form (Kontieren there completes Freigabe 1 immediately, moving the job out of
+// 'zugewiesen' — so it can no longer serve as a "just save the Betrag first" step for splitting).
+export function setJobBetrag(db, jobId, betrag) {
+  db.prepare('UPDATE jobs SET betrag = ? WHERE id = ?').run(betrag || null, jobId);
+}
+
 export function updateKontierungMetadaten(db, jobId, { absender, betrag, zahlungsziel, rechnungsnummer, lieferant, debitorId }) {
   db.prepare('UPDATE jobs SET absender = ?, betrag = ?, zahlungsziel = ?, rechnungsnummer = ?, lieferant = ?, debitor_id = ? WHERE id = ?').run(
     absender || null,

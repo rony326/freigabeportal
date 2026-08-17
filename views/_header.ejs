@@ -73,19 +73,25 @@
 <% const navIsBuchhaltung = typeof isBuchhaltung !== 'undefined' && isBuchhaltung; %>
 <% const navIsPortalAdmin = typeof isPortalAdmin !== 'undefined' && isPortalAdmin; %>
 <% const navAktuellerPfad = typeof currentPath !== 'undefined' ? currentPath : ''; %>
-<% if (navIsBuchhaltung || navIsPortalAdmin) { %>
-  <nav class="container mb-3">
-    <div class="dropdown">
-      <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="hauptmenue-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-        Menü
-      </button>
-      <ul class="dropdown-menu" aria-labelledby="hauptmenue-toggle">
-        <li><a class="dropdown-item<%= navAktuellerPfad === '/pool' ? ' active' : '' %>" href="/pool">Aufgaben</a></li>
-        <% if (navIsPortalAdmin) { %>
-          <li><a class="dropdown-item<%= navAktuellerPfad.startsWith('/admin') ? ' active' : '' %>" href="/admin">Admin</a></li>
-        <% } %>
-      </ul>
-    </div>
+<% const navZeigeZurueck = navAktuellerPfad.startsWith('/kontierung'); %>
+<% if (navIsBuchhaltung || navIsPortalAdmin || navZeigeZurueck) { %>
+  <nav class="container mb-3 d-flex align-items-center gap-2">
+    <% if (navZeigeZurueck) { %>
+      <a href="/pool" class="btn btn-outline-secondary btn-sm">← Zurück</a>
+    <% } %>
+    <% if (navIsBuchhaltung || navIsPortalAdmin) { %>
+      <div class="dropdown">
+        <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="hauptmenue-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+          Menü
+        </button>
+        <ul class="dropdown-menu" aria-labelledby="hauptmenue-toggle">
+          <li><a class="dropdown-item<%= navAktuellerPfad === '/pool' ? ' active' : '' %>" href="/pool">Aufgaben</a></li>
+          <% if (navIsPortalAdmin) { %>
+            <li><a class="dropdown-item<%= navAktuellerPfad.startsWith('/admin') ? ' active' : '' %>" href="/admin">Admin</a></li>
+          <% } %>
+        </ul>
+      </div>
+    <% } %>
   </nav>
 <% } %>
 <script>

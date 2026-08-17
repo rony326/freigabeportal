@@ -9,9 +9,9 @@
 <body>
   <%- include('_header') %>
   <main class="container-fluid py-4">
-    <div class="row g-3">
+    <div class="row g-3 justify-content-center">
       <div class="col-lg-6">
-        <iframe src="/vendor/pdfjs/web/viewer.html?file=<%= encodeURIComponent(previewUrl) %>" class="w-100 border rounded" style="height:85vh"></iframe>
+        <iframe id="freigabe2-preview-frame" data-preview-url="<%= previewUrl %>" src="" class="w-100 border rounded" style="height:85vh"></iframe>
       </div>
       <div class="col-lg-6 col-xl-4">
         <div class="card">
@@ -53,6 +53,14 @@
       </div>
     </div>
   </main>
+  <script>
+    // See pool.ejs's thumbnail-click handler for why file= must be resolved to an absolute URL.
+    (function () {
+      var frame = document.getElementById('freigabe2-preview-frame');
+      var absoluteUrl = new URL(frame.dataset.previewUrl, window.location.origin).href;
+      frame.src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(absoluteUrl);
+    })();
+  </script>
   <%- include('_footer') %>
 </body>
 </html>

@@ -419,6 +419,37 @@ test('GET /kontierung/:id is reachable through the real app for the assigned per
 
   const res = await agent.get(`/kontierung/${jobId}`);
   assert.equal(res.status, 200);
+  // The Zurück button must show on /kontierung even for a person with no Buchhaltung/Portal-Admin
+  // group membership (no Menü dropdown for them at all) — it's gated on the current path, not on role.
+  assert.match(res.text, /<a href="\/pool" class="btn btn-outline-secondary btn-sm">← Zurück<\/a>/);
+  db.close();
+});
+
+test('the Zurück button does not appear on /pool itself', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get('/pool');
+  assert.doesNotMatch(res.text, /← Zurück/);
   db.close();
 });
 

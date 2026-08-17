@@ -190,7 +190,8 @@ test('GET /pool wires the thumbnail preview through the PDF.js viewer, not the r
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.match(res.text, /'\/vendor\/pdfjs\/web\/viewer\.html\?file=' \+ encodeURIComponent\(img\.dataset\.previewUrl\)/);
+  assert.match(res.text, /new URL\(img\.dataset\.previewUrl, window\.location\.origin\)\.href/);
+  assert.match(res.text, /'\/vendor\/pdfjs\/web\/viewer\.html\?file=' \+ encodeURIComponent\(absoluteUrl\)/);
   db.close();
 });
 

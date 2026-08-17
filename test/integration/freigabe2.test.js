@@ -208,8 +208,8 @@ test('GET /freigabe2/:id embeds the preview through the PDF.js viewer, not a raw
   const app = buildTestApp(db);
   const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<iframe src="\/vendor\/pdfjs\/web\/viewer\.html\?file=/);
-  assert.match(res.text, /file=%2Fdownloads%2F/);
+  assert.match(res.text, /id="freigabe2-preview-frame" data-preview-url="\/downloads\/\d+\?expires=\d+&amp;signature=[0-9a-f]{64}"/);
+  assert.match(res.text, /'\/vendor\/pdfjs\/web\/viewer\.html\?file=' \+ encodeURIComponent\(absoluteUrl\)/);
   db.close();
 });
 

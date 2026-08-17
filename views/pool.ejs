@@ -60,7 +60,13 @@
         // inline rendering inside an <iframe> entirely (shows an Open-button placeholder that
         // downloads instead of previewing), regardless of Content-Disposition. PDF.js renders
         // via canvas/JS and is unaffected by that setting.
-        document.getElementById('preview-frame').src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(img.dataset.previewUrl);
+        // The file= value must be an absolute URL: PDF.js's viewer runs `new URL(file)` with no
+        // base, which throws for a relative path like ours — its fallback then treats the whole
+        // string (query string included) as a literal filename, so expires/signature never reach
+        // the server as real query params and every preview 403s. Resolving against
+        // location.origin here keeps it a real, absolute, still-relative-to-this-host URL.
+        const absoluteUrl = new URL(img.dataset.previewUrl, window.location.origin).href;
+        document.getElementById('preview-frame').src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(absoluteUrl);
         document.getElementById('preview-dialog').showModal();
       });
     });

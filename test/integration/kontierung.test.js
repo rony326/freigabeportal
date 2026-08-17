@@ -114,8 +114,8 @@ test('GET /kontierung/:id embeds the preview through the PDF.js viewer, not a ra
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<iframe src="\/vendor\/pdfjs\/web\/viewer\.html\?file=/);
-  assert.match(res.text, /file=%2Fdownloads%2F/);
+  assert.match(res.text, /id="kontierung-preview-frame" data-preview-url="\/downloads\/\d+\?expires=\d+&amp;signature=[0-9a-f]{64}"/);
+  assert.match(res.text, /'\/vendor\/pdfjs\/web\/viewer\.html\?file=' \+ encodeURIComponent\(absoluteUrl\)/);
   db.close();
 });
 

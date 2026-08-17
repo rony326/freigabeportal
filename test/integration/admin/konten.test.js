@@ -76,7 +76,7 @@ test('GET /admin/konten as portal-admin lists konten', async () => {
   db.close();
 });
 
-test('POST /admin/konten with valid data creates a Konto and redirects', async () => {
+test('POST /admin/konten with valid data creates a Konto and redirects with a gespeichert marker', async () => {
   const db = openDatabase(':memory:');
   seedPersonen(db);
   const app = buildTestApp(db);
@@ -86,6 +86,7 @@ test('POST /admin/konten with valid data creates a Konto and redirects', async (
     .type('form')
     .send({ kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
   assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/admin/konten?gespeichert=1');
   const listRes = await request(app).get('/admin/konten').set('x-test-person-id', '99');
   assert.match(listRes.text, /Unterhalt/);
   db.close();
@@ -132,6 +133,7 @@ test('GET /admin/konten/:id/bearbeiten pre-fills the form, POST /admin/konten/:i
     .type('form')
     .send({ kontonummer: '3001', bezeichnung: 'Unterhalt neu', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
   assert.equal(updateRes.status, 302);
+  assert.equal(updateRes.headers.location, '/admin/konten?gespeichert=1');
 
   const listAfter = await request(app).get('/admin/konten').set('x-test-person-id', '99');
   assert.match(listAfter.text, /3001/);
@@ -188,5 +190,16 @@ test('POST /admin/konten/:id/deaktivieren removes it from the default list but k
   assert.doesNotMatch(listAfter.text, /Unterhalt/);
   const row = db.prepare('SELECT * FROM konten WHERE id = ?').get(Number(id));
   assert.equal(row.aktiv, 0);
+  db.close();
+});
+
+test('GET /admin/konten?gespeichert=1 shows the save confirmation; without it, it does not', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  const app = buildTestApp(db);
+  const withMarker = await request(app).get('/admin/konten?gespeichert=1').set('x-test-person-id', '99');
+  assert.match(withMarker.text, /Gespeichert\./);
+  const withoutMarker = await request(app).get('/admin/konten').set('x-test-person-id', '99');
+  assert.doesNotMatch(withoutMarker.text, /Gespeichert\./);
   db.close();
 });

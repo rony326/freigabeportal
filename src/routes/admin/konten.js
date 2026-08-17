@@ -28,7 +28,7 @@ export function createKontenRouter({ db }) {
       freigeber1Name: personDisplayName(db, konto.freigeber1_id),
       freigeber2Name: personDisplayName(db, konto.freigeber2_id),
     }));
-    res.render('admin/konten-liste', { konten, zeigtAlle });
+    res.render('admin/konten-liste', { konten, zeigtAlle, gespeichert: req.query.gespeichert === '1' });
   });
 
   router.get('/neu', (req, res) => {
@@ -46,7 +46,7 @@ export function createKontenRouter({ db }) {
     }
 
     createKonto(db, values);
-    res.redirect('/admin/konten');
+    res.redirect('/admin/konten?gespeichert=1');
   });
 
   router.get('/:id/bearbeiten', (req, res) => {
@@ -92,7 +92,7 @@ export function createKontenRouter({ db }) {
     }
 
     updateKonto(db, id, values);
-    res.redirect('/admin/konten');
+    res.redirect('/admin/konten?gespeichert=1');
   });
 
   router.post('/:id/deaktivieren', (req, res) => {

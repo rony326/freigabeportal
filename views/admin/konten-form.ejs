@@ -1,56 +1,73 @@
 <!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
-<head><meta charset="utf-8"><title>Konto — Freigabeportal Admin</title></head>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Konto — Freigabeportal Admin</title>
+</head>
 <body>
   <%- include('../_header') %>
-  <%- include('./_nav') %>
-  <h1><%= konto ? 'Konto bearbeiten' : 'Neues Konto' %></h1>
-  <% if (errors.length > 0) { %>
-    <ul>
-      <% errors.forEach((error) => { %><li><%= error %></li><% }) %>
-    </ul>
-  <% } %>
-  <form method="post" action="<%= konto ? `/admin/konten/${konto.id}` : '/admin/konten' %>">
-    <label>Kontonummer <input type="text" name="kontonummer" value="<%= values.kontonummer || '' %>" required></label><br>
-    <label>Bezeichnung <input type="text" name="bezeichnung" value="<%= values.bezeichnung || '' %>" required></label><br>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <h1><%= konto ? 'Konto bearbeiten' : 'Neues Konto' %></h1>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger">
+        <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+    <form method="post" action="<%= konto ? `/admin/konten/${konto.id}` : '/admin/konten' %>" class="col-12 col-md-8 col-lg-6">
+      <div class="mb-3">
+        <label class="form-label" for="kontonummer">Kontonummer</label>
+        <input type="text" class="form-control" id="kontonummer" name="kontonummer" value="<%= values.kontonummer || '' %>" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="bezeichnung">Bezeichnung</label>
+        <input type="text" class="form-control" id="bezeichnung" name="bezeichnung" value="<%= values.bezeichnung || '' %>" required>
+      </div>
 
-    <label>Freigeber 1
-      <select name="freigeber1Id" required>
-        <option value="">— wählen —</option>
-        <% personen.forEach((p) => { %>
-          <option value="<%= p.churchtools_person_id %>" <%= values.freigeber1Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
-        <% }) %>
-      </select>
-    </label><br>
+      <div class="mb-3">
+        <label class="form-label" for="freigeber1Id">Freigeber 1</label>
+        <select class="form-select" id="freigeber1Id" name="freigeber1Id" required>
+          <option value="">— wählen —</option>
+          <% personen.forEach((p) => { %>
+            <option value="<%= p.churchtools_person_id %>" <%= values.freigeber1Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+          <% }) %>
+        </select>
+      </div>
 
-    <label>Stellvertreter 1
-      <select name="stellvertreter1Id" required>
-        <option value="">— wählen —</option>
-        <% personen.forEach((p) => { %>
-          <option value="<%= p.churchtools_person_id %>" <%= values.stellvertreter1Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
-        <% }) %>
-      </select>
-    </label><br>
+      <div class="mb-3">
+        <label class="form-label" for="stellvertreter1Id">Stellvertreter 1</label>
+        <select class="form-select" id="stellvertreter1Id" name="stellvertreter1Id" required>
+          <option value="">— wählen —</option>
+          <% personen.forEach((p) => { %>
+            <option value="<%= p.churchtools_person_id %>" <%= values.stellvertreter1Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+          <% }) %>
+        </select>
+      </div>
 
-    <label>Freigeber 2
-      <select name="freigeber2Id" required>
-        <option value="">— wählen —</option>
-        <% personen.forEach((p) => { %>
-          <option value="<%= p.churchtools_person_id %>" <%= values.freigeber2Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
-        <% }) %>
-      </select>
-    </label><br>
+      <div class="mb-3">
+        <label class="form-label" for="freigeber2Id">Freigeber 2</label>
+        <select class="form-select" id="freigeber2Id" name="freigeber2Id" required>
+          <option value="">— wählen —</option>
+          <% personen.forEach((p) => { %>
+            <option value="<%= p.churchtools_person_id %>" <%= values.freigeber2Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+          <% }) %>
+        </select>
+      </div>
 
-    <label>Stellvertreter 2
-      <select name="stellvertreter2Id" required>
-        <option value="">— wählen —</option>
-        <% personen.forEach((p) => { %>
-          <option value="<%= p.churchtools_person_id %>" <%= values.stellvertreter2Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
-        <% }) %>
-      </select>
-    </label><br>
+      <div class="mb-3">
+        <label class="form-label" for="stellvertreter2Id">Stellvertreter 2</label>
+        <select class="form-select" id="stellvertreter2Id" name="stellvertreter2Id" required>
+          <option value="">— wählen —</option>
+          <% personen.forEach((p) => { %>
+            <option value="<%= p.churchtools_person_id %>" <%= values.stellvertreter2Id === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+          <% }) %>
+        </select>
+      </div>
 
-    <button type="submit">Speichern</button>
-  </form>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </form>
+  </main>
 </body>
 </html>

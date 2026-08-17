@@ -1,22 +1,31 @@
 <!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
-<head><meta charset="utf-8"><title>Personen — Freigabeportal Admin</title></head>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Personen — Freigabeportal Admin</title>
+</head>
 <body>
   <%- include('../_header') %>
-  <%- include('./_nav') %>
-  <h1>Personen</h1>
-  <table>
-    <thead><tr><th>Name</th><th>E-Mail</th><th>Status</th><th>Hinweis</th></tr></thead>
-    <tbody>
-      <% personen.forEach((p) => { %>
-        <tr>
-          <td><%= p.vorname %> <%= p.nachname %></td>
-          <td><%= p.email %></td>
-          <td><%= p.aktiv ? 'Aktiv' : 'Inaktiv' %></td>
-          <td><% if (p.ct_person_unresolved) { %>⚠️ Person in ChurchTools nicht auflösbar (nicht auflösbar)<% } %></td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <h1>Personen</h1>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Name</th><th>E-Mail</th><th>Status</th><th>Hinweis</th></tr></thead>
+        <tbody>
+          <% personen.forEach((p) => { %>
+            <tr>
+              <td><%= p.vorname %> <%= p.nachname %></td>
+              <td><%= p.email %></td>
+              <td><span class="badge <%= p.aktiv ? 'text-bg-success' : 'text-bg-secondary' %>"><%= p.aktiv ? 'Aktiv' : 'Inaktiv' %></span></td>
+              <td><% if (p.ct_person_unresolved) { %><span class="text-warning">⚠️ Person in ChurchTools nicht auflösbar (nicht auflösbar)</span><% } %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </main>
 </body>
 </html>

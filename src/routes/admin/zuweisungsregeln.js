@@ -20,7 +20,7 @@ export function createZuweisungsregelnRouter({ db }) {
   const router = Router();
 
   router.get('/', (req, res) => {
-    res.render('admin/zuweisungsregeln-liste', { regeln: listZuweisungsregeln(db) });
+    res.render('admin/zuweisungsregeln-liste', { regeln: listZuweisungsregeln(db), gespeichert: req.query.gespeichert === '1' });
   });
 
   router.get('/neu', (req, res) => {
@@ -44,7 +44,7 @@ export function createZuweisungsregelnRouter({ db }) {
     }
 
     createZuweisungsregel(db, { absenderMuster, kontoId: Number(kontoId) });
-    res.redirect('/admin/zuweisungsregeln');
+    res.redirect('/admin/zuweisungsregeln?gespeichert=1');
   });
 
   router.get('/:id/bearbeiten', (req, res) => {
@@ -84,7 +84,7 @@ export function createZuweisungsregelnRouter({ db }) {
     }
 
     updateZuweisungsregel(db, id, { absenderMuster, kontoId: Number(kontoId) });
-    res.redirect('/admin/zuweisungsregeln');
+    res.redirect('/admin/zuweisungsregeln?gespeichert=1');
   });
 
   router.post('/:id/loeschen', (req, res) => {

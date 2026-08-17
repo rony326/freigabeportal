@@ -1,39 +1,54 @@
 <!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>"<% } %>>
-<head><meta charset="utf-8"><title>Konten — Freigabeportal Admin</title></head>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Konten — Freigabeportal Admin</title>
+</head>
 <body>
   <%- include('../_header') %>
-  <%- include('./_nav') %>
-  <h1>Konten</h1>
-  <p><a href="/admin/konten/neu">Neues Konto anlegen</a></p>
-  <p>
-    <% if (zeigtAlle) { %>
-      <a href="/admin/konten">Nur aktive Konten anzeigen</a>
-    <% } else { %>
-      <a href="/admin/konten?alle=1">Auch inaktive Konten anzeigen</a>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <h1>Konten</h1>
+    <% if (gespeichert) { %>
+      <div class="alert alert-success alert-dismissible fade show" role="alert">
+        Gespeichert.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
+      </div>
     <% } %>
-  </p>
-  <table>
-    <thead>
-      <tr><th>Kontonummer</th><th>Bezeichnung</th><th>Freigeber 1</th><th>Freigeber 2</th><th>Aktiv</th><th></th></tr>
-    </thead>
-    <tbody>
-      <% konten.forEach((konto) => { %>
-        <tr>
-          <td><%= konto.kontonummer %></td>
-          <td><%= konto.bezeichnung %></td>
-          <td><%= konto.freigeber1Name %></td>
-          <td><%= konto.freigeber2Name %></td>
-          <td><%= konto.aktiv ? 'Ja' : 'Nein' %></td>
-          <td>
-            <a href="/admin/konten/<%= konto.id %>/bearbeiten">Bearbeiten</a>
-            <form method="post" action="/admin/konten/<%= konto.id %>/deaktivieren" style="display:inline">
-              <button type="submit">Deaktivieren</button>
-            </form>
-          </td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
+    <p><a href="/admin/konten/neu" class="btn btn-primary btn-sm">Neues Konto anlegen</a></p>
+    <p>
+      <% if (zeigtAlle) { %>
+        <a href="/admin/konten">Nur aktive Konten anzeigen</a>
+      <% } else { %>
+        <a href="/admin/konten?alle=1">Auch inaktive Konten anzeigen</a>
+      <% } %>
+    </p>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr><th>Kontonummer</th><th>Bezeichnung</th><th>Freigeber 1</th><th>Freigeber 2</th><th>Aktiv</th><th></th></tr>
+        </thead>
+        <tbody>
+          <% konten.forEach((konto) => { %>
+            <tr>
+              <td><%= konto.kontonummer %></td>
+              <td><%= konto.bezeichnung %></td>
+              <td><%= konto.freigeber1Name %></td>
+              <td><%= konto.freigeber2Name %></td>
+              <td><%= konto.aktiv ? 'Ja' : 'Nein' %></td>
+              <td>
+                <a href="/admin/konten/<%= konto.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
+                <form method="post" action="/admin/konten/<%= konto.id %>/deaktivieren" class="d-inline">
+                  <button type="submit" class="btn btn-outline-danger btn-sm">Deaktivieren</button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </main>
 </body>
 </html>

@@ -69,7 +69,7 @@ test('every Zuweisungsregeln route returns 403 for a logged-in non-admin (buchha
   db.close();
 });
 
-test('POST /admin/zuweisungsregeln with valid data creates a rule and redirects', async () => {
+test('POST /admin/zuweisungsregeln with valid data creates a rule and redirects with a gespeichert marker', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
   const app = buildTestApp(db);
@@ -79,6 +79,7 @@ test('POST /admin/zuweisungsregeln with valid data creates a rule and redirects'
     .type('form')
     .send({ absenderMuster: 'lieferant.ch', kontoId: String(kontoId) });
   assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/admin/zuweisungsregeln?gespeichert=1');
   const listRes = await request(app).get('/admin/zuweisungsregeln').set('x-test-person-id', '99');
   assert.match(listRes.text, /lieferant\.ch/);
   db.close();
@@ -125,6 +126,7 @@ test('edit and delete a Zuweisungsregel', async () => {
     .type('form')
     .send({ absenderMuster: 'rechnungen@lieferant.ch', kontoId: String(kontoId) });
   assert.equal(updateRes.status, 302);
+  assert.equal(updateRes.headers.location, '/admin/zuweisungsregeln?gespeichert=1');
 
   const afterEdit = await request(app).get('/admin/zuweisungsregeln').set('x-test-person-id', '99');
   assert.match(afterEdit.text, /rechnungen@lieferant\.ch/);
@@ -133,5 +135,16 @@ test('edit and delete a Zuweisungsregel', async () => {
   assert.equal(deleteRes.status, 302);
   const afterDelete = await request(app).get('/admin/zuweisungsregeln').set('x-test-person-id', '99');
   assert.doesNotMatch(afterDelete.text, /rechnungen@lieferant\.ch/);
+  db.close();
+});
+
+test('GET /admin/zuweisungsregeln?gespeichert=1 shows the save confirmation; without it, it does not', async () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const app = buildTestApp(db);
+  const withMarker = await request(app).get('/admin/zuweisungsregeln?gespeichert=1').set('x-test-person-id', '99');
+  assert.match(withMarker.text, /Gespeichert\./);
+  const withoutMarker = await request(app).get('/admin/zuweisungsregeln').set('x-test-person-id', '99');
+  assert.doesNotMatch(withoutMarker.text, /Gespeichert\./);
   db.close();
 });

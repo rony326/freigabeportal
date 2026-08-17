@@ -49,6 +49,7 @@ test('every /admin/debitoren route returns 401 without a session', async () => {
     await request(app).get('/admin/debitoren/1/bearbeiten'),
     await request(app).post('/admin/debitoren/1'),
     await request(app).post('/admin/debitoren/1/deaktivieren'),
+    await request(app).post('/admin/debitoren/1/aktivieren'),
     await request(app).post('/admin/debitoren/regeln'),
     await request(app).get('/admin/debitoren/regeln/1/bearbeiten'),
     await request(app).post('/admin/debitoren/regeln/1'),
@@ -126,6 +127,14 @@ test('POST /admin/debitoren/:id updates a Debitor, POST .../deaktivieren deactiv
   const deactivateRes = await request(app).post(`/admin/debitoren/${debitorId}/deaktivieren`).set('x-test-person-id', '99');
   assert.equal(deactivateRes.status, 302);
   assert.equal(getDebitorById(db, debitorId).aktiv, 0);
+
+  const listAfterDeactivate = await request(app).get('/admin/debitoren').set('x-test-person-id', '99');
+  assert.match(listAfterDeactivate.text, new RegExp(`/admin/debitoren/${debitorId}/aktivieren`), 'a Reaktivieren form should be rendered for the inactive Debitor');
+  assert.doesNotMatch(listAfterDeactivate.text, new RegExp(`/admin/debitoren/${debitorId}/deaktivieren`), 'no Deaktivieren form should be rendered for the inactive Debitor');
+
+  const reactivateRes = await request(app).post(`/admin/debitoren/${debitorId}/aktivieren`).set('x-test-person-id', '99');
+  assert.equal(reactivateRes.status, 302);
+  assert.equal(getDebitorById(db, debitorId).aktiv, 1);
   db.close();
 });
 

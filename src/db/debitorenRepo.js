@@ -11,6 +11,10 @@ export function deactivateDebitor(db, id) {
   db.prepare('UPDATE debitoren SET aktiv = 0 WHERE id = ?').run(id);
 }
 
+export function activateDebitor(db, id) {
+  db.prepare('UPDATE debitoren SET aktiv = 1 WHERE id = ?').run(id);
+}
+
 export function getDebitorById(db, id) {
   return db.prepare('SELECT * FROM debitoren WHERE id = ?').get(id) ?? null;
 }

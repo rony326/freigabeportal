@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createDebitor, updateDebitor, deactivateDebitor, getDebitorById, listDebitoren } from '../../db/debitorenRepo.js';
+import { createDebitor, updateDebitor, deactivateDebitor, activateDebitor, getDebitorById, listDebitoren } from '../../db/debitorenRepo.js';
 import {
   createZuweisungsregel,
   updateZuweisungsregel,
@@ -162,6 +162,11 @@ export function createDebitorenRouter({ db }) {
 
   router.post('/:id/deaktivieren', (req, res) => {
     deactivateDebitor(db, Number(req.params.id));
+    res.redirect('/admin/debitoren?gespeichert=1');
+  });
+
+  router.post('/:id/aktivieren', (req, res) => {
+    activateDebitor(db, Number(req.params.id));
     res.redirect('/admin/debitoren?gespeichert=1');
   });
 

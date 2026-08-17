@@ -39,6 +39,10 @@
                   <form method="post" action="/admin/debitoren/<%= debitor.id %>/deaktivieren" class="d-inline">
                     <button type="submit" class="btn btn-outline-danger btn-sm">Deaktivieren</button>
                   </form>
+                <% } else { %>
+                  <form method="post" action="/admin/debitoren/<%= debitor.id %>/aktivieren" class="d-inline">
+                    <button type="submit" class="btn btn-outline-success btn-sm">Reaktivieren</button>
+                  </form>
                 <% } %>
               </td>
             </tr>

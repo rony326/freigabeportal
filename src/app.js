@@ -35,6 +35,7 @@ export function createApp({ db, config }) {
   app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
   app.set('views', join(__dirname, '..', 'views'));
+  app.use(express.static(join(__dirname, '..', 'public')));
   app.use((req, res, next) => {
     // X-Content-Type-Options: the PDF magic-byte check on upload only validates the first 4
     // bytes, so this stops a browser from sniffing a crafted upload into something other than

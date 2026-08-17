@@ -32,6 +32,24 @@ test('GET /healthz returns ok', async () => {
   db.close();
 });
 
+test('GET /vendor/bootstrap/bootstrap.min.css is served as a static asset', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/vendor/bootstrap/bootstrap.min.css');
+  assert.equal(res.status, 200);
+  assert.match(res.headers['content-type'], /css/);
+  db.close();
+});
+
+test('GET /vendor/bootstrap/bootstrap.bundle.min.js is served as a static asset', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/vendor/bootstrap/bootstrap.bundle.min.js');
+  assert.equal(res.status, 200);
+  assert.match(res.headers['content-type'], /javascript/);
+  db.close();
+});
+
 test('GET / renders the German home page for an anonymous visitor', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });

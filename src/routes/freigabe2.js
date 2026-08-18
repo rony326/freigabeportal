@@ -204,6 +204,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
         kommentar: begruendung || null,
       };
       const stampData = {
+        konto: { nummer: konto.kontonummer, bezeichnung: konto.bezeichnung },
         freigeber1: {
           name: `${freigeber1Person.vorname} ${freigeber1Person.nachname}`,
           identitaet: freigeber1Person.churchtools_person_id,

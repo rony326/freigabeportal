@@ -305,6 +305,7 @@ test('POST /freigabe2/:id without conflict approves, stamps the PDF and complete
   const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
   assert.match(stampPageText, /Person1/);
   assert.match(stampPageText, /Person3/);
+  assert.match(stampPageText, /Konto: 3000 — Unterhalt/, 'the Kontonummer must be visible on the stamped PDF');
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

@@ -21,7 +21,12 @@ function sampleVerlauf() {
 }
 
 function sampleStampData() {
-  return { freigeber1: sampleFreigeber1(), freigeber2: sampleFreigeber2(), verlauf: sampleVerlauf() };
+  return {
+    konto: { nummer: '3000', bezeichnung: 'Unterhalt' },
+    freigeber1: sampleFreigeber1(),
+    freigeber2: sampleFreigeber2(),
+    verlauf: sampleVerlauf(),
+  };
 }
 
 // Same fixture shape used as PDF_BYTES in test/integration/n8n/jobs.test.js: pdf-lib's
@@ -61,6 +66,28 @@ test('appends exactly one new page (not merged into existing content) carrying b
   assert.match(stampText, /Verlauf/, 'the audit-log Verlauf section starts on the same page as the Freigaben');
   assert.match(stampText, /Freigabe 1/);
   assert.match(stampText, /Freigabe 2/);
+  assert.match(stampText, /Konto: 3000 — Unterhalt/, 'the Kontonummer must be prominently shown at the top of the stamp page');
+});
+
+test('the Konto line is drawn before (above) the Freigabe 1 block', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const stamped = await stampAndFinalize(pdf, sampleStampData());
+  const reloaded = await PDFDocument.load(stamped);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
+  const kontoIndex = stampText.indexOf('Konto: 3000');
+  const freigabe1Index = stampText.indexOf('Freigabe 1');
+  assert.ok(kontoIndex >= 0 && freigabe1Index >= 0 && kontoIndex < freigabe1Index);
+});
+
+test('omitting stampData.konto skips the Konto line without error', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const stampData = sampleStampData();
+  delete stampData.konto;
+  const stamped = await stampAndFinalize(pdf, stampData);
+  const reloaded = await PDFDocument.load(stamped);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
+  assert.doesNotMatch(stampText, /Konto:/);
+  assert.match(stampText, /Freigabe 1/);
 });
 
 test('the appended stamp page reuses the original document\'s page size', async () => {

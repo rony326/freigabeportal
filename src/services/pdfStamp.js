@@ -118,10 +118,18 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
     // the rest of the file, rather than assuming a fixed standard size.
     const { width, height } = pages[pages.length - 1].getSize();
     const font = await doc.embedFont(StandardFonts.Helvetica);
+    const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
     const maxWidth = width - PAGE_MARGIN;
 
     const stampPage = doc.addPage([width, height]);
     let y = height - 50;
+    if (stampData.konto) {
+      for (const line of wrapLine(boldFont, `Konto: ${stampData.konto.nummer} — ${stampData.konto.bezeichnung}`, 14, maxWidth)) {
+        stampPage.drawText(line, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });
+        y -= 18;
+      }
+      y -= 12;
+    }
     y = drawFreigabeBlock(stampPage, font, 'Freigabe 1', stampData.freigeber1, y, maxWidth);
     y -= BLOCK_GAP;
     y = drawFreigabeBlock(stampPage, font, 'Freigabe 2', stampData.freigeber2, y, maxWidth);

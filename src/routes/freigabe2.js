@@ -8,7 +8,7 @@ import { getPersonById } from '../db/personenRepo.js';
 import { stampAndFinalize } from '../services/pdfStamp.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
-import { buildAuditLog } from '../services/auditLog.js';
+import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
 
 export function createFreigabe2Router({ db, config, mailer }) {
   const router = Router();
@@ -232,7 +232,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
           ...freigaben.map((f) => {
             const person = getPersonById(db, f.person_id);
             return {
-              rolleLabel: { freigeber1: 'Freigabe 1', freigeber2: 'Freigabe 2', ablehnung: 'Abgelehnt' }[f.rolle],
+              rolleLabel: EREIGNIS_LABEL[f.rolle] || f.rolle,
               name: `${person.vorname} ${person.nachname}`,
               identitaet: f.person_id,
               zeitpunkt: f.zeitpunkt,

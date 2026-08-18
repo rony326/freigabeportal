@@ -343,6 +343,93 @@ test('POST /freigabe2/:id without a conflict still saves an optional Begründung
   db.close();
 });
 
+test('a prior Freigabe-1 Interessenskonflikt-Eskalation in the Verlauf is labelled correctly on the stamped PDF, not "undefined"', async () => {
+  const { mkdtempSync, rmSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-eskalation-verlauf-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  writeFileSync(pdfPfad, pdf);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  // Person '1' declared a conflict and escalated Freigabe 1 to stellvertreter1 ('2') before '2'
+  // actually completed it — this is the row that would otherwise render as "undefined" in the
+  // Verlauf (freigabe2.js's rolleLabel lookup previously had no entry for this rolle).
+  createFreigabe(db, { jobId: id, personId: '1', rolle: 'freigabe1_eskalation', zeitpunkt: '2026-08-15T08:15:00.000Z', ip: '1.2.3.4', interessenskonflikt: true, kommentar: 'Befangen', eskaliertVon: null });
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 302);
+
+  const stampedBytes = readFileSync(pdfPfad);
+  const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
+  const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
+  assert.doesNotMatch(stampPageText, /undefined/, 'a missing rolleLabel entry must never surface as the literal word "undefined"');
+  assert.match(stampPageText, /Freigabe 1: Interessenskonflikt gemeldet/, 'the escalation must appear under its own event label, not as an approval');
+  assert.match(stampPageText, /Befangen/);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('the top Freigabe-1 block always reflects the person who actually completed it, never the person who escalated a conflict — their declaration only appears in the Verlauf', async () => {
+  const { mkdtempSync, rmSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-eskalation-top-block-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  writeFileSync(pdfPfad, pdf);
+
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  setKontierung(db, id, kontoId);
+  // Person '1' (the Konto's own Freigeber 1) declares a conflict and escalates to stellvertreter1 ('2').
+  createFreigabe(db, { jobId: id, personId: '1', rolle: 'freigabe1_eskalation', zeitpunkt: '2026-08-15T08:15:00.000Z', ip: '1.2.3.4', interessenskonflikt: true, kommentar: 'Befangen', eskaliertVon: null });
+  // Person '2' then actually completes Freigabe 1, with no conflict of their own.
+  createFreigabe(db, { jobId: id, personId: '2', rolle: 'freigeber1', zeitpunkt: '2026-08-15T08:30:00.000Z', ip: '9.9.9.9', interessenskonflikt: false, kommentar: null, eskaliertVon: '1' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '2' WHERE id = ?").run(id);
+
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res.status, 302);
+
+  const stampedBytes = readFileSync(pdfPfad);
+  const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
+  const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
+
+  // The top Freigabe-1 block sits between the "Freigabe 1" and "Freigabe 2" headings.
+  const freigabe1BlockIndex = stampPageText.indexOf('Freigabe 1');
+  const freigabe2BlockIndex = stampPageText.indexOf('Freigabe 2', freigabe1BlockIndex + 1);
+  const topBlockText = stampPageText.slice(freigabe1BlockIndex, freigabe2BlockIndex);
+  assert.match(topBlockText, /Person2 Muster/, 'the top Freigabe-1 block must show the person who actually completed it');
+  assert.match(topBlockText, /Interessenskonflikt: Nein/);
+  assert.doesNotMatch(topBlockText, /Person1 Muster/, 'the escalating person must not appear in the top Freigabe-1 block');
+
+  // The Verlauf, further down, is where Person1's conflict declaration belongs instead.
+  const verlaufText = stampPageText.slice(stampPageText.indexOf('Verlauf'));
+  assert.match(verlaufText, /Freigabe 1: Interessenskonflikt gemeldet.*Person1 Muster/);
+  assert.match(verlaufText, /\[Interessenskonflikt\]/);
+  assert.match(verlaufText, /Befangen/);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
 // Fires two requests for the same job "concurrently" (Promise.all), mirroring the pattern used
 // for the analogous claimJob race in test/integration/pool.test.js. Real HTTP requests via
 // supertest were tried first, but two independent connections to a local Express server reliably

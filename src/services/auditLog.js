@@ -2,7 +2,7 @@ import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
-const EREIGNIS_LABEL = {
+export const EREIGNIS_LABEL = {
   freigeber1: 'Freigabe 1 erteilt',
   freigeber2: 'Freigabe 2 erteilt',
   ablehnung: 'Abgelehnt',

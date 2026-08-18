@@ -8,6 +8,7 @@ import { upsertPerson, getPersonById } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob } from '../../src/db/jobsRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
+import { buildAuditLog } from '../../src/services/auditLog.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createFreigabe2Router } from '../../src/routes/freigabe2.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
@@ -438,7 +439,7 @@ test('two concurrent POST /freigabe2/:id requests for the same job complete it e
   db.close();
 });
 
-test('POST /freigabe2/:id with a conflict reassigns to stellvertreter2, creates no Freigabe-2 row', async () => {
+test('POST /freigabe2/:id with a conflict reassigns to stellvertreter2 and records a freigabe2_eskalation audit entry with the Begründung', async () => {
   const db = openDatabase(':memory:');
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
@@ -454,7 +455,20 @@ test('POST /freigabe2/:id with a conflict reassigns to stellvertreter2, creates 
   assert.equal(job.status, 'freigabe2');
   assert.equal(job.freigabe2_eskaliert_von, '3');
   assert.equal(job.freigabe2_eskalationsgrund, 'Befangen');
-  assert.equal(listFreigabenByJob(db, id).length, 1);
+
+  const freigaben = listFreigabenByJob(db, id);
+  assert.equal(freigaben.length, 2, 'the pre-seeded freigeber1 row plus the new escalation row');
+  const eskalation = freigaben.find((f) => f.rolle === 'freigabe2_eskalation');
+  assert.ok(eskalation);
+  assert.equal(eskalation.person_id, '3');
+  assert.equal(eskalation.interessenskonflikt, 1);
+  assert.equal(eskalation.kommentar, 'Befangen');
+  assert.equal(eskalation.eskaliert_von, null);
+
+  const auditLog = buildAuditLog(db, id);
+  const eintrag = auditLog.find((e) => e.ereignis === 'Freigabe 2: Interessenskonflikt gemeldet');
+  assert.ok(eintrag, 'the escalation must appear in the audit log');
+  assert.equal(eintrag.kommentar, 'Befangen');
 
   const followUp = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
   assert.equal(followUp.status, 403);
@@ -482,6 +496,11 @@ test('POST /freigabe2/:id from an already-escalated stellvertreter2 declaring an
   assert.equal(job.status, 'freigabe2');
   assert.equal(job.freigabe2_eskaliert_von, '4');
   assert.equal(job.freigabe2_eskalationsgrund, 'Zweiter Konflikt');
+
+  const eskalation = listFreigabenByJob(db, id).find((f) => f.rolle === 'freigabe2_eskalation' && f.person_id === '4');
+  assert.ok(eskalation, 'the second-tier escalation must also be recorded in the audit trail');
+  assert.equal(eskalation.kommentar, 'Zweiter Konflikt');
+  assert.equal(eskalation.eskaliert_von, '3', 'chains back to the person who escalated to this stellvertreter2 in the first place');
   db.close();
 });
 

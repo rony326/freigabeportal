@@ -100,6 +100,16 @@ export function createFreigabe2Router({ db, config, mailer }) {
 
         db.exec('BEGIN');
         try {
+          createFreigabe(db, {
+            jobId: job.id,
+            personId: req.currentPerson.churchtools_person_id,
+            rolle: 'freigabe2_eskalation',
+            zeitpunkt: new Date().toISOString(),
+            ip: req.ip,
+            interessenskonflikt: true,
+            kommentar: begruendung,
+            eskaliertVon: job.freigabe2_eskaliert_von,
+          });
           if (eskaliertAnAdmin) {
             eskalierenFreigabe2AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
           } else {

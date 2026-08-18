@@ -6,6 +6,8 @@ const EREIGNIS_LABEL = {
   freigeber1: 'Freigabe 1 erteilt',
   freigeber2: 'Freigabe 2 erteilt',
   ablehnung: 'Abgelehnt',
+  freigabe1_eskalation: 'Freigabe 1: Interessenskonflikt gemeldet',
+  freigabe2_eskalation: 'Freigabe 2: Interessenskonflikt gemeldet',
 };
 
 // Swiss org, hardcoded rather than derived from the server's OS timezone — Infomaniak's hosting

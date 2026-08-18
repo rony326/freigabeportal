@@ -222,8 +222,28 @@ export function createKontierungRouter({ db, config, mailer }) {
           debitorId: debitor ? debitor.id : null,
         });
         if (eskaliertAnAdmin) {
+          createFreigabe(db, {
+            jobId: job.id,
+            personId: req.currentPerson.churchtools_person_id,
+            rolle: 'freigabe1_eskalation',
+            zeitpunkt: new Date().toISOString(),
+            ip: req.ip,
+            interessenskonflikt: true,
+            kommentar: begruendung,
+            eskaliertVon: job.freigabe1_eskaliert_von,
+          });
           eskalierenFreigabe1AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
         } else if (hatKonflikt) {
+          createFreigabe(db, {
+            jobId: job.id,
+            personId: req.currentPerson.churchtools_person_id,
+            rolle: 'freigabe1_eskalation',
+            zeitpunkt: new Date().toISOString(),
+            ip: req.ip,
+            interessenskonflikt: true,
+            kommentar: begruendung,
+            eskaliertVon: job.freigabe1_eskaliert_von,
+          });
           eskalierenFreigabe1(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung, stellvertreterId: konto.stellvertreter1_id });
         } else {
           createFreigabe(db, {

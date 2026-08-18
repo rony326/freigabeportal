@@ -10,6 +10,7 @@ import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById } from '../../src/db/kontenRepo.js';
 import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob, listSplitKinder, updateKontierungMetadaten } from '../../src/db/jobsRepo.js';
 import { listFreigabenByJob, createFreigabe } from '../../src/db/freigabenRepo.js';
+import { buildAuditLog } from '../../src/services/auditLog.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
 import { createApp } from '../../src/app.js';
@@ -423,7 +424,7 @@ test('POST /kontierung/:id aktion=ablehnen without a Begründung is rejected, jo
   db.close();
 });
 
-test('POST /kontierung/:id with a conflict reassigns to stellvertreter1, creates no Freigabe row', async () => {
+test('POST /kontierung/:id with a conflict reassigns to stellvertreter1 and records a freigabe1_eskalation audit entry with the Begründung', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -443,7 +444,19 @@ test('POST /kontierung/:id with a conflict reassigns to stellvertreter1, creates
   assert.equal(job.zugewiesen_an, '2');
   assert.equal(job.freigabe1_eskaliert_von, '1');
   assert.equal(job.freigabe1_eskalationsgrund, 'Befangen');
-  assert.equal(listFreigabenByJob(db, id).length, 0);
+
+  const freigaben = listFreigabenByJob(db, id);
+  assert.equal(freigaben.length, 1);
+  assert.equal(freigaben[0].rolle, 'freigabe1_eskalation');
+  assert.equal(freigaben[0].person_id, '1');
+  assert.equal(freigaben[0].interessenskonflikt, 1);
+  assert.equal(freigaben[0].kommentar, 'Befangen');
+  assert.equal(freigaben[0].eskaliert_von, null);
+
+  const auditLog = buildAuditLog(db, id);
+  const eintrag = auditLog.find((e) => e.ereignis === 'Freigabe 1: Interessenskonflikt gemeldet');
+  assert.ok(eintrag, 'the escalation must appear in the audit log');
+  assert.equal(eintrag.kommentar, 'Befangen');
   db.close();
 });
 
@@ -465,6 +478,12 @@ test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring a
   const job = getJobById(db, id);
   assert.equal(job.freigabe1_eskaliert_an_admin, 1);
   assert.equal(job.status, 'zugewiesen');
+
+  const eskalation = listFreigabenByJob(db, id).find((f) => f.rolle === 'freigabe1_eskalation');
+  assert.ok(eskalation, 'the second-tier escalation must also be recorded in the audit trail');
+  assert.equal(eskalation.person_id, '2');
+  assert.equal(eskalation.kommentar, 'Zweiter Konflikt');
+  assert.equal(eskalation.eskaliert_von, '1', 'chains back to the person who escalated to this stellvertreter1 in the first place');
   db.close();
 });
 

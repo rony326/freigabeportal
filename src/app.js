@@ -107,7 +107,7 @@ export function createApp({ db, config }) {
   // section itself stays restricted inside pool.ejs (gated on isBuchhaltung/isPortalAdmin from
   // loadNavFlags) — only the route-level gate widens, not who can see the company-wide pool.
   app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config }));
-  app.use('/downloads', publicLimiter, createDownloadsRouter({ db, config }));
+  app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer }));
   app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer }));
   app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config }));

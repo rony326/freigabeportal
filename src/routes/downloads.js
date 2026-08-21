@@ -7,13 +7,23 @@ import { canViewJobPdf } from '../services/jobAuthorization.js';
 
 const GENERIC_DENIAL = { error: 'Link ungültig oder abgelaufen.' };
 
-export function createDownloadsRouter({ db, config }) {
+// sessionLimiter/publicLimiter are injected rather than applied once at the /downloads mount
+// point in app.js: refresh-url and thumbnail both require a session (requireLogin below) and are
+// requested once per dashboard row on every reload, so they belong on the session tier (keyed per
+// person, generous budget) alongside the rest of the logged-in app. The bare PDF stream at
+// GET /:jobId is the opposite — unauthenticated, reached only via a short-lived signed URL — and
+// stays on the IP-keyed public tier. Before this split, all three shared one IP-keyed budget, so a
+// dashboard with more than a handful of rows could exhaust it (and the /branding/logo route that
+// also lives on the public tier) after only a few page reloads.
+const NOOP_LIMITER = (req, res, next) => next();
+
+export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITER, publicLimiter = NOOP_LIMITER }) {
   const router = Router();
 
   // Used by the "Neu laden" button next to an expired PDF preview: re-authorizes the current
   // session against the job (not the old signature) and mints a fresh short-lived signed URL,
   // so a browser idle past PDF_PREVIEW_TTL_SECONDS doesn't need a full page reload.
-  router.get('/:jobId/refresh-url', requireLogin(), (req, res) => {
+  router.get('/:jobId/refresh-url', sessionLimiter, requireLogin(), (req, res) => {
     const jobId = Number(req.params.jobId);
     const job = getJobById(db, jobId);
     if (!job) {
@@ -28,7 +38,7 @@ export function createDownloadsRouter({ db, config }) {
   // Same authorization as /:jobId/refresh-url — any session that may see this job's PDF may
   // also see its thumbnail (dashboard table, Pool section included). Session-authenticated,
   // unlike the PDF stream below (which uses a signed URL so n8n can fetch it without a session).
-  router.get('/:jobId/thumbnail', requireLogin(), (req, res) => {
+  router.get('/:jobId/thumbnail', sessionLimiter, requireLogin(), (req, res) => {
     const jobId = Number(req.params.jobId);
     const job = getJobById(db, jobId);
     const authorized = job && canViewJobPdf(db, config, req.currentPerson, job);
@@ -47,7 +57,7 @@ export function createDownloadsRouter({ db, config }) {
     stream.pipe(res);
   });
 
-  router.get('/:jobId', (req, res) => {
+  router.get('/:jobId', publicLimiter, (req, res) => {
     const jobId = Number(req.params.jobId);
     const { expires, signature } = req.query;
 

@@ -1,8 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
+import { createJob, setThumbnailPfad } from '../../src/db/jobsRepo.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 
@@ -107,5 +111,54 @@ test('two different logged-in people hitting /pool do not throttle each other (s
   const resB = await personB.get('/pool');
   assert.equal(resB.status, 200, 'person B is unaffected by person A having just used /pool');
 
+  db.close();
+});
+
+test('GET /downloads/:jobId/thumbnail is rate-limited by the session tier (per person), not the public IP tier — so a dashboard with many rows reloaded a few times does not exhaust the shared public budget the logo also depends on', async () => {
+  const db = openDatabase(':memory:');
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  upsertPerson(db, { id: '1', vorname: 'Erste', nachname: 'Person', email: 'erste@example.org', gruppen: ['10'], loggedInNow: true });
+  const app = createApp({ db, config });
+
+  const dir = mkdtempSync(join(tmpdir(), 'ratelimit-thumbnail-test-'));
+  const thumbnailPfad = join(dir, 'a.png');
+  writeFileSync(thumbnailPfad, Buffer.from('not-really-a-png'));
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setThumbnailPfad(db, jobId, thumbnailPfad);
+
+  async function loginAs(id) {
+    client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: `tok-${id}` });
+    client.intercept({ path: '/oauth/userinfo', method: 'GET' }).reply(200, { id, firstName: 'X', lastName: 'Y', email: `p${id}@example.org` });
+    client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: id }] });
+    client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+    const agent = request.agent(app);
+    const loginRes = await agent.get('/auth/login');
+    const state = new URL(loginRes.headers.location).searchParams.get('state');
+    await agent.get('/auth/callback').query({ code: `code-${id}`, state });
+    return agent;
+  }
+
+  const person = await loginAs('1');
+
+  // More than the public tier's 100/15min budget, but well within the session tier's 300/15min —
+  // a busy dashboard reloaded a handful of times realistically exceeds 100 thumbnail requests.
+  for (let i = 0; i < 105; i++) {
+    const res = await person.get(`/downloads/${jobId}/thumbnail`);
+    assert.equal(res.status, 200, `thumbnail request ${i} should not be throttled within the session tier's budget`);
+  }
+
+  // The logo lives on the public tier — it must still have budget left, proving the thumbnail
+  // requests above drew from a separate counter rather than the same shared IP-keyed one.
+  const logoRes = await person.get('/branding/logo');
+  assert.equal(logoRes.status, 404, 'no logo configured in this test, but critically not 429 — the public budget was not touched by the thumbnail requests');
+
+  rmSync(dir, { recursive: true, force: true });
   db.close();
 });

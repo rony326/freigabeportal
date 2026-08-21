@@ -1,5 +1,12 @@
 import { Router } from 'express';
-import { listPoolJobs, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, listAbgelehntJobsForPerson } from '../db/jobsRepo.js';
+import {
+  listPoolJobs,
+  listZugewiesenJobsForPerson,
+  listFreigabe2JobsForPerson,
+  listAbgelehntJobsForPerson,
+  listAdminEskalierteKontierungen,
+  listAdminEskalierteFreigaben,
+} from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { personHasRole } from '../middleware/roles.js';
@@ -21,11 +28,14 @@ export function createPoolPageRouter({ db, config }) {
     // unassigned invoices is still Buchhaltung/Portal-Admin business — skip the query entirely for
     // anyone else rather than relying on pool.ejs alone to hide it.
     const zeigtPool = personHasRole(req.currentPerson, config, 'buchhaltung') || personHasRole(req.currentPerson, config, 'portal-admin');
+    const istPortalAdmin = personHasRole(req.currentPerson, config, 'portal-admin');
     res.render('pool', {
       poolJobs: zeigtPool ? enrich(listPoolJobs(db)) : [],
       meineKontierungen: enrich(listZugewiesenJobsForPerson(db, personId)),
       meineFreigaben: enrich(listFreigabe2JobsForPerson(db, personId)),
       meineAbgelehnten: enrich(listAbgelehntJobsForPerson(db, personId)),
+      adminEskalierteKontierungen: istPortalAdmin ? enrich(listAdminEskalierteKontierungen(db)) : [],
+      adminEskalierteFreigaben: istPortalAdmin ? enrich(listAdminEskalierteFreigaben(db)) : [],
     });
   });
 

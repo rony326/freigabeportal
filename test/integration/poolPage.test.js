@@ -5,7 +5,16 @@ import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, setKontierung, setThumbnailPfad, ablehnenJob, updateKontierungMetadaten } from '../../src/db/jobsRepo.js';
+import {
+  createJob,
+  claimJob,
+  setKontierung,
+  setThumbnailPfad,
+  ablehnenJob,
+  updateKontierungMetadaten,
+  eskalierenFreigabe1AnAdmin,
+  eskalierenFreigabe2AnAdmin,
+} from '../../src/db/jobsRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createPoolPageRouter } from '../../src/routes/poolPage.js';
@@ -31,6 +40,10 @@ function buildTestApp(db) {
 
 function seedBuchhaltungPerson(db, id = '50') {
   upsertPerson(db, { id, vorname: 'Buch', nachname: 'Halter', email: `${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+}
+
+function seedPortalAdminPerson(db, id = '99') {
+  upsertPerson(db, { id, vorname: 'Admina', nachname: 'Portal', email: `${id}@example.org`, gruppen: ['20'], loggedInNow: true });
 }
 
 test('GET /pool returns 401 without a session', async () => {
@@ -241,6 +254,59 @@ test('GET /pool lists a job the current person can rework under "Meine abgelehnt
   assert.match(res.text, new RegExp(`/abgelehnt/${id}`));
   assert.match(res.text, new RegExp(`id="abgelehnt-row-${id}"`));
   assert.match(res.text, />Ansehen</);
+  db.close();
+});
+
+test('GET /pool lists a job escalated to the Portal-Admin group at Freigabe 1 under "An Portal-Admin eskalierte Kontierungen", with a link to /kontierung', async () => {
+  const db = openDatabase(':memory:');
+  seedPortalAdminPerson(db);
+  for (const id of ['1', '2']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '1', stellvertreter2Id: '2' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'eskaliert.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2' WHERE id = ?").run(id);
+  eskalierenFreigabe1AnAdmin(db, id, { eskaliertVon: '2', grund: 'Auch befangen' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /An Portal-Admin eskalierte Kontierungen/);
+  assert.match(res.text, new RegExp(`/kontierung/${id}`));
+  assert.match(res.text, new RegExp(`id="admin-eskalation-kontierung-row-${id}"`));
+  db.close();
+});
+
+test('GET /pool lists a job escalated to the Portal-Admin group at Freigabe 2 under "An Portal-Admin eskalierte Freigaben", with a link to /freigabe2', async () => {
+  const db = openDatabase(':memory:');
+  seedPortalAdminPerson(db);
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'eskaliert2.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(id);
+  eskalierenFreigabe2AnAdmin(db, id, { eskaliertVon: '4', grund: 'Auch befangen' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /An Portal-Admin eskalierte Freigaben/);
+  assert.match(res.text, new RegExp(`/freigabe2/${id}`));
+  assert.match(res.text, new RegExp(`id="admin-eskalation-freigabe-row-${id}"`));
+  db.close();
+});
+
+test('GET /pool hides the admin-escalation sections entirely for a non-Portal-Admin', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /An Portal-Admin eskalierte/);
   db.close();
 });
 

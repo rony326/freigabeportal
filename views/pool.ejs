@@ -16,6 +16,14 @@
       <%- include('_job_table', { jobs: poolJobs, idPrefix: 'pool', leerText: 'Keine offenen Rechnungen im Pool.' }) %>
     <% } %>
 
+    <% if (typeof isPortalAdmin !== 'undefined' && isPortalAdmin) { %>
+      <h2 class="h4 mt-4">An Portal-Admin eskalierte Kontierungen</h2>
+      <%- include('_job_table', { jobs: adminEskalierteKontierungen, idPrefix: 'admin-eskalation-kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren', leerText: 'Keine an Portal-Admin eskalierten Kontierungen.' }) %>
+
+      <h2 class="h4 mt-4">An Portal-Admin eskalierte Freigaben</h2>
+      <%- include('_job_table', { jobs: adminEskalierteFreigaben, idPrefix: 'admin-eskalation-freigabe', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben', leerText: 'Keine an Portal-Admin eskalierten Freigaben.' }) %>
+    <% } %>
+
     <h2 class="h4 mt-4">Meine offenen Kontierungen</h2>
     <%- include('_job_table', { jobs: meineKontierungen, idPrefix: 'kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren', leerText: 'Keine offenen Kontierungen.' }) %>
 

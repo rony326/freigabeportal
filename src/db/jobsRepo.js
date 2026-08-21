@@ -382,6 +382,21 @@ export function listFreigabe2JobsForPerson(db, personId) {
     .all(personId, personId);
 }
 
+// Both listZugewiesenJobsForPerson and listFreigabe2JobsForPerson deliberately exclude
+// admin-escalated jobs (freigabeN_eskaliert_an_admin = 1) — they're "my jobs" lists for the
+// person who was escalated away FROM, not for the admin group escalated TO. Without these two,
+// nothing in the dashboard ever lists such a job for the Portal-Admin group that a
+// SYNC-8-style second-tier escalation (see kontierung.js/freigabe2.js) is actually routed to —
+// it exists in the database and its notification email links straight to it, but there is no
+// list a Portal-Admin can browse to find it without already knowing its ID.
+export function listAdminEskalierteKontierungen(db) {
+  return db.prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND freigabe1_eskaliert_an_admin = 1 ORDER BY eingang_am").all();
+}
+
+export function listAdminEskalierteFreigaben(db) {
+  return db.prepare("SELECT * FROM jobs WHERE status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 1 ORDER BY eingang_am").all();
+}
+
 export function getEffectiveFreigeber2Id(job, konto) {
   return job.freigabe2_eskaliert_von ? konto.stellvertreter2_id : konto.freigeber2_id;
 }

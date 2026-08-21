@@ -141,6 +141,32 @@ test('GET /nonexistent-route-xyz renders the logo in the right header cell along
   db.close();
 });
 
+test('GET /nonexistent-route-xyz resolves data-bs-theme from the system color scheme on load when no theme cookie/admin-default exists, before any Bootstrap-styled markup renders', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/nonexistent-route-xyz');
+  assert.equal(res.status, 404);
+  // <html> itself carries no data-bs-theme (branding.themeAttr is null: no cookie, no admin
+  // default) — Bootstrap's own components (e.g. .table) would otherwise stay light forever
+  // regardless of the OS's prefers-color-scheme, since Bootstrap 5.3 has no built-in auto-detection.
+  assert.doesNotMatch(res.text, /<html[^>]*data-bs-theme/);
+  const headerIndex = res.text.indexOf('<header');
+  const scriptIndex = res.text.indexOf('matchMedia');
+  assert.ok(scriptIndex >= 0, 'a matchMedia-based theme resolution script must be present');
+  assert.ok(scriptIndex < headerIndex, 'the resolution script must run before any Bootstrap-styled markup (e.g. <header>) is parsed, to avoid a flash of the wrong theme');
+  assert.match(res.text, /hasAttribute\(['"]data-bs-theme['"]\)/, 'must not override an already-explicit theme (from a cookie or admin default)');
+  db.close();
+});
+
+test('GET /nonexistent-route-xyz does not emit the system-preference resolution logic redundantly when a theme cookie already resolved data-bs-theme server-side', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/nonexistent-route-xyz').set('Cookie', 'theme=dunkel');
+  assert.equal(res.status, 404);
+  assert.match(res.text, /<html[^>]*data-bs-theme="dark"/, 'the cookie must still resolve data-bs-theme server-side as before');
+  db.close();
+});
+
 test('GET /pool shows a logout link for a logged-in person', async () => {
   const config = testConfig();
   config.churchtools = {

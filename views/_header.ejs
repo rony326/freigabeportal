@@ -1,3 +1,19 @@
+<script>
+  // Bootstrap 5.3's own components (e.g. .table) obey ONLY the explicit data-bs-theme attribute —
+  // it has no built-in prefers-color-scheme auto-detection. When branding.themeAttr is null (no
+  // theme cookie and no admin default — i.e. "system"), <html> carries neither data-theme nor
+  // data-bs-theme at all, so Bootstrap silently defaults every component to light regardless of
+  // the OS's dark mode, even though this app's own --bg/--fg CSS variables (see _brand_styles)
+  // already react correctly via @media (prefers-color-scheme: dark). Runs first, synchronously,
+  // before any Bootstrap-styled markup below is parsed, so there is no flash of the wrong theme.
+  (function () {
+    var root = document.documentElement;
+    if (root.hasAttribute('data-bs-theme')) return;
+    var dunkel = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.setAttribute('data-theme', dunkel ? 'dunkel' : 'hell');
+    root.setAttribute('data-bs-theme', dunkel ? 'dark' : 'light');
+  })();
+</script>
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
 <%- include('_brand_styles') %>

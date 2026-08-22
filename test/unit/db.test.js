@@ -47,6 +47,13 @@ test('jobs table has betrag, zahlungsziel, rechnungsnummer and lieferant columns
   db.close();
 });
 
+test('jobs table has a zeitstempel_gesetzt_am column', () => {
+  const db = openDatabase(':memory:');
+  const columns = db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  assert.ok(columns.includes('zeitstempel_gesetzt_am'), 'jobs table is missing zeitstempel_gesetzt_am');
+  db.close();
+});
+
 test('openDatabase adds betrag/zahlungsziel via ALTER TABLE to an existing on-disk database that predates those columns', () => {
   // Simulates the real production case: a jobs table that was created by an older schema.sql
   // (before betrag/zahlungsziel existed) and has already been running — CREATE TABLE IF NOT

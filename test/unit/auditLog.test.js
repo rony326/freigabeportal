@@ -51,3 +51,13 @@ test('buildAuditLog formats the timestamp as Europe/Zurich local time (CET, wint
   assert.equal(log[0].zeitpunkt, '15.01.2026 09:30');
   db.close();
 });
+
+test('buildAuditLog labels an iban_abweichung rolle as "IBAN-Abweichung festgestellt"', () => {
+  const db = openDatabase(':memory:');
+  const jobId = seedJobMitFreigabe(db, '2026-08-22T08:30:00.000Z');
+  createFreigabe(db, { jobId, personId: '1', rolle: 'iban_abweichung', zeitpunkt: '2026-08-22T09:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false, kommentar: 'QR-IBAN weicht ab', eskaliertVon: null });
+  const log = buildAuditLog(db, jobId);
+  assert.equal(log[1].ereignis, 'IBAN-Abweichung festgestellt');
+  assert.equal(log[1].kommentar, 'QR-IBAN weicht ab');
+  db.close();
+});

@@ -17,12 +17,13 @@ import {
 } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById } from '../db/kontenRepo.js';
 import { listDebitoren, getDebitorById } from '../db/debitorenRepo.js';
-import { findDebitorIbanByIban, listDebitorIbansByDebitor } from '../db/debitorIbanRepo.js';
+import { findDebitorIbanByIban, listDebitorIbansByDebitor, createDebitorIban } from '../db/debitorIbanRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
 import { buildAuditLog } from '../services/auditLog.js';
+import { getConfigValue } from '../db/adminConfigRepo.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -133,6 +134,7 @@ export function createKontierungRouter({ db, config, mailer }) {
       if (!job) return;
       const konten = ladeKontenFuerJob(req, job);
       const debitoren = listDebitoren(db);
+      const qrInfo = buildQrInfo(db, job);
       const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId, aktion } = req.body;
       const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId };
 
@@ -144,6 +146,7 @@ export function createKontierungRouter({ db, config, mailer }) {
             debitoren,
             previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
             values,
+            qrInfo,
             errors: ['Bei einer Ablehnung ist eine Begründung Pflicht.'],
             auditLog: buildAuditLog(db, job.id),
           });
@@ -178,6 +181,7 @@ export function createKontierungRouter({ db, config, mailer }) {
             debitoren,
             previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
             values,
+            qrInfo,
             errors: ['Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.'],
             auditLog: buildAuditLog(db, job.id),
           });
@@ -223,6 +227,7 @@ export function createKontierungRouter({ db, config, mailer }) {
           debitoren,
           previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
           values,
+          qrInfo,
           errors,
           auditLog: buildAuditLog(db, job.id),
         });
@@ -290,6 +295,39 @@ export function createKontierungRouter({ db, config, mailer }) {
       } catch (err) {
         db.exec('ROLLBACK');
         throw err;
+      }
+
+      if (job.qr_iban && debitor) {
+        const { status } = pruefeIbanAbgleich(db, debitor.id, job.qr_iban);
+        if (status === 'mismatch') {
+          createFreigabe(db, {
+            jobId: job.id,
+            personId: req.currentPerson.churchtools_person_id,
+            rolle: 'iban_abweichung',
+            zeitpunkt: new Date().toISOString(),
+            ip: req.ip,
+            interessenskonflikt: false,
+            kommentar: `QR-IBAN ${job.qr_iban} weicht von der/den für ${debitor.name} hinterlegten IBAN(s) ab.`,
+            eskaliertVon: null,
+          });
+          const zusatzEmpfaenger = new Set(resolveEmpfaenger(db, config, getConfigValue(db, 'iban_abweichung_empfaenger')));
+          zusatzEmpfaenger.add(req.currentPerson.email);
+          const freigeber1 = getPersonById(db, konto.freigeber1_id);
+          const freigeber2 = getPersonById(db, konto.freigeber2_id);
+          if (freigeber1) zusatzEmpfaenger.add(freigeber1.email);
+          if (freigeber2) zusatzEmpfaenger.add(freigeber2.email);
+          for (const email of zusatzEmpfaenger) {
+            await sendNotification(db, mailer, {
+              to: email,
+              subject: 'Freigabeportal: IBAN-Abweichung bei Rechnung festgestellt',
+              text: `Bei der Kontierung von "${job.dateiname}" (Lieferant: ${debitor.name}) weicht die im QR-Code gefundene IBAN (${job.qr_iban}) von der hinterlegten IBAN ab. Bitte prüfen: ${config.publicBaseUrl}/kontierung/${job.id}`,
+              typ: 'iban-warnung',
+              jobId: job.id,
+            });
+          }
+        } else if (status === 'kein_abgleich' && req.body.ibanMerken === 'on' && !findDebitorIbanByIban(db, job.qr_iban)) {
+          createDebitorIban(db, { debitorId: debitor.id, iban: job.qr_iban, quelle: 'bestaetigt' });
+        }
       }
 
       if (eskaliertAnAdmin) {

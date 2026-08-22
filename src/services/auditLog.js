@@ -8,6 +8,7 @@ export const EREIGNIS_LABEL = {
   ablehnung: 'Abgelehnt',
   freigabe1_eskalation: 'Freigabe 1: Interessenskonflikt gemeldet',
   freigabe2_eskalation: 'Freigabe 2: Interessenskonflikt gemeldet',
+  iban_abweichung: 'IBAN-Abweichung festgestellt',
 };
 
 // Swiss org, hardcoded rather than derived from the server's OS timezone — Infomaniak's hosting

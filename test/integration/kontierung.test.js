@@ -1229,3 +1229,108 @@ test('GET /kontierung/:id shows no QR box at all when no QR-Code was decoded', a
   assert.doesNotMatch(res.text, /Aus QR-Code erkannt/);
   db.close();
 });
+
+test('POST /kontierung/:id sends an IBAN-Abweichung warning mail and logs it to the audit log on mismatch', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const { createDebitorIban } = await import('../../src/db/debitorIbanRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  createDebitorIban(db, { debitorId, iban: 'CH0000000000000000000' }); // hinterlegte IBAN weicht ab
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), betrag: '100.00', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+
+  assert.equal(res.status, 302, 'Kontierung must still complete despite the mismatch');
+  const mailLog = listMailLog(db).filter((m) => m.typ === 'iban-warnung');
+  assert.ok(mailLog.length > 0, 'expected at least one iban-warnung mail to be logged');
+  assert.ok(mailer.sent.some((m) => /IBAN-Abweichung/.test(m.subject)));
+
+  const auditEintrag = db.prepare("SELECT * FROM freigaben WHERE job_id = ? AND rolle = 'iban_abweichung'").get(id);
+  assert.ok(auditEintrag, 'expected an iban_abweichung freigaben row');
+  db.close();
+});
+
+test('POST /kontierung/:id sends no IBAN-Abweichung mail when the QR-IBAN matches the hinterlegte IBAN', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const { createDebitorIban } = await import('../../src/db/debitorIbanRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  createDebitorIban(db, { debitorId, iban: 'CH4431999123000889012' });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), betrag: '100.00', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+
+  assert.equal(res.status, 302);
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'iban-warnung').length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id with ibanMerken checked creates a bestaetigt debitor_ibans row for a Lieferant with no IBAN on file yet', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const { listDebitorIbansByDebitor } = await import('../../src/db/debitorIbanRepo.js');
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), betrag: '100.00', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', ibanMerken: 'on' });
+
+  assert.equal(res.status, 302);
+  const rows = listDebitorIbansByDebitor(db, debitorId);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].iban, 'CH4431999123000889012');
+  assert.equal(rows[0].quelle, 'bestaetigt');
+  db.close();
+});
+
+test('POST /kontierung/:id without ibanMerken checked creates no debitor_ibans row', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const { listDebitorIbansByDebitor } = await import('../../src/db/debitorIbanRepo.js');
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), betrag: '100.00', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+
+  assert.equal(res.status, 302);
+  assert.equal(listDebitorIbansByDebitor(db, debitorId).length, 0);
+  db.close();
+});

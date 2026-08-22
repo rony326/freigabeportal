@@ -145,6 +145,13 @@ export function setThumbnailPfad(db, id, thumbnailPfad) {
   db.prepare('UPDATE jobs SET thumbnail_pfad = ? WHERE id = ?').run(thumbnailPfad, id);
 }
 
+export function setQrDaten(db, id, { qrIban, qrReferenz, qrBetrag, qrWaehrung, qrCreditorName }) {
+  db.prepare(
+    `UPDATE jobs SET qr_iban = ?, qr_referenz = ?, qr_betrag = ?, qr_waehrung = ?, qr_creditor_name = ?, qr_erkannt_am = ?
+     WHERE id = ?`
+  ).run(qrIban ?? null, qrReferenz ?? null, qrBetrag ?? null, qrWaehrung ?? null, qrCreditorName ?? null, new Date().toISOString(), id);
+}
+
 // setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, and eskalierenFreigabe2 need no
 // WHERE-status guard: every route that calls them is a fully synchronous handler with no
 // `await` between its authorization/status check and COMMIT, so node:sqlite's synchronous

@@ -113,6 +113,51 @@
         <button type="submit" class="btn btn-primary">Regel anlegen</button>
       </div>
     </form>
+
+    <h2 class="h4 mt-4">Lieferanten-IBANs</h2>
+    <p class="text-muted">Hinterlegt pro Lieferant die erwartete(n) IBAN(s). Weicht die im QR-Code einer Rechnung gefundene IBAN davon ab, warnt das Portal bei der Kontierung.</p>
+    <% if (ibanErrors.length > 0) { %>
+      <div class="alert alert-danger">
+        <ul class="mb-0"><% ibanErrors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+    <div class="table-responsive mb-3">
+      <table class="table align-middle">
+        <thead><tr><th>IBAN</th><th>Lieferant</th><th>Quelle</th><th></th></tr></thead>
+        <tbody>
+          <% ibans.forEach((row) => { %>
+            <tr>
+              <td><%= row.iban %></td>
+              <td><%= row.debitor ? row.debitor.name : '—' %></td>
+              <td><span class="badge <%= row.quelle === 'bestaetigt' ? 'text-bg-info' : 'text-bg-secondary' %>"><%= row.quelle === 'bestaetigt' ? 'bestätigt' : 'manuell' %></span></td>
+              <td>
+                <form method="post" action="/admin/debitoren/ibans/<%= row.id %>/loeschen" class="d-inline">
+                  <button type="submit" class="btn btn-outline-danger btn-sm">Löschen</button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <form method="post" action="/admin/debitoren/ibans" class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label" for="ibanIban">IBAN</label>
+        <input type="text" class="form-control" id="ibanIban" name="iban" value="<%= ibanValues.iban || '' %>" placeholder="z.B. CH93 0076 2011 6238 5295 7" required>
+      </div>
+      <div class="col-auto">
+        <label class="form-label" for="ibanDebitorId">Lieferant</label>
+        <select class="form-select" id="ibanDebitorId" name="debitorId" required>
+          <option value="">— wählen —</option>
+          <% aktiveDebitoren.forEach((d) => { %>
+            <option value="<%= d.id %>" <%= String(d.id) === String(ibanValues.debitorId) ? 'selected' : '' %>><%= d.name %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary">IBAN hinzufügen</button>
+      </div>
+    </form>
   </main>
   <%- include('../_footer') %>
 </body>

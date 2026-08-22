@@ -27,6 +27,7 @@ import { createDownloadsRouter } from './routes/downloads.js';
 import { createKontierungRouter } from './routes/kontierung.js';
 import { createFreigabe2Router } from './routes/freigabe2.js';
 import { createAblehnungRouter } from './routes/ablehnung.js';
+import { createZeitstempelPruefenRouter } from './routes/zeitstempelPruefen.js';
 import { createMailerOrFallback } from './services/mailer.js';
 import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
 
@@ -111,6 +112,7 @@ export function createApp({ db, config }) {
   app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer }));
   app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer }));
   app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config }));
+  app.use('/zeitstempel-pruefen', sessionLimiter, requireLogin(), createZeitstempelPruefenRouter({ db, config }));
 
   app.use('/auth', publicLimiter, createAuthRouter({ db, config }));
   app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));

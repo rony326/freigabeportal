@@ -145,6 +145,17 @@ test('GET /pool returns 200 for a logged-in person without the buchhaltung or po
   db.close();
 });
 
+test('GET /pool shows the "Zeitstempel prüfen" menu item even for a logged-in person with no group membership at all', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '77', vorname: 'Frei', nachname: 'Geber', email: 'a@example.org', gruppen: [], loggedInNow: true });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '77');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="hauptmenue-toggle"/, 'the Menü dropdown itself must be shown, not just role-gated');
+  assert.match(res.text, /href="\/zeitstempel-pruefen">Zeitstempel prüfen</);
+  db.close();
+});
+
 test('GET /pool lists an unzugewiesen job in the Pool section with a thumbnail src and preview URL', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db);

@@ -33,13 +33,14 @@ export function createEskalationRouter({ db }) {
       eskalationStunden: getConfigValue(db, 'eskalation_stunden'),
       reminderEmpfaenger: getConfigValue(db, 'reminder_empfaenger'),
       eskalationEmpfaenger: getConfigValue(db, 'eskalation_empfaenger'),
+      ibanAbweichungEmpfaenger: getConfigValue(db, 'iban_abweichung_empfaenger'),
       errors: [],
       gespeichert: req.query.gespeichert === '1',
     });
   });
 
   router.post('/', (req, res) => {
-    const { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger } = req.body;
+    const { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger, ibanAbweichungEmpfaenger } = req.body;
     const errors = [];
 
     const reminderNum = Number(reminderStunden);
@@ -52,15 +53,17 @@ export function createEskalationRouter({ db }) {
     }
     validateEmpfaengerListe(reminderEmpfaenger, 'Reminder-Empfänger', errors);
     validateEmpfaengerListe(eskalationEmpfaenger, 'Eskalations-Empfänger', errors);
+    validateEmpfaengerListe(ibanAbweichungEmpfaenger, 'IBAN-Abweichungs-Empfänger', errors);
 
     if (errors.length > 0) {
-      return res.status(400).render('admin/eskalation-form', { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger, errors, gespeichert: false });
+      return res.status(400).render('admin/eskalation-form', { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger, ibanAbweichungEmpfaenger, errors, gespeichert: false });
     }
 
     setConfigValue(db, 'reminder_stunden', String(reminderNum));
     setConfigValue(db, 'eskalation_stunden', String(eskalationNum));
     setConfigValue(db, 'reminder_empfaenger', reminderEmpfaenger.trim());
     setConfigValue(db, 'eskalation_empfaenger', eskalationEmpfaenger.trim());
+    setConfigValue(db, 'iban_abweichung_empfaenger', ibanAbweichungEmpfaenger.trim());
     res.redirect('/admin/eskalation?gespeichert=1');
   });
 

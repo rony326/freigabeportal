@@ -33,6 +33,10 @@
         <label class="form-label" for="eskalationEmpfaenger">Eskalations-Empfänger (ein Ziel pro Zeile: E-Mail-Adresse oder "gruppe:buchhaltung")</label>
         <textarea class="form-control" id="eskalationEmpfaenger" name="eskalationEmpfaenger" rows="4"><%= eskalationEmpfaenger || '' %></textarea>
       </div>
+      <div class="mb-3">
+        <label class="form-label" for="ibanAbweichungEmpfaenger">IBAN-Abweichungs-Empfänger (ein Ziel pro Zeile: E-Mail-Adresse oder "gruppe:buchhaltung"/"gruppe:admin") <span class="text-muted">— zusätzlich zur kontierenden Person und den Freigebern des betroffenen Kontos</span></label>
+        <textarea class="form-control" id="ibanAbweichungEmpfaenger" name="ibanAbweichungEmpfaenger" rows="4"><%= ibanAbweichungEmpfaenger || '' %></textarea>
+      </div>
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>
         <div class="alert alert-success alert-dismissible fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">

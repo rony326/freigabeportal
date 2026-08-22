@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../../src/db/index.js';
-import { seedDefaults, getConfigValue } from '../../../src/db/adminConfigRepo.js';
+import { seedDefaults, getConfigValue, setConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
 import { createEskalationRouter } from '../../../src/routes/admin/eskalation.js';
@@ -36,7 +36,7 @@ const ESKALATION_ROUTES = [
   { method: 'post', path: '/admin/eskalation' },
 ];
 
-const VALID_BODY = { reminderStunden: '1', eskalationStunden: '2', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'x@example.org' };
+const VALID_BODY = { reminderStunden: '1', eskalationStunden: '2', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'x@example.org', ibanAbweichungEmpfaenger: 'gruppe:admin' };
 
 test('every Eskalation route returns 401 without any session, and config is untouched', async () => {
   const db = openDatabase(':memory:');
@@ -84,7 +84,7 @@ test('POST /admin/eskalation with valid values persists them', async () => {
     .post('/admin/eskalation')
     .set('x-test-person-id', '99')
     .type('form')
-    .send({ reminderStunden: '12', eskalationStunden: '36', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'kirchenpflege@musterkirche.ch\ngruppe:buchhaltung' });
+    .send({ reminderStunden: '12', eskalationStunden: '36', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'kirchenpflege@musterkirche.ch\ngruppe:buchhaltung', ibanAbweichungEmpfaenger: 'gruppe:admin' });
   assert.equal(res.status, 302);
   assert.equal(res.headers.location, '/admin/eskalation?gespeichert=1');
   assert.equal(getConfigValue(db, 'reminder_stunden'), '12');
@@ -148,5 +148,49 @@ test('POST /admin/eskalation with an invalid Empfänger line (neither email nor 
     .send({ ...VALID_BODY, eskalationEmpfaenger: 'nicht-valide' });
   assert.equal(res.status, 400);
   assert.match(res.text, /nicht-valide/);
+  db.close();
+});
+
+test('GET /admin/eskalation shows the current IBAN-Abweichungs-Empfänger value', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  setConfigValue(db, 'iban_abweichung_empfaenger', 'gruppe:admin');
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/admin/eskalation').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /gruppe:admin/);
+  db.close();
+});
+
+test('POST /admin/eskalation saves a valid IBAN-Abweichungs-Empfänger value', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post('/admin/eskalation')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ reminderStunden: '24', eskalationStunden: '48', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'gruppe:buchhaltung', ibanAbweichungEmpfaenger: 'admin@example.org' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'iban_abweichung_empfaenger'), 'admin@example.org');
+  db.close();
+});
+
+test('POST /admin/eskalation rejects an invalid IBAN-Abweichungs-Empfänger value', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post('/admin/eskalation')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ reminderStunden: '24', eskalationStunden: '48', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'gruppe:buchhaltung', ibanAbweichungEmpfaenger: 'nicht-valide' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /IBAN-Abweichungs-Empfänger/);
   db.close();
 });

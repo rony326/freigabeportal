@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Zeitstempel — <%= branding.seitenTitel %> Admin</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <h1>Zeitstempel</h1>
+    <p class="text-muted">RFC3161-Zeitstempel-Server (TSA) für abgeschlossene Rechnungen. Leere TSA-URL deaktiviert die Funktion vollständig — es wird dann weder bei Freigabe-2-Abschluss noch beim Zeitstempel-Nachholen-Job ein Zeitstempel versucht.</p>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger">
+        <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+    <form method="post" action="/admin/zeitstempel" class="col-12 col-md-8 col-lg-6">
+      <div class="mb-3">
+        <label class="form-label" for="tsaUrl">TSA-URL</label>
+        <input type="text" class="form-control" id="tsaUrl" name="tsaUrl" value="<%= tsaUrl %>" placeholder="https://freetsa.org/tsr">
+        <div class="form-text">Leer lassen, um die Zeitstempel-Funktion zu deaktivieren.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="tsaUser">Benutzername (optional)</label>
+        <input type="text" class="form-control" id="tsaUser" name="tsaUser" value="<%= tsaUser %>">
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="tsaPasswort">Passwort (optional)</label>
+        <input type="password" class="form-control" id="tsaPasswort" name="tsaPasswort" autocomplete="off">
+        <div class="form-text">Aus Sicherheitsgründen wird ein bereits gespeichertes Passwort hier nie angezeigt. Leer lassen und speichern löscht ein vorhandenes Passwort.</div>
+      </div>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+      <% if (gespeichert) { %>
+        <div class="alert alert-success alert-dismissible fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">
+          Gespeichert.
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
+        </div>
+      <% } %>
+    </form>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

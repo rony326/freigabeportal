@@ -16,6 +16,7 @@ import { createKontenRouter } from './routes/admin/konten.js';
 import { createDebitorenRouter } from './routes/admin/debitoren.js';
 import { createEskalationRouter } from './routes/admin/eskalation.js';
 import { createErscheinungsbildRouter } from './routes/admin/erscheinungsbild.js';
+import { createZeitstempelAdminRouter } from './routes/admin/zeitstempel.js';
 import { createPersonenRouter } from './routes/admin/personen.js';
 import { createMailsRouter } from './routes/admin/mails.js';
 import { createSyncRouter } from './routes/admin/sync.js';
@@ -94,6 +95,7 @@ export function createApp({ db, config }) {
   app.use('/admin/debitoren', createDebitorenRouter({ db }));
   app.use('/admin/eskalation', createEskalationRouter({ db }));
   app.use('/admin/erscheinungsbild', createErscheinungsbildRouter({ db, config }));
+  app.use('/admin/zeitstempel', createZeitstempelAdminRouter({ db }));
   app.use('/admin/personen', createPersonenRouter({ db }));
   app.use('/admin/mails', createMailsRouter({ db, mailer }));
   app.use('/admin/sync', createSyncRouter({ db }));

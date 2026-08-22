@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentSyncLogs } from '../../db/syncLogRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob } from '../../services/cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob } from '../../services/cronJobs.js';
 
 const LOG_LIMIT = 10;
 
@@ -16,9 +16,11 @@ export function createGeplanteJobsRouter({ db, config, mailer }) {
       cronPoolErinnerungenIntervallMinuten: getConfigValue(db, 'cron_pool_erinnerungen_intervall_minuten'),
       cronPdfBereinigungStunde: getConfigValue(db, 'cron_pdf_bereinigung_stunde'),
       cronPdfBereinigungMinute: getConfigValue(db, 'cron_pdf_bereinigung_minute'),
+      cronZeitstempelNachholenIntervallMinuten: getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'),
       syncLog: listRecentSyncLogs(db, LOG_LIMIT),
       poolErinnerungenLog: listRecentCronLog(db, 'pool-erinnerungen', LOG_LIMIT),
       pdfBereinigungLog: listRecentCronLog(db, 'pdf-bereinigung', LOG_LIMIT),
+      zeitstempelNachholenLog: listRecentCronLog(db, 'zeitstempel-nachholen', LOG_LIMIT),
       getriggert,
     };
   }
@@ -32,7 +34,14 @@ export function createGeplanteJobsRouter({ db, config, mailer }) {
   });
 
   router.post('/', (req, res) => {
-    const { syncPersonenStunde, syncPersonenMinute, poolErinnerungenIntervallMinuten, pdfBereinigungStunde, pdfBereinigungMinute } = req.body;
+    const {
+      syncPersonenStunde,
+      syncPersonenMinute,
+      poolErinnerungenIntervallMinuten,
+      pdfBereinigungStunde,
+      pdfBereinigungMinute,
+      zeitstempelNachholenIntervallMinuten,
+    } = req.body;
     const errors = [];
 
     function ganzzahlImBereich(wert, min, max, label) {
@@ -51,6 +60,10 @@ export function createGeplanteJobsRouter({ db, config, mailer }) {
     if (!Number.isInteger(intervallNum) || intervallNum <= 0) {
       errors.push('Pool-Erinnerungen: Intervall muss eine positive Ganzzahl (Minuten) sein.');
     }
+    const zeitstempelIntervallNum = Number(zeitstempelNachholenIntervallMinuten);
+    if (!Number.isInteger(zeitstempelIntervallNum) || zeitstempelIntervallNum <= 0) {
+      errors.push('Zeitstempel-Nachholen: Intervall muss eine positive Ganzzahl (Minuten) sein.');
+    }
 
     if (errors.length > 0) {
       return res.status(400).render('admin/geplante-jobs', {
@@ -59,9 +72,11 @@ export function createGeplanteJobsRouter({ db, config, mailer }) {
         cronPoolErinnerungenIntervallMinuten: poolErinnerungenIntervallMinuten,
         cronPdfBereinigungStunde: pdfBereinigungStunde,
         cronPdfBereinigungMinute: pdfBereinigungMinute,
+        cronZeitstempelNachholenIntervallMinuten: zeitstempelNachholenIntervallMinuten,
         syncLog: listRecentSyncLogs(db, LOG_LIMIT),
         poolErinnerungenLog: listRecentCronLog(db, 'pool-erinnerungen', LOG_LIMIT),
         pdfBereinigungLog: listRecentCronLog(db, 'pdf-bereinigung', LOG_LIMIT),
+        zeitstempelNachholenLog: listRecentCronLog(db, 'zeitstempel-nachholen', LOG_LIMIT),
         getriggert: null,
         errors,
         gespeichert: false,
@@ -73,6 +88,7 @@ export function createGeplanteJobsRouter({ db, config, mailer }) {
     setConfigValue(db, 'cron_pool_erinnerungen_intervall_minuten', String(intervallNum));
     setConfigValue(db, 'cron_pdf_bereinigung_stunde', String(pdfStundeNum));
     setConfigValue(db, 'cron_pdf_bereinigung_minute', String(pdfMinuteNum));
+    setConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten', String(zeitstempelIntervallNum));
     res.redirect('/admin/geplante-jobs?gespeichert=1');
   });
 
@@ -103,6 +119,15 @@ export function createGeplanteJobsRouter({ db, config, mailer }) {
     try {
       runPdfBereinigungJob(db, config);
       res.redirect('/admin/geplante-jobs?getriggert=pdf-bereinigung');
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/zeitstempel-nachholen/jetzt-ausfuehren', async (req, res, next) => {
+    try {
+      await runZeitstempelNachholenJob(db, config);
+      res.redirect('/admin/geplante-jobs?getriggert=zeitstempel-nachholen');
     } catch (err) {
       next(err);
     }

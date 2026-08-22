@@ -2,17 +2,20 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../../src/db/index.js';
 import { seedDefaults, getConfigValue, setConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createJob, getJobById } from '../../../src/db/jobsRepo.js';
+import { startCronLauf } from '../../../src/db/cronLogRepo.js';
 import { listMailLog } from '../../../src/db/mailLogRepo.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
 import { createGeplanteJobsRouter } from '../../../src/routes/admin/geplanteJobs.js';
 import { setupMockChurchTools } from '../../helpers/mockChurchTools.js';
+import { setupMockTsa } from '../../helpers/mockTsa.js';
+import { buildPdfFixture } from '../../helpers/pdfFixture.js';
 
 function createStubMailer({ shouldFail = false } = {}) {
   const sent = [];
@@ -52,6 +55,7 @@ const VALID_BODY = {
   poolErinnerungenIntervallMinuten: '30',
   pdfBereinigungStunde: '4',
   pdfBereinigungMinute: '45',
+  zeitstempelNachholenIntervallMinuten: '10',
 };
 
 const GEPLANTE_JOBS_ROUTES = [
@@ -60,6 +64,7 @@ const GEPLANTE_JOBS_ROUTES = [
   { method: 'post', path: '/admin/geplante-jobs/sync-personen/jetzt-ausfuehren' },
   { method: 'post', path: '/admin/geplante-jobs/pool-erinnerungen/jetzt-ausfuehren' },
   { method: 'post', path: '/admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren' },
+  { method: 'post', path: '/admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren' },
 ];
 
 test('every Geplante-Jobs route returns 401 without any session, and config is untouched', async () => {
@@ -113,6 +118,7 @@ test('POST /admin/geplante-jobs persists a valid schedule', async () => {
   assert.equal(getConfigValue(db, 'cron_pool_erinnerungen_intervall_minuten'), '30');
   assert.equal(getConfigValue(db, 'cron_pdf_bereinigung_stunde'), '4');
   assert.equal(getConfigValue(db, 'cron_pdf_bereinigung_minute'), '45');
+  assert.equal(getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'), '10');
   db.close();
 });
 
@@ -145,6 +151,22 @@ test('POST /admin/geplante-jobs rejects a non-positive interval, config untouche
   assert.equal(res.status, 400);
   assert.match(res.text, /positive Ganzzahl/);
   assert.equal(getConfigValue(db, 'cron_pool_erinnerungen_intervall_minuten'), '60');
+  db.close();
+});
+
+test('POST /admin/geplante-jobs rejects a non-positive zeitstempel-nachholen interval, config untouched', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/geplante-jobs')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ ...VALID_BODY, zeitstempelNachholenIntervallMinuten: '0' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Zeitstempel-Nachholen: Intervall muss eine positive Ganzzahl/);
+  assert.equal(getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'), '5');
   db.close();
 });
 
@@ -245,6 +267,64 @@ test('POST /admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren runs it now, lo
   assert.equal(res.status, 200);
   assert.match(res.text, /alert-success/);
   assert.match(res.text, /Archiviert: 1/);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren shows an alert-info banner (not a false failure) when a run is already laufend', async () => {
+  // Task 4's overlap guard (mirroring hasRecentRunningSync) leaves the existing 'laufend' cron_log
+  // row untouched and writes nothing new when a second invocation fires mid-run. The banner must
+  // read that stale 'laufend' row as "already running", not as a failure -- see sync-personen's
+  // analogous 3-way status check just above this section in the view.
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  startCronLauf(db, 'zeitstempel-nachholen'); // simulates a still-in-progress run
+  const app = buildTestApp(db, { config });
+
+  const triggerRes = await request(app).post('/admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren').set('x-test-person-id', '99');
+  assert.equal(triggerRes.status, 302);
+  assert.equal(triggerRes.headers.location, '/admin/geplante-jobs?getriggert=zeitstempel-nachholen');
+
+  const res = await request(app).get(triggerRes.headers.location).set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /alert-info/);
+  assert.doesNotMatch(res.text, /alert-danger/);
+  assert.match(res.text, /Ein Zeitstempel-Nachholen-Lauf war bereits aktiv/);
+  db.close();
+});
+
+test('POST /admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren runs it now, logs the result, and shows feedback', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'geplante-jobs-zeitstempel-test-'));
+  const pdfPfad = join(dir, 'job.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Rechnung Seite 1']));
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
+
+  const rfc3161Response = readFileSync(new URL('../../fixtures/rfc3161-response.der', import.meta.url));
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, rfc3161Response, { headers: { 'content-type': 'application/timestamp-reply' } });
+
+  const app = buildTestApp(db, { config });
+
+  const triggerRes = await request(app).post('/admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren').set('x-test-person-id', '99');
+  assert.equal(triggerRes.status, 302);
+  assert.equal(triggerRes.headers.location, '/admin/geplante-jobs?getriggert=zeitstempel-nachholen');
+  assert.ok(getJobById(db, jobId).zeitstempel_gesetzt_am);
+
+  const res = await request(app).get(triggerRes.headers.location).set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /alert-success/);
+  assert.match(res.text, /Nachgeholt: 1/);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

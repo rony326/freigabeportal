@@ -483,3 +483,32 @@ test('POST /internal/cron/pdf-bereinigung still returns 200 with the normal succ
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
+
+test('POST /internal/cron/zeitstempel-nachholen without the secret is rejected', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).post('/internal/cron/zeitstempel-nachholen');
+  assert.equal(res.status, 401);
+  db.close();
+});
+
+test('POST /internal/cron/zeitstempel-nachholen returns 409 uebersprungen when no TSA is configured', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).post('/internal/cron/zeitstempel-nachholen').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(res.status, 409);
+  assert.equal(res.body.status, 'uebersprungen');
+  db.close();
+});
+
+test('POST /internal/cron/zeitstempel-nachholen runs with the correct secret and reports erfolg with zero pending jobs', async () => {
+  const { setConfigValue } = await import('../../src/db/adminConfigRepo.js');
+  const db = openDatabase(':memory:');
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).post('/internal/cron/zeitstempel-nachholen').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, 'erfolg');
+  assert.equal(res.body.nachgeholt, 0);
+  db.close();
+});

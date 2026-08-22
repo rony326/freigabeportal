@@ -16,6 +16,8 @@ import { createKontenRouter } from './routes/admin/konten.js';
 import { createDebitorenRouter } from './routes/admin/debitoren.js';
 import { createEskalationRouter } from './routes/admin/eskalation.js';
 import { createErscheinungsbildRouter } from './routes/admin/erscheinungsbild.js';
+import { countZeitstempelUeberfaellig } from './db/jobsRepo.js';
+import { getConfigValue } from './db/adminConfigRepo.js';
 import { createZeitstempelAdminRouter } from './routes/admin/zeitstempel.js';
 import { createPersonenRouter } from './routes/admin/personen.js';
 import { createMailsRouter } from './routes/admin/mails.js';
@@ -89,7 +91,12 @@ export function createApp({ db, config }) {
   app.use('/branding', publicLimiter, createBrandingRouter({ db }));
   app.use('/admin', sessionLimiter, requireRole(config, 'portal-admin'));
   app.get('/admin', (req, res) => {
-    res.render('admin/dashboard');
+    const zeitstempelWarnungSchwelle = Number(getConfigValue(db, 'zeitstempel_warnung_ab_stunden'));
+    const tsaAktiv = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
+    res.render('admin/dashboard', {
+      zeitstempelUeberfaellig: tsaAktiv ? countZeitstempelUeberfaellig(db, zeitstempelWarnungSchwelle) : 0,
+      zeitstempelWarnungSchwelle,
+    });
   });
   app.use('/admin/konten', createKontenRouter({ db }));
   app.use('/admin/debitoren', createDebitorenRouter({ db }));

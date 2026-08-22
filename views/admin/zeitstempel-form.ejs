@@ -11,7 +11,7 @@
   <main class="container py-4">
     <%- include('./_nav') %>
     <h1>Zeitstempel</h1>
-    <p class="text-muted">RFC3161-Zeitstempel-Server (TSA) für abgeschlossene Rechnungen. Leere TSA-URL deaktiviert die Funktion vollständig — es wird dann weder bei Freigabe-2-Abschluss noch beim Zeitstempel-Nachholen-Job ein Zeitstempel versucht.</p>
+    <p class="text-muted">RFC3161-Zeitstempel-Server (TSA) für abgeschlossene Rechnungen. Leere TSA-URL deaktiviert die Funktion vollständig — es wird dann weder bei Freigabe-2-Abschluss noch beim Zeitstempel-Nachholen-Job ein Zeitstempel versucht, und n8n darf abgeschlossene Rechnungen ohne Wartezeit abholen.</p>
     <% if (errors.length > 0) { %>
       <div class="alert alert-danger">
         <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
@@ -31,6 +31,11 @@
         <label class="form-label" for="tsaPasswort">Passwort (optional)</label>
         <input type="password" class="form-control" id="tsaPasswort" name="tsaPasswort" autocomplete="off">
         <div class="form-text">Aus Sicherheitsgründen wird ein bereits gespeichertes Passwort hier nie angezeigt. Leer lassen und speichern löscht ein vorhandenes Passwort.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="warnungAbStunden">Admin-Warnung ab (Stunden)</label>
+        <input type="number" min="1" class="form-control" id="warnungAbStunden" name="warnungAbStunden" value="<%= warnungAbStunden %>">
+        <div class="form-text">Ab wie vielen Stunden ohne Zeitstempel eine abgeschlossene Rechnung als Warnung im Admin-Dashboard erscheint (nur solange die TSA-URL oben gesetzt ist).</div>
       </div>
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>

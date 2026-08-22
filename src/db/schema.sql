@@ -104,7 +104,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   debitor_id INTEGER REFERENCES debitoren(id),
   aufgesplittet_von INTEGER REFERENCES jobs(id),
   datei_hash TEXT,
-  zeitstempel_gesetzt_am TEXT
+  zeitstempel_gesetzt_am TEXT,
+  abgeschlossen_am TEXT
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (

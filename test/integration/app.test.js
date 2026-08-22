@@ -422,9 +422,82 @@ test('GET /admin renders a dashboard with links to all ten admin areas for a Por
 
   const res = await agent.get('/admin');
   assert.equal(res.status, 200);
-  for (const path of ['/admin/konten', '/admin/debitoren', '/admin/eskalation', '/admin/erscheinungsbild', '/admin/personen', '/admin/mails', '/admin/sync', '/admin/geplante-jobs', '/admin/abgelehnt']) {
+  for (const path of ['/admin/konten', '/admin/debitoren', '/admin/eskalation', '/admin/erscheinungsbild', '/admin/zeitstempel', '/admin/personen', '/admin/mails', '/admin/sync', '/admin/geplante-jobs', '/admin/abgelehnt']) {
     assert.match(res.text, new RegExp(`href="${path}"`), `expected a link to ${path}`);
   }
+  db.close();
+});
+
+test('GET /admin shows no Zeitstempel warning banner when no TSA is configured', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 2, firstName: 'Admin', lastName: 'Only', email: 'admin@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [{ personId: 2 }] });
+
+  const db = openDatabase(':memory:');
+  const jobId = createJob(db, { eingangAm: '2026-08-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', abgeschlossen_am = ? WHERE id = ?").run(
+    new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+    jobId
+  );
+
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get('/admin');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /ohne Zeitstempel/);
+  db.close();
+});
+
+test('GET /admin shows a Zeitstempel warning banner for abgeschlossen jobs past the configured threshold, once a TSA is configured', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 2, firstName: 'Admin', lastName: 'Only', email: 'admin@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [{ personId: 2 }] });
+
+  const db = openDatabase(':memory:');
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  setConfigValue(db, 'zeitstempel_warnung_ab_stunden', '2');
+  const jobId = createJob(db, { eingangAm: '2026-08-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', abgeschlossen_am = ? WHERE id = ?").run(
+    new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+    jobId
+  );
+
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get('/admin');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /1 abgeschlossene Rechnung seit über 2 Stunden ohne Zeitstempel/);
+  assert.match(res.text, /href="\/admin\/zeitstempel"/);
   db.close();
 });
 

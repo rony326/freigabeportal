@@ -83,3 +83,10 @@ test('seedDefaults sets zeitstempel defaults (feature disabled until a TSA URL i
   assert.equal(getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'), '5');
   db.close();
 });
+
+test('seedDefaults sets zeitstempel_warnung_ab_stunden default', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'zeitstempel_warnung_ab_stunden'), '2');
+  db.close();
+});

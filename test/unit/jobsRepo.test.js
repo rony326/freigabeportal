@@ -6,7 +6,7 @@ import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -453,6 +453,17 @@ test('abschliessenFreigabe2 sets status to abgeschlossen and clears the escalati
   db.close();
 });
 
+test('abschliessenFreigabe2 sets abgeschlossen_am', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  assert.equal(getJobById(db, jobId).abgeschlossen_am, null);
+  abschliessenFreigabe2(db, jobId);
+  assert.ok(getJobById(db, jobId).abgeschlossen_am);
+  db.close();
+});
+
 test('abschliessenFreigabe2 clears freigabe2_eskaliert_an_admin, so a later rework cycle is not permanently locked to Portal-Admin', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
@@ -478,6 +489,40 @@ test('abschliessenFreigabe2 atomically guards against completing a job twice', (
   assert.equal(secondCompletion, false);
   const job = getJobById(db, jobId);
   assert.equal(job.status, 'abgeschlossen');
+  db.close();
+});
+
+test('countZeitstempelUeberfaellig counts an abgeschlossen job past the threshold with no timestamp', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  const alt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  db.prepare('UPDATE jobs SET abgeschlossen_am = ? WHERE id = ?').run(alt, id);
+  assert.equal(countZeitstempelUeberfaellig(db, 2), 1);
+  db.close();
+});
+
+test('countZeitstempelUeberfaellig ignores a job that already has a timestamp', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  const alt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  db.prepare('UPDATE jobs SET abgeschlossen_am = ?, zeitstempel_gesetzt_am = ? WHERE id = ?').run(alt, alt, id);
+  assert.equal(countZeitstempelUeberfaellig(db, 2), 0);
+  db.close();
+});
+
+test('countZeitstempelUeberfaellig ignores a job that has not yet crossed the threshold', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  const neu = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  db.prepare('UPDATE jobs SET abgeschlossen_am = ? WHERE id = ?').run(neu, id);
+  assert.equal(countZeitstempelUeberfaellig(db, 2), 0);
+  db.close();
+});
+
+test('countZeitstempelUeberfaellig ignores a pre-feature abgeschlossen job with no abgeschlossen_am recorded', () => {
+  const db = openDatabase(':memory:');
+  seedAbgeschlossenJob(db);
+  assert.equal(countZeitstempelUeberfaellig(db, 2), 0);
   db.close();
 });
 

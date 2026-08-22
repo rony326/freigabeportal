@@ -224,10 +224,25 @@ export function abschliessenFreigabe2(db, jobId) {
   // now behave differently.)
   const result = db
     .prepare(
-      "UPDATE jobs SET status = 'abgeschlossen', freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0 WHERE id = ? AND status = 'freigabe2'"
+      "UPDATE jobs SET status = 'abgeschlossen', abgeschlossen_am = ?, freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0 WHERE id = ? AND status = 'freigabe2'"
     )
-    .run(jobId);
+    .run(new Date().toISOString(), jobId);
   return result.changes > 0;
+}
+
+// Powers the admin-dashboard warning banner: counts abgeschlossen jobs whose RFC3161 timestamp
+// is still missing after schwellenStunden hours. abgeschlossen_am IS NOT NULL excludes jobs that
+// reached 'abgeschlossen' before this column existed (their abgeschlossen_am stays NULL forever,
+// matching this feature's established no-retroactive-migration stance) — they remain visible via
+// the per-person "Meine abgeschlossenen Rechnungen" dashboard section instead.
+export function countZeitstempelUeberfaellig(db, schwellenStunden) {
+  const schwelle = new Date(Date.now() - schwellenStunden * 60 * 60 * 1000).toISOString();
+  const row = db
+    .prepare(
+      "SELECT COUNT(*) AS anzahl FROM jobs WHERE status = 'abgeschlossen' AND zeitstempel_gesetzt_am IS NULL AND abgeschlossen_am IS NOT NULL AND abgeschlossen_am < ?"
+    )
+    .get(schwelle);
+  return row.anzahl;
 }
 
 // SYNC-8: a second-tier escalation, triggered when the person already escalated to (Tier 1)

@@ -10,6 +10,11 @@
   <%- include('../_header') %>
   <main class="container py-4">
     <h1>Admin</h1>
+    <% if (typeof zeitstempelUeberfaellig !== 'undefined' && zeitstempelUeberfaellig > 0) { %>
+      <div class="alert alert-danger">
+        <%= zeitstempelUeberfaellig %> abgeschlossene Rechnung<%= zeitstempelUeberfaellig === 1 ? '' : 'en' %> seit über <%= zeitstempelWarnungSchwelle %> Stunde<%= zeitstempelWarnungSchwelle === 1 ? '' : 'n' %> ohne Zeitstempel — <a href="/admin/zeitstempel">TSA-Konfiguration prüfen</a>.
+      </div>
+    <% } %>
     <div class="row row-cols-1 row-cols-md-3 g-3">
       <div class="col">
         <a href="/admin/konten" class="card text-decoration-none h-100">

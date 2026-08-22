@@ -9,6 +9,7 @@ import { createJob, getJobById, setThumbnailPfad, updateKontierungMetadaten } fr
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
+import { setConfigValue } from '../../../src/db/adminConfigRepo.js';
 
 const PDF_BYTES = Buffer.from('%PDF-1.4\n%test-fixture-not-a-real-pdf-body\n');
 
@@ -345,6 +346,44 @@ test('GET /api/n8n/jobs/abholbereit returns an abgeschlossen job with a signed d
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('GET /api/n8n/jobs/abholbereit omits an abgeschlossen job without a Zeitstempel while a TSA is configured', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+
+  seedAbgeschlossenJobWithFile(db, jobsDir);
+
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.length, 0);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /api/n8n/jobs/abholbereit lists an abgeschlossen job once it has a Zeitstempel, while a TSA is configured', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+
+  const { id } = seedAbgeschlossenJobWithFile(db, jobsDir);
+  db.prepare('UPDATE jobs SET zeitstempel_gesetzt_am = ? WHERE id = ?').run('2026-08-21T09:00:00.000Z', id);
+
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.length, 1);
+  assert.equal(res.body[0].id, id);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
 test('GET /api/n8n/jobs/abholbereit includes lieferant, rechnungsnummer, betrag and zahlungsziel for downstream Paperless/Bexio handoff', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
@@ -389,6 +428,43 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen confirms pickup, deletes the f
 
   const secondRes = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
   assert.equal(secondRes.status, 409);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs/:id/abholung-bestaetigen returns 409 for an abgeschlossen job without a Zeitstempel while a TSA is configured, and does not delete the file', async () => {
+  const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+
+  const { id, pdfPfad } = seedAbgeschlossenJobWithFile(db, jobsDir);
+
+  const res = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
+  assert.equal(res.status, 409);
+  assert.equal(getJobById(db, id).status, 'abgeschlossen');
+  assert.ok(existsSync(pdfPfad), 'the PDF must not be deleted while the Zeitstempel is still pending');
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs/:id/abholung-bestaetigen still confirms pickup normally when no TSA is configured (feature disabled)', async () => {
+  const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const { id, pdfPfad } = seedAbgeschlossenJobWithFile(db, jobsDir);
+
+  const res = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
+  assert.equal(res.status, 200);
+  assert.equal(getJobById(db, id).status, 'abgeholt');
+  assert.equal(existsSync(pdfPfad), false);
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });

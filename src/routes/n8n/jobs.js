@@ -8,6 +8,7 @@ import { renderFirstPageThumbnail } from '../../services/thumbnail.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
 import { getPersonById } from '../../db/personenRepo.js';
 import { sendNotification } from '../../services/notify.js';
+import { getConfigValue } from '../../db/adminConfigRepo.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
@@ -106,7 +107,8 @@ export function createN8nJobsRouter({ db, config, mailer }) {
   });
 
   router.get('/abholbereit', (req, res) => {
-    const jobs = listAbholbereitJobs(db);
+    const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
+    const jobs = listAbholbereitJobs(db, undefined, nurMitZeitstempel);
     const payload = jobs.map((job) => ({
       id: job.id,
       eingang_am: job.eingang_am,
@@ -124,9 +126,12 @@ export function createN8nJobsRouter({ db, config, mailer }) {
   });
 
   router.post('/:id/abholung-bestaetigen', (req, res) => {
-    const job = confirmAbholung(db, Number(req.params.id));
+    const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
+    const job = confirmAbholung(db, Number(req.params.id), nurMitZeitstempel);
     if (!job) {
-      return res.status(409).json({ error: 'Job ist nicht im Status "abgeschlossen" oder bereits abgeholt.' });
+      return res
+        .status(409)
+        .json({ error: 'Job ist nicht im Status "abgeschlossen" oder bereits abgeholt, oder der Zeitstempel steht noch aus.' });
     }
     try {
       if (job.pdf_pfad && existsSync(job.pdf_pfad)) {

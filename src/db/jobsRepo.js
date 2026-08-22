@@ -118,12 +118,17 @@ export function claimJob(db, id, personId) {
 // SELECT and the per-row claim UPDATE below cannot interleave with any other request in this
 // single Node process — safe without an explicit transaction. This would need one under a
 // multi-process deployment.
-export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000) {
+// nurMitZeitstempel: when the RFC3161 feature is active (a TSA URL is configured), a job
+// without a timestamp must not reach n8n yet — it stays invisible to /abholbereit until the
+// timestamp is set (by Freigabe-2 completion or the zeitstempel-nachholen cron job). When the
+// feature is off (no TSA configured), the caller passes false so nothing changes.
+export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false) {
   const staleThreshold = new Date(Date.now() - staleAfterMs).toISOString();
+  const zeitstempelBedingung = nurMitZeitstempel ? ' AND zeitstempel_gesetzt_am IS NOT NULL' : '';
   const rows = db
     .prepare(
       `SELECT * FROM jobs WHERE status = 'abgeschlossen'
-       AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)`
+       AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)${zeitstempelBedingung}`
     )
     .all(staleThreshold);
 
@@ -135,8 +140,14 @@ export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000) {
   return rows;
 }
 
-export function confirmAbholung(db, id) {
-  const result = db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ? AND status = 'abgeschlossen'").run(id);
+// See listAbholbereitJobs above for nurMitZeitstempel — this is the second half of the same
+// gate: even a job n8n already knows about (e.g. from before the feature was enabled) must not
+// be confirmable without a timestamp while the feature is active.
+export function confirmAbholung(db, id, nurMitZeitstempel = false) {
+  const zeitstempelBedingung = nurMitZeitstempel ? " AND zeitstempel_gesetzt_am IS NOT NULL" : '';
+  const result = db
+    .prepare(`UPDATE jobs SET status = 'abgeholt' WHERE id = ? AND status = 'abgeschlossen'${zeitstempelBedingung}`)
+    .run(id);
   if (result.changes === 0) return null;
   return getJobById(db, id);
 }

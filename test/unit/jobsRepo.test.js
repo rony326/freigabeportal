@@ -295,6 +295,47 @@ test('confirmAbholung returns null on a second confirmation attempt', () => {
   db.close();
 });
 
+test('listAbholbereitJobs, with nurMitZeitstempel true, omits an abgeschlossen job that has no timestamp yet', () => {
+  const db = openDatabase(':memory:');
+  seedAbgeschlossenJob(db);
+  assert.equal(listAbholbereitJobs(db, undefined, true).length, 0);
+  db.close();
+});
+
+test('listAbholbereitJobs, with nurMitZeitstempel true, includes an abgeschlossen job once zeitstempel_gesetzt_am is set', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  db.prepare('UPDATE jobs SET zeitstempel_gesetzt_am = ? WHERE id = ?').run('2026-08-21T09:00:00.000Z', id);
+  const jobs = listAbholbereitJobs(db, undefined, true);
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].id, id);
+  db.close();
+});
+
+test('listAbholbereitJobs, with nurMitZeitstempel false (default), includes a job without a timestamp', () => {
+  const db = openDatabase(':memory:');
+  seedAbgeschlossenJob(db);
+  assert.equal(listAbholbereitJobs(db).length, 1);
+  db.close();
+});
+
+test('confirmAbholung, with nurMitZeitstempel true, refuses a job that has no timestamp yet', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  assert.equal(confirmAbholung(db, id, true), null);
+  assert.equal(getJobById(db, id).status, 'abgeschlossen');
+  db.close();
+});
+
+test('confirmAbholung, with nurMitZeitstempel true, succeeds once zeitstempel_gesetzt_am is set', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  db.prepare('UPDATE jobs SET zeitstempel_gesetzt_am = ? WHERE id = ?').run('2026-08-21T09:00:00.000Z', id);
+  const job = confirmAbholung(db, id, true);
+  assert.equal(job.status, 'abgeholt');
+  db.close();
+});
+
 test('setThumbnailPfad sets thumbnail_pfad on the job row', () => {
   const db = openDatabase(':memory:');
   const jobsDir = '/tmp/does-not-need-to-exist';

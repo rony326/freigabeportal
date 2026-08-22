@@ -1158,3 +1158,74 @@ test('POST /kontierung/:id/aufsplitten rejects a Konto the person is not authori
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
+
+test('GET /kontierung/:id shows the QR-decoded suggestion and prefills Betrag when no Betrag is saved yet', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: '210000000003139471430009017', qrBetrag: '1949.75', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /CH4431999123000889012/);
+  assert.match(res.text, /Muster AG/);
+  assert.match(res.text, /value="1949\.75"/);
+  db.close();
+});
+
+test('GET /kontierung/:id pre-selects a Lieferant found via QR-IBAN when no Absender-Regel assigned one', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const { createDebitorIban } = await import('../../src/db/debitorIbanRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const debitorId = createDebitor(db, { name: 'Erkannte AG', kontoId: null });
+  createDebitorIban(db, { debitorId, iban: 'CH4431999123000889012' });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: null, qrWaehrung: null, qrCreditorName: 'Erkannte AG' });
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, new RegExp(`<option value="${debitorId}" selected>Erkannte AG</option>`));
+  db.close();
+});
+
+test('GET /kontierung/:id warns when the QR-IBAN resolves to a different Lieferant than already assigned', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const { createDebitorIban } = await import('../../src/db/debitorIbanRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const zugewiesenerDebitor = createDebitor(db, { name: 'Zugewiesen AG', kontoId });
+  const erkannterDebitor = createDebitor(db, { name: 'Erkannte AG', kontoId: null });
+  createDebitorIban(db, { debitorId: erkannterDebitor, iban: 'CH4431999123000889012' });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  updateKontierungMetadaten(db, id, { absender: null, betrag: null, zahlungsziel: null, rechnungsnummer: null, lieferant: 'Zugewiesen AG', debitorId: zugewiesenerDebitor });
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: null, qrWaehrung: null, qrCreditorName: 'Erkannte AG' });
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Erkannte AG/);
+  assert.match(res.text, /bitte prüfen/i);
+  db.close();
+});
+
+test('GET /kontierung/:id shows no QR box at all when no QR-Code was decoded', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /Aus QR-Code erkannt/);
+  db.close();
+});

@@ -17,6 +17,7 @@ import {
 } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById } from '../db/kontenRepo.js';
 import { listDebitoren, getDebitorById } from '../db/debitorenRepo.js';
+import { findDebitorIbanByIban, listDebitorIbansByDebitor } from '../db/debitorIbanRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -32,6 +33,31 @@ function neuerDateipfad(jobsDir, quelldatei) {
   const zielPfad = join(jobsDir, `job-${Date.now()}-${Math.random().toString(36).slice(2)}${endung}`);
   copyFileSync(quelldatei, zielPfad);
   return zielPfad;
+}
+
+function pruefeIbanAbgleich(db, debitorId, qrIban) {
+  const hinterlegte = listDebitorIbansByDebitor(db, debitorId);
+  if (hinterlegte.length === 0) return { status: 'kein_abgleich' };
+  return { status: hinterlegte.some((row) => row.iban === qrIban) ? 'match' : 'mismatch' };
+}
+
+function buildQrInfo(db, job) {
+  if (!job.qr_erkannt_am) return null;
+  const ibanMapping = job.qr_iban ? findDebitorIbanByIban(db, job.qr_iban) : null;
+  const vorschlagDebitor = ibanMapping ? getDebitorById(db, ibanMapping.debitor_id) : null;
+  const debitorFuerAbgleich = job.debitor_id ? getDebitorById(db, job.debitor_id) : vorschlagDebitor;
+  const abgleich = job.qr_iban && debitorFuerAbgleich ? pruefeIbanAbgleich(db, debitorFuerAbgleich.id, job.qr_iban) : null;
+  return {
+    iban: job.qr_iban,
+    referenz: job.qr_referenz,
+    betrag: job.qr_betrag,
+    waehrung: job.qr_waehrung,
+    creditorName: job.qr_creditor_name,
+    vorschlagDebitor,
+    debitorFuerAbgleich,
+    konfliktMitZugewiesenemDebitor: Boolean(vorschlagDebitor) && Boolean(job.debitor_id) && vorschlagDebitor.id !== job.debitor_id,
+    abgleich,
+  };
 }
 
 export function createKontierungRouter({ db, config, mailer }) {
@@ -79,6 +105,7 @@ export function createKontierungRouter({ db, config, mailer }) {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
     const konten = ladeKontenFuerJob(req, job);
+    const qrInfo = buildQrInfo(db, job);
     res.render('kontierung', {
       job,
       konten,
@@ -89,11 +116,12 @@ export function createKontierungRouter({ db, config, mailer }) {
         interessenskonflikt: '',
         begruendung: '',
         absender: job.absender || '',
-        betrag: job.betrag || '',
+        betrag: job.betrag || (qrInfo ? qrInfo.betrag || '' : ''),
         zahlungsziel: job.zahlungsziel || '',
         rechnungsnummer: job.rechnungsnummer || '',
-        debitorId: job.debitor_id ? String(job.debitor_id) : '',
+        debitorId: job.debitor_id ? String(job.debitor_id) : (qrInfo && qrInfo.vorschlagDebitor ? String(qrInfo.vorschlagDebitor.id) : ''),
       },
+      qrInfo,
       errors: [],
       auditLog: buildAuditLog(db, job.id),
     });

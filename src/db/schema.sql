@@ -61,6 +61,14 @@ CREATE TABLE IF NOT EXISTS debitoren (
   aktiv INTEGER NOT NULL DEFAULT 1
 );
 
+CREATE TABLE IF NOT EXISTS debitor_ibans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  debitor_id INTEGER NOT NULL REFERENCES debitoren(id),
+  iban TEXT NOT NULL UNIQUE,
+  quelle TEXT NOT NULL CHECK (quelle IN ('manuell', 'bestaetigt')) DEFAULT 'manuell',
+  erstellt_am TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS zuweisungsregeln (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   absender_muster TEXT NOT NULL UNIQUE,
@@ -99,14 +107,20 @@ CREATE TABLE IF NOT EXISTS jobs (
   lieferant TEXT,
   debitor_id INTEGER REFERENCES debitoren(id),
   aufgesplittet_von INTEGER REFERENCES jobs(id),
-  datei_hash TEXT
+  datei_hash TEXT,
+  qr_iban TEXT,
+  qr_referenz TEXT,
+  qr_betrag TEXT,
+  qr_waehrung TEXT,
+  qr_creditor_name TEXT,
+  qr_erkannt_am TEXT
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id INTEGER NOT NULL REFERENCES jobs(id),
   person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation')),
+  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung')),
   zeitpunkt TEXT NOT NULL,
   ip TEXT NOT NULL,
   interessenskonflikt INTEGER NOT NULL DEFAULT 0,
@@ -116,7 +130,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
 
 CREATE TABLE IF NOT EXISTS mail_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler')),
+  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung')),
   job_id INTEGER REFERENCES jobs(id),
   empfaenger TEXT NOT NULL,
   betreff TEXT NOT NULL,

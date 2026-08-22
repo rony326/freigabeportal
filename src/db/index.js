@@ -19,6 +19,12 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'debitor_id', ddl: 'ALTER TABLE jobs ADD COLUMN debitor_id INTEGER REFERENCES debitoren(id)' },
   { column: 'aufgesplittet_von', ddl: 'ALTER TABLE jobs ADD COLUMN aufgesplittet_von INTEGER REFERENCES jobs(id)' },
   { column: 'datei_hash', ddl: 'ALTER TABLE jobs ADD COLUMN datei_hash TEXT' },
+  { column: 'qr_iban', ddl: 'ALTER TABLE jobs ADD COLUMN qr_iban TEXT' },
+  { column: 'qr_referenz', ddl: 'ALTER TABLE jobs ADD COLUMN qr_referenz TEXT' },
+  { column: 'qr_betrag', ddl: 'ALTER TABLE jobs ADD COLUMN qr_betrag TEXT' },
+  { column: 'qr_waehrung', ddl: 'ALTER TABLE jobs ADD COLUMN qr_waehrung TEXT' },
+  { column: 'qr_creditor_name', ddl: 'ALTER TABLE jobs ADD COLUMN qr_creditor_name TEXT' },
+  { column: 'qr_erkannt_am', ddl: 'ALTER TABLE jobs ADD COLUMN qr_erkannt_am TEXT' },
 ];
 
 function migrateJobsTable(db) {
@@ -40,17 +46,17 @@ function migrateJobsTable(db) {
 // crash mid-migration can't leave the database without a freigaben table at all.
 function migrateFreigabenTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'freigaben'").get();
-  if (!tableSql || tableSql.sql.includes('freigabe1_eskalation')) return;
+  if (!tableSql || tableSql.sql.includes('iban_abweichung')) return;
 
   db.exec('BEGIN');
   try {
-    db.exec('ALTER TABLE freigaben RENAME TO freigaben_pre_eskalation_rolle');
+    db.exec('ALTER TABLE freigaben RENAME TO freigaben_pre_iban_abweichung_rolle');
     db.exec(`
       CREATE TABLE freigaben (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         job_id INTEGER NOT NULL REFERENCES jobs(id),
         person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-        rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation')),
+        rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung')),
         zeitpunkt TEXT NOT NULL,
         ip TEXT NOT NULL,
         interessenskonflikt INTEGER NOT NULL DEFAULT 0,
@@ -60,9 +66,44 @@ function migrateFreigabenTable(db) {
     `);
     db.exec(`
       INSERT INTO freigaben (id, job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von)
-      SELECT id, job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von FROM freigaben_pre_eskalation_rolle
+      SELECT id, job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von FROM freigaben_pre_iban_abweichung_rolle
     `);
-    db.exec('DROP TABLE freigaben_pre_eskalation_rolle');
+    db.exec('DROP TABLE freigaben_pre_iban_abweichung_rolle');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+// Same rationale as migrateFreigabenTable above: mail_log.typ's CHECK constraint can't be
+// widened with ALTER TABLE, so an already-running database that predates 'iban-warnung' needs
+// its mail_log table rebuilt in place to accept the new value.
+function migrateMailLogTable(db) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mail_log'").get();
+  if (!tableSql || tableSql.sql.includes('iban-warnung')) return;
+
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE mail_log RENAME TO mail_log_pre_iban_warnung_typ');
+    db.exec(`
+      CREATE TABLE mail_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung')),
+        job_id INTEGER REFERENCES jobs(id),
+        empfaenger TEXT NOT NULL,
+        betreff TEXT NOT NULL,
+        text TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen')),
+        fehler_details TEXT,
+        versucht_am TEXT NOT NULL
+      )
+    `);
+    db.exec(`
+      INSERT INTO mail_log (id, typ, job_id, empfaenger, betreff, text, status, fehler_details, versucht_am)
+      SELECT id, typ, job_id, empfaenger, betreff, text, status, fehler_details, versucht_am FROM mail_log_pre_iban_warnung_typ
+    `);
+    db.exec('DROP TABLE mail_log_pre_iban_warnung_typ');
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
@@ -79,5 +120,6 @@ export function openDatabase(dbPath) {
   db.exec(schema);
   migrateJobsTable(db);
   migrateFreigabenTable(db);
+  migrateMailLogTable(db);
   return db;
 }

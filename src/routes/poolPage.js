@@ -6,6 +6,7 @@ import {
   listAbgelehntJobsForPerson,
   listAdminEskalierteKontierungen,
   listAdminEskalierteFreigaben,
+  listAbgeschlossenJobsForPerson,
 } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
@@ -36,6 +37,7 @@ export function createPoolPageRouter({ db, config }) {
       meineAbgelehnten: enrich(listAbgelehntJobsForPerson(db, personId)),
       adminEskalierteKontierungen: istPortalAdmin ? enrich(listAdminEskalierteKontierungen(db)) : [],
       adminEskalierteFreigaben: istPortalAdmin ? enrich(listAdminEskalierteFreigaben(db)) : [],
+      meineAbgeschlossenen: enrich(listAbgeschlossenJobsForPerson(db, personId)),
     });
   });
 

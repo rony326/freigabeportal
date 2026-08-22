@@ -6,7 +6,7 @@ import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -562,6 +562,43 @@ test('listFreigabe2JobsForPerson matches freigeber2_id when not escalated, stell
   eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Befangen' });
   assert.equal(listFreigabe2JobsForPerson(db, '3').length, 0);
   assert.equal(listFreigabe2JobsForPerson(db, '4').length, 1);
+  db.close();
+});
+
+test('listAbgeschlossenJobsForPerson matches a job by freigeber2_id and lists it across all three completed statuses', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber2Id: '3', stellvertreter2Id: '4'
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+
+  for (const status of ['abgeschlossen', 'abgeholt', 'archiviert']) {
+    db.prepare('UPDATE jobs SET status = ? WHERE id = ?').run(status, jobId);
+    const result = listAbgeschlossenJobsForPerson(db, '3');
+    assert.equal(result.length, 1, `expected a match for status ${status}`);
+    assert.equal(result[0].id, jobId);
+  }
+  db.close();
+});
+
+test('listAbgeschlossenJobsForPerson matches a job by zugewiesen_an even when the person is not the Konto\'s freigeber2', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber1Id: '1', freigeber2Id: '3'
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
+
+  assert.equal(listAbgeschlossenJobsForPerson(db, '1').length, 1);
+  db.close();
+});
+
+test('listAbgeschlossenJobsForPerson excludes a job that has not reached abgeschlossen yet', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber2Id: '3'
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+
+  assert.equal(listAbgeschlossenJobsForPerson(db, '3').length, 0);
   db.close();
 });
 

@@ -386,6 +386,26 @@ export function listFreigabe2JobsForPerson(db, personId) {
     .all(personId, personId);
 }
 
+// Same konto-membership logic as listFreigabe2JobsForPerson, widened to the three
+// completed-and-beyond statuses (so it keeps listing a job after n8n abholt/archiviert it, even
+// though its PDF file is no longer available to preview/verify by then) plus a direct
+// zugewiesen_an match (the person who did the Kontierung, not necessarily the Freigeber2).
+export function listAbgeschlossenJobsForPerson(db, personId) {
+  return db
+    .prepare(
+      `SELECT jobs.* FROM jobs
+       JOIN konten ON konten.id = jobs.konto_id
+       WHERE jobs.status IN ('abgeschlossen', 'abgeholt', 'archiviert')
+         AND (
+           jobs.zugewiesen_an = ?
+           OR (jobs.freigabe2_eskaliert_von IS NULL AND konten.freigeber2_id = ?)
+           OR (jobs.freigabe2_eskaliert_von IS NOT NULL AND konten.stellvertreter2_id = ?)
+         )
+       ORDER BY jobs.eingang_am DESC`
+    )
+    .all(personId, personId, personId);
+}
+
 // Both listZugewiesenJobsForPerson and listFreigabe2JobsForPerson deliberately exclude
 // admin-escalated jobs (freigabeN_eskaliert_an_admin = 1) — they're "my jobs" lists for the
 // person who was escalated away FROM, not for the admin group escalated TO. Without these two,

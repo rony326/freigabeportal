@@ -1,0 +1,29 @@
+<% if (jobs.length === 0) { %>
+  <p>Keine abgeschlossenen Rechnungen.</p>
+<% } else { %>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Dateiname</th><th>Status</th><th>Zeitstempel</th><th></th></tr></thead>
+      <tbody>
+        <% jobs.forEach((job) => { %>
+          <tr id="abgeschlossen-row-<%= job.id %>">
+            <td><%= job.dateiname %></td>
+            <td><%= job.status %></td>
+            <td>
+              <% if (job.zeitstempel_gesetzt_am) { %>
+                ✓ gesetzt am <%= job.zeitstempel_gesetzt_am %>
+              <% } else { %>
+                ausstehend
+              <% } %>
+            </td>
+            <td>
+              <% if (job.status === 'abgeschlossen') { %>
+                <a href="/zeitstempel-pruefen?jobId=<%= job.id %>" class="btn btn-outline-primary btn-sm">Jetzt prüfen</a>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+<% } %>

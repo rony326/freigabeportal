@@ -33,6 +33,9 @@
     <h2 class="h4 mt-4">Meine abgelehnten Jobs</h2>
     <%- include('_job_table', { jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen', leerText: 'Keine abgelehnten Rechnungen.' }) %>
 
+    <h2 class="h4 mt-4">Meine abgeschlossenen Rechnungen</h2>
+    <%- include('_abgeschlossen_table', { jobs: meineAbgeschlossenen }) %>
+
     <dialog id="preview-dialog" class="p-0 border-0 rounded">
       <div class="d-flex justify-content-end p-2 bg-body border-bottom">
         <button type="button" id="preview-dialog-close" class="btn btn-outline-secondary btn-sm">Schließen</button>

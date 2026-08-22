@@ -161,7 +161,7 @@ test('GET /kontierung/:id drops the Konto select\'s required attribute on click 
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<select class="form-select" id="kontoId" name="kontoId" required>/);
+  assert.match(res.text, /<select class="form-select" id="kontoId" name="kontoId" required data-searchable>/);
   assert.match(res.text, /<button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn"/);
   assert.match(res.text, /getElementById\('ablehnen-btn'\)\.addEventListener\('click', function \(\) \{\s*document\.getElementById\('kontoId'\)\.required = false;/);
   db.close();
@@ -1157,4 +1157,80 @@ test('POST /kontierung/:id/aufsplitten rejects a Konto the person is not authori
   assert.equal(getJobById(db, id).status, 'zugewiesen');
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /kontierung/:id marks the Konto and Lieferant dropdowns as searchable and offers a "+ Neu" trigger plus a matching Lieferant-anlegen modal', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<select class="form-select" id="debitorId" name="debitorId" data-searchable>/);
+  assert.match(res.text, /data-bs-target="#neuer-lieferant-modal"/);
+  assert.match(res.text, /id="neuer-lieferant-modal"/);
+  assert.match(res.text, /id="neuer-lieferant-name"/);
+  // The modal's "Anlegen" button must actually call the new endpoint, not just look like a form.
+  assert.match(res.text, /fetch\('\/kontierung\/lieferanten'/);
+  db.close();
+});
+
+test('POST /kontierung/lieferanten creates a Debitor and returns it as JSON, for any logged-in Kontierung user (not just Portal-Admins)', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post('/kontierung/lieferanten')
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ name: 'Neue Firma AG' });
+
+  assert.equal(res.status, 201);
+  assert.equal(res.body.name, 'Neue Firma AG');
+  assert.ok(res.body.id);
+  const { getDebitorById } = await import('../../src/db/debitorenRepo.js');
+  const debitor = getDebitorById(db, res.body.id);
+  assert.equal(debitor.name, 'Neue Firma AG');
+  assert.equal(debitor.konto_id, null);
+  assert.equal(debitor.aktiv, 1);
+  db.close();
+});
+
+test('POST /kontierung/lieferanten trims the name and stores the optional Konto', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post('/kontierung/lieferanten')
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ name: '  Muster AG  ', kontoId: String(kontoId) });
+
+  assert.equal(res.status, 201);
+  const { getDebitorById } = await import('../../src/db/debitorenRepo.js');
+  const debitor = getDebitorById(db, res.body.id);
+  assert.equal(debitor.name, 'Muster AG');
+  assert.equal(debitor.konto_id, kontoId);
+  db.close();
+});
+
+test('POST /kontierung/lieferanten rejects a missing name, nothing created', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post('/kontierung/lieferanten')
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ name: '   ' });
+
+  assert.equal(res.status, 400);
+  assert.equal(res.body.error, 'Name ist ein Pflichtfeld.');
+  const { listDebitoren } = await import('../../src/db/debitorenRepo.js');
+  assert.equal(listDebitoren(db).length, 0);
+  db.close();
 });

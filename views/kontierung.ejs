@@ -30,7 +30,7 @@
             <form id="kontierung-form" method="post" action="/kontierung/<%= job.id %>">
               <div class="mb-3">
                 <label class="form-label" for="kontoId">Konto</label>
-                <select class="form-select" id="kontoId" name="kontoId" required>
+                <select class="form-select" id="kontoId" name="kontoId" required data-searchable>
                   <option value="">— wählen —</option>
                   <% konten.forEach((k) => { %>
                     <option value="<%= k.id %>" <%= String(k.id) === values.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
@@ -44,8 +44,11 @@
                   <input type="text" class="form-control" id="absender" name="absender" value="<%= values.absender || '' %>">
                 </div>
                 <div class="col-6">
-                  <label class="form-label" for="debitorId">Lieferant</label>
-                  <select class="form-select" id="debitorId" name="debitorId">
+                  <div class="d-flex justify-content-between align-items-baseline">
+                    <label class="form-label mb-0" for="debitorId">Lieferant</label>
+                    <button type="button" class="btn btn-link btn-sm p-0" id="neuer-lieferant-btn" data-bs-toggle="modal" data-bs-target="#neuer-lieferant-modal">+ Neu</button>
+                  </div>
+                  <select class="form-select" id="debitorId" name="debitorId" data-searchable>
                     <option value="">— wählen —</option>
                     <% debitoren.forEach((d) => { %>
                       <option value="<%= d.id %>" <%= String(d.id) === values.debitorId ? 'selected' : '' %>><%= d.name %></option>
@@ -110,6 +113,37 @@
           </div>
           <div class="modal-body p-0">
             <iframe id="aufsplitten-frame" title="Rechnung aufsplitten" style="width:100%;height:70vh;border:0"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="neuer-lieferant-modal" tabindex="-1" aria-labelledby="neuer-lieferant-modal-label" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="neuer-lieferant-modal-label">Neuen Lieferanten anlegen</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          </div>
+          <div class="modal-body">
+            <div id="neuer-lieferant-error" class="alert alert-danger d-none"></div>
+            <div class="mb-3">
+              <label class="form-label" for="neuer-lieferant-name">Name</label>
+              <input type="text" class="form-control" id="neuer-lieferant-name">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="neuer-lieferant-konto">Konto (optional)</label>
+              <select class="form-select" id="neuer-lieferant-konto" data-searchable>
+                <option value="">— kein Konto —</option>
+                <% konten.forEach((k) => { %>
+                  <option value="<%= k.id %>"><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="button" class="btn btn-primary" id="neuer-lieferant-speichern">Anlegen</button>
           </div>
         </div>
       </div>
@@ -182,6 +216,211 @@
         if (e.origin === window.location.origin && e.data === 'aufsplitten-abbrechen') {
           bootstrap.Modal.getOrCreateInstance(modal).hide();
         }
+      });
+    })();
+    // Progressively enhances any <select data-searchable> into a filterable combobox: a text
+    // input the person can type into to narrow the list, backed by the original <select> as the
+    // single source of truth for value/name/required (kept in the DOM, just visually hidden via
+    // .visually-hidden rather than .d-none — a display:none form control is excluded from HTML5
+    // constraint validation in every major browser, which would silently defeat the Konto
+    // select's `required` and break the existing Ablehnen/Kontieren required-toggle above). No
+    // "required" is ever set on the shadow input itself, so it never validates independently of
+    // the real select.
+    (function () {
+      function optionLabel(opt) {
+        return opt.textContent;
+      }
+
+      function enhance(select) {
+        if (select.dataset.searchableEnhanced) return;
+        select.dataset.searchableEnhanced = '1';
+
+        var wrapper = document.createElement('div');
+        wrapper.className = 'position-relative';
+        select.parentNode.insertBefore(wrapper, select);
+
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = select.className;
+        input.setAttribute('autocomplete', 'off');
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-expanded', 'false');
+        if (select.disabled) input.disabled = true;
+        var placeholderOption = select.querySelector('option[value=""]');
+        if (placeholderOption) input.placeholder = placeholderOption.textContent;
+
+        wrapper.appendChild(input);
+        wrapper.appendChild(select);
+        select.classList.add('visually-hidden');
+
+        var menu = document.createElement('div');
+        menu.className = 'list-group position-absolute w-100 shadow-sm d-none';
+        menu.style.zIndex = '1000';
+        menu.style.maxHeight = '240px';
+        menu.style.overflowY = 'auto';
+        wrapper.appendChild(menu);
+
+        var activeIndex = -1;
+
+        function currentSelectedLabel() {
+          var opt = select.options[select.selectedIndex];
+          return opt && opt.value ? optionLabel(opt) : '';
+        }
+
+        function syncInputFromSelect() {
+          input.value = currentSelectedLabel();
+        }
+
+        function highlight(items) {
+          Array.prototype.forEach.call(items, function (item, i) {
+            item.classList.toggle('active', i === activeIndex);
+          });
+          if (items[activeIndex]) items[activeIndex].scrollIntoView({ block: 'nearest' });
+        }
+
+        function renderMenu(filterText) {
+          menu.innerHTML = '';
+          activeIndex = -1;
+          var lower = (filterText || '').toLowerCase();
+          var any = false;
+          Array.prototype.forEach.call(select.options, function (opt) {
+            if (!opt.value) return; // skip the "— wählen —" placeholder
+            var label = optionLabel(opt);
+            if (lower && label.toLowerCase().indexOf(lower) === -1) return;
+            any = true;
+            var item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'list-group-item list-group-item-action py-1';
+            item.textContent = label;
+            item.dataset.value = opt.value;
+            // mousedown (not click) fires before the input's blur handler hides the menu.
+            item.addEventListener('mousedown', function (e) {
+              e.preventDefault();
+              select.value = opt.value;
+              syncInputFromSelect();
+              hideMenu();
+              select.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            menu.appendChild(item);
+          });
+          if (!any) {
+            var empty = document.createElement('div');
+            empty.className = 'list-group-item text-muted py-1';
+            empty.textContent = 'Keine Treffer';
+            menu.appendChild(empty);
+          }
+        }
+
+        function showMenu() {
+          renderMenu(input.value === currentSelectedLabel() ? '' : input.value);
+          menu.classList.remove('d-none');
+          input.setAttribute('aria-expanded', 'true');
+        }
+
+        function hideMenu() {
+          menu.classList.add('d-none');
+          input.setAttribute('aria-expanded', 'false');
+        }
+
+        input.addEventListener('focus', showMenu);
+        input.addEventListener('input', function () {
+          renderMenu(input.value);
+          menu.classList.remove('d-none');
+        });
+        input.addEventListener('blur', function () {
+          // Delayed so the menu item's mousedown handler above still fires first.
+          setTimeout(function () {
+            hideMenu();
+            input.value = currentSelectedLabel();
+          }, 150);
+        });
+        input.addEventListener('keydown', function (e) {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (menu.classList.contains('d-none')) {
+              showMenu();
+              return;
+            }
+            var items = menu.querySelectorAll('[data-value]');
+            activeIndex = Math.min(activeIndex + 1, items.length - 1);
+            highlight(items);
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIndex = Math.max(activeIndex - 1, 0);
+            highlight(menu.querySelectorAll('[data-value]'));
+          } else if (e.key === 'Enter') {
+            var current = menu.querySelectorAll('[data-value]')[activeIndex];
+            if (!menu.classList.contains('d-none') && current) {
+              e.preventDefault();
+              current.dispatchEvent(new MouseEvent('mousedown'));
+            }
+          } else if (e.key === 'Escape') {
+            hideMenu();
+          }
+        });
+
+        syncInputFromSelect();
+      }
+
+      function refresh(select) {
+        var input = select.parentNode.querySelector('input[role="combobox"]');
+        if (!input) return;
+        var opt = select.options[select.selectedIndex];
+        input.value = opt && opt.value ? optionLabel(opt) : '';
+      }
+
+      Array.prototype.forEach.call(document.querySelectorAll('select[data-searchable]'), enhance);
+      window.SearchableSelect = { enhance: enhance, refresh: refresh };
+    })();
+    // "+ Neu" next to the Lieferant-Dropdown opens a modal to create a Debitor on the fly, so a
+    // person doesn't have to leave the Kontierung page (and lose their in-progress form) to go
+    // through /admin/debitoren just because the invoice's supplier isn't in the list yet. The Name
+    // field is pre-filled from the Absender field already on this page, since that's usually
+    // already the supplier's address/name lifted straight off the invoice.
+    (function () {
+      var modal = document.getElementById('neuer-lieferant-modal');
+      var nameInput = document.getElementById('neuer-lieferant-name');
+      var kontoSelect = document.getElementById('neuer-lieferant-konto');
+      var errorBox = document.getElementById('neuer-lieferant-error');
+      var debitorSelect = document.getElementById('debitorId');
+
+      modal.addEventListener('show.bs.modal', function () {
+        errorBox.classList.add('d-none');
+        nameInput.value = document.getElementById('absender').value || '';
+        kontoSelect.value = '';
+        if (window.SearchableSelect) window.SearchableSelect.refresh(kontoSelect);
+      });
+
+      document.getElementById('neuer-lieferant-speichern').addEventListener('click', function () {
+        var name = nameInput.value.trim();
+        errorBox.classList.add('d-none');
+        fetch('/kontierung/lieferanten', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'name=' + encodeURIComponent(name) + '&kontoId=' + encodeURIComponent(kontoSelect.value),
+        })
+          .then(function (res) {
+            return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+          })
+          .then(function (result) {
+            if (!result.ok) {
+              errorBox.textContent = result.data.error || 'Lieferant konnte nicht angelegt werden.';
+              errorBox.classList.remove('d-none');
+              return;
+            }
+            var option = document.createElement('option');
+            option.value = result.data.id;
+            option.textContent = result.data.name;
+            option.selected = true;
+            debitorSelect.appendChild(option);
+            debitorSelect.value = String(result.data.id);
+            if (window.SearchableSelect) window.SearchableSelect.refresh(debitorSelect);
+            bootstrap.Modal.getOrCreateInstance(modal).hide();
+          })
+          .catch(function () {
+            errorBox.textContent = 'Lieferant konnte nicht angelegt werden.';
+            errorBox.classList.remove('d-none');
+          });
       });
     })();
   </script>

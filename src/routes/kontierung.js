@@ -16,7 +16,7 @@ import {
   setJobBetrag,
 } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById } from '../db/kontenRepo.js';
-import { listDebitoren, getDebitorById } from '../db/debitorenRepo.js';
+import { listDebitoren, getDebitorById, createDebitor } from '../db/debitorenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -97,6 +97,21 @@ export function createKontierungRouter({ db, config, mailer }) {
       errors: [],
       auditLog: buildAuditLog(db, job.id),
     });
+  });
+
+  // Must be registered before the generic /:id routes below — otherwise POST
+  // /kontierung/lieferanten would first match /:id (with id="lieferanten", a NaN Number()) and
+  // 404/403 before ever reaching this handler. Open to any logged-in Kontierung user (not just
+  // Portal-Admins), since Kontierung itself is usually done by Buchhaltung, not admins — mirrors
+  // the validation in POST /admin/debitoren, minus the admin-only gate.
+  router.post('/lieferanten', (req, res) => {
+    const { name, kontoId } = req.body;
+    const trimmedName = (name || '').trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Name ist ein Pflichtfeld.' });
+    }
+    const id = createDebitor(db, { name: trimmedName, kontoId: kontoId ? Number(kontoId) : null });
+    res.status(201).json({ id, name: trimmedName });
   });
 
   router.post('/:id', async (req, res, next) => {

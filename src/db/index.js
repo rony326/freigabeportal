@@ -71,6 +71,38 @@ function migrateFreigabenTable(db) {
   }
 }
 
+// Same rationale as migrateFreigabenTable above: an already-existing cron_log table (any database
+// that predates the 'zeitstempel-nachholen' job name) keeps its original, narrower CHECK forever
+// otherwise, and logCronLauf('zeitstempel-nachholen', ...) would fail on it.
+function migrateCronLogTable(db) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cron_log'").get();
+  if (!tableSql || tableSql.sql.includes('zeitstempel-nachholen')) return;
+
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE cron_log RENAME TO cron_log_pre_zeitstempel_nachholen');
+    db.exec(`
+      CREATE TABLE cron_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen')),
+        gestartet_am TEXT NOT NULL,
+        beendet_am TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler')),
+        details TEXT
+      )
+    `);
+    db.exec(`
+      INSERT INTO cron_log (id, job, gestartet_am, beendet_am, status, details)
+      SELECT id, job, gestartet_am, beendet_am, status, details FROM cron_log_pre_zeitstempel_nachholen
+    `);
+    db.exec('DROP TABLE cron_log_pre_zeitstempel_nachholen');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -80,5 +112,6 @@ export function openDatabase(dbPath) {
   db.exec(schema);
   migrateJobsTable(db);
   migrateFreigabenTable(db);
+  migrateCronLogTable(db);
   return db;
 }

@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS admin_config (
 -- deaktiviert counts), so it isn't duplicated in here.
 CREATE TABLE IF NOT EXISTS cron_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung')),
+  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen')),
   gestartet_am TEXT NOT NULL,
   beendet_am TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler')),

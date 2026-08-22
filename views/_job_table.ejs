@@ -17,7 +17,7 @@
             <td><%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></td>
             <td><%= job.absender || '—' %></td>
             <td><%= job.lieferant || '—' %></td>
-            <td><%= job.kontonummer || '—' %></td>
+            <td><%= job.kontonummer || (job.hinweisKonto ? `Hinweis: ${job.hinweisKonto.kontonummer} — ${job.hinweisKonto.bezeichnung}` : '—') %></td>
             <td><%= job.eingang_am %></td>
             <td>
               <% if (idPrefix === 'pool') { %>

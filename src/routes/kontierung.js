@@ -15,7 +15,7 @@ import {
   createSplitJob,
   setJobBetrag,
 } from '../db/jobsRepo.js';
-import { listKontenForPerson, getKontoById } from '../db/kontenRepo.js';
+import { listKontenForPerson, getKontoById, listKonten } from '../db/kontenRepo.js';
 import { listDebitoren, getDebitorById, createDebitor } from '../db/debitorenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
@@ -82,6 +82,7 @@ export function createKontierungRouter({ db, config, mailer }) {
     res.render('kontierung', {
       job,
       konten,
+      alleKonten: listKonten(db),
       debitoren: listDebitoren(db),
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values: {
@@ -128,6 +129,7 @@ export function createKontierungRouter({ db, config, mailer }) {
           return res.status(400).render('kontierung', {
             job,
             konten,
+            alleKonten: listKonten(db),
             debitoren,
             previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
             values,
@@ -162,6 +164,7 @@ export function createKontierungRouter({ db, config, mailer }) {
           return res.status(409).render('kontierung', {
             job,
             konten,
+            alleKonten: listKonten(db),
             debitoren,
             previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
             values,
@@ -207,6 +210,7 @@ export function createKontierungRouter({ db, config, mailer }) {
         return res.status(400).render('kontierung', {
           job,
           konten,
+          alleKonten: listKonten(db),
           debitoren,
           previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
           values,
@@ -320,18 +324,43 @@ export function createKontierungRouter({ db, config, mailer }) {
     }
   });
 
-  router.post('/:id/zurueck-in-pool', (req, res) => {
-    const job = loadAuthorizedJob(req, res);
-    if (!job) return;
-    // Use job.zugewiesen_an, not req.currentPerson.churchtools_person_id: releaseJob's guard
-    // requires zugewiesen_an to match the person passed in, and for a Portal-Admin authorized
-    // via the freigabe1_eskaliert_an_admin branch, the admin's own ID never equals
-    // job.zugewiesen_an (still the excluded Stellvertreter1's ID) — passing the admin's ID would
-    // silently match zero rows while still redirecting to /pool as if it had succeeded. For the
-    // ordinary (non-admin) path this is definitionally identical, since loadAuthorizedJob already
-    // verified job.zugewiesen_an === req.currentPerson.churchtools_person_id to get here.
-    releaseJob(db, job.id, job.zugewiesen_an);
-    res.redirect('/pool');
+  router.post('/:id/zurueck-in-pool', async (req, res, next) => {
+    try {
+      const job = loadAuthorizedJob(req, res);
+      if (!job) return;
+
+      // The hint is best-effort, not a hard requirement — an unparseable, non-existent, or
+      // deactivated Konto id is simply ignored (releases the job exactly as if no hint had been
+      // given) rather than blocking the release or erroring out.
+      const hinweisKonto = req.body.hinweisKontoId ? getKontoById(db, Number(req.body.hinweisKontoId)) : null;
+      const gueltigerHinweis = hinweisKonto && hinweisKonto.aktiv ? hinweisKonto : null;
+
+      // Use job.zugewiesen_an, not req.currentPerson.churchtools_person_id: releaseJob's guard
+      // requires zugewiesen_an to match the person passed in, and for a Portal-Admin authorized
+      // via the freigabe1_eskaliert_an_admin branch, the admin's own ID never equals
+      // job.zugewiesen_an (still the excluded Stellvertreter1's ID) — passing the admin's ID would
+      // silently match zero rows while still redirecting to /pool as if it had succeeded. For the
+      // ordinary (non-admin) path this is definitionally identical, since loadAuthorizedJob already
+      // verified job.zugewiesen_an === req.currentPerson.churchtools_person_id to get here.
+      releaseJob(db, job.id, job.zugewiesen_an, { hinweisKontoId: gueltigerHinweis ? gueltigerHinweis.id : null });
+
+      if (gueltigerHinweis) {
+        const freigeber1 = getPersonById(db, gueltigerHinweis.freigeber1_id);
+        if (freigeber1) {
+          await sendNotification(db, mailer, {
+            to: freigeber1.email,
+            subject: 'Freigabeportal: Rechnung vermutlich für dein Konto — bitte aus dem Pool holen',
+            text: `Eine Rechnung wurde mit dem Hinweis in den Pool zurückgelegt, dass sie vermutlich für dein Konto ${gueltigerHinweis.kontonummer} — ${gueltigerHinweis.bezeichnung} bestimmt ist: ${job.dateiname}\n\nBitte im Freigabeportal anmelden und aus dem Pool holen: ${config.publicBaseUrl}/pool`,
+            typ: 'zuweisung',
+            jobId: job.id,
+          });
+        }
+      }
+
+      res.redirect('/pool');
+    } catch (err) {
+      next(err);
+    }
   });
 
   function renderAufsplittenForm(req, res, status, job, konten, gesamtbetrag, teile, errors) {

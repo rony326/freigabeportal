@@ -237,7 +237,7 @@ export function eskalierenFreigabe2AnAdmin(db, jobId, { eskaliertVon, grund }) {
   ).run(eskaliertVon, grund, jobId);
 }
 
-export function releaseJob(db, jobId, personId) {
+export function releaseJob(db, jobId, personId, { hinweisKontoId } = {}) {
   // Also clears freigabe1_eskaliert_von/-grund: a stellvertreter1 who was escalated to can
   // release the job too (loadAuthorizedJob only checks current zugewiesen_an), and a fresh
   // claimer must not inherit a stale escalation record from a previous claim cycle. Also
@@ -247,7 +247,9 @@ export function releaseJob(db, jobId, personId) {
   // unlike wiederOeffnenJob (which deliberately preserves the flag, since a rework cycle on the
   // same job/Konto means the conflict is still real), releaseJob is a genuine fresh start — the
   // job may be reassigned to an entirely different Konto, for which the old exclusion no longer
-  // applies.
+  // applies. hinweis_konto_id is always written (to the given value or NULL), not left untouched,
+  // for the same "fresh start" reason — a hint from a prior, possibly-wrong release must not
+  // silently survive into the next pool cycle just because this one didn't set a new one.
   const result = db
     .prepare(
       `UPDATE jobs
@@ -256,10 +258,11 @@ export function releaseJob(db, jobId, personId) {
            freigabe1_eskaliert_an_admin = 0,
            freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL,
            freigabe2_eskaliert_an_admin = 0,
-           reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL
+           reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
+           hinweis_konto_id = ?
        WHERE id = ? AND zugewiesen_an = ? AND status = 'zugewiesen'`
     )
-    .run(jobId, personId);
+    .run(hinweisKontoId || null, jobId, personId);
   return result.changes > 0;
 }
 

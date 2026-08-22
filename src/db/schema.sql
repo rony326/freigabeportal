@@ -99,7 +99,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   lieferant TEXT,
   debitor_id INTEGER REFERENCES debitoren(id),
   aufgesplittet_von INTEGER REFERENCES jobs(id),
-  datei_hash TEXT
+  datei_hash TEXT,
+  hinweis_konto_id INTEGER REFERENCES konten(id)
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (

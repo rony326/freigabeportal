@@ -19,6 +19,9 @@ export function createPoolPageRouter({ db, config }) {
       ...job,
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       kontonummer: job.konto_id ? (getKontoById(db, job.konto_id)?.kontonummer ?? null) : null,
+      // Only meaningful while the job still sits unzugewiesen in the Pool — once it's actually
+      // kontiert, the real Konto (above) takes over and this best-effort hint is moot.
+      hinweisKonto: job.hinweis_konto_id ? (getKontoById(db, job.hinweis_konto_id) ?? null) : null,
     }));
   }
 

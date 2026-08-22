@@ -870,6 +870,48 @@ test('releaseJob clears reminder_gesendet_at and eskalation_gesendet_at so a fre
   db.close();
 });
 
+test('releaseJob stores an optional hinweisKontoId so the Pool can show which Konto this invoice is probably meant for', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const anderesKontoId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+
+  releaseJob(db, jobId, '1', { hinweisKontoId: anderesKontoId });
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.hinweis_konto_id, anderesKontoId);
+  db.close();
+});
+
+test('releaseJob defaults hinweis_konto_id to null when no hint is given', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+
+  releaseJob(db, jobId, '1');
+  assert.equal(getJobById(db, jobId).hinweis_konto_id, null);
+  db.close();
+});
+
+test('releaseJob clears a stale hinweis_konto_id from a prior release cycle when the new one carries no hint', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const anderesKontoId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+  releaseJob(db, jobId, '1', { hinweisKontoId: anderesKontoId });
+
+  // Someone claims the mis-hinted job, realizes the hint was itself wrong, and releases it again
+  // without one -- releaseJob is documented as a "genuine fresh start", so the stale hint must
+  // not silently survive into the next pool cycle.
+  claimJob(db, jobId, '2');
+  releaseJob(db, jobId, '2');
+  assert.equal(getJobById(db, jobId).hinweis_konto_id, null);
+  db.close();
+});
+
 test('listAbgeholtJobs returns only abgeholt jobs', () => {
   const db = openDatabase(':memory:');
   const abgeholtId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });

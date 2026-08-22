@@ -216,6 +216,22 @@ test('GET /pool shows an em dash for Konto when a Pool job has not been kontiert
   db.close();
 });
 
+test('GET /pool shows a "Hinweis: <Konto>" label for a Pool job released with a hinweis_konto_id', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
+  const kontoId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '1', stellvertreter2Id: '2' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'brack@example.com', dateiname: 'brack.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare('UPDATE jobs SET hinweis_konto_id = ? WHERE id = ?').run(kontoId, id);
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Hinweis: 4200 — Kinderbereich/);
+  db.close();
+});
+
 test('GET /pool lists a job awaiting this person\'s Freigabe 2 under "Meine Freigaben"', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db, '50');

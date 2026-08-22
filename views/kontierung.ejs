@@ -95,7 +95,7 @@
             <div class="d-flex flex-wrap gap-2">
               <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary btn-sm">Kontieren</button>
               <button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger btn-sm">Ablehnen</button>
-              <button type="submit" form="zurueck-in-pool-form" class="btn btn-outline-secondary btn-sm">Zurück in den Pool legen</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#zurueck-in-pool-modal">Zurück in den Pool legen</button>
               <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#aufsplitten-modal">Rechnung aufsplitten</button>
             </div>
           </div>
@@ -113,6 +113,33 @@
           </div>
           <div class="modal-body p-0">
             <iframe id="aufsplitten-frame" title="Rechnung aufsplitten" style="width:100%;height:70vh;border:0"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="zurueck-in-pool-modal" tabindex="-1" aria-labelledby="zurueck-in-pool-modal-label" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="zurueck-in-pool-modal-label">Zurück in den Pool legen</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label" for="hinweisKontoId">Für welches Konto ist diese Rechnung vermutlich bestimmt? <span class="text-muted">(optional)</span></label>
+              <select class="form-select" id="hinweisKontoId" name="hinweisKontoId" form="zurueck-in-pool-form" data-searchable>
+                <option value="">— kein Hinweis —</option>
+                <% alleKonten.forEach((k) => { %>
+                  <option value="<%= k.id %>"><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+                <% }) %>
+              </select>
+              <div class="form-text">Hilft der zuständigen Person, die Rechnung im Pool zu finden — sie bekommt eine E-Mail.</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="submit" form="zurueck-in-pool-form" class="btn btn-primary">Zurück in den Pool legen</button>
           </div>
         </div>
       </div>

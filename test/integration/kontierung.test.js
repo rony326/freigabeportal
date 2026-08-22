@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
-import { createKonto, getKontoById } from '../../src/db/kontenRepo.js';
+import { createKonto, getKontoById, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob, listSplitKinder, updateKontierungMetadaten } from '../../src/db/jobsRepo.js';
 import { listFreigabenByJob, createFreigabe } from '../../src/db/freigabenRepo.js';
 import { buildAuditLog } from '../../src/services/auditLog.js';
@@ -250,7 +250,11 @@ test('GET /kontierung/:id shows an empty Konto dropdown for a pool-claim by some
 
   const getRes = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '5');
   assert.equal(getRes.status, 200);
-  assert.doesNotMatch(getRes.text, /3000/, 'person 5 has no role on Konto 3000, so it must not appear in their dropdown');
+  // Konto 3000 legitimately appears elsewhere on the page now (the Zurück-in-den-Pool
+  // Hinweis-Konto picker deliberately lists every active Konto, not just this person's own) — so
+  // scope this assertion to the actual Kontierung <select> itself, not the whole page.
+  const kontoSelect = getRes.text.match(/<select class="form-select" id="kontoId"[\s\S]*?<\/select>/)[0];
+  assert.doesNotMatch(kontoSelect, /3000/, 'person 5 has no role on Konto 3000, so it must not appear in their dropdown');
 
   const releaseRes = await request(app).post(`/kontierung/${id}/zurueck-in-pool`).set('x-test-person-id', '5');
   assert.equal(releaseRes.status, 302);
@@ -561,6 +565,92 @@ test('POST /kontierung/:id/zurueck-in-pool releases the job and redirects to /po
   const job = getJobById(db, id);
   assert.equal(job.status, 'unzugewiesen');
   assert.equal(job.zugewiesen_an, null);
+  db.close();
+});
+
+test('POST /kontierung/:id/zurueck-in-pool with a hinweisKontoId sets it on the job and emails that Konto\'s Freigeber1', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', ...
+  const kinderbereichId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '3', stellvertreter1Id: '4', freigeber2Id: '1', stellvertreter2Id: '2' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'brack.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/zurueck-in-pool`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ hinweisKontoId: String(kinderbereichId) });
+
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+  const job = getJobById(db, id);
+  assert.equal(job.hinweis_konto_id, kinderbereichId);
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'p3@example.org', 'Freigeber1 of the hinted Konto, not the releasing person\'s own Konto');
+  assert.match(mailer.sent[0].text, /brack\.pdf/);
+  assert.match(mailer.sent[0].text, /\/pool/);
+  db.close();
+});
+
+test('POST /kontierung/:id/zurueck-in-pool without a hinweisKontoId behaves exactly as before, no mail sent', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app).post(`/kontierung/${id}/zurueck-in-pool`).set('x-test-person-id', '1');
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).hinweis_konto_id, null);
+  assert.equal(mailer.sent.length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id/zurueck-in-pool silently ignores an invalid hinweisKontoId, still releases, no mail sent', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/zurueck-in-pool`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ hinweisKontoId: '999999' });
+
+  assert.equal(res.status, 302);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.hinweis_konto_id, null);
+  assert.equal(mailer.sent.length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id/zurueck-in-pool silently ignores an inactive hinweisKontoId, still releases, no mail sent', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const inaktivKontoId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '3', stellvertreter1Id: '4', freigeber2Id: '1', stellvertreter2Id: '2' });
+  deactivateKonto(db, inaktivKontoId);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/zurueck-in-pool`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ hinweisKontoId: String(inaktivKontoId) });
+
+  assert.equal(res.status, 302);
+  const job = getJobById(db, id);
+  assert.equal(job.hinweis_konto_id, null);
+  assert.equal(mailer.sent.length, 0);
   db.close();
 });
 
@@ -1214,6 +1304,27 @@ test('POST /kontierung/lieferanten trims the name and stores the optional Konto'
   const debitor = getDebitorById(db, res.body.id);
   assert.equal(debitor.name, 'Muster AG');
   assert.equal(debitor.konto_id, kontoId);
+  db.close();
+});
+
+test('GET /kontierung/:id offers a Konto-Hinweis picker on "Zurück in den Pool legen" that lists every active Konto, not just this person\'s own', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db); // freigeber1Id: '1' -- the assigned person below
+  upsertPerson(db, { id: '9', vorname: 'Fremd', nachname: 'Person', email: 'fremd@example.org', gruppen: ['10'], loggedInNow: true });
+  createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '9', stellvertreter1Id: '9', freigeber2Id: '9', stellvertreter2Id: '9' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'brack@example.com', dateiname: 'brack.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="zurueck-in-pool-modal"/);
+  assert.match(res.text, /name="hinweisKontoId"/);
+  // Person 1 holds no role on Kinderbereich, unlike the main Konto-select — the hint picker must
+  // still offer it, since the whole point is routing to a Konto this person can't touch.
+  assert.match(res.text, /4200 — Kinderbereich/);
+  assert.match(res.text, /id="zurueck-in-pool-form"/);
+  assert.match(res.text, new RegExp(`action="/kontierung/${id}/zurueck-in-pool"`));
   db.close();
 });
 

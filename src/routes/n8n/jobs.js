@@ -3,8 +3,9 @@ import multer from 'multer';
 import { writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import crypto from 'node:crypto';
-import { createJob, getJobById, findJobByDateiHash, listAbholbereitJobs, confirmAbholung, setThumbnailPfad } from '../../db/jobsRepo.js';
+import { createJob, getJobById, findJobByDateiHash, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setQrDaten } from '../../db/jobsRepo.js';
 import { renderFirstPageThumbnail } from '../../services/thumbnail.js';
+import { scanQrBill } from '../../services/qrBillScan.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
 import { getPersonById } from '../../db/personenRepo.js';
 import { sendNotification } from '../../services/notify.js';
@@ -82,6 +83,20 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           setThumbnailPfad(db, id, thumbnailPfad);
         } catch (err) {
           console.error(`Thumbnail-Rendering fehlgeschlagen für Job ${id}:`, err.message);
+        }
+        try {
+          const qrDaten = scanQrBill(req.file.buffer);
+          if (qrDaten) {
+            setQrDaten(db, id, {
+              qrIban: qrDaten.iban,
+              qrReferenz: qrDaten.referenz,
+              qrBetrag: qrDaten.betrag,
+              qrWaehrung: qrDaten.waehrung,
+              qrCreditorName: qrDaten.creditorName,
+            });
+          }
+        } catch (err) {
+          console.error(`QR-Code-Erkennung fehlgeschlagen für Job ${id}:`, err.message);
         }
         const job = getJobById(db, id);
 

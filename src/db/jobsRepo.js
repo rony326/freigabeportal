@@ -386,16 +386,23 @@ export function listFreigabe2JobsForPerson(db, personId) {
     .all(personId, personId);
 }
 
-// Same konto-membership logic as listFreigabe2JobsForPerson, widened to the three
-// completed-and-beyond statuses (so it keeps listing a job after n8n abholt/archiviert it, even
-// though its PDF file is no longer available to preview/verify by then) plus a direct
-// zugewiesen_an match (the person who did the Kontierung, not necessarily the Freigeber2).
+// Same konto-membership logic as listFreigabe2JobsForPerson (including the
+// freigabe2_eskaliert_an_admin = 0 guard: a job that reached admin-escalation stays excluded from
+// the recused freigeber2/stellvertreter2's own lists, matching listFreigabe2JobsForPerson's
+// intent), widened to the three completed-and-beyond statuses (so it keeps listing a job after
+// n8n abholt/archiviert it, even though its PDF file is no longer available to preview/verify by
+// then) plus a direct zugewiesen_an match (the person who did the Kontierung, not necessarily the
+// Freigeber2). In practice abschliessenFreigabe2 always clears freigabe2_eskaliert_an_admin back
+// to 0 by the time a job reaches 'abgeschlossen', so this guard is defense-in-depth rather than
+// something normal completion flows can trip — but it keeps the two queries' access rules
+// identical rather than relying on that invariant holding forever.
 export function listAbgeschlossenJobsForPerson(db, personId) {
   return db
     .prepare(
       `SELECT jobs.* FROM jobs
        JOIN konten ON konten.id = jobs.konto_id
        WHERE jobs.status IN ('abgeschlossen', 'abgeholt', 'archiviert')
+         AND jobs.freigabe2_eskaliert_an_admin = 0
          AND (
            jobs.zugewiesen_an = ?
            OR (jobs.freigabe2_eskaliert_von IS NULL AND konten.freigeber2_id = ?)

@@ -602,6 +602,24 @@ test('listAbgeschlossenJobsForPerson excludes a job that has not reached abgesch
   db.close();
 });
 
+test('listAbgeschlossenJobsForPerson excludes a job that has been admin-escalated past the excluded stellvertreter2, even once it reaches abgeschlossen', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber2Id: '3', stellvertreter2Id: '4'
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Befangen' });
+  eskalierenFreigabe2AnAdmin(db, jobId, { eskaliertVon: '4', grund: 'Auch befangen' });
+  // Carried to abgeschlossen directly (bypassing abschliessenFreigabe2, which would otherwise
+  // clear freigabe2_eskaliert_an_admin) so the query's guard is exercised on its own merits,
+  // matching listFreigabe2JobsForPerson's admin-escalation exclusion.
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
+
+  assert.equal(listAbgeschlossenJobsForPerson(db, '3').length, 0);
+  assert.equal(listAbgeschlossenJobsForPerson(db, '4').length, 0);
+  db.close();
+});
+
 test('listFreigabe2JobsForPerson excludes a job that has been admin-escalated past the excluded stellvertreter2', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db); // freigeber2Id: '3', stellvertreter2Id: '4'

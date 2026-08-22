@@ -15,7 +15,7 @@ import {
 } from '../db/jobsRepo.js';
 import { pruneMailLogOlderThan } from '../db/mailLogRepo.js';
 import { sendNotification, resolveEmpfaenger } from './notify.js';
-import { logCronLauf } from '../db/cronLogRepo.js';
+import { logCronLauf, startCronLauf, finishCronLauf, hasRecentRunningCronLauf } from '../db/cronLogRepo.js';
 import { setZeitstempel } from './zeitstempel.js';
 
 const TMP_MAX_ALTER_MS = 60 * 60 * 1000; // 1 Stunde
@@ -187,12 +187,23 @@ export function runPdfBereinigungJob(db, config) {
 // "empty zeitstempel_tsa_url = feature disabled" behavior at Freigabe-2 completion. Each pending
 // job is tried independently — one job's TSA failure or missing PDF file must never stop the
 // others in the same run from being retried.
+//
+// Overlap guard: unlike pool-erinnerungen/pdf-bereinigung (fast, no per-item network round-trip),
+// each iteration here awaits a real TSA call, so a batch can take a while — Task 5's manual
+// "Jetzt ausführen" trigger calls this exact function too, and could otherwise fire while a
+// scheduled run is still mid-batch. Same start/finish/hasRecentRunning pattern as
+// runSyncPersonenJob's hasRecentRunningSync guard, just scoped to cron_log via
+// startCronLauf/finishCronLauf/hasRecentRunningCronLauf instead of sync_log.
 export async function runZeitstempelNachholenJob(db, config) {
-  const gestartetAm = new Date().toISOString();
   const tsaUrl = getConfigValue(db, 'zeitstempel_tsa_url');
   if (!tsaUrl) {
     return { status: 'uebersprungen', nachgeholt: 0 };
   }
+  if (hasRecentRunningCronLauf(db, 'zeitstempel-nachholen')) {
+    return { status: 'uebersprungen', nachgeholt: 0, meldung: 'Ein Zeitstempel-Nachholen-Lauf ist bereits aktiv' };
+  }
+
+  const laufId = startCronLauf(db, 'zeitstempel-nachholen');
   try {
     const tsaConfig = {
       url: tsaUrl,
@@ -227,16 +238,14 @@ export async function runZeitstempelNachholenJob(db, config) {
     }
 
     const ergebnis = { status: 'erfolg', nachgeholt, fehlgeschlagen, dateiFehlt };
-    logCronLauf(db, {
-      job: 'zeitstempel-nachholen',
-      gestartetAm,
+    finishCronLauf(db, laufId, {
       beendetAm: new Date().toISOString(),
       status: 'erfolg',
       details: `Nachgeholt: ${nachgeholt}, Fehlgeschlagen: ${fehlgeschlagen}, Datei fehlt: ${dateiFehlt}`,
     });
     return ergebnis;
   } catch (err) {
-    logCronLauf(db, { job: 'zeitstempel-nachholen', gestartetAm, beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
+    finishCronLauf(db, laufId, { beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
     return { status: 'fehler', error: err.message };
   }
 }

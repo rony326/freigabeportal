@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { createJob, getJobById } from '../../src/db/jobsRepo.js';
-import { listRecentCronLog } from '../../src/db/cronLogRepo.js';
+import { listRecentCronLog, startCronLauf } from '../../src/db/cronLogRepo.js';
 import { runZeitstempelNachholenJob } from '../../src/services/cronJobs.js';
 import { setupMockTsa } from '../helpers/mockTsa.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
@@ -91,6 +91,29 @@ test('runZeitstempelNachholenJob counts a job whose PDF file no longer exists as
   assert.equal(result.dateiFehlt, 1);
   assert.equal(getJobById(db, id).zeitstempel_gesetzt_am, null);
 
+  db.close();
+});
+
+test('runZeitstempelNachholenJob skips (uebersprungen) when another zeitstempel-nachholen run is already laufend, without touching pending jobs', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'nachholen-test-'));
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const { id } = await seedAbgeschlossenJob(db, dir);
+
+  // No interceptor registered -- if the guard failed to skip and the job proceeded anyway, the
+  // TSA call would find nothing to respond and the job would come back fehlgeschlagen instead of
+  // untouched, exposing the bug just as clearly as a hang would.
+  setupMockTsa('https://tsa.example.org/tsr');
+  // Simulate a scheduled run still mid-batch (Task 5's manual trigger would call this same
+  // function while that scheduled run's cron_log row is still 'laufend').
+  startCronLauf(db, 'zeitstempel-nachholen');
+
+  const result = await runZeitstempelNachholenJob(db, {});
+  assert.equal(result.status, 'uebersprungen');
+  assert.equal(result.nachgeholt, 0);
+  assert.equal(getJobById(db, id).zeitstempel_gesetzt_am, null, 'the pending job must not have been touched while another run is active');
+
+  rmSync(dir, { recursive: true, force: true });
   db.close();
 });
 

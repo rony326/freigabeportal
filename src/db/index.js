@@ -72,11 +72,13 @@ function migrateFreigabenTable(db) {
 }
 
 // Same rationale as migrateFreigabenTable above: an already-existing cron_log table (any database
-// that predates the 'zeitstempel-nachholen' job name) keeps its original, narrower CHECK forever
-// otherwise, and logCronLauf('zeitstempel-nachholen', ...) would fail on it.
+// that predates the 'zeitstempel-nachholen' job name, or predates the 'laufend' status value and
+// nullable beendet_am that a running-but-not-yet-finished zeitstempel-nachholen entry needs — see
+// hasRecentRunningCronLauf in cronLogRepo.js) keeps its original, narrower schema forever
+// otherwise, and logCronLauf/startCronLauf('zeitstempel-nachholen', ...) would fail on it.
 function migrateCronLogTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cron_log'").get();
-  if (!tableSql || tableSql.sql.includes('zeitstempel-nachholen')) return;
+  if (!tableSql || (tableSql.sql.includes('zeitstempel-nachholen') && tableSql.sql.includes("'laufend'"))) return;
 
   db.exec('BEGIN');
   try {
@@ -86,8 +88,8 @@ function migrateCronLogTable(db) {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen')),
         gestartet_am TEXT NOT NULL,
-        beendet_am TEXT NOT NULL,
-        status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler')),
+        beendet_am TEXT,
+        status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
         details TEXT
       )
     `);

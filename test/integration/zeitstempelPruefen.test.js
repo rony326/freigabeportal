@@ -153,7 +153,7 @@ test('POST /zeitstempel-pruefen with a jobId for a job the person is not authori
   db.close();
 });
 
-test('POST /zeitstempel-pruefen with a jobId never shows the Zertifikat-Button ‚Äî the result reflects the uploaded file, not the file stored on disk', async () => {
+test('POST /zeitstempel-pruefen with a jobId renders the Pr√ºfbescheinigung directly, noting the checked file was uploaded (not read from the portal)', async () => {
   const { createHash } = await import('node:crypto');
   const db = openDatabase(':memory:');
   seedPerson(db, '1');
@@ -161,7 +161,7 @@ test('POST /zeitstempel-pruefen with a jobId never shows the Zertifikat-Button ‚
   const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   setKontierung(db, id, kontoId);
   const hash = createHash('sha256').update(RFC3161_TIMESTAMPED_PDF).digest('hex');
-  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1', zeitstempel_datei_hash = ? WHERE id = ?").run(hash, id);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1', zeitstempel_datei_hash = ?, rechnungsnummer = 'RE-2026-042' WHERE id = ?").run(hash, id);
 
   const app = buildTestApp(db);
   const res = await request(app)
@@ -170,7 +170,10 @@ test('POST /zeitstempel-pruefen with a jobId never shows the Zertifikat-Button ‚
     .field('jobId', String(id))
     .attach('pdf', RFC3161_TIMESTAMPED_PDF, 'timestamped.pdf');
   assert.equal(res.status, 200);
-  assert.doesNotMatch(res.text, /Zertifikat anzeigen/);
+  assert.match(res.text, /Pr√ºfbescheinigung/);
+  assert.match(res.text, /RE-2026-042/);
+  assert.match(res.text, /hochgeladen/);
+  assert.match(res.text, /window\.print\(\)/);
   db.close();
 });
 

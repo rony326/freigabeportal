@@ -41,7 +41,7 @@ export function createZeitstempelPruefenRouter({ db, config }) {
         return res.status(404).render('error', { message: 'PDF-Datei für diesen Job ist nicht mehr vorhanden.' });
       }
       const ergebnis = await verifyZeitstempel(readFileSync(job.pdf_pfad), job.zeitstempel_datei_hash);
-      res.render('zeitstempel-zertifikat', { ergebnis, job, erstelltAm: new Date().toISOString(), erstelltVon: `${req.currentPerson.vorname} ${req.currentPerson.nachname}` });
+      res.render('zeitstempel-zertifikat', { ergebnis, job, erstelltAm: new Date().toISOString(), erstelltVon: `${req.currentPerson.vorname} ${req.currentPerson.nachname}`, hochgeladen: false });
     } catch (err) {
       next(err);
     }
@@ -57,15 +57,23 @@ export function createZeitstempelPruefenRouter({ db, config }) {
         if (!req.file) {
           return res.status(400).render('zeitstempel-pruefen', { ergebnis: null, errors: ['Bitte eine PDF-Datei auswählen.'], jobId: null, job: null });
         }
-        let erwarteterHash = null;
+        let vergleichsJob = null;
         if (req.body.jobId) {
-          const vergleichsJob = getJobById(db, Number(req.body.jobId));
+          vergleichsJob = getJobById(db, Number(req.body.jobId));
           if (!vergleichsJob || !canViewJobPdf(db, config, req.currentPerson, vergleichsJob)) {
             return res.status(403).render('error', { message: 'Kein Zugriff auf diesen Job.' });
           }
-          erwarteterHash = vergleichsJob.zeitstempel_datei_hash;
         }
-        const ergebnis = await verifyZeitstempel(req.file.buffer, erwarteterHash);
+        const ergebnis = await verifyZeitstempel(req.file.buffer, vergleichsJob ? vergleichsJob.zeitstempel_datei_hash : null);
+        if (vergleichsJob) {
+          return res.render('zeitstempel-zertifikat', {
+            ergebnis,
+            job: vergleichsJob,
+            erstelltAm: new Date().toISOString(),
+            erstelltVon: `${req.currentPerson.vorname} ${req.currentPerson.nachname}`,
+            hochgeladen: true,
+          });
+        }
         res.render('zeitstempel-pruefen', { ergebnis, errors: [], jobId: null, job: null });
       } catch (err) {
         next(err);

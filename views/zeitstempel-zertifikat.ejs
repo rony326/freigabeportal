@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Prüfbescheinigung — <%= branding.seitenTitel %></title>
+  <style>
+    .bescheinigung { border: 2px solid #333; padding: 2rem; }
+    .hash-wert { font-family: monospace; word-break: break-all; }
+    @media print {
+      .no-print { display: none !important; }
+      .bescheinigung { border: 2px solid #000; }
+      body { padding: 0; }
+      body { background: #fff !important; color: #000 !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print"><%- include('_header') %></div>
+  <main class="container py-4">
+    <p class="no-print"><a href="/zeitstempel-pruefen?jobId=<%= job.id %>">← Zurück zur Prüfung</a></p>
+
+    <div class="bescheinigung col-12 col-lg-8">
+      <h1>Prüfbescheinigung</h1>
+      <p class="text-muted">Diese Bescheinigung ist kein rechtsverbindliches Signaturzertifikat. Sie fasst das Ergebnis der RFC3161-Zeitstempel- und Hash-Prüfung dieses Dokuments zusammen.</p>
+
+      <h2 class="h5 mt-4">Beleg</h2>
+      <p class="mb-1"><strong>Dateiname:</strong> <%= job.dateiname %></p>
+      <% if (job.rechnungsnummer) { %><p class="mb-1"><strong>Rechnungsnummer:</strong> <%= job.rechnungsnummer %></p><% } %>
+      <% if (job.lieferant) { %><p class="mb-1"><strong>Lieferant:</strong> <%= job.lieferant %></p><% } %>
+      <% if (job.betrag) { %><p class="mb-1"><strong>Betrag:</strong> <%= job.betrag %></p><% } %>
+
+      <h2 class="h5 mt-4">Prüfergebnis</h2>
+      <ul class="list-unstyled">
+        <li><%= ergebnis.vorhanden ? '✓' : '✗' %> Zeitstempel vorhanden</li>
+        <li><%= ergebnis.gueltig ? '✓' : '✗' %> Kryptografisch gültig (RFC3161)</li>
+        <li>
+          <% if (ergebnis.hashUebereinstimmung === true) { %>✓ Hash stimmt mit Datenbank überein
+          <% } else if (ergebnis.hashUebereinstimmung === false) { %>✗ Hash weicht von der Datenbank ab
+          <% } else { %>– kein Vergleichswert vorhanden
+          <% } %>
+        </li>
+      </ul>
+      <p><strong>Zeitpunkt des Zeitstempels:</strong> <%= ergebnis.zeitpunkt || '—' %></p>
+      <% if (ergebnis.tsaPolicy) { %><p><strong>TSA-Policy:</strong> <%= ergebnis.tsaPolicy %></p><% } %>
+
+      <h2 class="h5 mt-4">Hash-Werte (SHA-256)</h2>
+      <p class="mb-1"><strong>Aktuell berechneter Hash der Datei:</strong><br><span class="hash-wert"><%= ergebnis.dateiHash %></span></p>
+      <p class="mb-1"><strong>In der Datenbank hinterlegter Hash:</strong><br><span class="hash-wert"><%= job.zeitstempel_datei_hash || '— kein Vergleichswert vorhanden' %></span></p>
+
+      <p class="text-muted small mt-4">Diese Bescheinigung wurde erstellt am <%= erstelltAm %> durch <%= erstelltVon %>.</p>
+    </div>
+
+    <p class="no-print mt-3"><button type="button" class="btn btn-primary" onclick="window.print()">Drucken / als PDF speichern</button></p>
+  </main>
+  <div class="no-print"><%- include('_footer') %></div>
+</body>
+</html>

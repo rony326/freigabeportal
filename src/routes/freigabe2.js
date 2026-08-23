@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { getJobById, eskalierenFreigabe2, eskalierenFreigabe2AnAdmin, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id, markZeitstempelGesetzt } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../db/freigabenRepo.js';
@@ -261,6 +261,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
       // zeitstempel-nachholen cron job (see cronJobs.js) rather than rolled back here.
       const tsaUrl = getConfigValue(db, 'zeitstempel_tsa_url');
       let zeitstempelGesetztAm = null;
+      let zeitstempelDateiHash = null;
       if (tsaUrl) {
         try {
           stamped = await setZeitstempel(stamped, {
@@ -269,6 +270,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
             passwort: getConfigValue(db, 'zeitstempel_tsa_passwort') || undefined,
           });
           zeitstempelGesetztAm = new Date().toISOString();
+          zeitstempelDateiHash = createHash('sha256').update(stamped).digest('hex');
         } catch (err) {
           console.error(`Zeitstempel für Job ${job.id} fehlgeschlagen, wird nachgeholt:`, err.message);
         }
@@ -298,7 +300,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
           ]);
         }
         if (zeitstempelGesetztAm) {
-          markZeitstempelGesetzt(db, job.id, zeitstempelGesetztAm);
+          markZeitstempelGesetzt(db, job.id, zeitstempelGesetztAm, zeitstempelDateiHash);
         }
         db.exec('COMMIT');
       } catch (err) {
@@ -325,7 +327,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
         // and the zeitstempel-nachholen cron job retries the job later.
         if (zeitstempelGesetztAm) {
           try {
-            markZeitstempelGesetzt(db, job.id, null);
+            markZeitstempelGesetzt(db, job.id, null, null);
           } catch (clearErr) {
             console.error(`Zurücksetzen von zeitstempel_gesetzt_am für Job ${job.id} fehlgeschlagen:`, clearErr.message);
           }

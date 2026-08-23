@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { timestampPdf, extractTimestamps, verifyTimestamp } from 'pdf-rfc3161';
 
 // Bounded well below the library's own defaults (timeout 30000ms, retry 3, retryDelay 1000ms —
@@ -37,16 +38,26 @@ export async function setZeitstempel(pdfBuffer, tsaConfig) {
 // Never throws: a PDF with no timestamp, a corrupt/unreadable PDF, or a cryptographically invalid
 // timestamp are all normal, displayable outcomes for the verification UI (dashboard link, upload
 // tool) — not error conditions the caller needs to catch.
-export async function verifyZeitstempel(pdfBuffer) {
-  const LEER = { vorhanden: false, gueltig: false, zeitpunkt: null, tsaPolicy: null };
+//
+// erwarteterHash lets a caller with a DB-stored hash (a job's zeitstempel_datei_hash) ask "is this
+// really that exact file?" — independent of the RFC3161 result. RFC3161 alone proves "this file is
+// unchanged since it was stamped", but not "this is the file that belongs to this job": a job's
+// pdf_pfad could be swapped for a different, separately valid, stamped PDF without RFC3161 alone
+// noticing. dateiHash is always computed, whether or not a timestamp is present, since the hash
+// comparison is an independent fact about the bytes, not a sub-step of the RFC3161 check.
+export async function verifyZeitstempel(pdfBuffer, erwarteterHash = null) {
+  const dateiHash = createHash('sha256').update(pdfBuffer).digest('hex');
+  const hashUebereinstimmung = erwarteterHash != null ? dateiHash === erwarteterHash : null;
+  const basis = { dateiHash, hashUebereinstimmung };
+
   let extrahiert;
   try {
     extrahiert = await extractTimestamps(pdfBuffer);
   } catch {
-    return LEER;
+    return { vorhanden: false, gueltig: false, zeitpunkt: null, tsaPolicy: null, ...basis };
   }
   if (extrahiert.length === 0) {
-    return LEER;
+    return { vorhanden: false, gueltig: false, zeitpunkt: null, tsaPolicy: null, ...basis };
   }
   const verifiziert = await verifyTimestamp(extrahiert[0], { pdf: pdfBuffer });
   return {
@@ -54,5 +65,6 @@ export async function verifyZeitstempel(pdfBuffer) {
     gueltig: verifiziert.verified,
     zeitpunkt: verifiziert.info.genTime.toISOString(),
     tsaPolicy: verifiziert.info.policy,
+    ...basis,
   };
 }

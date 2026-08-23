@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   datei_hash TEXT,
   hinweis_konto_id INTEGER REFERENCES konten(id),
   zeitstempel_gesetzt_am TEXT,
+  zeitstempel_datei_hash TEXT,
   abgeschlossen_am TEXT,
   qr_iban TEXT,
   qr_referenz TEXT,

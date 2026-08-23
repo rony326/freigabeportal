@@ -1138,15 +1138,30 @@ test('archivierenJob refuses to archive a job that is not abgeholt', () => {
   db.close();
 });
 
-test('markZeitstempelGesetzt sets zeitstempel_gesetzt_am, leaves it null until called', () => {
+test('markZeitstempelGesetzt sets zeitstempel_gesetzt_am and zeitstempel_datei_hash together', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
 
   assert.equal(getJobById(db, jobId).zeitstempel_gesetzt_am, null);
-  markZeitstempelGesetzt(db, jobId, '2026-08-21T10:00:00.000Z');
+  assert.equal(getJobById(db, jobId).zeitstempel_datei_hash, null);
+  markZeitstempelGesetzt(db, jobId, '2026-08-21T10:00:00.000Z', 'abc123');
   assert.equal(getJobById(db, jobId).zeitstempel_gesetzt_am, '2026-08-21T10:00:00.000Z');
+  assert.equal(getJobById(db, jobId).zeitstempel_datei_hash, 'abc123');
+  db.close();
+});
+
+test('markZeitstempelGesetzt with null, null clears both fields again', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
+
+  markZeitstempelGesetzt(db, jobId, '2026-08-21T10:00:00.000Z', 'abc123');
+  markZeitstempelGesetzt(db, jobId, null, null);
+  assert.equal(getJobById(db, jobId).zeitstempel_gesetzt_am, null);
+  assert.equal(getJobById(db, jobId).zeitstempel_datei_hash, null);
   db.close();
 });
 

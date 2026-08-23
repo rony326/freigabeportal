@@ -123,6 +123,10 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
 
     const stampPage = doc.addPage([width, height]);
     let y = height - 50;
+    if (stampData.jobId != null) {
+      stampPage.drawText(`Job-ID: ${stampData.jobId}`, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });
+      y -= 30;
+    }
     if (stampData.konto) {
       for (const line of wrapLine(boldFont, `Konto: ${stampData.konto.nummer} — ${stampData.konto.bezeichnung}`, 14, maxWidth)) {
         stampPage.drawText(line, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });

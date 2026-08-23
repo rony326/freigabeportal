@@ -216,6 +216,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
         kommentar: begruendung || null,
       };
       const stampData = {
+        jobId: job.id,
         konto: { nummer: konto.kontonummer, bezeichnung: konto.bezeichnung },
         freigeber1: {
           name: `${freigeber1Person.vorname} ${freigeber1Person.nachname}`,

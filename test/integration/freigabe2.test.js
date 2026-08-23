@@ -309,6 +309,7 @@ test('POST /freigabe2/:id without conflict approves, stamps the PDF and complete
   assert.match(stampPageText, /Person1/);
   assert.match(stampPageText, /Person3/);
   assert.match(stampPageText, /Konto: 3000 — Unterhalt/, 'the Kontonummer must be visible on the stamped PDF');
+  assert.match(stampPageText, new RegExp(`Job-ID: ${id}`), 'the Job-ID must be printed on the stamped PDF so the record can be identified without portal access');
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

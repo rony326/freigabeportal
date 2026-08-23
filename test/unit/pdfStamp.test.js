@@ -22,6 +22,7 @@ function sampleVerlauf() {
 
 function sampleStampData() {
   return {
+    jobId: 42,
     konto: { nummer: '3000', bezeichnung: 'Unterhalt' },
     freigeber1: sampleFreigeber1(),
     freigeber2: sampleFreigeber2(),
@@ -67,6 +68,28 @@ test('appends exactly one new page (not merged into existing content) carrying b
   assert.match(stampText, /Freigabe 1/);
   assert.match(stampText, /Freigabe 2/);
   assert.match(stampText, /Konto: 3000 — Unterhalt/, 'the Kontonummer must be prominently shown at the top of the stamp page');
+  assert.match(stampText, /Job-ID: 42/, 'the Job-ID must be printed on the archived page so the record can be identified and hash-checked without portal access, years later');
+});
+
+test('the Job-ID line is drawn before (above) the Konto line', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const stamped = await stampAndFinalize(pdf, sampleStampData());
+  const reloaded = await PDFDocument.load(stamped);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
+  const jobIdIndex = stampText.indexOf('Job-ID: 42');
+  const kontoIndex = stampText.indexOf('Konto: 3000');
+  assert.ok(jobIdIndex >= 0 && kontoIndex >= 0 && jobIdIndex < kontoIndex);
+});
+
+test('omitting stampData.jobId skips the Job-ID line without error', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const stampData = sampleStampData();
+  delete stampData.jobId;
+  const stamped = await stampAndFinalize(pdf, stampData);
+  const reloaded = await PDFDocument.load(stamped);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
+  assert.doesNotMatch(stampText, /Job-ID:/);
+  assert.match(stampText, /Freigabe 1/);
 });
 
 test('the Konto line is drawn before (above) the Freigabe 1 block', async () => {

@@ -37,7 +37,11 @@ export function createPoolPageRouter({ db, config }) {
       meineAbgelehnten: enrich(listAbgelehntJobsForPerson(db, personId)),
       adminEskalierteKontierungen: istPortalAdmin ? enrich(listAdminEskalierteKontierungen(db)) : [],
       adminEskalierteFreigaben: istPortalAdmin ? enrich(listAdminEskalierteFreigaben(db)) : [],
-      meineAbgeschlossenen: enrich(listAbgeschlossenJobsForPerson(db, personId)),
+      // Deliberately NOT run through enrich(): _abgeschlossen_table.ejs renders only dateiname,
+      // status and zeitstempel_gesetzt_am — it has neither a thumbnail/preview link nor a Konto
+      // column, unlike the _job_table.ejs-backed sections above. enrich() would mint a signed
+      // download URL and do a getKontoById query per row for values nothing ever reads.
+      meineAbgeschlossenen: listAbgeschlossenJobsForPerson(db, personId),
     });
   });
 

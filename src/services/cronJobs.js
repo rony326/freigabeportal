@@ -12,6 +12,7 @@ import {
   listAbgeholtJobs,
   archivierenJob,
   markZeitstempelGesetzt,
+  listZeitstempelAusstehendJobs,
 } from '../db/jobsRepo.js';
 import { pruneMailLogOlderThan } from '../db/mailLogRepo.js';
 import { sendNotification, resolveEmpfaenger } from './notify.js';
@@ -211,7 +212,7 @@ export async function runZeitstempelNachholenJob(db, config) {
       passwort: getConfigValue(db, 'zeitstempel_tsa_passwort') || undefined,
     };
 
-    const ausstehend = db.prepare("SELECT * FROM jobs WHERE status = 'abgeschlossen' AND zeitstempel_gesetzt_am IS NULL").all();
+    const ausstehend = listZeitstempelAusstehendJobs(db);
     let nachgeholt = 0;
     let fehlgeschlagen = 0;
     let dateiFehlt = 0;

@@ -315,6 +315,21 @@ export function createFreigabe2Router({ db, config, mailer }) {
         // no audit trail) instead of crashing the request. Log loudly so it's noticed rather
         // than silently shipping the wrong file.
         console.error(`Stempel-PDF für Job ${job.id} konnte nicht final abgelegt werden:`, err.message);
+        // The RFC3161 timestamp was applied to the buffer that just failed to reach
+        // job.pdf_pfad — the file still on disk there has no timestamp at all. Leaving
+        // zeitstempel_gesetzt_am set would make the database assert a timestamp that does not
+        // exist: it would open the n8n pickup gate (listAbholbereitJobs/confirmAbholung) for an
+        // untimestamped file, and show "✓ gesetzt am …" next to a /zeitstempel-pruefen result
+        // that finds nothing. Clear it back to NULL (markZeitstempelGesetzt is a plain
+        // parameterised UPDATE, so null is the honest "not set" value) — the gate stays closed
+        // and the zeitstempel-nachholen cron job retries the job later.
+        if (zeitstempelGesetztAm) {
+          try {
+            markZeitstempelGesetzt(db, job.id, null);
+          } catch (clearErr) {
+            console.error(`Zurücksetzen von zeitstempel_gesetzt_am für Job ${job.id} fehlgeschlagen:`, clearErr.message);
+          }
+        }
       }
       res.redirect('/pool');
     } catch (err) {

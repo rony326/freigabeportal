@@ -36,7 +36,7 @@ Einschränkung des Projekts (nicht dieser Bibliothek): kleines Projekt (2 Stars,
 ## Datenmodell
 
 - Neue Spalte `jobs.zeitstempel_gesetzt_am TEXT` (NULL = noch kein gültiger Zeitstempel gesetzt, sonst ISO-Zeitpunkt des letzten erfolgreichen Setzens). Kein weiteres Feld nötig — Fehlversuche werden nicht pro Job persistiert, nur im `cron_log` des Nachhol-Laufs sichtbar.
-- Neue Spalte `jobs.abgeschlossen_am TEXT` (NULL = Job wurde vor Einführung dieser Spalte abgeschlossen, sonst ISO-Zeitpunkt des Freigabe-2-Abschlusses). Wird von der Admin-Warnung gebraucht, um zu bestimmen, wie lange ein Job schon ohne Zeitstempel wartet — dafür reicht `zeitstempel_gesetzt_am IS NULL` allein nicht, weil das nicht verrät, seit wann.
+- Neue Spalte `jobs.abgeschlossen_am TEXT` (ISO-Zeitpunkt des Freigabe-2-Abschlusses; NULL nur für Jobs, die `abgeschlossen` nie erreicht haben). Wird von der Admin-Warnung gebraucht, um zu bestimmen, wie lange ein Job schon ohne Zeitstempel wartet — dafür reicht `zeitstempel_gesetzt_am IS NULL` allein nicht, weil das nicht verrät, seit wann.
 - Neue `admin_config`-Einträge (Default jeweils leerer String, ausser vermerkt):
   - `zeitstempel_tsa_url` (Default: `https://freetsa.org/tsr`)
   - `zeitstempel_tsa_user` (Default: leer)
@@ -113,7 +113,7 @@ WHERE status = 'abgeschlossen' AND zeitstempel_gesetzt_am IS NULL
   AND abgeschlossen_am IS NOT NULL AND abgeschlossen_am < <jetzt minus schwellenStunden>
 ```
 
-Die Warnung wird nur berechnet, wenn das Feature aktiv ist (TSA-URL konfiguriert) — sonst wäre sie vor dem ersten TSA-Setup auf jeder frischen Installation fälschlich rot. `abgeschlossen_am IS NOT NULL` schliesst Jobs aus, die vor Einführung dieser Spalte abgeschlossen wurden (deren `abgeschlossen_am` bleibt für immer NULL, siehe "Bewusst nicht Teil dieser Spec"); die sind weiterhin über die Dashboard-Sektion "Meine abgeschlossenen Rechnungen" pro Person sichtbar.
+Die Warnung wird nur berechnet, wenn das Feature aktiv ist (TSA-URL konfiguriert) — sonst wäre sie vor dem ersten TSA-Setup auf jeder frischen Installation fälschlich rot. `abgeschlossen_am IS NOT NULL` ist nur noch ein Sicherheitsnetz: die Migration in `src/db/index.js` füllt `abgeschlossen_am` für alle bereits `abgeschlossen`en Bestands-Jobs einmalig auf (siehe "Migration für Bestands-Jobs"), damit ein NULL-Wert nicht stillschweigend als "unendlich überfällig" verglichen wird.
 
 ## Verifikation — zwei Einstiegspunkte
 
@@ -162,9 +162,20 @@ Neue eigenständige Admin-Seite `views/admin/zeitstempel-form.ejs` + `src/routes
 - Unit-Tests für `countZeitstempelUeberfaellig`: zählt überfällige Jobs korrekt, ignoriert bereits gestempelte/noch nicht überfällige/Alt-Jobs ohne `abgeschlossen_am`.
 - Integrationstest für den Dashboard-Warnbanner (`app.test.js`, volle `createApp`-Verdrahtung): erscheint bei überfälligen Jobs mit aktiver TSA, erscheint nicht ohne konfigurierte TSA.
 
+## Migration für Bestands-Jobs
+
+Beim ersten Start nach dem Deploy füllt `migrateJobsTable` in `src/db/index.js` — direkt nachdem die Spalte `abgeschlossen_am` per `ALTER TABLE` angelegt wurde — einmalig auf:
+
+```sql
+UPDATE jobs SET abgeschlossen_am = <jetzt> WHERE status = 'abgeschlossen' AND abgeschlossen_am IS NULL
+```
+
+Grund: die n8n-Abholung-Sperre kennt keine Ausnahme für Bestands-Jobs — sobald eine TSA konfiguriert ist, blockiert sie *jeden* `abgeschlossen`en Job ohne Zeitstempel, also auch die, die es schon vor diesem Feature gab. Ohne diesen Backfill wären genau diese Jobs für n8n unsichtbar und gleichzeitig für die Admin-Warnung unsichtbar (die `abgeschlossen_am IS NULL` überspringt) — blockiert, ohne dass irgendwo im Portal steht, warum. Mit dem Backfill laufen sie auf derselben Uhr wie frisch abgeschlossene Jobs: der Nachhol-Job holt sie, und falls die TSA dauerhaft nicht erreichbar ist, warnt der Banner nach Ablauf der Schwelle auch über sie.
+
+Der `UPDATE` braucht kein Guard-Flag: er trifft nur Zeilen mit `abgeschlossen_am IS NULL` und setzt bei jeder getroffenen Zeile einen Wert — ein zweiter Lauf trifft also nichts mehr.
+
 ## Bewusst nicht Teil dieser Spec (YAGNI)
 
-- Keine automatische Migration/Nachholung für bereits vor diesem Feature abgeschlossene, aber noch nicht abgeholte Jobs — der neue Nachhol-Job deckt das ohnehin ab, sobald er läuft (`zeitstempel_gesetzt_am IS NULL` trifft auf alle bestehenden `abgeschlossen`-Jobs zu).
 - Keine Unterstützung für mehrere TSA-Anbieter gleichzeitig oder Fallback-TSA — ein konfigurierter Endpunkt zur Zeit.
 - Keine Rückwirkende Zeitstempelung bereits `abgeholt`/`archiviert`er Jobs — technisch unmöglich, da die PDF-Datei nicht mehr existiert (siehe "n8n-Abholung-Sperre").
 - Keine automatische Eskalation/Benachrichtigung bei überfälligen Zeitstempeln über den Dashboard-Banner hinaus (kein E-Mail-Alarm) — der Banner ist beim nächsten Admin-Login sichtbar, das reicht für den Anwendungsfall.

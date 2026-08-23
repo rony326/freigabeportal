@@ -148,6 +148,127 @@ test('openDatabase rebuilds the freigaben table to widen its rolle CHECK constra
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('openDatabase rebuilds the cron_log table to widen its job/status CHECK constraints on an existing on-disk database that predates zeitstempel-nachholen', () => {
+  // Simulates the real production case: a cron_log table created by an older schema.sql (job
+  // CHECK only allowing 'pool-erinnerungen'/'pdf-bereinigung', status only 'erfolg'/'fehler',
+  // beendet_am NOT NULL) that has already been running with real rows in it. `CREATE TABLE IF NOT
+  // EXISTS` alone no-ops on it and SQLite cannot widen a CHECK constraint via ALTER TABLE, so
+  // startCronLauf('zeitstempel-nachholen') would fail forever on such a database — the migration
+  // has to rebuild the table without losing the existing log history. Every other test in the
+  // suite opens ':memory:', where schema.sql already creates the new shape and
+  // migrateCronLogTable early-returns, so this on-disk case is the only place its body runs.
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE cron_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung')),
+      gestartet_am TEXT NOT NULL,
+      beendet_am TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler')),
+      details TEXT
+    );
+    INSERT INTO cron_log (job, gestartet_am, beendet_am, status, details)
+      VALUES ('pool-erinnerungen', '2026-08-15T08:00:00.000Z', '2026-08-15T08:00:05.000Z', 'erfolg', 'Reminder: 2, Eskalation: 0');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+
+  const preserved = migratedDb.prepare('SELECT * FROM cron_log WHERE id = 1').get();
+  assert.ok(preserved, 'existing rows must survive the table rebuild');
+  assert.equal(preserved.job, 'pool-erinnerungen');
+  assert.equal(preserved.gestartet_am, '2026-08-15T08:00:00.000Z');
+  assert.equal(preserved.beendet_am, '2026-08-15T08:00:05.000Z');
+  assert.equal(preserved.status, 'erfolg');
+  assert.equal(preserved.details, 'Reminder: 2, Eskalation: 0');
+
+  assert.doesNotThrow(
+    () =>
+      migratedDb
+        .prepare("INSERT INTO cron_log (job, gestartet_am, beendet_am, status, details) VALUES ('zeitstempel-nachholen', '2026-08-15T09:00:00.000Z', NULL, 'laufend', NULL)")
+        .run(),
+    'the widened CHECK constraints (and the now-nullable beendet_am) must accept a running zeitstempel-nachholen entry'
+  );
+
+  assert.equal(migratedDb.prepare('SELECT COUNT(*) AS anzahl FROM cron_log').get().anzahl, 2);
+  assert.equal(
+    migratedDb.prepare("SELECT COUNT(*) AS anzahl FROM sqlite_master WHERE type = 'table' AND name = 'cron_log_pre_zeitstempel_nachholen'").get().anzahl,
+    0,
+    'the renamed-aside table must be dropped once its rows have been copied across'
+  );
+
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('openDatabase is a no-op on the cron_log table when it already has the widened CHECK constraints', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'current.sqlite');
+  const first = openDatabase(dbPath);
+  first.prepare("INSERT INTO cron_log (job, gestartet_am, beendet_am, status, details) VALUES ('zeitstempel-nachholen', '2026-08-15T09:00:00.000Z', NULL, 'laufend', NULL)").run();
+  first.close();
+
+  const second = openDatabase(dbPath);
+  assert.equal(second.prepare('SELECT COUNT(*) AS anzahl FROM cron_log').get().anzahl, 1, 'a second open must not rebuild (and must not lose) an already-current cron_log');
+  second.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('openDatabase backfills abgeschlossen_am for jobs that were already abgeschlossen before the column existed, and leaves other statuses NULL', () => {
+  // Simulates the deploy-day case for the RFC3161 feature: a database with jobs that reached
+  // 'abgeschlossen' before abgeschlossen_am existed. The n8n pickup gate blocks every
+  // abgeschlossen job without a timestamp, while the admin warning banner
+  // (countZeitstempelUeberfaellig) skips rows with abgeschlossen_am IS NULL — so without this
+  // backfill those jobs would be un-pickupable by n8n with nothing on the dashboard saying why.
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      eingang_am TEXT NOT NULL,
+      quelle TEXT NOT NULL,
+      absender TEXT,
+      dateiname TEXT NOT NULL,
+      pdf_pfad TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'unzugewiesen'
+    );
+    INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status)
+      VALUES ('2026-08-15T08:00:00.000Z', 'scanner', NULL, 'fertig.pdf', '/tmp/fertig.pdf', 'abgeschlossen');
+    INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status)
+      VALUES ('2026-08-15T08:00:00.000Z', 'scanner', NULL, 'offen.pdf', '/tmp/offen.pdf', 'freigabe2');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+
+  const columns = migratedDb.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  assert.ok(columns.includes('abgeschlossen_am'), 'ALTER TABLE should have added abgeschlossen_am to the pre-existing table');
+
+  const abgeschlossen = migratedDb.prepare("SELECT * FROM jobs WHERE dateiname = 'fertig.pdf'").get();
+  assert.ok(abgeschlossen.abgeschlossen_am, 'a job that was already abgeschlossen must be backfilled with a non-null abgeschlossen_am');
+  assert.ok(!Number.isNaN(Date.parse(abgeschlossen.abgeschlossen_am)), 'the backfilled value must be a parseable ISO timestamp');
+
+  const offen = migratedDb.prepare("SELECT * FROM jobs WHERE dateiname = 'offen.pdf'").get();
+  assert.equal(offen.abgeschlossen_am, null, 'a job that is not abgeschlossen must keep abgeschlossen_am NULL');
+
+  migratedDb.close();
+
+  // Idempotence: re-opening must not rewrite the already-backfilled value (only NULL rows match).
+  const reopened = openDatabase(dbPath);
+  assert.equal(
+    reopened.prepare("SELECT abgeschlossen_am FROM jobs WHERE dateiname = 'fertig.pdf'").get().abgeschlossen_am,
+    abgeschlossen.abgeschlossen_am,
+    're-running the migration must leave an already-backfilled abgeschlossen_am untouched'
+  );
+  assert.equal(reopened.prepare("SELECT abgeschlossen_am FROM jobs WHERE dateiname = 'offen.pdf'").get().abgeschlossen_am, null);
+  reopened.close();
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('openDatabase is a no-op on the freigaben table when it already has the widened rolle CHECK constraint', () => {
   const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
   const dbPath = join(dir, 'current.sqlite');

@@ -31,6 +31,24 @@ function migrateJobsTable(db) {
     }
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_datei_hash ON jobs(datei_hash)');
+
+  // Runs strictly after the loop above, so the abgeschlossen_am column is guaranteed to exist by
+  // now (whether it came from schema.sql on a fresh database or from the ALTER TABLE entry).
+  //
+  // Backfill: on the day the RFC3161 feature is deployed to a database that already has
+  // 'abgeschlossen' jobs, those jobs have no abgeschlossen_am (the column is new). Without this,
+  // they are caught by the n8n pickup gate (jobsRepo.listAbholbereitJobs/confirmAbholung block
+  // every abgeschlossen job without a timestamp) while being invisible to the admin warning
+  // banner (countZeitstempelUeberfaellig skips abgeschlossen_am IS NULL) — un-pickupable with
+  // nothing on the dashboard saying why. Stamping them with "now" puts them on the same clock as
+  // freshly completed jobs: the nachhol-job picks them up, and if the TSA stays unreachable the
+  // banner does start warning about them once the threshold passes.
+  //
+  // Idempotent by construction, no guard flag needed: it only touches rows whose abgeschlossen_am
+  // is still NULL, and every row it touches gets a non-NULL value, so a second run matches nothing.
+  db.prepare("UPDATE jobs SET abgeschlossen_am = ? WHERE status = 'abgeschlossen' AND abgeschlossen_am IS NULL").run(
+    new Date().toISOString()
+  );
 }
 
 // SQLite CHECK constraints can't be widened with ALTER TABLE — unlike JOBS_TABLE_MIGRATIONS'

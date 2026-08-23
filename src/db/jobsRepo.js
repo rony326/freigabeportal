@@ -230,11 +230,19 @@ export function abschliessenFreigabe2(db, jobId) {
   return result.changes > 0;
 }
 
+// Every abgeschlossen job that still has no RFC3161 timestamp — the work list of the
+// zeitstempel-nachholen cron job (cronJobs.js). Deliberately the exact inverse of the
+// `zeitstempel_gesetzt_am IS NOT NULL` gate in listAbholbereitJobs/confirmAbholung above: what
+// n8n is not allowed to pick up yet is precisely what the nachhol-job must still stamp.
+export function listZeitstempelAusstehendJobs(db) {
+  return db.prepare("SELECT * FROM jobs WHERE status = 'abgeschlossen' AND zeitstempel_gesetzt_am IS NULL").all();
+}
+
 // Powers the admin-dashboard warning banner: counts abgeschlossen jobs whose RFC3161 timestamp
-// is still missing after schwellenStunden hours. abgeschlossen_am IS NOT NULL excludes jobs that
-// reached 'abgeschlossen' before this column existed (their abgeschlossen_am stays NULL forever,
-// matching this feature's established no-retroactive-migration stance) — they remain visible via
-// the per-person "Meine abgeschlossenen Rechnungen" dashboard section instead.
+// is still missing after schwellenStunden hours. abgeschlossen_am IS NOT NULL is a safety net
+// only — db/index.js backfills abgeschlossen_am for every already-abgeschlossen job at migration
+// time, so a job reaching this state without the column set should no longer occur; the guard
+// stays so a NULL can never silently be compared as "infinitely overdue".
 export function countZeitstempelUeberfaellig(db, schwellenStunden) {
   const schwelle = new Date(Date.now() - schwellenStunden * 60 * 60 * 1000).toISOString();
   const row = db
@@ -412,6 +420,13 @@ export function listFreigabe2JobsForPerson(db, personId) {
     .all(personId, personId);
 }
 
+// listAbgeschlossenJobsForPerson feeds the "Meine abgeschlossenen Rechnungen" section of /pool,
+// the app's most-visited page — a person's completed invoices only ever accumulate, so without a
+// cap the dashboard would grow without bound for the whole lifetime of the installation. The 50
+// newest (ORDER BY eingang_am DESC) are what that section is actually for: a recent-activity and
+// timestamp-status overview, not an archive browser.
+const ABGESCHLOSSEN_LISTE_LIMIT = 50;
+
 // Same konto-membership logic as listFreigabe2JobsForPerson (including the
 // freigabe2_eskaliert_an_admin = 0 guard: a job that reached admin-escalation stays excluded from
 // the recused freigeber2/stellvertreter2's own lists, matching listFreigabe2JobsForPerson's
@@ -434,7 +449,8 @@ export function listAbgeschlossenJobsForPerson(db, personId) {
            OR (jobs.freigabe2_eskaliert_von IS NULL AND konten.freigeber2_id = ?)
            OR (jobs.freigabe2_eskaliert_von IS NOT NULL AND konten.stellvertreter2_id = ?)
          )
-       ORDER BY jobs.eingang_am DESC`
+       ORDER BY jobs.eingang_am DESC
+       LIMIT ${ABGESCHLOSSEN_LISTE_LIMIT}`
     )
     .all(personId, personId, personId);
 }

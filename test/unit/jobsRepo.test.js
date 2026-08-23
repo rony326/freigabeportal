@@ -6,7 +6,7 @@ import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -492,6 +492,34 @@ test('abschliessenFreigabe2 atomically guards against completing a job twice', (
   db.close();
 });
 
+test('listZeitstempelAusstehendJobs returns an abgeschlossen job that has no timestamp yet', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  const jobs = listZeitstempelAusstehendJobs(db);
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].id, id);
+  assert.equal(jobs[0].pdf_pfad, '/tmp/a.pdf', 'full job rows are returned — the nachhol-job needs pdf_pfad');
+  db.close();
+});
+
+test('listZeitstempelAusstehendJobs ignores a job that already has a timestamp', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  markZeitstempelGesetzt(db, id, '2026-08-20T10:00:00.000Z');
+  assert.equal(listZeitstempelAusstehendJobs(db).length, 0);
+  db.close();
+});
+
+test('listZeitstempelAusstehendJobs ignores jobs that have not reached abgeschlossen, and ones that already moved past it', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  for (const status of ['freigabe2', 'abgeholt', 'archiviert', 'abgelehnt']) {
+    db.prepare('UPDATE jobs SET status = ? WHERE id = ?').run(status, id);
+    assert.equal(listZeitstempelAusstehendJobs(db).length, 0, `status ${status} must not be in the nachhol work list`);
+  }
+  db.close();
+});
+
 test('countZeitstempelUeberfaellig counts an abgeschlossen job past the threshold with no timestamp', () => {
   const db = openDatabase(':memory:');
   const id = seedAbgeschlossenJob(db);
@@ -674,6 +702,28 @@ test('listAbgeschlossenJobsForPerson matches a job by zugewiesen_an even when th
   db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
 
   assert.equal(listAbgeschlossenJobsForPerson(db, '1').length, 1);
+  db.close();
+});
+
+test('listAbgeschlossenJobsForPerson caps the list at 50 rows and returns the newest ones', () => {
+  // Completed invoices only ever accumulate, and this list feeds the most-visited page in the
+  // app (/pool) — without the LIMIT it would grow unbounded for the lifetime of the install.
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber2Id: '3'
+  // 60 jobs with strictly increasing eingang_am, so "newest first" is unambiguous.
+  const ids = [];
+  for (let i = 0; i < 60; i += 1) {
+    const eingangAm = new Date(Date.UTC(2026, 0, 1, 0, i, 0)).toISOString();
+    const jobId = createJob(db, { eingangAm, quelle: 'scanner', absender: null, dateiname: `a${i}.pdf`, pdfPfad: '/tmp/a.pdf' });
+    setKontierung(db, jobId, kontoId);
+    db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
+    ids.push(jobId);
+  }
+
+  const result = listAbgeschlossenJobsForPerson(db, '3');
+  assert.equal(result.length, 50, 'the query must cap at 50 rows, not return all 60');
+  assert.equal(result[0].id, ids[59], 'newest (highest eingang_am) first');
+  assert.equal(result[49].id, ids[10], 'the 50 newest are kept — the 10 oldest are what falls off');
   db.close();
 });
 

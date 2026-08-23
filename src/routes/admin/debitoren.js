@@ -9,6 +9,8 @@ import {
   findZuweisungsregelByMuster,
 } from '../../db/zuweisungsregelnRepo.js';
 import { listKonten } from '../../db/kontenRepo.js';
+import { createDebitorIban, deleteDebitorIban, listDebitorIbansAll, findDebitorIbanByIban } from '../../db/debitorIbanRepo.js';
+import { normalizeIban, isValidIban } from '../../services/ibanUtils.js';
 
 const EMAIL_MUSTER_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DOMAIN_MUSTER_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
@@ -30,15 +32,22 @@ export function createDebitorenRouter({ db }) {
       ...regel,
       debitor: getDebitorById(db, regel.debitor_id),
     }));
+    const ibans = listDebitorIbansAll(db).map((row) => ({
+      ...row,
+      debitor: getDebitorById(db, row.debitor_id),
+    }));
     res.status(status).render('admin/debitoren-liste', {
       debitoren,
       regeln,
+      ibans,
       konten: listKonten(db),
       aktiveDebitoren: listDebitoren(db),
       debitorErrors: [],
       debitorValues: {},
       regelErrors: [],
       regelValues: {},
+      ibanErrors: [],
+      ibanValues: {},
       gespeichert: req.query.gespeichert === '1',
       ...overrides,
     });
@@ -126,6 +135,35 @@ export function createDebitorenRouter({ db }) {
 
   router.post('/regeln/:id/loeschen', (req, res) => {
     deleteZuweisungsregel(db, Number(req.params.id));
+    res.redirect('/admin/debitoren');
+  });
+
+  // The /ibans* routes must be registered before the generic /:id* debitor routes below —
+  // otherwise POST /admin/debitoren/ibans(...) would first match router's `/:id` pattern
+  // (with id="ibans", a NaN Number()) and 404 before ever reaching these handlers.
+  router.post('/ibans', (req, res) => {
+    const { iban, debitorId } = req.body;
+    const normalizedIban = normalizeIban(iban);
+    const errors = [];
+    if (!normalizedIban) {
+      errors.push('IBAN ist ein Pflichtfeld.');
+    } else if (!isValidIban(normalizedIban)) {
+      errors.push('IBAN muss eine gültige Schweizer IBAN sein (z. B. "CH93 0076 2011 6238 5295 7").');
+    } else if (findDebitorIbanByIban(db, normalizedIban)) {
+      errors.push('Diese IBAN ist bereits einem Lieferanten zugeordnet.');
+    }
+    if (!debitorId) errors.push('Lieferant ist ein Pflichtfeld.');
+
+    if (errors.length > 0) {
+      return renderListe(req, res, 400, { ibanErrors: errors, ibanValues: { iban, debitorId } });
+    }
+
+    createDebitorIban(db, { debitorId: Number(debitorId), iban: normalizedIban, quelle: 'manuell' });
+    res.redirect('/admin/debitoren?gespeichert=1');
+  });
+
+  router.post('/ibans/:id/loeschen', (req, res) => {
+    deleteDebitorIban(db, Number(req.params.id));
     res.redirect('/admin/debitoren');
   });
 

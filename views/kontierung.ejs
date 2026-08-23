@@ -21,6 +21,22 @@
       <div class="col-lg-6 col-xl-4">
         <div class="card">
           <div class="card-body">
+            <% if (typeof qrInfo !== 'undefined' && qrInfo) { %>
+              <div class="alert alert-info">
+                <strong>Aus QR-Code erkannt:</strong>
+                IBAN <%= qrInfo.iban %><% if (qrInfo.creditorName) { %> (<%= qrInfo.creditorName %>)<% } %>
+                <% if (qrInfo.betrag) { %>, Betrag <%= qrInfo.betrag %> <%= qrInfo.waehrung || '' %><% } %>
+                <% if (qrInfo.referenz) { %>, Referenz <%= qrInfo.referenz %><% } %>
+                <% if (qrInfo.abgleich && qrInfo.abgleich.status === 'match') { %>
+                  <div class="mt-1 text-success">IBAN stimmt mit hinterlegten Daten überein.</div>
+                <% } %>
+              </div>
+            <% } %>
+            <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.konfliktMitZugewiesenemDebitor) { %>
+              <div class="alert alert-warning">
+                QR-Code deutet auf Lieferant <strong><%= qrInfo.vorschlagDebitor.name %></strong> hin, aktuell zugewiesen: <strong><%= qrInfo.zugewiesenerDebitor.name %></strong> — bitte prüfen.
+              </div>
+            <% } %>
             <% if (errors.length > 0) { %>
               <div class="alert alert-danger">
                 <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
@@ -72,6 +88,13 @@
                   <input type="date" class="form-control" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>">
                 </div>
               </div>
+
+              <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.abgleich && qrInfo.abgleich.status === 'kein_abgleich') { %>
+                <div class="form-check mb-3">
+                  <input class="form-check-input" type="checkbox" id="ibanMerken" name="ibanMerken" checked>
+                  <label class="form-check-label" for="ibanMerken">IBAN <%= qrInfo.iban %> künftig automatisch <%= qrInfo.debitorFuerAbgleich.name %> zuordnen</label>
+                </div>
+              <% } %>
 
               <div class="mb-3">
                 <div class="form-check">

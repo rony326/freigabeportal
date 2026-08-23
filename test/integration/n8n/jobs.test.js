@@ -638,3 +638,64 @@ test('POST /:id/abholung-bestaetigen still marks the job abgeholt even if deleti
   rmSync(jobsDir, { recursive: true, force: true });
   db.close();
 });
+
+test('POST /api/n8n/jobs decodes a real Swiss QR-Bill PDF and stores the qr_* fields', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { buildQrBillPdfFixture } = await import('../../helpers/qrBillFixture.js');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const qrBillPdf = await buildQrBillPdfFixture({
+    amount: 1949.75,
+    creditor: { account: 'CH4431999123000889012', address: 'Musterstrasse', buildingNumber: 7, city: 'Musterstadt', country: 'CH', name: 'Muster AG', zip: 1234 },
+    currency: 'CHF',
+    debtor: { address: 'Musterstrasse', buildingNumber: 1, city: 'Musterstadt', country: 'CH', name: 'Peter Muster', zip: 1234 },
+    reference: '210000000003139471430009017',
+  });
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'lieferant')
+    .field('dateiname', 'rechnung.pdf')
+    .attach('pdf', qrBillPdf, { filename: 'rechnung.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 201);
+  const job = getJobById(db, res.body.id);
+  assert.equal(job.qr_iban, 'CH4431999123000889012');
+  assert.equal(job.qr_creditor_name, 'Muster AG');
+  assert.equal(job.qr_betrag, '1949.75');
+  assert.equal(job.qr_waehrung, 'CHF');
+  assert.equal(job.qr_referenz, '210000000003139471430009017');
+  assert.ok(job.qr_erkannt_am);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs still creates the job with qr_* columns null when the PDF has no QR-Code', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'scanner')
+    .field('dateiname', 'scan.pdf')
+    .attach('pdf', PDF_BYTES, { filename: 'scan.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 201);
+  const job = getJobById(db, res.body.id);
+  assert.equal(job.qr_iban, null);
+  assert.equal(job.qr_erkannt_am, null);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});

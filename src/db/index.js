@@ -22,6 +22,12 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'hinweis_konto_id', ddl: 'ALTER TABLE jobs ADD COLUMN hinweis_konto_id INTEGER REFERENCES konten(id)' },
   { column: 'zeitstempel_gesetzt_am', ddl: 'ALTER TABLE jobs ADD COLUMN zeitstempel_gesetzt_am TEXT' },
   { column: 'abgeschlossen_am', ddl: 'ALTER TABLE jobs ADD COLUMN abgeschlossen_am TEXT' },
+  { column: 'qr_iban', ddl: 'ALTER TABLE jobs ADD COLUMN qr_iban TEXT' },
+  { column: 'qr_referenz', ddl: 'ALTER TABLE jobs ADD COLUMN qr_referenz TEXT' },
+  { column: 'qr_betrag', ddl: 'ALTER TABLE jobs ADD COLUMN qr_betrag TEXT' },
+  { column: 'qr_waehrung', ddl: 'ALTER TABLE jobs ADD COLUMN qr_waehrung TEXT' },
+  { column: 'qr_creditor_name', ddl: 'ALTER TABLE jobs ADD COLUMN qr_creditor_name TEXT' },
+  { column: 'qr_erkannt_am', ddl: 'ALTER TABLE jobs ADD COLUMN qr_erkannt_am TEXT' },
 ];
 
 function migrateJobsTable(db) {
@@ -53,25 +59,35 @@ function migrateJobsTable(db) {
 }
 
 // SQLite CHECK constraints can't be widened with ALTER TABLE — unlike JOBS_TABLE_MIGRATIONS'
-// simple ADD COLUMN entries, an already-existing freigaben table (any database that predates the
-// 'freigabe1_eskalation'/'freigabe2_eskalation' rolle values) keeps its original, narrower CHECK
+// simple ADD COLUMN entries, an already-existing freigaben table (any database whose rolle CHECK
+// predates the current marker value checked for below) keeps its original, narrower CHECK
 // forever, since `CREATE TABLE IF NOT EXISTS` in schema.sql no-ops on it. The only way to widen a
 // CHECK constraint in SQLite is to rebuild the table: rename it aside, create a fresh one from the
 // current schema, copy every row across, then drop the old one — all inside one transaction so a
-// crash mid-migration can't leave the database without a freigaben table at all.
+// crash mid-migration can't leave the database without a freigaben table at all. The marker value
+// this function checks for (currently 'iban_abweichung') moves forward each time the CHECK is
+// widened again — it's just "the newest rolle value", not tied to any one feature; check the
+// CREATE TABLE below for what the CHECK currently allows, not this comment.
 function migrateFreigabenTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'freigaben'").get();
-  if (!tableSql || tableSql.sql.includes('freigabe1_eskalation')) return;
+  if (!tableSql || tableSql.sql.includes('iban_abweichung')) return;
 
+  // node:sqlite enforces `PRAGMA foreign_keys` by default, and it must be toggled OFF outside any
+  // transaction (the pragma is a documented no-op if set from inside one). Without this, a single
+  // freigaben row referencing a jobs.id or personen.churchtools_person_id that no longer exists
+  // aborts the INSERT below, the catch rolls back, and the error propagates out of openDatabase —
+  // the whole app fails to start. Restoring it in `finally` (not just after COMMIT) matters: a
+  // migration that throws must not leave FK enforcement permanently disabled.
+  db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');
   try {
-    db.exec('ALTER TABLE freigaben RENAME TO freigaben_pre_eskalation_rolle');
+    db.exec('ALTER TABLE freigaben RENAME TO freigaben_pre_iban_abweichung_rolle');
     db.exec(`
       CREATE TABLE freigaben (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         job_id INTEGER NOT NULL REFERENCES jobs(id),
         person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-        rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation')),
+        rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung')),
         zeitpunkt TEXT NOT NULL,
         ip TEXT NOT NULL,
         interessenskonflikt INTEGER NOT NULL DEFAULT 0,
@@ -81,13 +97,56 @@ function migrateFreigabenTable(db) {
     `);
     db.exec(`
       INSERT INTO freigaben (id, job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von)
-      SELECT id, job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von FROM freigaben_pre_eskalation_rolle
+      SELECT id, job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von FROM freigaben_pre_iban_abweichung_rolle
     `);
-    db.exec('DROP TABLE freigaben_pre_eskalation_rolle');
+    db.exec('DROP TABLE freigaben_pre_iban_abweichung_rolle');
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
+// Same rationale as migrateFreigabenTable above: mail_log.typ's CHECK constraint can't be
+// widened with ALTER TABLE, so an already-running database that predates 'iban-warnung' needs
+// its mail_log table rebuilt in place to accept the new value.
+function migrateMailLogTable(db) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mail_log'").get();
+  if (!tableSql || tableSql.sql.includes('iban-warnung')) return;
+
+  // See the matching comment in migrateFreigabenTable above: node:sqlite enforces
+  // `PRAGMA foreign_keys` by default, so a single mail_log row referencing a jobs.id that no
+  // longer exists would otherwise abort this INSERT and take down app startup entirely.
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE mail_log RENAME TO mail_log_pre_iban_warnung_typ');
+    db.exec(`
+      CREATE TABLE mail_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung')),
+        job_id INTEGER REFERENCES jobs(id),
+        empfaenger TEXT NOT NULL,
+        betreff TEXT NOT NULL,
+        text TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen')),
+        fehler_details TEXT,
+        versucht_am TEXT NOT NULL
+      )
+    `);
+    db.exec(`
+      INSERT INTO mail_log (id, typ, job_id, empfaenger, betreff, text, status, fehler_details, versucht_am)
+      SELECT id, typ, job_id, empfaenger, betreff, text, status, fehler_details, versucht_am FROM mail_log_pre_iban_warnung_typ
+    `);
+    db.exec('DROP TABLE mail_log_pre_iban_warnung_typ');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
   }
 }
 
@@ -134,6 +193,7 @@ export function openDatabase(dbPath) {
   db.exec(schema);
   migrateJobsTable(db);
   migrateFreigabenTable(db);
+  migrateMailLogTable(db);
   migrateCronLogTable(db);
   return db;
 }

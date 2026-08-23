@@ -13,6 +13,7 @@ const DEFAULTS = {
   sync_max_deaktivierung_prozent: '50',
   sync_max_deaktivierung_anzahl: '10',
   sync_fehler_empfaenger: 'gruppe:admin',
+  iban_abweichung_empfaenger: 'gruppe:admin',
   audit_log_lokale_zeit: '0',
   cron_sync_personen_stunde: '2',
   cron_sync_personen_minute: '0',

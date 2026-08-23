@@ -207,3 +207,94 @@ test('POST /admin/debitoren/regeln/:id updates a rule, POST .../loeschen removes
   assert.equal(getZuweisungsregelById(db, regelId), null);
   db.close();
 });
+
+test('every /admin/debitoren/ibans route returns 401 without a session', async () => {
+  const db = openDatabase(':memory:');
+  const app = buildTestApp(db);
+  for (const res of [
+    await request(app).post('/admin/debitoren/ibans'),
+    await request(app).post('/admin/debitoren/ibans/1/loeschen'),
+  ]) {
+    assert.equal(res.status, 401);
+  }
+  db.close();
+});
+
+test('POST /admin/debitoren/ibans creates a mapping with quelle manuell, listed on the Debitoren page', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const kontoId = seedKonto(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post('/admin/debitoren/ibans')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ iban: 'CH44 3199 9123 0008 8901 2', debitorId: String(debitorId) });
+
+  assert.equal(res.status, 302);
+  const { listDebitorIbansAll } = await import('../../../src/db/debitorIbanRepo.js');
+  const rows = listDebitorIbansAll(db);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].iban, 'CH4431999123000889012');
+  assert.equal(rows[0].quelle, 'manuell');
+
+  const listRes = await request(app).get('/admin/debitoren').set('x-test-person-id', '99');
+  assert.match(listRes.text, /CH4431999123000889012/);
+  db.close();
+});
+
+test('POST /admin/debitoren/ibans rejects an invalid IBAN', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const kontoId = seedKonto(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post('/admin/debitoren/ibans')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ iban: 'NICHT-EINE-IBAN', debitorId: String(debitorId) });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /gültige Schweizer IBAN/);
+  db.close();
+});
+
+test('POST /admin/debitoren/ibans rejects an IBAN already mapped to another Lieferant', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const kontoId = seedKonto(db);
+  const debitorA = createDebitor(db, { name: 'A AG', kontoId });
+  const debitorB = createDebitor(db, { name: 'B AG', kontoId });
+  const { createDebitorIban } = await import('../../../src/db/debitorIbanRepo.js');
+  createDebitorIban(db, { debitorId: debitorA, iban: 'CH4431999123000889012' });
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post('/admin/debitoren/ibans')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ iban: 'CH4431999123000889012', debitorId: String(debitorB) });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /bereits einem Lieferanten zugeordnet/);
+  db.close();
+});
+
+test('POST /admin/debitoren/ibans/:id/loeschen removes the mapping', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const kontoId = seedKonto(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  const { createDebitorIban, getDebitorIbanById } = await import('../../../src/db/debitorIbanRepo.js');
+  const ibanId = createDebitorIban(db, { debitorId, iban: 'CH4431999123000889012' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).post(`/admin/debitoren/ibans/${ibanId}/loeschen`).set('x-test-person-id', '99');
+  assert.equal(res.status, 302);
+  assert.equal(getDebitorIbanById(db, ibanId), null);
+  db.close();
+});

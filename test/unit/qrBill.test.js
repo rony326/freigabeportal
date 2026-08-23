@@ -57,3 +57,13 @@ test('returns null for empty or missing text', () => {
 test('returns null when the IBAN line is empty', () => {
   assert.equal(parseQrBillPayload(buildSpcPayload({ iban: '' })), null);
 });
+
+test('normalizes an IBAN line containing internal grouping spaces (out-of-spec but seen from real-world generators)', () => {
+  // Out-of-spec — the SPC payload format doesn't call for grouping spaces in the IBAN line — but
+  // real-world QR-bill generators can still emit them. Without stripping internal whitespace (not
+  // just leading/trailing), this would never equal the space-stripped IBAN stored via the admin
+  // route's normalizeIban, producing a false IBAN-mismatch fraud alert against a legitimate
+  // invoice.
+  const result = parseQrBillPayload(buildSpcPayload({ iban: 'CH44 3199 9123 0008 89012' }));
+  assert.equal(result.iban, 'CH4431999123000889012');
+});

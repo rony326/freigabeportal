@@ -10,10 +10,10 @@ import {
 } from '../../db/zuweisungsregelnRepo.js';
 import { listKonten } from '../../db/kontenRepo.js';
 import { createDebitorIban, deleteDebitorIban, listDebitorIbansAll, findDebitorIbanByIban } from '../../db/debitorIbanRepo.js';
+import { normalizeIban, isValidIban } from '../../services/ibanUtils.js';
 
 const EMAIL_MUSTER_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DOMAIN_MUSTER_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
-const IBAN_PATTERN = /^CH\d{2}[0-9A-Z]{17}$/;
 
 function isValidAbsenderMuster(muster) {
   return muster.includes('@') ? EMAIL_MUSTER_PATTERN.test(muster) : DOMAIN_MUSTER_PATTERN.test(muster);
@@ -143,11 +143,11 @@ export function createDebitorenRouter({ db }) {
   // (with id="ibans", a NaN Number()) and 404 before ever reaching these handlers.
   router.post('/ibans', (req, res) => {
     const { iban, debitorId } = req.body;
-    const normalizedIban = (iban || '').replace(/\s/g, '').toUpperCase();
+    const normalizedIban = normalizeIban(iban);
     const errors = [];
     if (!normalizedIban) {
       errors.push('IBAN ist ein Pflichtfeld.');
-    } else if (!IBAN_PATTERN.test(normalizedIban)) {
+    } else if (!isValidIban(normalizedIban)) {
       errors.push('IBAN muss eine gültige Schweizer IBAN sein (z. B. "CH93 0076 2011 6238 5295 7").');
     } else if (findDebitorIbanByIban(db, normalizedIban)) {
       errors.push('Diese IBAN ist bereits einem Lieferanten zugeordnet.');

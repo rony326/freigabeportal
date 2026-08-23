@@ -1,3 +1,5 @@
+import { normalizeIban } from './ibanUtils.js';
+
 // Line order per the Swiss "Style Guide QR-bill" (SIX/SPC v2.x) payload format embedded in a
 // Swiss QR-Bill's QR code. Only the lines this parser actually reads are named; everything else
 // (detailed creditor/debtor address lines, the still-reserved "Ultimate Creditor" block) is
@@ -22,7 +24,11 @@ export function parseQrBillPayload(text) {
   if (zeilen.length < MIN_LINES) return null;
   if (zeilen[LINE.HEADER].trim() !== EXPECTED_HEADER) return null;
 
-  const iban = zeilen[LINE.IBAN].trim().toUpperCase();
+  // normalizeIban also strips internal whitespace, not just leading/trailing — out-of-spec but
+  // real-world QR-bill generators can emit grouping spaces in the IBAN line, and leaving them in
+  // would make this never equal the space-stripped IBANs stored via the admin route, producing a
+  // false IBAN-mismatch fraud alert against a legitimate invoice.
+  const iban = normalizeIban(zeilen[LINE.IBAN]);
   if (!iban) return null;
 
   const referenzTyp = zeilen[LINE.REFERENCE_TYPE].trim();

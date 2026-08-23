@@ -1213,6 +1213,7 @@ test('GET /kontierung/:id warns when the QR-IBAN resolves to a different Liefera
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
   assert.match(res.text, /Erkannte AG/);
+  assert.match(res.text, /Zugewiesen AG/);
   assert.match(res.text, /bitte prüfen/i);
   db.close();
 });
@@ -1331,6 +1332,33 @@ test('POST /kontierung/:id without ibanMerken checked creates no debitor_ibans r
     .send({ kontoId: String(kontoId), debitorId: String(debitorId), betrag: '100.00', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
 
   assert.equal(res.status, 302);
+  assert.equal(listDebitorIbansByDebitor(db, debitorId).length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id with ibanMerken checked skips the save when the decoded qr_iban is not IBAN-shaped', async () => {
+  // job.qr_iban comes from a QR-code decode with no shape validation of its own (unlike the
+  // admin route, which validates against IBAN_PATTERN before accepting an IBAN) — a malformed or
+  // adversarial "IBAN" must not silently become a supplier's trusted expected IBAN just because
+  // the (default-checked) ibanMerken box was submitted checked.
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const { listDebitorIbansByDebitor } = await import('../../src/db/debitorIbanRepo.js');
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  setQrDaten(db, id, { qrIban: 'NICHT-EINE-IBAN', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), betrag: '100.00', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', ibanMerken: 'on' });
+
+  assert.equal(res.status, 302, 'Kontierung must still complete even though the opt-in save is skipped');
   assert.equal(listDebitorIbansByDebitor(db, debitorId).length, 0);
   db.close();
 });

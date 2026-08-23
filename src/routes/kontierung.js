@@ -24,6 +24,7 @@ import { getPersonById } from '../db/personenRepo.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
+import { isValidIban } from '../services/ibanUtils.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -48,6 +49,7 @@ function buildQrInfo(db, job) {
   const vorschlagDebitor = ibanMapping ? getDebitorById(db, ibanMapping.debitor_id) : null;
   const debitorFuerAbgleich = job.debitor_id ? getDebitorById(db, job.debitor_id) : vorschlagDebitor;
   const abgleich = job.qr_iban && debitorFuerAbgleich ? pruefeIbanAbgleich(db, debitorFuerAbgleich.id, job.qr_iban) : null;
+  const konfliktMitZugewiesenemDebitor = Boolean(vorschlagDebitor) && Boolean(job.debitor_id) && vorschlagDebitor.id !== job.debitor_id;
   return {
     iban: job.qr_iban,
     referenz: job.qr_referenz,
@@ -55,8 +57,12 @@ function buildQrInfo(db, job) {
     waehrung: job.qr_waehrung,
     creditorName: job.qr_creditor_name,
     vorschlagDebitor,
+    // Only meaningful (and only resolved) when there's actually a conflict to name — debitorFuerAbgleich
+    // already IS the currently-assigned debitor in that case, since job.debitor_id is truthy whenever
+    // konfliktMitZugewiesenemDebitor is true.
+    zugewiesenerDebitor: konfliktMitZugewiesenemDebitor ? debitorFuerAbgleich : null,
     debitorFuerAbgleich,
-    konfliktMitZugewiesenemDebitor: Boolean(vorschlagDebitor) && Boolean(job.debitor_id) && vorschlagDebitor.id !== job.debitor_id,
+    konfliktMitZugewiesenemDebitor,
     abgleich,
   };
 }
@@ -325,7 +331,12 @@ export function createKontierungRouter({ db, config, mailer }) {
               jobId: job.id,
             });
           }
-        } else if (status === 'kein_abgleich' && req.body.ibanMerken === 'on' && !findDebitorIbanByIban(db, job.qr_iban)) {
+        } else if (
+          status === 'kein_abgleich' &&
+          req.body.ibanMerken === 'on' &&
+          isValidIban(job.qr_iban) &&
+          !findDebitorIbanByIban(db, job.qr_iban)
+        ) {
           createDebitorIban(db, { debitorId: debitor.id, iban: job.qr_iban, quelle: 'bestaetigt' });
         }
       }

@@ -70,6 +70,13 @@
                 </div>
               </div>
 
+              <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.iban) { %>
+                <div class="mb-3">
+                  <label class="form-label" for="qrIban">IBAN (aus QR-Code)</label>
+                  <input type="text" class="form-control" id="qrIban" value="<%= qrInfo.iban %>" readonly>
+                </div>
+              <% } %>
+
               <div class="mb-3">
                 <label class="form-label" for="rechnungsnummer">Rechnungsnummer</label>
                 <input type="text" class="form-control" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>">
@@ -86,10 +93,10 @@
                 </div>
               </div>
 
-              <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.abgleich && qrInfo.abgleich.status === 'kein_abgleich') { %>
+              <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.iban && (!qrInfo.abgleich || qrInfo.abgleich.status !== 'match')) { %>
                 <div class="form-check mb-3">
                   <input class="form-check-input" type="checkbox" id="ibanMerken" name="ibanMerken" checked>
-                  <label class="form-check-label" for="ibanMerken">IBAN <%= qrInfo.iban %> künftig automatisch <%= qrInfo.debitorFuerAbgleich.name %> zuordnen</label>
+                  <label class="form-check-label" for="ibanMerken">IBAN <%= qrInfo.iban %> künftig automatisch <%= qrInfo.debitorFuerAbgleich ? qrInfo.debitorFuerAbgleich.name : 'dem ausgewählten Lieferanten' %> zuordnen</label>
                 </div>
               <% } %>
 

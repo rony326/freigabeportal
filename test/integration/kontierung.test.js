@@ -1421,6 +1421,24 @@ test('GET /kontierung/:id shows no QR box at all when no QR-Code was decoded', a
   db.close();
 });
 
+test('GET /kontierung/:id shows the IBAN as its own field and offers to remember it, even for a brand-new Lieferant with no existing IBAN mapping and no pre-assigned debitor', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /IBAN \(aus QR-Code\)/);
+  assert.match(res.text, /id="qrIban"[^>]*value="CH4431999123000889012"/);
+  assert.match(res.text, /id="ibanMerken"/);
+  assert.match(res.text, /dem ausgewählten Lieferanten/);
+  db.close();
+});
+
 test('POST /kontierung/:id sends an IBAN-Abweichung warning mail and logs it to the audit log on mismatch', async () => {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
   const { createDebitorIban } = await import('../../src/db/debitorIbanRepo.js');

@@ -80,7 +80,7 @@ export function createApp({ db, config }) {
     })
   );
   app.use(loadCurrentPerson(db));
-  app.use(loadNavFlags(config));
+  app.use(loadNavFlags(db, config));
 
   const mailer = createMailerOrFallback(config.smtp);
 
@@ -111,10 +111,10 @@ export function createApp({ db, config }) {
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
-  // Dashboard for every logged-in person, not just Buchhaltung/Portal-Admin: "/" always redirects
+  // Dashboard for every logged-in person, not just Buchhaltung/Superadmin: "/" always redirects
   // here now that the old landing page is gone, and a Freigeber1/2-only person (no group
   // membership, AUTH-WIDEN-1) needs somewhere to land too. The pool-of-unassigned-invoices
-  // section itself stays restricted inside pool.ejs (gated on isBuchhaltung/isPortalAdmin from
+  // section itself stays restricted inside pool.ejs (gated on isBuchhaltung/isSuperadmin from
   // loadNavFlags) — only the route-level gate widens, not who can see the company-wide pool.
   app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));

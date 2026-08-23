@@ -81,7 +81,7 @@ function buildTestApp(db, mailer) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret', publicBaseUrl: 'https://portal.example.org' };
   app.use(loadCurrentPerson(db));
-  app.use(loadNavFlags(config));
+  app.use(loadNavFlags(db, config));
   app.use('/kontierung', requireLogin(), createKontierungRouter({ db, config, mailer }));
   return app;
 }
@@ -113,7 +113,7 @@ function buildTestAppMitDateien(db, mailer, jobsDir) {
     jobsDir,
   };
   app.use(loadCurrentPerson(db));
-  app.use(loadNavFlags(config));
+  app.use(loadNavFlags(db, config));
   app.use('/kontierung', requireLogin(), createKontierungRouter({ db, config, mailer }));
   return app;
 }

@@ -118,12 +118,17 @@ export function claimJob(db, id, personId) {
 // SELECT and the per-row claim UPDATE below cannot interleave with any other request in this
 // single Node process — safe without an explicit transaction. This would need one under a
 // multi-process deployment.
-export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000) {
+// nurMitZeitstempel: when the RFC3161 feature is active (a TSA URL is configured), a job
+// without a timestamp must not reach n8n yet — it stays invisible to /abholbereit until the
+// timestamp is set (by Freigabe-2 completion or the zeitstempel-nachholen cron job). When the
+// feature is off (no TSA configured), the caller passes false so nothing changes.
+export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false) {
   const staleThreshold = new Date(Date.now() - staleAfterMs).toISOString();
+  const zeitstempelBedingung = nurMitZeitstempel ? ' AND zeitstempel_gesetzt_am IS NOT NULL' : '';
   const rows = db
     .prepare(
       `SELECT * FROM jobs WHERE status = 'abgeschlossen'
-       AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)`
+       AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)${zeitstempelBedingung}`
     )
     .all(staleThreshold);
 
@@ -135,8 +140,14 @@ export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000) {
   return rows;
 }
 
-export function confirmAbholung(db, id) {
-  const result = db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ? AND status = 'abgeschlossen'").run(id);
+// See listAbholbereitJobs above for nurMitZeitstempel — this is the second half of the same
+// gate: even a job n8n already knows about (e.g. from before the feature was enabled) must not
+// be confirmable without a timestamp while the feature is active.
+export function confirmAbholung(db, id, nurMitZeitstempel = false) {
+  const zeitstempelBedingung = nurMitZeitstempel ? " AND zeitstempel_gesetzt_am IS NOT NULL" : '';
+  const result = db
+    .prepare(`UPDATE jobs SET status = 'abgeholt' WHERE id = ? AND status = 'abgeschlossen'${zeitstempelBedingung}`)
+    .run(id);
   if (result.changes === 0) return null;
   return getJobById(db, id);
 }
@@ -213,10 +224,33 @@ export function abschliessenFreigabe2(db, jobId) {
   // now behave differently.)
   const result = db
     .prepare(
-      "UPDATE jobs SET status = 'abgeschlossen', freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0 WHERE id = ? AND status = 'freigabe2'"
+      "UPDATE jobs SET status = 'abgeschlossen', abgeschlossen_am = ?, freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0 WHERE id = ? AND status = 'freigabe2'"
     )
-    .run(jobId);
+    .run(new Date().toISOString(), jobId);
   return result.changes > 0;
+}
+
+// Every abgeschlossen job that still has no RFC3161 timestamp — the work list of the
+// zeitstempel-nachholen cron job (cronJobs.js). Deliberately the exact inverse of the
+// `zeitstempel_gesetzt_am IS NOT NULL` gate in listAbholbereitJobs/confirmAbholung above: what
+// n8n is not allowed to pick up yet is precisely what the nachhol-job must still stamp.
+export function listZeitstempelAusstehendJobs(db) {
+  return db.prepare("SELECT * FROM jobs WHERE status = 'abgeschlossen' AND zeitstempel_gesetzt_am IS NULL").all();
+}
+
+// Powers the admin-dashboard warning banner: counts abgeschlossen jobs whose RFC3161 timestamp
+// is still missing after schwellenStunden hours. abgeschlossen_am IS NOT NULL is a safety net
+// only — db/index.js backfills abgeschlossen_am for every already-abgeschlossen job at migration
+// time, so a job reaching this state without the column set should no longer occur; the guard
+// stays so a NULL can never silently be compared as "infinitely overdue".
+export function countZeitstempelUeberfaellig(db, schwellenStunden) {
+  const schwelle = new Date(Date.now() - schwellenStunden * 60 * 60 * 1000).toISOString();
+  const row = db
+    .prepare(
+      "SELECT COUNT(*) AS anzahl FROM jobs WHERE status = 'abgeschlossen' AND zeitstempel_gesetzt_am IS NULL AND abgeschlossen_am IS NOT NULL AND abgeschlossen_am < ?"
+    )
+    .get(schwelle);
+  return row.anzahl;
 }
 
 // SYNC-8: a second-tier escalation, triggered when the person already escalated to (Tier 1)
@@ -361,6 +395,10 @@ export function archivierenJob(db, id) {
   return result.changes > 0;
 }
 
+export function markZeitstempelGesetzt(db, jobId, zeitpunkt) {
+  db.prepare('UPDATE jobs SET zeitstempel_gesetzt_am = ? WHERE id = ?').run(zeitpunkt, jobId);
+}
+
 export function listZugewiesenJobsForPerson(db, personId) {
   return db
     .prepare(
@@ -383,6 +421,41 @@ export function listFreigabe2JobsForPerson(db, personId) {
        ORDER BY jobs.eingang_am`
     )
     .all(personId, personId);
+}
+
+// listAbgeschlossenJobsForPerson feeds the "Meine abgeschlossenen Rechnungen" section of /pool,
+// the app's most-visited page — a person's completed invoices only ever accumulate, so without a
+// cap the dashboard would grow without bound for the whole lifetime of the installation. The 50
+// newest (ORDER BY eingang_am DESC) are what that section is actually for: a recent-activity and
+// timestamp-status overview, not an archive browser.
+const ABGESCHLOSSEN_LISTE_LIMIT = 50;
+
+// Same konto-membership logic as listFreigabe2JobsForPerson (including the
+// freigabe2_eskaliert_an_admin = 0 guard: a job that reached admin-escalation stays excluded from
+// the recused freigeber2/stellvertreter2's own lists, matching listFreigabe2JobsForPerson's
+// intent), widened to the three completed-and-beyond statuses (so it keeps listing a job after
+// n8n abholt/archiviert it, even though its PDF file is no longer available to preview/verify by
+// then) plus a direct zugewiesen_an match (the person who did the Kontierung, not necessarily the
+// Freigeber2). In practice abschliessenFreigabe2 always clears freigabe2_eskaliert_an_admin back
+// to 0 by the time a job reaches 'abgeschlossen', so this guard is defense-in-depth rather than
+// something normal completion flows can trip — but it keeps the two queries' access rules
+// identical rather than relying on that invariant holding forever.
+export function listAbgeschlossenJobsForPerson(db, personId) {
+  return db
+    .prepare(
+      `SELECT jobs.* FROM jobs
+       JOIN konten ON konten.id = jobs.konto_id
+       WHERE jobs.status IN ('abgeschlossen', 'abgeholt', 'archiviert')
+         AND jobs.freigabe2_eskaliert_an_admin = 0
+         AND (
+           jobs.zugewiesen_an = ?
+           OR (jobs.freigabe2_eskaliert_von IS NULL AND konten.freigeber2_id = ?)
+           OR (jobs.freigabe2_eskaliert_von IS NOT NULL AND konten.stellvertreter2_id = ?)
+         )
+       ORDER BY jobs.eingang_am DESC
+       LIMIT ${ABGESCHLOSSEN_LISTE_LIMIT}`
+    )
+    .all(personId, personId, personId);
 }
 
 // Both listZugewiesenJobsForPerson and listFreigabe2JobsForPerson deliberately exclude

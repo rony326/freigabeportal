@@ -43,19 +43,20 @@
     <% } %>
   </div>
 </header>
-<% const navIsBuchhaltung = typeof isBuchhaltung !== 'undefined' && isBuchhaltung; %>
 <% const navIsPortalAdmin = typeof isPortalAdmin !== 'undefined' && isPortalAdmin; %>
+<% const navEingeloggt = typeof currentPerson !== 'undefined' && Boolean(currentPerson); %>
 <% const navAktuellerPfad = typeof currentPath !== 'undefined' ? currentPath : ''; %>
 <% const navZeigeZurueck = navAktuellerPfad.startsWith('/kontierung'); %>
-<% if (navIsBuchhaltung || navIsPortalAdmin || navZeigeZurueck) { %>
+<% if (navEingeloggt || navZeigeZurueck) { %>
   <nav class="<%= typeof navContainerClass !== 'undefined' ? navContainerClass : 'container' %> mb-3 d-flex align-items-center gap-2">
-    <% if (navIsBuchhaltung || navIsPortalAdmin) { %>
+    <% if (navEingeloggt) { %>
       <div class="dropdown">
         <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="hauptmenue-toggle" data-bs-toggle="dropdown" aria-expanded="false">
           Menü
         </button>
         <ul class="dropdown-menu" aria-labelledby="hauptmenue-toggle">
           <li><a class="dropdown-item<%= navAktuellerPfad === '/pool' ? ' active' : '' %>" href="/pool">Aufgaben</a></li>
+          <li><a class="dropdown-item<%= navAktuellerPfad === '/zeitstempel-pruefen' ? ' active' : '' %>" href="/zeitstempel-pruefen">Zeitstempel prüfen</a></li>
           <% if (navIsPortalAdmin) { %>
             <li><a class="dropdown-item<%= navAktuellerPfad.startsWith('/admin') ? ' active' : '' %>" href="/admin">Admin</a></li>
           <% } %>

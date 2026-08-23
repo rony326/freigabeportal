@@ -34,12 +34,16 @@ CREATE TABLE IF NOT EXISTS admin_config (
 -- Execution history for the scheduled/manually-triggered pool-erinnerungen and pdf-bereinigung
 -- jobs (services/cronJobs.js) -- sync-personen keeps its own richer sync_log above (upserted/
 -- deaktiviert counts), so it isn't duplicated in here.
+-- beendet_am is nullable and status allows 'laufend' so a run can be recorded as started before it
+-- finishes -- needed by zeitstempel-nachholen (see hasRecentRunningCronLauf in cronLogRepo.js) to
+-- detect an overlapping run in progress; pool-erinnerungen and pdf-bereinigung still always write
+-- both fields in one shot via logCronLauf and never use 'laufend'.
 CREATE TABLE IF NOT EXISTS cron_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung')),
+  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen')),
   gestartet_am TEXT NOT NULL,
-  beendet_am TEXT NOT NULL,
-  status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler')),
+  beendet_am TEXT,
+  status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
   details TEXT
 );
 
@@ -100,7 +104,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   debitor_id INTEGER REFERENCES debitoren(id),
   aufgesplittet_von INTEGER REFERENCES jobs(id),
   datei_hash TEXT,
-  hinweis_konto_id INTEGER REFERENCES konten(id)
+  hinweis_konto_id INTEGER REFERENCES konten(id),
+  zeitstempel_gesetzt_am TEXT,
+  abgeschlossen_am TEXT
 );
 
 CREATE TABLE IF NOT EXISTS freigaben (

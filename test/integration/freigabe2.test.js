@@ -15,6 +15,8 @@ import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import * as mupdf from 'mupdf';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
+import { setConfigValue } from '../../src/db/adminConfigRepo.js';
+import { setupMockTsa } from '../helpers/mockTsa.js';
 
 function createStubMailer() {
   const sent = [];
@@ -338,6 +340,154 @@ test('POST /freigabe2/:id without a conflict still saves an optional Begründung
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
   const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
   assert.match(stampPageText, /Betrag und Konto passen, Freigabe erteilt\./);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /freigabe2/:id sets zeitstempel_gesetzt_am when a TSA is configured and reachable', async () => {
+  const { mkdtempSync, rmSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-zeitstempel-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  writeFileSync(pdfPfad, pdf);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+
+  const rfc3161Response = readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url));
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, rfc3161Response, { headers: { 'content-type': 'application/timestamp-reply' } });
+
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 302);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'abgeschlossen');
+  assert.ok(job.zeitstempel_gesetzt_am, 'zeitstempel_gesetzt_am must be set after a successful TSA call');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /freigabe2/:id clears zeitstempel_gesetzt_am again when the stamped PDF cannot be renamed into place', async () => {
+  // The DB must never claim a timestamp that is not actually on disk: markZeitstempelGesetzt runs
+  // inside the completion transaction, which commits *before* the .tmp file is renamed onto
+  // job.pdf_pfad. If that rename fails, the file still sitting at job.pdf_pfad is the untimestamped
+  // original — leaving zeitstempel_gesetzt_am set would open the n8n pickup gate for it and make
+  // /zeitstempel-pruefen show "✓ gesetzt am …" next to a verification that finds nothing.
+  const { mkdtempSync, rmSync, readFileSync, unlinkSync, mkdirSync, statSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-zeitstempel-rename-fail-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  writeFileSync(pdfPfad, pdf);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+
+  const rfc3161Response = readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url));
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(
+    200,
+    () => {
+      // Runs mid-request, while the route awaits the TSA: job.pdf_pfad has already been read
+      // (that happens before the TSA call) and the .tmp file has not been written yet. Turning
+      // job.pdf_pfad into a *directory* here makes the route's final renameSync(tmp, pdf_pfad)
+      // fail with EISDIR — deterministic on every platform and for every user (unlike a
+      // chmod-based denial, which root ignores), the same trick cron.test.js uses to force a
+      // filesystem error. Writing the .tmp file itself is unaffected: it is a different name in
+      // the same, still-writable directory.
+      unlinkSync(pdfPfad);
+      mkdirSync(pdfPfad);
+      return rfc3161Response;
+    },
+    { headers: { 'content-type': 'application/timestamp-reply' } }
+  );
+
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 302, 'the Freigabe itself is already committed — a failed rename must not turn into a 500');
+  assert.ok(statSync(pdfPfad).isDirectory(), 'the rename really must have failed for this test to mean anything');
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'abgeschlossen');
+  assert.equal(
+    job.zeitstempel_gesetzt_am,
+    null,
+    'zeitstempel_gesetzt_am must be cleared again — the timestamped bytes never reached job.pdf_pfad, so the n8n gate has to stay closed and the nachhol-job has to retry'
+  );
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /freigabe2/:id still completes the Freigabe when the configured TSA is unreachable — zeitstempel_gesetzt_am stays null for the nachhol-job to pick up later', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-zeitstempel-fail-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  writeFileSync(pdfPfad, pdf);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  setupMockTsa('https://tsa.example.org/tsr'); // no .intercept() registered -> unreachable
+
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 302, 'the Freigabe must complete despite the TSA being unreachable');
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'abgeschlossen');
+  assert.equal(job.zeitstempel_gesetzt_am, null);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /freigabe2/:id leaves zeitstempel_gesetzt_am null and makes no TSA request when no TSA URL is configured', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-zeitstempel-unconfigured-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  writeFileSync(pdfPfad, pdf);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  // Deliberately no setConfigValue(db, 'zeitstempel_tsa_url', ...) call and no setupMockTsa
+  // registered at all -- getConfigValue returns null for the unset key, so the route's `if
+  // (tsaUrl)` guard must skip the TSA step entirely. If it didn't, this test would attempt a real
+  // network call against undici's untouched default dispatcher and fail/error instead of the
+  // route completing normally.
+  const app = buildTestApp(db);
+
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).zeitstempel_gesetzt_am, null);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

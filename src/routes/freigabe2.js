@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { getJobById, eskalierenFreigabe2, eskalierenFreigabe2AnAdmin, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
+import { getJobById, eskalierenFreigabe2, eskalierenFreigabe2AnAdmin, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id, markZeitstempelGesetzt } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
+import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampAndFinalize } from '../services/pdfStamp.js';
+import { setZeitstempel } from '../services/zeitstempel.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
 import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
@@ -253,6 +255,25 @@ export function createFreigabe2Router({ db, config, mailer }) {
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, [err.message]);
       }
 
+      // Non-blocking, best-effort: a TSA outage must never prevent Freigabe 2 from completing.
+      // Deliberately outside the DB transaction below — that transaction always commits the
+      // Freigabe itself; a failed timestamp attempt is simply retried later by the
+      // zeitstempel-nachholen cron job (see cronJobs.js) rather than rolled back here.
+      const tsaUrl = getConfigValue(db, 'zeitstempel_tsa_url');
+      let zeitstempelGesetztAm = null;
+      if (tsaUrl) {
+        try {
+          stamped = await setZeitstempel(stamped, {
+            url: tsaUrl,
+            user: getConfigValue(db, 'zeitstempel_tsa_user') || undefined,
+            passwort: getConfigValue(db, 'zeitstempel_tsa_passwort') || undefined,
+          });
+          zeitstempelGesetztAm = new Date().toISOString();
+        } catch (err) {
+          console.error(`Zeitstempel für Job ${job.id} fehlgeschlagen, wird nachgeholt:`, err.message);
+        }
+      }
+
       const tmpPfad = `${job.pdf_pfad}.${randomUUID()}.tmp`;
       writeFileSync(tmpPfad, stamped);
 
@@ -276,6 +297,9 @@ export function createFreigabe2Router({ db, config, mailer }) {
             'Diese Freigabe wurde inzwischen bereits von einem anderen Vorgang abgeschlossen.',
           ]);
         }
+        if (zeitstempelGesetztAm) {
+          markZeitstempelGesetzt(db, job.id, zeitstempelGesetztAm);
+        }
         db.exec('COMMIT');
       } catch (err) {
         db.exec('ROLLBACK');
@@ -291,6 +315,21 @@ export function createFreigabe2Router({ db, config, mailer }) {
         // no audit trail) instead of crashing the request. Log loudly so it's noticed rather
         // than silently shipping the wrong file.
         console.error(`Stempel-PDF für Job ${job.id} konnte nicht final abgelegt werden:`, err.message);
+        // The RFC3161 timestamp was applied to the buffer that just failed to reach
+        // job.pdf_pfad — the file still on disk there has no timestamp at all. Leaving
+        // zeitstempel_gesetzt_am set would make the database assert a timestamp that does not
+        // exist: it would open the n8n pickup gate (listAbholbereitJobs/confirmAbholung) for an
+        // untimestamped file, and show "✓ gesetzt am …" next to a /zeitstempel-pruefen result
+        // that finds nothing. Clear it back to NULL (markZeitstempelGesetzt is a plain
+        // parameterised UPDATE, so null is the honest "not set" value) — the gate stays closed
+        // and the zeitstempel-nachholen cron job retries the job later.
+        if (zeitstempelGesetztAm) {
+          try {
+            markZeitstempelGesetzt(db, job.id, null);
+          } catch (clearErr) {
+            console.error(`Zurücksetzen von zeitstempel_gesetzt_am für Job ${job.id} fehlgeschlagen:`, clearErr.message);
+          }
+        }
       }
       res.redirect('/pool');
     } catch (err) {

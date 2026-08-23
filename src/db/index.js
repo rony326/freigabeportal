@@ -20,6 +20,8 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'aufgesplittet_von', ddl: 'ALTER TABLE jobs ADD COLUMN aufgesplittet_von INTEGER REFERENCES jobs(id)' },
   { column: 'datei_hash', ddl: 'ALTER TABLE jobs ADD COLUMN datei_hash TEXT' },
   { column: 'hinweis_konto_id', ddl: 'ALTER TABLE jobs ADD COLUMN hinweis_konto_id INTEGER REFERENCES konten(id)' },
+  { column: 'zeitstempel_gesetzt_am', ddl: 'ALTER TABLE jobs ADD COLUMN zeitstempel_gesetzt_am TEXT' },
+  { column: 'abgeschlossen_am', ddl: 'ALTER TABLE jobs ADD COLUMN abgeschlossen_am TEXT' },
 ];
 
 function migrateJobsTable(db) {
@@ -30,6 +32,24 @@ function migrateJobsTable(db) {
     }
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_datei_hash ON jobs(datei_hash)');
+
+  // Runs strictly after the loop above, so the abgeschlossen_am column is guaranteed to exist by
+  // now (whether it came from schema.sql on a fresh database or from the ALTER TABLE entry).
+  //
+  // Backfill: on the day the RFC3161 feature is deployed to a database that already has
+  // 'abgeschlossen' jobs, those jobs have no abgeschlossen_am (the column is new). Without this,
+  // they are caught by the n8n pickup gate (jobsRepo.listAbholbereitJobs/confirmAbholung block
+  // every abgeschlossen job without a timestamp) while being invisible to the admin warning
+  // banner (countZeitstempelUeberfaellig skips abgeschlossen_am IS NULL) — un-pickupable with
+  // nothing on the dashboard saying why. Stamping them with "now" puts them on the same clock as
+  // freshly completed jobs: the nachhol-job picks them up, and if the TSA stays unreachable the
+  // banner does start warning about them once the threshold passes.
+  //
+  // Idempotent by construction, no guard flag needed: it only touches rows whose abgeschlossen_am
+  // is still NULL, and every row it touches gets a non-NULL value, so a second run matches nothing.
+  db.prepare("UPDATE jobs SET abgeschlossen_am = ? WHERE status = 'abgeschlossen' AND abgeschlossen_am IS NULL").run(
+    new Date().toISOString()
+  );
 }
 
 // SQLite CHECK constraints can't be widened with ALTER TABLE — unlike JOBS_TABLE_MIGRATIONS'
@@ -71,6 +91,40 @@ function migrateFreigabenTable(db) {
   }
 }
 
+// Same rationale as migrateFreigabenTable above: an already-existing cron_log table (any database
+// that predates the 'zeitstempel-nachholen' job name, or predates the 'laufend' status value and
+// nullable beendet_am that a running-but-not-yet-finished zeitstempel-nachholen entry needs — see
+// hasRecentRunningCronLauf in cronLogRepo.js) keeps its original, narrower schema forever
+// otherwise, and logCronLauf/startCronLauf('zeitstempel-nachholen', ...) would fail on it.
+function migrateCronLogTable(db) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cron_log'").get();
+  if (!tableSql || (tableSql.sql.includes('zeitstempel-nachholen') && tableSql.sql.includes("'laufend'"))) return;
+
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE cron_log RENAME TO cron_log_pre_zeitstempel_nachholen');
+    db.exec(`
+      CREATE TABLE cron_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen')),
+        gestartet_am TEXT NOT NULL,
+        beendet_am TEXT,
+        status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
+        details TEXT
+      )
+    `);
+    db.exec(`
+      INSERT INTO cron_log (id, job, gestartet_am, beendet_am, status, details)
+      SELECT id, job, gestartet_am, beendet_am, status, details FROM cron_log_pre_zeitstempel_nachholen
+    `);
+    db.exec('DROP TABLE cron_log_pre_zeitstempel_nachholen');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -80,5 +134,6 @@ export function openDatabase(dbPath) {
   db.exec(schema);
   migrateJobsTable(db);
   migrateFreigabenTable(db);
+  migrateCronLogTable(db);
   return db;
 }

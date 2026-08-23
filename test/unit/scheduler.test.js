@@ -31,6 +31,7 @@ function fakeJobs(overrides = {}) {
     runSyncPersonenJob: async () => ({ status: 'erfolg' }),
     runPoolErinnerungenJob: async () => ({ status: 'erfolg' }),
     runPdfBereinigungJob: () => ({ status: 'erfolg' }),
+    runZeitstempelNachholenJob: async () => ({ status: 'erfolg' }),
     ...overrides,
   };
 }
@@ -159,5 +160,26 @@ test('startScheduler runs the daily pdf-bereinigung job at its own, later schedu
   t.mock.timers.tick(30 * 60 * 1000);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(calls, 1);
+  db.close();
+});
+
+test('startScheduler runs the zeitstempel-nachholen job on the configured interval (default 5 minutes)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const db = seededDb();
+  let calls = 0;
+  startScheduler({
+    db,
+    config: {},
+    mailer: {},
+    jobs: fakeJobs({ runZeitstempelNachholenJob: async () => { calls += 1; return { status: 'erfolg' }; } }),
+  });
+
+  t.mock.timers.tick(5 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+
+  t.mock.timers.tick(5 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 2);
   db.close();
 });

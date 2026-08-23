@@ -40,6 +40,15 @@
       </div>
       <p class="text-muted small">Die Reminder-/Eskalations-<strong>Schwellen</strong> (ab wann eine Rechnung als überfällig gilt) werden separat unter <a href="/admin/eskalation">Eskalationszeiten</a> eingestellt — hier nur, wie oft diese Prüfung läuft.</p>
 
+      <h2 class="h5 mt-3">Zeitstempel-Nachholen</h2>
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="zeitstempelNachholenIntervallMinuten">Intervall (Minuten)</label>
+          <input type="number" min="1" class="form-control" id="zeitstempelNachholenIntervallMinuten" name="zeitstempelNachholenIntervallMinuten" value="<%= cronZeitstempelNachholenIntervallMinuten %>" required>
+        </div>
+      </div>
+      <p class="text-muted small">TSA-Adresse und Zugangsdaten werden separat unter <a href="/admin/zeitstempel">Zeitstempel</a> eingestellt — hier nur, wie oft ein fehlgeschlagener/übersprungener Zeitstempel nachgeholt wird.</p>
+
       <h2 class="h5 mt-3">PDF-Bereinigung &amp; Mail-Log-Retention</h2>
       <div class="row g-2 mb-3">
         <div class="col-6 col-md-3">
@@ -149,6 +158,39 @@
             </tr>
           <% }) %>
           <% if (pdfBereinigungLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="h4 mt-4">Zeitstempel-Nachholen — Verlauf</h2>
+    <form method="post" action="/admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren" class="mb-2">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
+    </form>
+    <% if (getriggert === 'zeitstempel-nachholen' && zeitstempelNachholenLog.length > 0) { %>
+      <% const letzteZeitstempel = zeitstempelNachholenLog[0]; %>
+      <div class="alert <%= letzteZeitstempel.status === 'erfolg' ? 'alert-success' : letzteZeitstempel.status === 'laufend' ? 'alert-info' : 'alert-danger' %>">
+        <% if (letzteZeitstempel.status === 'erfolg') { %>
+          Erfolgreich ausgeführt. <%= letzteZeitstempel.details %>
+        <% } else if (letzteZeitstempel.status === 'laufend') { %>
+          Ein Zeitstempel-Nachholen-Lauf war bereits aktiv — dieser Trigger wurde übersprungen.
+        <% } else { %>
+          Fehlgeschlagen: <%= letzteZeitstempel.details %>
+        <% } %>
+      </div>
+    <% } %>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Gestartet</th><th>Beendet</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody>
+          <% zeitstempelNachholenLog.forEach((eintrag) => { %>
+            <tr>
+              <td><%= eintrag.gestartet_am %></td>
+              <td><%= eintrag.beendet_am %></td>
+              <td><%= eintrag.status %></td>
+              <td><%= eintrag.details || '' %></td>
+            </tr>
+          <% }) %>
+          <% if (zeitstempelNachholenLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
         </tbody>
       </table>
     </div>

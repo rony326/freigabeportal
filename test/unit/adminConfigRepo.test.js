@@ -73,3 +73,20 @@ test('seedDefaults sets the SYNC-1/SYNC-2 sync-robustness defaults', () => {
   assert.equal(getConfigValue(db, 'sync_fehler_empfaenger'), 'gruppe:admin');
   db.close();
 });
+
+test('seedDefaults sets zeitstempel defaults (feature disabled until a TSA URL is configured)', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'zeitstempel_tsa_url'), '');
+  assert.equal(getConfigValue(db, 'zeitstempel_tsa_user'), '');
+  assert.equal(getConfigValue(db, 'zeitstempel_tsa_passwort'), '');
+  assert.equal(getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'), '5');
+  db.close();
+});
+
+test('seedDefaults sets zeitstempel_warnung_ab_stunden default', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'zeitstempel_warnung_ab_stunden'), '2');
+  db.close();
+});

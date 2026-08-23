@@ -19,6 +19,11 @@ const DEFAULTS = {
   cron_pdf_bereinigung_stunde: '2',
   cron_pdf_bereinigung_minute: '30',
   cron_pool_erinnerungen_intervall_minuten: '60',
+  zeitstempel_tsa_url: '',
+  zeitstempel_tsa_user: '',
+  zeitstempel_tsa_passwort: '',
+  cron_zeitstempel_nachholen_intervall_minuten: '5',
+  zeitstempel_warnung_ab_stunden: '2',
 };
 
 export function seedDefaults(db) {

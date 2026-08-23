@@ -16,6 +16,9 @@ import { createKontenRouter } from './routes/admin/konten.js';
 import { createDebitorenRouter } from './routes/admin/debitoren.js';
 import { createEskalationRouter } from './routes/admin/eskalation.js';
 import { createErscheinungsbildRouter } from './routes/admin/erscheinungsbild.js';
+import { countZeitstempelUeberfaellig } from './db/jobsRepo.js';
+import { getConfigValue } from './db/adminConfigRepo.js';
+import { createZeitstempelAdminRouter } from './routes/admin/zeitstempel.js';
 import { createPersonenRouter } from './routes/admin/personen.js';
 import { createMailsRouter } from './routes/admin/mails.js';
 import { createSyncRouter } from './routes/admin/sync.js';
@@ -27,6 +30,7 @@ import { createDownloadsRouter } from './routes/downloads.js';
 import { createKontierungRouter } from './routes/kontierung.js';
 import { createFreigabe2Router } from './routes/freigabe2.js';
 import { createAblehnungRouter } from './routes/ablehnung.js';
+import { createZeitstempelPruefenRouter } from './routes/zeitstempelPruefen.js';
 import { createMailerOrFallback } from './services/mailer.js';
 import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
 
@@ -87,12 +91,18 @@ export function createApp({ db, config }) {
   app.use('/branding', publicLimiter, createBrandingRouter({ db }));
   app.use('/admin', sessionLimiter, requireRole(config, 'portal-admin'));
   app.get('/admin', (req, res) => {
-    res.render('admin/dashboard');
+    const zeitstempelWarnungSchwelle = Number(getConfigValue(db, 'zeitstempel_warnung_ab_stunden'));
+    const tsaAktiv = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
+    res.render('admin/dashboard', {
+      zeitstempelUeberfaellig: tsaAktiv ? countZeitstempelUeberfaellig(db, zeitstempelWarnungSchwelle) : 0,
+      zeitstempelWarnungSchwelle,
+    });
   });
   app.use('/admin/konten', createKontenRouter({ db }));
   app.use('/admin/debitoren', createDebitorenRouter({ db }));
   app.use('/admin/eskalation', createEskalationRouter({ db }));
   app.use('/admin/erscheinungsbild', createErscheinungsbildRouter({ db, config }));
+  app.use('/admin/zeitstempel', createZeitstempelAdminRouter({ db }));
   app.use('/admin/personen', createPersonenRouter({ db }));
   app.use('/admin/mails', createMailsRouter({ db, mailer }));
   app.use('/admin/sync', createSyncRouter({ db }));
@@ -111,6 +121,7 @@ export function createApp({ db, config }) {
   app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer }));
   app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer }));
   app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config }));
+  app.use('/zeitstempel-pruefen', sessionLimiter, requireLogin(), createZeitstempelPruefenRouter({ db, config }));
 
   app.use('/auth', publicLimiter, createAuthRouter({ db, config }));
   app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));

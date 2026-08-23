@@ -6,7 +6,7 @@ import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -295,6 +295,47 @@ test('confirmAbholung returns null on a second confirmation attempt', () => {
   db.close();
 });
 
+test('listAbholbereitJobs, with nurMitZeitstempel true, omits an abgeschlossen job that has no timestamp yet', () => {
+  const db = openDatabase(':memory:');
+  seedAbgeschlossenJob(db);
+  assert.equal(listAbholbereitJobs(db, undefined, true).length, 0);
+  db.close();
+});
+
+test('listAbholbereitJobs, with nurMitZeitstempel true, includes an abgeschlossen job once zeitstempel_gesetzt_am is set', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  db.prepare('UPDATE jobs SET zeitstempel_gesetzt_am = ? WHERE id = ?').run('2026-08-21T09:00:00.000Z', id);
+  const jobs = listAbholbereitJobs(db, undefined, true);
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].id, id);
+  db.close();
+});
+
+test('listAbholbereitJobs, with nurMitZeitstempel false (default), includes a job without a timestamp', () => {
+  const db = openDatabase(':memory:');
+  seedAbgeschlossenJob(db);
+  assert.equal(listAbholbereitJobs(db).length, 1);
+  db.close();
+});
+
+test('confirmAbholung, with nurMitZeitstempel true, refuses a job that has no timestamp yet', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  assert.equal(confirmAbholung(db, id, true), null);
+  assert.equal(getJobById(db, id).status, 'abgeschlossen');
+  db.close();
+});
+
+test('confirmAbholung, with nurMitZeitstempel true, succeeds once zeitstempel_gesetzt_am is set', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  db.prepare('UPDATE jobs SET zeitstempel_gesetzt_am = ? WHERE id = ?').run('2026-08-21T09:00:00.000Z', id);
+  const job = confirmAbholung(db, id, true);
+  assert.equal(job.status, 'abgeholt');
+  db.close();
+});
+
 test('setThumbnailPfad sets thumbnail_pfad on the job row', () => {
   const db = openDatabase(':memory:');
   const jobsDir = '/tmp/does-not-need-to-exist';
@@ -412,6 +453,17 @@ test('abschliessenFreigabe2 sets status to abgeschlossen and clears the escalati
   db.close();
 });
 
+test('abschliessenFreigabe2 sets abgeschlossen_am', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  assert.equal(getJobById(db, jobId).abgeschlossen_am, null);
+  abschliessenFreigabe2(db, jobId);
+  assert.ok(getJobById(db, jobId).abgeschlossen_am);
+  db.close();
+});
+
 test('abschliessenFreigabe2 clears freigabe2_eskaliert_an_admin, so a later rework cycle is not permanently locked to Portal-Admin', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
@@ -437,6 +489,68 @@ test('abschliessenFreigabe2 atomically guards against completing a job twice', (
   assert.equal(secondCompletion, false);
   const job = getJobById(db, jobId);
   assert.equal(job.status, 'abgeschlossen');
+  db.close();
+});
+
+test('listZeitstempelAusstehendJobs returns an abgeschlossen job that has no timestamp yet', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  const jobs = listZeitstempelAusstehendJobs(db);
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].id, id);
+  assert.equal(jobs[0].pdf_pfad, '/tmp/a.pdf', 'full job rows are returned — the nachhol-job needs pdf_pfad');
+  db.close();
+});
+
+test('listZeitstempelAusstehendJobs ignores a job that already has a timestamp', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  markZeitstempelGesetzt(db, id, '2026-08-20T10:00:00.000Z');
+  assert.equal(listZeitstempelAusstehendJobs(db).length, 0);
+  db.close();
+});
+
+test('listZeitstempelAusstehendJobs ignores jobs that have not reached abgeschlossen, and ones that already moved past it', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  for (const status of ['freigabe2', 'abgeholt', 'archiviert', 'abgelehnt']) {
+    db.prepare('UPDATE jobs SET status = ? WHERE id = ?').run(status, id);
+    assert.equal(listZeitstempelAusstehendJobs(db).length, 0, `status ${status} must not be in the nachhol work list`);
+  }
+  db.close();
+});
+
+test('countZeitstempelUeberfaellig counts an abgeschlossen job past the threshold with no timestamp', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  const alt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  db.prepare('UPDATE jobs SET abgeschlossen_am = ? WHERE id = ?').run(alt, id);
+  assert.equal(countZeitstempelUeberfaellig(db, 2), 1);
+  db.close();
+});
+
+test('countZeitstempelUeberfaellig ignores a job that already has a timestamp', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  const alt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  db.prepare('UPDATE jobs SET abgeschlossen_am = ?, zeitstempel_gesetzt_am = ? WHERE id = ?').run(alt, alt, id);
+  assert.equal(countZeitstempelUeberfaellig(db, 2), 0);
+  db.close();
+});
+
+test('countZeitstempelUeberfaellig ignores a job that has not yet crossed the threshold', () => {
+  const db = openDatabase(':memory:');
+  const id = seedAbgeschlossenJob(db);
+  const neu = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  db.prepare('UPDATE jobs SET abgeschlossen_am = ? WHERE id = ?').run(neu, id);
+  assert.equal(countZeitstempelUeberfaellig(db, 2), 0);
+  db.close();
+});
+
+test('countZeitstempelUeberfaellig ignores a pre-feature abgeschlossen job with no abgeschlossen_am recorded', () => {
+  const db = openDatabase(':memory:');
+  seedAbgeschlossenJob(db);
+  assert.equal(countZeitstempelUeberfaellig(db, 2), 0);
   db.close();
 });
 
@@ -562,6 +676,83 @@ test('listFreigabe2JobsForPerson matches freigeber2_id when not escalated, stell
   eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Befangen' });
   assert.equal(listFreigabe2JobsForPerson(db, '3').length, 0);
   assert.equal(listFreigabe2JobsForPerson(db, '4').length, 1);
+  db.close();
+});
+
+test('listAbgeschlossenJobsForPerson matches a job by freigeber2_id and lists it across all three completed statuses', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber2Id: '3', stellvertreter2Id: '4'
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+
+  for (const status of ['abgeschlossen', 'abgeholt', 'archiviert']) {
+    db.prepare('UPDATE jobs SET status = ? WHERE id = ?').run(status, jobId);
+    const result = listAbgeschlossenJobsForPerson(db, '3');
+    assert.equal(result.length, 1, `expected a match for status ${status}`);
+    assert.equal(result[0].id, jobId);
+  }
+  db.close();
+});
+
+test('listAbgeschlossenJobsForPerson matches a job by zugewiesen_an even when the person is not the Konto\'s freigeber2', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber1Id: '1', freigeber2Id: '3'
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
+
+  assert.equal(listAbgeschlossenJobsForPerson(db, '1').length, 1);
+  db.close();
+});
+
+test('listAbgeschlossenJobsForPerson caps the list at 50 rows and returns the newest ones', () => {
+  // Completed invoices only ever accumulate, and this list feeds the most-visited page in the
+  // app (/pool) — without the LIMIT it would grow unbounded for the lifetime of the install.
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber2Id: '3'
+  // 60 jobs with strictly increasing eingang_am, so "newest first" is unambiguous.
+  const ids = [];
+  for (let i = 0; i < 60; i += 1) {
+    const eingangAm = new Date(Date.UTC(2026, 0, 1, 0, i, 0)).toISOString();
+    const jobId = createJob(db, { eingangAm, quelle: 'scanner', absender: null, dateiname: `a${i}.pdf`, pdfPfad: '/tmp/a.pdf' });
+    setKontierung(db, jobId, kontoId);
+    db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
+    ids.push(jobId);
+  }
+
+  const result = listAbgeschlossenJobsForPerson(db, '3');
+  assert.equal(result.length, 50, 'the query must cap at 50 rows, not return all 60');
+  assert.equal(result[0].id, ids[59], 'newest (highest eingang_am) first');
+  assert.equal(result[49].id, ids[10], 'the 50 newest are kept — the 10 oldest are what falls off');
+  db.close();
+});
+
+test('listAbgeschlossenJobsForPerson excludes a job that has not reached abgeschlossen yet', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber2Id: '3'
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+
+  assert.equal(listAbgeschlossenJobsForPerson(db, '3').length, 0);
+  db.close();
+});
+
+test('listAbgeschlossenJobsForPerson excludes a job that has been admin-escalated past the excluded stellvertreter2, even once it reaches abgeschlossen', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber2Id: '3', stellvertreter2Id: '4'
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Befangen' });
+  eskalierenFreigabe2AnAdmin(db, jobId, { eskaliertVon: '4', grund: 'Auch befangen' });
+  // Carried to abgeschlossen directly (bypassing abschliessenFreigabe2, which would otherwise
+  // clear freigabe2_eskaliert_an_admin) so the query's guard is exercised on its own merits,
+  // matching listFreigabe2JobsForPerson's admin-escalation exclusion.
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
+
+  assert.equal(listAbgeschlossenJobsForPerson(db, '3').length, 0);
+  assert.equal(listAbgeschlossenJobsForPerson(db, '4').length, 0);
   db.close();
 });
 
@@ -944,6 +1135,18 @@ test('archivierenJob refuses to archive a job that is not abgeholt', () => {
   const result = archivierenJob(db, jobId);
   assert.equal(result, false);
   assert.equal(getJobById(db, jobId).status, 'unzugewiesen');
+  db.close();
+});
+
+test('markZeitstempelGesetzt sets zeitstempel_gesetzt_am, leaves it null until called', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
+
+  assert.equal(getJobById(db, jobId).zeitstempel_gesetzt_am, null);
+  markZeitstempelGesetzt(db, jobId, '2026-08-21T10:00:00.000Z');
+  assert.equal(getJobById(db, jobId).zeitstempel_gesetzt_am, '2026-08-21T10:00:00.000Z');
   db.close();
 });
 

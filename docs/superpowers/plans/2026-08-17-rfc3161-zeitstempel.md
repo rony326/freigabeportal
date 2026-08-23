@@ -2831,7 +2831,7 @@ git commit -m "feat: add admin page for configuring the RFC3161 TSA"
 
 - [ ] **Step 1: Write the failing `jobsRepo.js` unit tests**
 
-Add `countZeitstempelUeberfaellig` is not part of this task (see Task 10) — skip that import. Add to `test/unit/jobsRepo.test.js`, directly after the existing `'confirmAbholung returns null on a second confirmation attempt'` test:
+Add to `test/unit/jobsRepo.test.js`, directly after the existing `'confirmAbholung returns null on a second confirmation attempt'` test. No new imports needed — `listAbholbereitJobs`, `confirmAbholung`, and `getJobById` are already imported at the top of this file:
 
 ```javascript
 test('listAbholbereitJobs, with nurMitZeitstempel true, omits an abgeschlossen job that has no timestamp yet', () => {
@@ -3519,7 +3519,17 @@ Expected: PASS (all of Task 8's tests plus this task's new/modified ones).
 
 - [ ] **Step 13: Write the failing dashboard-banner tests**
 
-Add to `test/integration/app.test.js`, right after the existing `'GET /admin renders a dashboard with links to all ten admin areas for a Portal-Admin'` test. First, extend that existing test's own path list to include `/admin/zeitstempel` (it will already be there once Task 8 is done — no change needed if Task 8 already added it; if not yet present, add `'/admin/zeitstempel'` to the array of paths that test iterates over).
+Add to `test/integration/app.test.js`, right after the existing `'GET /admin renders a dashboard with links to all ten admin areas for a Portal-Admin'` test. First, extend that existing test's own path list: Task 8 never touches `test/integration/app.test.js` (only `test/integration/admin/zeitstempel.test.js`), so `/admin/zeitstempel` is not yet in the array this test iterates over — add it. Replace:
+
+```javascript
+  for (const path of ['/admin/konten', '/admin/debitoren', '/admin/eskalation', '/admin/erscheinungsbild', '/admin/personen', '/admin/mails', '/admin/sync', '/admin/geplante-jobs', '/admin/abgelehnt']) {
+```
+
+with:
+
+```javascript
+  for (const path of ['/admin/konten', '/admin/debitoren', '/admin/eskalation', '/admin/erscheinungsbild', '/admin/zeitstempel', '/admin/personen', '/admin/mails', '/admin/sync', '/admin/geplante-jobs', '/admin/abgelehnt']) {
+```
 
 ```javascript
 test('GET /admin shows no Zeitstempel warning banner when no TSA is configured', async () => {

@@ -34,7 +34,7 @@
             <% } %>
             <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.konfliktMitZugewiesenemDebitor) { %>
               <div class="alert alert-warning">
-                QR-Code deutet auf Lieferant <strong><%= qrInfo.vorschlagDebitor.name %></strong> hin, aktuell zugewiesen ist ein anderer Lieferant — bitte prüfen.
+                QR-Code deutet auf Lieferant <strong><%= qrInfo.vorschlagDebitor.name %></strong> hin, aktuell zugewiesen: <strong><%= qrInfo.zugewiesenerDebitor.name %></strong> — bitte prüfen.
               </div>
             <% } %>
             <% if (errors.length > 0) { %>

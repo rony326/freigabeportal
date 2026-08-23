@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { setupMockTsa } from '../helpers/mockTsa.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { setZeitstempel, verifyZeitstempel } from '../../src/services/zeitstempel.js';
@@ -82,10 +83,15 @@ test('setZeitstempel throws a German-message Error when the TSA returns an HTTP 
   );
 });
 
-test('verifyZeitstempel reports vorhanden:false for a PDF with no timestamp', async () => {
+test('verifyZeitstempel reports vorhanden:false for a PDF with no timestamp, and still computes dateiHash', async () => {
   const plain = await buildPdfFixture(['Kein Zeitstempel hier.']);
   const result = await verifyZeitstempel(plain);
-  assert.deepEqual(result, { vorhanden: false, gueltig: false, zeitpunkt: null, tsaPolicy: null });
+  assert.equal(result.vorhanden, false);
+  assert.equal(result.gueltig, false);
+  assert.equal(result.zeitpunkt, null);
+  assert.equal(result.tsaPolicy, null);
+  assert.equal(result.dateiHash, createHash('sha256').update(plain).digest('hex'));
+  assert.equal(result.hashUebereinstimmung, null, 'no erwarteterHash was given, so there is nothing to compare');
 });
 
 test('verifyZeitstempel reports vorhanden:true, gueltig:true, and a parsed zeitpunkt for a validly timestamped PDF', async () => {
@@ -105,4 +111,21 @@ test('verifyZeitstempel reports gueltig:false when the PDF content was altered a
   const result = await verifyZeitstempel(tampered);
   assert.equal(result.vorhanden, true, 'the timestamp structure is still parseable');
   assert.equal(result.gueltig, false, 'but the digest no longer matches the altered content');
+});
+
+test('verifyZeitstempel reports hashUebereinstimmung:true when the given hash matches the file', async () => {
+  const erwarteterHash = createHash('sha256').update(RFC3161_TIMESTAMPED_PDF).digest('hex');
+  const result = await verifyZeitstempel(RFC3161_TIMESTAMPED_PDF, erwarteterHash);
+  assert.equal(result.dateiHash, erwarteterHash);
+  assert.equal(result.hashUebereinstimmung, true);
+});
+
+test('verifyZeitstempel reports hashUebereinstimmung:false when the given hash does not match the file', async () => {
+  const result = await verifyZeitstempel(RFC3161_TIMESTAMPED_PDF, 'ein-falscher-hash');
+  assert.equal(result.hashUebereinstimmung, false);
+});
+
+test('verifyZeitstempel reports hashUebereinstimmung:null when no erwarteterHash is given at all', async () => {
+  const result = await verifyZeitstempel(RFC3161_TIMESTAMPED_PDF);
+  assert.equal(result.hashUebereinstimmung, null);
 });

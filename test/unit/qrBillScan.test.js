@@ -64,3 +64,22 @@ test('scanQrBill throws a defined Error for a corrupt PDF, does not crash', () =
   const corrupt = Buffer.from('%PDF-1.4\n%not-a-real-pdf-body\n');
   assert.throws(() => scanQrBill(corrupt), Error);
 });
+
+test('scanQrBill clamps rasterization for a degenerate narrow/tall page and returns null quickly, instead of an unbounded pixmap', async () => {
+  // A page like [50, 5000] is legal PDF geometry (well within mupdf's own limits) but, without a
+  // pixel-count clamp, `scale = SCAN_WIDTH_PX / width` alone would blow the rendered height up to
+  // match the declared width-to-height ratio — an unbounded-memory DoS reachable from any
+  // untrusted PDF ingested via POST /n8n/jobs. This asserts the fix (capping total scanned
+  // pixels) makes such a page render too small for jsQR to find anything, completing fast instead
+  // of hanging or exhausting memory.
+  const doc = await PdfLibDocument.create();
+  doc.addPage([50, 5000]);
+  const pdf = Buffer.from(await doc.save());
+
+  const start = Date.now();
+  const result = scanQrBill(pdf);
+  const elapsedMs = Date.now() - start;
+
+  assert.equal(result, null);
+  assert.ok(elapsedMs < 2000, `expected scanQrBill to complete quickly, took ${elapsedMs}ms`);
+});

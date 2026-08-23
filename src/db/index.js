@@ -38,16 +38,26 @@ function migrateJobsTable(db) {
 }
 
 // SQLite CHECK constraints can't be widened with ALTER TABLE — unlike JOBS_TABLE_MIGRATIONS'
-// simple ADD COLUMN entries, an already-existing freigaben table (any database that predates the
-// 'freigabe1_eskalation'/'freigabe2_eskalation' rolle values) keeps its original, narrower CHECK
+// simple ADD COLUMN entries, an already-existing freigaben table (any database whose rolle CHECK
+// predates the current marker value checked for below) keeps its original, narrower CHECK
 // forever, since `CREATE TABLE IF NOT EXISTS` in schema.sql no-ops on it. The only way to widen a
 // CHECK constraint in SQLite is to rebuild the table: rename it aside, create a fresh one from the
 // current schema, copy every row across, then drop the old one — all inside one transaction so a
-// crash mid-migration can't leave the database without a freigaben table at all.
+// crash mid-migration can't leave the database without a freigaben table at all. The marker value
+// this function checks for (currently 'iban_abweichung') moves forward each time the CHECK is
+// widened again — it's just "the newest rolle value", not tied to any one feature; check the
+// CREATE TABLE below for what the CHECK currently allows, not this comment.
 function migrateFreigabenTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'freigaben'").get();
   if (!tableSql || tableSql.sql.includes('iban_abweichung')) return;
 
+  // node:sqlite enforces `PRAGMA foreign_keys` by default, and it must be toggled OFF outside any
+  // transaction (the pragma is a documented no-op if set from inside one). Without this, a single
+  // freigaben row referencing a jobs.id or personen.churchtools_person_id that no longer exists
+  // aborts the INSERT below, the catch rolls back, and the error propagates out of openDatabase —
+  // the whole app fails to start. Restoring it in `finally` (not just after COMMIT) matters: a
+  // migration that throws must not leave FK enforcement permanently disabled.
+  db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');
   try {
     db.exec('ALTER TABLE freigaben RENAME TO freigaben_pre_iban_abweichung_rolle');
@@ -73,6 +83,8 @@ function migrateFreigabenTable(db) {
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
   }
 }
 
@@ -83,6 +95,10 @@ function migrateMailLogTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mail_log'").get();
   if (!tableSql || tableSql.sql.includes('iban-warnung')) return;
 
+  // See the matching comment in migrateFreigabenTable above: node:sqlite enforces
+  // `PRAGMA foreign_keys` by default, so a single mail_log row referencing a jobs.id that no
+  // longer exists would otherwise abort this INSERT and take down app startup entirely.
+  db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');
   try {
     db.exec('ALTER TABLE mail_log RENAME TO mail_log_pre_iban_warnung_typ');
@@ -108,6 +124,8 @@ function migrateMailLogTable(db) {
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
   }
 }
 

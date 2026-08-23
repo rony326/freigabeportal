@@ -263,3 +263,44 @@ test('openDatabase rebuilds the mail_log table to widen its typ CHECK constraint
   migratedDb.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('openDatabase does not throw when migrating a mail_log table that contains a row referencing a job_id that no longer exists', () => {
+  // node:sqlite's DatabaseSync enforces `PRAGMA foreign_keys` by default. migrateMailLogTable's
+  // rebuild does `INSERT INTO mail_log SELECT ... FROM mail_log_pre_iban_warnung_typ` while that
+  // FK is live — a real production database can easily have an orphaned mail_log row (e.g. its
+  // job was hard-deleted separately), and without disabling the FK check for the duration of the
+  // rebuild, that single row aborts the whole migration and takes down app startup.
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, eingang_am TEXT NOT NULL, quelle TEXT NOT NULL, absender TEXT, dateiname TEXT NOT NULL, pdf_pfad TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'unzugewiesen');
+    CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL
+    );
+  `);
+  // Seeded with FK enforcement off, on purpose: this reproduces how a real orphaned row would
+  // actually get there (e.g. the referenced job was later hard-deleted), not a scenario that
+  // could only exist if FK enforcement were already broken.
+  legacyDb.exec('PRAGMA foreign_keys = OFF');
+  legacyDb.exec(`
+    INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am)
+      VALUES ('zuweisung', 999999, 'orphan@example.org', 'Betreff', 'Text', 'versendet', '2026-08-15T08:05:00.000Z');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const orphan = migratedDb.prepare('SELECT * FROM mail_log WHERE job_id = 999999').get();
+  assert.ok(orphan, 'the orphaned row must survive the migration, not be dropped or block it');
+  assert.equal(orphan.empfaenger, 'orphan@example.org');
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});

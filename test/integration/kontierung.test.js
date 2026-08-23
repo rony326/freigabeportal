@@ -1079,6 +1079,23 @@ test('GET /kontierung/:id/aufsplitten pre-fills Gesamtbetrag from the job when o
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('GET /kontierung/:id/aufsplitten lists every active Konto, not just this person\'s own, and offers an Interessenskonflikt checkbox per Zeile plus a shared Begründung field', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  upsertPerson(db, { id: '5', vorname: 'Kinder', nachname: 'Bereich', email: 'kinder@example.org', gruppen: ['10'], loggedInNow: true });
+  createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '5', stellvertreter1Id: '5', freigeber2Id: '5', stellvertreter2Id: '5' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /4200 — Kinderbereich/, 'a Konto this person has no role on must still be selectable');
+  assert.match(res.text, /class="[^"]*konflikt-checkbox/);
+  assert.match(res.text, /name="teilInteressenskonflikt"/);
+  assert.match(res.text, /name="begruendung"/);
+  db.close();
+});
+
 test('POST /kontierung/:id/aufsplitten creates independent split jobs, each with its own file, Freigabe 1 already granted, marks the parent aufgesplittet', async () => {
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));

@@ -7,8 +7,10 @@ import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createKonto } from '../../../src/db/kontenRepo.js';
 import { createDebitor, getDebitorById } from '../../../src/db/debitorenRepo.js';
 import { createZuweisungsregel, getZuweisungsregelById } from '../../../src/db/zuweisungsregelnRepo.js';
-import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
+import { requirePermission } from '../../../src/middleware/permissions.js';
+import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { createDebitorenRouter } from '../../../src/routes/admin/debitoren.js';
 
 function buildTestApp(db) {
@@ -24,10 +26,10 @@ function buildTestApp(db) {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, config));
-  app.use('/admin/debitoren', requireRole(config, 'superadmin'), createDebitorenRouter({ db }));
+  app.use('/admin/debitoren', requirePermission(db, config, 'debitoren_verwalten'), createDebitorenRouter({ db }));
   return app;
 }
 
@@ -298,5 +300,28 @@ test('POST /admin/debitoren/ibans/:id/loeschen removes the mapping', async () =>
   const res = await request(app).post(`/admin/debitoren/ibans/${ibanId}/loeschen`).set('x-test-person-id', '99');
   assert.equal(res.status, 302);
   assert.equal(getDebitorIbanById(db, ibanId), null);
+  db.close();
+});
+
+test('GET /admin/debitoren returns 200 for a Manager', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/debitoren').set('x-test-person-id', '55');
+  assert.equal(res.status, 200);
+  db.close();
+});
+
+test('GET /admin/debitoren returns 200 for a plain person with exactly this individual grant, and 403 for a different one', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Nur', nachname: 'Konten', email: 'nur@example.org', gruppen: [], loggedInNow: true });
+  setBerechtigungenForPerson(db, '1', ['konten_verwalten']);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/debitoren').set('x-test-person-id', '1');
+  assert.equal(res.status, 403);
+
+  setBerechtigungenForPerson(db, '1', ['debitoren_verwalten']);
+  const res2 = await request(app).get('/admin/debitoren').set('x-test-person-id', '1');
+  assert.equal(res2.status, 200);
   db.close();
 });

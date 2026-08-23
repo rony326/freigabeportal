@@ -4,8 +4,10 @@ import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../../src/db/index.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
-import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
+import { requirePermission } from '../../../src/middleware/permissions.js';
+import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { createKontenRouter } from '../../../src/routes/admin/konten.js';
 
 function buildTestApp(db) {
@@ -21,10 +23,10 @@ function buildTestApp(db) {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, config));
-  app.use('/admin/konten', requireRole(config, 'superadmin'), createKontenRouter({ db }));
+  app.use('/admin/konten', requirePermission(db, config, 'konten_verwalten'), createKontenRouter({ db }));
   return app;
 }
 
@@ -233,5 +235,28 @@ test('GET /admin/konten?gespeichert=1 shows the save confirmation; without it, i
   assert.match(withMarker.text, /Gespeichert\./);
   const withoutMarker = await request(app).get('/admin/konten').set('x-test-person-id', '99');
   assert.doesNotMatch(withoutMarker.text, /Gespeichert\./);
+  db.close();
+});
+
+test('GET /admin/konten returns 200 for a Manager', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/konten').set('x-test-person-id', '55');
+  assert.equal(res.status, 200);
+  db.close();
+});
+
+test('GET /admin/konten returns 200 for a plain person with exactly this individual grant, and 403 for a different one', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Nur', nachname: 'Debitoren', email: 'nur@example.org', gruppen: [], loggedInNow: true });
+  setBerechtigungenForPerson(db, '1', ['debitoren_verwalten']);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/konten').set('x-test-person-id', '1');
+  assert.equal(res.status, 403);
+
+  setBerechtigungenForPerson(db, '1', ['konten_verwalten']);
+  const res2 = await request(app).get('/admin/konten').set('x-test-person-id', '1');
+  assert.equal(res2.status, 200);
   db.close();
 });

@@ -5,8 +5,10 @@ import request from 'supertest';
 import { openDatabase } from '../../../src/db/index.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { logMailAttempt, listMailLog } from '../../../src/db/mailLogRepo.js';
-import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
+import { requirePermission } from '../../../src/middleware/permissions.js';
+import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { createMailsRouter } from '../../../src/routes/admin/mails.js';
 
 function createStubMailer({ shouldFail = false } = {}) {
@@ -27,10 +29,10 @@ function buildTestApp(db, mailer) {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, config));
-  app.use('/admin/mails', requireRole(config, 'superadmin'), createMailsRouter({ db, mailer }));
+  app.use('/admin/mails', requirePermission(db, config, 'mails_einsehen'), createMailsRouter({ db, mailer }));
   return app;
 }
 
@@ -97,5 +99,28 @@ test('POST /admin/mails/:id/erneut-versenden for an unknown id returns 404', asy
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).post('/admin/mails/999/erneut-versenden').set('x-test-person-id', '99');
   assert.equal(res.status, 404);
+  db.close();
+});
+
+test('GET /admin/mails returns 200 for a Manager', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/mails').set('x-test-person-id', '55');
+  assert.equal(res.status, 200);
+  db.close();
+});
+
+test('GET /admin/mails returns 200 for a plain person with exactly this individual grant, and 403 for a different one', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Nur', nachname: 'Sync', email: 'nur@example.org', gruppen: [], loggedInNow: true });
+  setBerechtigungenForPerson(db, '1', ['sync_einsehen']);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/mails').set('x-test-person-id', '1');
+  assert.equal(res.status, 403);
+
+  setBerechtigungenForPerson(db, '1', ['mails_einsehen']);
+  const res2 = await request(app).get('/admin/mails').set('x-test-person-id', '1');
+  assert.equal(res2.status, 200);
   db.close();
 });

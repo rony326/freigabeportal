@@ -7,8 +7,10 @@ import { seedDefaults, getConfigValue } from '../../../src/db/adminConfigRepo.js
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createKonto } from '../../../src/db/kontenRepo.js';
 import { createJob, getJobById } from '../../../src/db/jobsRepo.js';
-import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
+import { requirePermission } from '../../../src/middleware/permissions.js';
+import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { createSyncRouter } from '../../../src/routes/admin/sync.js';
 
 function buildTestApp(db) {
@@ -24,10 +26,10 @@ function buildTestApp(db) {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, config));
-  app.use('/admin/sync', requireRole(config, 'superadmin'), createSyncRouter({ db }));
+  app.use('/admin/sync', requirePermission(db, config, 'sync_einsehen'), createSyncRouter({ db }));
   return app;
 }
 
@@ -170,5 +172,30 @@ test('POST /admin/sync/stalled/:jobId/freigeben escalates a stalled freigabe2 jo
   const job = getJobById(db, jobId);
   assert.equal(job.status, 'freigabe2');
   assert.equal(job.freigabe2_eskaliert_an_admin, 1);
+  db.close();
+});
+
+test('GET /admin/sync returns 200 for a Manager', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/sync').set('x-test-person-id', '55');
+  assert.equal(res.status, 200);
+  db.close();
+});
+
+test('GET /admin/sync returns 200 for a plain person with exactly this individual grant, and 403 for a different one', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  upsertPerson(db, { id: '1', vorname: 'Nur', nachname: 'Mails', email: 'nur@example.org', gruppen: [], loggedInNow: true });
+  setBerechtigungenForPerson(db, '1', ['mails_einsehen']);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/sync').set('x-test-person-id', '1');
+  assert.equal(res.status, 403);
+
+  setBerechtigungenForPerson(db, '1', ['sync_einsehen']);
+  const res2 = await request(app).get('/admin/sync').set('x-test-person-id', '1');
+  assert.equal(res2.status, 200);
   db.close();
 });

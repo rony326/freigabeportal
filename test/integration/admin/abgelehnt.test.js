@@ -11,8 +11,10 @@ import { createKonto } from '../../../src/db/kontenRepo.js';
 import { createJob, claimJob, setKontierung, ablehnenJob, getJobById, setThumbnailPfad } from '../../../src/db/jobsRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../../src/db/freigabenRepo.js';
 import { listJobLoeschungen } from '../../../src/db/jobLoeschungenRepo.js';
-import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
+import { requirePermission } from '../../../src/middleware/permissions.js';
+import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { createAdminAbgelehntRouter } from '../../../src/routes/admin/abgelehnt.js';
 
 function buildTestApp(db) {
@@ -28,10 +30,10 @@ function buildTestApp(db) {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, config));
-  app.use('/admin/abgelehnt', requireRole(config, 'superadmin'), createAdminAbgelehntRouter({ db }));
+  app.use('/admin/abgelehnt', requirePermission(db, config, 'abgelehnt_verwalten'), createAdminAbgelehntRouter({ db }));
   return app;
 }
 
@@ -236,5 +238,28 @@ test('POST /admin/abgelehnt/:id/loeschen for a job that is not abgelehnt returns
 
   assert.equal(res.status, 404);
   assert.ok(getJobById(db, id));
+  db.close();
+});
+
+test('GET /admin/abgelehnt returns 200 for a Manager', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/abgelehnt').set('x-test-person-id', '55');
+  assert.equal(res.status, 200);
+  db.close();
+});
+
+test('GET /admin/abgelehnt returns 200 for a plain person with exactly this individual grant, and 403 for a different one', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Nur', nachname: 'GeplanteJobs', email: 'nur@example.org', gruppen: [], loggedInNow: true });
+  setBerechtigungenForPerson(db, '1', ['geplante_jobs_verwalten']);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/abgelehnt').set('x-test-person-id', '1');
+  assert.equal(res.status, 403);
+
+  setBerechtigungenForPerson(db, '1', ['abgelehnt_verwalten']);
+  const res2 = await request(app).get('/admin/abgelehnt').set('x-test-person-id', '1');
+  assert.equal(res2.status, 200);
   db.close();
 });

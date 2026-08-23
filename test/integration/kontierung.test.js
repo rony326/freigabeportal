@@ -1283,6 +1283,7 @@ test('POST /kontierung/:id/aufsplitten sends a part on a Konto the person is not
   assert.ok(hinweisMail, "the foreign Konto's Freigeber1 must be notified");
   assert.match(hinweisMail.text, /4200 — Kinderbereich/);
   db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
 });
 
 test('POST /kontierung/:id/aufsplitten escalates a part with a declared Interessenskonflikt to that Konto\'s Stellvertretung', async () => {
@@ -1322,6 +1323,81 @@ test('POST /kontierung/:id/aufsplitten escalates a part with a declared Interess
   assert.ok(mail, 'the Stellvertretung must be notified');
   assert.match(mail.text, /Interessenskonflikt/);
   db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten escalates to Portal-Admin, not back to the declaring Stellvertretung, when the splitter is that Konto\'s own Stellvertretung', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2'
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  claimJob(db, id, '2'); // person '2' is this Konto's own stellvertreter1
+  const mailer = createStubMailer();
+  const app = buildTestAppMitDateien(db, mailer, jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '2')
+    .type('form')
+    .send({
+      gesamtbetrag: '200.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+      teilInteressenskonflikt: ['false', 'true'],
+      begruendung: 'Befangen',
+    });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  const eskaliert = kinder.find((k) => k.betrag === '80.00');
+  assert.equal(eskaliert.freigabe1_eskaliert_an_admin, 1, 'must escalate to Portal-Admin, not hand the conflicted part back to the declaring Stellvertretung');
+  assert.equal(eskaliert.zugewiesen_an, '2', 'zugewiesen_an is left untouched by the admin-escalation write, not silently reassigned to the conflicted person');
+  const adminMail = mailer.sent.find((m) => /Portal-Admin/.test(m.subject));
+  assert.ok(adminMail, 'Portal-Admin group must be notified');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten keeps escalating to Portal-Admin on a Zeile whose Konto\'s Stellvertretung caused the original admin escalation', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2'
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2', konto_id = ?, betrag = '200.00', freigabe1_eskaliert_an_admin = 1, freigabe1_eskaliert_von = '2' WHERE id = ?").run(kontoId, id);
+  const mailer = createStubMailer();
+  const app = buildTestAppMitDateien(db, mailer, jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({
+      gesamtbetrag: '200.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+      teilInteressenskonflikt: ['false', 'true'],
+      begruendung: 'Nochmals befangen',
+    });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  const eskaliert = kinder.find((k) => k.betrag === '80.00');
+  assert.equal(eskaliert.freigabe1_eskaliert_an_admin, 1, 'must stay locked to Portal-Admin, not be handed to the Stellvertreter1 whose conflict caused the original escalation');
+  // The split child row is newly created (unlike the main handler's single persistent job row),
+  // and createSplitJob always sets its zugewiesen_an to the person doing the splitting ('99',
+  // the admin) at creation time — eskalierenFreigabe1AnAdmin then deliberately leaves that value
+  // untouched, exactly as the main handler leaves an existing job's zugewiesen_an untouched.
+  assert.equal(eskaliert.zugewiesen_an, '99', 'zugewiesen_an is left untouched by the admin-escalation write');
+  const adminMail = mailer.sent.find((m) => /Portal-Admin/.test(m.subject));
+  assert.ok(adminMail, 'Portal-Admin group must be notified again');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
 });
 
 test('POST /kontierung/:id/aufsplitten requires a Begründung when any Zeile declares an Interessenskonflikt', async () => {
@@ -1346,6 +1422,7 @@ test('POST /kontierung/:id/aufsplitten requires a Begründung when any Zeile dec
   assert.match(res.text, /Bei einem Interessenskonflikt ist eine Begründung Pflicht\./);
   assert.equal(listSplitKinder(db, id).length, 0);
   db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
 });
 
 test('POST /kontierung/:id/aufsplitten handles all three outcomes in a single mixed split', async () => {
@@ -1386,6 +1463,7 @@ test('POST /kontierung/:id/aufsplitten handles all three outcomes in a single mi
 
   assert.equal(mailer.sent.length, 3, 'one mail per non-trivial outcome: Freigabe2, Stellvertretung, and Konto-Hinweis');
   db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
 });
 
 test('POST /kontierung/:id/aufsplitten lets an admin-escalated Portal-Admin still self-approve a part on the job\'s originally-assigned Konto, despite holding no role there', async () => {
@@ -1418,6 +1496,7 @@ test('POST /kontierung/:id/aufsplitten lets an admin-escalated Portal-Admin stil
     assert.equal(kind.status, 'freigabe2');
   }
   db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
 });
 
 test('GET /kontierung/:id marks the Konto and Lieferant dropdowns as searchable and offers a "+ Neu" trigger plus a matching Lieferant-anlegen modal', async () => {

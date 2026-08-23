@@ -40,7 +40,8 @@
             </div>
             <div class="col-2 form-check">
               <input type="checkbox" class="form-check-input konflikt-checkbox" <%= teil.interessenskonflikt ? 'checked' : '' %>>
-              <label class="form-check-label small">Konflikt</label>
+              <label class="form-check-label small">Interessenskonflikt bei diesem Konto</label>
+              <div class="form-text small">(nur relevant, wenn du selbst Freigeber oder Stellvertretung bist)</div>
               <input type="hidden" name="teilInteressenskonflikt" value="<%= teil.interessenskonflikt ? 'true' : 'false' %>">
             </div>
             <div class="col-2">
@@ -103,7 +104,7 @@
         zeile.innerHTML =
           '<div class="col-5"><select class="form-select" name="teilKontoId">' + kontoOptionsHtml + '</select></div>' +
           '<div class="col-3"><input type="text" inputmode="decimal" class="form-control" name="teilBetrag" placeholder="Teilbetrag, z.B. 61.75"></div>' +
-          '<div class="col-2 form-check"><input type="checkbox" class="form-check-input konflikt-checkbox"><label class="form-check-label small">Konflikt</label><input type="hidden" name="teilInteressenskonflikt" value="false"></div>' +
+          '<div class="col-2 form-check"><input type="checkbox" class="form-check-input konflikt-checkbox"><label class="form-check-label small">Interessenskonflikt bei diesem Konto</label><div class="form-text small">(nur relevant, wenn du selbst Freigeber oder Stellvertretung bist)</div><input type="hidden" name="teilInteressenskonflikt" value="false"></div>' +
           '<div class="col-2"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
         document.getElementById('teile-container').appendChild(zeile);
         zeileEntfernenBinden(zeile);

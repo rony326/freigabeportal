@@ -76,8 +76,10 @@ test('POST /zeitstempel-pruefen with a validly timestamped PDF reports it as val
     .set('x-test-person-id', '1')
     .attach('pdf', RFC3161_TIMESTAMPED_PDF, 'timestamped.pdf');
   assert.equal(res.status, 200);
-  assert.match(res.text, /Gültiger Zeitstempel vorhanden/);
+  assert.match(res.text, /Kryptografisch gültig \(RFC3161\)/);
+  assert.match(res.text, /Diese Datei ist nachweislich unverändert/);
   assert.match(res.text, /2026-08-21T07:21:19\.000Z/);
+  assert.match(res.text, /kein Vergleichswert vorhanden/);
   db.close();
 });
 
@@ -109,8 +111,84 @@ test('GET /zeitstempel-pruefen?jobId= verifies the job\'s own PDF directly for a
   const app = buildTestApp(db);
   const res = await request(app).get(`/zeitstempel-pruefen?jobId=${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, /Gültiger Zeitstempel vorhanden/);
+  assert.match(res.text, /Kryptografisch gültig \(RFC3161\)/);
+  assert.match(res.text, /Diese Datei ist nachweislich unverändert/);
   assert.doesNotMatch(res.text, /<input type="file"/);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('GET /zeitstempel-pruefen?jobId= shows a matching hash for an unaltered file', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createHash } = await import('node:crypto');
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  seedPerson(db, '3');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const dir = mkdtempSync(join(tmpdir(), 'zeitstempel-pruefen-hash-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  writeFileSync(pdfPfad, RFC3161_TIMESTAMPED_PDF);
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  setKontierung(db, id, kontoId);
+  const hash = createHash('sha256').update(RFC3161_TIMESTAMPED_PDF).digest('hex');
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1', zeitstempel_datei_hash = ? WHERE id = ?").run(hash, id);
+
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/zeitstempel-pruefen?jobId=${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Hash stimmt mit Datenbank überein/);
+  assert.match(res.text, /Zertifikat anzeigen/);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('GET /zeitstempel-pruefen?jobId= shows a mismatched hash and a red banner when the file was swapped after stamping', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  seedPerson(db, '3');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const dir = mkdtempSync(join(tmpdir(), 'zeitstempel-pruefen-hash-mismatch-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  writeFileSync(pdfPfad, RFC3161_TIMESTAMPED_PDF);
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1', zeitstempel_datei_hash = 'ein-anderer-hash' WHERE id = ?").run(id);
+
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/zeitstempel-pruefen?jobId=${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Datei weicht vom in der Datenbank hinterlegten Original ab/);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('GET /zeitstempel-pruefen?jobId= shows "kein Vergleichswert" for a job with no stored hash', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  seedPerson(db, '3');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const dir = mkdtempSync(join(tmpdir(), 'zeitstempel-pruefen-hash-none-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  writeFileSync(pdfPfad, RFC3161_TIMESTAMPED_PDF);
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1' WHERE id = ?").run(id);
+
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/zeitstempel-pruefen?jobId=${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /kein Vergleichswert vorhanden/);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

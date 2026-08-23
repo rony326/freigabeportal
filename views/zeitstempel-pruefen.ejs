@@ -33,11 +33,28 @@
         <div class="card-body">
           <% if (!ergebnis.vorhanden) { %>
             <p class="mb-0">⚠️ Kein Zeitstempel in dieser Datei gefunden.</p>
-          <% } else if (ergebnis.gueltig) { %>
-            <p class="mb-0">✓ Gültiger Zeitstempel vorhanden.</p>
-            <p class="text-muted small mb-0">Zeitpunkt: <%= ergebnis.zeitpunkt %><% if (ergebnis.tsaPolicy) { %> · TSA-Policy: <%= ergebnis.tsaPolicy %><% } %></p>
           <% } else { %>
-            <p class="mb-0 text-danger">✗ Zeitstempel vorhanden, aber ungültig — die Datei wurde nach dem Zeitstempel verändert.</p>
+            <ul class="list-unstyled mb-3">
+              <li><%= ergebnis.vorhanden ? '✓' : '✗' %> Zeitstempel vorhanden</li>
+              <li><%= ergebnis.gueltig ? '✓' : '✗' %> Kryptografisch gültig (RFC3161)</li>
+              <li>
+                <% if (ergebnis.hashUebereinstimmung === true) { %>✓ Hash stimmt mit Datenbank überein
+                <% } else if (ergebnis.hashUebereinstimmung === false) { %>✗ Hash weicht von der Datenbank ab
+                <% } else { %>– kein Vergleichswert vorhanden
+                <% } %>
+              </li>
+            </ul>
+            <% if (ergebnis.gueltig && ergebnis.hashUebereinstimmung !== false) { %>
+              <p class="mb-3"><strong class="text-success">✓ Diese Datei ist nachweislich unverändert.</strong></p>
+            <% } else if (!ergebnis.gueltig) { %>
+              <p class="mb-3 text-danger"><strong>✗ Zeitstempel vorhanden, aber ungültig — die Datei wurde nach dem Zeitstempel verändert.</strong></p>
+            <% } else { %>
+              <p class="mb-3 text-danger"><strong>✗ Datei weicht vom in der Datenbank hinterlegten Original ab.</strong></p>
+            <% } %>
+            <p class="text-muted small mb-0">Zeitpunkt: <%= ergebnis.zeitpunkt %><% if (ergebnis.tsaPolicy) { %> · TSA-Policy: <%= ergebnis.tsaPolicy %><% } %></p>
+            <% if (job && ergebnis.vorhanden) { %>
+              <p class="mt-3 mb-0"><a href="/zeitstempel-pruefen/zertifikat?jobId=<%= job.id %>" class="btn btn-outline-primary btn-sm">Zertifikat anzeigen</a></p>
+            <% } %>
           <% } %>
         </div>
       </div>

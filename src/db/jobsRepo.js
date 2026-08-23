@@ -402,8 +402,8 @@ export function archivierenJob(db, id) {
   return result.changes > 0;
 }
 
-export function markZeitstempelGesetzt(db, jobId, zeitpunkt) {
-  db.prepare('UPDATE jobs SET zeitstempel_gesetzt_am = ? WHERE id = ?').run(zeitpunkt, jobId);
+export function markZeitstempelGesetzt(db, jobId, zeitpunkt, hash = null) {
+  db.prepare('UPDATE jobs SET zeitstempel_gesetzt_am = ?, zeitstempel_datei_hash = ? WHERE id = ?').run(zeitpunkt, hash, jobId);
 }
 
 export function listZugewiesenJobsForPerson(db, personId) {

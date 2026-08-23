@@ -6,6 +6,7 @@ import { openDatabase } from '../../../src/db/index.js';
 import { seedDefaults, getConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createZeitstempelAdminRouter } from '../../../src/routes/admin/zeitstempel.js';
 
 function buildTestApp(db) {
@@ -23,6 +24,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
   app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(db, config));
   app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db }));
   return app;
 }

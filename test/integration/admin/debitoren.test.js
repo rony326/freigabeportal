@@ -8,6 +8,7 @@ import { createKonto } from '../../../src/db/kontenRepo.js';
 import { createDebitor, getDebitorById } from '../../../src/db/debitorenRepo.js';
 import { createZuweisungsregel, getZuweisungsregelById } from '../../../src/db/zuweisungsregelnRepo.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createDebitorenRouter } from '../../../src/routes/admin/debitoren.js';
 
 function buildTestApp(db) {
@@ -25,6 +26,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(db, config));
   app.use('/admin/debitoren', requireRole(config, 'superadmin'), createDebitorenRouter({ db }));
   return app;
 }

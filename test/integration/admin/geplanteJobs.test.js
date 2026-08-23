@@ -12,6 +12,7 @@ import { createJob, getJobById } from '../../../src/db/jobsRepo.js';
 import { startCronLauf } from '../../../src/db/cronLogRepo.js';
 import { listMailLog } from '../../../src/db/mailLogRepo.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createGeplanteJobsRouter } from '../../../src/routes/admin/geplanteJobs.js';
 import { setupMockChurchTools } from '../../helpers/mockChurchTools.js';
 import { setupMockTsa } from '../../helpers/mockTsa.js';
@@ -37,6 +38,7 @@ function buildTestApp(db, { config, mailer } = {}) {
   });
   const resolvedConfig = config || { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(db, resolvedConfig));
   app.use(
     '/admin/geplante-jobs',
     requireRole(resolvedConfig, 'superadmin'),

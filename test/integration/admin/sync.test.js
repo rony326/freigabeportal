@@ -8,6 +8,7 @@ import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createKonto } from '../../../src/db/kontenRepo.js';
 import { createJob, getJobById } from '../../../src/db/jobsRepo.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createSyncRouter } from '../../../src/routes/admin/sync.js';
 
 function buildTestApp(db) {
@@ -25,6 +26,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(db, config));
   app.use('/admin/sync', requireRole(config, 'superadmin'), createSyncRouter({ db }));
   return app;
 }

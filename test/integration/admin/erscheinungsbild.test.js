@@ -9,6 +9,7 @@ import { openDatabase } from '../../../src/db/index.js';
 import { seedDefaults, getConfigValue, setConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createErscheinungsbildRouter } from '../../../src/routes/admin/erscheinungsbild.js';
 import { createBrandingRouter } from '../../../src/routes/branding.js';
 
@@ -27,6 +28,7 @@ function buildTestApp(db, brandingDir) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' }, brandingDir };
   app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(db, config));
   // Mounted unauthenticated, same as src/app.js does — GET /branding/logo is
   // a public route served to unauthenticated callers too.
   app.use('/branding', createBrandingRouter({ db }));

@@ -68,17 +68,20 @@ und dürfen nicht `changeme` enthalten — die App verweigert sonst den Start
 | `DB_PATH`, `JOBS_DIR`, `BRANDING_DIR` | Pfade im persistenten Speicherbereich der Site wählen |
 | `PUBLIC_BASE_URL` | die produktive Domain, `https://` |
 | `CT_BASE_URL`, `CT_CLIENT_ID`, `CT_CLIENT_SECRET`, `CT_REDIRECT_URI`, `CT_GROUP_ID_BUCHHALTUNG`, `CT_GROUP_ID_ADMIN` | aus der bereits registrierten ChurchTools-OAuth2-Anwendung |
+| `CT_GROUP_ID_MANAGER` (optional) | ChurchTools-Gruppe für die Manager-Rolle — Zugriff auf die meisten, aber nicht alle Admin-Bereiche; ohne diese Variable existiert die Rolle schlicht nicht |
 | `CT_SYNC_SERVICE_TOKEN` | Login-Token des technischen Service-Accounts für den nächtlichen Sync |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | aus den bereits vorhandenen Produktions-SMTP-Zugangsdaten |
 
-### Vor dem ersten Login — Portal-Admin-Bootstrap
+### Vor dem ersten Login — Superadmin-Bootstrap
 
 Der `/admin`-Bereich ist ausschliesslich über ChurchTools-Gruppenmitgliedschaft
-zugänglich (`CT_GROUP_ID_ADMIN`), es gibt keinen anderen Weg, Admin-Rechte zu
-vergeben. **Bevor die erste Person sich einloggt**, muss diese Person in
-ChurchTools bereits Mitglied der Portal-Admin-Gruppe sein — sonst kann sich
+zugänglich (`CT_GROUP_ID_ADMIN` für Superadmin, optional `CT_GROUP_ID_MANAGER`
+für die eingeschränktere Manager-Rolle), es gibt keinen anderen Weg, Admin-Rechte
+zu vergeben. **Bevor die erste Person sich einloggt**, muss diese Person in
+ChurchTools bereits Mitglied der Superadmin-Gruppe sein — sonst kann sich
 zwar jeder einloggen (Login ist seit Batch 4 nicht mehr gruppengebunden),
-aber niemand erreicht `/admin`, um z. B. das erste Konto anzulegen.
+aber niemand erreicht `/admin`, um z. B. das erste Konto anzulegen oder die
+Manager-Gruppe später Einzelrechte zuzuweisen.
 
 ### Zeitgesteuerte Jobs — laufen im Node-Prozess selbst
 

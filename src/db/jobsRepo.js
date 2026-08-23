@@ -554,13 +554,14 @@ export function markJobAufgesplittet(db, jobId) {
 // lifecycle (so deleting/rejecting one split part can never affect another). eingang_am, quelle,
 // absender, dateiname, zahlungsziel, rechnungsnummer, lieferant and debitor_id are carried over
 // from the parent; konto_id, betrag, zugewiesen_an are specific to this one split line.
-export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId, betrag, zugewiesenAn }) {
+export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId, hinweisKontoId, betrag, zugewiesenAn }) {
+  const status = kontoId ? 'zugewiesen' : 'unzugewiesen';
   const result = db
     .prepare(
       `INSERT INTO jobs (
          eingang_am, quelle, absender, dateiname, pdf_pfad, thumbnail_pfad, status,
-         konto_id, zugewiesen_an, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id, aufgesplittet_von
-       ) VALUES (?, ?, ?, ?, ?, ?, 'zugewiesen', ?, ?, ?, ?, ?, ?, ?, ?)`
+         konto_id, zugewiesen_an, hinweis_konto_id, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id, aufgesplittet_von
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       parentJob.eingang_am,
@@ -569,8 +570,10 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
       parentJob.dateiname,
       pdfPfad,
       thumbnailPfad ?? null,
-      kontoId,
-      zugewiesenAn,
+      status,
+      kontoId ?? null,
+      zugewiesenAn ?? null,
+      hinweisKontoId ?? null,
       betrag,
       parentJob.zahlungsziel,
       parentJob.rechnungsnummer,

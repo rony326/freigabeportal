@@ -1397,6 +1397,43 @@ test('createSplitJob creates an independent job carrying over the parent\'s shar
   db.close();
 });
 
+test('createSplitJob with hinweisKontoId (no kontoId) creates an unzugewiesen job carrying the hint, not a real Konto', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const fremdKontoId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '3', stellvertreter1Id: '4', freigeber2Id: '1', stellvertreter2Id: '2' });
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
+  updateKontierungMetadaten(db, parentId, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId: null });
+  const parentJob = getJobById(db, parentId);
+
+  const kindId = createSplitJob(db, parentJob, { pdfPfad: '/tmp/split-b.pdf', thumbnailPfad: null, hinweisKontoId: fremdKontoId, betrag: '100.00' });
+  const kind = getJobById(db, kindId);
+
+  assert.equal(kind.status, 'unzugewiesen');
+  assert.equal(kind.konto_id, null);
+  assert.equal(kind.zugewiesen_an, null);
+  assert.equal(kind.hinweis_konto_id, fremdKontoId);
+  assert.equal(kind.betrag, '100.00');
+  assert.equal(kind.aufgesplittet_von, parentId);
+  db.close();
+});
+
+test('createSplitJob with kontoId still behaves exactly as before (regression: no hinweis_konto_id set)', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
+  updateKontierungMetadaten(db, parentId, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId: null });
+  const parentJob = getJobById(db, parentId);
+
+  const kindId = createSplitJob(db, parentJob, { pdfPfad: '/tmp/split-a.pdf', thumbnailPfad: null, kontoId, betrag: '100.00', zugewiesenAn: '1' });
+  const kind = getJobById(db, kindId);
+
+  assert.equal(kind.status, 'zugewiesen');
+  assert.equal(kind.konto_id, kontoId);
+  assert.equal(kind.zugewiesen_an, '1');
+  assert.equal(kind.hinweis_konto_id, null);
+  db.close();
+});
+
 test('setQrDaten stores the decoded QR-bill fields and sets qr_erkannt_am', () => {
   const db = openDatabase(':memory:');
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });

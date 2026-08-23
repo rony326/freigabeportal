@@ -1079,6 +1079,23 @@ test('GET /kontierung/:id/aufsplitten pre-fills Gesamtbetrag from the job when o
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('GET /kontierung/:id/aufsplitten lists every active Konto, not just this person\'s own, and offers an Interessenskonflikt checkbox per Zeile plus a shared Begründung field', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  upsertPerson(db, { id: '5', vorname: 'Kinder', nachname: 'Bereich', email: 'kinder@example.org', gruppen: ['10'], loggedInNow: true });
+  createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '5', stellvertreter1Id: '5', freigeber2Id: '5', stellvertreter2Id: '5' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /4200 — Kinderbereich/, 'a Konto this person has no role on must still be selectable');
+  assert.match(res.text, /class="[^"]*konflikt-checkbox/);
+  assert.match(res.text, /name="teilInteressenskonflikt"/);
+  assert.match(res.text, /name="begruendung"/);
+  db.close();
+});
+
 test('POST /kontierung/:id/aufsplitten creates independent split jobs, each with its own file, Freigabe 1 already granted, marks the parent aufgesplittet', async () => {
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
@@ -1226,14 +1243,14 @@ test('POST /kontierung/:id/aufsplitten rejects fewer than two Teilbeträge', asy
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('POST /kontierung/:id/aufsplitten rejects a Konto the person is not authorized on', async () => {
+test('POST /kontierung/:id/aufsplitten sends a part on a Konto the person is not authorized on to the Pool with a Konto-Hinweis, instead of rejecting the whole split', async () => {
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
-  upsertPerson(db, { id: '9', vorname: 'Fremd', nachname: 'Person', email: 'fremd@example.org', gruppen: ['10'], loggedInNow: true });
-  upsertPerson(db, { id: '10', vorname: 'Fremd2', nachname: 'Person', email: 'fremd2@example.org', gruppen: ['10'], loggedInNow: true });
-  const fremdKontoId = createKonto(db, { kontonummer: '9999', bezeichnung: 'Fremdkonto', freigeber1Id: '9', stellvertreter1Id: '10', freigeber2Id: '9', stellvertreter2Id: '10' });
-  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+  upsertPerson(db, { id: '5', vorname: 'Kinder', nachname: 'Bereich', email: 'kinder@example.org', gruppen: ['10'], loggedInNow: true });
+  const fremdKontoId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '5', stellvertreter1Id: '5', freigeber2Id: '5', stellvertreter2Id: '5' });
+  const mailer = createStubMailer();
+  const app = buildTestAppMitDateien(db, mailer, jobsDir);
 
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
@@ -1245,9 +1262,239 @@ test('POST /kontierung/:id/aufsplitten rejects a Konto the person is not authori
       teilBetrag: ['100.00', '100.00'],
     });
 
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  const eigenerTeil = kinder.find((k) => k.konto_id === kontoId);
+  const fremderTeil = kinder.find((k) => k.konto_id === null);
+
+  assert.ok(eigenerTeil, 'the own-Konto part should still be created with a real Konto');
+  assert.equal(eigenerTeil.status, 'freigabe2', 'still self-approved as before');
+
+  assert.ok(fremderTeil, 'the foreign-Konto part should be created without a Konto');
+  assert.equal(fremderTeil.status, 'unzugewiesen');
+  assert.equal(fremderTeil.hinweis_konto_id, fremdKontoId);
+  assert.equal(fremderTeil.betrag, '100.00');
+  assert.equal(fremderTeil.zugewiesen_an, null);
+
+  const hinweisMail = mailer.sent.find((m) => m.to === 'kinder@example.org');
+  assert.ok(hinweisMail, "the foreign Konto's Freigeber1 must be notified");
+  assert.match(hinweisMail.text, /4200 — Kinderbereich/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten escalates a part with a declared Interessenskonflikt to that Konto\'s Stellvertretung', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' }); // stellvertreter1Id: '2'
+  const mailer = createStubMailer();
+  const app = buildTestAppMitDateien(db, mailer, jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '200.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+      teilInteressenskonflikt: ['false', 'true'],
+      begruendung: 'Befangen beim zweiten Teil',
+    });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  const normal = kinder.find((k) => k.betrag === '120.00');
+  const eskaliert = kinder.find((k) => k.betrag === '80.00');
+
+  assert.equal(normal.status, 'freigabe2');
+
+  assert.equal(eskaliert.status, 'zugewiesen', 'still needs Freigabe 1 from the Stellvertretung');
+  assert.equal(eskaliert.konto_id, kontoId);
+  assert.equal(eskaliert.zugewiesen_an, '2');
+  assert.equal(eskaliert.freigabe1_eskaliert_von, '1');
+  assert.equal(eskaliert.freigabe1_eskalationsgrund, 'Befangen beim zweiten Teil');
+
+  const mail = mailer.sent.find((m) => m.to === 'p2@example.org');
+  assert.ok(mail, 'the Stellvertretung must be notified');
+  assert.match(mail.text, /Interessenskonflikt/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten escalates to Portal-Admin, not back to the declaring Stellvertretung, when the splitter is that Konto\'s own Stellvertretung', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2'
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  claimJob(db, id, '2'); // person '2' is this Konto's own stellvertreter1
+  const mailer = createStubMailer();
+  const app = buildTestAppMitDateien(db, mailer, jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '2')
+    .type('form')
+    .send({
+      gesamtbetrag: '200.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+      teilInteressenskonflikt: ['false', 'true'],
+      begruendung: 'Befangen',
+    });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  const eskaliert = kinder.find((k) => k.betrag === '80.00');
+  assert.equal(eskaliert.freigabe1_eskaliert_an_admin, 1, 'must escalate to Portal-Admin, not hand the conflicted part back to the declaring Stellvertretung');
+  assert.equal(eskaliert.zugewiesen_an, '2', 'zugewiesen_an is left untouched by the admin-escalation write, not silently reassigned to the conflicted person');
+  const adminMail = mailer.sent.find((m) => /Portal-Admin/.test(m.subject));
+  assert.ok(adminMail, 'Portal-Admin group must be notified');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten keeps escalating to Portal-Admin on a Zeile whose Konto\'s Stellvertretung caused the original admin escalation', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2'
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2', konto_id = ?, betrag = '200.00', freigabe1_eskaliert_an_admin = 1, freigabe1_eskaliert_von = '2' WHERE id = ?").run(kontoId, id);
+  const mailer = createStubMailer();
+  const app = buildTestAppMitDateien(db, mailer, jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({
+      gesamtbetrag: '200.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+      teilInteressenskonflikt: ['false', 'true'],
+      begruendung: 'Nochmals befangen',
+    });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  const eskaliert = kinder.find((k) => k.betrag === '80.00');
+  assert.equal(eskaliert.freigabe1_eskaliert_an_admin, 1, 'must stay locked to Portal-Admin, not be handed to the Stellvertreter1 whose conflict caused the original escalation');
+  // The split child row is newly created (unlike the main handler's single persistent job row),
+  // and createSplitJob always sets its zugewiesen_an to the person doing the splitting ('99',
+  // the admin) at creation time — eskalierenFreigabe1AnAdmin then deliberately leaves that value
+  // untouched, exactly as the main handler leaves an existing job's zugewiesen_an untouched.
+  assert.equal(eskaliert.zugewiesen_an, '99', 'zugewiesen_an is left untouched by the admin-escalation write');
+  const adminMail = mailer.sent.find((m) => /Portal-Admin/.test(m.subject));
+  assert.ok(adminMail, 'Portal-Admin group must be notified again');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten requires a Begründung when any Zeile declares an Interessenskonflikt', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '200.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+      teilInteressenskonflikt: ['false', 'true'],
+      begruendung: '',
+    });
+
   assert.equal(res.status, 400);
-  assert.match(res.text, /gültiges Konto/);
-  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.match(res.text, /Bei einem Interessenskonflikt ist eine Begründung Pflicht\./);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten handles all three outcomes in a single mixed split', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '300.00' }); // freigeber1Id: '1', stellvertreter1Id: '2'
+  upsertPerson(db, { id: '5', vorname: 'Kinder', nachname: 'Bereich', email: 'kinder@example.org', gruppen: ['10'], loggedInNow: true });
+  const fremdKontoId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '5', stellvertreter1Id: '5', freigeber2Id: '5', stellvertreter2Id: '5' });
+  const mailer = createStubMailer();
+  const app = buildTestAppMitDateien(db, mailer, jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '300.00',
+      teilKontoId: [String(kontoId), String(kontoId), String(fremdKontoId)],
+      teilBetrag: ['100.00', '100.00', '100.00'],
+      teilInteressenskonflikt: ['false', 'true', 'false'],
+      begruendung: 'Befangen beim zweiten Teil',
+    });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 3);
+
+  const selbst = kinder.find((k) => k.konto_id === kontoId && k.status === 'freigabe2');
+  const eskaliert = kinder.find((k) => k.konto_id === kontoId && k.status === 'zugewiesen');
+  const fremd = kinder.find((k) => k.konto_id === null);
+
+  assert.ok(selbst, 'self-approved part');
+  assert.ok(eskaliert, 'escalated part');
+  assert.equal(eskaliert.zugewiesen_an, '2');
+  assert.ok(fremd, 'foreign-Konto part');
+  assert.equal(fremd.hinweis_konto_id, fremdKontoId);
+  assert.equal(fremd.status, 'unzugewiesen');
+
+  assert.equal(mailer.sent.length, 3, 'one mail per non-trivial outcome: Freigabe2, Stellvertretung, and Konto-Hinweis');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten lets an admin-escalated Portal-Admin still self-approve a part on the job\'s originally-assigned Konto, despite holding no role there', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const kontoId = seedKontoAndPersonen(db); // freigeber1Id:'1', stellvertreter1Id:'2', freigeber2Id:'3', stellvertreter2Id:'4'
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2', konto_id = ?, betrag = '200.00', freigabe1_eskaliert_an_admin = 1 WHERE id = ?").run(kontoId, id);
+  const mailer = createStubMailer();
+  const app = buildTestAppMitDateien(db, mailer, jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({
+      gesamtbetrag: '200.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+    });
+
+  assert.equal(res.status, 302, "the admin should be able to self-approve the job's own already-assigned Konto, not have it treated as foreign");
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) {
+    assert.equal(kind.konto_id, kontoId, 'must NOT fall back to the foreign-Konto pool path');
+    assert.equal(kind.status, 'freigabe2');
+  }
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });

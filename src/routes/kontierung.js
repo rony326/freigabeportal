@@ -440,18 +440,18 @@ export function createKontierungRouter({ db, config, mailer }) {
     }
   });
 
-  function renderAufsplittenForm(req, res, status, job, konten, gesamtbetrag, teile, errors) {
-    res.status(status).render('kontierung-aufsplitten', { job, konten, gesamtbetrag, teile, errors });
+  function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors) {
+    res.status(status).render('kontierung-aufsplitten', { job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors });
   }
 
   router.get('/:id/aufsplitten', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
     const konten = ladeKontenFuerJob(req, job);
-    renderAufsplittenForm(req, res, 200, job, konten, job.betrag || '', [
-      { kontoId: '', betrag: '' },
-      { kontoId: '', betrag: '' },
-    ], []);
+    renderAufsplittenForm(req, res, 200, job, konten, listKonten(db), job.betrag || '', [
+      { kontoId: '', betrag: '', interessenskonflikt: false },
+      { kontoId: '', betrag: '', interessenskonflikt: false },
+    ], '', []);
   });
 
   router.post('/:id/aufsplitten', async (req, res, next) => {
@@ -459,11 +459,18 @@ export function createKontierungRouter({ db, config, mailer }) {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
       const konten = ladeKontenFuerJob(req, job);
+      const alleKonten = listKonten(db);
 
       const gesamtbetrag = req.body.gesamtbetrag || '';
       const kontoIds = [].concat(req.body.teilKontoId || []);
       const betraege = [].concat(req.body.teilBetrag || []);
-      const teileEingabe = kontoIds.map((kontoId, i) => ({ kontoId, betrag: betraege[i] || '' }));
+      const konflikte = [].concat(req.body.teilInteressenskonflikt || []);
+      const begruendung = req.body.begruendung || '';
+      const teileEingabe = kontoIds.map((kontoId, i) => ({
+        kontoId,
+        betrag: betraege[i] || '',
+        interessenskonflikt: konflikte[i] === 'true',
+      }));
 
       const errors = [];
       if (!gesamtbetrag || !BETRAG_PATTERN.test(gesamtbetrag)) {
@@ -476,7 +483,7 @@ export function createKontierungRouter({ db, config, mailer }) {
       const aufgeloesteTeile = [];
       for (const teil of teileEingabe) {
         if (!teil.kontoId && !teil.betrag) continue;
-        const konto = konten.find((k) => String(k.id) === teil.kontoId);
+        const konto = alleKonten.find((k) => String(k.id) === teil.kontoId);
         if (!konto) {
           errors.push('Bitte für jede Zeile ein gültiges Konto auswählen.');
           continue;
@@ -485,7 +492,7 @@ export function createKontierungRouter({ db, config, mailer }) {
           errors.push('Jede Zeile braucht einen gültigen Betrag (z.B. 123.45).');
           continue;
         }
-        aufgeloesteTeile.push({ konto, betrag: teil.betrag.replace(',', '.') });
+        aufgeloesteTeile.push({ konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt });
       }
 
       if (errors.length === 0) {
@@ -496,8 +503,16 @@ export function createKontierungRouter({ db, config, mailer }) {
         }
       }
 
+      // Nur Zeilen auf eigenen Konten (in `konten`, inkl. des Admin-Eskalations-Fallbacks aus
+      // ladeKontenFuerJob) können überhaupt einen Interessenskonflikt haben — für ein fremdes
+      // Konto ist die Checkbox bedeutungslos, siehe Design-Spec.
+      const hatKonflikt = aufgeloesteTeile.some((t) => t.interessenskonflikt && konten.some((k) => k.id === t.konto.id));
+      if (hatKonflikt && !begruendung) {
+        errors.push('Bei einem Interessenskonflikt ist eine Begründung Pflicht.');
+      }
+
       if (errors.length > 0) {
-        return renderAufsplittenForm(req, res, 400, job, konten, gesamtbetrag, teileEingabe, errors);
+        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors);
       }
 
       // Persisted on the parent even though it's about to be retired: the parent may never have
@@ -506,7 +521,10 @@ export function createKontierungRouter({ db, config, mailer }) {
       job.betrag = gesamtbetrag.replace(',', '.');
 
       db.exec('BEGIN');
-      const kinder = [];
+      const selbstFreigegeben = [];
+      const eskaliert = [];
+      const eskaliertAnAdmin = [];
+      const fremdeKonten = [];
       try {
         setJobBetrag(db, job.id, job.betrag);
         const markiert = markJobAufgesplittet(db, job.id);
@@ -517,6 +535,19 @@ export function createKontierungRouter({ db, config, mailer }) {
         for (const teil of aufgeloesteTeile) {
           const pdfPfad = neuerDateipfad(config.jobsDir, job.pdf_pfad);
           const thumbnailPfad = job.thumbnail_pfad ? neuerDateipfad(config.jobsDir, job.thumbnail_pfad) : null;
+          const istEigenesKonto = konten.some((k) => k.id === teil.konto.id);
+
+          if (!istEigenesKonto) {
+            const kindId = createSplitJob(db, job, {
+              pdfPfad,
+              thumbnailPfad,
+              hinweisKontoId: teil.konto.id,
+              betrag: teil.betrag,
+            });
+            fremdeKonten.push({ id: kindId, konto: teil.konto });
+            continue;
+          }
+
           const kindId = createSplitJob(db, job, {
             pdfPfad,
             thumbnailPfad,
@@ -524,18 +555,44 @@ export function createKontierungRouter({ db, config, mailer }) {
             betrag: teil.betrag,
             zugewiesenAn: req.currentPerson.churchtools_person_id,
           });
-          createFreigabe(db, {
-            jobId: kindId,
-            personId: req.currentPerson.churchtools_person_id,
-            rolle: 'freigeber1',
-            zeitpunkt: new Date().toISOString(),
-            ip: req.ip,
-            interessenskonflikt: false,
-            kommentar: null,
-            eskaliertVon: null,
-          });
-          abschliessenFreigabe1(db, kindId);
-          kinder.push({ id: kindId, konto: teil.konto });
+
+          if (teil.interessenskonflikt) {
+            const zeileEskaliertAnAdmin = Boolean(job.freigabe1_eskaliert_von || teil.konto.stellvertreter1_id === req.currentPerson.churchtools_person_id);
+            createFreigabe(db, {
+              jobId: kindId,
+              personId: req.currentPerson.churchtools_person_id,
+              rolle: 'freigabe1_eskalation',
+              zeitpunkt: new Date().toISOString(),
+              ip: req.ip,
+              interessenskonflikt: true,
+              kommentar: begruendung,
+              eskaliertVon: job.freigabe1_eskaliert_von,
+            });
+            if (zeileEskaliertAnAdmin) {
+              eskalierenFreigabe1AnAdmin(db, kindId, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+              eskaliertAnAdmin.push({ id: kindId, konto: teil.konto });
+            } else {
+              eskalierenFreigabe1(db, kindId, {
+                eskaliertVon: req.currentPerson.churchtools_person_id,
+                grund: begruendung,
+                stellvertreterId: teil.konto.stellvertreter1_id,
+              });
+              eskaliert.push({ id: kindId, konto: teil.konto });
+            }
+          } else {
+            createFreigabe(db, {
+              jobId: kindId,
+              personId: req.currentPerson.churchtools_person_id,
+              rolle: 'freigeber1',
+              zeitpunkt: new Date().toISOString(),
+              ip: req.ip,
+              interessenskonflikt: false,
+              kommentar: null,
+              eskaliertVon: null,
+            });
+            abschliessenFreigabe1(db, kindId);
+            selbstFreigegeben.push({ id: kindId, konto: teil.konto });
+          }
         }
         db.exec('COMMIT');
       } catch (err) {
@@ -543,7 +600,7 @@ export function createKontierungRouter({ db, config, mailer }) {
         throw err;
       }
 
-      for (const { id: kindId, konto } of kinder) {
+      for (const { id: kindId, konto } of selbstFreigegeben) {
         const kindJob = getJobById(db, kindId);
         const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(kindJob, konto));
         if (freigeber2) {
@@ -553,6 +610,45 @@ export function createKontierungRouter({ db, config, mailer }) {
             text: `Eine Rechnung wartet auf deine Freigabe 2: ${kindJob.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/freigabe2/${kindJob.id}`,
             typ: 'zuweisung',
             jobId: kindJob.id,
+          });
+        }
+      }
+
+      for (const { id: kindId, konto } of eskaliert) {
+        const stellvertreter1 = getPersonById(db, konto.stellvertreter1_id);
+        if (stellvertreter1) {
+          await sendNotification(db, mailer, {
+            to: stellvertreter1.email,
+            subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 1 – Kontierung an dich übergeben',
+            text: `Eine Rechnung wurde dir zur Kontierung übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${kindId}`,
+            typ: 'zuweisung',
+            jobId: kindId,
+          });
+        }
+      }
+
+      for (const { id: kindId } of eskaliertAnAdmin) {
+        const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
+        for (const email of empfaenger) {
+          await sendNotification(db, mailer, {
+            to: email,
+            subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 1 – an Portal-Admin eskaliert',
+            text: `Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${kindId}`,
+            typ: 'zuweisung',
+            jobId: kindId,
+          });
+        }
+      }
+
+      for (const { id: kindId, konto } of fremdeKonten) {
+        const freigeber1 = getPersonById(db, konto.freigeber1_id);
+        if (freigeber1) {
+          await sendNotification(db, mailer, {
+            to: freigeber1.email,
+            subject: 'Freigabeportal: Rechnung vermutlich für dein Konto — bitte aus dem Pool holen',
+            text: `Eine Rechnung wurde mit dem Hinweis in den Pool zurückgelegt, dass sie vermutlich für dein Konto ${konto.kontonummer} — ${konto.bezeichnung} bestimmt ist: ${job.dateiname}\n\nBitte im Freigabeportal anmelden und aus dem Pool holen: ${config.publicBaseUrl}/pool`,
+            typ: 'zuweisung',
+            jobId: kindId,
           });
         }
       }

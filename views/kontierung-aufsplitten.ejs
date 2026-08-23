@@ -16,7 +16,7 @@
         <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
       </div>
     <% } %>
-    <p>Jede Zeile wird zu einer eigenständigen Rechnung mit eigenem Konto und Teilbetrag. Zahlungsziel, Lieferant, Absender und Rechnungsnummer werden übernommen. Freigabe 1 gilt für jeden Teil als durch dich erteilt.</p>
+    <p>Jede Zeile wird zu einer eigenständigen Rechnung mit eigenem Konto und Teilbetrag. Zahlungsziel, Lieferant, Absender und Rechnungsnummer werden übernommen. Für Konten, bei denen du Freigeber oder Stellvertretung bist, gilt Freigabe 1 automatisch als durch dich erteilt — ausser du kreuzt "Konflikt" an, dann geht der Teil direkt an deine Stellvertretung. Für andere Konten landet der Teil unzugewiesen im Pool mit einem Hinweis für die zuständige Person.</p>
 
     <form method="post" action="/kontierung/<%= job.id %>/aufsplitten" class="col-12 col-md-10 col-lg-8">
       <div class="mb-3 col-6 col-md-4">
@@ -27,16 +27,22 @@
       <div id="teile-container">
         <% teile.forEach((teil) => { %>
           <div class="row g-2 mb-2 align-items-center teil-zeile">
-            <div class="col-6">
+            <div class="col-5">
               <select class="form-select" name="teilKontoId">
                 <option value="">— Konto wählen —</option>
-                <% konten.forEach((k) => { %>
+                <% alleKonten.forEach((k) => { %>
                   <option value="<%= k.id %>" <%= String(k.id) === teil.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
                 <% }) %>
               </select>
             </div>
-            <div class="col-4">
+            <div class="col-3">
               <input type="text" inputmode="decimal" class="form-control" name="teilBetrag" value="<%= teil.betrag %>" placeholder="Teilbetrag, z.B. 61.75">
+            </div>
+            <div class="col-2 form-check">
+              <input type="checkbox" class="form-check-input konflikt-checkbox" <%= teil.interessenskonflikt ? 'checked' : '' %>>
+              <label class="form-check-label small">Interessenskonflikt bei diesem Konto</label>
+              <div class="form-text small">(nur relevant, wenn du selbst Freigeber oder Stellvertretung bist)</div>
+              <input type="hidden" name="teilInteressenskonflikt" value="<%= teil.interessenskonflikt ? 'true' : 'false' %>">
             </div>
             <div class="col-2">
               <button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button>
@@ -45,8 +51,12 @@
         <% }) %>
       </div>
       <button type="button" id="zeile-hinzufuegen" class="btn btn-outline-secondary btn-sm mb-3">+ Teilbetrag hinzufügen</button>
+      <div class="mb-3">
+        <label class="form-label" for="begruendung">Begründung <span class="text-muted">(bei mind. einem Interessenskonflikt Pflicht)</span></label>
+        <textarea class="form-control" id="begruendung" name="begruendung"><%= begruendung || '' %></textarea>
+      </div>
       <div class="d-flex flex-wrap gap-2">
-        <button type="submit" class="btn btn-primary">Aufsplitten und Freigabe 1 erteilen</button>
+        <button type="submit" class="btn btn-primary">Aufsplitten</button>
         <a href="/kontierung/<%= job.id %>" id="abbrechen-link" class="btn btn-outline-secondary">Abbrechen</a>
       </div>
     </form>
@@ -66,21 +76,39 @@
     })();
     (function () {
       var kontoOptionsHtml = document.querySelector('.teil-zeile select').innerHTML;
+      // The checkbox itself has no `name` and is never submitted — it only drives the hidden
+      // input's value via this listener. With several dynamically added/removed rows, a shared
+      // `name` on the checkboxes alone can't be parsed back into a reliable 1:1 array alongside
+      // teilKontoId/teilBetrag: an unchecked checkbox sends nothing at all, so the submitted
+      // array would silently shrink and misalign for any row after the first unchecked one. The
+      // always-present hidden input keeps exactly one value per row, same as teilKontoId/teilBetrag.
+      function konfliktCheckboxBinden(zeile) {
+        var checkbox = zeile.querySelector('.konflikt-checkbox');
+        var hidden = zeile.querySelector('input[name="teilInteressenskonflikt"]');
+        checkbox.addEventListener('change', function () {
+          hidden.value = checkbox.checked ? 'true' : 'false';
+        });
+      }
       function zeileEntfernenBinden(zeile) {
         zeile.querySelector('.zeile-entfernen').addEventListener('click', function () {
           zeile.remove();
         });
       }
-      document.querySelectorAll('.teil-zeile').forEach(zeileEntfernenBinden);
+      document.querySelectorAll('.teil-zeile').forEach(function (zeile) {
+        zeileEntfernenBinden(zeile);
+        konfliktCheckboxBinden(zeile);
+      });
       document.getElementById('zeile-hinzufuegen').addEventListener('click', function () {
         var zeile = document.createElement('div');
         zeile.className = 'row g-2 mb-2 align-items-center teil-zeile';
         zeile.innerHTML =
-          '<div class="col-6"><select class="form-select" name="teilKontoId">' + kontoOptionsHtml + '</select></div>' +
-          '<div class="col-4"><input type="text" inputmode="decimal" class="form-control" name="teilBetrag" placeholder="Teilbetrag, z.B. 61.75"></div>' +
+          '<div class="col-5"><select class="form-select" name="teilKontoId">' + kontoOptionsHtml + '</select></div>' +
+          '<div class="col-3"><input type="text" inputmode="decimal" class="form-control" name="teilBetrag" placeholder="Teilbetrag, z.B. 61.75"></div>' +
+          '<div class="col-2 form-check"><input type="checkbox" class="form-check-input konflikt-checkbox"><label class="form-check-label small">Interessenskonflikt bei diesem Konto</label><div class="form-text small">(nur relevant, wenn du selbst Freigeber oder Stellvertretung bist)</div><input type="hidden" name="teilInteressenskonflikt" value="false"></div>' +
           '<div class="col-2"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
         document.getElementById('teile-container').appendChild(zeile);
         zeileEntfernenBinden(zeile);
+        konfliktCheckboxBinden(zeile);
       });
     })();
   </script>

@@ -58,6 +58,33 @@
     --bs-btn-disabled-color: var(--brand-primary);
     --bs-btn-disabled-border-color: var(--brand-primary);
   }
+  /* Bootstrap's compiled .btn-outline-secondary bakes in a fixed #6c757d for text/border in
+     every theme (it isn't redefined under [data-bs-theme=dark] the way body/border colors are) —
+     against this app's near-black dark background that's under 3:1 contrast, well below WCAG AA.
+     Same media-query/[data-theme] pairing as .pdf-preview above; light mode's contrast is fine
+     already and stays untouched. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="hell"]) .btn-outline-secondary {
+      --bs-btn-color: #ced4da;
+      --bs-btn-border-color: #ced4da;
+      --bs-btn-hover-color: #1a1a1a;
+      --bs-btn-hover-bg: #ced4da;
+      --bs-btn-hover-border-color: #ced4da;
+      --bs-btn-active-color: #1a1a1a;
+      --bs-btn-active-bg: #ced4da;
+      --bs-btn-active-border-color: #ced4da;
+    }
+  }
+  :root[data-theme="dunkel"] .btn-outline-secondary {
+    --bs-btn-color: #ced4da;
+    --bs-btn-border-color: #ced4da;
+    --bs-btn-hover-color: #1a1a1a;
+    --bs-btn-hover-bg: #ced4da;
+    --bs-btn-hover-border-color: #ced4da;
+    --bs-btn-active-color: #1a1a1a;
+    --bs-btn-active-bg: #ced4da;
+    --bs-btn-active-border-color: #ced4da;
+  }
 </style>
 <style>
   /* Scoped to only render alongside the menu itself: an anonymous visitor gets no menu at all,

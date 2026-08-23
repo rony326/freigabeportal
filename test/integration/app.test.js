@@ -617,6 +617,77 @@ test('on /kontierung, the Zurück button renders to the right of the Menü dropd
   db.close();
 });
 
+test('on /kontierung, a "+ Lieferant" button sits in the nav bar alongside Menü/Zurück/Vorschau neu laden, not down in the form', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Buch', nachname: 'Halter', email: 'buch@example.org', gruppen: ['10'], loggedInNow: false });
+  for (const id of ['2', '3']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '2' });
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get(`/kontierung/${jobId}`);
+  assert.equal(res.status, 200);
+  const navMatch = res.text.match(/<nav[^>]*>[\s\S]*?<\/nav>/);
+  assert.ok(navMatch, 'expected a <nav> element');
+  assert.match(navMatch[0], /data-bs-target="#neuer-lieferant-modal"/, 'the Lieferant trigger should live inside the nav bar');
+  const menuIndex = navMatch[0].indexOf('hauptmenue-toggle');
+  const zurueckIndex = navMatch[0].indexOf('← Zurück');
+  const lieferantIndex = navMatch[0].indexOf('data-bs-target="#neuer-lieferant-modal"');
+  assert.ok(menuIndex < zurueckIndex && zurueckIndex < lieferantIndex, 'Menü, then Zurück, then + Lieferant, left to right');
+  db.close();
+});
+
+test('the "+ Lieferant" nav button does not appear on /pool, where the modal it opens does not exist', async () => {
+  const config = testConfig();
+  config.churchtools = {
+    ...config.churchtools,
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    redirectUri: 'https://portal.example.org/auth/callback',
+  };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const res = await agent.get('/pool');
+  assert.doesNotMatch(res.text, /data-bs-target="#neuer-lieferant-modal"/);
+  db.close();
+});
+
 test('the Zurück button does not appear on /pool itself', async () => {
   const config = testConfig();
   config.churchtools = {

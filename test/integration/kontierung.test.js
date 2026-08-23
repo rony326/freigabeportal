@@ -12,6 +12,7 @@ import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, es
 import { listFreigabenByJob, createFreigabe } from '../../src/db/freigabenRepo.js';
 import { buildAuditLog } from '../../src/services/auditLog.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
+import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
@@ -80,6 +81,7 @@ function buildTestApp(db, mailer) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret', publicBaseUrl: 'https://portal.example.org' };
   app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(config));
   app.use('/kontierung', requireLogin(), createKontierungRouter({ db, config, mailer }));
   return app;
 }
@@ -111,6 +113,7 @@ function buildTestAppMitDateien(db, mailer, jobsDir) {
     jobsDir,
   };
   app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(config));
   app.use('/kontierung', requireLogin(), createKontierungRouter({ db, config, mailer }));
   return app;
 }

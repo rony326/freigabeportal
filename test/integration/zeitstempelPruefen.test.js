@@ -170,6 +170,32 @@ test('GET /zeitstempel-pruefen?jobId= shows a mismatched hash and a red banner w
   db.close();
 });
 
+test('GET /zeitstempel-pruefen?jobId= shows the hash mismatch even when the file has no timestamp at all', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  seedPerson(db, '3');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const dir = mkdtempSync(join(tmpdir(), 'zeitstempel-pruefen-mismatch-untimestamped-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const unstamped = await buildPdfFixture(['Kein Zeitstempel hier.']);
+  writeFileSync(pdfPfad, unstamped);
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1', zeitstempel_datei_hash = 'ein-anderer-hash' WHERE id = ?").run(id);
+
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/zeitstempel-pruefen?jobId=${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Kein Zeitstempel in dieser Datei gefunden/);
+  assert.match(res.text, /Hash weicht von der Datenbank ab/);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
 test('GET /zeitstempel-pruefen?jobId= shows "kein Vergleichswert" for a job with no stored hash', async () => {
   const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');

@@ -32,7 +32,13 @@
       <div class="card col-12 col-lg-6">
         <div class="card-body">
           <% if (!ergebnis.vorhanden) { %>
-            <p class="mb-0">⚠️ Kein Zeitstempel in dieser Datei gefunden.</p>
+            <p>⚠️ Kein Zeitstempel in dieser Datei gefunden.</p>
+            <p class="mb-0">
+              <% if (ergebnis.hashUebereinstimmung === true) { %>✓ Hash stimmt mit Datenbank überein
+              <% } else if (ergebnis.hashUebereinstimmung === false) { %>✗ Hash weicht von der Datenbank ab
+              <% } else { %>– kein Vergleichswert vorhanden
+              <% } %>
+            </p>
           <% } else { %>
             <ul class="list-unstyled mb-3">
               <li><%= ergebnis.vorhanden ? '✓' : '✗' %> Zeitstempel vorhanden</li>

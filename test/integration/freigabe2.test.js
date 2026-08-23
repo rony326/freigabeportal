@@ -349,6 +349,7 @@ test('POST /freigabe2/:id sets zeitstempel_gesetzt_am when a TSA is configured a
   const { mkdtempSync, rmSync, readFileSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
+  const { createHash } = await import('node:crypto');
   const db = openDatabase(':memory:');
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-zeitstempel-test-'));
   const pdfPfad = join(dir, 'a.pdf');
@@ -372,6 +373,8 @@ test('POST /freigabe2/:id sets zeitstempel_gesetzt_am when a TSA is configured a
   const job = getJobById(db, id);
   assert.equal(job.status, 'abgeschlossen');
   assert.ok(job.zeitstempel_gesetzt_am, 'zeitstempel_gesetzt_am must be set after a successful TSA call');
+  assert.match(job.zeitstempel_datei_hash, /^[0-9a-f]{64}$/, 'zeitstempel_datei_hash must be a sha256 hex digest');
+  assert.equal(job.zeitstempel_datei_hash, createHash('sha256').update(readFileSync(pdfPfad)).digest('hex'), 'the stored hash must match the final bytes on disk');
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
@@ -428,6 +431,11 @@ test('POST /freigabe2/:id clears zeitstempel_gesetzt_am again when the stamped P
     job.zeitstempel_gesetzt_am,
     null,
     'zeitstempel_gesetzt_am must be cleared again — the timestamped bytes never reached job.pdf_pfad, so the n8n gate has to stay closed and the nachhol-job has to retry'
+  );
+  assert.equal(
+    job.zeitstempel_datei_hash,
+    null,
+    'zeitstempel_datei_hash must be cleared right alongside zeitstempel_gesetzt_am — a hash without a matching timestamp claim would be meaningless'
   );
 
   rmSync(dir, { recursive: true, force: true });

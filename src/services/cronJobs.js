@@ -1,6 +1,6 @@
 import { existsSync, unlinkSync, readdirSync, statSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { runPersonenSync } from './sync.js';
 import { hasRecentRunningSync } from '../db/syncLogRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -230,7 +230,7 @@ export async function runZeitstempelNachholenJob(db, config) {
         const tmpPfad = `${job.pdf_pfad}.${randomUUID()}.tmp`;
         writeFileSync(tmpPfad, stamped);
         renameSync(tmpPfad, job.pdf_pfad);
-        markZeitstempelGesetzt(db, job.id, new Date().toISOString());
+        markZeitstempelGesetzt(db, job.id, new Date().toISOString(), createHash('sha256').update(stamped).digest('hex'));
         nachgeholt += 1;
       } catch (err) {
         fehlgeschlagen += 1;

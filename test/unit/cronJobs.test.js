@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { openDatabase } from '../../src/db/index.js';
 import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { createJob, getJobById } from '../../src/db/jobsRepo.js';
@@ -36,7 +37,7 @@ test('runZeitstempelNachholenJob sets zeitstempel_gesetzt_am for a pending abges
   const db = openDatabase(':memory:');
   const dir = mkdtempSync(join(tmpdir(), 'nachholen-test-'));
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
-  const { id } = await seedAbgeschlossenJob(db, dir);
+  const { id, pdfPfad } = await seedAbgeschlossenJob(db, dir);
 
   const client = setupMockTsa('https://tsa.example.org/tsr');
   client.intercept({ path: '/tsr', method: 'POST' }).reply(200, RFC3161_RESPONSE, { headers: { 'content-type': 'application/timestamp-reply' } });
@@ -46,7 +47,9 @@ test('runZeitstempelNachholenJob sets zeitstempel_gesetzt_am for a pending abges
   assert.equal(result.nachgeholt, 1);
   assert.equal(result.fehlgeschlagen, 0);
   assert.equal(result.dateiFehlt, 0);
-  assert.ok(getJobById(db, id).zeitstempel_gesetzt_am);
+  const job = getJobById(db, id);
+  assert.ok(job.zeitstempel_gesetzt_am);
+  assert.equal(job.zeitstempel_datei_hash, createHash('sha256').update(readFileSync(pdfPfad)).digest('hex'), 'the stored hash must match the final stamped bytes on disk');
 
   const log = listRecentCronLog(db, 'zeitstempel-nachholen', 1);
   assert.equal(log.length, 1);

@@ -25,7 +25,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use(loadCurrentPerson(db));
-  app.use('/admin/sync', requireRole(config, 'portal-admin'), createSyncRouter({ db }));
+  app.use('/admin/sync', requireRole(config, 'superadmin'), createSyncRouter({ db }));
   return app;
 }
 

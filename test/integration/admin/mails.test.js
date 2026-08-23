@@ -28,7 +28,7 @@ function buildTestApp(db, mailer) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use(loadCurrentPerson(db));
-  app.use('/admin/mails', requireRole(config, 'portal-admin'), createMailsRouter({ db, mailer }));
+  app.use('/admin/mails', requireRole(config, 'superadmin'), createMailsRouter({ db, mailer }));
   return app;
 }
 

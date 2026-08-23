@@ -1,9 +1,9 @@
 // test/integration/admin/authz-sweep.test.js
 //
 // Proves the REAL createApp({ db, config }) object graph enforces the
-// portal-admin guard on every /admin/* route — not a hand-built test app
+// superadmin guard on every /admin/* route — not a hand-built test app
 // that mounts requireRole itself. src/app.js mounts a single blanket
-// `app.use('/admin', requireRole(config, 'portal-admin'))` in front of all
+// `app.use('/admin', requireRole(config, 'superadmin'))` in front of all
 // six admin router families; this test sweeps every known route/method
 // combination across all six families against the real app and confirms
 // each returns 401 when no session/cookie is present at all.

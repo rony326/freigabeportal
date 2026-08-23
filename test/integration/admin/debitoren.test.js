@@ -25,7 +25,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use(loadCurrentPerson(db));
-  app.use('/admin/debitoren', requireRole(config, 'portal-admin'), createDebitorenRouter({ db }));
+  app.use('/admin/debitoren', requireRole(config, 'superadmin'), createDebitorenRouter({ db }));
   return app;
 }
 

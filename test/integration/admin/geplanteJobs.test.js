@@ -39,7 +39,7 @@ function buildTestApp(db, { config, mailer } = {}) {
   app.use(loadCurrentPerson(db));
   app.use(
     '/admin/geplante-jobs',
-    requireRole(resolvedConfig, 'portal-admin'),
+    requireRole(resolvedConfig, 'superadmin'),
     createGeplanteJobsRouter({ db, config: resolvedConfig, mailer: mailer || createStubMailer() })
   );
   return app;

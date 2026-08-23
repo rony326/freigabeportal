@@ -23,7 +23,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use(loadCurrentPerson(db));
-  app.use('/admin/zeitstempel', requireRole(config, 'portal-admin'), createZeitstempelAdminRouter({ db }));
+  app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db }));
   return app;
 }
 

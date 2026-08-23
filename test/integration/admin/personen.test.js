@@ -22,7 +22,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use(loadCurrentPerson(db));
-  app.use('/admin/personen', requireRole(config, 'portal-admin'), createPersonenRouter({ db }));
+  app.use('/admin/personen', requireRole(config, 'superadmin'), createPersonenRouter({ db }));
   return app;
 }
 

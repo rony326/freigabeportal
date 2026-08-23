@@ -71,6 +71,29 @@ test('GET /auth/callback logs the person in and redirects straight to /pool for 
   db.close();
 });
 
+test('GET /auth/callback also resolves Manager group membership when CT_GROUP_ID_MANAGER is configured', async () => {
+  const config = testConfig();
+  config.churchtools.groupIdManager = '30';
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/30/members', method: 'GET' }).reply(200, { data: [{ personId: 7 }] });
+
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  const res = await agent.get('/auth/callback').query({ code: 'the-code', state });
+  assert.equal(res.status, 302);
+  assert.deepEqual(getPersonById(db, '7').gruppen, ['30']);
+  db.close();
+});
+
 test('GET /auth/callback redirects a Portal-Admin (not also Buchhaltung) straight to /pool', async () => {
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);

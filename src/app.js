@@ -89,7 +89,7 @@ export function createApp({ db, config }) {
   const machineLimiter = createMachineRateLimiter();
 
   app.use('/branding', publicLimiter, createBrandingRouter({ db }));
-  app.use('/admin', sessionLimiter, requireRole(config, 'portal-admin'));
+  app.use('/admin', sessionLimiter, requireRole(config, 'superadmin'));
   app.get('/admin', (req, res) => {
     const zeitstempelWarnungSchwelle = Number(getConfigValue(db, 'zeitstempel_warnung_ab_stunden'));
     const tsaAktiv = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));

@@ -30,7 +30,7 @@ function buildTestApp(db, brandingDir) {
   // Mounted unauthenticated, same as src/app.js does — GET /branding/logo is
   // a public route served to unauthenticated callers too.
   app.use('/branding', createBrandingRouter({ db }));
-  app.use('/admin/erscheinungsbild', requireRole(config, 'portal-admin'), createErscheinungsbildRouter({ db, config }));
+  app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config }));
   return app;
 }
 

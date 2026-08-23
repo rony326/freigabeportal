@@ -23,7 +23,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   app.use(loadCurrentPerson(db));
-  app.use('/admin/eskalation', requireRole(config, 'portal-admin'), createEskalationRouter({ db }));
+  app.use('/admin/eskalation', requireRole(config, 'superadmin'), createEskalationRouter({ db }));
   return app;
 }
 

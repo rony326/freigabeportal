@@ -42,6 +42,23 @@ test('runPersonenSync upserts current members and deactivates people no longer i
   db.close();
 });
 
+test('runPersonenSync also queries the Manager group when configured', async () => {
+  const client = setupMockChurchTools(CT_CONFIG.baseUrl);
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/30/members', method: 'GET' }).reply(200, { data: [{ personId: 7 }] });
+  client
+    .intercept({ path: '/api/persons/7', method: 'GET' })
+    .reply(200, { data: { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' } });
+
+  const db = openDatabase(':memory:');
+  const result = await runPersonenSync(db, { ...CT_CONFIG, groupIdManager: '30' }, 'service-token');
+
+  assert.equal(result.upserted, 1);
+  assert.deepEqual(getPersonById(db, '7').gruppen, ['30']);
+  db.close();
+});
+
 test('runPersonenSync marks an existing local person unresolved when their detail fetch fails', async () => {
   const client = setupMockChurchTools(CT_CONFIG.baseUrl);
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 7 }] });

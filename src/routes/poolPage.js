@@ -31,15 +31,15 @@ export function createPoolPageRouter({ db, config }) {
     // /pool is reachable by every logged-in person now (see app.js), but the company-wide pool of
     // unassigned invoices is still Buchhaltung/Portal-Admin business — skip the query entirely for
     // anyone else rather than relying on pool.ejs alone to hide it.
-    const zeigtPool = personHasRole(req.currentPerson, config, 'buchhaltung') || personHasRole(req.currentPerson, config, 'portal-admin');
-    const istPortalAdmin = personHasRole(req.currentPerson, config, 'portal-admin');
+    const zeigtPool = personHasRole(req.currentPerson, config, 'buchhaltung') || personHasRole(req.currentPerson, config, 'superadmin');
+    const istSuperadmin = personHasRole(req.currentPerson, config, 'superadmin');
     res.render('pool', {
       poolJobs: zeigtPool ? enrich(listPoolJobs(db)) : [],
       meineKontierungen: enrich(listZugewiesenJobsForPerson(db, personId)),
       meineFreigaben: enrich(listFreigabe2JobsForPerson(db, personId)),
       meineAbgelehnten: enrich(listAbgelehntJobsForPerson(db, personId)),
-      adminEskalierteKontierungen: istPortalAdmin ? enrich(listAdminEskalierteKontierungen(db)) : [],
-      adminEskalierteFreigaben: istPortalAdmin ? enrich(listAdminEskalierteFreigaben(db)) : [],
+      adminEskalierteKontierungen: istSuperadmin ? enrich(listAdminEskalierteKontierungen(db)) : [],
+      adminEskalierteFreigaben: istSuperadmin ? enrich(listAdminEskalierteFreigaben(db)) : [],
       // Deliberately NOT run through enrich(): _abgeschlossen_table.ejs renders only dateiname,
       // status and zeitstempel_gesetzt_am — it has neither a thumbnail/preview link nor a Konto
       // column, unlike the _job_table.ejs-backed sections above. enrich() would mint a signed

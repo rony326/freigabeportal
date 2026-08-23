@@ -23,6 +23,11 @@
           <label class="form-label" for="pdf">PDF-Datei</label>
           <input type="file" class="form-control" id="pdf" name="pdf" accept="application/pdf" required>
         </div>
+        <div class="mb-3">
+          <label class="form-label" for="jobId">Job-ID (optional, für Hash-Abgleich)</label>
+          <input type="number" class="form-control" id="jobId" name="jobId" min="1">
+          <div class="form-text">Steht auf der archivierten PDF-Seite mit den Freigabe-Angaben. Wenn angegeben, wird der Hash der hochgeladenen Datei mit dem in der Datenbank hinterlegten Hash dieses Jobs verglichen.</div>
+        </div>
         <button type="submit" class="btn btn-primary">Prüfen</button>
       </form>
     <% } else { %>

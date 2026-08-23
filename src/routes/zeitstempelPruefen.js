@@ -57,7 +57,15 @@ export function createZeitstempelPruefenRouter({ db, config }) {
         if (!req.file) {
           return res.status(400).render('zeitstempel-pruefen', { ergebnis: null, errors: ['Bitte eine PDF-Datei auswählen.'], jobId: null, job: null });
         }
-        const ergebnis = await verifyZeitstempel(req.file.buffer);
+        let erwarteterHash = null;
+        if (req.body.jobId) {
+          const vergleichsJob = getJobById(db, Number(req.body.jobId));
+          if (!vergleichsJob || !canViewJobPdf(db, config, req.currentPerson, vergleichsJob)) {
+            return res.status(403).render('error', { message: 'Kein Zugriff auf diesen Job.' });
+          }
+          erwarteterHash = vergleichsJob.zeitstempel_datei_hash;
+        }
+        const ergebnis = await verifyZeitstempel(req.file.buffer, erwarteterHash);
         res.render('zeitstempel-pruefen', { ergebnis, errors: [], jobId: null, job: null });
       } catch (err) {
         next(err);

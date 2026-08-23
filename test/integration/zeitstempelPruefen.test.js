@@ -93,6 +93,87 @@ test('POST /zeitstempel-pruefen without a file attached is rejected with a clear
   db.close();
 });
 
+test('POST /zeitstempel-pruefen with a jobId compares the upload against that job\'s stored hash — match', async () => {
+  const { createHash } = await import('node:crypto');
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '1', stellvertreter2Id: '1' });
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  const hash = createHash('sha256').update(RFC3161_TIMESTAMPED_PDF).digest('hex');
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1', zeitstempel_datei_hash = ? WHERE id = ?").run(hash, id);
+
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/zeitstempel-pruefen')
+    .set('x-test-person-id', '1')
+    .field('jobId', String(id))
+    .attach('pdf', RFC3161_TIMESTAMPED_PDF, 'timestamped.pdf');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Hash stimmt mit Datenbank überein/);
+  db.close();
+});
+
+test('POST /zeitstempel-pruefen with a jobId compares the upload against that job\'s stored hash — mismatch', async () => {
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '1', stellvertreter2Id: '1' });
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1', zeitstempel_datei_hash = 'ein-anderer-hash' WHERE id = ?").run(id);
+
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/zeitstempel-pruefen')
+    .set('x-test-person-id', '1')
+    .field('jobId', String(id))
+    .attach('pdf', RFC3161_TIMESTAMPED_PDF, 'timestamped.pdf');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Hash weicht von der Datenbank ab/);
+  db.close();
+});
+
+test('POST /zeitstempel-pruefen with a jobId for a job the person is not authorized to view returns 403', async () => {
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  seedPerson(db, '2');
+  seedPerson(db, '3');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1' WHERE id = ?").run(id);
+
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/zeitstempel-pruefen')
+    .set('x-test-person-id', '2')
+    .field('jobId', String(id))
+    .attach('pdf', RFC3161_TIMESTAMPED_PDF, 'timestamped.pdf');
+  assert.equal(res.status, 403);
+  db.close();
+});
+
+test('POST /zeitstempel-pruefen with a jobId never shows the Zertifikat-Button — the result reflects the uploaded file, not the file stored on disk', async () => {
+  const { createHash } = await import('node:crypto');
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '1', stellvertreter2Id: '1' });
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  const hash = createHash('sha256').update(RFC3161_TIMESTAMPED_PDF).digest('hex');
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1', zeitstempel_datei_hash = ? WHERE id = ?").run(hash, id);
+
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/zeitstempel-pruefen')
+    .set('x-test-person-id', '1')
+    .field('jobId', String(id))
+    .attach('pdf', RFC3161_TIMESTAMPED_PDF, 'timestamped.pdf');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /Zertifikat anzeigen/);
+  db.close();
+});
+
 test('GET /zeitstempel-pruefen?jobId= verifies the job\'s own PDF directly for an authorized person, no upload form', async () => {
   const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');

@@ -224,3 +224,72 @@ test('GET /zeitstempel-pruefen?jobId= returns 404 when the job\'s PDF file no lo
   assert.equal(res.status, 404);
   db.close();
 });
+
+test('GET /zeitstempel-pruefen/zertifikat?jobId= returns 401 without a session', async () => {
+  const db = openDatabase(':memory:');
+  const app = buildTestApp(db);
+  const res = await request(app).get('/zeitstempel-pruefen/zertifikat?jobId=1');
+  assert.equal(res.status, 401);
+  db.close();
+});
+
+test('GET /zeitstempel-pruefen/zertifikat?jobId= returns 403 for a person not authorized to view that job', async () => {
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  seedPerson(db, '2');
+  seedPerson(db, '3');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1' WHERE id = ?").run(id);
+
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/zeitstempel-pruefen/zertifikat?jobId=${id}`).set('x-test-person-id', '2');
+  assert.equal(res.status, 403);
+  db.close();
+});
+
+test('GET /zeitstempel-pruefen/zertifikat?jobId= returns 404 when the job\'s PDF file no longer exists', async () => {
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  seedPerson(db, '3');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/nonexistent/gone.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeholt', zugewiesen_an = '1' WHERE id = ?").run(id);
+
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/zeitstempel-pruefen/zertifikat?jobId=${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 404);
+  db.close();
+});
+
+test('GET /zeitstempel-pruefen/zertifikat?jobId= renders the Prüfbescheinigung with job context and hash values', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createHash } = await import('node:crypto');
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  seedPerson(db, '3');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const dir = mkdtempSync(join(tmpdir(), 'zeitstempel-zertifikat-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  writeFileSync(pdfPfad, RFC3161_TIMESTAMPED_PDF);
+  const hash = createHash('sha256').update(RFC3161_TIMESTAMPED_PDF).digest('hex');
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1', zeitstempel_datei_hash = ?, rechnungsnummer = 'RE-2026-042', lieferant = 'Muster AG', betrag = '123.45' WHERE id = ?").run(hash, id);
+
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/zeitstempel-pruefen/zertifikat?jobId=${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Prüfbescheinigung/);
+  assert.match(res.text, /RE-2026-042/);
+  assert.match(res.text, /Muster AG/);
+  assert.match(res.text, new RegExp(hash));
+  assert.match(res.text, /window\.print\(\)/);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});

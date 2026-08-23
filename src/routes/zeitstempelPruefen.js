@@ -30,6 +30,23 @@ export function createZeitstempelPruefenRouter({ db, config }) {
     }
   });
 
+  router.get('/zertifikat', async (req, res, next) => {
+    try {
+      const jobId = Number(req.query.jobId);
+      const job = jobId ? getJobById(db, jobId) : null;
+      if (!job || !canViewJobPdf(db, config, req.currentPerson, job)) {
+        return res.status(403).render('error', { message: 'Kein Zugriff auf diesen Job.' });
+      }
+      if (!job.pdf_pfad || !existsSync(job.pdf_pfad)) {
+        return res.status(404).render('error', { message: 'PDF-Datei für diesen Job ist nicht mehr vorhanden.' });
+      }
+      const ergebnis = await verifyZeitstempel(readFileSync(job.pdf_pfad), job.zeitstempel_datei_hash);
+      res.render('zeitstempel-zertifikat', { ergebnis, job, erstelltAm: new Date().toISOString(), erstelltVon: `${req.currentPerson.vorname} ${req.currentPerson.nachname}` });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.post('/', (req, res, next) => {
     upload.single('pdf')(req, res, async (uploadErr) => {
       try {

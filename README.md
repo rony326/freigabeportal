@@ -6,6 +6,15 @@ Rollen-Ableitung aus Gruppen, Personen-Sync und einer n8n-Schnittstelle für
 Eingang und Ablage. Node.js/Express, SQLite, lauffähig auf Infomaniak
 Node.js-Webhosting.
 
+## Dokumentation
+
+Dieses README deckt Setup und Deployment ab. Die vollständige fachliche
+und technische Dokumentation — Architektur, Datenmodell, der komplette
+Rechnungs-Workflow, n8n-Schnittstelle, QR-Bill/Betrugserkennung,
+RFC3161-Zeitstempel, Admin-Bereich, geplante Jobs und der
+ChurchTools-Personen-Sync, jeweils mit Ablauf-/Sequenzdiagrammen — liegt
+in [`docs/`](docs/README.md).
+
 ## Setup (lokal)
 
 1. `npm install`
@@ -87,7 +96,7 @@ das erste Konto anzulegen oder später Einzelrechte zuzuweisen.
 ### Zeitgesteuerte Jobs — laufen im Node-Prozess selbst
 
 Kein externer Task Scheduler nötig: Solange der Node-Prozess läuft (Infomaniaks
-Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App die drei
+Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App die vier
 Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 
 | Job | Zeitplan | Zweck |
@@ -95,12 +104,14 @@ Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 | `sync-personen` | täglich, Default 02:00 (Europe/Zürich) | ChurchTools-Personen-/Gruppen-Sync |
 | `pool-erinnerungen` | Intervall, Default alle 60 Min. | Reminder-/Eskalations-Mails für unbeanspruchte Pool-Rechnungen (Schwellen in Stunden, admin-konfigurierbar, Default 24h/48h — separat unter Eskalationszeiten) |
 | `pdf-bereinigung` | täglich, Default 02:30 (Europe/Zürich) | Archivierung abgeholter Jobs, Aufräumen alter `.tmp`-Stempeldateien, Mail-Log-Retention |
+| `zeitstempel-nachholen` | Intervall, Default alle 5 Min. | wiederholt fehlgeschlagene RFC3161-Zeitstempel-Versuche (nur solange die PDF noch lokal vorliegt) |
 
-**Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan aller drei Jobs
+**Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan aller vier Jobs
 einstellen (wirkt ab dem nächsten planmässigen Lauf, kein Neustart nötig),
 jeden Job manuell sofort auslösen, und den Verlauf der letzten Läufe
 (Erfolg/Fehler samt Details) einsehen — sowohl geplante als auch manuell
-ausgelöste Läufe landen im selben Verlauf.
+ausgelöste Läufe landen im selben Verlauf. Details zu allen vier Jobs:
+[docs/geplante-jobs-und-benachrichtigungen.md](docs/geplante-jobs-und-benachrichtigungen.md).
 
 Die zugehörigen `POST /internal/cron/*`-Routen (Header `X-Cron-Secret:
 <CRON_SECRET>`) existieren weiterhin — nützlich für die Go-Live-Checkliste
@@ -115,11 +126,11 @@ laut Lastenheft zwingend für das Portal.
 ### Go-Live-Checkliste (nach dem ersten Deploy)
 
 1. `GET /healthz` → `{ "status": "ok" }`.
-2. Login-Roundtrip als der vorab in ChurchTools zur Portal-Admin-Gruppe
+2. Login-Roundtrip als der vorab in ChurchTools zur Superadmin-Gruppe
    hinzugefügten Person; `/admin` muss erreichbar sein.
 3. Ein erstes Konto unter `/admin/konten` anlegen (Freigeber 1/2 samt
    Stellvertretern).
-4. Jede der drei Task-Scheduler-Routen einmal manuell auslösen (z. B. via
+4. Jede der vier Task-Scheduler-Routen einmal manuell auslösen (z. B. via
    `curl -X POST -H "X-Cron-Secret: <CRON_SECRET>" https://<domain>/internal/cron/sync-personen`)
    und den `200`/`erfolg`-Response prüfen, bevor man sich auf den
    automatischen Zeitplan verlässt.
@@ -128,8 +139,23 @@ laut Lastenheft zwingend für das Portal.
 
 ## Weitere Dokumentation
 
-Phasenpläne und Design-Dokumente in `docs/superpowers/specs/`. Der
-Gesamt-Phasenplan (A: Fundament/Auth, B: Admin-Bereich, C:
-n8n-Schnittstelle, D: Freigabe-Workflow-UI, E: Härtung & Deployment) ist in
+Die vollständige fachliche/technische Dokumentation mit Diagrammen liegt
+in [`docs/`](docs/README.md):
+
+- [Architektur](docs/architektur.md) — Systemüberblick, Middleware-Pipeline, Router-Übersicht
+- [Authentifizierung und Rechte](docs/auth-und-rechte.md) — OAuth2-Login, Rollen, Einzelrechte, Job-Autorisierung
+- [Datenmodell](docs/datenmodell.md) — ER-Diagramm und Tabellenbeschreibung
+- [Rechnungs-Workflow](docs/rechnungs-workflow.md) — Status-Modell, Kontierung, Freigabe 1/2, Ablehnung, Aufsplitten, Löschung
+- [n8n-Schnittstelle](docs/n8n-schnittstelle.md) — API-Vertrag Eingang/Abholung
+- [QR-Bill und Betrugserkennung](docs/qr-bill-und-betrugserkennung.md)
+- [Zeitstempel und Prüfbescheinigung](docs/zeitstempel-und-pruefbescheinigung.md)
+- [Admin-Bereich](docs/admin-bereich.md) — alle Admin-Seiten mit Rechte-Matrix
+- [Geplante Jobs und Benachrichtigungen](docs/geplante-jobs-und-benachrichtigungen.md)
+- [ChurchTools-Personen-Sync](docs/personen-sync.md)
+
+Phasenpläne und historische Design-Dokumente der einzelnen Ausbaustufen
+liegen in `docs/superpowers/specs/`. Der Gesamt-Phasenplan (A:
+Fundament/Auth, B: Admin-Bereich, C: n8n-Schnittstelle, D:
+Freigabe-Workflow-UI, E: Härtung & Deployment) ist in
 `docs/superpowers/specs/2026-08-14-phase-a-fundament-auth-design.md`
 dokumentiert.

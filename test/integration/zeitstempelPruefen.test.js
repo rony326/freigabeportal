@@ -13,12 +13,12 @@ import { buildPdfFixture } from '../helpers/pdfFixture.js';
 
 const RFC3161_TIMESTAMPED_PDF = readFileSync(new URL('../fixtures/rfc3161-timestamped.pdf', import.meta.url));
 
-function buildTestApp(db) {
+function buildTestApp(db, brandingOverrides = {}) {
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../views', import.meta.url).pathname);
   app.use((req, res, next) => {
-    res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null };
+    res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null, seitenTitel: 'Freigabeportal', ...brandingOverrides };
     next();
   });
   app.use((req, res, next) => {
@@ -111,6 +111,7 @@ test('POST /zeitstempel-pruefen with a jobId compares the upload against that jo
     .attach('pdf', RFC3161_TIMESTAMPED_PDF, 'timestamped.pdf');
   assert.equal(res.status, 200);
   assert.match(res.text, /Hash stimmt mit Datenbank überein/);
+  assert.match(res.text, /stimmt nachweislich mit der im Portal archivierten Originaldatei überein/, 'a confirmed match must be stated positively, not hedged, for non-technical readers');
   db.close();
 });
 
@@ -130,6 +131,26 @@ test('POST /zeitstempel-pruefen with a jobId compares the upload against that jo
     .attach('pdf', RFC3161_TIMESTAMPED_PDF, 'timestamped.pdf');
   assert.equal(res.status, 200);
   assert.match(res.text, /Hash weicht von der Datenbank ab/);
+  assert.match(res.text, /weicht von der im Portal archivierten Originaldatei ab/, 'a confirmed mismatch must be stated clearly, not just implied by the checklist symbol');
+  db.close();
+});
+
+test('POST /zeitstempel-pruefen with a jobId for a job with no stored hash states plainly that no comparison was possible', async () => {
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '1', stellvertreter2Id: '1' });
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1' WHERE id = ?").run(id);
+
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/zeitstempel-pruefen')
+    .set('x-test-person-id', '1')
+    .field('jobId', String(id))
+    .attach('pdf', RFC3161_TIMESTAMPED_PDF, 'timestamped.pdf');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /kein Vergleichswert im Portal hinterlegt/);
   db.close();
 });
 
@@ -172,7 +193,7 @@ test('POST /zeitstempel-pruefen with a jobId renders the Prüfbescheinigung dire
   assert.equal(res.status, 200);
   assert.match(res.text, /Prüfbescheinigung/);
   assert.match(res.text, /RE-2026-042/);
-  assert.match(res.text, /hochgeladen/);
+  assert.match(res.text, /stimmt nachweislich mit der im Portal archivierten Originaldatei überein/);
   assert.match(res.text, /window\.print\(\)/);
   db.close();
 });
@@ -399,6 +420,34 @@ test('GET /zeitstempel-pruefen/zertifikat?jobId= renders the Prüfbescheinigung 
   assert.match(res.text, /Muster AG/);
   assert.match(res.text, new RegExp(hash));
   assert.match(res.text, /window\.print\(\)/);
+  assert.doesNotMatch(res.text, /<img src="\/branding\/logo"/, 'no logo configured for this test app — must not render a broken/empty logo tag');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('GET /zeitstempel-pruefen/zertifikat?jobId= shows the branding logo and Organisationsname when configured', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createHash } = await import('node:crypto');
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  seedPerson(db, '3');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const dir = mkdtempSync(join(tmpdir(), 'zeitstempel-zertifikat-branding-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  writeFileSync(pdfPfad, RFC3161_TIMESTAMPED_PDF);
+  const hash = createHash('sha256').update(RFC3161_TIMESTAMPED_PDF).digest('hex');
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1', zeitstempel_datei_hash = ? WHERE id = ?").run(hash, id);
+
+  const app = buildTestApp(db, { hasLogo: true, seitenTitel: 'Muster-Gemeinde' });
+  const res = await request(app).get(`/zeitstempel-pruefen/zertifikat?jobId=${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<img src="\/branding\/logo"/);
+  assert.match(res.text, /Muster-Gemeinde/);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

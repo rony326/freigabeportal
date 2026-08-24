@@ -22,12 +22,22 @@
     <p class="no-print"><a href="/zeitstempel-pruefen?jobId=<%= job.id %>">← Zurück zur Prüfung</a></p>
 
     <div class="bescheinigung col-12 col-lg-8">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <% if (branding.hasLogo) { %><img src="/branding/logo" alt="Logo" height="40"><% } %>
+        <strong><%= branding.seitenTitel %></strong>
+      </div>
       <h1>Prüfbescheinigung</h1>
       <p class="text-muted">Diese Bescheinigung ist kein rechtsverbindliches Signaturzertifikat. Sie fasst das Ergebnis der RFC3161-Zeitstempel- und Hash-Prüfung dieses Dokuments zusammen.</p>
 
       <h2 class="h5 mt-4">Beleg</h2>
       <p class="mb-1"><strong>Dateiname:</strong> <%= job.dateiname %></p>
-      <p class="mb-1"><strong>Geprüfte Datei:</strong> <% if (hochgeladen) { %>hochgeladene Datei (nicht zwingend identisch mit der im Portal gespeicherten Kopie)<% } else { %>im Portal gespeicherte Kopie<% } %></p>
+      <p class="mb-1"><strong>Geprüfte Datei:</strong>
+        <% if (!hochgeladen) { %>im Portal gespeicherte Kopie
+        <% } else if (ergebnis.hashUebereinstimmung === true) { %>hochgeladene Datei — stimmt nachweislich mit der im Portal archivierten Originaldatei überein
+        <% } else if (ergebnis.hashUebereinstimmung === false) { %>hochgeladene Datei — weicht von der im Portal archivierten Originaldatei ab, es handelt sich nicht um dieselbe, unveränderte Datei
+        <% } else { %>hochgeladene Datei — kein Vergleichswert im Portal hinterlegt, ein Abgleich war nicht möglich
+        <% } %>
+      </p>
       <% if (job.rechnungsnummer) { %><p class="mb-1"><strong>Rechnungsnummer:</strong> <%= job.rechnungsnummer %></p><% } %>
       <% if (job.lieferant) { %><p class="mb-1"><strong>Lieferant:</strong> <%= job.lieferant %></p><% } %>
       <% if (job.betrag) { %><p class="mb-1"><strong>Betrag:</strong> <%= job.betrag %></p><% } %>

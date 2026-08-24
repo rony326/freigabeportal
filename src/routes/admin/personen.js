@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listAllPersons } from '../../db/personenRepo.js';
+import { listAllPersons, getPersonById } from '../../db/personenRepo.js';
 import { personHasRole, requireRole } from '../../middleware/roles.js';
 import { listBerechtigungenForPerson, setBerechtigungenForPerson } from '../../db/personBerechtigungenRepo.js';
 import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS } from '../../middleware/permissions.js';
@@ -29,6 +29,9 @@ export function createPersonenRouter({ db, config }) {
   });
 
   router.post('/:id/berechtigungen', requireRole(config, 'superadmin'), (req, res) => {
+    if (!getPersonById(db, req.params.id)) {
+      return res.status(404).render('error', { message: 'Person nicht gefunden.' });
+    }
     const angefordert = [].concat(req.body.berechtigungen || []);
     const gueltig = angefordert.filter((b) => GRANTABLE_BERECHTIGUNGEN.includes(b));
     setBerechtigungenForPerson(db, req.params.id, gueltig);

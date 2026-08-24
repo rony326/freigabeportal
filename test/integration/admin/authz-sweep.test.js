@@ -147,7 +147,7 @@ test('the real createApp wiring enforces the superadmin-only hard lock and the m
   ];
   for (const { method, path } of VERGEBBAR) {
     const res = await managerAgent[method](path);
-    assert.notEqual(res.status, 403, `${method.toUpperCase()} ${path} must be reachable by a Manager`);
+    assert.equal(res.status, 200, `${method.toUpperCase()} ${path} must be reachable by a Manager`);
   }
 
   db.close();

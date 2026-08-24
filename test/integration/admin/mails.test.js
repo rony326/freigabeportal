@@ -124,3 +124,15 @@ test('GET /admin/mails returns 200 for a plain person with exactly this individu
   assert.equal(res2.status, 200);
   db.close();
 });
+
+test('GET /admin/mails as a person with only mails_einsehen shows the Mail-Protokoll link but not Konten', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Nur', nachname: 'Mails', email: 'nur@example.org', gruppen: [], loggedInNow: true });
+  setBerechtigungenForPerson(db, '1', ['mails_einsehen']);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/mails').set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /href="\/admin\/mails"/);
+  assert.doesNotMatch(res.text, /href="\/admin\/konten"/);
+  db.close();
+});

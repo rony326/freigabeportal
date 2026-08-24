@@ -74,14 +74,15 @@ und dürfen nicht `changeme` enthalten — die App verweigert sonst den Start
 
 ### Vor dem ersten Login — Superadmin-Bootstrap
 
-Der `/admin`-Bereich ist ausschliesslich über ChurchTools-Gruppenmitgliedschaft
+Der `/admin`-Bereich ist standardmässig über ChurchTools-Gruppenmitgliedschaft
 zugänglich (`CT_GROUP_ID_ADMIN` für Superadmin, optional `CT_GROUP_ID_MANAGER`
-für die eingeschränktere Manager-Rolle), es gibt keinen anderen Weg, Admin-Rechte
-zu vergeben. **Bevor die erste Person sich einloggt**, muss diese Person in
-ChurchTools bereits Mitglied der Superadmin-Gruppe sein — sonst kann sich
-zwar jeder einloggen (Login ist seit Batch 4 nicht mehr gruppengebunden),
-aber niemand erreicht `/admin`, um z. B. das erste Konto anzulegen oder die
-Manager-Gruppe später Einzelrechte zuzuweisen.
+für die eingeschränktere Manager-Rolle); ein Superadmin kann zusätzlich
+einzelnen Personen über `/admin/personen` gezielte Einzelrechte geben,
+unabhängig von ihrer ChurchTools-Gruppenmitgliedschaft. **Bevor die erste
+Person sich einloggt**, muss diese Person in ChurchTools bereits Mitglied der
+Superadmin-Gruppe sein — sonst kann sich zwar jeder einloggen (Login ist seit
+Batch 4 nicht mehr gruppengebunden), aber niemand erreicht `/admin`, um z. B.
+das erste Konto anzulegen oder später Einzelrechte zuzuweisen.
 
 ### Zeitgesteuerte Jobs — laufen im Node-Prozess selbst
 

@@ -244,6 +244,11 @@ test('GET /admin/konten returns 200 for a Manager', async () => {
   const app = buildTestApp(db);
   const res = await request(app).get('/admin/konten').set('x-test-person-id', '55');
   assert.equal(res.status, 200);
+  assert.match(res.text, /href="\/admin\/konten"/);
+  assert.match(res.text, /href="\/admin\/debitoren"/);
+  assert.doesNotMatch(res.text, /href="\/admin\/eskalation"/);
+  assert.doesNotMatch(res.text, /href="\/admin\/erscheinungsbild"/);
+  assert.doesNotMatch(res.text, /href="\/admin\/zeitstempel"/);
   db.close();
 });
 

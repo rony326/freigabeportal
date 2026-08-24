@@ -44,6 +44,8 @@
   </div>
 </header>
 <% const navIsSuperadmin = typeof isSuperadmin !== 'undefined' && isSuperadmin; %>
+<% const navIsManager = typeof isManager !== 'undefined' && isManager; %>
+<% const navHatAdminZugang = navIsSuperadmin || navIsManager || (typeof adminNav !== 'undefined' && Object.values(adminNav).some(Boolean)); %>
 <% const navEingeloggt = typeof currentPerson !== 'undefined' && Boolean(currentPerson); %>
 <% const navAktuellerPfad = typeof currentPath !== 'undefined' ? currentPath : ''; %>
 <% const navZeigeZurueck = navAktuellerPfad.startsWith('/kontierung'); %>
@@ -57,7 +59,7 @@
         <ul class="dropdown-menu" aria-labelledby="hauptmenue-toggle">
           <li><a class="dropdown-item<%= navAktuellerPfad === '/pool' ? ' active' : '' %>" href="/pool">Aufgaben</a></li>
           <li><a class="dropdown-item<%= navAktuellerPfad === '/zeitstempel-pruefen' ? ' active' : '' %>" href="/zeitstempel-pruefen">Zeitstempel prüfen</a></li>
-          <% if (navIsSuperadmin) { %>
+          <% if (navHatAdminZugang) { %>
             <li><a class="dropdown-item<%= navAktuellerPfad.startsWith('/admin') ? ' active' : '' %>" href="/admin">Admin</a></li>
           <% } %>
         </ul>

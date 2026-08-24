@@ -159,3 +159,16 @@ test('POST /admin/personen/:id/berechtigungen ignores a value outside the catalo
   assert.deepEqual(listBerechtigungenForPerson(db, '1'), ['konten_verwalten']);
   db.close();
 });
+
+test('POST /admin/personen/:id/berechtigungen returns 404 for a person that does not exist', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/personen/does-not-exist/berechtigungen')
+    .type('form')
+    .set('x-test-person-id', '99')
+    .send({ berechtigungen: ['konten_verwalten'] });
+  assert.equal(res.status, 404);
+  db.close();
+});

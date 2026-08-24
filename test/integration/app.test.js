@@ -205,6 +205,8 @@ test('every response carries the baseline security headers', async () => {
   // not a style preference, do not "harden" it back to DENY.
   assert.equal(res.headers['x-frame-options'], 'SAMEORIGIN');
   assert.equal(res.headers['referrer-policy'], 'no-referrer');
+  assert.match(res.headers['content-security-policy'], /default-src 'self'/);
+  assert.match(res.headers['content-security-policy'], /frame-ancestors 'self'/);
   db.close();
 });
 

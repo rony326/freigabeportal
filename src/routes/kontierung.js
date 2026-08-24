@@ -31,8 +31,15 @@ import { isValidIban } from '../services/ibanUtils.js';
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
+// Aufsplitten sends one optional beleg file per Teil row (teilBeleg_<i>) via uploadBeleg.any(),
+// which has no field-name allowlist — without a files cap, a request forging many parts could
+// force up to fileSize each into memory. No real form has anywhere near this many Teile.
+const MAX_BELEG_FILES = 25;
 
-const uploadBeleg = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BELEG_SIZE } });
+const uploadBeleg = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_BELEG_SIZE, files: MAX_BELEG_FILES },
+});
 
 function neuerDateipfad(jobsDir, quelldatei) {
   mkdirSync(jobsDir, { recursive: true });
@@ -174,8 +181,8 @@ export function createKontierungRouter({ db, config, mailer }) {
       const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId, aktion } = req.body;
       const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId };
 
-      const renderFehler = (message) =>
-        res.status(400).render('kontierung', {
+      const renderFehler = (messages, status = 400) =>
+        res.status(status).render('kontierung', {
           job,
           konten,
           alleKonten: listKonten(db),
@@ -183,7 +190,7 @@ export function createKontierungRouter({ db, config, mailer }) {
           previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
           values,
           qrInfo,
-          errors: [message],
+          errors: Array.isArray(messages) ? messages : [messages],
           auditLog: buildAuditLog(db, job.id),
         });
 
@@ -203,17 +210,7 @@ export function createKontierungRouter({ db, config, mailer }) {
 
       if (aktion === 'ablehnen') {
         if (!begruendung) {
-          return res.status(400).render('kontierung', {
-            job,
-            konten,
-            alleKonten: listKonten(db),
-            debitoren,
-            previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
-            values,
-            qrInfo,
-            errors: ['Bei einer Ablehnung ist eine Begründung Pflicht.'],
-            auditLog: buildAuditLog(db, job.id),
-          });
+          return renderFehler('Bei einer Ablehnung ist eine Begründung Pflicht.');
         }
 
         db.exec('BEGIN');
@@ -239,17 +236,7 @@ export function createKontierungRouter({ db, config, mailer }) {
         }
 
         if (!abgelehnt) {
-          return res.status(409).render('kontierung', {
-            job,
-            konten,
-            alleKonten: listKonten(db),
-            debitoren,
-            previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
-            values,
-            qrInfo,
-            errors: ['Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.'],
-            auditLog: buildAuditLog(db, job.id),
-          });
+          return renderFehler('Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.', 409);
         }
 
         if (req.file) {
@@ -290,17 +277,7 @@ export function createKontierungRouter({ db, config, mailer }) {
       }
 
       if (errors.length > 0) {
-        return res.status(400).render('kontierung', {
-          job,
-          konten,
-          alleKonten: listKonten(db),
-          debitoren,
-          previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
-          values,
-          qrInfo,
-          errors,
-          auditLog: buildAuditLog(db, job.id),
-        });
+        return renderFehler(errors);
       }
 
       const debitor = debitorId ? getDebitorById(db, debitorId) : null;

@@ -1290,6 +1290,36 @@ test('POST /kontierung/:id/aufsplitten rejects an invalid per-Zeile Beleg, nothi
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('POST /kontierung/:id/aufsplitten rejects a request carrying more attached files than MAX_BELEG_FILES, nothing persisted', async () => {
+  // .any() has no field-name allowlist, so without a files cap a forged request could attach
+  // arbitrarily many parts (each up to MAX_BELEG_SIZE) and force a large in-memory allocation —
+  // see MAX_BELEG_FILES in kontierung.js. No real Aufsplitten form ever sends this many rows.
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = await seedJobMitEchtemPdf(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  let req = request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .field('gesamtbetrag', '200.00')
+    .field('teilKontoId', String(kontoId))
+    .field('teilKontoId', String(kontoId))
+    .field('teilBetrag', '120.00')
+    .field('teilBetrag', '80.00');
+  for (let i = 0; i < 26; i++) {
+    req = req.attach(`teilBeleg_${i}`, Buffer.from('x'), { filename: 'x.pdf', contentType: 'application/pdf' });
+  }
+  const res = await req;
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Fehler beim Datei-Upload/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listSplitKinder(db, id).length, 0);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
 test('POST /kontierung/:id/aufsplitten rejects Teilbeträge that do not sum to the original Betrag, nothing persisted', async () => {
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));

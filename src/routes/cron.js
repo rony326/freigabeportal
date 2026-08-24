@@ -17,24 +17,40 @@ function httpStatusFuer(status) {
 export function createCronRouter({ db, config, mailer }) {
   const router = Router();
 
-  router.post('/sync-personen', async (req, res) => {
-    const result = await runSyncPersonenJob(db, config, mailer);
-    res.status(httpStatusFuer(result.status)).json(result);
+  router.post('/sync-personen', async (req, res, next) => {
+    try {
+      const result = await runSyncPersonenJob(db, config, mailer);
+      res.status(httpStatusFuer(result.status)).json(result);
+    } catch (err) {
+      next(err);
+    }
   });
 
-  router.post('/pool-erinnerungen', async (req, res) => {
-    const result = await runPoolErinnerungenJob(db, config, mailer);
-    res.status(httpStatusFuer(result.status)).json(result);
+  router.post('/pool-erinnerungen', async (req, res, next) => {
+    try {
+      const result = await runPoolErinnerungenJob(db, config, mailer);
+      res.status(httpStatusFuer(result.status)).json(result);
+    } catch (err) {
+      next(err);
+    }
   });
 
-  router.post('/pdf-bereinigung', async (req, res) => {
-    const result = await runPdfBereinigungJob(db, config);
-    res.status(httpStatusFuer(result.status)).json(result);
+  router.post('/pdf-bereinigung', async (req, res, next) => {
+    try {
+      const result = await runPdfBereinigungJob(db, config);
+      res.status(httpStatusFuer(result.status)).json(result);
+    } catch (err) {
+      next(err);
+    }
   });
 
-  router.post('/zeitstempel-nachholen', async (req, res) => {
-    const result = await runZeitstempelNachholenJob(db, config);
-    res.status(httpStatusFuer(result.status)).json(result);
+  router.post('/zeitstempel-nachholen', async (req, res, next) => {
+    try {
+      const result = await runZeitstempelNachholenJob(db, config);
+      res.status(httpStatusFuer(result.status)).json(result);
+    } catch (err) {
+      next(err);
+    }
   });
 
   return router;

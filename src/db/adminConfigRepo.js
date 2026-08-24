@@ -25,6 +25,9 @@ const DEFAULTS = {
   zeitstempel_tsa_passwort: '',
   cron_zeitstempel_nachholen_intervall_minuten: '5',
   zeitstempel_warnung_ab_stunden: '2',
+  backup_cron_stunde: '3',
+  backup_cron_minute: '0',
+  backup_aufbewahrung_anzahl: '14',
 };
 
 export function seedDefaults(db) {

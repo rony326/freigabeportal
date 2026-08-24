@@ -37,8 +37,9 @@ in [`docs/`](docs/README.md).
 - **Port**: wird von Infomaniak automatisch über die Umgebungsvariable
   `PORT` vorgegeben — die App liest das bereits korrekt
   (`config/env.js`), keine manuelle Portwahl nötig.
-- **Datenverzeichnisse** (`DB_PATH`, `JOBS_DIR`, `BRANDING_DIR`, siehe
-  unten): alle drei werden von der App beim ersten Zugriff automatisch
+- **Datenverzeichnisse** (`DB_PATH`, `JOBS_DIR`, `BRANDING_DIR`,
+  `BACKUP_DIR`, siehe unten): alle vier werden von der App beim ersten
+  Zugriff automatisch
   angelegt (`mkdirSync({ recursive: true })`) — kein manueller Schritt
   nötig, nur sicherstellen, dass der gewählte Pfad im persistenten
   (redeploy-sicheren) Speicherbereich der Site liegt, nicht im

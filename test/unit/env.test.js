@@ -84,3 +84,11 @@ test('loadConfig applies the strength check to every secret-shaped variable', ()
     assert.throws(() => loadConfig(tooShort), new RegExp(`${name} ist zu kurz`), `${name} should be validated as a secret`);
   }
 });
+
+test('loadConfig defaults backupDir to ./data/backups and honors BACKUP_DIR', () => {
+  const defaultConfig = loadConfig(FULL_ENV);
+  assert.equal(defaultConfig.backupDir, './data/backups');
+
+  const customConfig = loadConfig({ ...FULL_ENV, BACKUP_DIR: '/srv/backups' });
+  assert.equal(customConfig.backupDir, '/srv/backups');
+});

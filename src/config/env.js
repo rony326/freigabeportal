@@ -29,6 +29,7 @@ export function loadConfig(env = process.env) {
     dbPath: env.DB_PATH || './data/freigabeportal.sqlite',
     brandingDir: env.BRANDING_DIR || './data/branding',
     jobsDir: env.JOBS_DIR || './data/jobs',
+    backupDir: env.BACKUP_DIR || './data/backups',
     downloadSigningSecret: requiredSecret(env, 'DOWNLOAD_SIGNING_SECRET'),
     publicBaseUrl: required(env, 'PUBLIC_BASE_URL'),
     churchtools: {

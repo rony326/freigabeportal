@@ -1,12 +1,12 @@
 <ul class="nav nav-pills mb-3">
-  <li class="nav-item"><a class="nav-link" href="/admin/konten">Konten</a></li>
-  <li class="nav-item"><a class="nav-link" href="/admin/debitoren">Debitoren</a></li>
-  <li class="nav-item"><a class="nav-link" href="/admin/eskalation">Eskalationszeiten</a></li>
-  <li class="nav-item"><a class="nav-link" href="/admin/erscheinungsbild">Erscheinungsbild</a></li>
-  <li class="nav-item"><a class="nav-link" href="/admin/zeitstempel">Zeitstempel</a></li>
-  <li class="nav-item"><a class="nav-link" href="/admin/personen">Personen</a></li>
-  <li class="nav-item"><a class="nav-link" href="/admin/mails">Mail-Protokoll</a></li>
-  <li class="nav-item"><a class="nav-link" href="/admin/sync">Sync-Übersicht</a></li>
-  <li class="nav-item"><a class="nav-link" href="/admin/geplante-jobs">Geplante Jobs</a></li>
-  <li class="nav-item"><a class="nav-link" href="/admin/abgelehnt">Abgelehnte Rechnungen</a></li>
+  <% if (adminNav.konten) { %><li class="nav-item"><a class="nav-link" href="/admin/konten">Konten</a></li><% } %>
+  <% if (adminNav.debitoren) { %><li class="nav-item"><a class="nav-link" href="/admin/debitoren">Debitoren</a></li><% } %>
+  <% if (adminNav.eskalation) { %><li class="nav-item"><a class="nav-link" href="/admin/eskalation">Eskalationszeiten</a></li><% } %>
+  <% if (adminNav.erscheinungsbild) { %><li class="nav-item"><a class="nav-link" href="/admin/erscheinungsbild">Erscheinungsbild</a></li><% } %>
+  <% if (adminNav.zeitstempel) { %><li class="nav-item"><a class="nav-link" href="/admin/zeitstempel">Zeitstempel</a></li><% } %>
+  <% if (adminNav.personen) { %><li class="nav-item"><a class="nav-link" href="/admin/personen">Personen</a></li><% } %>
+  <% if (adminNav.mails) { %><li class="nav-item"><a class="nav-link" href="/admin/mails">Mail-Protokoll</a></li><% } %>
+  <% if (adminNav.sync) { %><li class="nav-item"><a class="nav-link" href="/admin/sync">Sync-Übersicht</a></li><% } %>
+  <% if (adminNav.geplanteJobs) { %><li class="nav-item"><a class="nav-link" href="/admin/geplante-jobs">Geplante Jobs</a></li><% } %>
+  <% if (adminNav.abgelehnt) { %><li class="nav-item"><a class="nav-link" href="/admin/abgelehnt">Abgelehnte Rechnungen</a></li><% } %>
 </ul>

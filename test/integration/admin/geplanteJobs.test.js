@@ -11,7 +11,10 @@ import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createJob, getJobById } from '../../../src/db/jobsRepo.js';
 import { startCronLauf } from '../../../src/db/cronLogRepo.js';
 import { listMailLog } from '../../../src/db/mailLogRepo.js';
-import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadCurrentPerson } from '../../../src/middleware/roles.js';
+import { loadNavFlags } from '../../../src/middleware/nav.js';
+import { requirePermission } from '../../../src/middleware/permissions.js';
+import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { createGeplanteJobsRouter } from '../../../src/routes/admin/geplanteJobs.js';
 import { setupMockChurchTools } from '../../helpers/mockChurchTools.js';
 import { setupMockTsa } from '../../helpers/mockTsa.js';
@@ -35,11 +38,12 @@ function buildTestApp(db, { config, mailer } = {}) {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const resolvedConfig = config || { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const resolvedConfig = config || { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
   app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(db, resolvedConfig));
   app.use(
     '/admin/geplante-jobs',
-    requireRole(resolvedConfig, 'portal-admin'),
+    requirePermission(db, resolvedConfig, 'geplante_jobs_verwalten'),
     createGeplanteJobsRouter({ db, config: resolvedConfig, mailer: mailer || createStubMailer() })
   );
   return app;
@@ -327,5 +331,30 @@ test('POST /admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren runs it n
   assert.match(res.text, /Nachgeholt: 1/);
 
   rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('GET /admin/geplante-jobs returns 200 for a Manager', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/geplante-jobs').set('x-test-person-id', '55');
+  assert.equal(res.status, 200);
+  db.close();
+});
+
+test('GET /admin/geplante-jobs returns 200 for a plain person with exactly this individual grant, and 403 for a different one', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  upsertPerson(db, { id: '1', vorname: 'Nur', nachname: 'Abgelehnt', email: 'nur@example.org', gruppen: [], loggedInNow: true });
+  setBerechtigungenForPerson(db, '1', ['abgelehnt_verwalten']);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/geplante-jobs').set('x-test-person-id', '1');
+  assert.equal(res.status, 403);
+
+  setBerechtigungenForPerson(db, '1', ['geplante_jobs_verwalten']);
+  const res2 = await request(app).get('/admin/geplante-jobs').set('x-test-person-id', '1');
+  assert.equal(res2.status, 200);
   db.close();
 });

@@ -10,12 +10,15 @@
   <%- include('../_header') %>
   <main class="container py-4">
     <h1>Admin</h1>
-    <% if (typeof zeitstempelUeberfaellig !== 'undefined' && zeitstempelUeberfaellig > 0) { %>
-      <div class="alert alert-danger">
-        <%= zeitstempelUeberfaellig %> abgeschlossene Rechnung<%= zeitstempelUeberfaellig === 1 ? '' : 'en' %> seit über <%= zeitstempelWarnungSchwelle %> Stunde<%= zeitstempelWarnungSchwelle === 1 ? '' : 'n' %> ohne Zeitstempel — <a href="/admin/zeitstempel">TSA-Konfiguration prüfen</a>.
-      </div>
+    <% if (adminNav.zeitstempel) { %>
+      <% if (typeof zeitstempelUeberfaellig !== 'undefined' && zeitstempelUeberfaellig > 0) { %>
+        <div class="alert alert-danger">
+          <%= zeitstempelUeberfaellig %> abgeschlossene Rechnung<%= zeitstempelUeberfaellig === 1 ? '' : 'en' %> seit über <%= zeitstempelWarnungSchwelle %> Stunde<%= zeitstempelWarnungSchwelle === 1 ? '' : 'n' %> ohne Zeitstempel — <a href="/admin/zeitstempel">TSA-Konfiguration prüfen</a>.
+        </div>
+      <% } %>
     <% } %>
     <div class="row row-cols-1 row-cols-md-3 g-3">
+      <% if (adminNav.konten) { %>
       <div class="col">
         <a href="/admin/konten" class="card text-decoration-none h-100">
           <div class="card-body">
@@ -24,6 +27,8 @@
           </div>
         </a>
       </div>
+      <% } %>
+      <% if (adminNav.debitoren) { %>
       <div class="col">
         <a href="/admin/debitoren" class="card text-decoration-none h-100">
           <div class="card-body">
@@ -32,6 +37,8 @@
           </div>
         </a>
       </div>
+      <% } %>
+      <% if (adminNav.eskalation) { %>
       <div class="col">
         <a href="/admin/eskalation" class="card text-decoration-none h-100">
           <div class="card-body">
@@ -40,6 +47,8 @@
           </div>
         </a>
       </div>
+      <% } %>
+      <% if (adminNav.erscheinungsbild) { %>
       <div class="col">
         <a href="/admin/erscheinungsbild" class="card text-decoration-none h-100">
           <div class="card-body">
@@ -48,6 +57,8 @@
           </div>
         </a>
       </div>
+      <% } %>
+      <% if (adminNav.zeitstempel) { %>
       <div class="col">
         <a href="/admin/zeitstempel" class="card text-decoration-none h-100">
           <div class="card-body">
@@ -56,6 +67,8 @@
           </div>
         </a>
       </div>
+      <% } %>
+      <% if (adminNav.personen) { %>
       <div class="col">
         <a href="/admin/personen" class="card text-decoration-none h-100">
           <div class="card-body">
@@ -64,6 +77,8 @@
           </div>
         </a>
       </div>
+      <% } %>
+      <% if (adminNav.mails) { %>
       <div class="col">
         <a href="/admin/mails" class="card text-decoration-none h-100">
           <div class="card-body">
@@ -72,6 +87,8 @@
           </div>
         </a>
       </div>
+      <% } %>
+      <% if (adminNav.sync) { %>
       <div class="col">
         <a href="/admin/sync" class="card text-decoration-none h-100">
           <div class="card-body">
@@ -80,6 +97,8 @@
           </div>
         </a>
       </div>
+      <% } %>
+      <% if (adminNav.geplanteJobs) { %>
       <div class="col">
         <a href="/admin/geplante-jobs" class="card text-decoration-none h-100">
           <div class="card-body">
@@ -88,6 +107,8 @@
           </div>
         </a>
       </div>
+      <% } %>
+      <% if (adminNav.abgelehnt) { %>
       <div class="col">
         <a href="/admin/abgelehnt" class="card text-decoration-none h-100">
           <div class="card-body">
@@ -96,6 +117,7 @@
           </div>
         </a>
       </div>
+      <% } %>
     </div>
   </main>
   <%- include('../_footer') %>

@@ -38,6 +38,7 @@ export function loadConfig(env = process.env) {
       redirectUri: required(env, 'CT_REDIRECT_URI'),
       groupIdBuchhaltung: required(env, 'CT_GROUP_ID_BUCHHALTUNG'),
       groupIdAdmin: required(env, 'CT_GROUP_ID_ADMIN'),
+      groupIdManager: env.CT_GROUP_ID_MANAGER || null,
       syncServiceToken: requiredSecret(env, 'CT_SYNC_SERVICE_TOKEN'),
     },
     cronSecret: requiredSecret(env, 'CRON_SECRET'),

@@ -13,13 +13,54 @@
     <h1>Personen</h1>
     <div class="table-responsive">
       <table class="table align-middle">
-        <thead><tr><th>Name</th><th>E-Mail</th><th>Status</th><th>Hinweis</th></tr></thead>
+        <thead><tr><th>Name</th><th>E-Mail</th><th>Status</th><th>Rolle</th><th>Einzelrechte</th><th>Hinweis</th></tr></thead>
         <tbody>
           <% personen.forEach((p) => { %>
             <tr>
               <td><%= p.vorname %> <%= p.nachname %></td>
               <td><%= p.email %></td>
               <td><span class="badge <%= p.aktiv ? 'text-bg-success' : 'text-bg-secondary' %>"><%= p.aktiv ? 'Aktiv' : 'Inaktiv' %></span></td>
+              <td><span class="badge text-bg-info"><%= p.rolle %></span></td>
+              <td>
+                <% if (p.rolle !== 'Benutzer') { %>
+                  <span class="text-muted small">bereits über Rolle <%= p.rolle %> enthalten</span>
+                <% } %>
+                <% if (bearbeitbar) { %>
+                <form method="post" action="/admin/personen/<%= p.churchtools_person_id %>/berechtigungen" class="d-flex flex-wrap gap-2 mt-1">
+                  <% grantableBerechtigungen.forEach((berechtigung) => { %>
+                    <div class="form-check form-check-inline">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        name="berechtigungen"
+                        value="<%= berechtigung %>"
+                        id="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"
+                        <%= p.berechtigungen.includes(berechtigung) ? 'checked' : '' %>
+                      >
+                      <label class="form-check-label small" for="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"><%= berechtigungLabels[berechtigung] %></label>
+                    </div>
+                  <% }) %>
+                  <button type="submit" class="btn btn-sm btn-outline-primary">Speichern</button>
+                </form>
+                <% } else { %>
+                <div class="d-flex flex-wrap gap-2 mt-1">
+                  <% grantableBerechtigungen.forEach((berechtigung) => { %>
+                    <div class="form-check form-check-inline">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        name="berechtigungen"
+                        value="<%= berechtigung %>"
+                        id="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"
+                        <%= p.berechtigungen.includes(berechtigung) ? 'checked' : '' %>
+                        disabled
+                      >
+                      <label class="form-check-label small" for="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"><%= berechtigungLabels[berechtigung] %></label>
+                    </div>
+                  <% }) %>
+                </div>
+                <% } %>
+              </td>
               <td>
                 <% if (p.ct_person_unresolved) { %><span class="text-warning d-block">⚠️ Person in ChurchTools nicht auflösbar (nicht auflösbar)</span><% } %>
                 <% if (p.aktiv && p.gruppen.length === 0) { %><span class="text-warning d-block">⚠️ Nicht mehr in einer ChurchTools-Gruppe, aber weiterhin als Freigeber/Stellvertreter auf einem Konto hinterlegt</span><% } %>

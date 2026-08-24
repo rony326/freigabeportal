@@ -15,7 +15,7 @@ import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
 export function createFreigabe2Router({ db, config, mailer }) {
   const router = Router();
 
-  function isPortalAdmin(person) {
+  function isSuperadmin(person) {
     return Boolean(person && person.gruppen.includes(String(config.churchtools.groupIdAdmin)));
   }
 
@@ -29,7 +29,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
     const authorized =
       konto &&
       (job.freigabe2_eskaliert_an_admin
-        ? isPortalAdmin(req.currentPerson)
+        ? isSuperadmin(req.currentPerson)
         : getEffectiveFreigeber2Id(job, konto) === req.currentPerson.churchtools_person_id);
     if (!authorized) {
       res.status(403).render('error', { message: 'Du bist für die Freigabe 2 dieses Jobs nicht zuständig.' });

@@ -8,7 +8,8 @@ import { createCronRouter } from './routes/cron.js';
 import { requireApiKey } from './middleware/apiKey.js';
 import { requireCronSecret } from './middleware/cronAuth.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
-import { loadCurrentPerson, requireRole, requireLogin } from './middleware/roles.js';
+import { loadCurrentPerson, requireRole, requireAnyRole, requireLogin } from './middleware/roles.js';
+import { requireAdminAreaAccess, requirePermission } from './middleware/permissions.js';
 import { loadNavFlags } from './middleware/nav.js';
 import { loadBranding } from './middleware/branding.js';
 import { createBrandingRouter } from './routes/branding.js';
@@ -80,7 +81,7 @@ export function createApp({ db, config }) {
     })
   );
   app.use(loadCurrentPerson(db));
-  app.use(loadNavFlags(config));
+  app.use(loadNavFlags(db, config));
 
   const mailer = createMailerOrFallback(config.smtp);
 
@@ -89,7 +90,7 @@ export function createApp({ db, config }) {
   const machineLimiter = createMachineRateLimiter();
 
   app.use('/branding', publicLimiter, createBrandingRouter({ db }));
-  app.use('/admin', sessionLimiter, requireRole(config, 'portal-admin'));
+  app.use('/admin', sessionLimiter, requireAdminAreaAccess(db, config));
   app.get('/admin', (req, res) => {
     const zeitstempelWarnungSchwelle = Number(getConfigValue(db, 'zeitstempel_warnung_ab_stunden'));
     const tsaAktiv = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
@@ -98,23 +99,23 @@ export function createApp({ db, config }) {
       zeitstempelWarnungSchwelle,
     });
   });
-  app.use('/admin/konten', createKontenRouter({ db }));
-  app.use('/admin/debitoren', createDebitorenRouter({ db }));
-  app.use('/admin/eskalation', createEskalationRouter({ db }));
-  app.use('/admin/erscheinungsbild', createErscheinungsbildRouter({ db, config }));
-  app.use('/admin/zeitstempel', createZeitstempelAdminRouter({ db }));
-  app.use('/admin/personen', createPersonenRouter({ db }));
-  app.use('/admin/mails', createMailsRouter({ db, mailer }));
-  app.use('/admin/sync', createSyncRouter({ db }));
-  app.use('/admin/abgelehnt', createAdminAbgelehntRouter({ db }));
-  app.use('/admin/geplante-jobs', createGeplanteJobsRouter({ db, config, mailer }));
+  app.use('/admin/konten', requirePermission(db, config, 'konten_verwalten'), createKontenRouter({ db }));
+  app.use('/admin/debitoren', requirePermission(db, config, 'debitoren_verwalten'), createDebitorenRouter({ db }));
+  app.use('/admin/eskalation', requireRole(config, 'superadmin'), createEskalationRouter({ db }));
+  app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config }));
+  app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db }));
+  app.use('/admin/personen', requireAnyRole(config, ['superadmin', 'manager']), createPersonenRouter({ db, config }));
+  app.use('/admin/mails', requirePermission(db, config, 'mails_einsehen'), createMailsRouter({ db, mailer }));
+  app.use('/admin/sync', requirePermission(db, config, 'sync_einsehen'), createSyncRouter({ db }));
+  app.use('/admin/abgelehnt', requirePermission(db, config, 'abgelehnt_verwalten'), createAdminAbgelehntRouter({ db }));
+  app.use('/admin/geplante-jobs', requirePermission(db, config, 'geplante_jobs_verwalten'), createGeplanteJobsRouter({ db, config, mailer }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
-  // Dashboard for every logged-in person, not just Buchhaltung/Portal-Admin: "/" always redirects
+  // Dashboard for every logged-in person, not just Buchhaltung/Superadmin: "/" always redirects
   // here now that the old landing page is gone, and a Freigeber1/2-only person (no group
   // membership, AUTH-WIDEN-1) needs somewhere to land too. The pool-of-unassigned-invoices
-  // section itself stays restricted inside pool.ejs (gated on isBuchhaltung/isPortalAdmin from
+  // section itself stays restricted inside pool.ejs (gated on isBuchhaltung/isSuperadmin from
   // loadNavFlags) — only the route-level gate widens, not who can see the company-wide pool.
   app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));

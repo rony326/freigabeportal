@@ -7,7 +7,7 @@ import { personHasRole } from '../middleware/roles.js';
 // used to decide whether a given session may see a job's PDF/thumbnail (preview refresh,
 // thumbnail image), not as a replacement for those routes' own checks.
 export function canViewJobPdf(db, config, currentPerson, job) {
-  if (personHasRole(currentPerson, config, 'portal-admin')) return true;
+  if (personHasRole(currentPerson, config, 'superadmin')) return true;
   if (job.status === 'unzugewiesen') return personHasRole(currentPerson, config, 'buchhaltung');
   const personId = currentPerson.churchtools_person_id;
   if (job.zugewiesen_an === personId) return true;

@@ -33,7 +33,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret' };
   app.use(loadCurrentPerson(db));
-  app.use(loadNavFlags(config));
+  app.use(loadNavFlags(db, config));
   app.use('/pool', requireLogin(), createPoolPageRouter({ db, config }));
   return app;
 }
@@ -341,7 +341,7 @@ test('GET /pool lists a job escalated to the Portal-Admin group at Freigabe 1 un
 
   const res = await request(app).get('/pool').set('x-test-person-id', '99');
   assert.equal(res.status, 200);
-  assert.match(res.text, /An Portal-Admin eskalierte Kontierungen/);
+  assert.match(res.text, /An Superadmin eskalierte Kontierungen/);
   assert.match(res.text, new RegExp(`/kontierung/${id}`));
   assert.match(res.text, new RegExp(`id="admin-eskalation-kontierung-row-${id}"`));
   db.close();
@@ -362,7 +362,7 @@ test('GET /pool lists a job escalated to the Portal-Admin group at Freigabe 2 un
 
   const res = await request(app).get('/pool').set('x-test-person-id', '99');
   assert.equal(res.status, 200);
-  assert.match(res.text, /An Portal-Admin eskalierte Freigaben/);
+  assert.match(res.text, /An Superadmin eskalierte Freigaben/);
   assert.match(res.text, new RegExp(`/freigabe2/${id}`));
   assert.match(res.text, new RegExp(`id="admin-eskalation-freigabe-row-${id}"`));
   db.close();
@@ -375,7 +375,7 @@ test('GET /pool hides the admin-escalation sections entirely for a non-Portal-Ad
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.doesNotMatch(res.text, /An Portal-Admin eskalierte/);
+  assert.doesNotMatch(res.text, /An Superadmin eskalierte/);
   db.close();
 });
 

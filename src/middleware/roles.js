@@ -18,7 +18,8 @@ export function loadCurrentPerson(db) {
 
 const GROUP_ID_KEY_BY_ROLE = {
   buchhaltung: 'groupIdBuchhaltung',
-  'portal-admin': 'groupIdAdmin',
+  superadmin: 'groupIdAdmin',
+  manager: 'groupIdManager',
 };
 
 // Shared by requireRole/requireAnyRole (the HTTP gates) and middleware/nav.js's loadNavFlags
@@ -27,6 +28,10 @@ const GROUP_ID_KEY_BY_ROLE = {
 export function personHasRole(person, config, role) {
   if (!person) return false;
   const groupId = config.churchtools[GROUP_ID_KEY_BY_ROLE[role]];
+  // groupIdManager is optional (CT_GROUP_ID_MANAGER is not required in env.js) — without this
+  // guard an unconfigured role would compare against the string "null"/"undefined" instead of
+  // simply having nobody in it.
+  if (!groupId) return false;
   return person.gruppen.includes(String(groupId));
 }
 

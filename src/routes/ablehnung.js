@@ -7,7 +7,7 @@ import { buildAuditLog } from '../services/auditLog.js';
 export function createAblehnungRouter({ db, config }) {
   const router = Router();
 
-  function isPortalAdmin(person) {
+  function isSuperadmin(person) {
     return Boolean(person && person.gruppen.includes(String(config.churchtools.groupIdAdmin)));
   }
 
@@ -18,7 +18,7 @@ export function createAblehnungRouter({ db, config }) {
       return null;
     }
     const authorized = job.freigabe1_eskaliert_an_admin
-      ? isPortalAdmin(req.currentPerson)
+      ? isSuperadmin(req.currentPerson)
       : job.zugewiesen_an === req.currentPerson.churchtools_person_id;
     if (!authorized) {
       res.status(403).render('error', { message: 'Dieser Job ist für dich aktuell nicht zur Überarbeitung verfügbar.' });

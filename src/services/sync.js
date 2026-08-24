@@ -7,7 +7,7 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 export async function runPersonenSync(db, config, accessToken) {
   const syncLogId = startSyncLog(db);
   try {
-    const candidateGroupIds = [config.groupIdBuchhaltung, config.groupIdAdmin];
+    const candidateGroupIds = [config.groupIdBuchhaltung, config.groupIdAdmin, config.groupIdManager].filter(Boolean);
     const personIdToGroups = new Map();
     for (const groupId of candidateGroupIds) {
       const memberIds = await fetchGroupMemberIds(config, accessToken, groupId);

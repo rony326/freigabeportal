@@ -22,7 +22,7 @@ export function createAuthRouter({ db, config }) {
 
       const token = await exchangeCodeForToken(config.churchtools, code);
       const profile = await fetchPerson(config.churchtools, token.access_token);
-      const candidateGroupIds = [config.churchtools.groupIdBuchhaltung, config.churchtools.groupIdAdmin];
+      const candidateGroupIds = [config.churchtools.groupIdBuchhaltung, config.churchtools.groupIdAdmin, config.churchtools.groupIdManager].filter(Boolean);
       // AUTH-WIDEN-1: login no longer requires Buchhaltung/Admin membership — Freigeber1/2 and
       // their Stellvertreter are account-based roles (AUTHZ-3) that may not be in either group.
       // gruppen is still resolved and stored exactly as before; only the empty-array rejection

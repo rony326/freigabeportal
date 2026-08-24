@@ -6,6 +6,7 @@ import { openDatabase } from '../../../src/db/index.js';
 import { seedDefaults, getConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
+import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createZeitstempelAdminRouter } from '../../../src/routes/admin/zeitstempel.js';
 
 function buildTestApp(db) {
@@ -21,9 +22,10 @@ function buildTestApp(db) {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
   app.use(loadCurrentPerson(db));
-  app.use('/admin/zeitstempel', requireRole(config, 'portal-admin'), createZeitstempelAdminRouter({ db }));
+  app.use(loadNavFlags(db, config));
+  app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db }));
   return app;
 }
 
@@ -57,6 +59,15 @@ test('every Zeitstempel route returns 403 for a logged-in non-admin (buchhaltung
     const res = await request(app)[method](path).set('x-test-person-id', '77').type('form').send({ tsaUrl: 'https://tsa.example.org/tsr' });
     assert.equal(res.status, 403, `${method.toUpperCase()} ${path} should be 403 for a non-admin`);
   }
+  db.close();
+});
+
+test('GET /admin/zeitstempel returns 403 for a Manager (hard-locked to superadmin only)', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/zeitstempel').set('x-test-person-id', '55');
+  assert.equal(res.status, 403);
   db.close();
 });
 

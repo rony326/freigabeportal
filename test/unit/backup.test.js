@@ -100,3 +100,13 @@ test('validateBackupArchive throws BackupValidationError for a ZIP missing db.sq
   zip.addFile('manifest.json', Buffer.from('{}'));
   assert.throws(() => validateBackupArchive(zip.toBuffer()), BackupValidationError);
 });
+
+test('validateBackupArchive throws BackupValidationError for a well-formed ZIP whose db.sqlite is corrupt', () => {
+  // node:sqlite's DatabaseSync constructor does not read the file header and does not throw on
+  // garbage bytes -- the real error only surfaces on the first query. This must still come out of
+  // validateBackupArchive as a BackupValidationError, not a raw SQLite error.
+  const zip = new AdmZip();
+  zip.addFile('manifest.json', Buffer.from(JSON.stringify({ formatVersion: 1, erstelltAm: new Date().toISOString() })));
+  zip.addFile('db.sqlite', Buffer.from('this is not a valid sqlite database file, just garbage padding'));
+  assert.throws(() => validateBackupArchive(zip.toBuffer()), BackupValidationError);
+});

@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, existsSync, readdirSync, mkdirSync, renameSync, wr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { openDatabase } from '../db/index.js';
 import { logBackupWiederherstellung } from '../db/backupWiederherstellungenRepo.js';
 
 const REQUIRED_TABLES = ['jobs', 'personen', 'konten'];
@@ -68,20 +69,24 @@ export function validateBackupArchive(buffer) {
     zip.extractEntryTo(dbEntry, tmpDir, false, true, false, 'db.sqlite');
     const tmpDbPfad = join(tmpDir, 'db.sqlite');
     let testDb;
+    // Der DatabaseSync-Konstruktor liest den Dateikopf NICHT ein und wirft bei Garbage-Bytes nicht
+    // -- der Fehler ("file is not a database") kommt erst bei der ersten Query. Öffnen und Abfragen
+    // laufen deshalb in einem gemeinsamen try/catch, damit jeder SQLite-Fehler an dieser Stelle als
+    // BackupValidationError herauskommt statt als roher Fehler durchzuschlagen (siehe Task 8, das
+    // gezielt auf BackupValidationError für die deutsche Admin-Fehlermeldung prüft).
     try {
       testDb = new DatabaseSync(tmpDbPfad);
-    } catch {
-      throw new BackupValidationError('db.sqlite im Archiv lässt sich nicht als SQLite-Datenbank öffnen.');
-    }
-    try {
       const tables = new Set(testDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name));
       for (const required of REQUIRED_TABLES) {
         if (!tables.has(required)) {
           throw new BackupValidationError(`db.sqlite im Archiv hat keine Tabelle "${required}" — kein gültiges Freigabeportal-Backup.`);
         }
       }
+    } catch (err) {
+      if (err instanceof BackupValidationError) throw err;
+      throw new BackupValidationError('db.sqlite im Archiv lässt sich nicht als SQLite-Datenbank öffnen.');
     } finally {
-      testDb.close();
+      testDb?.close();
     }
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });
@@ -136,7 +141,15 @@ export function restoreBackupArchive(buffer, db, config, { wiederhergestelltVon,
   // Prozess-Neustart verworfen wird, sobald die gerade wiederhergestellte Datei übernommen wird.
   // Eine frische, kurzlebige Verbindung direkt auf die neue Datei ist der einzige Weg, wie dieser
   // Audit-Eintrag den Neustart übersteht.
-  const restoredDb = new DatabaseSync(config.dbPath);
+  //
+  // openDatabase() statt `new DatabaseSync(config.dbPath)`: Der Datei-Swap ist an dieser Stelle
+  // bereits vollständig und korrekt abgeschlossen -- nur der Audit-Log-Insert steht noch aus. Ein
+  // wiederhergestelltes Archiv kann älter sein als das aktuelle Schema (z.B. von vor Task 2, ohne
+  // die Tabelle backup_wiederherstellungen). openDatabase() fährt schema.sql + Migrationen, bevor
+  // die Verbindung zurückgegeben wird, genau wie jeder andere Einstiegspunkt in dieser Codebase --
+  // damit existiert die Tabelle garantiert, statt dass ein "no such table"-Fehler hier den
+  // eigentlich erfolgreichen Restore fälschlich als fehlgeschlagen erscheinen lässt.
+  const restoredDb = openDatabase(config.dbPath);
   try {
     logBackupWiederherstellung(restoredDb, { dateiname: quellDateiname, wiederhergestelltVon });
   } finally {

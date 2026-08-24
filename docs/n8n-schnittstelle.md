@@ -59,7 +59,7 @@ sequenceDiagram
 
     loop Polling
         n8n->>P: GET /api/n8n/jobs/abholbereit
-        P-->>n8n: [{id, ..., download_url (15 Min gültig, signiert)}]
+        P-->>n8n: [{id, Kontierungs- & Konto-Metadaten, QR-Bill-Felder, download_url (15 Min gültig, signiert)}]
         n8n->>P: GET {download_url} (unauthentifiziert, nur Signatur)
         P-->>n8n: PDF-Stream
         n8n->>P: POST /api/n8n/jobs/:id/abholung-bestaetigen
@@ -79,6 +79,18 @@ sequenceDiagram
   NULL`) — siehe
   [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md).
   Dieselbe Bedingung gilt für `abholung-bestaetigen`.
+- Antwort-Felder je Job:
+
+  | Feld | Beschreibung |
+  |---|---|
+  | `id`, `eingang_am`, `quelle`, `absender`, `dateiname` | wie beim Rechnungseingang übergeben |
+  | `lieferant`, `rechnungsnummer`, `betrag`, `zahlungsziel` | bei der Kontierung erfasste Rechnungsdaten |
+  | `konto_id` | ID des zugeordneten Kontos, `null` falls noch keines gesetzt |
+  | `konto_kontonummer`, `konto_bezeichnung` | Kontonummer und Bezeichnung des Kontos, `null` falls `konto_id` leer ist |
+  | `qr_iban`, `qr_referenz`, `qr_betrag`, `qr_waehrung`, `qr_creditor_name` | aus einer erkannten Swiss-QR-Bill übernommen, sonst `null` |
+  | `qr_erkannt_am` | Zeitpunkt der QR-Erkennung, `null` falls keine QR-Bill erkannt wurde |
+  | `download_url` | signierte, 15 Minuten gültige Download-URL |
+
 - Der `download_url` ist eine HMAC-signierte, 15 Minuten gültige URL auf
   `GET /downloads/:jobId` — **keine** Session nötig, siehe
   [architektur.md](architektur.md#sicherheitsmechanismen-auszug).

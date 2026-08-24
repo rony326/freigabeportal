@@ -8,6 +8,7 @@ import { renderFirstPageThumbnail } from '../../services/thumbnail.js';
 import { scanQrBill } from '../../services/qrBillScan.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
 import { getPersonById } from '../../db/personenRepo.js';
+import { getKontoById } from '../../db/kontenRepo.js';
 import { sendNotification } from '../../services/notify.js';
 import { getConfigValue } from '../../db/adminConfigRepo.js';
 
@@ -124,19 +125,30 @@ export function createN8nJobsRouter({ db, config, mailer }) {
   router.get('/abholbereit', (req, res) => {
     const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
     const jobs = listAbholbereitJobs(db, undefined, nurMitZeitstempel);
-    const payload = jobs.map((job) => ({
-      id: job.id,
-      eingang_am: job.eingang_am,
-      quelle: job.quelle,
-      absender: job.absender,
-      lieferant: job.lieferant,
-      rechnungsnummer: job.rechnungsnummer,
-      betrag: job.betrag,
-      zahlungsziel: job.zahlungsziel,
-      dateiname: job.dateiname,
-      konto_id: job.konto_id,
-      download_url: buildSignedDownloadUrl(config, job.id, ABHOLEN_TTL_SECONDS),
-    }));
+    const payload = jobs.map((job) => {
+      const konto = job.konto_id ? getKontoById(db, job.konto_id) : null;
+      return {
+        id: job.id,
+        eingang_am: job.eingang_am,
+        quelle: job.quelle,
+        absender: job.absender,
+        lieferant: job.lieferant,
+        rechnungsnummer: job.rechnungsnummer,
+        betrag: job.betrag,
+        zahlungsziel: job.zahlungsziel,
+        dateiname: job.dateiname,
+        konto_id: job.konto_id,
+        konto_kontonummer: konto?.kontonummer ?? null,
+        konto_bezeichnung: konto?.bezeichnung ?? null,
+        qr_iban: job.qr_iban,
+        qr_referenz: job.qr_referenz,
+        qr_betrag: job.qr_betrag,
+        qr_waehrung: job.qr_waehrung,
+        qr_creditor_name: job.qr_creditor_name,
+        qr_erkannt_am: job.qr_erkannt_am,
+        download_url: buildSignedDownloadUrl(config, job.id, ABHOLEN_TTL_SECONDS),
+      };
+    });
     res.json(payload);
   });
 

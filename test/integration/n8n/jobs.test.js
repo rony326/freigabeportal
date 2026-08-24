@@ -5,11 +5,13 @@ import request from 'supertest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openDatabase } from '../../../src/db/index.js';
-import { createJob, getJobById, setThumbnailPfad, updateKontierungMetadaten } from '../../../src/db/jobsRepo.js';
+import { createJob, getJobById, setThumbnailPfad, updateKontierungMetadaten, setQrDaten } from '../../../src/db/jobsRepo.js';
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
 import { setConfigValue } from '../../../src/db/adminConfigRepo.js';
+import { upsertPerson } from '../../../src/db/personenRepo.js';
+import { createKonto } from '../../../src/db/kontenRepo.js';
 
 const PDF_BYTES = Buffer.from('%PDF-1.4\n%test-fixture-not-a-real-pdf-body\n');
 
@@ -406,6 +408,58 @@ test('GET /api/n8n/jobs/abholbereit includes lieferant, rechnungsnummer, betrag 
   assert.equal(res.body[0].rechnungsnummer, 'RE-2026-042');
   assert.equal(res.body[0].betrag, '123.45');
   assert.equal(res.body[0].zahlungsziel, '2026-09-01');
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /api/n8n/jobs/abholbereit includes Konto-Details and QR-Bill-Felder for downstream Paperless/Bexio handoff', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+
+  const { id } = seedAbgeschlossenJobWithFile(db, jobsDir);
+  updateKontierungMetadaten(db, id, { absender: null, lieferant: 'Muster AG', rechnungsnummer: 'RE-2026-042', betrag: '123.45', zahlungsziel: '2026-09-01' });
+  db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, id);
+  setQrDaten(db, id, { qrIban: 'CH9300762011623852957', qrReferenz: '210000000003139471430009017', qrBetrag: '123.45', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  assert.equal(res.status, 200);
+  assert.equal(res.body[0].konto_kontonummer, '3000');
+  assert.equal(res.body[0].konto_bezeichnung, 'Unterhalt');
+  assert.equal(res.body[0].qr_iban, 'CH9300762011623852957');
+  assert.equal(res.body[0].qr_referenz, '210000000003139471430009017');
+  assert.equal(res.body[0].qr_betrag, '123.45');
+  assert.equal(res.body[0].qr_waehrung, 'CHF');
+  assert.equal(res.body[0].qr_creditor_name, 'Muster AG');
+  assert.ok(res.body[0].qr_erkannt_am);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /api/n8n/jobs/abholbereit returns null Konto-Details and QR-Felder when neither is set', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  seedAbgeschlossenJobWithFile(db, jobsDir);
+
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  assert.equal(res.status, 200);
+  assert.equal(res.body[0].konto_kontonummer, null);
+  assert.equal(res.body[0].konto_bezeichnung, null);
+  assert.equal(res.body[0].qr_iban, null);
+  assert.equal(res.body[0].qr_erkannt_am, null);
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });

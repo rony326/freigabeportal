@@ -1165,6 +1165,44 @@ test('markZeitstempelGesetzt with null, null clears both fields again', () => {
   db.close();
 });
 
+test('markZeitstempelGesetzt refuses to overwrite an already-set zeitstempel_datei_hash with a different value', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
+
+  markZeitstempelGesetzt(db, jobId, '2026-08-21T10:00:00.000Z', 'abc123');
+  assert.throws(() => markZeitstempelGesetzt(db, jobId, '2026-08-22T10:00:00.000Z', 'ein-anderer-hash'));
+  assert.equal(getJobById(db, jobId).zeitstempel_gesetzt_am, '2026-08-21T10:00:00.000Z', 'the original timestamp must survive the rejected overwrite attempt');
+  assert.equal(getJobById(db, jobId).zeitstempel_datei_hash, 'abc123', 'the original hash must survive the rejected overwrite attempt');
+  db.close();
+});
+
+test('markZeitstempelGesetzt setting the exact same value again is a no-op, not an error', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
+
+  markZeitstempelGesetzt(db, jobId, '2026-08-21T10:00:00.000Z', 'abc123');
+  assert.doesNotThrow(() => markZeitstempelGesetzt(db, jobId, '2026-08-21T10:00:00.000Z', 'abc123'));
+  assert.equal(getJobById(db, jobId).zeitstempel_datei_hash, 'abc123');
+  db.close();
+});
+
+test('markZeitstempelGesetzt can still reset an already-set hash back to null (the legitimate rename-failure path)', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
+
+  markZeitstempelGesetzt(db, jobId, '2026-08-21T10:00:00.000Z', 'abc123');
+  assert.doesNotThrow(() => markZeitstempelGesetzt(db, jobId, null, null));
+  assert.equal(getJobById(db, jobId).zeitstempel_gesetzt_am, null);
+  assert.equal(getJobById(db, jobId).zeitstempel_datei_hash, null);
+  db.close();
+});
+
 test('eskalierenFreigabe1AnAdmin sets the admin-escalation flag and records who/why, leaving zugewiesen_an untouched', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);

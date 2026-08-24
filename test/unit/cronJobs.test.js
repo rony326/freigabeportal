@@ -138,6 +138,32 @@ test('runZeitstempelNachholenJob counts a TSA failure as fehlgeschlagen without 
   db.close();
 });
 
+test('runZeitstempelNachholenJob counts a rejected hash overwrite as fehlgeschlagen — the immutability trigger protects an already-set hash from an anomalous retry', async () => {
+  // Should never happen via the normal flow (this job is only picked up because
+  // zeitstempel_gesetzt_am IS NULL) — simulates the anomaly the DB-level immutability trigger
+  // (schema.sql) exists to guard against: zeitstempel_datei_hash was somehow already set to a
+  // different value while zeitstempel_gesetzt_am stayed NULL.
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'nachholen-test-'));
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const { id } = await seedAbgeschlossenJob(db, dir);
+  db.prepare('UPDATE jobs SET zeitstempel_datei_hash = ? WHERE id = ?').run('bereits-vorhandener-hash', id);
+
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, RFC3161_RESPONSE, { headers: { 'content-type': 'application/timestamp-reply' } });
+
+  const result = await runZeitstempelNachholenJob(db, {});
+  assert.equal(result.status, 'erfolg', 'a per-job rejected overwrite must not turn the whole run into a fehler status');
+  assert.equal(result.nachgeholt, 0);
+  assert.equal(result.fehlgeschlagen, 1);
+  const job = getJobById(db, id);
+  assert.equal(job.zeitstempel_gesetzt_am, null, 'must stay null — the trigger rejected the write before it could be recorded');
+  assert.equal(job.zeitstempel_datei_hash, 'bereits-vorhandener-hash', 'the original hash must survive untouched');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
 test('runDatenbankSicherungJob writes a backup file, logs to cron_log, and prunes beyond the retention count', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cronjobs-backup-test-'));
   const config = {

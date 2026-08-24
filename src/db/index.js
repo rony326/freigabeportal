@@ -40,6 +40,30 @@ function migrateJobsTable(db) {
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_datei_hash ON jobs(datei_hash)');
 
+  // Manipulationsschutz für bereits bestehende Datenbanken — siehe schema.sql für die
+  // ausführliche Begründung. Beide Trigger sind CREATE TRIGGER IF NOT EXISTS, also idempotent wie
+  // der Rest dieser Funktion.
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_zeitstempel_hash_unveraenderlich
+    BEFORE UPDATE OF zeitstempel_datei_hash ON jobs
+    WHEN OLD.zeitstempel_datei_hash IS NOT NULL
+      AND NEW.zeitstempel_datei_hash IS NOT NULL
+      AND NEW.zeitstempel_datei_hash <> OLD.zeitstempel_datei_hash
+    BEGIN
+      SELECT RAISE(ABORT, 'zeitstempel_datei_hash ist unveraenderlich, sobald gesetzt');
+    END
+  `);
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_zeitstempel_gesetzt_am_unveraenderlich
+    BEFORE UPDATE OF zeitstempel_gesetzt_am ON jobs
+    WHEN OLD.zeitstempel_gesetzt_am IS NOT NULL
+      AND NEW.zeitstempel_gesetzt_am IS NOT NULL
+      AND NEW.zeitstempel_gesetzt_am <> OLD.zeitstempel_gesetzt_am
+    BEGIN
+      SELECT RAISE(ABORT, 'zeitstempel_gesetzt_am ist unveraenderlich, sobald gesetzt');
+    END
+  `);
+
   // Runs strictly after the loop above, so the abgeschlossen_am column is guaranteed to exist by
   // now (whether it came from schema.sql on a fresh database or from the ALTER TABLE entry).
   //

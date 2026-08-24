@@ -137,6 +137,29 @@ CREATE TABLE IF NOT EXISTS jobs (
   qr_erkannt_am TEXT
 );
 
+-- Manipulationsschutz: sobald ein Zeitstempel-Hash/-Zeitpunkt für einen Job gesetzt ist, darf er
+-- nicht mehr auf einen ANDEREN Wert geändert werden (der eigentliche Manipulationsfall) — nur das
+-- erstmalige Setzen (NULL -> Wert) und das bestehende Zurücksetzen bei fehlgeschlagenem Ablegen der
+-- gestempelten Datei (Wert -> NULL, siehe freigabe2.js) bleiben erlaubt. Schützt unabhängig davon,
+-- über welchen Code-Pfad ein UPDATE versucht wird (auch vor Bugs oder direkten DB-Zugriffen).
+CREATE TRIGGER IF NOT EXISTS trg_zeitstempel_hash_unveraenderlich
+BEFORE UPDATE OF zeitstempel_datei_hash ON jobs
+WHEN OLD.zeitstempel_datei_hash IS NOT NULL
+  AND NEW.zeitstempel_datei_hash IS NOT NULL
+  AND NEW.zeitstempel_datei_hash <> OLD.zeitstempel_datei_hash
+BEGIN
+  SELECT RAISE(ABORT, 'zeitstempel_datei_hash ist unveraenderlich, sobald gesetzt');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_zeitstempel_gesetzt_am_unveraenderlich
+BEFORE UPDATE OF zeitstempel_gesetzt_am ON jobs
+WHEN OLD.zeitstempel_gesetzt_am IS NOT NULL
+  AND NEW.zeitstempel_gesetzt_am IS NOT NULL
+  AND NEW.zeitstempel_gesetzt_am <> OLD.zeitstempel_gesetzt_am
+BEGIN
+  SELECT RAISE(ABORT, 'zeitstempel_gesetzt_am ist unveraenderlich, sobald gesetzt');
+END;
+
 CREATE TABLE IF NOT EXISTS freigaben (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id INTEGER NOT NULL REFERENCES jobs(id),

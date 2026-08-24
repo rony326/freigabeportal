@@ -301,7 +301,20 @@ export function createFreigabe2Router({ db, config, mailer }) {
           ]);
         }
         if (zeitstempelGesetztAm) {
-          markZeitstempelGesetzt(db, job.id, zeitstempelGesetztAm, zeitstempelDateiHash);
+          try {
+            markZeitstempelGesetzt(db, job.id, zeitstempelGesetztAm, zeitstempelDateiHash);
+          } catch (err) {
+            // Defense in depth: abschliessenFreigabe2's status guard above already prevents a job
+            // from completing Freigabe 2 twice, so this should never legitimately fire. If it does
+            // anyway — a bug, a race condition, or a direct/malicious DB write — the
+            // zeitstempel_datei_hash/zeitstempel_gesetzt_am immutability triggers (schema.sql)
+            // reject the conflicting write and the job's original, already-recorded values stay
+            // intact. Treat this attempt like a TSA failure: the rest of the Freigabe still
+            // completes, just without claiming a (this time unrecorded) timestamp.
+            console.error(`Job ${job.id}: Zeitstempel-Hash/-Zeitpunkt konnte nicht gespeichert werden — vermutlich bereits ein anderer Wert hinterlegt (möglicher Manipulationsversuch):`, err.message);
+            zeitstempelGesetztAm = null;
+            zeitstempelDateiHash = null;
+          }
         }
         db.exec('COMMIT');
       } catch (err) {

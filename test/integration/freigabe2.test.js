@@ -472,6 +472,44 @@ test('POST /freigabe2/:id still completes the Freigabe when the configured TSA i
   db.close();
 });
 
+test('POST /freigabe2/:id still completes the Freigabe when the job already carries a different zeitstempel_datei_hash (immutability trigger rejects the overwrite) — the original hash survives, untouched', async () => {
+  // This should never happen via the normal flow (abschliessenFreigabe2's status guard already
+  // prevents a job from completing Freigabe 2 twice) — it simulates the anomaly the DB-level
+  // immutability trigger (schema.sql) exists to guard against: a bug, a race condition, or a
+  // direct DB write that would otherwise silently replace an already-recorded hash.
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-zeitstempel-immutable-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  writeFileSync(pdfPfad, pdf);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  db.prepare("UPDATE jobs SET zeitstempel_gesetzt_am = '2026-08-01T00:00:00.000Z', zeitstempel_datei_hash = 'bereits-vorhandener-hash' WHERE id = ?").run(id);
+
+  const rfc3161Response = readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url));
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, rfc3161Response, { headers: { 'content-type': 'application/timestamp-reply' } });
+
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 302, 'the Freigabe must still complete — the rejected hash write must not crash or roll back the whole request');
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'abgeschlossen');
+  assert.equal(job.zeitstempel_datei_hash, 'bereits-vorhandener-hash', 'the original hash must survive untouched — the trigger rejected the conflicting overwrite');
+  assert.equal(job.zeitstempel_gesetzt_am, '2026-08-01T00:00:00.000Z', 'the original timestamp must survive untouched for the same reason');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
 test('POST /freigabe2/:id leaves zeitstempel_gesetzt_am null and makes no TSA request when no TSA URL is configured', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');

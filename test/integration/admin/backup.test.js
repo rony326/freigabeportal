@@ -190,3 +190,86 @@ test('POST /admin/backup/dateien/:name/loeschen returns 404 for a path-traversal
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('POST /admin/backup/wiederherstellen rejects a wrong confirmation phrase without touching any file', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'backup-restore-test-'));
+  const dbPath = join(dir, 'live.sqlite');
+  const db = openDatabase(dbPath);
+  seedDefaults(db);
+  seedSuperadmin(db);
+  const config = testConfig(dir);
+  config.dbPath = dbPath;
+  const app = buildTestApp(db, config);
+
+  const res = await request(app)
+    .post('/admin/backup/wiederherstellen')
+    .set('x-test-person-id', '99')
+    .field('bestaetigung', 'falsch')
+    .attach('backup', Buffer.from('irrelevant'), { filename: 'x.zip', contentType: 'application/zip' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /WIEDERHERSTELLEN/);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('POST /admin/backup/wiederherstellen rejects an invalid ZIP even with the correct confirmation phrase', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'backup-restore-test-'));
+  const dbPath = join(dir, 'live.sqlite');
+  const db = openDatabase(dbPath);
+  seedDefaults(db);
+  seedSuperadmin(db);
+  const config = testConfig(dir);
+  config.dbPath = dbPath;
+  const app = buildTestApp(db, config);
+
+  const res = await request(app)
+    .post('/admin/backup/wiederherstellen')
+    .set('x-test-person-id', '99')
+    .field('bestaetigung', 'WIEDERHERSTELLEN')
+    .attach('backup', Buffer.from('not a real zip'), { filename: 'x.zip', contentType: 'application/zip' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /ZIP-Archiv/);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('POST /admin/backup/wiederherstellen with a valid backup and correct confirmation replaces the live DB file and logs the restore', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'backup-restore-test-'));
+  const dbPath = join(dir, 'live.sqlite');
+  const db = openDatabase(dbPath);
+  seedDefaults(db);
+  seedSuperadmin(db);
+  const config = testConfig(dir);
+  config.dbPath = dbPath;
+  const app = buildTestApp(db, config);
+
+  // Build a real, valid backup archive of the current (superadmin-seeded) state to upload back in.
+  const { buildBackupArchive } = await import('../../../src/services/backup.js');
+  const archivBuffer = buildBackupArchive(db, config);
+
+  const res = await request(app)
+    .post('/admin/backup/wiederherstellen')
+    .set('x-test-person-id', '99')
+    .field('bestaetigung', 'WIEDERHERSTELLEN')
+    .attach('backup', archivBuffer, { filename: 'mein-upload.zip', contentType: 'application/zip' });
+
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Wiederherstellung auf Dateiebene abgeschlossen/);
+
+  // The restore audit entry lands in the freshly-restored file on disk, not in the still-open
+  // `db` handle from before the restore (see services/backup.js's restoreBackupArchive comment) --
+  // open a fresh connection to verify it, exactly like the roundtrip test in backup.test.js does.
+  const { openDatabase: reopen } = await import('../../../src/db/index.js');
+  const { listBackupWiederherstellungen } = await import('../../../src/db/backupWiederherstellungenRepo.js');
+  const wiederhergestellteDb = reopen(dbPath);
+  const eintraege = listBackupWiederherstellungen(wiederhergestellteDb);
+  assert.equal(eintraege.length, 1);
+  assert.equal(eintraege[0].dateiname, 'mein-upload.zip');
+  assert.equal(eintraege[0].wiederhergestellt_von, '99');
+  wiederhergestellteDb.close();
+
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});

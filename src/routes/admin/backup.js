@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { readdirSync, statSync, unlinkSync, createReadStream, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
@@ -6,9 +7,12 @@ import { listRecentCronLog } from '../../db/cronLogRepo.js';
 import { listBackupWiederherstellungen } from '../../db/backupWiederherstellungenRepo.js';
 import { getPersonById } from '../../db/personenRepo.js';
 import { runDatenbankSicherungJob } from '../../services/cronJobs.js';
-import { BACKUP_DATEINAME_PATTERN } from '../../services/backup.js';
+import { BACKUP_DATEINAME_PATTERN, restoreBackupArchive, BackupValidationError } from '../../services/backup.js';
 
 const SICHERUNG_LOG_LIMIT = 10;
+const MAX_RESTORE_UPLOAD_SIZE = 500 * 1024 * 1024;
+const BESTAETIGUNGSTEXT = 'WIEDERHERSTELLEN';
+const uploadBackup = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_RESTORE_UPLOAD_SIZE } });
 
 export function createBackupRouter({ db, config }) {
   const router = Router();
@@ -122,6 +126,53 @@ export function createBackupRouter({ db, config }) {
     const pfad = join(config.backupDir, name);
     if (existsSync(pfad)) unlinkSync(pfad);
     res.redirect('/admin/backup');
+  });
+
+  router.post('/wiederherstellen', (req, res, next) => {
+    uploadBackup.single('backup')(req, res, (uploadErr) => {
+      try {
+        if (uploadErr) {
+          return res.status(400).render('admin/backup', {
+            ...ladeState(),
+            errors: [],
+            restoreErrors: [uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Die Backup-Datei ist zu gross.' : 'Fehler beim Datei-Upload.'],
+            gespeichert: false,
+          });
+        }
+        if (!req.file) {
+          return res.status(400).render('admin/backup', {
+            ...ladeState(),
+            errors: [],
+            restoreErrors: ['Backup-Datei fehlt.'],
+            gespeichert: false,
+          });
+        }
+        if (req.body.bestaetigung !== BESTAETIGUNGSTEXT) {
+          return res.status(400).render('admin/backup', {
+            ...ladeState(),
+            errors: [],
+            restoreErrors: [`Zur Bestätigung muss exakt "${BESTAETIGUNGSTEXT}" eingetippt werden.`],
+            gespeichert: false,
+          });
+        }
+
+        restoreBackupArchive(req.file.buffer, db, config, {
+          wiederhergestelltVon: req.currentPerson.churchtools_person_id,
+          quellDateiname: req.file.originalname,
+        });
+        res.render('admin/backup', { ...ladeState(), errors: [], restoreErrors: [], gespeichert: false, wiederhergestellt: true });
+      } catch (err) {
+        if (err instanceof BackupValidationError) {
+          return res.status(400).render('admin/backup', {
+            ...ladeState(),
+            errors: [],
+            restoreErrors: [err.message],
+            gespeichert: false,
+          });
+        }
+        next(err);
+      }
+    });
   });
 
   return router;

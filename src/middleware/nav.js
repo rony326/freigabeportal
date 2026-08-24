@@ -19,6 +19,7 @@ export function loadNavFlags(db, config) {
       sync: hasPermission('sync_einsehen'),
       geplanteJobs: hasPermission('geplante_jobs_verwalten'),
       abgelehnt: hasPermission('abgelehnt_verwalten'),
+      backup: res.locals.isSuperadmin,
     };
     res.locals.currentPath = req.path;
     next();

@@ -267,15 +267,24 @@ export function runDatenbankSicherungJob(db, config) {
     const dateiname = backupDateiname(new Date());
     writeFileSync(join(config.backupDir, dateiname), archiv);
 
-    const aufbewahrungAnzahl = Number(getConfigValue(db, 'backup_aufbewahrung_anzahl')) || 14;
-    const vorhandene = readdirSync(config.backupDir)
-      .filter((name) => BACKUP_DATEINAME_PATTERN.test(name))
-      .sort();
+    // Retention-Bereinigung ist absichtlich in einem eigenen try/catch isoliert (analog zu den
+    // drei unabhängigen Schritten in runPdfBereinigungJob): das neue Backup ist zu diesem
+    // Zeitpunkt bereits erfolgreich auf der Platte -- ein unlinkSync-Fehler beim Aufräumen alter
+    // Dateien (z.B. Berechtigungsproblem) darf den gesamten Lauf nicht als 'fehler' melden, denn
+    // sowohl der Scheduler (Task 6) als auch das Admin-UI (Task 7) werten `status` direkt aus.
     let bereinigt = 0;
-    const zuLoeschendeAnzahl = vorhandene.length - aufbewahrungAnzahl;
-    for (let i = 0; i < zuLoeschendeAnzahl; i += 1) {
-      unlinkSync(join(config.backupDir, vorhandene[i]));
-      bereinigt += 1;
+    try {
+      const aufbewahrungAnzahl = Number(getConfigValue(db, 'backup_aufbewahrung_anzahl')) || 14;
+      const vorhandene = readdirSync(config.backupDir)
+        .filter((name) => BACKUP_DATEINAME_PATTERN.test(name))
+        .sort();
+      const zuLoeschendeAnzahl = vorhandene.length - aufbewahrungAnzahl;
+      for (let i = 0; i < zuLoeschendeAnzahl; i += 1) {
+        unlinkSync(join(config.backupDir, vorhandene[i]));
+        bereinigt += 1;
+      }
+    } catch (err) {
+      console.error('Bereinigung alter Backups fehlgeschlagen:', err.message);
     }
 
     const ergebnis = { status: 'erfolg', dateiname, groesseBytes: archiv.length, bereinigt };

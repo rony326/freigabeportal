@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -166,6 +166,42 @@ test('runDatenbankSicherungJob writes a backup file, logs to cron_log, and prune
   const log = listRecentCronLog(db, 'datenbank-sicherung', 10);
   assert.equal(log.length, 3);
   assert.equal(log[0].status, 'erfolg');
+
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runDatenbankSicherungJob still reports erfolg for the new backup when pruning an old file fails', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cronjobs-backup-prune-fail-test-'));
+  const config = {
+    jobsDir: join(dir, 'jobs'),
+    brandingDir: join(dir, 'branding'),
+    backupDir: join(dir, 'backups'),
+    dbPath: join(dir, 'db.sqlite'),
+  };
+  const db = openDatabase(config.dbPath);
+  setConfigValue(db, 'backup_aufbewahrung_anzahl', '1');
+
+  const erstesErgebnis = runDatenbankSicherungJob(db, config);
+  assert.equal(erstesErgebnis.status, 'erfolg');
+
+  // Simulate a stubborn old backup that can't be unlinked: a directory (not a file) whose name
+  // still matches BACKUP_DATEINAME_PATTERN and sorts before the real backups, so unlinkSync
+  // throws EISDIR on it first during pruning.
+  mkdirSync(join(config.backupDir, 'backup-2000-01-01T00-00-00-000Z.zip'));
+
+  const zweitesErgebnis = runDatenbankSicherungJob(db, config);
+  assert.equal(
+    zweitesErgebnis.status,
+    'erfolg',
+    'a pruning failure must not fail the overall run once the new backup is safely written'
+  );
+  assert.match(zweitesErgebnis.dateiname, BACKUP_DATEINAME_PATTERN);
+  assert.ok(zweitesErgebnis.groesseBytes > 0);
+  assert.equal(zweitesErgebnis.bereinigt, 0, 'pruning aborted on the first EISDIR failure, before deleting anything');
+
+  const uebrig = readdirSync(config.backupDir);
+  assert.ok(uebrig.includes(erstesErgebnis.dateiname), 'the real first backup must still be present since pruning failed before reaching it');
 
   db.close();
   rmSync(dir, { recursive: true, force: true });

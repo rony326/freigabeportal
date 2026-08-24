@@ -1174,6 +1174,32 @@ test('GET /kontierung/:id/aufsplitten pre-fills Gesamtbetrag from the job when o
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('GET /kontierung/:id/aufsplitten prefers a betrag query param (the not-yet-saved Kontierung-Betrag) over the job\'s saved Betrag', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).query({ betrag: '250.00' }).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="gesamtbetrag"[^>]*value="250\.00"/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /kontierung/:id/aufsplitten ignores a malformed betrag query param, falling back to the job\'s saved Betrag', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).query({ betrag: '<script>' }).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="gesamtbetrag"[^>]*value="200\.00"/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
 test('GET /kontierung/:id/aufsplitten lists every active Konto, not just this person\'s own, and offers an Interessenskonflikt checkbox per Zeile plus a shared Begründung field', async () => {
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));

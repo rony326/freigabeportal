@@ -257,7 +257,12 @@
       modal.addEventListener('shown.bs.modal', function () {
         if (!geladen) {
           geladen = true;
-          frame.src = frameUrl;
+          // Carries over whatever Betrag is currently in the Kontierung form (from the
+          // Originalrechnung, whether QR-erkannt or already saved) even if it hasn't been
+          // submitted yet, so the split's Gesamtbetrag doesn't need to be typed in again.
+          var betragFeld = document.getElementById('betrag');
+          var betrag = betragFeld ? betragFeld.value.trim() : '';
+          frame.src = betrag ? frameUrl + '?betrag=' + encodeURIComponent(betrag) : frameUrl;
         }
       });
       frame.addEventListener('load', function () {

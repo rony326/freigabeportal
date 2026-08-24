@@ -475,7 +475,12 @@ export function createKontierungRouter({ db, config, mailer }) {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
     const konten = ladeKontenFuerJob(req, job);
-    renderAufsplittenForm(req, res, 200, job, konten, listKonten(db), job.betrag || '', [
+    // The Kontierung form's own Betrag field (already pre-filled from the original Rechnung —
+    // QR-erkannt or previously saved) is passed in as ?betrag=... when the Aufsplitten-Popup is
+    // opened, so a value the person typed there but hasn't saved yet still shows up here instead
+    // of falling back to whatever is (or isn't) persisted on the job.
+    const queryBetrag = typeof req.query.betrag === 'string' && BETRAG_PATTERN.test(req.query.betrag) ? req.query.betrag : null;
+    renderAufsplittenForm(req, res, 200, job, konten, listKonten(db), queryBetrag || job.betrag || '', [
       { kontoId: '', betrag: '', interessenskonflikt: false },
       { kontoId: '', betrag: '', interessenskonflikt: false },
     ], '', []);

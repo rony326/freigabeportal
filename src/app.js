@@ -8,6 +8,7 @@ import { createCronRouter } from './routes/cron.js';
 import { requireApiKey } from './middleware/apiKey.js';
 import { requireCronSecret } from './middleware/cronAuth.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
+import { createN8nBackupRouter } from './routes/n8n/backup.js';
 import { loadCurrentPerson, requireRole, requireAnyRole, requireLogin } from './middleware/roles.js';
 import { requireAdminAreaAccess, requirePermission } from './middleware/permissions.js';
 import { loadNavFlags } from './middleware/nav.js';
@@ -126,6 +127,7 @@ export function createApp({ db, config }) {
   app.use('/admin/backup', requireRole(config, 'superadmin'), createBackupRouter({ db, config }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
+  app.use('/api/n8n/backup', machineLimiter, requireApiKey(config), createN8nBackupRouter({ config }));
   app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
   // Dashboard for every logged-in person, not just Buchhaltung/Superadmin: "/" always redirects
   // here now that the old landing page is gone, and a Freigeber1/2-only person (no group

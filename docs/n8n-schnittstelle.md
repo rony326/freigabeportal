@@ -98,3 +98,21 @@ sequenceDiagram
   Rechnungs-PDF/Thumbnail-Datei physisch vom Portal-Server gelöscht wird
   — ab hier liegt die Datei nur noch bei n8n bzw. im Zielsystem der
   Kirchgemeinde.
+
+## Backup-Abholung
+
+`GET /api/n8n/backup/latest` (`X-API-Key`, dieselbe Absicherung wie
+`/api/n8n/jobs`) liefert das jeweils neueste, unter `BACKUP_DIR`
+liegende Backup-Archiv aus (`404` falls noch keines existiert). Kein
+eigener Trigger-Mechanismus — die Datei wird vom internen Scheduler
+ohnehin produziert (siehe
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)),
+n8n holt sich nur ab, was bereits da ist. Ein n8n-Workflow ausserhalb
+dieses Repos ist dafür verantwortlich, die Datei extern abzulegen
+(WebDAV, Cloud-Speicher etc.) — eine native WebDAV-Anbindung im Portal
+selbst wurde bewusst nicht gebaut, siehe
+[2026-08-24-datenbank-backup-design.md](superpowers/specs/2026-08-24-datenbank-backup-design.md#nicht-teil-von-diesem-design).
+
+**Achtung:** das Archiv enthält Geheimnisse im Klartext (u. a. das
+RFC3161-TSA-Passwort) — der Workflow, der diese Route abruft, muss die
+Datei entsprechend sicher handhaben.

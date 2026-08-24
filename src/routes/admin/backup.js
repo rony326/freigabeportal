@@ -116,10 +116,11 @@ export function createBackupRouter({ db, config }) {
 
   router.post('/dateien/:name/loeschen', (req, res) => {
     const { name } = req.params;
-    if (BACKUP_DATEINAME_PATTERN.test(name)) {
-      const pfad = join(config.backupDir, name);
-      if (existsSync(pfad)) unlinkSync(pfad);
+    if (!BACKUP_DATEINAME_PATTERN.test(name)) {
+      return res.status(404).render('error', { message: 'Backup nicht gefunden.' });
     }
+    const pfad = join(config.backupDir, name);
+    if (existsSync(pfad)) unlinkSync(pfad);
     res.redirect('/admin/backup');
   });
 

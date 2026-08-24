@@ -174,3 +174,19 @@ test('POST /admin/backup/dateien/:name/loeschen removes the file', async () => {
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('POST /admin/backup/dateien/:name/loeschen returns 404 for a path-traversal attempt', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'backup-route-test-'));
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedSuperadmin(db);
+  const app = buildTestApp(db, testConfig(dir));
+
+  const traversalRes = await request(app)
+    .post('/admin/backup/dateien/..%2F..%2Fetc%2Fpasswd/loeschen')
+    .set('x-test-person-id', '99');
+  assert.equal(traversalRes.status, 404);
+
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});

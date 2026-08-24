@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -8,9 +8,10 @@ import { openDatabase } from '../../src/db/index.js';
 import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { createJob, getJobById } from '../../src/db/jobsRepo.js';
 import { listRecentCronLog, startCronLauf } from '../../src/db/cronLogRepo.js';
-import { runZeitstempelNachholenJob } from '../../src/services/cronJobs.js';
+import { runZeitstempelNachholenJob, runDatenbankSicherungJob } from '../../src/services/cronJobs.js';
 import { setupMockTsa } from '../helpers/mockTsa.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
+import { BACKUP_DATEINAME_PATTERN } from '../../src/services/backup.js';
 
 const RFC3161_RESPONSE = readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url));
 
@@ -135,4 +136,73 @@ test('runZeitstempelNachholenJob counts a TSA failure as fehlgeschlagen without 
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
+});
+
+test('runDatenbankSicherungJob writes a backup file, logs to cron_log, and prunes beyond the retention count', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cronjobs-backup-test-'));
+  const config = {
+    jobsDir: join(dir, 'jobs'),
+    brandingDir: join(dir, 'branding'),
+    backupDir: join(dir, 'backups'),
+    dbPath: join(dir, 'db.sqlite'),
+  };
+  const db = openDatabase(config.dbPath);
+  setConfigValue(db, 'backup_aufbewahrung_anzahl', '2');
+
+  const erstesErgebnis = runDatenbankSicherungJob(db, config);
+  assert.equal(erstesErgebnis.status, 'erfolg');
+  assert.match(erstesErgebnis.dateiname, BACKUP_DATEINAME_PATTERN);
+  assert.ok(erstesErgebnis.groesseBytes > 0);
+  assert.equal(erstesErgebnis.bereinigt, 0);
+
+  runDatenbankSicherungJob(db, config);
+  const drittesErgebnis = runDatenbankSicherungJob(db, config);
+  assert.equal(drittesErgebnis.bereinigt, 1, 'retention of 2 must prune the oldest of 3 backups');
+
+  const uebrig = readdirSync(config.backupDir).filter((name) => BACKUP_DATEINAME_PATTERN.test(name));
+  assert.equal(uebrig.length, 2);
+  assert.ok(!uebrig.includes(erstesErgebnis.dateiname), 'the oldest backup must have been pruned');
+
+  const log = listRecentCronLog(db, 'datenbank-sicherung', 10);
+  assert.equal(log.length, 3);
+  assert.equal(log[0].status, 'erfolg');
+
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runDatenbankSicherungJob still reports erfolg for the new backup when pruning an old file fails', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cronjobs-backup-prune-fail-test-'));
+  const config = {
+    jobsDir: join(dir, 'jobs'),
+    brandingDir: join(dir, 'branding'),
+    backupDir: join(dir, 'backups'),
+    dbPath: join(dir, 'db.sqlite'),
+  };
+  const db = openDatabase(config.dbPath);
+  setConfigValue(db, 'backup_aufbewahrung_anzahl', '1');
+
+  const erstesErgebnis = runDatenbankSicherungJob(db, config);
+  assert.equal(erstesErgebnis.status, 'erfolg');
+
+  // Simulate a stubborn old backup that can't be unlinked: a directory (not a file) whose name
+  // still matches BACKUP_DATEINAME_PATTERN and sorts before the real backups, so unlinkSync
+  // throws EISDIR on it first during pruning.
+  mkdirSync(join(config.backupDir, 'backup-2000-01-01T00-00-00-000Z.zip'));
+
+  const zweitesErgebnis = runDatenbankSicherungJob(db, config);
+  assert.equal(
+    zweitesErgebnis.status,
+    'erfolg',
+    'a pruning failure must not fail the overall run once the new backup is safely written'
+  );
+  assert.match(zweitesErgebnis.dateiname, BACKUP_DATEINAME_PATTERN);
+  assert.ok(zweitesErgebnis.groesseBytes > 0);
+  assert.equal(zweitesErgebnis.bereinigt, 0, 'pruning aborted on the first EISDIR failure, before deleting anything');
+
+  const uebrig = readdirSync(config.backupDir);
+  assert.ok(uebrig.includes(erstesErgebnis.dateiname), 'the real first backup must still be present since pruning failed before reaching it');
+
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
 });

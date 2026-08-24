@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Datenbank-Backup — <%= branding.seitenTitel %> Admin</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <h1>Datenbank-Backup</h1>
+    <div class="alert alert-warning">
+      Jedes Backup-Archiv enthält sämtliche Rechnungsdaten und Geheimnisse im Klartext (u. a. das RFC3161-TSA-Passwort) — Downloads entsprechend sicher aufbewahren.
+    </div>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger">
+        <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+
+    <h2 class="h5 mt-3">Zeitplan &amp; Aufbewahrung</h2>
+    <form method="post" action="/admin/backup" class="col-12 col-lg-8">
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="cronStunde">Stunde (0–23)</label>
+          <input type="number" min="0" max="23" class="form-control" id="cronStunde" name="cronStunde" value="<%= cronStunde %>" required>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="cronMinute">Minute (0–59)</label>
+          <input type="number" min="0" max="59" class="form-control" id="cronMinute" name="cronMinute" value="<%= cronMinute %>" required>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="aufbewahrungAnzahl">Aufbewahrung (Anzahl Backups)</label>
+          <input type="number" min="1" class="form-control" id="aufbewahrungAnzahl" name="aufbewahrungAnzahl" value="<%= aufbewahrungAnzahl %>" required>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+      <% if (gespeichert) { %>
+        <div class="alert alert-success alert-dismissible fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">
+          Gespeichert.
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
+        </div>
+      <% } %>
+    </form>
+
+    <hr class="my-4">
+
+    <h2 class="h5">Manuelle Sicherung</h2>
+    <form method="post" action="/admin/backup/jetzt-ausfuehren" class="mb-2">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt sichern</button>
+    </form>
+    <% if (getriggert === '1') { %>
+      <% const letzterLauf = sicherungLog[0]; %>
+      <% if (letzterLauf) { %>
+        <div class="alert <%= letzterLauf.status === 'erfolg' ? 'alert-success' : letzterLauf.status === 'laufend' ? 'alert-info' : 'alert-danger' %>">
+          <% if (letzterLauf.status === 'erfolg') { %>
+            Erfolgreich gesichert: <%= letzterLauf.details %>
+          <% } else if (letzterLauf.status === 'laufend') { %>
+            Ein Backup-Lauf war bereits aktiv — dieser Trigger wurde übersprungen.
+          <% } else { %>
+            Fehlgeschlagen: <%= letzterLauf.details || letzterLauf.status %>
+          <% } %>
+        </div>
+      <% } %>
+    <% } %>
+
+    <h2 class="h5 mt-4">Lokale Backups</h2>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Datei</th><th>Grösse</th><th>Erstellt</th><th></th></tr></thead>
+        <tbody>
+          <% backups.forEach((b) => { %>
+            <tr>
+              <td><%= b.dateiname %></td>
+              <td><%= b.groesseBytes %> Bytes</td>
+              <td><%= b.erstelltAm %></td>
+              <td class="text-end">
+                <a class="btn btn-outline-secondary btn-sm" href="/admin/backup/dateien/<%= encodeURIComponent(b.dateiname) %>">Download</a>
+                <form method="post" action="/admin/backup/dateien/<%= encodeURIComponent(b.dateiname) %>/loeschen" class="d-inline" onsubmit="return confirm('Backup wirklich löschen?');">
+                  <button type="submit" class="btn btn-outline-danger btn-sm">Löschen</button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+          <% if (backups.length === 0) { %>
+            <tr><td colspan="4" class="text-muted">Noch keine Backups vorhanden.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <hr class="my-4">
+
+    <h2 class="h5">Wiederherstellen</h2>
+    <div class="alert alert-danger">
+      Eine Wiederherstellung überschreibt Datenbank und Dateien vollständig. Danach muss die App sofort manuell neu gestartet werden (Infomaniak-Manager): Bis dahin arbeitet der laufende Prozess weiter auf der alten Datenbankdatei, und alles, was in der Zwischenzeit im Portal passiert, ist mit dem Neustart verloren.
+    </div>
+    <% if (restoreErrors && restoreErrors.length > 0) { %>
+      <div class="alert alert-danger">
+        <ul class="mb-0"><% restoreErrors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+    <% if (wiederhergestellt) { %>
+      <div class="alert alert-success">
+        <p class="mb-2">Wiederherstellung auf Dateiebene abgeschlossen. Die App jetzt sofort manuell neu starten (Infomaniak-Manager).</p>
+        <p class="mb-0">Bis zum Neustart läuft die App in einem inkonsistenten Zustand: Der laufende Prozess arbeitet weiterhin auf der alten Datenbankdatei. Alles, was ab jetzt im Portal passiert — neu eintreffende Rechnungen, Kontierungen, Freigaben, jede Änderung im Admin-Bereich — landet in dieser alten Datei und ist mit dem Neustart ersatzlos verloren. Das Portal deshalb bis zum Neustart nicht weiter benutzen.</p>
+      </div>
+    <% } %>
+    <form method="post" action="/admin/backup/wiederherstellen" enctype="multipart/form-data" class="col-12 col-lg-8">
+      <div class="mb-3">
+        <label class="form-label" for="backup">Backup-Datei (.zip)</label>
+        <input type="file" class="form-control" id="backup" name="backup" accept=".zip" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="bestaetigung">Zur Bestätigung "WIEDERHERSTELLEN" eintippen</label>
+        <input type="text" class="form-control" id="bestaetigung" name="bestaetigung" required>
+      </div>
+      <button type="submit" class="btn btn-danger">Wiederherstellen</button>
+    </form>
+
+    <h2 class="h5 mt-4">Wiederherstellungs-Verlauf</h2>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Datei</th><th>Von</th><th>Zeitpunkt</th></tr></thead>
+        <tbody>
+          <% wiederherstellungen.forEach((w) => { %>
+            <tr><td><%= w.dateiname %></td><td><%= w.personName %></td><td><%= w.zeitpunkt %></td></tr>
+          <% }) %>
+          <% if (wiederherstellungen.length === 0) { %>
+            <tr><td colspan="3" class="text-muted">Noch keine Wiederherstellung durchgeführt.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

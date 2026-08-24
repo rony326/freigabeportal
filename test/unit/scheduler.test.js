@@ -32,6 +32,7 @@ function fakeJobs(overrides = {}) {
     runPoolErinnerungenJob: async () => ({ status: 'erfolg' }),
     runPdfBereinigungJob: () => ({ status: 'erfolg' }),
     runZeitstempelNachholenJob: async () => ({ status: 'erfolg' }),
+    runDatenbankSicherungJob: () => ({ status: 'erfolg' }),
     ...overrides,
   };
 }
@@ -181,5 +182,23 @@ test('startScheduler runs the zeitstempel-nachholen job on the configured interv
   t.mock.timers.tick(5 * 60 * 1000);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(calls, 2);
+  db.close();
+});
+
+test('startScheduler runs the daily datenbank-sicherung job at the configured time (default 03:00)', async (t) => {
+  // 2026-01-15T00:00:00Z is 01:00 in Zurich (CET, UTC+1) -- 03:00 is 2 hours away.
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: new Date('2026-01-15T00:00:00.000Z') });
+  const db = seededDb();
+  let calls = 0;
+  startScheduler({
+    db,
+    config: {},
+    mailer: {},
+    jobs: fakeJobs({ runDatenbankSicherungJob: () => { calls += 1; return { status: 'erfolg' }; } }),
+  });
+
+  t.mock.timers.tick(2 * 60 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
   db.close();
 });

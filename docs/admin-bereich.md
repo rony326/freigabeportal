@@ -28,8 +28,9 @@ feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 | Personen-Sync | `/admin/sync` | Einzelrecht `sync_einsehen` |
 | Abgelehnte Rechnungen | `/admin/abgelehnt` | Einzelrecht `abgelehnt_verwalten` |
 | Geplante Jobs | `/admin/geplante-jobs` | Einzelrecht `geplante_jobs_verwalten` |
+| Datenbank-Backup | `/admin/backup` | **nur** `superadmin` |
 
-Die drei mit **nur `superadmin`** markierten Bereiche lassen sich als
+Die mit **nur `superadmin`** markierten Bereiche lassen sich als
 Einzelrecht gar nicht vergeben — strukturell abgesichert über den
 `CHECK`-Constraint auf `person_berechtigungen` (siehe
 [datenmodell.md](datenmodell.md#person_berechtigungen)).
@@ -75,6 +76,19 @@ Footer-Text, Seitentitel, sowie ob das Audit-Log lokale Zeit
 RFC3161-TSA-Konfiguration (URL, optionale Basic-Auth-Zugangsdaten,
 Warnschwelle in Stunden) — siehe
 [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md).
+
+## Datenbank-Backup (`/admin/backup`)
+
+Manuelle und geplante (täglich, Default 03:00) Sicherung von DB +
+`JOBS_DIR` + `BRANDING_DIR` als ein ZIP-Archiv nach `BACKUP_DIR`, mit
+konfigurierbarer Aufbewahrung (Default: die letzten 14). Download/Löschen
+einzelner lokaler Backups, sowie eine Wiederherstellung (Datei-Upload +
+Pflicht-Bestätigungstext "WIEDERHERSTELLEN"), die einen automatischen
+Sicherheits-Snapshot des vorherigen Standes anlegt, bevor sie Live-Dateien
+ersetzt. **Nur `superadmin`** — kein vergebbares Einzelrecht, strenger
+eingestuft als die drei bereits gesperrten Bereiche, weil das Archiv das
+RFC3161-TSA-Passwort im Klartext enthält. Details:
+[2026-08-24-datenbank-backup-design.md](superpowers/specs/2026-08-24-datenbank-backup-design.md).
 
 ## Personen (`/admin/personen`)
 

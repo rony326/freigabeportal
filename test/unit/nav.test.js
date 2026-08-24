@@ -33,6 +33,7 @@ test('loadNavFlags sets isSuperadmin true for a Superadmin (ChurchTools Admin gr
   const { res } = runLoadNavFlags(db, CONFIG, { churchtools_person_id: '1', gruppen: ['20'] }, '/admin');
   assert.equal(res.locals.isSuperadmin, true);
   assert.equal(res.locals.isBuchhaltung, false);
+  assert.equal(res.locals.adminNav.backup, true);
   db.close();
 });
 
@@ -51,6 +52,7 @@ test('loadNavFlags sets isManager true for a Manager group member, and adminNav 
   assert.equal(res.locals.adminNav.eskalation, false);
   assert.equal(res.locals.adminNav.erscheinungsbild, false);
   assert.equal(res.locals.adminNav.zeitstempel, false);
+  assert.equal(res.locals.adminNav.backup, false);
   db.close();
 });
 

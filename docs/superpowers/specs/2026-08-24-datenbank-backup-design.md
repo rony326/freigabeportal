@@ -147,8 +147,15 @@ Inhalt:
 5. Eintrag in neuer Tabelle `backup_wiederherstellungen` (siehe
    Datenmodell) mit der auslösenden Person.
 6. Ergebnisseite mit unübersehbarem Hinweis: *„Wiederherstellung auf
-   Dateiebene abgeschlossen. Die Oberfläche zeigt bis zum manuellen
-   Neustart (Infomaniak-Manager) weiterhin die alten Daten."*
+   Dateiebene abgeschlossen. Die App jetzt sofort manuell neu starten
+   (Infomaniak-Manager)."* — plus die Begründung, warum „sofort" wörtlich
+   gemeint ist: Bis zum Neustart arbeitet der laufende Prozess weiterhin auf
+   der alten Datenbankdatei (das offene File-Handle hängt am alten Inode).
+   Alles, was in der Zwischenzeit im Portal passiert — neu eintreffende
+   Rechnungen über `/api/n8n/jobs`, Kontierungen, Freigaben, jede
+   Admin-Änderung — landet in dieser alten Datei und ist mit dem Neustart
+   ersatzlos verloren. Das Portal ist zwischen Restore und Neustart faktisch
+   ausser Betrieb zu nehmen.
 
 Kein `process.exit()`, kein Versuch, die laufende `db`-Verbindung
 auszutauschen — bewusste Konsequenz aus den beiden Rahmenbedingungen oben.
@@ -177,10 +184,19 @@ Wiederherstellung ausgelöst hat):
 CREATE TABLE IF NOT EXISTS backup_wiederherstellungen (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   dateiname TEXT NOT NULL,
-  wiederhergestellt_von TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  wiederhergestellt_von TEXT NOT NULL,
   zeitpunkt TEXT NOT NULL
 );
 ```
+
+`wiederhergestellt_von` hat bewusst **keinen** Foreign Key auf `personen`
+(gleiche Begründung wie bei `job_loeschungen.job_id`, nur in die andere
+Richtung): Die Zeile wird in die *gerade wiederhergestellte* Datenbank
+geschrieben, deren `personen`-Tabelle aus dem Archiv stammt und die
+auslösende Person gar nicht enthalten muss (z. B. beim Restore eines
+Archivs, das älter ist als deren Konto). Ein erzwungener FK würde den
+Audit-Eintrag scheitern lassen und einen bereits erfolgreichen Restore als
+Fehler melden.
 
 `cron_log.job`-`CHECK` wird um `'datenbank-sicherung'` erweitert (siehe
 Migrationsmuster oben).

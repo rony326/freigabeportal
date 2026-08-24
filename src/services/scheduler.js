@@ -1,4 +1,4 @@
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob } from './cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob } from './cronJobs.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
 const ZEITZONE = 'Europe/Zurich';
@@ -95,11 +95,13 @@ export function startScheduler({
     runPoolErinnerungenJob: erinnerungenJob,
     runPdfBereinigungJob: bereinigungJob,
     runZeitstempelNachholenJob: zeitstempelJob,
+    runDatenbankSicherungJob: sicherungJob,
   } = {
     runSyncPersonenJob,
     runPoolErinnerungenJob,
     runPdfBereinigungJob,
     runZeitstempelNachholenJob,
+    runDatenbankSicherungJob,
   },
 }) {
   scheduleDaily(
@@ -133,6 +135,15 @@ export function startScheduler({
     async () => {
       const result = await zeitstempelJob(db, config);
       if (result.status === 'fehler') console.error('Geplanter zeitstempel-nachholen-Lauf fehlgeschlagen:', result.error);
+    }
+  );
+
+  scheduleDaily(
+    () => zahlOderStandard(getConfigValue(db, 'backup_cron_stunde'), 3),
+    () => zahlOderStandard(getConfigValue(db, 'backup_cron_minute'), 0),
+    () => {
+      const result = sicherungJob(db, config);
+      if (result.status === 'fehler') console.error('Geplanter datenbank-sicherung-Lauf fehlgeschlagen:', result.error);
     }
   );
 }

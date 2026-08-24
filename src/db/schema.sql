@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS admin_config (
 -- both fields in one shot via logCronLauf and never use 'laufend'.
 CREATE TABLE IF NOT EXISTS cron_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen')),
+  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung')),
   gestartet_am TEXT NOT NULL,
   beendet_am TEXT,
   status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
@@ -170,5 +170,20 @@ CREATE TABLE IF NOT EXISTS job_loeschungen (
   dateiname TEXT NOT NULL,
   geloescht_von TEXT NOT NULL REFERENCES personen(churchtools_person_id),
   begruendung TEXT NOT NULL,
+  zeitpunkt TEXT NOT NULL
+);
+
+-- Audit-Trail für Datenbank-Wiederherstellungen (Admin -> Datenbank-Backup). Eigene, schlanke
+-- Tabelle statt Zweckentfremdung von cron_log: anders als bei den geplanten Jobs muss hier
+-- festgehalten werden, welche Person eine Wiederherstellung ausgelöst hat.
+-- wiederhergestellt_von is deliberately NOT a foreign key (same rationale as job_loeschungen.job_id,
+-- only in the other direction): this row is written into the JUST-RESTORED database, whose personen
+-- table comes from the archive and may not contain the person who performed the restore at all
+-- (e.g. restoring an archive that predates that admin's account). An enforced FK would make the
+-- audit insert fail and report an already-successful restore as an error.
+CREATE TABLE IF NOT EXISTS backup_wiederherstellungen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dateiname TEXT NOT NULL,
+  wiederhergestellt_von TEXT NOT NULL,
   zeitpunkt TEXT NOT NULL
 );

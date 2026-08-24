@@ -37,8 +37,9 @@ in [`docs/`](docs/README.md).
 - **Port**: wird von Infomaniak automatisch über die Umgebungsvariable
   `PORT` vorgegeben — die App liest das bereits korrekt
   (`config/env.js`), keine manuelle Portwahl nötig.
-- **Datenverzeichnisse** (`DB_PATH`, `JOBS_DIR`, `BRANDING_DIR`, siehe
-  unten): alle drei werden von der App beim ersten Zugriff automatisch
+- **Datenverzeichnisse** (`DB_PATH`, `JOBS_DIR`, `BRANDING_DIR`,
+  `BACKUP_DIR`, siehe unten): alle vier werden von der App beim ersten
+  Zugriff automatisch
   angelegt (`mkdirSync({ recursive: true })`) — kein manueller Schritt
   nötig, nur sicherstellen, dass der gewählte Pfad im persistenten
   (redeploy-sicheren) Speicherbereich der Site liegt, nicht im
@@ -74,7 +75,7 @@ und dürfen nicht `changeme` enthalten — die App verweigert sonst den Start
 | Variable | Quelle |
 |---|---|
 | `SESSION_SECRET`, `DOWNLOAD_SIGNING_SECRET`, `CRON_SECRET`, `N8N_API_KEY` | neu generieren (`openssl rand -hex 32`), nie wiederverwenden |
-| `DB_PATH`, `JOBS_DIR`, `BRANDING_DIR` | Pfade im persistenten Speicherbereich der Site wählen |
+| `DB_PATH`, `JOBS_DIR`, `BRANDING_DIR`, `BACKUP_DIR` | Pfade im persistenten Speicherbereich der Site wählen — liegt einer davon im bei jedem Deploy ersetzten Ausführungsverzeichnis, sind die Daten (bzw. sämtliche Backups) nach dem nächsten Deploy weg |
 | `PUBLIC_BASE_URL` | die produktive Domain, `https://` |
 | `CT_BASE_URL`, `CT_CLIENT_ID`, `CT_CLIENT_SECRET`, `CT_REDIRECT_URI`, `CT_GROUP_ID_BUCHHALTUNG`, `CT_GROUP_ID_ADMIN` | aus der bereits registrierten ChurchTools-OAuth2-Anwendung |
 | `CT_GROUP_ID_MANAGER` (optional) | ChurchTools-Gruppe für die Manager-Rolle — Zugriff auf die meisten, aber nicht alle Admin-Bereiche; ohne diese Variable existiert die Rolle schlicht nicht |

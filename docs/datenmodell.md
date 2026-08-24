@@ -21,6 +21,7 @@ erDiagram
     jobs ||--o{ mail_log : "ausgelöste Mails"
     jobs ||--o{ jobs : "aufgesplittet_von (Parent → Teile)"
     jobs ||--o{ job_loeschungen : "Löschprotokoll (kein FK)"
+    personen ||--o{ backup_wiederherstellungen : "Restore-Protokoll (kein FK)"
 
     personen {
         text churchtools_person_id PK
@@ -117,6 +118,12 @@ erDiagram
         text begruendung
         text zeitpunkt
     }
+    backup_wiederherstellungen {
+        int id PK
+        text dateiname
+        text wiederhergestellt_von "bewusst KEIN FK"
+        text zeitpunkt
+    }
     sync_log { int id PK }
     cron_log { int id PK }
     admin_config { text key PK }
@@ -195,8 +202,27 @@ gerade, den Datensatz zu überleben, nachdem die zugehörige `jobs`-Zeile
 ist. `dateiname` wird dupliziert, weil sie sonst nach der Löschung nicht
 mehr rekonstruierbar wäre.
 
+### `backup_wiederherstellungen`
+Audit-Trail jeder Datenbank-Wiederherstellung über **Admin →
+Datenbank-Backup** (Dateiname des eingespielten Archivs, auslösende Person,
+Zeitpunkt) — Grundlage für den Wiederherstellungs-Verlauf auf dieser Seite.
+Eigene schlanke Tabelle statt Zweckentfremdung von `cron_log`, weil hier —
+anders als bei den geplanten Jobs — festgehalten werden muss, *welche
+Person* die Wiederherstellung ausgelöst hat.
+
+`wiederhergestellt_von` ist **absichtlich kein** Foreign Key auf `personen`
+— dieselbe Überlegung wie bei `job_loeschungen.job_id`, nur in die andere
+Richtung: Der Eintrag wird nicht in die laufende, sondern in die *gerade
+wiederhergestellte* Datenbank geschrieben (das offene File-Handle des
+Prozesses hängt nach dem Datei-Swap noch am alten Inode, ein Eintrag über
+die Live-Verbindung wäre beim Neustart weg). Deren `personen`-Tabelle stammt
+aus dem Archiv und muss die auslösende Person gar nicht enthalten — etwa
+beim Restore eines Archivs, das älter ist als deren Konto. Ein erzwungener
+FK würde genau dann den Audit-Eintrag scheitern lassen und einen bereits
+erfolgreichen Restore als Fehler melden.
+
 ### `sync_log`, `cron_log`, `admin_config`, `sessions`
 Betriebs-/Konfigurationstabellen: Lauf-Historie des nächtlichen
-ChurchTools-Syncs bzw. der drei anderen Hintergrund-Jobs, Key-Value-Store
+ChurchTools-Syncs bzw. der vier anderen Hintergrund-Jobs, Key-Value-Store
 für alle Admin-Einstellungen (Eskalationszeiten, Cron-Zeitpläne,
 Branding, TSA-Konfiguration, …), und der Express-Session-Store.

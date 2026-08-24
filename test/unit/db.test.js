@@ -10,7 +10,7 @@ test('openDatabase creates all expected tables', () => {
   const db = openDatabase(':memory:');
   const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
   const names = rows.map((r) => r.name);
-  for (const expected of ['personen', 'sessions', 'sync_log', 'admin_config', 'konten', 'zuweisungsregeln', 'jobs', 'freigaben', 'mail_log', 'job_loeschungen', 'cron_log']) {
+  for (const expected of ['personen', 'sessions', 'sync_log', 'admin_config', 'konten', 'zuweisungsregeln', 'jobs', 'freigaben', 'mail_log', 'job_loeschungen', 'cron_log', 'backup_wiederherstellungen']) {
     assert.ok(names.includes(expected), `missing table ${expected}`);
   }
   db.close();
@@ -436,6 +436,42 @@ test('openDatabase does not throw when migrating a mail_log table that contains 
   const orphan = migratedDb.prepare('SELECT * FROM mail_log WHERE job_id = 999999').get();
   assert.ok(orphan, 'the orphaned row must survive the migration, not be dropped or block it');
   assert.equal(orphan.empfaenger, 'orphan@example.org');
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('openDatabase rebuilds the cron_log table to widen its job CHECK constraint to include datenbank-sicherung', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE cron_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen')),
+      gestartet_am TEXT NOT NULL,
+      beendet_am TEXT,
+      status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
+      details TEXT
+    );
+    INSERT INTO cron_log (job, gestartet_am, beendet_am, status, details)
+      VALUES ('zeitstempel-nachholen', '2026-08-15T08:00:00.000Z', '2026-08-15T08:00:05.000Z', 'erfolg', 'Nachgeholt: 1');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+
+  const preserved = migratedDb.prepare('SELECT * FROM cron_log WHERE id = 1').get();
+  assert.ok(preserved, 'existing rows must survive the rebuild');
+  assert.equal(preserved.job, 'zeitstempel-nachholen');
+
+  assert.doesNotThrow(
+    () =>
+      migratedDb
+        .prepare("INSERT INTO cron_log (job, gestartet_am, beendet_am, status, details) VALUES ('datenbank-sicherung', '2026-08-24T03:00:00.000Z', NULL, 'laufend', NULL)")
+        .run(),
+    'the widened CHECK constraint must accept datenbank-sicherung'
+  );
+
   migratedDb.close();
   rmSync(dir, { recursive: true, force: true });
 });

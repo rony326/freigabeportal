@@ -1,3 +1,9 @@
 <footer class="border-top mt-4 py-3 text-center text-muted small">
   © <%= new Date().getFullYear() %> <%= branding.footerText || 'Freigabeportal' %>
+  <% if (typeof version !== 'undefined' && version && version.repoUrl) { %>
+    · <a href="<%= version.repoUrl %>" target="_blank" rel="noopener noreferrer">GitHub</a>
+    <% if (version.display && version.url) { %>
+      (<a href="<%= version.url %>" target="_blank" rel="noopener noreferrer"><%= version.display %></a>)
+    <% } %>
+  <% } %>
 </footer>

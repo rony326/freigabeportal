@@ -34,6 +34,7 @@ import { createAblehnungRouter } from './routes/ablehnung.js';
 import { createZeitstempelPruefenRouter } from './routes/zeitstempelPruefen.js';
 import { createMailerOrFallback } from './services/mailer.js';
 import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
+import { getVersionInfo } from './utils/version.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -42,6 +43,9 @@ export function createApp({ db, config }) {
   app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
   app.set('views', join(__dirname, '..', 'views'));
+  // Computed once at startup, not per request — the deployed commit doesn't change while the
+  // process is running, and shelling out to git on every request would be wasteful.
+  app.locals.version = getVersionInfo(join(__dirname, '..'));
   app.use((req, res, next) => {
     // X-Content-Type-Options: the PDF magic-byte check on upload only validates the first 4
     // bytes, so this stops a browser from sniffing a crafted upload into something other than

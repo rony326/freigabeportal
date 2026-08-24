@@ -18,6 +18,11 @@ export function backupDateiname(date = new Date()) {
 
 export class BackupValidationError extends Error {}
 
+// Zählt die echten Dateien (keine Verzeichniseinträge) unterhalb eines Präfixes im Archiv.
+function zaehleDateiEintraege(zip, praefix) {
+  return zip.getEntries().filter((entry) => !entry.isDirectory && entry.entryName.startsWith(praefix)).length;
+}
+
 // SQLite-eigener Online-Backup-Mechanismus (funktioniert bei laufendem Betrieb, kein Lock auf der
 // Live-Verbindung nötig) -- VACUUM INTO verlangt einen noch nicht existierenden Zielpfad, daher
 // ein frisches Tempverzeichnis statt eines festen Dateinamens.
@@ -33,7 +38,20 @@ export function buildBackupArchive(db, config) {
     if (existsSync(config.brandingDir)) zip.addLocalFolder(config.brandingDir, 'branding');
     zip.addFile(
       'manifest.json',
-      Buffer.from(JSON.stringify({ formatVersion: FORMAT_VERSION, erstelltAm: new Date().toISOString() }, null, 2))
+      Buffer.from(
+        JSON.stringify(
+          {
+            formatVersion: FORMAT_VERSION,
+            erstelltAm: new Date().toISOString(),
+            // Reine Plausibilitätsangaben für den Restore (siehe validateBackupArchive) -- gezählt
+            // wird auf dem fertigen Zip, damit Schreib- und Leseseite exakt dieselbe Logik nutzen.
+            dateiAnzahlJobs: zaehleDateiEintraege(zip, 'jobs/'),
+            dateiAnzahlBranding: zaehleDateiEintraege(zip, 'branding/'),
+          },
+          null,
+          2
+        )
+      )
     );
     return zip.toBuffer();
   } finally {
@@ -59,6 +77,36 @@ export function validateBackupArchive(buffer) {
     manifest = JSON.parse(zip.readAsText(manifestEntry));
   } catch {
     throw new BackupValidationError('manifest.json ist kein gültiges JSON.');
+  }
+  // JSON.parse('null') bzw. '"text"' wirft nicht -- ab hier wird auf Feldern gelesen, deshalb der
+  // explizite Objekt-Check statt eines TypeErrors, der als 500 durchschlagen würde.
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    throw new BackupValidationError('manifest.json enthält kein Objekt.');
+  }
+
+  // Harte Grenze: ein Archiv aus einer neueren Portal-Version kann Strukturen enthalten, die diese
+  // Version beim Restore stillschweigend falsch behandeln würde.
+  if (Number(manifest.formatVersion) > FORMAT_VERSION) {
+    throw new BackupValidationError(
+      'Dieses Backup wurde mit einer neueren Portal-Version erstellt und kann hier nicht wiederhergestellt werden.'
+    );
+  }
+
+  // Weiche Plausibilitätsprüfung (Design-Spec: "erste Plausibilitätsprüfung"): eine Abweichung
+  // zwischen deklarierter und tatsächlicher Dateianzahl deutet auf ein beschädigtes oder
+  // nachträglich verändertes Archiv hin, ist aber kein Grund, einen Restore zu verweigern.
+  for (const [praefix, feld] of [
+    ['jobs/', 'dateiAnzahlJobs'],
+    ['branding/', 'dateiAnzahlBranding'],
+  ]) {
+    const deklariert = manifest[feld];
+    if (typeof deklariert !== 'number') continue;
+    const tatsaechlich = zaehleDateiEintraege(zip, praefix);
+    if (deklariert !== tatsaechlich) {
+      console.warn(
+        `Backup-Archiv: manifest.json meldet ${deklariert} Datei(en) unter "${praefix}", tatsächlich enthalten sind ${tatsaechlich}.`
+      );
+    }
   }
 
   const dbEntry = zip.getEntry('db.sqlite');
@@ -149,11 +197,24 @@ export function restoreBackupArchive(buffer, db, config, { wiederhergestelltVon,
   // die Verbindung zurückgegeben wird, genau wie jeder andere Einstiegspunkt in dieser Codebase --
   // damit existiert die Tabelle garantiert, statt dass ein "no such table"-Fehler hier den
   // eigentlich erfolgreichen Restore fälschlich als fehlgeschlagen erscheinen lässt.
-  const restoredDb = openDatabase(config.dbPath);
+  //
+  // Der komplette Audit-Schritt ist in einem eigenen try/catch isoliert (analog zur
+  // Retention-Bereinigung in runDatenbankSicherungJob): der Restore ist an dieser Stelle bereits
+  // vollständig und erfolgreich auf der Platte. Schlägt nur noch die Buchführung fehl, darf das
+  // niemals als fehlgeschlagener Restore gemeldet werden -- die Route würde sonst eine 500-Seite
+  // zeigen, obwohl die Live-Daten längst ersetzt sind und der Admin sofort neu starten muss.
+  let restoredDb;
   try {
+    restoredDb = openDatabase(config.dbPath);
     logBackupWiederherstellung(restoredDb, { dateiname: quellDateiname, wiederhergestelltVon });
+  } catch (err) {
+    console.error('Audit-Eintrag zur Wiederherstellung konnte nicht geschrieben werden:', err.message);
   } finally {
-    restoredDb.close();
+    try {
+      restoredDb?.close();
+    } catch (err) {
+      console.error('Schliessen der Verbindung zur wiederhergestellten Datenbank fehlgeschlagen:', err.message);
+    }
   }
 
   return { sicherheitsSnapshotDateiname: sicherheitsDateiname };

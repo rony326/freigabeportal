@@ -92,6 +92,7 @@ und Zugriffskontrolle — siehe
 | `/branding` | public | offen | Logo ausliefern |
 | `/admin` + Unterrouten | session | `requireAdminAreaAccess` + pro Bereich unterschiedlich (siehe [admin-bereich.md](admin-bereich.md)) | gesamter Admin-Bereich |
 | `/api/n8n/jobs` | machine | `X-API-Key` | Rechnungseingang/-abholung durch n8n |
+| `/api/n8n/backup` | machine | `X-API-Key` | Abholung des neuesten Backup-Archivs durch n8n (Offsite-Ablage) |
 | `/api/pool` | session | Rolle `buchhaltung` | JSON-Pool-API (Beanspruchen) |
 | `/pool` | session | eingeloggt | Dashboard für jede aktive Person |
 | `/downloads` | eigene (session bzw. public je Route) | siehe [n8n-schnittstelle.md](n8n-schnittstelle.md) | signierte PDF-/Thumbnail-Auslieferung |
@@ -117,7 +118,8 @@ und Zugriffskontrolle — siehe
   Signatur — so kann auch n8n (ohne Login) eine PDF für ein kurzes
   Zeitfenster abrufen.
 - **API-Key/Cron-Secret**: gleiche zeitkonstante Vergleichslogik für
-  `X-API-Key` (`/api/n8n/jobs`) und `X-Cron-Secret` (`/internal/cron`).
+  `X-API-Key` (`/api/n8n/jobs`, `/api/n8n/backup/latest`) und `X-Cron-Secret`
+  (`/internal/cron`).
 - **Rate-Limiting**, dreistufig: `public` (100/15 Min, IP-basiert),
   `session` (300/15 Min, personen- oder IP-basiert) und `machine`
   (60/1 Min, IP-basiert, für API-Key-/Cron-Aufrufer).

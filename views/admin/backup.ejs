@@ -95,7 +95,7 @@
 
     <h2 class="h5">Wiederherstellen</h2>
     <div class="alert alert-danger">
-      Eine Wiederherstellung überschreibt Datenbank und Dateien vollständig. Die Oberfläche zeigt bis zum manuellen Neustart der App (Infomaniak-Manager) weiterhin die alten Daten.
+      Eine Wiederherstellung überschreibt Datenbank und Dateien vollständig. Danach muss die App sofort manuell neu gestartet werden (Infomaniak-Manager): Bis dahin arbeitet der laufende Prozess weiter auf der alten Datenbankdatei, und alles, was in der Zwischenzeit im Portal passiert, ist mit dem Neustart verloren.
     </div>
     <% if (restoreErrors && restoreErrors.length > 0) { %>
       <div class="alert alert-danger">
@@ -103,7 +103,10 @@
       </div>
     <% } %>
     <% if (wiederhergestellt) { %>
-      <div class="alert alert-success">Wiederherstellung auf Dateiebene abgeschlossen. Bitte die App jetzt manuell neu starten.</div>
+      <div class="alert alert-success">
+        <p class="mb-2">Wiederherstellung auf Dateiebene abgeschlossen. Die App jetzt sofort manuell neu starten (Infomaniak-Manager).</p>
+        <p class="mb-0">Bis zum Neustart läuft die App in einem inkonsistenten Zustand: Der laufende Prozess arbeitet weiterhin auf der alten Datenbankdatei. Alles, was ab jetzt im Portal passiert — neu eintreffende Rechnungen, Kontierungen, Freigaben, jede Änderung im Admin-Bereich — landet in dieser alten Datei und ist mit dem Neustart ersatzlos verloren. Das Portal deshalb bis zum Neustart nicht weiter benutzen.</p>
+      </div>
     <% } %>
     <form method="post" action="/admin/backup/wiederherstellen" enctype="multipart/form-data" class="col-12 col-lg-8">
       <div class="mb-3">

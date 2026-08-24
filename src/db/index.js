@@ -152,21 +152,21 @@ function migrateMailLogTable(db) {
 }
 
 // Same rationale as migrateFreigabenTable above: an already-existing cron_log table (any database
-// that predates the 'zeitstempel-nachholen' job name, or predates the 'laufend' status value and
-// nullable beendet_am that a running-but-not-yet-finished zeitstempel-nachholen entry needs — see
-// hasRecentRunningCronLauf in cronLogRepo.js) keeps its original, narrower schema forever
-// otherwise, and logCronLauf/startCronLauf('zeitstempel-nachholen', ...) would fail on it.
+// that predates the 'datenbank-sicherung' job name) keeps its original, narrower schema forever
+// otherwise, and startCronLauf('datenbank-sicherung', ...) would fail on it. The marker value this
+// function checks for moves forward each time the CHECK is widened again -- check the CREATE TABLE
+// below for what it currently allows, not this comment.
 function migrateCronLogTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cron_log'").get();
-  if (!tableSql || (tableSql.sql.includes('zeitstempel-nachholen') && tableSql.sql.includes("'laufend'"))) return;
+  if (!tableSql || tableSql.sql.includes('datenbank-sicherung')) return;
 
   db.exec('BEGIN');
   try {
-    db.exec('ALTER TABLE cron_log RENAME TO cron_log_pre_zeitstempel_nachholen');
+    db.exec('ALTER TABLE cron_log RENAME TO cron_log_pre_datenbank_sicherung');
     db.exec(`
       CREATE TABLE cron_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen')),
+        job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung')),
         gestartet_am TEXT NOT NULL,
         beendet_am TEXT,
         status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
@@ -175,9 +175,9 @@ function migrateCronLogTable(db) {
     `);
     db.exec(`
       INSERT INTO cron_log (id, job, gestartet_am, beendet_am, status, details)
-      SELECT id, job, gestartet_am, beendet_am, status, details FROM cron_log_pre_zeitstempel_nachholen
+      SELECT id, job, gestartet_am, beendet_am, status, details FROM cron_log_pre_datenbank_sicherung
     `);
-    db.exec('DROP TABLE cron_log_pre_zeitstempel_nachholen');
+    db.exec('DROP TABLE cron_log_pre_datenbank_sicherung');
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');

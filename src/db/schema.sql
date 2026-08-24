@@ -172,3 +172,13 @@ CREATE TABLE IF NOT EXISTS job_loeschungen (
   begruendung TEXT NOT NULL,
   zeitpunkt TEXT NOT NULL
 );
+
+-- Audit-Trail für Datenbank-Wiederherstellungen (Admin -> Datenbank-Backup). Eigene, schlanke
+-- Tabelle statt Zweckentfremdung von cron_log: anders als bei den geplanten Jobs muss hier
+-- festgehalten werden, welche Person eine Wiederherstellung ausgelöst hat.
+CREATE TABLE IF NOT EXISTS backup_wiederherstellungen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dateiname TEXT NOT NULL,
+  wiederhergestellt_von TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  zeitpunkt TEXT NOT NULL
+);

@@ -1,6 +1,7 @@
-import { existsSync, unlinkSync, readdirSync, statSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { existsSync, unlinkSync, readdirSync, statSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import { buildBackupArchive, backupDateiname, BACKUP_DATEINAME_PATTERN } from './backup.js';
 import { runPersonenSync } from './sync.js';
 import { hasRecentRunningSync } from '../db/syncLogRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -243,6 +244,45 @@ export async function runZeitstempelNachholenJob(db, config) {
       beendetAm: new Date().toISOString(),
       status: 'erfolg',
       details: `Nachgeholt: ${nachgeholt}, Fehlgeschlagen: ${fehlgeschlagen}, Datei fehlt: ${dateiFehlt}`,
+    });
+    return ergebnis;
+  } catch (err) {
+    finishCronLauf(db, laufId, { beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
+    return { status: 'fehler', error: err.message };
+  }
+}
+
+// Läuft wie zeitstempel-nachholen mit Zwei-Phasen-Logging (Overlap-Guard) statt des
+// Einzelschuss-logCronLauf der schnellen Jobs -- das Zippen von JOBS_DIR/BRANDING_DIR kann bei
+// vielen Dateien länger dauern als pool-erinnerungen/pdf-bereinigung.
+export function runDatenbankSicherungJob(db, config) {
+  if (hasRecentRunningCronLauf(db, 'datenbank-sicherung')) {
+    return { status: 'uebersprungen', meldung: 'Ein Backup-Lauf ist bereits aktiv' };
+  }
+
+  const laufId = startCronLauf(db, 'datenbank-sicherung');
+  try {
+    mkdirSync(config.backupDir, { recursive: true });
+    const archiv = buildBackupArchive(db, config);
+    const dateiname = backupDateiname(new Date());
+    writeFileSync(join(config.backupDir, dateiname), archiv);
+
+    const aufbewahrungAnzahl = Number(getConfigValue(db, 'backup_aufbewahrung_anzahl')) || 14;
+    const vorhandene = readdirSync(config.backupDir)
+      .filter((name) => BACKUP_DATEINAME_PATTERN.test(name))
+      .sort();
+    let bereinigt = 0;
+    const zuLoeschendeAnzahl = vorhandene.length - aufbewahrungAnzahl;
+    for (let i = 0; i < zuLoeschendeAnzahl; i += 1) {
+      unlinkSync(join(config.backupDir, vorhandene[i]));
+      bereinigt += 1;
+    }
+
+    const ergebnis = { status: 'erfolg', dateiname, groesseBytes: archiv.length, bereinigt };
+    finishCronLauf(db, laufId, {
+      beendetAm: new Date().toISOString(),
+      status: 'erfolg',
+      details: `Datei: ${dateiname}, Grösse: ${archiv.length} Bytes, Bereinigt: ${bereinigt}`,
     });
     return ergebnis;
   } catch (err) {

@@ -118,6 +118,16 @@
         </a>
       </div>
       <% } %>
+      <% if (adminNav.backup) { %>
+      <div class="col">
+        <a href="/admin/backup" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Datenbank-Backup</h2>
+            <p class="card-text text-body-secondary">Sicherung erstellen, Backups verwalten, wiederherstellen.</p>
+          </div>
+        </a>
+      </div>
+      <% } %>
     </div>
   </main>
   <%- include('../_footer') %>

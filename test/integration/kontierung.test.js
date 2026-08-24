@@ -2,9 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PDFDocument } from 'pdf-lib';
+import { buildPdfFixture } from '../helpers/pdfFixture.js';
+import { PNG_1X1 } from '../helpers/imageFixture.js';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById, deactivateKonto } from '../../src/db/kontenRepo.js';
@@ -555,6 +558,85 @@ test('POST /kontierung/:id with a Konto the person has no role on is rejected, n
   db.close();
 });
 
+test('POST /kontierung/:id with a Beleg PDF attached merges it into the job\'s PDF before completing Kontierung', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'beleg-test-'));
+  const kontoId = seedKontoAndPersonen(db);
+  const pdfPfad = join(jobsDir, 'original.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Kreditkartenabrechnung']));
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const beleg = await buildPdfFixture(['Restaurantquittung']);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .field('kontoId', String(kontoId))
+    .field('interessenskonflikt', 'nein')
+    .field('begruendung', '')
+    .attach('beleg', beleg, { filename: 'beleg.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).status, 'freigabe2');
+  const merged = await PDFDocument.load(readFileSync(pdfPfad));
+  assert.equal(merged.getPageCount(), 2, 'original page + appended Beleg page');
+  rmSync(jobsDir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /kontierung/:id with a non-PDF/image Beleg is rejected, nothing persisted or merged', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'beleg-test-'));
+  const kontoId = seedKontoAndPersonen(db);
+  const pdfPfad = join(jobsDir, 'original.pdf');
+  const originalBytes = await buildPdfFixture(['Kreditkartenabrechnung']);
+  writeFileSync(pdfPfad, originalBytes);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .field('kontoId', String(kontoId))
+    .field('interessenskonflikt', 'nein')
+    .field('begruendung', '')
+    .attach('beleg', Buffer.from('not a real file'), { filename: 'evil.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Beleg muss eine PDF-, PNG- oder JPEG-Datei sein/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.deepEqual(readFileSync(pdfPfad), originalBytes);
+  rmSync(jobsDir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /kontierung/:id aktion=ablehnen with a Beleg image attached still merges it, even though the job is being rejected', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'beleg-test-'));
+  seedKontoAndPersonen(db);
+  const pdfPfad = join(jobsDir, 'original.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Kreditkartenabrechnung']));
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .field('aktion', 'ablehnen')
+    .field('begruendung', 'Fehlerhafte Rechnung')
+    .attach('beleg', PNG_1X1, { filename: 'beleg.png', contentType: 'image/png' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).status, 'abgelehnt');
+  const merged = await PDFDocument.load(readFileSync(pdfPfad));
+  assert.equal(merged.getPageCount(), 2, 'original page + appended Beleg image page');
+  rmSync(jobsDir, { recursive: true, force: true });
+  db.close();
+});
+
 test('POST /kontierung/:id/zurueck-in-pool releases the job and redirects to /pool', async () => {
   const db = openDatabase(':memory:');
   seedKontoAndPersonen(db);
@@ -1048,6 +1130,19 @@ function seedJobMitDateien(db, jobsDir, { betrag = '200.00' } = {}) {
   return { id, kontoId, pdfPfad };
 }
 
+// Same as seedJobMitDateien, but with a real, page-countable PDF fixture rather than the lenient
+// "%PDF-1.4\n%test\n" placeholder — needed for the Beleg-Anhängen tests below, which assert on
+// getPageCount() growing after a merge.
+async function seedJobMitEchtemPdf(db, jobsDir, { betrag = '200.00' } = {}) {
+  const kontoId = seedKontoAndPersonen(db);
+  const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, await buildPdfFixture(['Kreditkartenabrechnung']));
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
+  claimJob(db, id, '1');
+  updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag, zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId: null });
+  return { id, kontoId, pdfPfad };
+}
+
 test('GET /kontierung/:id/aufsplitten works even when the job has no Betrag yet, with an empty Gesamtbetrag field to fill in', async () => {
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
@@ -1137,6 +1232,60 @@ test('POST /kontierung/:id/aufsplitten creates independent split jobs, each with
     assert.equal(freigaben[0].rolle, 'freigeber1');
     assert.equal(freigaben[0].person_id, '1');
   }
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten merges a per-Zeile Beleg into just that split part\'s own PDF copy', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = await seedJobMitEchtemPdf(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+  const beleg = await buildPdfFixture(['Restaurantquittung']);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .field('gesamtbetrag', '200.00')
+    .field('teilKontoId', String(kontoId))
+    .field('teilKontoId', String(kontoId))
+    .field('teilBetrag', '120.00')
+    .field('teilBetrag', '80.00')
+    .attach('teilBeleg_0', beleg, { filename: 'beleg.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  const mitBeleg = kinder.find((k) => k.betrag === '120.00');
+  const ohneBeleg = kinder.find((k) => k.betrag === '80.00');
+  const mitBelegPdf = await PDFDocument.load(readFileSync(mitBeleg.pdf_pfad));
+  const ohneBelegPdf = await PDFDocument.load(readFileSync(ohneBeleg.pdf_pfad));
+  assert.equal(mitBelegPdf.getPageCount(), 2, 'the row with a Beleg gets the extra page');
+  assert.equal(ohneBelegPdf.getPageCount(), 1, 'the row without a Beleg is untouched');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten rejects an invalid per-Zeile Beleg, nothing persisted', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = await seedJobMitEchtemPdf(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .field('gesamtbetrag', '200.00')
+    .field('teilKontoId', String(kontoId))
+    .field('teilKontoId', String(kontoId))
+    .field('teilBetrag', '120.00')
+    .field('teilBetrag', '80.00')
+    .attach('teilBeleg_1', Buffer.from('not a real file'), { filename: 'evil.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Beleg muss eine PDF-, PNG- oder JPEG-Datei sein/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listSplitKinder(db, id).length, 0);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });

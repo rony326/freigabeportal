@@ -1,6 +1,8 @@
 import { Router } from 'express';
-import { mkdirSync, copyFileSync } from 'node:fs';
+import multer from 'multer';
+import { mkdirSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { mergeBelegInPdf, detectBelegMimetype } from '../services/belegAnhaengen.js';
 import {
   getJobById,
   setKontierung,
@@ -28,6 +30,9 @@ import { isValidIban } from '../services/ibanUtils.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_BELEG_SIZE = 20 * 1024 * 1024;
+
+const uploadBeleg = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BELEG_SIZE } });
 
 function neuerDateipfad(jobsDir, quelldatei) {
   mkdirSync(jobsDir, { recursive: true });
@@ -35,6 +40,14 @@ function neuerDateipfad(jobsDir, quelldatei) {
   const zielPfad = join(jobsDir, `job-${Date.now()}-${Math.random().toString(36).slice(2)}${endung}`);
   copyFileSync(quelldatei, zielPfad);
   return zielPfad;
+}
+
+// Merges an uploaded Beleg (multer file) into the PDF at pdfPfad, in place — used once the
+// caller has already confirmed the surrounding Kontierung/Aufsplitten action actually persisted,
+// so a file that turns out not to apply (e.g. a 409 race) never mutates the PDF on disk.
+async function mergeBelegFuerJob(pdfPfad, file, mimetype) {
+  const merged = await mergeBelegInPdf(readFileSync(pdfPfad), file.buffer, mimetype);
+  writeFileSync(pdfPfad, merged);
 }
 
 function pruefeIbanAbgleich(db, debitorId, qrIban) {
@@ -150,7 +163,8 @@ export function createKontierungRouter({ db, config, mailer }) {
     res.status(201).json({ id, name: trimmedName });
   });
 
-  router.post('/:id', async (req, res, next) => {
+  router.post('/:id', (req, res, next) => {
+    uploadBeleg.single('beleg')(req, res, async (uploadErr) => {
     try {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
@@ -159,6 +173,33 @@ export function createKontierungRouter({ db, config, mailer }) {
       const qrInfo = buildQrInfo(db, job);
       const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId, aktion } = req.body;
       const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId };
+
+      const renderFehler = (message) =>
+        res.status(400).render('kontierung', {
+          job,
+          konten,
+          alleKonten: listKonten(db),
+          debitoren,
+          previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
+          values,
+          qrInfo,
+          errors: [message],
+          auditLog: buildAuditLog(db, job.id),
+        });
+
+      if (uploadErr) {
+        return renderFehler(uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Der Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.');
+      }
+      // Applies regardless of aktion (kontieren or ablehnen) — a Beleg attached alongside a
+      // rejection is still merged, since the original PDF (with the Beleg now part of it) is
+      // what gets reworked and resubmitted afterwards.
+      let belegMimetype = null;
+      if (req.file) {
+        belegMimetype = detectBelegMimetype(req.file.buffer);
+        if (!belegMimetype || belegMimetype !== req.file.mimetype) {
+          return renderFehler('Beleg muss eine PDF-, PNG- oder JPEG-Datei sein.');
+        }
+      }
 
       if (aktion === 'ablehnen') {
         if (!begruendung) {
@@ -209,6 +250,10 @@ export function createKontierungRouter({ db, config, mailer }) {
             errors: ['Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.'],
             auditLog: buildAuditLog(db, job.id),
           });
+        }
+
+        if (req.file) {
+          await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
         }
 
         if (job.freigabe1_eskaliert_an_admin) {
@@ -322,6 +367,10 @@ export function createKontierungRouter({ db, config, mailer }) {
         throw err;
       }
 
+      if (req.file) {
+        await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
+      }
+
       if (job.qr_iban && debitor) {
         const { status } = pruefeIbanAbgleich(db, debitor.id, job.qr_iban);
         if (status === 'mismatch') {
@@ -399,6 +448,7 @@ export function createKontierungRouter({ db, config, mailer }) {
     } catch (err) {
       next(err);
     }
+    });
   });
 
   router.post('/:id/zurueck-in-pool', async (req, res, next) => {
@@ -454,7 +504,8 @@ export function createKontierungRouter({ db, config, mailer }) {
     ], '', []);
   });
 
-  router.post('/:id/aufsplitten', async (req, res, next) => {
+  router.post('/:id/aufsplitten', (req, res, next) => {
+    uploadBeleg.any()(req, res, async (uploadErr) => {
     try {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
@@ -473,6 +524,9 @@ export function createKontierungRouter({ db, config, mailer }) {
       }));
 
       const errors = [];
+      if (uploadErr) {
+        errors.push(uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Ein Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.');
+      }
       if (!gesamtbetrag || !BETRAG_PATTERN.test(gesamtbetrag)) {
         errors.push('Bitte einen gültigen Gesamtbetrag erfassen (z.B. 200.00).');
       }
@@ -480,20 +534,35 @@ export function createKontierungRouter({ db, config, mailer }) {
         errors.push('Mindestens zwei Teilbeträge sind nötig, um aufzusplitten.');
       }
 
+      // The browser renames each row's file input to teilBeleg_<i> at submit time, matching that
+      // row's current position — see kontierung-aufsplitten.ejs. Matched against aufgeloesteTeile
+      // below via originalIndex, not array position, since blank rows are filtered out there.
+      const teilBelegByIndex = new Map();
+      for (const file of req.files || []) {
+        const match = /^teilBeleg_(\d+)$/.exec(file.fieldname);
+        if (!match) continue;
+        const mimetype = detectBelegMimetype(file.buffer);
+        if (!mimetype || mimetype !== file.mimetype) {
+          errors.push('Beleg muss eine PDF-, PNG- oder JPEG-Datei sein.');
+          continue;
+        }
+        teilBelegByIndex.set(Number(match[1]), { file, mimetype });
+      }
+
       const aufgeloesteTeile = [];
-      for (const teil of teileEingabe) {
-        if (!teil.kontoId && !teil.betrag) continue;
+      teileEingabe.forEach((teil, originalIndex) => {
+        if (!teil.kontoId && !teil.betrag) return;
         const konto = alleKonten.find((k) => String(k.id) === teil.kontoId);
         if (!konto) {
           errors.push('Bitte für jede Zeile ein gültiges Konto auswählen.');
-          continue;
+          return;
         }
         if (!teil.betrag || !BETRAG_PATTERN.test(teil.betrag)) {
           errors.push('Jede Zeile braucht einen gültigen Betrag (z.B. 123.45).');
-          continue;
+          return;
         }
-        aufgeloesteTeile.push({ konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt });
-      }
+        aufgeloesteTeile.push({ konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt, originalIndex });
+      });
 
       if (errors.length === 0) {
         const summe = aufgeloesteTeile.reduce((sum, t) => sum + Number(t.betrag), 0);
@@ -520,6 +589,23 @@ export function createKontierungRouter({ db, config, mailer }) {
       // its own record should reflect the real total the split was based on, not stay empty.
       job.betrag = gesamtbetrag.replace(',', '.');
 
+      // File I/O (including the async Beleg merge) happens before the DB transaction below,
+      // mirroring the "PDF work before BEGIN" pattern in freigabe2.js — better-sqlite3 has no
+      // real async transactions, so an await inside BEGIN/COMMIT would hold it open across the
+      // event loop. On the rare 409 (markJobAufgesplittet already run by another request), these
+      // freshly-copied files are simply orphaned — the same class of leftover-file risk the
+      // per-Zeile loop below already accepts if a later Zeile throws mid-transaction.
+      const vorbereiteteTeile = [];
+      for (const teil of aufgeloesteTeile) {
+        const pdfPfad = neuerDateipfad(config.jobsDir, job.pdf_pfad);
+        const thumbnailPfad = job.thumbnail_pfad ? neuerDateipfad(config.jobsDir, job.thumbnail_pfad) : null;
+        const beleg = teilBelegByIndex.get(teil.originalIndex);
+        if (beleg) {
+          await mergeBelegFuerJob(pdfPfad, beleg.file, beleg.mimetype);
+        }
+        vorbereiteteTeile.push({ ...teil, pdfPfad, thumbnailPfad });
+      }
+
       db.exec('BEGIN');
       const selbstFreigegeben = [];
       const eskaliert = [];
@@ -532,9 +618,8 @@ export function createKontierungRouter({ db, config, mailer }) {
           db.exec('ROLLBACK');
           return res.status(409).render('error', { message: 'Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.' });
         }
-        for (const teil of aufgeloesteTeile) {
-          const pdfPfad = neuerDateipfad(config.jobsDir, job.pdf_pfad);
-          const thumbnailPfad = job.thumbnail_pfad ? neuerDateipfad(config.jobsDir, job.thumbnail_pfad) : null;
+        for (const teil of vorbereiteteTeile) {
+          const { pdfPfad, thumbnailPfad } = teil;
           const istEigenesKonto = konten.some((k) => k.id === teil.konto.id);
 
           if (!istEigenesKonto) {
@@ -657,6 +742,7 @@ export function createKontierungRouter({ db, config, mailer }) {
     } catch (err) {
       next(err);
     }
+    });
   });
 
   return router;

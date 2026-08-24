@@ -18,7 +18,7 @@
     <% } %>
     <p>Jede Zeile wird zu einer eigenständigen Rechnung mit eigenem Konto und Teilbetrag. Zahlungsziel, Lieferant, Absender und Rechnungsnummer werden übernommen. Für Konten, bei denen du Freigeber oder Stellvertretung bist, gilt Freigabe 1 automatisch als durch dich erteilt — ausser du kreuzt "Konflikt" an, dann geht der Teil direkt an deine Stellvertretung. Für andere Konten landet der Teil unzugewiesen im Pool mit einem Hinweis für die zuständige Person.</p>
 
-    <form method="post" action="/kontierung/<%= job.id %>/aufsplitten" class="col-12 col-md-10 col-lg-8">
+    <form method="post" action="/kontierung/<%= job.id %>/aufsplitten" enctype="multipart/form-data" class="col-12 col-md-10 col-lg-8">
       <div class="mb-3 col-6 col-md-4">
         <label class="form-label" for="gesamtbetrag">Gesamtbetrag</label>
         <input type="text" inputmode="decimal" class="form-control" id="gesamtbetrag" name="gesamtbetrag" value="<%= gesamtbetrag %>" placeholder="z.B. 200.00" required>
@@ -46,6 +46,10 @@
             </div>
             <div class="col-2">
               <button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button>
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Beleg für diese Zeile <span class="text-muted">(optional, z.B. Einzelbeleg zu einer Kreditkartenabrechnung — PDF, PNG oder JPEG)</span></label>
+              <input type="file" class="form-control form-control-sm teil-beleg-input" accept="application/pdf,image/png,image/jpeg">
             </div>
           </div>
         <% }) %>
@@ -105,10 +109,27 @@
           '<div class="col-5"><select class="form-select" name="teilKontoId">' + kontoOptionsHtml + '</select></div>' +
           '<div class="col-3"><input type="text" inputmode="decimal" class="form-control" name="teilBetrag" placeholder="Teilbetrag, z.B. 61.75"></div>' +
           '<div class="col-2 form-check"><input type="checkbox" class="form-check-input konflikt-checkbox"><label class="form-check-label small">Interessenskonflikt bei diesem Konto</label><div class="form-text small">(nur relevant, wenn du selbst Freigeber oder Stellvertretung bist)</div><input type="hidden" name="teilInteressenskonflikt" value="false"></div>' +
-          '<div class="col-2"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
+          '<div class="col-2"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>' +
+          '<div class="col-12"><label class="form-label small">Beleg für diese Zeile <span class="text-muted">(optional, z.B. Einzelbeleg zu einer Kreditkartenabrechnung — PDF, PNG oder JPEG)</span></label><input type="file" class="form-control form-control-sm teil-beleg-input" accept="application/pdf,image/png,image/jpeg"></div>';
         document.getElementById('teile-container').appendChild(zeile);
         zeileEntfernenBinden(zeile);
         konfliktCheckboxBinden(zeile);
+      });
+      // Native <input type="file"> fields with nothing selected are simply omitted from the
+      // multipart body by the browser — so req.files on the server would not line up
+      // positionally with teilKontoId[i]/teilBetrag[i] whenever some rows have a file and others
+      // don't. Renaming each row's file input to its current position right before submit (not
+      // at row-creation time, so add/remove reordering is always handled correctly) gives the
+      // server a stable teilBeleg_<i> fieldname to match back against that row's other fields.
+      document.querySelector('form[action$="/aufsplitten"]').addEventListener('submit', function () {
+        document.querySelectorAll('.teil-zeile').forEach(function (zeile, i) {
+          var fileInput = zeile.querySelector('.teil-beleg-input');
+          if (fileInput && fileInput.files.length > 0) {
+            fileInput.name = 'teilBeleg_' + i;
+          } else if (fileInput) {
+            fileInput.removeAttribute('name');
+          }
+        });
       });
     })();
   </script>

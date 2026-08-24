@@ -16,7 +16,7 @@
         <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
       </div>
     <% } %>
-    <p>Jede Zeile wird zu einer eigenständigen Rechnung mit eigenem Konto und Teilbetrag. Zahlungsziel, Lieferant, Absender und Rechnungsnummer werden übernommen. Für Konten, bei denen du Freigeber oder Stellvertretung bist, gilt Freigabe 1 automatisch als durch dich erteilt — ausser du kreuzt "Konflikt" an, dann geht der Teil direkt an deine Stellvertretung. Für andere Konten landet der Teil unzugewiesen im Pool mit einem Hinweis für die zuständige Person.</p>
+    <p>Jede Zeile wird zu einer eigenständigen Rechnung mit eigenem Konto und Teilbetrag. Zahlungsziel, Lieferant, Absender und Rechnungsnummer werden übernommen. Für Konten, bei denen du Freigeber oder Stellvertretung bist, gilt Freigabe 1 automatisch als durch dich erteilt — ausser du kreuzt "Konflikt" an, dann geht der Teil direkt an deine Stellvertretung. Für andere Konten landet der Teil unzugewiesen im Pool mit einem Hinweis für die zuständige Person. Das Kästchen "Konflikt" ist nur relevant, wenn du bei diesem Konto selbst Freigeber oder Stellvertretung bist.</p>
 
     <form method="post" action="/kontierung/<%= job.id %>/aufsplitten" enctype="multipart/form-data" class="col-12 col-md-10 col-lg-8">
       <div class="mb-3 col-6 col-md-4">
@@ -40,8 +40,7 @@
             </div>
             <div class="col-2 form-check">
               <input type="checkbox" class="form-check-input konflikt-checkbox" <%= teil.interessenskonflikt ? 'checked' : '' %>>
-              <label class="form-check-label small">Interessenskonflikt bei diesem Konto</label>
-              <div class="form-text small">(nur relevant, wenn du selbst Freigeber oder Stellvertretung bist)</div>
+              <label class="form-check-label small">Konflikt</label>
               <input type="hidden" name="teilInteressenskonflikt" value="<%= teil.interessenskonflikt ? 'true' : 'false' %>">
             </div>
             <div class="col-2">
@@ -108,7 +107,7 @@
         zeile.innerHTML =
           '<div class="col-5"><select class="form-select" name="teilKontoId">' + kontoOptionsHtml + '</select></div>' +
           '<div class="col-3"><input type="text" inputmode="decimal" class="form-control" name="teilBetrag" placeholder="Teilbetrag, z.B. 61.75"></div>' +
-          '<div class="col-2 form-check"><input type="checkbox" class="form-check-input konflikt-checkbox"><label class="form-check-label small">Interessenskonflikt bei diesem Konto</label><div class="form-text small">(nur relevant, wenn du selbst Freigeber oder Stellvertretung bist)</div><input type="hidden" name="teilInteressenskonflikt" value="false"></div>' +
+          '<div class="col-2 form-check"><input type="checkbox" class="form-check-input konflikt-checkbox"><label class="form-check-label small">Konflikt</label><input type="hidden" name="teilInteressenskonflikt" value="false"></div>' +
           '<div class="col-2"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>' +
           '<div class="col-12"><label class="form-label small">Beleg für diese Zeile <span class="text-muted">(optional, z.B. Einzelbeleg zu einer Kreditkartenabrechnung — PDF, PNG oder JPEG)</span></label><input type="file" class="form-control form-control-sm teil-beleg-input" accept="application/pdf,image/png,image/jpeg"></div>';
         document.getElementById('teile-container').appendChild(zeile);

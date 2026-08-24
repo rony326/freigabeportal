@@ -26,7 +26,7 @@
       </div>
       <div id="teile-container">
         <% teile.forEach((teil) => { %>
-          <div class="row g-2 mb-2 align-items-center teil-zeile">
+          <div class="row g-2 mb-3 pb-3 border-bottom align-items-center teil-zeile">
             <div class="col-5">
               <select class="form-select" name="teilKontoId">
                 <option value="">— Konto wählen —</option>
@@ -103,7 +103,7 @@
       });
       document.getElementById('zeile-hinzufuegen').addEventListener('click', function () {
         var zeile = document.createElement('div');
-        zeile.className = 'row g-2 mb-2 align-items-center teil-zeile';
+        zeile.className = 'row g-2 mb-3 pb-3 border-bottom align-items-center teil-zeile';
         zeile.innerHTML =
           '<div class="col-5"><select class="form-select" name="teilKontoId">' + kontoOptionsHtml + '</select></div>' +
           '<div class="col-3"><input type="text" inputmode="decimal" class="form-control" name="teilBetrag" placeholder="Teilbetrag, z.B. 61.75"></div>' +

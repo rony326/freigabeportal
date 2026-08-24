@@ -1,12 +1,19 @@
 // test/integration/admin/authz-sweep.test.js
 //
-// Proves the REAL createApp({ db, config }) object graph enforces the
-// superadmin guard on every /admin/* route — not a hand-built test app
-// that mounts requireRole itself. src/app.js mounts a single blanket
-// `app.use('/admin', requireRole(config, 'superadmin'))` in front of all
-// six admin router families; this test sweeps every known route/method
-// combination across all six families against the real app and confirms
-// each returns 401 when no session/cookie is present at all.
+// Proves the REAL createApp({ db, config }) object graph enforces a login
+// guard on every /admin/* route — not a hand-built test app that mounts
+// requireRole itself. src/app.js mounts a single blanket
+// `app.use('/admin', sessionLimiter, requireAdminAreaAccess(db, config))`
+// in front of all admin router families — admitting superadmin, manager,
+// or anyone with at least one individual Berechtigung, not superadmin
+// alone — and each sub-router then applies its own more specific gate
+// (requirePermission for the grantable areas, requireRole('superadmin')
+// for the three hard-locked ones). This test sweeps every known
+// route/method combination across the eight admin router families below
+// (konten, debitoren, eskalation, erscheinungsbild, personen, mails,
+// abgelehnt, geplante-jobs — zeitstempel and sync are exercised by the
+// second test below instead) against the real app and confirms each
+// returns 401 when no session/cookie is present at all.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';

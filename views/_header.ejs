@@ -48,7 +48,8 @@
 <% const navHatAdminZugang = navIsSuperadmin || navIsManager || (typeof adminNav !== 'undefined' && Object.values(adminNav).some(Boolean)); %>
 <% const navEingeloggt = typeof currentPerson !== 'undefined' && Boolean(currentPerson); %>
 <% const navAktuellerPfad = typeof currentPath !== 'undefined' ? currentPath : ''; %>
-<% const navZeigeZurueck = navAktuellerPfad.startsWith('/kontierung'); %>
+<% const navZeigeZurueck = navAktuellerPfad.startsWith('/kontierung') || navAktuellerPfad.startsWith('/freigabe2'); %>
+<% const navZeigeLieferant = navAktuellerPfad.startsWith('/kontierung'); %>
 <% if (navEingeloggt || navZeigeZurueck) { %>
   <nav class="<%= typeof navContainerClass !== 'undefined' ? navContainerClass : 'container' %> mb-3 d-flex align-items-center gap-2">
     <% if (navEingeloggt) { %>
@@ -68,7 +69,9 @@
     <% if (navZeigeZurueck) { %>
       <a href="/pool" class="btn btn-primary btn-sm">← Zurück</a>
       <button type="button" id="preview-refresh-btn" class="btn btn-outline-secondary btn-sm">Vorschau neu laden</button>
-      <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#neuer-lieferant-modal">+ Lieferant</button>
+      <% if (navZeigeLieferant) { %>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#neuer-lieferant-modal">+ Lieferant</button>
+      <% } %>
     <% } %>
     <% if (navAktuellerPfad === '/pool') { %>
       <a href="/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">🔄 Neu laden</a>

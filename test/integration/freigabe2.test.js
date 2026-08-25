@@ -10,6 +10,7 @@ import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob 
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { buildAuditLog } from '../../src/services/auditLog.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
+import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createFreigabe2Router } from '../../src/routes/freigabe2.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import * as mupdf from 'mupdf';
@@ -82,6 +83,7 @@ function buildTestApp(db, { withErrorHandler = false, mailer } = {}) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret', publicBaseUrl: 'https://portal.example.org' };
   app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(db, config));
   app.use('/freigabe2', requireLogin(), createFreigabe2Router({ db, config, mailer }));
   if (withErrorHandler) {
     // Mirrors src/app.js's generic error middleware: anything reaching next(err) gets a

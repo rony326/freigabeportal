@@ -57,11 +57,11 @@
               <div class="row g-2 mb-3">
                 <div class="col-6">
                   <label class="form-label" for="absender">Absender</label>
-                  <input type="text" class="form-control" id="absender" name="absender" value="<%= values.absender || '' %>">
+                  <input type="text" class="form-control" id="absender" name="absender" value="<%= values.absender || '' %>" required>
                 </div>
                 <div class="col-6">
                   <label class="form-label" for="debitorId">Lieferant</label>
-                  <select class="form-select" id="debitorId" name="debitorId" data-searchable>
+                  <select class="form-select" id="debitorId" name="debitorId" required data-searchable>
                     <option value="">— wählen —</option>
                     <% debitoren.forEach((d) => { %>
                       <option value="<%= d.id %>" <%= String(d.id) === values.debitorId ? 'selected' : '' %>><%= d.name %></option>
@@ -79,17 +79,17 @@
 
               <div class="mb-3">
                 <label class="form-label" for="rechnungsnummer">Rechnungsnummer</label>
-                <input type="text" class="form-control" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>">
+                <input type="text" class="form-control" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" required>
               </div>
 
               <div class="row g-2 mb-3">
                 <div class="col-6">
                   <label class="form-label" for="betrag">Betrag</label>
-                  <input type="text" inputmode="decimal" class="form-control" id="betrag" name="betrag" value="<%= values.betrag || '' %>" placeholder="z.B. 123.45">
+                  <input type="text" inputmode="decimal" class="form-control" id="betrag" name="betrag" value="<%= values.betrag || '' %>" placeholder="z.B. 123.45" required>
                 </div>
                 <div class="col-6">
                   <label class="form-label" for="zahlungsziel">Zahlungsziel</label>
-                  <input type="date" class="form-control" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>">
+                  <input type="date" class="form-control" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>" required>
                 </div>
               </div>
 
@@ -233,13 +233,16 @@
           });
       });
     })();
-    // Ablehnen deliberately needs no Konto (the server-side handler skips that check for
-    // aktion=ablehnen) — but the Konto <select>'s HTML `required` attribute is enforced by the
-    // browser before the form is even submitted, regardless of which button triggered it. Drop
-    // it the moment Ablehnen is clicked so the browser lets an empty Konto through; a fresh page
-    // load (any validation error re-renders the page) restores the attribute from the template.
+    // Ablehnen deliberately needs none of these fields filled in (the server-side handler skips
+    // all of these checks for aktion=ablehnen, only requiring Begründung) — but each field's HTML
+    // `required` attribute is enforced by the browser before the form is even submitted,
+    // regardless of which button triggered it. Drop them all the moment Ablehnen is clicked so
+    // the browser lets an empty form through; a fresh page load (any validation error re-renders
+    // the page) restores the attributes from the template.
     document.getElementById('ablehnen-btn').addEventListener('click', function () {
-      document.getElementById('kontoId').required = false;
+      ['kontoId', 'absender', 'debitorId', 'rechnungsnummer', 'betrag', 'zahlungsziel'].forEach(function (id) {
+        document.getElementById(id).required = false;
+      });
     });
     // "Rechnung aufsplitten" opens the existing standalone split page inside a Bootstrap modal via
     // an <iframe>, rather than navigating away — the page itself is unchanged (still a normal

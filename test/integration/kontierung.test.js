@@ -169,7 +169,7 @@ test('GET /kontierung/:id drops the Konto select\'s required attribute on click 
   assert.equal(res.status, 200);
   assert.match(res.text, /<select class="form-select" id="kontoId" name="kontoId" required data-searchable>/);
   assert.match(res.text, /<button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn"/);
-  assert.match(res.text, /getElementById\('ablehnen-btn'\)\.addEventListener\('click', function \(\) \{\s*document\.getElementById\('kontoId'\)\.required = false;/);
+  assert.match(res.text, /getElementById\('ablehnen-btn'\)\.addEventListener\('click', function \(\) \{\s*\[[^\]]*'kontoId'[^\]]*\]\.forEach\(function \(id\) \{\s*document\.getElementById\(id\)\.required = false;/);
   db.close();
 });
 
@@ -272,6 +272,8 @@ test('GET /kontierung/:id shows an empty Konto dropdown for a pool-claim by some
 test('POST /kontierung/:id without a conflict creates the Freigabe-1 row and advances status to freigabe2', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db);
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -280,7 +282,7 @@ test('POST /kontierung/:id without a conflict creates the Freigabe-1 row and adv
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
 
   assert.equal(res.status, 302);
   const job = getJobById(db, id);
@@ -297,6 +299,8 @@ test('POST /kontierung/:id without a conflict creates the Freigabe-1 row and adv
 test('POST /kontierung/:id without a conflict still saves an optional Begründung as the Freigabe-1 Kommentar', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db);
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -305,7 +309,7 @@ test('POST /kontierung/:id without a conflict still saves an optional Begründun
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: 'Rechnung geprüft, alles korrekt.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: 'Rechnung geprüft, alles korrekt.' });
 
   assert.equal(res.status, 302);
   const freigaben = listFreigabenByJob(db, id);
@@ -437,6 +441,8 @@ test('POST /kontierung/:id aktion=ablehnen without a Begründung is rejected, jo
 test('POST /kontierung/:id with a conflict reassigns to stellvertreter1 and records a freigabe1_eskalation audit entry with the Begründung', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db);
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -445,7 +451,7 @@ test('POST /kontierung/:id with a conflict reassigns to stellvertreter1 and reco
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Befangen' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen' });
 
   assert.equal(res.status, 302);
   const job = getJobById(db, id);
@@ -473,6 +479,8 @@ test('POST /kontierung/:id with a conflict reassigns to stellvertreter1 and reco
 test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring another conflict now escalates to Portal-Admin instead of being rejected', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db);
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   eskalierenFreigabe1(db, id, { eskaliertVon: '1', grund: 'Erster Konflikt', stellvertreterId: '2' });
@@ -482,7 +490,7 @@ test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring a
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '2')
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Zweiter Konflikt' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Zweiter Konflikt' });
 
   assert.equal(res.status, 302);
   const job = getJobById(db, id);
@@ -504,13 +512,15 @@ test('POST /kontierung/:id declaring a conflict while already being the Konto\'s
   // Represents the post-rework state: person '2' (the Konto's own stellvertreter1) is now the
   // current owner of this cycle's job, e.g. after reopening a rejected job they reworked.
   claimJob(db, id, '2');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const app = buildTestApp(db, createStubMailer());
 
   const res = await request(app)
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '2')
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Befangen' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen' });
 
   assert.equal(res.status, 302);
   const job = getJobById(db, id);
@@ -562,6 +572,8 @@ test('POST /kontierung/:id with a Beleg PDF attached merges it into the job\'s P
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'beleg-test-'));
   const kontoId = seedKontoAndPersonen(db);
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const pdfPfad = join(jobsDir, 'original.pdf');
   writeFileSync(pdfPfad, await buildPdfFixture(['Kreditkartenabrechnung']));
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad });
@@ -573,6 +585,11 @@ test('POST /kontierung/:id with a Beleg PDF attached merges it into the job\'s P
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .field('kontoId', String(kontoId))
+    .field('debitorId', String(debitorId))
+    .field('absender', 'Muster AG')
+    .field('rechnungsnummer', 'RE-1')
+    .field('betrag', '100.00')
+    .field('zahlungsziel', '2026-09-01')
     .field('interessenskonflikt', 'nein')
     .field('begruendung', '')
     .attach('beleg', beleg, { filename: 'beleg.pdf', contentType: 'application/pdf' });
@@ -755,6 +772,8 @@ test('POST /kontierung/:id/zurueck-in-pool returns 403 for a person the job is n
 test('POST /kontierung/:id with a conflict sends a Zuweisungs-Mail to stellvertreter1', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const mailer = createStubMailer();
@@ -764,7 +783,7 @@ test('POST /kontierung/:id with a conflict sends a Zuweisungs-Mail to stellvertr
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Befangen' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen' });
 
   assert.equal(res.status, 302);
   assert.equal(mailer.sent.length, 1);
@@ -777,6 +796,8 @@ test('POST /kontierung/:id with a conflict sends a Zuweisungs-Mail to stellvertr
 test('POST /kontierung/:id without a conflict sends a Zuweisungs-Mail to freigeber2', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db);
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const mailer = createStubMailer();
@@ -786,7 +807,7 @@ test('POST /kontierung/:id without a conflict sends a Zuweisungs-Mail to freigeb
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
 
   assert.equal(res.status, 302);
   assert.equal(mailer.sent.length, 1);
@@ -798,6 +819,8 @@ test('POST /kontierung/:id without a conflict sends a Zuweisungs-Mail to freigeb
 test('POST /kontierung/:id after a Freigabe-2 conflict + rejection + rework emails the effective stellvertreter2, not the original (recused) freigeber2', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
 
@@ -808,7 +831,7 @@ test('POST /kontierung/:id after a Freigabe-2 conflict + rejection + rework emai
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
 
   // Freigeber2 ('3') declares a conflict -> the effective Freigabe-2 approver becomes
   // stellvertreter2 ('4'), recorded via freigabe2_eskaliert_von.
@@ -830,7 +853,7 @@ test('POST /kontierung/:id after a Freigabe-2 conflict + rejection + rework emai
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
 
   assert.equal(res.status, 302);
   assert.equal(mailer.sent.length, 1);
@@ -849,6 +872,7 @@ test('a Stellvertreter1 who is escalated to and ALSO has a conflict escalates to
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
   const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
 
   upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
@@ -856,19 +880,20 @@ test('a Stellvertreter1 who is escalated to and ALSO has a conflict escalates to
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
 
   const app = createApp({ db, config });
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.' });
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.' });
   assert.equal(getJobById(db, jobId).zugewiesen_an, '2');
 
   const stellvertreter1Agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
   const res = await stellvertreter1Agent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin auch befangen.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin auch befangen.' });
 
   assert.equal(res.status, 302, 'the second escalation should succeed, not render the form with an error');
   const job = getJobById(db, jobId);
@@ -901,18 +926,20 @@ test('a plain, non-conflict resubmission after a prior escalation succeeds norma
   const { upsertPerson } = await import('../../src/db/personenRepo.js');
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob } = await import('../../src/db/jobsRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
 
   upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
 
   const app = createApp({ db, config });
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.' });
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.' });
 
   const stellvertreter1Agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
   // No conflict this time, just an ordinary attempt to escalate again (e.g. a stray double
@@ -921,7 +948,7 @@ test('a plain, non-conflict resubmission after a prior escalation succeeds norma
   const res = await stellvertreter1Agent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
   assert.equal(res.status, 302);
   db.close();
 });
@@ -933,6 +960,7 @@ test('a person who picks a Konto where they are themselves the stellvertreter1 a
   const { upsertPerson } = await import('../../src/db/personenRepo.js');
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
 
   upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   // Person 2 is stellvertreter1 for THIS konto, but claims the job directly (listKontenForPerson
@@ -942,6 +970,7 @@ test('a person who picks a Konto where they are themselves the stellvertreter1 a
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2' WHERE id = ?").run(jobId);
 
@@ -950,7 +979,7 @@ test('a person who picks a Konto where they are themselves the stellvertreter1 a
   const res = await agent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
 
   assert.equal(res.status, 302, 'this is a first-ever escalation for this job, but self-targeting -> should go straight to admin, not error');
   const job = getJobById(db, jobId);
@@ -966,6 +995,7 @@ test('a job admin-escalated in Freigabe 1, then rejected in Freigabe 2 and reope
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob, getJobById, setKontierung, ablehnenJob, wiederOeffnenJob, abschliessenFreigabe1 } = await import('../../src/db/jobsRepo.js');
   const { createFreigabe } = await import('../../src/db/freigabenRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
 
   upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
@@ -973,6 +1003,7 @@ test('a job admin-escalated in Freigabe 1, then rejected in Freigabe 2 and reope
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   // Person 2 is the Konto's own stellvertreter1, so their first-ever conflict declaration on
   // this Konto escalates straight to admin (the same case covered above).
@@ -983,7 +1014,7 @@ test('a job admin-escalated in Freigabe 1, then rejected in Freigabe 2 and reope
   await stellvertreterAgent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
   const escalatedJob = getJobById(db, jobId);
   assert.equal(escalatedJob.freigabe1_eskaliert_an_admin, 1, 'sanity: escalated to admin');
 
@@ -1032,6 +1063,7 @@ test('a Portal-Admin authorized via the freigabe1_eskaliert_an_admin flag can re
   const { upsertPerson } = await import('../../src/db/personenRepo.js');
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
 
   upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
@@ -1039,6 +1071,7 @@ test('a Portal-Admin authorized via the freigabe1_eskaliert_an_admin flag can re
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2' WHERE id = ?").run(jobId);
 
@@ -1047,7 +1080,7 @@ test('a Portal-Admin authorized via the freigabe1_eskaliert_an_admin flag can re
   await stellvertreterAgent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
   assert.equal(getJobById(db, jobId).freigabe1_eskaliert_an_admin, 1, 'sanity: escalated to admin');
 
   // The admin (not a member of Buchhaltung, authorized only via the flag branch) decides to
@@ -1079,6 +1112,7 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
   const { upsertPerson } = await import('../../src/db/personenRepo.js');
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
 
   upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
@@ -1088,6 +1122,7 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
   // freigeber1/stellvertreter1/freigeber2/stellvertreter2 role on the Konto below.
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2' WHERE id = ?").run(jobId);
 
@@ -1096,7 +1131,7 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
   await stellvertreterAgent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
   const escalated = getJobById(db, jobId);
   assert.equal(escalated.freigabe1_eskaliert_an_admin, 1, 'sanity: escalated to admin');
   assert.equal(escalated.konto_id, kontoId, 'sanity: the job already carries the Konto the admin must resubmit');
@@ -1111,7 +1146,7 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
   const postRes = await adminAgent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
 
   assert.equal(postRes.status, 302, 'the admin must be able to actually submit the form, not just view it');
   const job = getJobById(db, jobId);
@@ -1712,7 +1747,7 @@ test('GET /kontierung/:id marks the Konto and Lieferant dropdowns as searchable 
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<select class="form-select" id="debitorId" name="debitorId" data-searchable>/);
+  assert.match(res.text, /<select class="form-select" id="debitorId" name="debitorId" required data-searchable>/);
   assert.match(res.text, /data-bs-target="#neuer-lieferant-modal"/);
   assert.match(res.text, /id="neuer-lieferant-modal"/);
   assert.match(res.text, /id="neuer-lieferant-name"/);
@@ -1910,7 +1945,7 @@ test('POST /kontierung/:id sends an IBAN-Abweichung warning mail and logs it to 
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), betrag: '100.00', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
 
   assert.equal(res.status, 302, 'Kontierung must still complete despite the mismatch');
   const mailLog = listMailLog(db).filter((m) => m.typ === 'iban-warnung');
@@ -1940,7 +1975,7 @@ test('POST /kontierung/:id sends no IBAN-Abweichung mail when the QR-IBAN matche
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), betrag: '100.00', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
 
   assert.equal(res.status, 302);
   assert.equal(listMailLog(db).filter((m) => m.typ === 'iban-warnung').length, 0);
@@ -1963,7 +1998,7 @@ test('POST /kontierung/:id with ibanMerken checked creates a bestaetigt debitor_
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), betrag: '100.00', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', ibanMerken: 'on' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', ibanMerken: 'on' });
 
   assert.equal(res.status, 302);
   const rows = listDebitorIbansByDebitor(db, debitorId);
@@ -1989,7 +2024,7 @@ test('POST /kontierung/:id without ibanMerken checked creates no debitor_ibans r
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), betrag: '100.00', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
 
   assert.equal(res.status, 302);
   assert.equal(listDebitorIbansByDebitor(db, debitorId).length, 0);
@@ -2016,7 +2051,7 @@ test('POST /kontierung/:id with ibanMerken checked skips the save when the decod
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), betrag: '100.00', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', ibanMerken: 'on' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', ibanMerken: 'on' });
 
   assert.equal(res.status, 302, 'Kontierung must still complete even though the opt-in save is skipped');
   assert.equal(listDebitorIbansByDebitor(db, debitorId).length, 0);

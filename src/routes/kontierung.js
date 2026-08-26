@@ -265,22 +265,34 @@ export function createKontierungRouter({ db, config, mailer }) {
       if (!konto) {
         errors.push('Bitte ein gültiges Konto aus der Liste auswählen.');
       }
+      if (!absender) {
+        errors.push('Bitte einen Absender angeben.');
+      }
+      const debitor = debitorId ? getDebitorById(db, debitorId) : null;
+      if (!debitor) {
+        errors.push('Bitte einen gültigen Lieferanten aus der Liste auswählen.');
+      }
+      if (!rechnungsnummer) {
+        errors.push('Bitte eine Rechnungsnummer angeben.');
+      }
       const hatKonflikt = interessenskonflikt === 'ja';
       if (hatKonflikt && !begruendung) {
         errors.push('Bei einem Interessenskonflikt ist eine Begründung Pflicht.');
       }
-      if (betrag && !BETRAG_PATTERN.test(betrag)) {
+      if (!betrag) {
+        errors.push('Bitte einen Betrag angeben.');
+      } else if (!BETRAG_PATTERN.test(betrag)) {
         errors.push('Betrag muss eine gültige Zahl sein (z.B. 123.45).');
       }
-      if (zahlungsziel && (!ZAHLUNGSZIEL_PATTERN.test(zahlungsziel) || Number.isNaN(new Date(zahlungsziel).getTime()))) {
+      if (!zahlungsziel) {
+        errors.push('Bitte ein Zahlungsziel angeben.');
+      } else if (!ZAHLUNGSZIEL_PATTERN.test(zahlungsziel) || Number.isNaN(new Date(zahlungsziel).getTime())) {
         errors.push('Zahlungsziel ist kein gültiges Datum.');
       }
 
       if (errors.length > 0) {
         return renderFehler(errors);
       }
-
-      const debitor = debitorId ? getDebitorById(db, debitorId) : null;
 
       // SYNC-8: a conflict-driven escalation has no distinct named person to hand off to in two
       // cases — this job was already escalated once (so the only person who could even reach

@@ -10,10 +10,10 @@ import { GRANTABLE_BERECHTIGUNGEN, personHasPermission, requirePermission, requi
 
 const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
 
-test('GRANTABLE_BERECHTIGUNGEN lists exactly the six catalog permissions', () => {
+test('GRANTABLE_BERECHTIGUNGEN lists exactly the seven catalog permissions', () => {
   assert.deepEqual(
     [...GRANTABLE_BERECHTIGUNGEN].sort(),
-    ['abgelehnt_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten', 'konten_verwalten', 'mails_einsehen', 'sync_einsehen']
+    ['abgelehnt_verwalten', 'audit_log_einsehen', 'debitoren_verwalten', 'geplante_jobs_verwalten', 'konten_verwalten', 'mails_einsehen', 'sync_einsehen']
   );
 });
 

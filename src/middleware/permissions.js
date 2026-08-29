@@ -8,6 +8,7 @@ export const GRANTABLE_BERECHTIGUNGEN = [
   'abgelehnt_verwalten',
   'mails_einsehen',
   'sync_einsehen',
+  'audit_log_einsehen',
 ];
 
 export const BERECHTIGUNG_LABELS = {
@@ -17,6 +18,7 @@ export const BERECHTIGUNG_LABELS = {
   abgelehnt_verwalten: 'Abgelehnte Rechnungen verwalten',
   mails_einsehen: 'Mail-Protokoll einsehen',
   sync_einsehen: 'Sync-Übersicht einsehen',
+  audit_log_einsehen: 'Globales Audit-Log einsehen',
 };
 
 // Superadmin und Manager bekommen jedes vergebbare Recht über ihr Rollen-Bundle, unabhängig von

@@ -5,7 +5,7 @@ import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createJob } from '../../src/db/jobsRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import { setConfigValue } from '../../src/db/adminConfigRepo.js';
-import { buildAuditLog } from '../../src/services/auditLog.js';
+import { buildAuditLog, EREIGNIS_LABEL, personName, formatZeitpunkt } from '../../src/services/auditLog.js';
 
 function seedJobMitFreigabe(db, zeitpunkt) {
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f@example.org', gruppen: [], loggedInNow: false });
@@ -59,5 +59,18 @@ test('buildAuditLog labels an iban_abweichung rolle as "IBAN-Abweichung festgest
   const log = buildAuditLog(db, jobId);
   assert.equal(log[1].ereignis, 'IBAN-Abweichung festgestellt');
   assert.equal(log[1].kommentar, 'QR-IBAN weicht ab');
+  db.close();
+});
+
+test('EREIGNIS_LABEL includes a loeschung label for the global audit log', () => {
+  assert.equal(EREIGNIS_LABEL.loeschung, 'Job gelöscht');
+});
+
+test('personName and formatZeitpunkt are exported for reuse by the global audit log service', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f@example.org', gruppen: [], loggedInNow: false });
+  assert.equal(personName(db, '1'), 'Frei Geber');
+  assert.equal(personName(db, 'unbekannt'), 'Unbekannt');
+  assert.equal(formatZeitpunkt('2026-08-15T08:30:00.000Z', false), '2026-08-15T08:30:00.000Z');
   db.close();
 });

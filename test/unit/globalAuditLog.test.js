@@ -139,3 +139,47 @@ test('queryGlobalAuditLog returns an empty result without error when nothing mat
   assert.equal(gesamtAnzahl, 0);
   db.close();
 });
+
+test('queryGlobalAuditLog clamps a negative proSeite instead of returning an unbounded result set', () => {
+  const db = openDatabase(':memory:');
+  seedGrundstock(db);
+  const job = createJob(db, { eingangAm: '2026-08-01T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  const anzahlSeedRows = 55;
+  for (let i = 0; i < anzahlSeedRows; i += 1) {
+    createFreigabe(db, {
+      jobId: job,
+      personId: '1',
+      rolle: 'freigeber1',
+      zeitpunkt: `2026-08-01T09:${String(i).padStart(2, '0')}:00.000Z`,
+      ip: '127.0.0.1',
+      interessenskonflikt: false,
+      kommentar: null,
+      eskaliertVon: null,
+    });
+  }
+
+  const { eintraege, gesamtAnzahl, proSeite } = queryGlobalAuditLog(db, {}, { proSeite: -1 });
+  assert.equal(gesamtAnzahl, anzahlSeedRows, 'all rows were seeded and counted');
+  assert.ok(
+    eintraege.length < anzahlSeedRows,
+    `expected a clamped, bounded page, got all ${eintraege.length} of ${anzahlSeedRows} rows -- SQLite treats a negative LIMIT as "no bound"`
+  );
+  assert.equal(proSeite, eintraege.length, 'the returned proSeite must reflect the clamped value actually used');
+  assert.ok(proSeite >= 1, 'proSeite must clamp to a sane positive value, never stay negative');
+  db.close();
+});
+
+test('queryGlobalAuditLog clamps a non-positive/non-integer seite to a valid page number', () => {
+  const db = openDatabase(':memory:');
+  seedGrundstock(db);
+  const job = createJob(db, { eingangAm: '2026-08-01T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  createFreigabe(db, { jobId: job, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-01T09:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+
+  const mitNullSeite = queryGlobalAuditLog(db, {}, { seite: 0 });
+  assert.equal(mitNullSeite.seite, 1);
+  assert.equal(mitNullSeite.eintraege.length, 1);
+
+  const mitNegativerSeite = queryGlobalAuditLog(db, {}, { seite: -3 });
+  assert.equal(mitNegativerSeite.seite, 1);
+  db.close();
+});

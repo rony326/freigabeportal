@@ -68,15 +68,21 @@ function buildWhere(filter) {
 // Zeitleiste. Filter/Pagination laufen komplett in SQL (nicht in JS über geladene Zeilen) --
 // entscheidend für eine global wachsende Tabelle, im Gegensatz zum job-lokalen buildAuditLog.
 export function queryGlobalAuditLog(db, filter = {}, { seite = 1, proSeite = 50 } = {}) {
+  // A non-positive or non-integer seite/proSeite must never reach the SQL LIMIT/OFFSET clause
+  // unclamped: SQLite treats a negative LIMIT as "no upper bound", which would silently return
+  // the entire, unbounded audit table instead of a page of it.
+  const seiteSicher = Math.max(1, Math.trunc(seite) || 1);
+  const proSeiteSicher = Math.max(1, Math.trunc(proSeite) || 50);
+
   const { where, params } = buildWhere(filter);
   const lokaleZeit = getConfigValue(db, 'audit_log_lokale_zeit') === '1';
 
   const gesamtAnzahl = db.prepare(`${BASE_QUERY} SELECT COUNT(*) AS anzahl FROM audit ${where}`).get(...params).anzahl;
 
-  const offset = (seite - 1) * proSeite;
+  const offset = (seiteSicher - 1) * proSeiteSicher;
   const rows = db
     .prepare(`${BASE_QUERY} SELECT * FROM audit ${where} ORDER BY zeitpunkt DESC LIMIT ? OFFSET ?`)
-    .all(...params, proSeite, offset);
+    .all(...params, proSeiteSicher, offset);
 
   const eintraege = rows.map((row) => ({
     zeitpunkt: formatZeitpunkt(row.zeitpunkt, lokaleZeit),
@@ -89,5 +95,5 @@ export function queryGlobalAuditLog(db, filter = {}, { seite = 1, proSeite = 50 
     jobStatus: row.job_status,
   }));
 
-  return { eintraege, gesamtAnzahl, seite, proSeite };
+  return { eintraege, gesamtAnzahl, seite: seiteSicher, proSeite: proSeiteSicher };
 }

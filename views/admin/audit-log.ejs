@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Audit-Log — <%= branding.seitenTitel %> Admin</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <% if (typeof adminNav !== 'undefined') { %>
+      <%- include('./_nav') %>
+    <% } %>
+    <h1>Globales Audit-Log</h1>
+
+    <form method="get" class="row g-2 mb-3">
+      <div class="col-auto">
+        <select class="form-select" name="person">
+          <option value="">Alle Personen</option>
+          <% personen.forEach((p) => { %>
+            <option value="<%= p.churchtools_person_id %>" <%= query.person === p.churchtools_person_id ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <select class="form-select" name="konto">
+          <option value="">Alle Konten</option>
+          <% konten.forEach((k) => { %>
+            <option value="<%= k.id %>" <%= String(query.konto) === String(k.id) ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <select class="form-select" name="typ">
+          <option value="">Alle Ereignisse</option>
+          <% Object.keys(ereignisLabels).forEach((typ) => { %>
+            <option value="<%= typ %>" <%= query.typ === typ ? 'selected' : '' %>><%= ereignisLabels[typ] %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <input type="date" class="form-control" name="von" value="<%= query.von || '' %>" placeholder="Von">
+      </div>
+      <div class="col-auto">
+        <input type="date" class="form-control" name="bis" value="<%= query.bis || '' %>" placeholder="Bis">
+      </div>
+      <div class="col-auto">
+        <input type="text" class="form-control" name="q" value="<%= query.q || '' %>" placeholder="Suche in Kommentar/Dateiname">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Filtern</button>
+      </div>
+    </form>
+
+    <% if (eintraege.length === 0) { %>
+      <p>Keine Einträge gefunden.</p>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Zeitpunkt</th><th>Ereignis</th><th>Person</th><th>Job</th><th>Konto</th><th>Kommentar/Begründung</th></tr></thead>
+          <tbody>
+            <% eintraege.forEach((eintrag) => { %>
+              <tr>
+                <td><%= eintrag.zeitpunkt %></td>
+                <td><%= eintrag.ereignis %></td>
+                <td><%= eintrag.person %></td>
+                <td><%= eintrag.dateiname %> (#<%= eintrag.jobId %>)</td>
+                <td><%= eintrag.kontoBezeichnung || '—' %></td>
+                <td><%= eintrag.kommentar || '' %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+
+      <nav aria-label="Seiten">
+        <ul class="pagination">
+          <li class="page-item <%= seite <= 1 ? 'disabled' : '' %>">
+            <a class="page-link" href="?<%= new URLSearchParams({ ...query, seite: seite - 1 }).toString() %>">Zurück</a>
+          </li>
+          <li class="page-item disabled"><span class="page-link">Seite <%= seite %> von <%= gesamtSeiten %></span></li>
+          <li class="page-item <%= seite >= gesamtSeiten ? 'disabled' : '' %>">
+            <a class="page-link" href="?<%= new URLSearchParams({ ...query, seite: seite + 1 }).toString() %>">Weiter</a>
+          </li>
+        </ul>
+      </nav>
+    <% } %>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

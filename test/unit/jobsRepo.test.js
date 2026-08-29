@@ -374,6 +374,31 @@ test('updateKontierungMetadaten persists absender, betrag, zahlungsziel, rechnun
   db.close();
 });
 
+test('updateKontierungMetadaten persists typ', () => {
+  const db = openDatabase(':memory:');
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  updateKontierungMetadaten(db, jobId, {
+    absender: 'lieferant@example.org',
+    betrag: '123.45',
+    zahlungsziel: '2026-09-01',
+    rechnungsnummer: 'RE-2026-042',
+    lieferant: 'Muster AG',
+    typ: 'gutschrift',
+  });
+  const job = getJobById(db, jobId);
+  assert.equal(job.typ, 'gutschrift');
+  db.close();
+});
+
+test('updateKontierungMetadaten defaults typ to rechnung when not given', () => {
+  const db = openDatabase(':memory:');
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  updateKontierungMetadaten(db, jobId, { absender: 'lieferant@example.org', betrag: '100.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG' });
+  const job = getJobById(db, jobId);
+  assert.equal(job.typ, 'rechnung');
+  db.close();
+});
+
 test('updateKontierungMetadaten stores null for empty values instead of empty strings', () => {
   const db = openDatabase(':memory:');
   const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: 'alt@example.org', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });

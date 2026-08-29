@@ -141,6 +141,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values: {
         kontoId: job.konto_id ? String(job.konto_id) : '',
+        typ: job.typ || 'rechnung',
         interessenskonflikt: '',
         begruendung: '',
         absender: job.absender || '',
@@ -182,8 +183,9 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const konten = ladeKontenFuerJob(req, job);
       const debitoren = listDebitoren(db);
       const qrInfo = buildQrInfo(db, job);
-      const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId, aktion } = req.body;
-      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId };
+      const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId, aktion, typ } = req.body;
+      const jobTyp = typ === 'gutschrift' ? 'gutschrift' : 'rechnung';
+      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId, typ: jobTyp };
 
       const renderFehler = (messages, status = 400) =>
         res.status(status).render('kontierung', {
@@ -288,8 +290,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       } else if (!BETRAG_PATTERN.test(betrag)) {
         errors.push('Betrag muss eine gültige Zahl sein (z.B. 123.45).');
       }
+      // Eine Gutschrift hat kein Fälligkeitsdatum im eigentlichen Sinn — nur bei einer Rechnung
+      // ist das Zahlungsziel Pflicht; ein trotzdem mitgegebener Wert wird aber weiterhin geprüft.
       if (!zahlungsziel) {
-        errors.push('Bitte ein Zahlungsziel angeben.');
+        if (jobTyp === 'rechnung') {
+          errors.push('Bitte ein Zahlungsziel angeben.');
+        }
       } else if (!ZAHLUNGSZIEL_PATTERN.test(zahlungsziel) || Number.isNaN(new Date(zahlungsziel).getTime())) {
         errors.push('Zahlungsziel ist kein gültiges Datum.');
       }
@@ -316,6 +322,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           rechnungsnummer,
           lieferant: debitor ? debitor.name : null,
           debitorId: debitor ? debitor.id : null,
+          typ: jobTyp,
         });
         if (eskaliertAnAdmin) {
           createFreigabe(db, {

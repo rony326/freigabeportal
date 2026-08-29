@@ -19,6 +19,7 @@
             <h1 class="h3">Freigabe 2: <%= job.dateiname %></h1>
             <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %> · Absender: <%= job.absender %><% } %></p>
             <p><strong>Konto:</strong> <%= konto.kontonummer %> — <%= konto.bezeichnung %></p>
+            <% if (job.typ === 'gutschrift') { %><p><strong>Typ:</strong> Gutschrift</p><% } %>
             <% if (job.lieferant) { %><p><strong>Lieferant:</strong> <%= job.lieferant %></p><% } %>
             <% if (job.rechnungsnummer) { %><p><strong>Rechnungsnummer:</strong> <%= job.rechnungsnummer %></p><% } %>
             <% if (job.betrag) { %><p><strong>Betrag:</strong> <%= job.betrag %></p><% } %>

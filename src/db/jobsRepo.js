@@ -184,14 +184,15 @@ export function setJobBetrag(db, jobId, betrag) {
   db.prepare('UPDATE jobs SET betrag = ? WHERE id = ?').run(betrag || null, jobId);
 }
 
-export function updateKontierungMetadaten(db, jobId, { absender, betrag, zahlungsziel, rechnungsnummer, lieferant, debitorId }) {
-  db.prepare('UPDATE jobs SET absender = ?, betrag = ?, zahlungsziel = ?, rechnungsnummer = ?, lieferant = ?, debitor_id = ? WHERE id = ?').run(
+export function updateKontierungMetadaten(db, jobId, { absender, betrag, zahlungsziel, rechnungsnummer, lieferant, debitorId, typ }) {
+  db.prepare('UPDATE jobs SET absender = ?, betrag = ?, zahlungsziel = ?, rechnungsnummer = ?, lieferant = ?, debitor_id = ?, typ = ? WHERE id = ?').run(
     absender || null,
     betrag || null,
     zahlungsziel || null,
     rechnungsnummer || null,
     lieferant || null,
     debitorId || null,
+    typ || 'rechnung',
     jobId
   );
 }

@@ -79,7 +79,18 @@
               <% } %>
 
               <div class="mb-3">
-                <label class="form-label" for="rechnungsnummer">Rechnungsnummer</label>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="typ" id="typRechnung" value="rechnung" <%= values.typ !== 'gutschrift' ? 'checked' : '' %>>
+                  <label class="form-check-label" for="typRechnung">Rechnung</label>
+                </div>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="typ" id="typGutschrift" value="gutschrift" <%= values.typ === 'gutschrift' ? 'checked' : '' %>>
+                  <label class="form-check-label" for="typGutschrift">Gutschrift</label>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label" for="rechnungsnummer" id="rechnungsnummer-label">Rechnungsnummer</label>
                 <input type="text" class="form-control" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" required>
               </div>
 
@@ -90,7 +101,7 @@
                 </div>
                 <div class="col-6">
                   <label class="form-label" for="zahlungsziel">Zahlungsziel</label>
-                  <input type="date" class="form-control" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>" required>
+                  <input type="date" class="form-control" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>" <%= values.typ === 'gutschrift' ? '' : 'required' %>>
                 </div>
               </div>
 
@@ -247,6 +258,22 @@
         document.getElementById(id).required = false;
       });
     });
+    // Eine Gutschrift hat kein Fälligkeitsdatum — Zahlungsziel wird optional, sobald der Typ
+    // umgeschaltet wird. Läuft auch einmal beim Laden, damit ein Fehler-Rerender mit bereits
+    // gewähltem Typ=Gutschrift den Zustand korrekt wiederherstellt.
+    (function () {
+      var zahlungszielFeld = document.getElementById('zahlungsziel');
+      var rechnungsnummerLabel = document.getElementById('rechnungsnummer-label');
+      function aktualisiereTypUi() {
+        var istGutschrift = document.getElementById('typGutschrift').checked;
+        zahlungszielFeld.required = !istGutschrift;
+        rechnungsnummerLabel.textContent = istGutschrift ? 'Gutschriftnummer' : 'Rechnungsnummer';
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="typ"]'), function (radio) {
+        radio.addEventListener('change', aktualisiereTypUi);
+      });
+      aktualisiereTypUi();
+    })();
     // "Rechnung aufsplitten" opens the existing standalone split page inside a Bootstrap modal via
     // an <iframe>, rather than navigating away — the page itself is unchanged (still a normal
     // GET/POST form) so error re-renders just update in place inside the modal. Two things need

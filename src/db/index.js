@@ -29,6 +29,7 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'qr_waehrung', ddl: 'ALTER TABLE jobs ADD COLUMN qr_waehrung TEXT' },
   { column: 'qr_creditor_name', ddl: 'ALTER TABLE jobs ADD COLUMN qr_creditor_name TEXT' },
   { column: 'qr_erkannt_am', ddl: 'ALTER TABLE jobs ADD COLUMN qr_erkannt_am TEXT' },
+  { column: 'typ', ddl: 'ALTER TABLE jobs ADD COLUMN typ TEXT' },
 ];
 
 function migrateJobsTable(db) {

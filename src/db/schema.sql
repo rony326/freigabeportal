@@ -134,7 +134,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   qr_betrag TEXT,
   qr_waehrung TEXT,
   qr_creditor_name TEXT,
-  qr_erkannt_am TEXT
+  qr_erkannt_am TEXT,
+  typ TEXT
 );
 
 -- Manipulationsschutz: sobald ein Zeitstempel-Hash/-Zeitpunkt für einen Job gesetzt ist, darf er

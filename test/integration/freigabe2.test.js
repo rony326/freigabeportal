@@ -229,6 +229,24 @@ test('GET /freigabe2/:id shows betrag, zahlungsziel, lieferant and rechnungsnumm
   db.close();
 });
 
+test('GET /freigabe2/:id shows Typ: Gutschrift for a credit note', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const { updateKontierungMetadaten } = await import('../../src/db/jobsRepo.js');
+  updateKontierungMetadaten(db, id, {
+    absender: 'lieferant@example.org',
+    betrag: '50.00',
+    rechnungsnummer: 'GS-1',
+    lieferant: 'Muster AG',
+    typ: 'gutschrift',
+  });
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Gutschrift/);
+  db.close();
+});
+
 test('GET /freigabe2/:id embeds the preview through the PDF.js viewer, not a raw /downloads iframe', async () => {
   const db = openDatabase(':memory:');
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });

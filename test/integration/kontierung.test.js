@@ -395,6 +395,64 @@ test('POST /kontierung/:id rejects an invalid zahlungsziel, nothing persisted', 
   db.close();
 });
 
+test('POST /kontierung/:id with typ=gutschrift does not require a Zahlungsziel and persists the type', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'GS-1', betrag: '50.00', typ: 'gutschrift', interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 302);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.typ, 'gutschrift');
+  assert.equal(job.zahlungsziel, null);
+  db.close();
+});
+
+test('POST /kontierung/:id defaults typ to rechnung when omitted, so Zahlungsziel stays required', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bitte ein Zahlungsziel angeben/);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'zugewiesen');
+  db.close();
+});
+
+test('GET /kontierung/:id pre-fills the Typ radio as Rechnung by default', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="typRechnung"[^>]*checked/);
+  db.close();
+});
+
 test('POST /kontierung/:id aktion=ablehnen rejects the job directly from the Kontierung stage, no Konto needed', async () => {
   const db = openDatabase(':memory:');
   seedKontoAndPersonen(db);

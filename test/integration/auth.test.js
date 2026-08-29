@@ -5,6 +5,7 @@ import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { openDatabase } from '../../src/db/index.js';
 import { createApp } from '../../src/app.js';
 import { getPersonById } from '../../src/db/personenRepo.js';
+import { fetchCsrfToken, extractCookieValue } from '../helpers/csrf.js';
 
 function testConfig() {
   return {
@@ -161,12 +162,12 @@ test('GET /auth/callback regenerates the session on login (prevents session fixa
   const app = createApp({ db, config });
   const agent = request.agent(app);
   const loginRes = await agent.get('/auth/login');
-  const preLoginSid = loginRes.headers['set-cookie'][0].match(/connect\.sid=([^;]+)/)[1];
+  const preLoginSid = extractCookieValue(loginRes.headers, 'connect.sid');
   const state = new URL(loginRes.headers.location).searchParams.get('state');
 
   const callbackRes = await agent.get('/auth/callback').query({ code: 'the-code', state });
   assert.equal(callbackRes.status, 302);
-  const postLoginSid = callbackRes.headers['set-cookie'][0].match(/connect\.sid=([^;]+)/)[1];
+  const postLoginSid = extractCookieValue(callbackRes.headers, 'connect.sid');
 
   assert.notEqual(preLoginSid, postLoginSid, 'session ID must change on login, not just gain new data');
 
@@ -203,10 +204,24 @@ test('GET /auth/callback creates a session and a person even when the person bel
 });
 
 test('POST /auth/logout destroys the session', async () => {
+  const config = testConfig();
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client
+    .intercept({ path: '/oauth/userinfo', method: 'GET' })
+    .reply(200, { id: 9, firstName: 'Log', lastName: 'Out', email: 'logout@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 9 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+
   const db = openDatabase(':memory:');
-  const app = createApp({ db, config: testConfig() });
+  const app = createApp({ db, config });
   const agent = request.agent(app);
-  const res = await agent.post('/auth/logout');
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  const csrfToken = await fetchCsrfToken(agent, '/pool');
+  const res = await agent.post('/auth/logout').type('form').send({ _csrf: csrfToken });
   assert.equal(res.status, 302);
   db.close();
 });

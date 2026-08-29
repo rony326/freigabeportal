@@ -20,6 +20,7 @@
       <p>Aktuelles Logo: <img src="/branding/logo" alt="Aktuelles Logo" height="48"></p>
     <% } %>
     <form method="post" action="/admin/erscheinungsbild" enctype="multipart/form-data" class="col-12 col-md-8 col-lg-6">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="mb-3">
         <label class="form-label" for="primaryColor">Primärfarbe</label>
         <input type="color" class="form-control form-control-color" id="primaryColor" name="primaryColor" value="<%= primaryColor %>" required>

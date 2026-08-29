@@ -19,6 +19,7 @@ import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
+import { fetchCsrfToken } from '../helpers/csrf.js';
 
 function createStubMailer() {
   const sent = [];
@@ -886,14 +887,16 @@ test('a Stellvertreter1 who is escalated to and ALSO has a conflict escalates to
 
   const app = createApp({ db, config });
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.' });
+  const freigeber1Token = await fetchCsrfToken(freigeber1Agent, `/kontierung/${jobId}`);
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.', _csrf: freigeber1Token });
   assert.equal(getJobById(db, jobId).zugewiesen_an, '2');
 
   const stellvertreter1Agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  const stellvertreter1Token = await fetchCsrfToken(stellvertreter1Agent, `/kontierung/${jobId}`);
   const res = await stellvertreter1Agent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin auch befangen.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin auch befangen.', _csrf: stellvertreter1Token });
 
   assert.equal(res.status, 302, 'the second escalation should succeed, not render the form with an error');
   const job = getJobById(db, jobId);
@@ -939,16 +942,18 @@ test('a plain, non-conflict resubmission after a prior escalation succeeds norma
 
   const app = createApp({ db, config });
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.' });
+  const freigeber1Token = await fetchCsrfToken(freigeber1Agent, `/kontierung/${jobId}`);
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.', _csrf: freigeber1Token });
 
   const stellvertreter1Agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  const stellvertreter1Token = await fetchCsrfToken(stellvertreter1Agent, `/kontierung/${jobId}`);
   // No conflict this time, just an ordinary attempt to escalate again (e.g. a stray double
   // form submit) — still needs handling. This drives the branch that used to always error;
   // now it goes through the normal non-conflict completion path since hatKonflikt is false.
   const res = await stellvertreter1Agent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: stellvertreter1Token });
   assert.equal(res.status, 302);
   db.close();
 });
@@ -976,10 +981,11 @@ test('a person who picks a Konto where they are themselves the stellvertreter1 a
 
   const app = createApp({ db, config });
   const agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  const token = await fetchCsrfToken(agent, `/kontierung/${jobId}`);
   const res = await agent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.', _csrf: token });
 
   assert.equal(res.status, 302, 'this is a first-ever escalation for this job, but self-targeting -> should go straight to admin, not error');
   const job = getJobById(db, jobId);
@@ -1011,10 +1017,11 @@ test('a job admin-escalated in Freigabe 1, then rejected in Freigabe 2 and reope
 
   const app = createApp({ db, config });
   const stellvertreterAgent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  const stellvertreterToken = await fetchCsrfToken(stellvertreterAgent, `/kontierung/${jobId}`);
   await stellvertreterAgent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.', _csrf: stellvertreterToken });
   const escalatedJob = getJobById(db, jobId);
   assert.equal(escalatedJob.freigabe1_eskaliert_an_admin, 1, 'sanity: escalated to admin');
 
@@ -1077,16 +1084,18 @@ test('a Portal-Admin authorized via the freigabe1_eskaliert_an_admin flag can re
 
   const app = createApp({ db, config });
   const stellvertreterAgent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  const stellvertreterToken = await fetchCsrfToken(stellvertreterAgent, `/kontierung/${jobId}`);
   await stellvertreterAgent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.', _csrf: stellvertreterToken });
   assert.equal(getJobById(db, jobId).freigabe1_eskaliert_an_admin, 1, 'sanity: escalated to admin');
 
   // The admin (not a member of Buchhaltung, authorized only via the flag branch) decides to
   // send the job back to the pool instead of completing it.
   const adminAgent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'] });
-  const releaseRes = await adminAgent.post(`/kontierung/${jobId}/zurueck-in-pool`);
+  const adminToken = await fetchCsrfToken(adminAgent, `/kontierung/${jobId}`);
+  const releaseRes = await adminAgent.post(`/kontierung/${jobId}/zurueck-in-pool`).type('form').send({ _csrf: adminToken });
   assert.equal(releaseRes.status, 302);
   assert.equal(releaseRes.headers.location, '/pool');
 
@@ -1128,10 +1137,11 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
 
   const app = createApp({ db, config });
   const stellvertreterAgent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  const stellvertreterToken = await fetchCsrfToken(stellvertreterAgent, `/kontierung/${jobId}`);
   await stellvertreterAgent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Ich bin selbst die Stellvertretung.', _csrf: stellvertreterToken });
   const escalated = getJobById(db, jobId);
   assert.equal(escalated.freigabe1_eskaliert_an_admin, 1, 'sanity: escalated to admin');
   assert.equal(escalated.konto_id, kontoId, 'sanity: the job already carries the Konto the admin must resubmit');
@@ -1142,11 +1152,12 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
   const getRes = await adminAgent.get(`/kontierung/${jobId}`);
   assert.equal(getRes.status, 200);
   assert.match(getRes.text, /3000/, 'the admin must be able to see/select the job\'s own Konto despite holding no role on it');
+  const adminToken = getRes.text.match(/name="_csrf" value="([^"]+)"/)[1];
 
   const postRes = await adminAgent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: adminToken });
 
   assert.equal(postRes.status, 302, 'the admin must be able to actually submit the form, not just view it');
   const job = getJobById(db, jobId);

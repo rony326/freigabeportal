@@ -27,6 +27,7 @@
                 <% } %>
                 <% if (bearbeitbar) { %>
                 <form method="post" action="/admin/personen/<%= p.churchtools_person_id %>/berechtigungen" class="d-flex flex-wrap gap-2 mt-1">
+                  <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                   <% grantableBerechtigungen.forEach((berechtigung) => { %>
                     <div class="form-check form-check-inline">
                       <input

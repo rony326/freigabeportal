@@ -15,6 +15,7 @@
     <p><strong>Grund:</strong> <%= job.ablehnungsgrund %></p>
     <p><strong>Zeitpunkt:</strong> <%= ablehnung ? ablehnung.zeitpunkt : 'Unbekannt' %></p>
     <form method="post" action="/abgelehnt/<%= job.id %>/ueberarbeiten">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-primary">Überarbeiten</button>
     </form>
     <%- include('_audit_log') %>

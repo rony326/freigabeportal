@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { listPoolJobs, claimJob } from '../db/jobsRepo.js';
 
-export function createPoolRouter({ db }) {
+export function createPoolRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/', (req, res) => {
@@ -18,7 +18,7 @@ export function createPoolRouter({ db }) {
     res.json(jobs);
   });
 
-  router.post('/:id/beanspruchen', (req, res) => {
+  router.post('/:id/beanspruchen', csrfProtection, (req, res) => {
     const claimed = claimJob(db, Number(req.params.id), req.currentPerson.churchtools_person_id);
     if (!claimed) {
       return res.status(409).json({ error: 'Job ist nicht mehr im Pool verfügbar.' });

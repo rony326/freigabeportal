@@ -19,6 +19,7 @@
     <% } %>
     <div class="alert alert-warning">Diese Aktion löscht die Rechnung inklusive PDF endgültig. Das kann nicht rückgängig gemacht werden.</div>
     <form method="post" action="/admin/abgelehnt/<%= job.id %>/loeschen" class="col-12 col-md-8 col-lg-6">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="mb-3">
         <label class="form-label" for="begruendung">Begründung für die Löschung</label>
         <textarea class="form-control" id="begruendung" name="begruendung" required><%= begruendung %></textarea>

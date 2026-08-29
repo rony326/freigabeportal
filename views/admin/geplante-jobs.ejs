@@ -19,6 +19,7 @@
     <% } %>
 
     <form method="post" action="/admin/geplante-jobs" class="col-12 col-lg-8">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <h2 class="h5 mt-3">ChurchTools-Personen-Sync</h2>
       <div class="row g-2 mb-3">
         <div class="col-6 col-md-3">
@@ -74,6 +75,7 @@
 
     <h2 class="h4">ChurchTools-Personen-Sync — Verlauf</h2>
     <form method="post" action="/admin/geplante-jobs/sync-personen/jetzt-ausfuehren" class="mb-2">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
     </form>
     <% if (getriggert === 'sync-personen') { %>
@@ -110,6 +112,7 @@
 
     <h2 class="h4 mt-4">Pool-Erinnerungen — Verlauf</h2>
     <form method="post" action="/admin/geplante-jobs/pool-erinnerungen/jetzt-ausfuehren" class="mb-2">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
     </form>
     <% if (getriggert === 'pool-erinnerungen' && poolErinnerungenLog.length > 0) { %>
@@ -137,6 +140,7 @@
 
     <h2 class="h4 mt-4">PDF-Bereinigung — Verlauf</h2>
     <form method="post" action="/admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren" class="mb-2">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
     </form>
     <% if (getriggert === 'pdf-bereinigung' && pdfBereinigungLog.length > 0) { %>
@@ -164,6 +168,7 @@
 
     <h2 class="h4 mt-4">Zeitstempel-Nachholen — Verlauf</h2>
     <form method="post" action="/admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren" class="mb-2">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
     </form>
     <% if (getriggert === 'zeitstempel-nachholen' && zeitstempelNachholenLog.length > 0) { %>

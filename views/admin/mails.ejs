@@ -32,6 +32,7 @@
               <td>
                 <% if (mail.status === 'fehlgeschlagen') { %>
                   <form method="post" action="/admin/mails/<%= mail.id %>/erneut-versenden">
+                    <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                     <button type="submit" class="btn btn-outline-secondary btn-sm">Erneut versenden</button>
                   </form>
                 <% } %>

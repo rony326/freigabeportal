@@ -24,7 +24,7 @@ export function validateEmpfaengerListe(value, label, errors) {
   }
 }
 
-export function createEskalationRouter({ db }) {
+export function createEskalationRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/', (req, res) => {
@@ -39,7 +39,7 @@ export function createEskalationRouter({ db }) {
     });
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', csrfProtection, (req, res) => {
     const { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger, ibanAbweichungEmpfaenger } = req.body;
     const errors = [];
 

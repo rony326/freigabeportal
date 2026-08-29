@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { buildAuthorizeUrl, exchangeCodeForToken, fetchPerson, resolveMemberGroupIds } from '../services/churchtools.js';
 import { upsertPerson } from '../db/personenRepo.js';
 
-export function createAuthRouter({ db, config }) {
+export function createAuthRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/login', (req, res) => {
@@ -66,7 +66,7 @@ export function createAuthRouter({ db, config }) {
     }
   });
 
-  router.post('/logout', (req, res, next) => {
+  router.post('/logout', csrfProtection, (req, res, next) => {
     req.session.destroy((err) => {
       if (err) return next(err);
       res.redirect('/');

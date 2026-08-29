@@ -17,6 +17,7 @@
       </div>
     <% } %>
     <form method="post" action="/admin/eskalation" class="col-12 col-md-8 col-lg-6">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="mb-3">
         <label class="form-label" for="reminderStunden">Reminder nach (Stunden)</label>
         <input type="number" class="form-control" id="reminderStunden" name="reminderStunden" value="<%= reminderStunden %>" required>

@@ -38,6 +38,7 @@
     <button type="button" id="theme-toggle" class="btn btn-outline-secondary btn-sm" aria-label="Farbmodus umschalten">🌓</button>
     <% if (typeof currentPerson !== 'undefined' && currentPerson) { %>
       <form method="post" action="/auth/logout" class="d-inline">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
         <button type="submit" class="btn btn-outline-secondary btn-sm">Abmelden</button>
       </form>
     <% } %>

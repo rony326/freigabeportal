@@ -19,7 +19,7 @@ function isValidAbsenderMuster(muster) {
   return muster.includes('@') ? EMAIL_MUSTER_PATTERN.test(muster) : DOMAIN_MUSTER_PATTERN.test(muster);
 }
 
-export function createDebitorenRouter({ db }) {
+export function createDebitorenRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   function renderListe(req, res, status, overrides = {}) {
@@ -57,7 +57,7 @@ export function createDebitorenRouter({ db }) {
     renderListe(req, res, 200);
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', csrfProtection, (req, res) => {
     const { name, kontoId } = req.body;
     const errors = [];
     if (!name || !name.trim()) errors.push('Name ist ein Pflichtfeld.');
@@ -73,7 +73,7 @@ export function createDebitorenRouter({ db }) {
   // The /regeln* routes must be registered before the generic /:id* debitor routes below —
   // otherwise POST/GET /admin/debitoren/regeln(...) would first match router's `/:id` pattern
   // (with id="regeln", a NaN Number()) and 404 before ever reaching these handlers.
-  router.post('/regeln', (req, res) => {
+  router.post('/regeln', csrfProtection, (req, res) => {
     const { absenderMuster, debitorId } = req.body;
     const errors = [];
     if (!absenderMuster) errors.push('Absender-Muster ist ein Pflichtfeld.');
@@ -106,7 +106,7 @@ export function createDebitorenRouter({ db }) {
     });
   });
 
-  router.post('/regeln/:id', (req, res) => {
+  router.post('/regeln/:id', csrfProtection, (req, res) => {
     const id = Number(req.params.id);
     const regel = getZuweisungsregelById(db, id);
     if (!regel) {
@@ -133,7 +133,7 @@ export function createDebitorenRouter({ db }) {
     res.redirect('/admin/debitoren?gespeichert=1');
   });
 
-  router.post('/regeln/:id/loeschen', (req, res) => {
+  router.post('/regeln/:id/loeschen', csrfProtection, (req, res) => {
     deleteZuweisungsregel(db, Number(req.params.id));
     res.redirect('/admin/debitoren');
   });
@@ -141,7 +141,7 @@ export function createDebitorenRouter({ db }) {
   // The /ibans* routes must be registered before the generic /:id* debitor routes below —
   // otherwise POST /admin/debitoren/ibans(...) would first match router's `/:id` pattern
   // (with id="ibans", a NaN Number()) and 404 before ever reaching these handlers.
-  router.post('/ibans', (req, res) => {
+  router.post('/ibans', csrfProtection, (req, res) => {
     const { iban, debitorId } = req.body;
     const normalizedIban = normalizeIban(iban);
     const errors = [];
@@ -162,7 +162,7 @@ export function createDebitorenRouter({ db }) {
     res.redirect('/admin/debitoren?gespeichert=1');
   });
 
-  router.post('/ibans/:id/loeschen', (req, res) => {
+  router.post('/ibans/:id/loeschen', csrfProtection, (req, res) => {
     deleteDebitorIban(db, Number(req.params.id));
     res.redirect('/admin/debitoren');
   });
@@ -180,7 +180,7 @@ export function createDebitorenRouter({ db }) {
     });
   });
 
-  router.post('/:id', (req, res) => {
+  router.post('/:id', csrfProtection, (req, res) => {
     const id = Number(req.params.id);
     const debitor = getDebitorById(db, id);
     if (!debitor) {
@@ -198,12 +198,12 @@ export function createDebitorenRouter({ db }) {
     res.redirect('/admin/debitoren?gespeichert=1');
   });
 
-  router.post('/:id/deaktivieren', (req, res) => {
+  router.post('/:id/deaktivieren', csrfProtection, (req, res) => {
     deactivateDebitor(db, Number(req.params.id));
     res.redirect('/admin/debitoren?gespeichert=1');
   });
 
-  router.post('/:id/aktivieren', (req, res) => {
+  router.post('/:id/aktivieren', csrfProtection, (req, res) => {
     activateDebitor(db, Number(req.params.id));
     res.redirect('/admin/debitoren?gespeichert=1');
   });

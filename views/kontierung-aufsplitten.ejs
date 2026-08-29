@@ -19,6 +19,7 @@
     <p>Jede Zeile wird zu einer eigenständigen Rechnung mit eigenem Konto und Teilbetrag. Zahlungsziel, Lieferant, Absender und Rechnungsnummer werden übernommen. Für Konten, bei denen du Freigeber oder Stellvertretung bist, gilt Freigabe 1 automatisch als durch dich erteilt — ausser du kreuzt "Konflikt" an, dann geht der Teil direkt an deine Stellvertretung. Für andere Konten landet der Teil unzugewiesen im Pool mit einem Hinweis für die zuständige Person. Das Kästchen "Konflikt" ist nur relevant, wenn du bei diesem Konto selbst Freigeber oder Stellvertretung bist.</p>
 
     <form method="post" action="/kontierung/<%= job.id %>/aufsplitten" enctype="multipart/form-data" class="col-12">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="mb-3 col-6 col-md-4">
         <label class="form-label" for="gesamtbetrag">Gesamtbetrag</label>
         <input type="text" inputmode="decimal" class="form-control" id="gesamtbetrag" name="gesamtbetrag" value="<%= gesamtbetrag %>" placeholder="z.B. 200.00" required>

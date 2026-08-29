@@ -18,7 +18,7 @@ function readRoleFields(body) {
   };
 }
 
-export function createKontenRouter({ db }) {
+export function createKontenRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/', (req, res) => {
@@ -35,7 +35,7 @@ export function createKontenRouter({ db }) {
     res.render('admin/konten-form', { konto: null, values: {}, errors: [], personen: listActivePersons(db) });
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', csrfProtection, (req, res) => {
     const values = readRoleFields(req.body);
     const errors = validateKontoRoles(db, values);
     if (!values.kontonummer) errors.push('Kontonummer ist ein Pflichtfeld.');
@@ -69,7 +69,7 @@ export function createKontenRouter({ db }) {
     });
   });
 
-  router.post('/:id', (req, res) => {
+  router.post('/:id', csrfProtection, (req, res) => {
     const id = Number(req.params.id);
     const konto = getKontoById(db, id);
     if (!konto) {
@@ -95,12 +95,12 @@ export function createKontenRouter({ db }) {
     res.redirect('/admin/konten?gespeichert=1');
   });
 
-  router.post('/:id/deaktivieren', (req, res) => {
+  router.post('/:id/deaktivieren', csrfProtection, (req, res) => {
     deactivateKonto(db, Number(req.params.id));
     res.redirect('/admin/konten');
   });
 
-  router.post('/:id/aktivieren', (req, res) => {
+  router.post('/:id/aktivieren', csrfProtection, (req, res) => {
     activateKonto(db, Number(req.params.id));
     res.redirect('/admin/konten?alle=1');
   });

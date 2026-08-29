@@ -6,7 +6,7 @@ import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZe
 
 const LOG_LIMIT = 10;
 
-export function createGeplanteJobsRouter({ db, config, mailer }) {
+export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   function ladeState(getriggert) {
@@ -33,7 +33,7 @@ export function createGeplanteJobsRouter({ db, config, mailer }) {
     });
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', csrfProtection, (req, res) => {
     const {
       syncPersonenStunde,
       syncPersonenMinute,
@@ -97,7 +97,7 @@ export function createGeplanteJobsRouter({ db, config, mailer }) {
   // by an admin click instead of a timer. Each run is already persisted before the redirect, so
   // the GET handler picks the just-created row straight back up as feedback (no separate flash
   // mechanism needed).
-  router.post('/sync-personen/jetzt-ausfuehren', async (req, res, next) => {
+  router.post('/sync-personen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
     try {
       await runSyncPersonenJob(db, config, mailer);
       res.redirect('/admin/geplante-jobs?getriggert=sync-personen');
@@ -106,7 +106,7 @@ export function createGeplanteJobsRouter({ db, config, mailer }) {
     }
   });
 
-  router.post('/pool-erinnerungen/jetzt-ausfuehren', async (req, res, next) => {
+  router.post('/pool-erinnerungen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
     try {
       await runPoolErinnerungenJob(db, config, mailer);
       res.redirect('/admin/geplante-jobs?getriggert=pool-erinnerungen');
@@ -115,7 +115,7 @@ export function createGeplanteJobsRouter({ db, config, mailer }) {
     }
   });
 
-  router.post('/pdf-bereinigung/jetzt-ausfuehren', (req, res, next) => {
+  router.post('/pdf-bereinigung/jetzt-ausfuehren', csrfProtection, (req, res, next) => {
     try {
       runPdfBereinigungJob(db, config);
       res.redirect('/admin/geplante-jobs?getriggert=pdf-bereinigung');
@@ -124,7 +124,7 @@ export function createGeplanteJobsRouter({ db, config, mailer }) {
     }
   });
 
-  router.post('/zeitstempel-nachholen/jetzt-ausfuehren', async (req, res, next) => {
+  router.post('/zeitstempel-nachholen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
     try {
       await runZeitstempelNachholenJob(db, config);
       res.redirect('/admin/geplante-jobs?getriggert=zeitstempel-nachholen');

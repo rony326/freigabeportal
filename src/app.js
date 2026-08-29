@@ -1,5 +1,6 @@
 import express from 'express';
 import session from 'express-session';
+import cookieParser from 'cookie-parser';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { SqliteSessionStore } from './db/sessionStore.js';
@@ -7,6 +8,7 @@ import { createAuthRouter } from './routes/auth.js';
 import { createCronRouter } from './routes/cron.js';
 import { requireApiKey } from './middleware/apiKey.js';
 import { requireCronSecret } from './middleware/cronAuth.js';
+import { createCsrfProtection } from './middleware/csrf.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { createN8nBackupRouter } from './routes/n8n/backup.js';
 import { loadCurrentPerson, requireRole, requireAnyRole, requireLogin } from './middleware/roles.js';
@@ -99,6 +101,19 @@ export function createApp({ db, config }) {
       },
     })
   );
+  // cookie-parser must run after express-session (session parses its own cookie first) and
+  // before the CSRF middleware, which reads/writes its own separate, non-session cookie.
+  app.use(cookieParser());
+  const { attachCsrfToken, csrfProtection } = createCsrfProtection(config);
+  app.use((req, res, next) => {
+    // /api/n8n/* and /internal/cron/* are machine routes authenticated via X-API-Key /
+    // X-Cron-Secret headers, never session cookies — they send no CSRF cookie or token and must
+    // stay exempt. /api/pool is session-cookie authenticated (its beanspruchen button is a
+    // fetch() call, protected via the x-csrf-token header instead of a form field) and does need
+    // this.
+    if (req.path.startsWith('/api/n8n/') || req.path.startsWith('/internal/cron')) return next();
+    return attachCsrfToken(req, res, next);
+  });
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, config));
 
@@ -118,21 +133,21 @@ export function createApp({ db, config }) {
       zeitstempelWarnungSchwelle,
     });
   });
-  app.use('/admin/konten', requirePermission(db, config, 'konten_verwalten'), createKontenRouter({ db }));
-  app.use('/admin/debitoren', requirePermission(db, config, 'debitoren_verwalten'), createDebitorenRouter({ db }));
-  app.use('/admin/eskalation', requireRole(config, 'superadmin'), createEskalationRouter({ db }));
-  app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config }));
-  app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db }));
-  app.use('/admin/personen', requireAnyRole(config, ['superadmin', 'manager']), createPersonenRouter({ db, config }));
-  app.use('/admin/mails', requirePermission(db, config, 'mails_einsehen'), createMailsRouter({ db, mailer }));
-  app.use('/admin/sync', requirePermission(db, config, 'sync_einsehen'), createSyncRouter({ db }));
-  app.use('/admin/abgelehnt', requirePermission(db, config, 'abgelehnt_verwalten'), createAdminAbgelehntRouter({ db }));
-  app.use('/admin/geplante-jobs', requirePermission(db, config, 'geplante_jobs_verwalten'), createGeplanteJobsRouter({ db, config, mailer }));
-  app.use('/admin/backup', requireRole(config, 'superadmin'), createBackupRouter({ db, config }));
+  app.use('/admin/konten', requirePermission(db, config, 'konten_verwalten'), createKontenRouter({ db, csrfProtection }));
+  app.use('/admin/debitoren', requirePermission(db, config, 'debitoren_verwalten'), createDebitorenRouter({ db, csrfProtection }));
+  app.use('/admin/eskalation', requireRole(config, 'superadmin'), createEskalationRouter({ db, csrfProtection }));
+  app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config, csrfProtection }));
+  app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db, csrfProtection }));
+  app.use('/admin/personen', requireAnyRole(config, ['superadmin', 'manager']), createPersonenRouter({ db, config, csrfProtection }));
+  app.use('/admin/mails', requirePermission(db, config, 'mails_einsehen'), createMailsRouter({ db, mailer, csrfProtection }));
+  app.use('/admin/sync', requirePermission(db, config, 'sync_einsehen'), createSyncRouter({ db, csrfProtection }));
+  app.use('/admin/abgelehnt', requirePermission(db, config, 'abgelehnt_verwalten'), createAdminAbgelehntRouter({ db, csrfProtection }));
+  app.use('/admin/geplante-jobs', requirePermission(db, config, 'geplante_jobs_verwalten'), createGeplanteJobsRouter({ db, config, mailer, csrfProtection }));
+  app.use('/admin/backup', requireRole(config, 'superadmin'), createBackupRouter({ db, config, csrfProtection }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/n8n/backup', machineLimiter, requireApiKey(config), createN8nBackupRouter({ config }));
-  app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db }));
+  app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db, csrfProtection }));
   // Dashboard for every logged-in person, not just Buchhaltung/Superadmin: "/" always redirects
   // here now that the old landing page is gone, and a Freigeber1/2-only person (no group
   // membership, AUTH-WIDEN-1) needs somewhere to land too. The pool-of-unassigned-invoices
@@ -140,12 +155,12 @@ export function createApp({ db, config }) {
   // loadNavFlags) — only the route-level gate widens, not who can see the company-wide pool.
   app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));
-  app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer }));
-  app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer }));
-  app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config }));
-  app.use('/zeitstempel-pruefen', sessionLimiter, requireLogin(), createZeitstempelPruefenRouter({ db, config }));
+  app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer, csrfProtection }));
+  app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer, csrfProtection }));
+  app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config, csrfProtection }));
+  app.use('/zeitstempel-pruefen', sessionLimiter, requireLogin(), createZeitstempelPruefenRouter({ db, config, csrfProtection }));
 
-  app.use('/auth', publicLimiter, createAuthRouter({ db, config }));
+  app.use('/auth', publicLimiter, createAuthRouter({ db, config, csrfProtection }));
   app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));
 
   app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
@@ -161,8 +176,15 @@ export function createApp({ db, config }) {
   });
 
   app.use((err, req, res, next) => {
-    console.error(err.stack || err);
     res.locals.branding ??= { primaryColor: null, secondaryColor: null, hasLogo: false, themeAttr: null, seitenTitel: 'Freigabeportal' };
+    if (err.code === 'EBADCSRFTOKEN') {
+      // Most likely a stale/expired form (session changed since it was loaded, e.g. logged out
+      // and back in another tab) rather than an actual attack — no need to log.stack this one.
+      return res
+        .status(403)
+        .render('error', { message: 'Sicherheitsprüfung fehlgeschlagen (ungültiges oder abgelaufenes Formular). Bitte lade die Seite neu und versuche es erneut.' });
+    }
+    console.error(err.stack || err);
     res.status(500).render('error', { message: 'Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es später erneut.' });
   });
 

@@ -10,6 +10,7 @@ import { createJob, getJobById } from '../../src/db/jobsRepo.js';
 import { listMailLog } from '../../src/db/mailLogRepo.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
+import { fetchCsrfToken } from '../helpers/csrf.js';
 
 function testConfig() {
   return {
@@ -67,27 +68,31 @@ test('a Freigabe-1 conflict escalated to admin survives a Freigabe-2 rejection: 
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
 
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen.' });
+  const freigeber1Token = await fetchCsrfToken(freigeber1Agent, '/pool');
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen.', _csrf: freigeber1Token });
 
   const stellvertreter1Agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
-  await stellvertreter1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Auch befangen.' });
+  const stellvertreter1Token = await fetchCsrfToken(stellvertreter1Agent, '/pool');
+  await stellvertreter1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Auch befangen.', _csrf: stellvertreter1Token });
   assert.equal(getJobById(db, jobId).freigabe1_eskaliert_an_admin, 1);
 
   const adminAgent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'] });
+  const adminToken = await fetchCsrfToken(adminAgent, '/pool');
   const kontierungRes = await adminAgent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: adminToken });
   assert.equal(kontierungRes.status, 302);
   assert.equal(getJobById(db, jobId).status, 'freigabe2');
   assert.equal(getJobById(db, jobId).freigabe1_eskaliert_an_admin, 1, "the exclusion must survive Freigabe 1's own completion");
 
   // Freigeber 2 has no group membership at all — also proves AUTHZ-3's route-gate removal.
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: [] });
+  const freigeber2Token = await fetchCsrfToken(freigeber2Agent, '/pool');
   const ablehnenRes = await freigeber2Agent
     .post(`/freigabe2/${jobId}`)
     .type('form')
-    .send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: 'Falsches Konto gewählt.' });
+    .send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: 'Falsches Konto gewählt.', _csrf: freigeber2Token });
   assert.equal(ablehnenRes.status, 302);
   assert.equal(getJobById(db, jobId).status, 'abgelehnt');
   assert.ok(
@@ -102,7 +107,7 @@ test('a Freigabe-1 conflict escalated to admin survives a Freigabe-2 rejection: 
   // The admin reworks it instead.
   const adminAbgelehntRes = await adminAgent.get(`/abgelehnt/${jobId}`);
   assert.equal(adminAbgelehntRes.status, 200);
-  const ueberarbeitenRes = await adminAgent.post(`/abgelehnt/${jobId}/ueberarbeiten`);
+  const ueberarbeitenRes = await adminAgent.post(`/abgelehnt/${jobId}/ueberarbeiten`).type('form').send({ _csrf: adminToken });
   assert.equal(ueberarbeitenRes.status, 302);
   assert.equal(ueberarbeitenRes.headers.location, `/kontierung/${jobId}`);
   assert.equal(getJobById(db, jobId).status, 'zugewiesen');
@@ -118,7 +123,7 @@ test('a Freigabe-1 conflict escalated to admin survives a Freigabe-2 rejection: 
   const reworkRes = await adminAgent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: adminToken });
   assert.equal(reworkRes.status, 302);
   assert.equal(getJobById(db, jobId).status, 'freigabe2');
 

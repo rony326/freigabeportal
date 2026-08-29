@@ -14,6 +14,7 @@ import { listMailLog } from '../../src/db/mailLogRepo.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
+import { fetchCsrfToken } from '../helpers/csrf.js';
 
 function testConfig(jobsDir) {
   return {
@@ -98,19 +99,23 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
 
   // 2. Freigeber 1 declares a conflict -> escalation mail to stellvertreter1.
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen' });
+  const freigeber1Token = await fetchCsrfToken(freigeber1Agent, '/pool');
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen', _csrf: freigeber1Token });
 
   // 3. Stellvertreter 1 completes Kontierung + Freigabe 1 -> handoff mail to freigeber2.
   const stellvertreter1Agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
-  await stellvertreter1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
+  const stellvertreter1Token = await fetchCsrfToken(stellvertreter1Agent, '/pool');
+  await stellvertreter1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: stellvertreter1Token });
 
   // 4. Freigeber 2 declares a conflict -> escalation mail to stellvertreter2.
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'] });
-  await freigeber2Agent.post(`/freigabe2/${jobId}`).type('form').send({ interessenskonflikt: 'ja', begruendung: 'Auch befangen' });
+  const freigeber2Token = await fetchCsrfToken(freigeber2Agent, '/pool');
+  await freigeber2Agent.post(`/freigabe2/${jobId}`).type('form').send({ interessenskonflikt: 'ja', begruendung: 'Auch befangen', _csrf: freigeber2Token });
 
   // 5. Stellvertreter 2 rejects -> Ablehnungs-Benachrichtigung to the job owner (stellvertreter1, '2').
   const stellvertreter2Agent = await loginAs(app, client, { id: 4, vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'] });
-  await stellvertreter2Agent.post(`/freigabe2/${jobId}`).type('form').send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: 'Falsches Konto' });
+  const stellvertreter2Token = await fetchCsrfToken(stellvertreter2Agent, '/pool');
+  await stellvertreter2Agent.post(`/freigabe2/${jobId}`).type('form').send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: 'Falsches Konto', _csrf: stellvertreter2Token });
 
   const zuweisungMails = listMailLog(db).filter((m) => m.typ === 'zuweisung' && m.job_id === jobId);
   const ablehnungMails = listMailLog(db).filter((m) => m.typ === 'ablehnung' && m.job_id === jobId);
@@ -158,12 +163,13 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
   assert.ok(allMails.every((m) => m.status === 'fehlgeschlagen'), 'unreachable SMTP host: every attempt failed, none crashed the app');
 
   const adminAgent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'] });
+  const adminToken = await fetchCsrfToken(adminAgent, '/pool');
   const listRes = await adminAgent.get('/admin/mails');
   assert.equal(listRes.status, 200);
   assert.match(listRes.text, /Falsches Konto|Rechnung abgelehnt/);
 
   const countBeforeRetry = listMailLog(db).length;
-  const retryRes = await adminAgent.post(`/admin/mails/${ablehnungMails[0].id}/erneut-versenden`);
+  const retryRes = await adminAgent.post(`/admin/mails/${ablehnungMails[0].id}/erneut-versenden`).type('form').send({ _csrf: adminToken });
   assert.equal(retryRes.status, 302);
   assert.equal(listMailLog(db).length, countBeforeRetry + 1, 'retry appends a new row rather than overwriting the original');
 

@@ -26,6 +26,7 @@
                 <a href="<%= linkPrefix %>/<%= job.id %>" class="btn btn-outline-primary btn-sm"><%= aktionLabel %></a>
                 <% if (idPrefix === 'kontierung') { %>
                   <form method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                     <button type="submit" class="btn btn-outline-secondary btn-sm">In den Pool legen</button>
                   </form>
                 <% } %>

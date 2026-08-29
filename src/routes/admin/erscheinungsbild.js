@@ -34,7 +34,7 @@ function detectImageMimetype(buffer) {
   return null;
 }
 
-export function createErscheinungsbildRouter({ db, config }) {
+export function createErscheinungsbildRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   function currentState() {
@@ -54,8 +54,12 @@ export function createErscheinungsbildRouter({ db, config }) {
     res.render('admin/erscheinungsbild-form', { ...currentState(), errors: [], gespeichert: req.query.gespeichert === '1' });
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', (req, res, next) => {
     upload.single('logo')(req, res, (uploadErr) => {
+      // csrfProtection runs after multer parses the multipart body (including the _csrf field) —
+      // any earlier and req.body would still be empty, rejecting every legitimate submission.
+      csrfProtection(req, res, (csrfErr) => {
+      if (csrfErr) return next(csrfErr);
       if (uploadErr) {
         const message = uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Die Logo-Datei darf höchstens 2 MB gross sein.' : 'Fehler beim Datei-Upload.';
         return res.status(400).render('admin/erscheinungsbild-form', {
@@ -127,6 +131,7 @@ export function createErscheinungsbildRouter({ db, config }) {
       }
 
       res.redirect('/admin/erscheinungsbild?gespeichert=1');
+      });
     });
   });
 

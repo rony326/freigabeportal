@@ -48,7 +48,7 @@
     document.querySelectorAll('.beanspruchen-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.jobId;
-        const res = await fetch(`/api/pool/${id}/beanspruchen`, { method: 'POST' });
+        const res = await fetch(`/api/pool/${id}/beanspruchen`, { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' } });
         if (res.ok) {
           window.location.href = `/kontierung/${id}`;
           return;

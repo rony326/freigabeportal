@@ -13,6 +13,7 @@ import { getJobById } from '../../src/db/jobsRepo.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
+import { fetchCsrfToken } from '../helpers/csrf.js';
 
 function testConfig(jobsDir) {
   return {
@@ -80,11 +81,13 @@ test('a job driven through the full workflow to Abholung is archived by the swee
   const jobId = createRes.body.id;
 
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
-  await freigeber1Agent.post(`/api/pool/${jobId}/beanspruchen`);
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
+  const freigeber1Token = await fetchCsrfToken(freigeber1Agent, '/pool');
+  await freigeber1Agent.post(`/api/pool/${jobId}/beanspruchen`).type('form').send({ _csrf: freigeber1Token });
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
 
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'] });
-  await freigeber2Agent.post(`/freigabe2/${jobId}`).type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  const freigeber2Token = await fetchCsrfToken(freigeber2Agent, '/pool');
+  await freigeber2Agent.post(`/freigabe2/${jobId}`).type('form').send({ interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber2Token });
 
   const abholbereitRes = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   assert.equal(abholbereitRes.body.length, 1);

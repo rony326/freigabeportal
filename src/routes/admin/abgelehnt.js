@@ -3,7 +3,7 @@ import { getJobById, listAlleAbgelehntenJobs, loeschenJob } from '../../db/jobsR
 import { getPersonById } from '../../db/personenRepo.js';
 import { logJobLoeschung } from '../../db/jobLoeschungenRepo.js';
 
-export function createAdminAbgelehntRouter({ db }) {
+export function createAdminAbgelehntRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/', (req, res) => {
@@ -25,7 +25,7 @@ export function createAdminAbgelehntRouter({ db }) {
     res.render('admin/abgelehnt-loeschen', { job, errors: [], begruendung: '' });
   });
 
-  router.post('/:id/loeschen', (req, res, next) => {
+  router.post('/:id/loeschen', csrfProtection, (req, res, next) => {
     try {
       const job = getJobById(db, Number(req.params.id));
       if (!job || job.status !== 'abgelehnt') {

@@ -16,7 +16,7 @@ function ladeStalledJobsMitNamen(db) {
   });
 }
 
-export function createSyncRouter({ db }) {
+export function createSyncRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/', (req, res) => {
@@ -31,7 +31,7 @@ export function createSyncRouter({ db }) {
     });
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', csrfProtection, (req, res) => {
     const { maxDeaktivierungProzent, maxDeaktivierungAnzahl, syncFehlerEmpfaenger } = req.body;
     const errors = [];
 
@@ -63,7 +63,7 @@ export function createSyncRouter({ db }) {
     res.redirect('/admin/sync?gespeichert=1');
   });
 
-  router.post('/stalled/:jobId/freigeben', (req, res) => {
+  router.post('/stalled/:jobId/freigeben', csrfProtection, (req, res) => {
     const jobId = Number(req.params.jobId);
     // Try the pool-release path first (covers zugewiesen/abgelehnt); if that's not the job's
     // status, fall back to the admin-escalation path (covers freigabe2). Exactly one of the two

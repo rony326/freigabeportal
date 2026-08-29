@@ -11,6 +11,7 @@ import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
+import { fetchCsrfToken } from '../helpers/csrf.js';
 import * as mupdf from 'mupdf';
 
 function testConfig(jobsDir) {
@@ -83,20 +84,22 @@ test('Pool → Beanspruchen → Kontierung → Freigabe 2 completes the job with
   assert.equal(createRes.body.status, 'unzugewiesen');
 
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
-  const claimRes = await freigeber1Agent.post(`/api/pool/${jobId}/beanspruchen`);
+  const freigeber1Token = await fetchCsrfToken(freigeber1Agent, '/pool');
+  const claimRes = await freigeber1Agent.post(`/api/pool/${jobId}/beanspruchen`).type('form').send({ _csrf: freigeber1Token });
   assert.equal(claimRes.status, 200);
 
   const kontierungRes = await freigeber1Agent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
   assert.equal(kontierungRes.status, 302);
 
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'] });
+  const freigeber2Token = await fetchCsrfToken(freigeber2Agent, '/pool');
   const freigabe2Res = await freigeber2Agent
     .post(`/freigabe2/${jobId}`)
     .type('form')
-    .send({ interessenskonflikt: 'nein', begruendung: '' });
+    .send({ interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber2Token });
   assert.equal(freigabe2Res.status, 302);
 
   const abholbereitRes = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');

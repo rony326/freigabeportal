@@ -2,14 +2,14 @@ import { Router } from 'express';
 import { listMailLog, getMailLogById } from '../../db/mailLogRepo.js';
 import { sendNotification } from '../../services/notify.js';
 
-export function createMailsRouter({ db, mailer }) {
+export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/', (req, res) => {
     res.render('admin/mails', { mails: listMailLog(db), gespeichert: req.query.gespeichert === '1' });
   });
 
-  router.post('/:id/erneut-versenden', async (req, res, next) => {
+  router.post('/:id/erneut-versenden', csrfProtection, async (req, res, next) => {
     try {
       const eintrag = getMailLogById(db, Number(req.params.id));
       if (!eintrag) {

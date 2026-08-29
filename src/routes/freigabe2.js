@@ -12,7 +12,7 @@ import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/dow
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
 import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
 
-export function createFreigabe2Router({ db, config, mailer }) {
+export function createFreigabe2Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   function isSuperadmin(person) {
@@ -75,7 +75,7 @@ export function createFreigabe2Router({ db, config, mailer }) {
     renderForm(req, res, 200, result, { interessenskonflikt: '', begruendung: '' }, []);
   });
 
-  router.post('/:id', async (req, res, next) => {
+  router.post('/:id', csrfProtection, async (req, res, next) => {
     try {
       const result = loadAuthorized(req, res);
       if (!result) return;

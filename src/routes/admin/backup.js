@@ -14,7 +14,7 @@ const MAX_RESTORE_UPLOAD_SIZE = 500 * 1024 * 1024;
 const BESTAETIGUNGSTEXT = 'WIEDERHERSTELLEN';
 const uploadBackup = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_RESTORE_UPLOAD_SIZE } });
 
-export function createBackupRouter({ db, config }) {
+export function createBackupRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   function listeLokalerBackups() {
@@ -57,7 +57,7 @@ export function createBackupRouter({ db, config }) {
     });
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', csrfProtection, (req, res) => {
     const { cronStunde, cronMinute, aufbewahrungAnzahl } = req.body;
     const errors = [];
 
@@ -94,7 +94,7 @@ export function createBackupRouter({ db, config }) {
     res.redirect('/admin/backup?gespeichert=1');
   });
 
-  router.post('/jetzt-ausfuehren', (req, res, next) => {
+  router.post('/jetzt-ausfuehren', csrfProtection, (req, res, next) => {
     try {
       runDatenbankSicherungJob(db, config);
       res.redirect('/admin/backup?getriggert=1');
@@ -118,7 +118,7 @@ export function createBackupRouter({ db, config }) {
     createReadStream(pfad).pipe(res);
   });
 
-  router.post('/dateien/:name/loeschen', (req, res) => {
+  router.post('/dateien/:name/loeschen', csrfProtection, (req, res) => {
     const { name } = req.params;
     if (!BACKUP_DATEINAME_PATTERN.test(name)) {
       return res.status(404).render('error', { message: 'Backup nicht gefunden.' });
@@ -130,6 +130,10 @@ export function createBackupRouter({ db, config }) {
 
   router.post('/wiederherstellen', (req, res, next) => {
     uploadBackup.single('backup')(req, res, (uploadErr) => {
+      // csrfProtection runs after multer parses the multipart body (the _csrf field included) —
+      // any earlier and req.body would still be empty, rejecting every legitimate submission.
+      csrfProtection(req, res, (csrfErr) => {
+      if (csrfErr) return next(csrfErr);
       try {
         if (uploadErr) {
           return res.status(400).render('admin/backup', {
@@ -172,6 +176,7 @@ export function createBackupRouter({ db, config }) {
         }
         next(err);
       }
+      });
     });
   });
 

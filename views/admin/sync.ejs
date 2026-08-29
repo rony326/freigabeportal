@@ -19,6 +19,7 @@
 
     <h2 class="h4 mt-4">Massen-Deaktivierungs-Schutz</h2>
     <form method="post" action="/admin/sync" class="col-12 col-md-8 col-lg-6">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="mb-3">
         <label class="form-label" for="maxDeaktivierungProzent">Max. Deaktivierung (Prozent der aktiven Personen)</label>
         <input type="number" class="form-control" id="maxDeaktivierungProzent" name="maxDeaktivierungProzent" value="<%= maxDeaktivierungProzent %>" required>
@@ -72,6 +73,7 @@
               <td><%= eintrag.grund === 'inaktiv' ? 'Person deaktiviert' : 'Person in ChurchTools nicht auflösbar' %></td>
               <td>
                 <form method="post" action="/admin/sync/stalled/<%= eintrag.job.id %>/freigeben">
+                  <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                   <button type="submit" class="btn btn-outline-secondary btn-sm">Freigeben</button>
                 </form>
               </td>

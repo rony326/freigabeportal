@@ -7,7 +7,7 @@ import { verifyZeitstempel } from '../services/zeitstempel.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
-export function createZeitstempelPruefenRouter({ db, config }) {
+export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/', async (req, res, next) => {
@@ -49,6 +49,11 @@ export function createZeitstempelPruefenRouter({ db, config }) {
 
   router.post('/', (req, res, next) => {
     upload.single('pdf')(req, res, async (uploadErr) => {
+      // csrfProtection must run after multer, not before: multer is what parses the multipart
+      // body (including the _csrf text field) — running csrfProtection any earlier would find
+      // req.body empty and reject every submission.
+      csrfProtection(req, res, async (csrfErr) => {
+      if (csrfErr) return next(csrfErr);
       try {
         if (uploadErr) {
           const message = uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Die Datei darf höchstens 25 MB gross sein.' : 'Fehler beim Datei-Upload.';
@@ -78,6 +83,7 @@ export function createZeitstempelPruefenRouter({ db, config }) {
       } catch (err) {
         next(err);
       }
+      });
     });
   });
 

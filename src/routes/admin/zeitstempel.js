@@ -3,7 +3,7 @@ import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 
 const URL_PATTERN = /^https?:\/\//;
 
-export function createZeitstempelAdminRouter({ db }) {
+export function createZeitstempelAdminRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   function currentState() {
@@ -18,7 +18,7 @@ export function createZeitstempelAdminRouter({ db }) {
     res.render('admin/zeitstempel-form', { ...currentState(), errors: [], gespeichert: req.query.gespeichert === '1' });
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', csrfProtection, (req, res) => {
     const { tsaUrl, tsaUser, tsaPasswort, warnungAbStunden } = req.body;
     const trimmedUrl = (tsaUrl || '').trim();
     const trimmedUser = (tsaUser || '').trim();

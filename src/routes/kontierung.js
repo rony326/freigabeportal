@@ -87,7 +87,7 @@ function buildQrInfo(db, job) {
   };
 }
 
-export function createKontierungRouter({ db, config, mailer }) {
+export function createKontierungRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   function isSuperadmin(person) {
@@ -160,7 +160,7 @@ export function createKontierungRouter({ db, config, mailer }) {
   // 404/403 before ever reaching this handler. Open to any logged-in Kontierung user (not just
   // Portal-Admins), since Kontierung itself is usually done by Buchhaltung, not admins — mirrors
   // the validation in POST /admin/debitoren, minus the admin-only gate.
-  router.post('/lieferanten', (req, res) => {
+  router.post('/lieferanten', csrfProtection, (req, res) => {
     const { name, kontoId } = req.body;
     const trimmedName = (name || '').trim();
     if (!trimmedName) {
@@ -172,6 +172,10 @@ export function createKontierungRouter({ db, config, mailer }) {
 
   router.post('/:id', (req, res, next) => {
     uploadBeleg.single('beleg')(req, res, async (uploadErr) => {
+    // csrfProtection runs after multer parses the multipart body (the _csrf field included) —
+    // any earlier and req.body would still be empty, rejecting every legitimate submission.
+    csrfProtection(req, res, async (csrfErr) => {
+    if (csrfErr) return next(csrfErr);
     try {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
@@ -438,9 +442,10 @@ export function createKontierungRouter({ db, config, mailer }) {
       next(err);
     }
     });
+    });
   });
 
-  router.post('/:id/zurueck-in-pool', async (req, res, next) => {
+  router.post('/:id/zurueck-in-pool', csrfProtection, async (req, res, next) => {
     try {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
@@ -500,6 +505,10 @@ export function createKontierungRouter({ db, config, mailer }) {
 
   router.post('/:id/aufsplitten', (req, res, next) => {
     uploadBeleg.any()(req, res, async (uploadErr) => {
+    // csrfProtection runs after multer parses the multipart body (the _csrf field included) —
+    // any earlier and req.body would still be empty, rejecting every legitimate submission.
+    csrfProtection(req, res, async (csrfErr) => {
+    if (csrfErr) return next(csrfErr);
     try {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
@@ -736,6 +745,7 @@ export function createKontierungRouter({ db, config, mailer }) {
     } catch (err) {
       next(err);
     }
+    });
     });
   });
 

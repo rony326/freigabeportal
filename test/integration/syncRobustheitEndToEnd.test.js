@@ -14,6 +14,7 @@ import { listMailLog } from '../../src/db/mailLogRepo.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
+import { fetchCsrfToken } from '../helpers/csrf.js';
 
 function testConfig(jobsDir) {
   return {
@@ -76,27 +77,31 @@ test('a doubly-conflicted Freigabe-1 handoff reaches an admin, who takes it all 
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
 
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen.' });
+  const freigeber1Token = await fetchCsrfToken(freigeber1Agent, '/pool');
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen.', _csrf: freigeber1Token });
 
   const stellvertreter1Agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
+  const stellvertreter1Token = await fetchCsrfToken(stellvertreter1Agent, '/pool');
   const eskalationRes = await stellvertreter1Agent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Auch befangen.' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Auch befangen.', _csrf: stellvertreter1Token });
   assert.equal(eskalationRes.status, 302);
   assert.equal(getJobById(db, jobId).freigabe1_eskaliert_an_admin, 1);
   assert.equal(listMailLog(db).filter((m) => m.empfaenger === 'admin@example.org').length, 1);
 
   const adminAgent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'] });
+  const adminToken = await fetchCsrfToken(adminAgent, '/pool');
   const kontierungRes = await adminAgent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: adminToken });
   assert.equal(kontierungRes.status, 302);
   assert.equal(getJobById(db, jobId).status, 'freigabe2');
 
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'] });
-  const freigabe2Res = await freigeber2Agent.post(`/freigabe2/${jobId}`).type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  const freigeber2Token = await fetchCsrfToken(freigeber2Agent, '/pool');
+  const freigabe2Res = await freigeber2Agent.post(`/freigabe2/${jobId}`).type('form').send({ interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber2Token });
   assert.equal(freigabe2Res.status, 302);
   assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
 

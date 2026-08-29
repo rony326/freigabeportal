@@ -19,6 +19,7 @@
     <% if (!ergebnis) { %>
       <p>Lade ein PDF hoch, um zu prüfen, ob es einen gültigen RFC3161-Zeitstempel enthält.</p>
       <form method="post" action="/zeitstempel-pruefen" enctype="multipart/form-data" class="col-12 col-lg-6">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
         <div class="mb-3">
           <label class="form-label" for="pdf">PDF-Datei</label>
           <input type="file" class="form-control" id="pdf" name="pdf" accept="application/pdf" required>

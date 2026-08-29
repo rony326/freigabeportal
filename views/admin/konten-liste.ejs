@@ -42,10 +42,12 @@
                 <a href="/admin/konten/<%= konto.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
                 <% if (konto.aktiv) { %>
                   <form method="post" action="/admin/konten/<%= konto.id %>/deaktivieren" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                     <button type="submit" class="btn btn-outline-danger btn-sm">Deaktivieren</button>
                   </form>
                 <% } else { %>
                   <form method="post" action="/admin/konten/<%= konto.id %>/aktivieren" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                     <button type="submit" class="btn btn-outline-success btn-sm">Reaktivieren</button>
                   </form>
                 <% } %>

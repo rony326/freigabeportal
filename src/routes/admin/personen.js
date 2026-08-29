@@ -10,7 +10,7 @@ function rolleVon(person, config) {
   return 'Benutzer';
 }
 
-export function createPersonenRouter({ db, config }) {
+export function createPersonenRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/', (req, res) => {
@@ -28,7 +28,7 @@ export function createPersonenRouter({ db, config }) {
     });
   });
 
-  router.post('/:id/berechtigungen', requireRole(config, 'superadmin'), (req, res) => {
+  router.post('/:id/berechtigungen', csrfProtection, requireRole(config, 'superadmin'), (req, res) => {
     if (!getPersonById(db, req.params.id)) {
       return res.status(404).render('error', { message: 'Person nicht gefunden.' });
     }

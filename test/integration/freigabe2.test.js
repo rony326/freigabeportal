@@ -18,6 +18,7 @@ import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { setupMockTsa } from '../helpers/mockTsa.js';
+import { fetchCsrfToken } from '../helpers/csrf.js';
 
 function createStubMailer() {
   const sent = [];
@@ -1134,11 +1135,13 @@ test('a Stellvertreter2 who is escalated to and ALSO has a conflict escalates to
 
   const app = createApp({ db, config });
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'] });
-  await freigeber2Agent.post(`/freigabe2/${jobId}`).type('form').send({ interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.' });
+  const freigeber2Token = await fetchCsrfToken(freigeber2Agent, `/freigabe2/${jobId}`);
+  await freigeber2Agent.post(`/freigabe2/${jobId}`).type('form').send({ interessenskonflikt: 'ja', begruendung: 'Ich bin befangen.', _csrf: freigeber2Token });
   assert.equal(getJobById(db, jobId).freigabe2_eskaliert_von, '3');
 
   const stellvertreter2Agent = await loginAs(app, client, { id: 4, vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'] });
-  const res = await stellvertreter2Agent.post(`/freigabe2/${jobId}`).type('form').send({ interessenskonflikt: 'ja', begruendung: 'Ich bin auch befangen.' });
+  const stellvertreter2Token = await fetchCsrfToken(stellvertreter2Agent, `/freigabe2/${jobId}`);
+  const res = await stellvertreter2Agent.post(`/freigabe2/${jobId}`).type('form').send({ interessenskonflikt: 'ja', begruendung: 'Ich bin auch befangen.', _csrf: stellvertreter2Token });
 
   assert.equal(res.status, 302, 'the second escalation should succeed, not render the form with an error');
   const job = getJobById(db, jobId);

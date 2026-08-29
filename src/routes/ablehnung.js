@@ -4,7 +4,7 @@ import { getPersonById } from '../db/personenRepo.js';
 import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { buildAuditLog } from '../services/auditLog.js';
 
-export function createAblehnungRouter({ db, config }) {
+export function createAblehnungRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   function isSuperadmin(person) {
@@ -35,7 +35,7 @@ export function createAblehnungRouter({ db, config }) {
     res.render('abgelehnt', { job, abgelehntVonPerson, ablehnung, auditLog: buildAuditLog(db, job.id) });
   });
 
-  router.post('/:id/ueberarbeiten', (req, res) => {
+  router.post('/:id/ueberarbeiten', csrfProtection, (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
     // Use job.zugewiesen_an, not req.currentPerson.churchtools_person_id: wiederOeffnenJob's

@@ -8,6 +8,7 @@ import { createJob } from '../../../src/db/jobsRepo.js';
 import { createFreigabe } from '../../../src/db/freigabenRepo.js';
 import { logJobLoeschung } from '../../../src/db/jobLoeschungenRepo.js';
 import { loadCurrentPerson } from '../../../src/middleware/roles.js';
+import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { requirePermission } from '../../../src/middleware/permissions.js';
 import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { createAuditLogRouter } from '../../../src/routes/admin/auditLog.js';
@@ -26,6 +27,7 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
   app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(db, config));
   app.use('/admin/audit-log', requirePermission(db, config, 'audit_log_einsehen'), createAuditLogRouter({ db }));
   return app;
 }

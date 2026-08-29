@@ -80,6 +80,8 @@ const ADMIN_ROUTES = [
   { method: 'get', path: '/admin/abgelehnt' },
   { method: 'get', path: '/admin/abgelehnt/1' },
   { method: 'post', path: '/admin/abgelehnt/1/loeschen' },
+  // audit-log (1)
+  { method: 'get', path: '/admin/audit-log' },
   // geplante-jobs (5)
   { method: 'get', path: '/admin/geplante-jobs' },
   { method: 'post', path: '/admin/geplante-jobs' },
@@ -89,7 +91,7 @@ const ADMIN_ROUTES = [
 ];
 
 test('the real createApp wiring returns 401 on all 32 admin route/method combinations with no session present', async () => {
-  assert.equal(ADMIN_ROUTES.length, 31, 'sanity check: this sweep should cover exactly 31 route/method combinations');
+  assert.equal(ADMIN_ROUTES.length, 32, 'sanity check: this sweep should cover exactly 32 route/method combinations');
 
   const db = openDatabase(':memory:');
   const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
@@ -151,6 +153,7 @@ test('the real createApp wiring enforces the superadmin-only hard lock and the m
     { method: 'get', path: '/admin/sync' },
     { method: 'get', path: '/admin/abgelehnt' },
     { method: 'get', path: '/admin/geplante-jobs' },
+    { method: 'get', path: '/admin/audit-log' },
   ];
   for (const { method, path } of VERGEBBAR) {
     const res = await managerAgent[method](path);

@@ -209,6 +209,44 @@ function migrateCronLogTable(db) {
   }
 }
 
+// Same rationale as migrateFreigabenTable above: an already-existing person_berechtigungen table
+// (any database whose berechtigung CHECK predates 'audit_log_einsehen') keeps its original,
+// narrower CHECK forever otherwise, since `CREATE TABLE IF NOT EXISTS` in schema.sql no-ops on it.
+function migratePersonBerechtigungenTable(db) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'person_berechtigungen'").get();
+  if (!tableSql || tableSql.sql.includes('audit_log_einsehen')) return;
+
+  // See the matching comment in migrateFreigabenTable above: node:sqlite enforces
+  // `PRAGMA foreign_keys` by default, so a single person_berechtigungen row referencing a
+  // personen.churchtools_person_id that no longer exists would otherwise abort this INSERT.
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE person_berechtigungen RENAME TO person_berechtigungen_pre_audit_log_einsehen');
+    db.exec(`
+      CREATE TABLE person_berechtigungen (
+        person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+        berechtigung TEXT NOT NULL CHECK (berechtigung IN (
+          'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
+          'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen'
+        )),
+        PRIMARY KEY (person_id, berechtigung)
+      )
+    `);
+    db.exec(`
+      INSERT INTO person_berechtigungen (person_id, berechtigung)
+      SELECT person_id, berechtigung FROM person_berechtigungen_pre_audit_log_einsehen
+    `);
+    db.exec('DROP TABLE person_berechtigungen_pre_audit_log_einsehen');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -220,5 +258,6 @@ export function openDatabase(dbPath) {
   migrateFreigabenTable(db);
   migrateMailLogTable(db);
   migrateCronLogTable(db);
+  migratePersonBerechtigungenTable(db);
   return db;
 }

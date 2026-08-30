@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PDFDocument } from 'pdf-lib';
 import * as mupdf from 'mupdf';
-import { stampAndFinalize } from '../../src/services/pdfStamp.js';
+import { stampAndFinalize, stampGruppenDokument } from '../../src/services/pdfStamp.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 
 function sampleFreigeber1() {
@@ -239,5 +239,64 @@ test('throws a German-message Error when a Verlauf entry contains non-WinAnsi ch
   await assert.rejects(
     () => stampAndFinalize(pdf, stampData),
     /PDF konnte nicht gestempelt werden/
+  );
+});
+
+function samplePosition(overrides = {}) {
+  return {
+    kontoNummer: '6500',
+    kontoBezeichnung: 'Unterhalt Gebäude',
+    betrag: '60.00',
+    position: 'Pos. 1',
+    freigeber1: sampleFreigeber1(),
+    freigeber2: sampleFreigeber2(),
+    ...overrides,
+  };
+}
+
+test('stampGruppenDokument appends a stamp page listing every Position with its own Konto/Betrag/Freigeber blocks', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const positionen = [
+    samplePosition({ kontoNummer: '6500', betrag: '60.00', position: 'Pos. 1' }),
+    samplePosition({ kontoNummer: '6600', betrag: '40.00', position: 'Pos. 2' }),
+  ];
+  const verlauf = [
+    { rolleLabel: 'Konto 6500 (Pos. 1) — Freigabe 2', name: 'Erika Beispiel', identitaet: 'ct-456', zeitpunkt: '2026-08-15T09:15:00.000Z', ip: '5.6.7.8', interessenskonflikt: false, kommentar: null },
+  ];
+
+  const gestempelt = await stampGruppenDokument(pdf, { jobId: 99, positionen, verlauf });
+
+  const seite1 = extractedText(gestempelt, 1);
+  assert.match(seite1, /6500/);
+  assert.match(seite1, /Unterhalt Gebäude/);
+  assert.match(seite1, /60\.00/);
+  assert.match(seite1, /Pos\. 1/);
+  assert.match(seite1, /6600/);
+  assert.match(seite1, /40\.00/);
+  assert.match(seite1, /Pos\. 2/);
+  assert.match(seite1, /Max Muster/);
+  assert.match(seite1, /Erika Beispiel/);
+});
+
+test('stampGruppenDokument overflows onto further pages for many Positionen without losing any of them', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const positionen = Array.from({ length: 5 }, (_, i) =>
+    samplePosition({ kontoNummer: `100${i}`, betrag: `${i + 1}0.00`, position: `Pos. ${i + 1}` })
+  );
+
+  const gestempelt = await stampGruppenDokument(pdf, { jobId: 1, positionen, verlauf: [] });
+  const doc = await PDFDocument.load(gestempelt);
+  assert.ok(doc.getPageCount() > 2, 'five full Freigabe-1+2 blocks must not fit on a single stamp page');
+
+  const allText = doc.getPages().map((_, i) => extractedText(gestempelt, i)).join('\n');
+  for (let i = 0; i < 5; i++) {
+    assert.match(allText, new RegExp(`Pos\\. ${i + 1}`));
+  }
+});
+
+test('stampGruppenDokument throws the standard German error for a corrupt PDF', async () => {
+  await assert.rejects(
+    () => stampGruppenDokument(NOT_REALLY_A_PDF, { jobId: 1, positionen: [samplePosition()], verlauf: [] }),
+    /konnte nicht gestempelt werden/
   );
 });

@@ -1275,7 +1275,19 @@ Add the import at the top:
 import { pruefeUndFinalisiereSplitGruppe } from '../../services/splitGruppenExport.js';
 ```
 
-The router factory needs `config` — check its call site (`src/app.js` or wherever `createAdminAbgelehntRouter` is invoked) and add `config` to the destructured factory parameter if it isn't already passed; if `config` is not currently threaded to this router, add it there too.
+The router factory needs `config`, which it does not currently receive. In `src/app.js:144`, change:
+
+```js
+  app.use('/admin/abgelehnt', requirePermission(db, config, 'abgelehnt_verwalten'), createAdminAbgelehntRouter({ db, csrfProtection }));
+```
+
+to:
+
+```js
+  app.use('/admin/abgelehnt', requirePermission(db, config, 'abgelehnt_verwalten'), createAdminAbgelehntRouter({ db, config, csrfProtection }));
+```
+
+And update `createAdminAbgelehntRouter`'s own factory-parameter destructuring in `src/routes/admin/abgelehnt.js` to accept `config` alongside `db`/`csrfProtection`.
 
 Right after the `res.redirect('/admin/abgelehnt?gespeichert=1');` line's preceding logic — i.e. right after the `if (!geloescht) { ... }` block and before the `res.redirect(...)` call — insert:
 

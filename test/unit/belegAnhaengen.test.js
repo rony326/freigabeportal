@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PDFDocument } from 'pdf-lib';
-import { mergeBelegInPdf, detectBelegMimetype } from '../../src/services/belegAnhaengen.js';
+import { mergeBelegInPdf, detectBelegMimetype, countBelegSeiten } from '../../src/services/belegAnhaengen.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { PNG_1X1, JPEG_1X1 } from '../helpers/imageFixture.js';
 
@@ -71,4 +71,20 @@ test('detectBelegMimetype recognizes a real JPEG', () => {
 
 test('detectBelegMimetype returns null for unrecognized bytes', () => {
   assert.equal(detectBelegMimetype(Buffer.from('not a file at all')), null);
+});
+
+test('countBelegSeiten reports exactly the page count mergeBelegInPdf will add, for every supported Beleg type', async () => {
+  const original = await buildPdfFixture(['Original Seite 1']);
+  const mehrseitigerBeleg = await buildPdfFixture(['Beleg Seite 1', 'Beleg Seite 2', 'Beleg Seite 3']);
+
+  assert.equal(await countBelegSeiten(mehrseitigerBeleg, 'application/pdf'), 3);
+  assert.equal(await countBelegSeiten(PNG_1X1, 'image/png'), 1);
+  assert.equal(await countBelegSeiten(JPEG_1X1, 'image/jpeg'), 1);
+
+  // Der eigentliche Vertrag: der gemeldete Wert ist genau der Zuwachs durch mergeBelegInPdf --
+  // darauf verlässt sich der spätere Splitgruppen-Merge, um die Belegseiten exakt zu lokalisieren.
+  for (const [beleg, mimetype] of [[mehrseitigerBeleg, 'application/pdf'], [PNG_1X1, 'image/png'], [JPEG_1X1, 'image/jpeg']]) {
+    const merged = await PDFDocument.load(await mergeBelegInPdf(original, beleg, mimetype));
+    assert.equal(merged.getPageCount(), 1 + (await countBelegSeiten(beleg, mimetype)));
+  }
 });

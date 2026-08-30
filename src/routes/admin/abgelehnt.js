@@ -4,7 +4,7 @@ import { getPersonById } from '../../db/personenRepo.js';
 import { logJobLoeschung } from '../../db/jobLoeschungenRepo.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../services/splitGruppenExport.js';
 
-export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
+export function createAdminAbgelehntRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/', (req, res) => {
@@ -72,7 +72,7 @@ export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, 
 
       if (geloescht.aufgesplittet_von) {
         try {
-          await pruefeUndFinalisiereSplitGruppe(db, config, geloescht.aufgesplittet_von);
+          await pruefeUndFinalisiereSplitGruppe(db, geloescht.aufgesplittet_von);
         } catch (err) {
           console.error(`Splitgruppen-Prüfung für Elternjob ${geloescht.aufgesplittet_von} fehlgeschlagen:`, err.message);
         }

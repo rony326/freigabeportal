@@ -351,7 +351,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
 
       if (job.aufgesplittet_von) {
         try {
-          await pruefeUndFinalisiereSplitGruppe(db, config, job.aufgesplittet_von);
+          await pruefeUndFinalisiereSplitGruppe(db, job.aufgesplittet_von);
         } catch (err) {
           // Never let a Splitgruppen-Merge-Fehler die bereits abgeschlossene Freigabe 2 dieses
           // einzelnen Kindes scheitern lassen -- der Nachhol-Cron-Job holt einen fehlgeschlagenen

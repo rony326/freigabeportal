@@ -1391,6 +1391,82 @@ test('POST /kontierung/:id/aufsplitten persists teilPosition as rechnungspositio
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('POST /kontierung/:id/aufsplitten rejects a teilPosition with characters the Splitgruppen-Stempel cannot render (e.g. an emoji), nothing persisted', async () => {
+  // Ohne diese Prüfung würde die Zeile klaglos angelegt und erst der spätere, asynchrone
+  // Gruppen-Merge am WinAnsi-only-Helvetica scheitern -- dauerhaft, weil der Nachhol-Cron-Job
+  // immer wieder dieselbe Eingabe vorfindet und niemand eine Rückmeldung bekommt.
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '100.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['60.00', '40.00'],
+      teilPosition: ['Pos. 1 \u{1F600}', 'Pos. 2'],
+    });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Position auf der Rechnung darf keine Sonderzeichen enthalten/);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  assert.equal(getJobById(db, id).status, 'zugewiesen', 'der Elternjob darf nicht aufgesplittet werden');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten accepts a teilPosition with German letters, digits and ordinary punctuation', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '100.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['60.00', '40.00'],
+      teilPosition: ['Pos. 3.1 (Gebäude-Unterhalt), Nr. 7/8 – Zuschlag', 'Pos. 2'],
+    });
+
+  assert.equal(res.status, 302);
+  assert.equal(listSplitKinder(db, id).length, 2);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten records the Beleg page count on the split child so a later Splitgruppen-Merge can locate those pages exactly', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = await seedJobMitEchtemPdf(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+  const beleg = await buildPdfFixture(['Quittung Seite 1', 'Quittung Seite 2']);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .field('gesamtbetrag', '200.00')
+    .field('teilKontoId', String(kontoId))
+    .field('teilKontoId', String(kontoId))
+    .field('teilBetrag', '120.00')
+    .field('teilBetrag', '80.00')
+    .attach('teilBeleg_0', beleg, { filename: 'beleg.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.find((k) => k.betrag === '120.00').beleg_seitenzahl, 2);
+  assert.equal(kinder.find((k) => k.betrag === '80.00').beleg_seitenzahl, null);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
 test('POST /kontierung/:id/aufsplitten merges a per-Zeile Beleg into just that split part\'s own PDF copy', async () => {
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));

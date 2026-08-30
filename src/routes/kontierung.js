@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { mkdirSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { mergeBelegInPdf, detectBelegMimetype } from '../services/belegAnhaengen.js';
+import { mergeBelegInPdf, detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
 import {
   getJobById,
   setKontierung,
@@ -30,6 +30,13 @@ import { isValidIban } from '../services/ibanUtils.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+// teilPosition landet später wörtlich auf der gemeinsamen Stempelseite der Splitgruppe
+// (stampGruppenDokument, pdfStamp.js), die mit pdf-lib's Helvetica-Standardfont gezeichnet wird —
+// und der kann ausschliesslich WinAnsi (Windows-1252) darstellen. Ein Emoji o.ä. würde das
+// Stempeln erst beim asynchronen Gruppen-Merge zum Scheitern bringen, wo niemand mehr eine
+// Rückmeldung bekommt und der Nachhol-Cron-Job denselben Fehler endlos wiederholt. Deshalb wird
+// dieses eine Feld schon beim Absenden geprüft, wo die Person die Zeile direkt korrigieren kann.
+const POSITION_PATTERN = /^[\p{L}\p{N}\s.,;:()/#\-–—]*$/u;
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 // Aufsplitten sends one optional beleg file per Teil row (teilBeleg_<i>) via uploadBeleg.any(),
 // which has no field-name allowlist — without a files cap, a request forging many parts could
@@ -573,6 +580,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           errors.push('Jede Zeile braucht einen gültigen Betrag (z.B. 123.45).');
           return;
         }
+        if (teil.position && !POSITION_PATTERN.test(teil.position)) {
+          errors.push('Position auf der Rechnung darf keine Sonderzeichen enthalten (z.B. Emoji), die nicht gestempelt werden können.');
+          return;
+        }
         aufgeloesteTeile.push({ konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt, position: teil.position, originalIndex });
       });
 
@@ -612,10 +623,17 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         const pdfPfad = neuerDateipfad(config.jobsDir, job.pdf_pfad);
         const thumbnailPfad = job.thumbnail_pfad ? neuerDateipfad(config.jobsDir, job.thumbnail_pfad) : null;
         const beleg = teilBelegByIndex.get(teil.originalIndex);
+        // Die Seitenzahl des Belegs wird hier — und nur hier — festgehalten: mergeBelegFuerJob
+        // hängt die Belegseiten direkt hinter die Rechnungsseiten, aber die spätere
+        // Einzel-Freigabe-2 dieses Kindes hängt noch eigene Stempelseiten dahinter. Ohne diesen
+        // Wert könnte der Gruppen-Merge die Belegseiten nachher nicht mehr von den Stempelseiten
+        // unterscheiden (siehe haengeBelegSeitenAn in splitGruppenExport.js).
+        let belegSeitenzahl = null;
         if (beleg) {
+          belegSeitenzahl = await countBelegSeiten(beleg.file.buffer, beleg.mimetype);
           await mergeBelegFuerJob(pdfPfad, beleg.file, beleg.mimetype);
         }
-        vorbereiteteTeile.push({ ...teil, pdfPfad, thumbnailPfad });
+        vorbereiteteTeile.push({ ...teil, pdfPfad, thumbnailPfad, belegSeitenzahl });
       }
 
       db.exec('BEGIN');
@@ -641,6 +659,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
               hinweisKontoId: teil.konto.id,
               betrag: teil.betrag,
               position: teil.position,
+              belegSeitenzahl: teil.belegSeitenzahl,
             });
             fremdeKonten.push({ id: kindId, konto: teil.konto });
             continue;
@@ -653,6 +672,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             betrag: teil.betrag,
             zugewiesenAn: req.currentPerson.churchtools_person_id,
             position: teil.position,
+            belegSeitenzahl: teil.belegSeitenzahl,
           });
 
           if (teil.interessenskonflikt) {

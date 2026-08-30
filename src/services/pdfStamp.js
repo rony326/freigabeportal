@@ -168,7 +168,8 @@ export async function stampGruppenDokument(pdfBuffer, gruppenData) {
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
     const maxWidth = width - PAGE_MARGIN;
-    const POSITION_BOTTOM_MARGIN = 220; // roughly the height a single Konto+Freigabe-1+2 block needs
+    const TITLE_BOTTOM_MARGIN = 80; // room for up to ~2 wrapped title lines
+    const FREIGABE_BLOCK_BOTTOM_MARGIN = 130; // heading(18) + up to 5 lines(14 each, with a Kommentar) = 88, plus headroom
 
     let stampPage = doc.addPage([width, height]);
     let y = height - 50;
@@ -178,7 +179,7 @@ export async function stampGruppenDokument(pdfBuffer, gruppenData) {
     }
 
     for (const position of gruppenData.positionen) {
-      if (y < POSITION_BOTTOM_MARGIN) {
+      if (y < TITLE_BOTTOM_MARGIN) {
         stampPage = doc.addPage([width, height]);
         y = height - 50;
       }
@@ -189,8 +190,16 @@ export async function stampGruppenDokument(pdfBuffer, gruppenData) {
         y -= 17;
       }
       y -= 10;
+      if (y < FREIGABE_BLOCK_BOTTOM_MARGIN) {
+        stampPage = doc.addPage([width, height]);
+        y = height - 50;
+      }
       y = drawFreigabeBlock(stampPage, font, 'Freigabe 1', position.freigeber1, y, maxWidth);
       y -= BLOCK_GAP;
+      if (y < FREIGABE_BLOCK_BOTTOM_MARGIN) {
+        stampPage = doc.addPage([width, height]);
+        y = height - 50;
+      }
       y = drawFreigabeBlock(stampPage, font, 'Freigabe 2', position.freigeber2, y, maxWidth);
       y -= BLOCK_GAP + 10;
     }

@@ -300,3 +300,49 @@ test('stampGruppenDokument throws the standard German error for a corrupt PDF', 
     /konnte nicht gestempelt werden/
   );
 });
+
+test('stampGruppenDokument does not clip Freigabe blocks when both Freigeber have Kommentare (regression test for variable-height blocks)', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const freigeber1WithKommentar = {
+    name: 'Max Muster',
+    identitaet: 'ct-123',
+    zeitpunkt: '2026-08-15T08:30:00.000Z',
+    ip: '1.2.3.4',
+    interessenskonflikt: false,
+    kommentar: 'Genehmigt nach Rücksprache mit dem Lieferanten',
+  };
+  const freigeber2WithKommentar = {
+    name: 'Erika Beispiel',
+    identitaet: 'ct-456',
+    zeitpunkt: '2026-08-15T09:15:00.000Z',
+    ip: '5.6.7.8',
+    interessenskonflikt: true,
+    kommentar: 'Verwandtschaft mit Lieferant, aber trotzdem genehmigt wegen dringender Notwendigkeit',
+  };
+  const positionen = [
+    {
+      kontoNummer: '6500',
+      kontoBezeichnung: 'Unterhalt Gebäude',
+      betrag: '60.00',
+      position: 'Pos. 1',
+      freigeber1: freigeber1WithKommentar,
+      freigeber2: freigeber2WithKommentar,
+    },
+  ];
+  const verlauf = [];
+
+  const gestempelt = await stampGruppenDokument(pdf, { jobId: 1, positionen, verlauf });
+
+  const doc = await PDFDocument.load(gestempelt);
+  const allText = doc.getPages().map((_, i) => extractedText(gestempelt, i)).join('\n');
+
+  // Verify that every expected text fragment appears in the extracted text
+  assert.match(allText, /6500/);
+  assert.match(allText, /Unterhalt Gebäude/);
+  assert.match(allText, /60\.00/);
+  assert.match(allText, /Pos\. 1/);
+  assert.match(allText, /Max Muster/);
+  assert.match(allText, /Erika Beispiel/);
+  assert.match(allText, /Genehmigt nach Rücksprache mit dem Lieferanten/);
+  assert.match(allText, /Verwandtschaft mit Lieferant, aber trotzdem genehmigt wegen dringender Notwendigkeit/);
+});

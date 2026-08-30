@@ -127,7 +127,7 @@ export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZei
   const zeitstempelBedingung = nurMitZeitstempel ? ' AND zeitstempel_gesetzt_am IS NOT NULL' : '';
   const rows = db
     .prepare(
-      `SELECT * FROM jobs WHERE status = 'abgeschlossen'
+      `SELECT * FROM jobs WHERE status = 'abgeschlossen' AND aufgesplittet_von IS NULL
        AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)${zeitstempelBedingung}`
     )
     .all(staleThreshold);
@@ -555,14 +555,14 @@ export function markJobAufgesplittet(db, jobId) {
 // lifecycle (so deleting/rejecting one split part can never affect another). eingang_am, quelle,
 // absender, dateiname, zahlungsziel, rechnungsnummer, lieferant and debitor_id are carried over
 // from the parent; konto_id, betrag, zugewiesen_an are specific to this one split line.
-export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId, hinweisKontoId, betrag, zugewiesenAn }) {
+export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId, hinweisKontoId, betrag, zugewiesenAn, position }) {
   const status = kontoId ? 'zugewiesen' : 'unzugewiesen';
   const result = db
     .prepare(
       `INSERT INTO jobs (
          eingang_am, quelle, absender, dateiname, pdf_pfad, thumbnail_pfad, status,
-         konto_id, zugewiesen_an, hinweis_konto_id, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id, aufgesplittet_von
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         konto_id, zugewiesen_an, hinweis_konto_id, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id, aufgesplittet_von, rechnungsposition
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       parentJob.eingang_am,
@@ -580,11 +580,80 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
       parentJob.rechnungsnummer,
       parentJob.lieferant,
       parentJob.debitor_id,
-      parentJob.id
+      parentJob.id,
+      position || null
     );
   return Number(result.lastInsertRowid);
 }
 
 export function listSplitKinder(db, parentJobId) {
   return db.prepare('SELECT * FROM jobs WHERE aufgesplittet_von = ? ORDER BY id').all(parentJobId);
+}
+
+// Eine per hinweis_konto_id angelegte Zeile (Konto ausserhalb der Freigabe-Befugnis der
+// aufsplittenden Person, siehe kontierung.js's istEigenesKonto-Zweig) ist NICHT dauerhaft
+// ausgenommen -- sie steht nur vorübergehend 'unzugewiesen', bis die zuständige Person sie über
+// die normale Kontierung claimt und sie danach den ganz normalen Weg bis 'abgeschlossen' geht.
+// Bis dahin zählt sie ganz normal als "noch offen", genau wie jede andere nicht-abgeschlossene
+// Zeile -- nur eine mit status='geloescht' aufgelöste (vormals abgelehnte) Zeile wird ignoriert.
+export function pruefeSplitGruppenVollstaendigkeit(db, parentJobId) {
+  const kinder = listSplitKinder(db, parentJobId).filter((k) => k.status !== 'geloescht');
+  if (kinder.length === 0) return { vollstaendig: false, blockiert: false, kinder: [] };
+  const blockiert = kinder.some((k) => k.status === 'abgelehnt');
+  const vollstaendig = !blockiert && kinder.every((k) => k.status === 'abgeschlossen');
+  return { vollstaendig, blockiert, kinder };
+}
+
+export function markGruppeExportiert(db, parentJobId, { pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash }) {
+  db.prepare(
+    'UPDATE jobs SET gruppe_pdf_pfad = ?, gruppe_zeitstempel_gesetzt_am = ?, gruppe_zeitstempel_datei_hash = ? WHERE id = ?'
+  ).run(pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash, parentJobId);
+}
+
+// Mirrors listAbholbereitJobs's stale/refetch semantics, scoped to Splitgruppen-Elternjobs
+// (status bleibt 'aufgesplittet', nie 'abgeschlossen' -- daher eine eigene Query statt eines
+// Filters auf listAbholbereitJobs).
+export function listAbholbereitGruppen(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false) {
+  const staleThreshold = new Date(Date.now() - staleAfterMs).toISOString();
+  const zeitstempelBedingung = nurMitZeitstempel ? ' AND gruppe_zeitstempel_gesetzt_am IS NOT NULL' : '';
+  const rows = db
+    .prepare(
+      `SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_pdf_pfad IS NOT NULL
+       AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)${zeitstempelBedingung}`
+    )
+    .all(staleThreshold);
+
+  const now = new Date().toISOString();
+  for (const row of rows) {
+    db.prepare('UPDATE jobs SET fetched_by_n8n_at = ? WHERE id = ?').run(now, row.id);
+    row.fetched_by_n8n_at = now;
+  }
+  return rows;
+}
+
+export function istGruppenElternjob(db, id) {
+  const job = getJobById(db, id);
+  return Boolean(job && job.gruppe_pdf_pfad);
+}
+
+// Analog zu confirmAbholung, aber für eine ganze Splitgruppe: setzt jedes abgeschlossene Kind auf
+// 'abgeholt' und liefert Eltern- und Kind-Datensätze zurück, damit der Aufrufer (n8n-Route) alle
+// betroffenen Dateien (Kind-PDFs, Kind-Thumbnails, Gruppen-PDF) von der Platte löschen kann.
+export function confirmGruppenAbholung(db, parentJobId, nurMitZeitstempel = false) {
+  const parent = getJobById(db, parentJobId);
+  if (!parent || !parent.gruppe_pdf_pfad) return null;
+  if (nurMitZeitstempel && !parent.gruppe_zeitstempel_gesetzt_am) return null;
+
+  const kinder = listSplitKinder(db, parentJobId).filter((k) => k.status === 'abgeschlossen');
+  for (const kind of kinder) {
+    db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ? AND status = 'abgeschlossen'").run(kind.id);
+  }
+  return { parent, kinder };
+}
+
+// Arbeitsliste für den split-gruppen-nachholen Cron-Job: Elternjobs, deren Splitgruppe noch nicht
+// gemergt wurde (unabhängig davon, ob sie schon vollständig ist -- die Vollständigkeitsprüfung
+// passiert im Aufrufer, pruefeUndFinalisiereSplitGruppe).
+export function listSplitGruppenAusstehend(db) {
+  return db.prepare("SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_pdf_pfad IS NULL").all();
 }

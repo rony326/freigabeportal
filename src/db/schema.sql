@@ -139,7 +139,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   rechnungsposition TEXT,
   gruppe_pdf_pfad TEXT,
   gruppe_zeitstempel_gesetzt_am TEXT,
-  gruppe_zeitstempel_datei_hash TEXT
+  gruppe_zeitstempel_datei_hash TEXT,
+  beleg_seitenzahl INTEGER,
+  gruppe_abgeholt_am TEXT
 );
 
 -- Manipulationsschutz: sobald ein Zeitstempel-Hash/-Zeitpunkt für einen Job gesetzt ist, darf er

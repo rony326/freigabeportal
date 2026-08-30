@@ -34,6 +34,8 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'gruppe_pdf_pfad', ddl: 'ALTER TABLE jobs ADD COLUMN gruppe_pdf_pfad TEXT' },
   { column: 'gruppe_zeitstempel_gesetzt_am', ddl: 'ALTER TABLE jobs ADD COLUMN gruppe_zeitstempel_gesetzt_am TEXT' },
   { column: 'gruppe_zeitstempel_datei_hash', ddl: 'ALTER TABLE jobs ADD COLUMN gruppe_zeitstempel_datei_hash TEXT' },
+  { column: 'beleg_seitenzahl', ddl: 'ALTER TABLE jobs ADD COLUMN beleg_seitenzahl INTEGER' },
+  { column: 'gruppe_abgeholt_am', ddl: 'ALTER TABLE jobs ADD COLUMN gruppe_abgeholt_am TEXT' },
 ];
 
 function migrateJobsTable(db) {

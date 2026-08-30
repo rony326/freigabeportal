@@ -748,6 +748,48 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         }
       }
 
+      // The main Kontierung submission runs this same check inline (see above) — Aufsplitten
+      // used to bypass it entirely, since splitting never used to touch job.debitor_id/qr_iban
+      // at all. Run it once against the parent (which stays in the DB as a historical reference,
+      // see markJobAufgesplittet), not per split child: the mismatch is a property of the
+      // original invoice's IBAN vs. its Lieferant, not of any one Teil-Konto.
+      if (job.qr_iban && job.debitor_id) {
+        const debitor = getDebitorById(db, job.debitor_id);
+        if (debitor) {
+          const { status } = pruefeIbanAbgleich(db, debitor.id, job.qr_iban);
+          if (status === 'mismatch') {
+            createFreigabe(db, {
+              jobId: job.id,
+              personId: req.currentPerson.churchtools_person_id,
+              rolle: 'iban_abweichung',
+              zeitpunkt: new Date().toISOString(),
+              ip: req.ip,
+              interessenskonflikt: false,
+              kommentar: `QR-IBAN ${job.qr_iban} weicht von der/den für ${debitor.name} hinterlegten IBAN(s) ab.`,
+              eskaliertVon: null,
+            });
+            const zusatzEmpfaenger = new Set(resolveEmpfaenger(db, config, getConfigValue(db, 'iban_abweichung_empfaenger')));
+            zusatzEmpfaenger.add(req.currentPerson.email);
+            for (const teil of aufgeloesteTeile) {
+              if (!konten.some((k) => k.id === teil.konto.id)) continue;
+              const freigeber1 = getPersonById(db, teil.konto.freigeber1_id);
+              const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(job, teil.konto));
+              if (freigeber1) zusatzEmpfaenger.add(freigeber1.email);
+              if (freigeber2) zusatzEmpfaenger.add(freigeber2.email);
+            }
+            for (const email of zusatzEmpfaenger) {
+              await sendNotification(db, mailer, {
+                to: email,
+                subject: 'Freigabeportal: IBAN-Abweichung bei Rechnung festgestellt',
+                text: `Bei der Kontierung von "${job.dateiname}" (Lieferant: ${debitor.name}) weicht die im QR-Code gefundene IBAN (${job.qr_iban}) von der hinterlegten IBAN ab. Bitte prüfen: ${config.publicBaseUrl}/kontierung/${job.id}`,
+                typ: 'iban-warnung',
+                jobId: job.id,
+              });
+            }
+          }
+        }
+      }
+
       res.redirect('/pool');
     } catch (err) {
       next(err);

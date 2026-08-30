@@ -553,16 +553,18 @@ export function markJobAufgesplittet(db, jobId) {
 
 // Each split line becomes its own fully independent job — own file, own approval chain, own
 // lifecycle (so deleting/rejecting one split part can never affect another). eingang_am, quelle,
-// absender, dateiname, zahlungsziel, rechnungsnummer, lieferant and debitor_id are carried over
-// from the parent; konto_id, betrag, zugewiesen_an are specific to this one split line.
+// absender, dateiname, zahlungsziel, rechnungsnummer, lieferant, debitor_id and the QR-decode
+// results are carried over from the parent; konto_id, betrag, zugewiesen_an are specific to this
+// one split line.
 export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId, hinweisKontoId, betrag, zugewiesenAn }) {
   const status = kontoId ? 'zugewiesen' : 'unzugewiesen';
   const result = db
     .prepare(
       `INSERT INTO jobs (
          eingang_am, quelle, absender, dateiname, pdf_pfad, thumbnail_pfad, status,
-         konto_id, zugewiesen_an, hinweis_konto_id, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id, aufgesplittet_von
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         konto_id, zugewiesen_an, hinweis_konto_id, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id, aufgesplittet_von,
+         qr_iban, qr_referenz, qr_betrag, qr_waehrung, qr_creditor_name, qr_erkannt_am
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       parentJob.eingang_am,
@@ -580,7 +582,13 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
       parentJob.rechnungsnummer,
       parentJob.lieferant,
       parentJob.debitor_id,
-      parentJob.id
+      parentJob.id,
+      parentJob.qr_iban,
+      parentJob.qr_referenz,
+      parentJob.qr_betrag,
+      parentJob.qr_waehrung,
+      parentJob.qr_creditor_name,
+      parentJob.qr_erkannt_am
     );
   return Number(result.lastInsertRowid);
 }

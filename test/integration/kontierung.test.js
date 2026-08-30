@@ -1808,6 +1808,126 @@ test('POST /kontierung/:id/aufsplitten lets an admin-escalated Portal-Admin stil
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('POST /kontierung/:id/aufsplitten sends an IBAN-Abweichung warning mail and logs it on the parent job when the QR-IBAN mismatches, without blocking the split', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const { createDebitorIban } = await import('../../src/db/debitorIbanRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const kontoId = seedKontoAndPersonen(db); // freigeber1Id:'1', freigeber2Id:'3'
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  createDebitorIban(db, { debitorId, iban: 'CH0000000000000000000' }); // hinterlegte IBAN weicht ab
+  const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
+  claimJob(db, id, '1');
+  updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId });
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const mailer = createStubMailer();
+  const app = buildTestAppMitDateien(db, mailer, jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '200.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+    });
+
+  assert.equal(res.status, 302, 'the split must still complete despite the mismatch');
+  assert.equal(res.headers.location, '/pool');
+
+  const auditEintrag = db.prepare("SELECT * FROM freigaben WHERE job_id = ? AND rolle = 'iban_abweichung'").get(id);
+  assert.ok(auditEintrag, 'expected an iban_abweichung freigaben row on the parent job');
+
+  const mailLog = listMailLog(db).filter((m) => m.typ === 'iban-warnung');
+  assert.ok(mailLog.length > 0, 'expected at least one iban-warnung mail to be logged');
+  assert.ok(mailer.sent.some((m) => /IBAN-Abweichung/.test(m.subject)));
+
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2, 'the split itself must still go through');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten sends no IBAN-Abweichung mail when the QR-IBAN matches the hinterlegte IBAN', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const { createDebitorIban } = await import('../../src/db/debitorIbanRepo.js');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const kontoId = seedKontoAndPersonen(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  createDebitorIban(db, { debitorId, iban: 'CH4431999123000889012' });
+  const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
+  claimJob(db, id, '1');
+  updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId });
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const mailer = createStubMailer();
+  const app = buildTestAppMitDateien(db, mailer, jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '200.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+    });
+
+  assert.equal(res.status, 302);
+  const mailLog = listMailLog(db).filter((m) => m.typ === 'iban-warnung');
+  assert.equal(mailLog.length, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM freigaben WHERE job_id = ? AND rolle = 'iban_abweichung'").get(id).n, 0);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test("POST /kontierung/:id/aufsplitten copies the parent's QR-decoded data onto each split child", async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const kontoId = seedKontoAndPersonen(db);
+  const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
+  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
+  claimJob(db, id, '1');
+  updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId: null });
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: 'REF-1', qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '200.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['120.00', '80.00'],
+    });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) {
+    assert.equal(kind.qr_iban, 'CH4431999123000889012');
+    assert.equal(kind.qr_referenz, 'REF-1');
+    assert.equal(kind.qr_betrag, '200.00');
+    assert.equal(kind.qr_waehrung, 'CHF');
+    assert.equal(kind.qr_creditor_name, 'Muster AG');
+    assert.ok(kind.qr_erkannt_am, 'qr_erkannt_am must be copied too');
+  }
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
 test('GET /kontierung/:id marks the Konto and Lieferant dropdowns as searchable and offers a "+ Neu" trigger plus a matching Lieferant-anlegen modal', async () => {
   const db = openDatabase(':memory:');
   seedKontoAndPersonen(db);

@@ -8,7 +8,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { createJob, getJobById } from '../../src/db/jobsRepo.js';
 import { listRecentCronLog, startCronLauf } from '../../src/db/cronLogRepo.js';
-import { runZeitstempelNachholenJob, runDatenbankSicherungJob } from '../../src/services/cronJobs.js';
+import { runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob } from '../../src/services/cronJobs.js';
 import { setupMockTsa } from '../helpers/mockTsa.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { BACKUP_DATEINAME_PATTERN } from '../../src/services/backup.js';
@@ -231,4 +231,63 @@ test('runDatenbankSicherungJob still reports erfolg for the new backup when prun
 
   db.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+async function seedUnvollstaendigeGruppe(db, dir) {
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const { createFreigabe } = await import('../../src/db/freigabenRepo.js');
+  upsertPerson(db, { id: '1', vorname: 'Max', nachname: 'Muster', email: 'max@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'Erika', nachname: 'Beispiel', email: 'erika@example.org', gruppen: ['10'], loggedInNow: false });
+  const kontoId = createKonto(db, {
+    kontonummer: '6500',
+    bezeichnung: 'Unterhalt',
+    freigeber1Id: '1',
+    stellvertreter1Id: '2',
+    freigeber2Id: '2',
+    stellvertreter2Id: '1',
+  });
+
+  const parentPfad = join(dir, 'parent.pdf');
+  writeFileSync(parentPfad, await buildPdfFixture(['Rechnung']));
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: parentPfad });
+  const { createSplitJob } = await import('../../src/db/jobsRepo.js');
+  const kindPfad = join(dir, 'kind.pdf');
+  writeFileSync(kindPfad, await buildPdfFixture(['Rechnung']));
+  const kindId = createSplitJob(db, getJobById(db, parentId), { pdfPfad: kindPfad, kontoId, betrag: '10.00', zugewiesenAn: '1' });
+  createFreigabe(db, { jobId: kindId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-01T08:00:00.000Z', ip: '1.2.3.4', interessenskonflikt: 0 });
+  createFreigabe(db, { jobId: kindId, personId: '2', rolle: 'freigeber2', zeitpunkt: '2026-08-01T09:00:00.000Z', ip: '5.6.7.8', interessenskonflikt: 0 });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(kindId);
+  // listSplitGruppenAusstehend only picks up parents whose own status is 'aufgesplittet' (set by
+  // markJobAufgesplittet at aufsplitten-time, routes/kontierung.js) -- createJob's own default of
+  // 'unzugewiesen' would otherwise make this seeded group invisible to the job under test.
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
+  return { parentId };
+}
+
+test('runSplitGruppenNachholenJob merges a pending complete group and logs the run', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'split-nachholen-test-'));
+  const { parentId } = await seedUnvollstaendigeGruppe(db, dir);
+
+  const result = await runSplitGruppenNachholenJob(db, {});
+  assert.equal(result.status, 'erfolg');
+  assert.equal(result.nachgeholt, 1);
+  assert.ok(getJobById(db, parentId).gruppe_pdf_pfad);
+  assert.equal(listRecentCronLog(db, 'split-gruppen-nachholen', 10).length, 1);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('runSplitGruppenNachholenJob skips a group that is still incomplete without counting it as fehlgeschlagen', async () => {
+  const db = openDatabase(':memory:');
+  db.prepare("INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad, status) VALUES ('2026-08-01T00:00:00.000Z', 'lieferant', 'r.pdf', '/tmp/x.pdf', 'aufgesplittet')").run();
+
+  const result = await runSplitGruppenNachholenJob(db, {});
+  assert.equal(result.status, 'erfolg');
+  assert.equal(result.nachgeholt, 0);
+  assert.equal(result.fehlgeschlagen, 0);
+  assert.equal(result.uebersprungen, 1);
+  db.close();
 });

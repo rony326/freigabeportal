@@ -11,7 +11,7 @@
   <main class="container py-4">
     <%- include('./_nav') %>
     <h1>Geplante Jobs</h1>
-    <p class="text-muted">Diese drei Jobs laufen automatisch im laufenden Node-Prozess, kein externer Task Scheduler nötig. Zeiten gelten in Lokalzeit (Europe/Zürich); eine Zeitplan-Änderung greift ab dem nächsten planmässigen Lauf.</p>
+    <p class="text-muted">Diese Jobs laufen automatisch im laufenden Node-Prozess, kein externer Task Scheduler nötig. Zeiten gelten in Lokalzeit (Europe/Zürich); eine Zeitplan-Änderung greift ab dem nächsten planmässigen Lauf.</p>
     <% if (errors.length > 0) { %>
       <div class="alert alert-danger">
         <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
@@ -49,6 +49,15 @@
         </div>
       </div>
       <p class="text-muted small">TSA-Adresse und Zugangsdaten werden separat unter <a href="/admin/zeitstempel">Zeitstempel</a> eingestellt — hier nur, wie oft ein fehlgeschlagener/übersprungener Zeitstempel nachgeholt wird.</p>
+
+      <h2 class="h5 mt-3">Splitgruppen-Nachholen</h2>
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="splitGruppenNachholenIntervallMinuten">Intervall (Minuten)</label>
+          <input type="number" min="1" class="form-control" id="splitGruppenNachholenIntervallMinuten" name="splitGruppenNachholenIntervallMinuten" value="<%= cronSplitGruppenNachholenIntervallMinuten %>" required>
+        </div>
+      </div>
+      <p class="text-muted small">Wie oft eine unvollständige oder fehlgeschlagene Splitgruppen-Zusammenführung nachgeholt wird.</p>
 
       <h2 class="h5 mt-3">PDF-Bereinigung &amp; Mail-Log-Retention</h2>
       <div class="row g-2 mb-3">
@@ -196,6 +205,40 @@
             </tr>
           <% }) %>
           <% if (zeitstempelNachholenLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="h4 mt-4">Splitgruppen-Nachholen — Verlauf</h2>
+    <form method="post" action="/admin/geplante-jobs/split-gruppen-nachholen/jetzt-ausfuehren" class="mb-2">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
+    </form>
+    <% if (getriggert === 'split-gruppen-nachholen' && splitGruppenNachholenLog.length > 0) { %>
+      <% const letzteSplitGruppen = splitGruppenNachholenLog[0]; %>
+      <div class="alert <%= letzteSplitGruppen.status === 'erfolg' ? 'alert-success' : letzteSplitGruppen.status === 'laufend' ? 'alert-info' : 'alert-danger' %>">
+        <% if (letzteSplitGruppen.status === 'erfolg') { %>
+          Erfolgreich ausgeführt. <%= letzteSplitGruppen.details %>
+        <% } else if (letzteSplitGruppen.status === 'laufend') { %>
+          Ein Splitgruppen-Nachholen-Lauf war bereits aktiv — dieser Trigger wurde übersprungen.
+        <% } else { %>
+          Fehlgeschlagen: <%= letzteSplitGruppen.details %>
+        <% } %>
+      </div>
+    <% } %>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Gestartet</th><th>Beendet</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody>
+          <% splitGruppenNachholenLog.forEach((eintrag) => { %>
+            <tr>
+              <td><%= eintrag.gestartet_am %></td>
+              <td><%= eintrag.beendet_am %></td>
+              <td><%= eintrag.status %></td>
+              <td><%= eintrag.details || '' %></td>
+            </tr>
+          <% }) %>
+          <% if (splitGruppenNachholenLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
         </tbody>
       </table>
     </div>

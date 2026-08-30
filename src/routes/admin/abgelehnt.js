@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { getJobById, listAlleAbgelehntenJobs, loeschenJob } from '../../db/jobsRepo.js';
 import { getPersonById } from '../../db/personenRepo.js';
 import { logJobLoeschung } from '../../db/jobLoeschungenRepo.js';
+import { pruefeUndFinalisiereSplitGruppe } from '../../services/splitGruppenExport.js';
 
-export function createAdminAbgelehntRouter({ db, csrfProtection = (req, res, next) => next() }) {
+export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/', (req, res) => {
@@ -25,7 +26,7 @@ export function createAdminAbgelehntRouter({ db, csrfProtection = (req, res, nex
     res.render('admin/abgelehnt-loeschen', { job, errors: [], begruendung: '' });
   });
 
-  router.post('/:id/loeschen', csrfProtection, (req, res, next) => {
+  router.post('/:id/loeschen', csrfProtection, async (req, res, next) => {
     try {
       const job = getJobById(db, Number(req.params.id));
       if (!job || job.status !== 'abgelehnt') {
@@ -67,6 +68,14 @@ export function createAdminAbgelehntRouter({ db, csrfProtection = (req, res, nex
 
       if (!geloescht) {
         return res.status(409).render('error', { message: 'Diese Rechnung wurde inzwischen bereits anderweitig bearbeitet (z.B. überarbeitet).' });
+      }
+
+      if (geloescht.aufgesplittet_von) {
+        try {
+          await pruefeUndFinalisiereSplitGruppe(db, config, geloescht.aufgesplittet_von);
+        } catch (err) {
+          console.error(`Splitgruppen-Prüfung für Elternjob ${geloescht.aufgesplittet_von} fehlgeschlagen:`, err.message);
+        }
       }
 
       res.redirect('/admin/abgelehnt?gespeichert=1');

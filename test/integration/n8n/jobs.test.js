@@ -845,3 +845,90 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen on a group parent id deletes e
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
+
+test('a Splitgruppe is never re-offered after a successful Abholung: it drops out of /abholbereit for good and a second Bestätigung is 409', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'n8n-gruppe-terminal-test-'));
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '6500', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '3', freigeber2Id: '2', stellvertreter2Id: '4' });
+  const parentPfad = join(dir, 'parent.pdf');
+  writeFileSync(parentPfad, 'x');
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: parentPfad });
+  const kindPfad = join(dir, 'k1.pdf');
+  writeFileSync(kindPfad, 'x');
+  const kindId = createSplitJob(db, getJobById(db, parentId), { pdfPfad: kindPfad, kontoId, betrag: '10.00', zugewiesenAn: '1', position: 'Pos. 1' });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(kindId);
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
+  const gruppenPfad = join(dir, 'gruppe.pdf');
+  writeFileSync(gruppenPfad, 'x');
+  markGruppeExportiert(db, parentId, { pdfPfad: gruppenPfad, zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+
+  const config = testConfig(dir);
+  const app = buildTestApp(db, config, createStubMailer());
+
+  const ersteListe = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', config.n8nApiKey);
+  assert.ok(ersteListe.body.some((e) => e.id === parentId), 'Vorbedingung: die fertige Gruppe wird angeboten');
+
+  const bestaetigung = await request(app).post(`/api/n8n/jobs/${parentId}/abholung-bestaetigen`).set('X-API-Key', config.n8nApiKey);
+  assert.equal(bestaetigung.status, 200);
+
+  // Das 15-Minuten-Stale-Fenster künstlich überspringen: genau so kam die Gruppe bisher
+  // alle 15 Minuten erneut hoch — mit einer download_url auf eine längst gelöschte Datei.
+  db.prepare("UPDATE jobs SET fetched_by_n8n_at = '2000-01-01T00:00:00.000Z' WHERE id = ?").run(parentId);
+
+  const zweiteListe = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', config.n8nApiKey);
+  assert.equal(zweiteListe.status, 200);
+  assert.ok(!zweiteListe.body.some((e) => e.id === parentId), 'eine abgeholte Gruppe darf nie wieder in /abholbereit auftauchen');
+
+  const zweiteBestaetigung = await request(app).post(`/api/n8n/jobs/${parentId}/abholung-bestaetigen`).set('X-API-Key', config.n8nApiKey);
+  assert.equal(zweiteBestaetigung.status, 409);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('GET /api/n8n/jobs/abholbereit carries the parent job\'s QR-Bill data on a group entry, with the same field names as an individual entry', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'n8n-gruppe-qr-test-'));
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '6500', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '3', freigeber2Id: '2', stellvertreter2Id: '4' });
+  const parentPfad = join(dir, 'parent.pdf');
+  writeFileSync(parentPfad, 'x');
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: parentPfad });
+  // QR-Daten entstehen beim Intake auf dem Elternjob und bleiben beim Aufsplitten unverändert.
+  setQrDaten(db, parentId, {
+    qrIban: 'CH9300762011623852957',
+    qrReferenz: '210000000003139471430009017',
+    qrBetrag: '30.00',
+    qrWaehrung: 'CHF',
+    qrCreditorName: 'Muster Handwerk AG',
+  });
+  const kindPfad = join(dir, 'k1.pdf');
+  writeFileSync(kindPfad, 'x');
+  const kindId = createSplitJob(db, getJobById(db, parentId), { pdfPfad: kindPfad, kontoId, betrag: '30.00', zugewiesenAn: '1', position: 'Pos. 1' });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(kindId);
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
+  const gruppenPfad = join(dir, 'gruppe.pdf');
+  writeFileSync(gruppenPfad, 'x');
+  markGruppeExportiert(db, parentId, { pdfPfad: gruppenPfad, zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+
+  const config = testConfig(dir);
+  const app = buildTestApp(db, config, createStubMailer());
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', config.n8nApiKey);
+
+  const gruppenEintrag = res.body.find((e) => e.id === parentId);
+  assert.ok(gruppenEintrag);
+  assert.equal(gruppenEintrag.qr_iban, 'CH9300762011623852957');
+  assert.equal(gruppenEintrag.qr_referenz, '210000000003139471430009017');
+  assert.equal(gruppenEintrag.qr_betrag, '30.00');
+  assert.equal(gruppenEintrag.qr_waehrung, 'CHF');
+  assert.equal(gruppenEintrag.qr_creditor_name, 'Muster Handwerk AG');
+  assert.ok(gruppenEintrag.qr_erkannt_am);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});

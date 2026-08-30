@@ -177,6 +177,15 @@ export function createN8nJobsRouter({ db, config, mailer }) {
         betrag: parent.betrag,
         zahlungsziel: parent.zahlungsziel,
         dateiname: parent.dateiname,
+        // QR-Bill-Daten stammen aus dem Intake und stehen unverändert auf dem Elternjob (das
+        // Aufsplitten fasst sie nicht an) -- gleiche Feldnamen wie beim Einzeljob-Eintrag oben,
+        // damit n8n für eine Splitgruppe genau dieselben Zahlungsdaten bekommt wie sonst auch.
+        qr_iban: parent.qr_iban,
+        qr_referenz: parent.qr_referenz,
+        qr_betrag: parent.qr_betrag,
+        qr_waehrung: parent.qr_waehrung,
+        qr_creditor_name: parent.qr_creditor_name,
+        qr_erkannt_am: parent.qr_erkannt_am,
         positionen,
         download_url: buildSignedDownloadUrl(config, parent.id, ABHOLEN_TTL_SECONDS),
       };

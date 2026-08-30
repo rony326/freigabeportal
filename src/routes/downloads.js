@@ -66,7 +66,12 @@ export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITE
     }
 
     const job = getJobById(db, jobId);
-    const pfad = job?.gruppe_pdf_pfad || job?.pdf_pfad;
+    // gruppe_pdf_pfad bleibt auf dem Elternjob stehen, auch nachdem die Abholung durch n8n die
+    // zusammengeführte Datei bereits gelöscht hat. Ohne die Existenzprüfung würde dieser Download
+    // danach dauerhaft 403 liefern, obwohl die Original-Rechnung des Elternjobs (pdf_pfad)
+    // laut Design nie gelöscht wird und weiterhin auf der Platte liegt.
+    const gruppenPfadExistiert = job?.gruppe_pdf_pfad && existsSync(job.gruppe_pdf_pfad);
+    const pfad = gruppenPfadExistiert ? job.gruppe_pdf_pfad : job?.pdf_pfad;
     if (!job || !existsSync(pfad)) {
       return res.status(403).json(GENERIC_DENIAL);
     }

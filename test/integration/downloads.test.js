@@ -437,3 +437,27 @@ test('GET /downloads/:jobId serves the merged Gruppen-PDF (not the Elternjob\'s 
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
+
+test('GET /downloads/:jobId falls back to the Elternjob\'s own original PDF once the merged Gruppen-PDF has been deleted by the Abholung', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-gruppe-weg-test-'));
+  const originalPfad = join(dir, 'original.pdf');
+  const gruppenPfad = join(dir, 'gruppe.pdf');
+  writeFileSync(originalPfad, '%PDF-original');
+
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: originalPfad });
+  // gruppe_pdf_pfad bleibt gesetzt, die Datei ist nach der Abholung aber weg -- der Elternjob
+  // behält laut Design seine Original-Rechnung.
+  markGruppeExportiert(db, parentId, { pdfPfad: gruppenPfad, zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+
+  const config = testConfig();
+  const app = buildTestApp(db, config);
+  const res = await request(app).get(buildSignedDownloadUrl(config, parentId, 300));
+
+  assert.equal(res.status, 200);
+  const bodyStr = typeof res.body === 'string' ? res.body : res.body.toString();
+  assert.equal(bodyStr, '%PDF-original');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});

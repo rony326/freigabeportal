@@ -475,3 +475,43 @@ test('openDatabase rebuilds the cron_log table to widen its job CHECK constraint
   migratedDb.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('openDatabase rebuilds the person_berechtigungen table to widen its berechtigung CHECK constraint to include audit_log_einsehen', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE personen (churchtools_person_id TEXT PRIMARY KEY, vorname TEXT NOT NULL, nachname TEXT NOT NULL, email TEXT NOT NULL);
+    CREATE TABLE person_berechtigungen (
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      berechtigung TEXT NOT NULL CHECK (berechtigung IN (
+        'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
+        'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen'
+      )),
+      PRIMARY KEY (person_id, berechtigung)
+    );
+    INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'Nur', 'Sync', 'n@example.org');
+    INSERT INTO person_berechtigungen (person_id, berechtigung) VALUES ('1', 'sync_einsehen');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const preserved = migratedDb.prepare('SELECT * FROM person_berechtigungen WHERE person_id = ?').get('1');
+  assert.equal(preserved.berechtigung, 'sync_einsehen', 'existing rows must survive the rebuild');
+  assert.doesNotThrow(() =>
+    migratedDb.prepare("INSERT INTO person_berechtigungen (person_id, berechtigung) VALUES ('1', 'audit_log_einsehen')").run(),
+    'the widened CHECK constraint must accept audit_log_einsehen'
+  );
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('openDatabase is a no-op on the person_berechtigungen table when it already has the widened berechtigung CHECK constraint', () => {
+  const db = openDatabase(':memory:');
+  const before = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'person_berechtigungen'").get().sql;
+  const dbAgain = openDatabase(':memory:');
+  const after = dbAgain.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'person_berechtigungen'").get().sql;
+  assert.equal(before, after);
+  db.close();
+  dbAgain.close();
+});

@@ -9,6 +9,7 @@ export const EREIGNIS_LABEL = {
   freigabe1_eskalation: 'Freigabe 1: Interessenskonflikt gemeldet',
   freigabe2_eskalation: 'Freigabe 2: Interessenskonflikt gemeldet',
   iban_abweichung: 'IBAN-Abweichung festgestellt',
+  loeschung: 'Job gelöscht',
 };
 
 // Swiss org, hardcoded rather than derived from the server's OS timezone — Infomaniak's hosting
@@ -16,7 +17,7 @@ export const EREIGNIS_LABEL = {
 // happens to run.
 const LOKALE_ZEITZONE = 'Europe/Zurich';
 
-function personName(db, personId) {
+export function personName(db, personId) {
   const person = getPersonById(db, personId);
   return person ? `${person.vorname} ${person.nachname}` : 'Unbekannt';
 }
@@ -25,7 +26,7 @@ function personName(db, personId) {
 // it's displayed. Formatted manually via formatToParts rather than a locale string so the output
 // (DD.MM.YYYY HH:MM) is deterministic and doesn't depend on the Intl locale data installed on
 // whatever machine renders the page.
-function formatZeitpunkt(iso, lokaleZeit) {
+export function formatZeitpunkt(iso, lokaleZeit) {
   if (!lokaleZeit) return iso;
   const teile = new Intl.DateTimeFormat('de-CH', {
     timeZone: LOKALE_ZEITZONE,

@@ -11,14 +11,14 @@ CREATE TABLE IF NOT EXISTS personen (
 );
 
 -- Additive Einzelrechte pro Person, unabhängig von der ChurchTools-Rolle (superadmin/manager).
--- Nur die sechs vergebbaren Rechte sind hier zulässig -- die drei hart gesperrten Admin-Bereiche
+-- Nur die sieben vergebbaren Rechte sind hier zulässig -- die drei hart gesperrten Admin-Bereiche
 -- (Eskalationszeiten, Erscheinungsbild, Zeitstempel) sowie das Bearbeiten dieser Tabelle selbst
 -- sind strukturell nicht einfügbar, unabhängig von der Anwendungslogik.
 CREATE TABLE IF NOT EXISTS person_berechtigungen (
   person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
   berechtigung TEXT NOT NULL CHECK (berechtigung IN (
     'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
-    'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen'
+    'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen'
   )),
   PRIMARY KEY (person_id, berechtigung)
 );

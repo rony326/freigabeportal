@@ -27,6 +27,7 @@ import { createPersonenRouter } from './routes/admin/personen.js';
 import { createMailsRouter } from './routes/admin/mails.js';
 import { createSyncRouter } from './routes/admin/sync.js';
 import { createAdminAbgelehntRouter } from './routes/admin/abgelehnt.js';
+import { createAuditLogRouter } from './routes/admin/auditLog.js';
 import { createGeplanteJobsRouter } from './routes/admin/geplanteJobs.js';
 import { createBackupRouter } from './routes/admin/backup.js';
 import { createPoolRouter } from './routes/pool.js';
@@ -142,6 +143,7 @@ export function createApp({ db, config }) {
   app.use('/admin/mails', requirePermission(db, config, 'mails_einsehen'), createMailsRouter({ db, mailer, csrfProtection }));
   app.use('/admin/sync', requirePermission(db, config, 'sync_einsehen'), createSyncRouter({ db, csrfProtection }));
   app.use('/admin/abgelehnt', requirePermission(db, config, 'abgelehnt_verwalten'), createAdminAbgelehntRouter({ db, csrfProtection }));
+  app.use('/admin/audit-log', requirePermission(db, config, 'audit_log_einsehen'), createAuditLogRouter({ db }));
   app.use('/admin/geplante-jobs', requirePermission(db, config, 'geplante_jobs_verwalten'), createGeplanteJobsRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/backup', requireRole(config, 'superadmin'), createBackupRouter({ db, config, csrfProtection }));
 

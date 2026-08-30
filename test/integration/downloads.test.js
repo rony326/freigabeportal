@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
-import { createJob, setKontierung, setThumbnailPfad } from '../../src/db/jobsRepo.js';
+import { createJob, setKontierung, setThumbnailPfad, markGruppeExportiert } from '../../src/db/jobsRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { loadCurrentPerson } from '../../src/middleware/roles.js';
@@ -411,4 +411,29 @@ test('GET /downloads/:jobId/thumbnail: a stream error (thumbnail_pfad pointing a
   assert.deepEqual(res.body, { error: 'Kein Thumbnail vorhanden.' });
   db.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId serves the merged Gruppen-PDF (not the Elternjob\'s own original PDF) for a job with gruppe_pdf_pfad set', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-gruppe-test-'));
+  const originalPfad = join(dir, 'original.pdf');
+  const gruppenPfad = join(dir, 'gruppe.pdf');
+  writeFileSync(originalPfad, '%PDF-original');
+  writeFileSync(gruppenPfad, '%PDF-gruppe');
+
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: originalPfad });
+  markGruppeExportiert(db, parentId, { pdfPfad: gruppenPfad, zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+
+  const config = testConfig();
+  const app = buildTestApp(db, config);
+  const url = buildSignedDownloadUrl(config, parentId, 300);
+  const res = await request(app).get(url);
+
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['content-type'], 'application/pdf');
+  const bodyStr = typeof res.body === 'string' ? res.body : res.body.toString();
+  assert.equal(bodyStr, '%PDF-gruppe');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
 });

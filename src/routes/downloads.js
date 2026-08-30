@@ -66,11 +66,12 @@ export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITE
     }
 
     const job = getJobById(db, jobId);
-    if (!job || !existsSync(job.pdf_pfad)) {
+    const pfad = job?.gruppe_pdf_pfad || job?.pdf_pfad;
+    if (!job || !existsSync(pfad)) {
       return res.status(403).json(GENERIC_DENIAL);
     }
 
-    const stream = createReadStream(job.pdf_pfad);
+    const stream = createReadStream(pfad);
     stream.on('error', () => {
       if (res.headersSent) {
         res.destroy();
@@ -91,7 +92,7 @@ export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITE
     // A chunked response with no Content-Length is a known trigger for some PDF viewers
     // (notably Safari/iOS) to fall back to a download prompt instead of rendering inline —
     // setting it explicitly removes that ambiguity for every browser.
-    res.setHeader('Content-Length', statSync(job.pdf_pfad).size);
+    res.setHeader('Content-Length', statSync(pfad).size);
     stream.pipe(res);
   });
 

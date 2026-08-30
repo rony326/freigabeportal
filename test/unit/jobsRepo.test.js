@@ -1531,3 +1531,33 @@ test('setQrDaten stores the decoded QR-bill fields and sets qr_erkannt_am', () =
   assert.ok(job.qr_erkannt_am, 'qr_erkannt_am should be set');
   db.close();
 });
+
+test('jobs table has the new Splitgruppen columns and immutability triggers on the gruppe_zeitstempel_* pair', () => {
+  const db = openDatabase(':memory:');
+  const spalten = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name));
+  assert.ok(spalten.has('rechnungsposition'));
+  assert.ok(spalten.has('gruppe_pdf_pfad'));
+  assert.ok(spalten.has('gruppe_zeitstempel_gesetzt_am'));
+  assert.ok(spalten.has('gruppe_zeitstempel_datei_hash'));
+
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET gruppe_zeitstempel_gesetzt_am = '2026-08-01T00:00:00.000Z', gruppe_zeitstempel_datei_hash = 'abc' WHERE id = ?").run(id);
+
+  assert.throws(
+    () => db.prepare("UPDATE jobs SET gruppe_zeitstempel_datei_hash = 'anders' WHERE id = ?").run(id),
+    /unveraenderlich/
+  );
+  assert.throws(
+    () => db.prepare("UPDATE jobs SET gruppe_zeitstempel_gesetzt_am = '2026-09-01T00:00:00.000Z' WHERE id = ?").run(id),
+    /unveraenderlich/
+  );
+  db.close();
+});
+
+test('cron_log accepts split-gruppen-nachholen as a valid job name', () => {
+  const db = openDatabase(':memory:');
+  db.prepare("INSERT INTO cron_log (job, gestartet_am, status) VALUES ('split-gruppen-nachholen', '2026-08-01T00:00:00.000Z', 'laufend')").run();
+  const row = db.prepare("SELECT * FROM cron_log WHERE job = 'split-gruppen-nachholen'").get();
+  assert.ok(row);
+  db.close();
+});

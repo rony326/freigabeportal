@@ -9,10 +9,10 @@
 // alone — and each sub-router then applies its own more specific gate
 // (requirePermission for the grantable areas, requireRole('superadmin')
 // for the three hard-locked ones). This test sweeps every known
-// route/method combination across the eight admin router families below
+// route/method combination across the nine admin router families below
 // (konten, debitoren, eskalation, erscheinungsbild, personen, mails,
-// abgelehnt, geplante-jobs — zeitstempel and sync are exercised by the
-// second test below instead) against the real app and confirms each
+// abgelehnt, audit-log, geplante-jobs — zeitstempel and sync are exercised
+// by the second test below instead) against the real app and confirms each
 // returns 401 when no session/cookie is present at all.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

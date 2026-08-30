@@ -28,6 +28,7 @@ feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 | Personen-Sync | `/admin/sync` | Einzelrecht `sync_einsehen` |
 | Abgelehnte Rechnungen | `/admin/abgelehnt` | Einzelrecht `abgelehnt_verwalten` |
 | Geplante Jobs | `/admin/geplante-jobs` | Einzelrecht `geplante_jobs_verwalten` |
+| Audit-Log | `/admin/audit-log` | Einzelrecht `audit_log_einsehen` |
 | Datenbank-Backup | `/admin/backup` | **nur** `superadmin` |
 
 Die mit **nur `superadmin`** markierten Bereiche lassen sich als
@@ -123,3 +124,16 @@ Selbstschutz gegen Löschung durch den eigenen Ablehner. Siehe
 Zeitplan-Konfiguration und manuelles Sofort-Auslösen der vier
 Hintergrund-Jobs, inklusive ihrer Lauf-Historie. Details:
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md).
+
+## Audit-Log (`/admin/audit-log`)
+
+Durchsuchbare, paginierte Gesamtsicht über alle Rechnungen hinweg — führt
+zwei Quellen in einer gemeinsamen Zeitleiste zusammen: `freigaben` (jedes
+Freigabe-, Ablehnungs-, Eskalations- und IBAN-Abweichungs-Ereignis über
+alle Jobs) und `job_loeschungen` (das Löschprotokoll endgültig gelöschter
+Rechnungen). Filterbar nach Person, Konto, Zeitraum (Von/Bis) sowie
+Ereignis-Typ, zusätzlich eine Freitext-Suche über Kommentar/Begründung
+und Dateiname. Einzelrecht `audit_log_einsehen` — `superadmin` und
+`manager` erhalten es automatisch über ihr Rollen-Bundle, sonst gilt
+dieselbe additive Vergabe wie bei den übrigen vergebbaren Bereichen
+(siehe [auth-und-rechte.md](auth-und-rechte.md)).

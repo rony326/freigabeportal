@@ -36,7 +36,7 @@ erDiagram
     }
     person_berechtigungen {
         text person_id PK,FK
-        text berechtigung PK "CHECK: 6 feste Werte"
+        text berechtigung PK "CHECK: 7 feste Werte"
     }
     konten {
         int id PK
@@ -144,7 +144,7 @@ mehr, siehe [personen-sync.md](personen-sync.md)).
 
 ### `person_berechtigungen`
 Additive Einzelrechte, siehe [auth-und-rechte.md](auth-und-rechte.md). Ein
-`CHECK`-Constraint erlaubt strukturell nur sechs Werte — die drei
+`CHECK`-Constraint erlaubt strukturell nur sieben Werte — die drei
 `superadmin`-exklusiven Admin-Bereiche lassen sich gar nicht erst
 eintragen.
 

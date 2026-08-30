@@ -39,12 +39,15 @@
             <div class="col-3">
               <input type="text" inputmode="decimal" class="form-control" name="teilBetrag" value="<%= teil.betrag %>" placeholder="Teilbetrag, z.B. 61.75">
             </div>
-            <div class="col-2 form-check">
+            <div class="col-2">
+              <input type="text" class="form-control" name="teilPosition" value="<%= teil.position || '' %>" placeholder="Position, z.B. Pos. 2">
+            </div>
+            <div class="col-1 form-check">
               <input type="checkbox" class="form-check-input konflikt-checkbox" <%= teil.interessenskonflikt ? 'checked' : '' %>>
               <label class="form-check-label small">Konflikt</label>
               <input type="hidden" name="teilInteressenskonflikt" value="<%= teil.interessenskonflikt ? 'true' : 'false' %>">
             </div>
-            <div class="col-2">
+            <div class="col-1">
               <button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button>
             </div>
             <div class="col-12">
@@ -108,8 +111,9 @@
         zeile.innerHTML =
           '<div class="col-5"><select class="form-select" name="teilKontoId">' + kontoOptionsHtml + '</select></div>' +
           '<div class="col-3"><input type="text" inputmode="decimal" class="form-control" name="teilBetrag" placeholder="Teilbetrag, z.B. 61.75"></div>' +
-          '<div class="col-2 form-check"><input type="checkbox" class="form-check-input konflikt-checkbox"><label class="form-check-label small">Konflikt</label><input type="hidden" name="teilInteressenskonflikt" value="false"></div>' +
-          '<div class="col-2"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>' +
+          '<div class="col-2"><input type="text" class="form-control" name="teilPosition" placeholder="Position, z.B. Pos. 2"></div>' +
+          '<div class="col-1 form-check"><input type="checkbox" class="form-check-input konflikt-checkbox"><label class="form-check-label small">Konflikt</label><input type="hidden" name="teilInteressenskonflikt" value="false"></div>' +
+          '<div class="col-1"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>' +
           '<div class="col-12"><label class="form-label small">Beleg für diese Zeile <span class="text-muted">(optional, z.B. Einzelbeleg zu einer Kreditkartenabrechnung — PDF, PNG oder JPEG)</span></label><input type="file" class="form-control form-control-sm teil-beleg-input" accept="application/pdf,image/png,image/jpeg"></div>';
         document.getElementById('teile-container').appendChild(zeile);
         zeileEntfernenBinden(zeile);

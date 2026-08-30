@@ -1366,6 +1366,31 @@ test('POST /kontierung/:id/aufsplitten creates independent split jobs, each with
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('POST /kontierung/:id/aufsplitten persists teilPosition as rechnungsposition on each split child', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '100.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['60.00', '40.00'],
+      teilPosition: ['Pos. 1', 'Pos. 2'],
+    });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  assert.deepEqual(kinder.map((k) => k.rechnungsposition).sort(), ['Pos. 1', 'Pos. 2']);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
 test('POST /kontierung/:id/aufsplitten merges a per-Zeile Beleg into just that split part\'s own PDF copy', async () => {
   const db = openDatabase(':memory:');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));

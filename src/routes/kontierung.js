@@ -526,11 +526,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const kontoIds = [].concat(req.body.teilKontoId || []);
       const betraege = [].concat(req.body.teilBetrag || []);
       const konflikte = [].concat(req.body.teilInteressenskonflikt || []);
+      const positionen = [].concat(req.body.teilPosition || []);
       const begruendung = req.body.begruendung || '';
       const teileEingabe = kontoIds.map((kontoId, i) => ({
         kontoId,
         betrag: betraege[i] || '',
         interessenskonflikt: konflikte[i] === 'true',
+        position: (positionen[i] || '').trim() || null,
       }));
 
       const errors = [];
@@ -571,7 +573,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           errors.push('Jede Zeile braucht einen gültigen Betrag (z.B. 123.45).');
           return;
         }
-        aufgeloesteTeile.push({ konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt, originalIndex });
+        aufgeloesteTeile.push({ konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt, position: teil.position, originalIndex });
       });
 
       if (errors.length === 0) {
@@ -638,6 +640,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
               thumbnailPfad,
               hinweisKontoId: teil.konto.id,
               betrag: teil.betrag,
+              position: teil.position,
             });
             fremdeKonten.push({ id: kindId, konto: teil.konto });
             continue;
@@ -649,6 +652,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             kontoId: teil.konto.id,
             betrag: teil.betrag,
             zugewiesenAn: req.currentPerson.churchtools_person_id,
+            position: teil.position,
           });
 
           if (teil.interessenskonflikt) {

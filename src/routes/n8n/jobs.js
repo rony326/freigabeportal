@@ -3,7 +3,7 @@ import multer from 'multer';
 import { writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import crypto from 'node:crypto';
-import { createJob, getJobById, findJobByDateiHash, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setQrDaten } from '../../db/jobsRepo.js';
+import { createJob, getJobById, findJobByDateiHash, listAbholbereitJobs, listAbholbereitGruppen, confirmAbholung, confirmGruppenAbholung, istGruppenElternjob, listSplitKinder, setThumbnailPfad, setQrDaten } from '../../db/jobsRepo.js';
 import { renderFirstPageThumbnail } from '../../services/thumbnail.js';
 import { scanQrBill } from '../../services/qrBillScan.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
@@ -125,7 +125,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
   router.get('/abholbereit', (req, res) => {
     const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
     const jobs = listAbholbereitJobs(db, undefined, nurMitZeitstempel);
-    const payload = jobs.map((job) => {
+    const einzelPayload = jobs.map((job) => {
       const konto = job.konto_id ? getKontoById(db, job.konto_id) : null;
       return {
         id: job.id,
@@ -149,12 +149,74 @@ export function createN8nJobsRouter({ db, config, mailer }) {
         download_url: buildSignedDownloadUrl(config, job.id, ABHOLEN_TTL_SECONDS),
       };
     });
-    res.json(payload);
+
+    const gruppen = listAbholbereitGruppen(db, undefined, nurMitZeitstempel);
+    const gruppenPayload = gruppen.map((parent) => {
+      // gruppe_pdf_pfad is only ever set once pruefeSplitGruppenVollstaendigkeit reported the
+      // group complete, which already guarantees every non-geloescht sibling reached
+      // 'abgeschlossen' (and therefore has a real konto_id, not just a hinweis_konto_id) -- so a
+      // plain geloescht-filter is enough here, no separate konto_id check needed.
+      const kinder = listSplitKinder(db, parent.id).filter((k) => k.status !== 'geloescht');
+      const positionen = kinder.map((kind) => {
+        const konto = getKontoById(db, kind.konto_id);
+        return {
+          konto_id: kind.konto_id,
+          konto_kontonummer: konto?.kontonummer ?? null,
+          konto_bezeichnung: konto?.bezeichnung ?? null,
+          betrag: kind.betrag,
+          position: kind.rechnungsposition,
+        };
+      });
+      return {
+        id: parent.id,
+        eingang_am: parent.eingang_am,
+        quelle: parent.quelle,
+        absender: parent.absender,
+        lieferant: parent.lieferant,
+        rechnungsnummer: parent.rechnungsnummer,
+        betrag: parent.betrag,
+        zahlungsziel: parent.zahlungsziel,
+        dateiname: parent.dateiname,
+        positionen,
+        download_url: buildSignedDownloadUrl(config, parent.id, ABHOLEN_TTL_SECONDS),
+      };
+    });
+
+    res.json([...einzelPayload, ...gruppenPayload]);
   });
 
   router.post('/:id/abholung-bestaetigen', (req, res) => {
     const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
-    const job = confirmAbholung(db, Number(req.params.id), nurMitZeitstempel);
+    const id = Number(req.params.id);
+
+    if (istGruppenElternjob(db, id)) {
+      const ergebnis = confirmGruppenAbholung(db, id, nurMitZeitstempel);
+      if (!ergebnis) {
+        return res
+          .status(409)
+          .json({ error: 'Splitgruppe ist nicht bereit zur Abholung, oder der Zeitstempel steht noch aus.' });
+      }
+      for (const kind of ergebnis.kinder) {
+        try {
+          if (kind.pdf_pfad && existsSync(kind.pdf_pfad)) unlinkSync(kind.pdf_pfad);
+        } catch (err) {
+          console.error(`Löschen der PDF für Splitkind ${kind.id} nach Abholung fehlgeschlagen:`, err.message);
+        }
+        try {
+          if (kind.thumbnail_pfad && existsSync(kind.thumbnail_pfad)) unlinkSync(kind.thumbnail_pfad);
+        } catch (err) {
+          console.error(`Löschen des Thumbnails für Splitkind ${kind.id} nach Abholung fehlgeschlagen:`, err.message);
+        }
+      }
+      try {
+        if (existsSync(ergebnis.parent.gruppe_pdf_pfad)) unlinkSync(ergebnis.parent.gruppe_pdf_pfad);
+      } catch (err) {
+        console.error(`Löschen der Gruppen-PDF für Elternjob ${ergebnis.parent.id} nach Abholung fehlgeschlagen:`, err.message);
+      }
+      return res.json({ id: ergebnis.parent.id, status: 'abgeholt' });
+    }
+
+    const job = confirmAbholung(db, id, nurMitZeitstempel);
     if (!job) {
       return res
         .status(409)

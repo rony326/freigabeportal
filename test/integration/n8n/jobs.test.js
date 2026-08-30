@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { openDatabase } from '../../../src/db/index.js';
-import { createJob, getJobById, setThumbnailPfad, updateKontierungMetadaten, setQrDaten } from '../../../src/db/jobsRepo.js';
+import { createJob, getJobById, setThumbnailPfad, updateKontierungMetadaten, setQrDaten, createSplitJob, markGruppeExportiert } from '../../../src/db/jobsRepo.js';
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
@@ -752,4 +753,95 @@ test('POST /api/n8n/jobs still creates the job with qr_* columns null when the P
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /api/n8n/jobs/abholbereit includes a group entry with a positionen array for a completed Splitgruppe, and no individual entries for its children', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'n8n-gruppe-test-'));
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '6500', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '3', freigeber2Id: '2', stellvertreter2Id: '4' });
+  const parentPfad = join(dir, 'parent.pdf');
+  writeFileSync(parentPfad, 'x');
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'r.pdf', pdfPfad: parentPfad });
+  const parentJob = getJobById(db, parentId);
+  const kindPfad1 = join(dir, 'k1.pdf');
+  const kindPfad2 = join(dir, 'k2.pdf');
+  writeFileSync(kindPfad1, 'x');
+  writeFileSync(kindPfad2, 'x');
+  const kind1 = createSplitJob(db, parentJob, { pdfPfad: kindPfad1, kontoId, betrag: '10.00', zugewiesenAn: '1', position: 'Pos. 1' });
+  const kind2 = createSplitJob(db, parentJob, { pdfPfad: kindPfad2, kontoId, betrag: '20.00', zugewiesenAn: '1', position: 'Pos. 2' });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id IN (?, ?)").run(kind1, kind2);
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
+  const gruppenPfad = join(dir, 'gruppe.pdf');
+  writeFileSync(gruppenPfad, 'x');
+  markGruppeExportiert(db, parentId, { pdfPfad: gruppenPfad, zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+
+  const config = testConfig(dir);
+  const app = buildTestApp(db, config, createStubMailer());
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', config.n8nApiKey);
+
+  assert.equal(res.status, 200);
+  const gruppenEintrag = res.body.find((e) => e.id === parentId);
+  assert.ok(gruppenEintrag, 'the parent id must appear as a group entry');
+  assert.equal(gruppenEintrag.positionen.length, 2);
+  assert.deepEqual(gruppenEintrag.positionen.map((p) => p.position).sort(), ['Pos. 1', 'Pos. 2']);
+  assert.ok(!res.body.some((e) => e.id === kind1 || e.id === kind2), 'Splitkinder must never appear as individual entries');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('GET /api/n8n/jobs/abholbereit leaves a normal (non-split) job entry exactly in its current shape, with no positionen field', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'n8n-normal-test-'));
+  const pdfPfad = join(dir, 'n.pdf');
+  writeFileSync(pdfPfad, 'x');
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'n.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
+
+  const config = testConfig(dir);
+  const app = buildTestApp(db, config, createStubMailer());
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', config.n8nApiKey);
+  const eintrag = res.body.find((e) => e.id === jobId);
+  assert.ok(eintrag);
+  assert.equal('positionen' in eintrag, false);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /api/n8n/jobs/:id/abholung-bestaetigen on a group parent id deletes every child file and the group file, and marks children abgeholt', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'n8n-gruppe-bestaetigen-test-'));
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '6500', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '3', freigeber2Id: '2', stellvertreter2Id: '4' });
+  const parentPfad = join(dir, 'parent.pdf');
+  writeFileSync(parentPfad, 'x');
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: parentPfad });
+  const parentJob = getJobById(db, parentId);
+
+  const kindPfad = join(dir, 'k1.pdf');
+  writeFileSync(kindPfad, 'x');
+  const kindId = createSplitJob(db, parentJob, { pdfPfad: kindPfad, kontoId, betrag: '10.00', zugewiesenAn: '1' });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(kindId);
+
+  const gruppenPfad = join(dir, 'gruppe.pdf');
+  writeFileSync(gruppenPfad, 'x');
+  markGruppeExportiert(db, parentId, { pdfPfad: gruppenPfad, zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+
+  const config = testConfig(dir);
+  const app = buildTestApp(db, config, createStubMailer());
+  const res = await request(app).post(`/api/n8n/jobs/${parentId}/abholung-bestaetigen`).set('X-API-Key', config.n8nApiKey);
+
+  assert.equal(res.status, 200);
+  assert.equal(getJobById(db, kindId).status, 'abgeholt');
+  assert.equal(existsSync(kindPfad), false);
+  assert.equal(existsSync(gruppenPfad), false);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
 });

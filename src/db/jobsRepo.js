@@ -677,11 +677,12 @@ export function createSpesenPosition(
       zugewiesenAn,
       freigabe1EskaliertVon ?? null,
       freigabe1Eskalationsgrund ?? null,
-      // A Spesen position has no separate invoice date — auslage_datum (when the expense actually
-      // happened) IS its document date. Mirrored into the generic rechnungsdatum column so n8n's
-      // Paperless-Versand (GET /abholbereit) has a real date to set, instead of Paperless falling
-      // back to its own (often wrong, or entirely missing for a photographed receipt) OCR guess.
-      auslageDatum
+      // Paperless' Date custom field wants the Einreichedatum (submission date) for a Spesen
+      // position — not auslage_datum (when the expense happened). eingangAm is a full ISO
+      // timestamp (new Date().toISOString(), see spesen.js), so only its date portion is kept;
+      // Paperless rejects anything but a bare YYYY-MM-DD for a Date custom field. See
+      // GET /abholbereit (n8n/jobs.js), which falls back to zahlungsziel for a non-Spesen job.
+      eingangAm.slice(0, 10)
     );
   return Number(result.lastInsertRowid);
 }

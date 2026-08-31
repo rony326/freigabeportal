@@ -1940,7 +1940,7 @@ test('createSpesenPosition inserts a quelle=spesen job in status zugewiesen with
   assert.equal(job.eingereicht_von, '2');
   assert.equal(job.auslage_datum, '2026-08-20');
   assert.equal(job.beschreibung, 'Bahnticket');
-  assert.equal(job.rechnungsdatum, '2026-08-20', 'rechnungsdatum mirrors auslage_datum — a Spesen position has no separate invoice date');
+  assert.equal(job.rechnungsdatum, '2026-08-31', 'rechnungsdatum is the Einreichedatum (date portion of eingang_am), not auslage_datum');
   assert.equal(job.spesenabrechnung_id, spesenabrechnungId);
   assert.equal(job.zugewiesen_an, '1');
   assert.equal(job.konto_id, kontoId);

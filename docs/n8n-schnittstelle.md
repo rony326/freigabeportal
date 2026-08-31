@@ -90,7 +90,7 @@ sequenceDiagram
   | `eingereicht_von` | ChurchTools-Personen-ID der einreichenden Person, nur bei `quelle: "spesen"` gesetzt, sonst `null` |
   | `auslage_datum` | Datum der Auslage (von der einreichenden Person erfasst), nur bei `quelle: "spesen"` gesetzt, sonst `null` |
   | `beschreibung` | Verwendungszweck der Spesen-Position, nur bei `quelle: "spesen"` gesetzt, sonst `null` |
-  | `rechnungsdatum` | Dokumentendatum für den Paperless-Versand — bei `quelle: "spesen"` das `auslage_datum`, sonst (noch) `null` |
+  | `rechnungsdatum` | Dokumentendatum für den Paperless-Versand — bei `quelle: "spesen"` das Einreichedatum (Datum von `eingang_am`), sonst live das `zahlungsziel` |
   | `iban`, `kontoinhaber` | aus den ChurchTools-Custom-Fields der einreichenden Person nachgeschlagen (live, bei jedem Abruf), nur bei `quelle: "spesen"` — `null`, wenn kein Custom-Field hinterlegt ist oder der ChurchTools-Abruf fehlschlägt |
   | `qr_iban`, `qr_referenz`, `qr_betrag`, `qr_waehrung`, `qr_creditor_name` | aus einer erkannten Swiss-QR-Bill übernommen, sonst `null` |
   | `qr_erkannt_am` | Zeitpunkt der QR-Erkennung, `null` falls keine QR-Bill erkannt wurde |

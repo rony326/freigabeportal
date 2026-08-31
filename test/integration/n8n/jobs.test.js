@@ -321,7 +321,9 @@ function seedAbgeschlossenSpesenJob(db, jobsDir) {
   const pdfPfad = join(jobsDir, `spesen-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
   writeFileSync(pdfPfad, PDF_BYTES);
   const id = createSpesenPosition(db, {
-    eingangAm: '2026-08-20T08:00:00.000Z',
+    // Deliberately different from auslageDatum below — proves rechnungsdatum (Einreichedatum)
+    // tracks eingangAm, not auslage_datum (when the two coincide, a test can't tell them apart).
+    eingangAm: '2026-08-25T08:00:00.000Z',
     eingereichtVon: '60',
     kontoId,
     betrag: '42.00',
@@ -937,7 +939,7 @@ test('GET /api/n8n/jobs/abholbereit includes quelle, eingereicht_von, auslage_da
   assert.equal(entry.eingereicht_von, '60');
   assert.equal(entry.auslage_datum, '2026-08-20');
   assert.equal(entry.beschreibung, 'Taxi');
-  assert.equal(entry.rechnungsdatum, '2026-08-20', 'rechnungsdatum mirrors auslage_datum for a Spesen position, for Paperless');
+  assert.equal(entry.rechnungsdatum, '2026-08-25', 'rechnungsdatum is the Einreichedatum (date portion of eingang_am), not auslage_datum');
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
@@ -1021,7 +1023,24 @@ test('GET /api/n8n/jobs/abholbereit omits quelle/eingereicht_von-style Spesen fi
   assert.ok(entry);
   assert.equal(entry.eingereicht_von, null);
   assert.equal(entry.iban, null);
-  assert.equal(entry.rechnungsdatum, null, 'no rechnungsdatum source yet for a non-Spesen job');
+  assert.equal(entry.rechnungsdatum, null, 'falls back to zahlungsziel, which is also unset here');
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /api/n8n/jobs/abholbereit falls back to zahlungsziel for rechnungsdatum on a Lieferant job', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const { id } = seedAbgeschlossenJobWithFile(db, jobsDir);
+  db.prepare("UPDATE jobs SET zahlungsziel = '2026-09-15' WHERE id = ?").run(id);
+
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  const entry = res.body.find((j) => j.id === id);
+  assert.ok(entry);
+  assert.equal(entry.rechnungsdatum, '2026-09-15');
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });

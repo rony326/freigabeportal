@@ -163,7 +163,11 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           eingereicht_von: job.eingereicht_von,
           auslage_datum: job.auslage_datum,
           beschreibung: job.beschreibung,
-          rechnungsdatum: job.rechnungsdatum,
+          // rechnungsdatum is only ever persisted for a Spesen position (Einreichedatum, see
+          // createSpesenPosition) — a Lieferant/Scanner job has no such column, so this falls
+          // back to its Zahlungsziel, live, giving n8n's Paperless-Versand one uniform field to
+          // read regardless of quelle.
+          rechnungsdatum: job.rechnungsdatum || job.zahlungsziel,
           iban,
           kontoinhaber,
           qr_iban: job.qr_iban,

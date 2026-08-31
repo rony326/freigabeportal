@@ -5,6 +5,7 @@ import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
+import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import {
   createJob,
   claimJob,
@@ -14,6 +15,7 @@ import {
   updateKontierungMetadaten,
   eskalierenFreigabe1AnAdmin,
   eskalierenFreigabe2AnAdmin,
+  createSpesenPosition,
 } from '../../src/db/jobsRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
@@ -423,5 +425,72 @@ test('GET /pool shows the empty-state text when there are no abgelehnt jobs for 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
   assert.match(res.text, /Keine abgelehnten Rechnungen\./);
+  db.close();
+});
+
+test('GET /pool shows a Spesen-Freigabe1 job under "Meine offenen Spesen-Freigaben" with a Prüfen link to /spesen-freigabe1', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  for (const id of ['51', '52', '53']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [] });
+  }
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '50', stellvertreter1Id: '51', freigeber2Id: '52', stellvertreter2Id: '53' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '60', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '60', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '50', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.match(res.text, /Meine offenen Spesen-Freigaben/);
+  assert.match(res.text, /href="\/spesen-freigabe1\/\d+"/);
+  db.close();
+});
+
+test('GET /pool shows every Spesen job the current person submitted under "Meine Spesen", including rejected ones', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  for (const id of ['51', '52', '53']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [] });
+  }
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '50', stellvertreter1Id: '51', freigeber2Id: '52', stellvertreter2Id: '53' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '60', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const abgelehntId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '60', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '50', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  ablehnenJob(db, abgelehntId, { abgelehntVon: '50', grund: 'Kein Beleg' });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '60');
+  assert.match(res.text, /Meine Spesen/);
+  assert.match(res.text, /Taxi/);
+  assert.match(res.text, /Kein Beleg/);
+  db.close();
+});
+
+test('GET /pool shows an admin-escalated Spesen position under a Superadmin-only section linking to /spesen-freigabe1', async () => {
+  const db = openDatabase(':memory:');
+  seedPortalAdminPerson(db, '99');
+  upsertPerson(db, { id: '50', vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  for (const id of ['51', '52', '53']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [] });
+  }
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '50', stellvertreter1Id: '51', freigeber2Id: '52', stellvertreter2Id: '53' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '60', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '60', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '50', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  eskalierenFreigabe1AnAdmin(db, jobId, { eskaliertVon: '50', grund: 'Befangen' });
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '99');
+  assert.match(res.text, /An Superadmin eskalierte Spesen-Freigaben/);
+  assert.match(res.text, new RegExp(`href="/spesen-freigabe1/${jobId}"`));
   db.close();
 });

@@ -22,16 +22,25 @@
 
       <h2 class="h4 mt-4">An Superadmin eskalierte Freigaben</h2>
       <%- include('_job_table', { jobs: adminEskalierteFreigaben, idPrefix: 'admin-eskalation-freigabe', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben', leerText: 'Keine an Superadmin eskalierten Freigaben.' }) %>
+
+      <h2 class="h4 mt-4">An Superadmin eskalierte Spesen-Freigaben</h2>
+      <%- include('_job_table', { jobs: adminEskalierteSpesenFreigaben, idPrefix: 'admin-eskalation-spesen-freigabe', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen', leerText: 'Keine an Superadmin eskalierten Spesen-Freigaben.' }) %>
     <% } %>
 
     <h2 class="h4 mt-4">Meine offenen Kontierungen</h2>
     <%- include('_job_table', { jobs: meineKontierungen, idPrefix: 'kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren', leerText: 'Keine offenen Kontierungen.' }) %>
+
+    <h2 class="h4 mt-4">Meine offenen Spesen-Freigaben</h2>
+    <%- include('_job_table', { jobs: meineSpesenFreigaben, idPrefix: 'spesen-freigabe1', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen', leerText: 'Keine offenen Spesen-Freigaben.' }) %>
 
     <h2 class="h4 mt-4">Meine Freigaben</h2>
     <%- include('_job_table', { jobs: meineFreigaben, idPrefix: 'freigabe2', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben', leerText: 'Keine offenen Freigaben.' }) %>
 
     <h2 class="h4 mt-4">Meine abgelehnten Jobs</h2>
     <%- include('_job_table', { jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen', leerText: 'Keine abgelehnten Rechnungen.' }) %>
+
+    <h2 class="h4 mt-4">Meine Spesen</h2>
+    <%- include('_spesen_meine_tabelle', { jobs: meineSpesen }) %>
 
     <h2 class="h4 mt-4">Meine abgeschlossenen Rechnungen</h2>
     <%- include('_abgeschlossen_table', { jobs: meineAbgeschlossenen }) %>

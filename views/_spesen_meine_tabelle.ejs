@@ -1,0 +1,25 @@
+<% if (jobs.length === 0) { %>
+  <p>Keine eigenen Spesen-Einreichungen.</p>
+<% } else { %>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Eingereicht am</th><th>Konto</th><th>Betrag</th><th>Verwendungszweck</th><th>Status</th></tr></thead>
+      <tbody>
+        <% jobs.forEach((job) => { %>
+          <tr id="spesen-meine-row-<%= job.id %>">
+            <td><%= job.eingang_am %></td>
+            <td><%= job.kontonummer || '—' %></td>
+            <td><%= job.betrag %></td>
+            <td><%= job.beschreibung %></td>
+            <td>
+              <%= job.status %>
+              <% if (job.status === 'abgelehnt' && job.ablehnungsgrund) { %>
+                — <%= job.ablehnungsgrund %>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+<% } %>

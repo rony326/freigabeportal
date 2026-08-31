@@ -6,7 +6,10 @@ import {
   listAbgelehntJobsForPerson,
   listAdminEskalierteKontierungen,
   listAdminEskalierteFreigaben,
+  listAdminEskalierteSpesenFreigaben,
   listAbgeschlossenJobsForPerson,
+  listSpesenFreigabe1JobsForPerson,
+  listSpesenForEinreicher,
 } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
@@ -36,10 +39,13 @@ export function createPoolPageRouter({ db, config }) {
     res.render('pool', {
       poolJobs: zeigtPool ? enrich(listPoolJobs(db)) : [],
       meineKontierungen: enrich(listZugewiesenJobsForPerson(db, personId)),
+      meineSpesenFreigaben: enrich(listSpesenFreigabe1JobsForPerson(db, personId)),
       meineFreigaben: enrich(listFreigabe2JobsForPerson(db, personId)),
       meineAbgelehnten: enrich(listAbgelehntJobsForPerson(db, personId)),
+      meineSpesen: enrich(listSpesenForEinreicher(db, personId)),
       adminEskalierteKontierungen: istSuperadmin ? enrich(listAdminEskalierteKontierungen(db)) : [],
       adminEskalierteFreigaben: istSuperadmin ? enrich(listAdminEskalierteFreigaben(db)) : [],
+      adminEskalierteSpesenFreigaben: istSuperadmin ? enrich(listAdminEskalierteSpesenFreigaben(db)) : [],
       // Deliberately NOT run through enrich(): _abgeschlossen_table.ejs renders only dateiname,
       // status and zeitstempel_gesetzt_am — it has neither a thumbnail/preview link nor a Konto
       // column, unlike the _job_table.ejs-backed sections above. enrich() would mint a signed

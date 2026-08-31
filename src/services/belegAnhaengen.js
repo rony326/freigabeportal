@@ -65,3 +65,19 @@ export async function mergeBelegInPdf(pdfBuffer, belegBuffer, belegMimetype) {
 
   return Buffer.from(await doc.save());
 }
+
+// Unlike mergeBelegInPdf, there is no existing job PDF to merge into here — a Spesen position's
+// Beleg *is* the entire job document. A PDF Beleg is returned as-is; an image Beleg is embedded
+// as the sole page of a brand-new PDF, at its own natural pixel dimensions (same convention
+// mergeBelegInPdf's image branch already uses for a merged image page).
+export async function buildBelegPdf(belegBuffer, belegMimetype) {
+  const belegBytes = toOwnedUint8Array(belegBuffer);
+  if (belegMimetype === 'application/pdf') {
+    return Buffer.from(belegBytes);
+  }
+  const doc = await PDFDocument.create();
+  const image = belegMimetype === 'image/png' ? await doc.embedPng(belegBytes) : await doc.embedJpg(belegBytes);
+  const page = doc.addPage([image.width, image.height]);
+  page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+  return Buffer.from(await doc.save());
+}

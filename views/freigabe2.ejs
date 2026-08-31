@@ -17,13 +17,20 @@
         <div class="card">
           <div class="card-body">
             <h1 class="h3">Freigabe 2: <%= job.dateiname %></h1>
-            <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %> · Absender: <%= job.absender %><% } %></p>
+            <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %><% if (job.absender) { %> · Absender: <%= job.absender %><% } %></p>
             <p><strong>Konto:</strong> <%= konto.kontonummer %> — <%= konto.bezeichnung %></p>
-            <% if (job.typ === 'gutschrift') { %><p><strong>Typ:</strong> Gutschrift</p><% } %>
-            <% if (job.lieferant) { %><p><strong>Lieferant:</strong> <%= job.lieferant %></p><% } %>
-            <% if (job.rechnungsnummer) { %><p><strong>Rechnungsnummer:</strong> <%= job.rechnungsnummer %></p><% } %>
-            <% if (job.betrag) { %><p><strong>Betrag:</strong> <%= job.betrag %></p><% } %>
-            <% if (job.zahlungsziel) { %><p><strong>Zahlungsziel:</strong> <%= job.zahlungsziel %></p><% } %>
+            <% if (job.quelle === 'spesen') { %>
+              <p><strong>Verwendungszweck:</strong> <%= job.beschreibung %></p>
+              <p><strong>Auslage-Datum:</strong> <%= job.auslage_datum %></p>
+              <p><strong>Eingereicht von:</strong> <%= spesenEinreicher ? `${spesenEinreicher.vorname} ${spesenEinreicher.nachname}` : 'Unbekannt' %></p>
+              <% if (job.betrag) { %><p><strong>Betrag:</strong> <%= job.betrag %></p><% } %>
+            <% } else { %>
+              <% if (job.typ === 'gutschrift') { %><p><strong>Typ:</strong> Gutschrift</p><% } %>
+              <% if (job.lieferant) { %><p><strong>Lieferant:</strong> <%= job.lieferant %></p><% } %>
+              <% if (job.rechnungsnummer) { %><p><strong>Rechnungsnummer:</strong> <%= job.rechnungsnummer %></p><% } %>
+              <% if (job.betrag) { %><p><strong>Betrag:</strong> <%= job.betrag %></p><% } %>
+              <% if (job.zahlungsziel) { %><p><strong>Zahlungsziel:</strong> <%= job.zahlungsziel %></p><% } %>
+            <% } %>
             <p><strong>Freigeber 1:</strong> <%= freigeber1Person.vorname %> <%= freigeber1Person.nachname %></p>
             <p><strong>Interessenskonflikt Freigeber 1:</strong> <%= freigabe1.interessenskonflikt ? 'Ja' : 'Nein' %></p>
             <% if (freigabe1.kommentar) { %><p><strong>Begründung:</strong> <%= freigabe1.kommentar %></p><% } %>

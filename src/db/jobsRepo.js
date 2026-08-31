@@ -114,7 +114,7 @@ export function getJobById(db, id) {
 }
 
 export function listPoolJobs(db) {
-  return db.prepare("SELECT * FROM jobs WHERE status = 'unzugewiesen' ORDER BY eingang_am").all();
+  return db.prepare("SELECT * FROM jobs WHERE status = 'unzugewiesen' AND quelle != 'spesen' ORDER BY eingang_am").all();
 }
 
 export function claimJob(db, id, personId) {
@@ -350,7 +350,7 @@ export function wiederOeffnenJob(db, jobId, personId) {
 export function listAbgelehntJobsForPerson(db, personId) {
   return db
     .prepare(
-      "SELECT * FROM jobs WHERE status = 'abgelehnt' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 ORDER BY eingang_am"
+      "SELECT * FROM jobs WHERE status = 'abgelehnt' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 AND quelle != 'spesen' ORDER BY eingang_am"
     )
     .all(personId);
 }
@@ -420,11 +420,19 @@ export function markZeitstempelGesetzt(db, jobId, zeitpunkt, hash = null) {
 export function listZugewiesenJobsForPerson(db, personId) {
   return db
     .prepare(
-      "SELECT * FROM jobs WHERE status = 'zugewiesen' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 ORDER BY eingang_am"
+      "SELECT * FROM jobs WHERE status = 'zugewiesen' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 AND quelle != 'spesen' ORDER BY eingang_am"
     )
     .all(personId);
 }
 
+// AND NOT (quelle = 'spesen' AND eingereicht_von = ?): a Spesen position whose submitter is
+// this Konto's own freigeber2/stellvertreter2 gets rerouted away from them at Freigabe-1
+// completion time (see spesenFreigabe1.js's "Freigeben" branch, which calls eskalierenFreigabe2
+// to hand it to the Stellvertreter2 instead) — but the submitter, still nominally matching this
+// query's freigeber2/stellvertreter2 condition on some *other* job, must never see their OWN
+// now-escalated claim listed here either. Without this, the Pool dashboard's "Meine Freigaben"
+// section would show a job that 403s the instant they click it (see freigabe2.js's loadAuthorized
+// submitter check), a dead end rather than an absent row.
 export function listFreigabe2JobsForPerson(db, personId) {
   return db
     .prepare(
@@ -436,9 +444,10 @@ export function listFreigabe2JobsForPerson(db, personId) {
            (jobs.freigabe2_eskaliert_von IS NULL AND konten.freigeber2_id = ?)
            OR (jobs.freigabe2_eskaliert_von IS NOT NULL AND konten.stellvertreter2_id = ?)
          )
+         AND NOT (jobs.quelle = 'spesen' AND jobs.eingereicht_von = ?)
        ORDER BY jobs.eingang_am`
     )
-    .all(personId, personId);
+    .all(personId, personId, personId);
 }
 
 // listAbgeschlossenJobsForPerson feeds the "Meine abgeschlossenen Rechnungen" section of /pool,
@@ -484,7 +493,7 @@ export function listAbgeschlossenJobsForPerson(db, personId) {
 // it exists in the database and its notification email links straight to it, but there is no
 // list a Portal-Admin can browse to find it without already knowing its ID.
 export function listAdminEskalierteKontierungen(db) {
-  return db.prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND freigabe1_eskaliert_an_admin = 1 ORDER BY eingang_am").all();
+  return db.prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND freigabe1_eskaliert_an_admin = 1 AND quelle != 'spesen' ORDER BY eingang_am").all();
 }
 
 export function listAdminEskalierteFreigaben(db) {
@@ -610,6 +619,50 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
   return Number(result.lastInsertRowid);
 }
 
+export function createSpesenPosition(
+  db,
+  {
+    eingangAm,
+    eingereichtVon,
+    kontoId,
+    betrag,
+    auslageDatum,
+    beschreibung,
+    dateiname,
+    pdfPfad,
+    thumbnailPfad,
+    spesenabrechnungId,
+    zugewiesenAn,
+    freigabe1EskaliertVon,
+    freigabe1Eskalationsgrund,
+  }
+) {
+  const result = db
+    .prepare(
+      `INSERT INTO jobs (
+        eingang_am, quelle, dateiname, pdf_pfad, thumbnail_pfad, status, konto_id, betrag,
+        eingereicht_von, auslage_datum, beschreibung, spesenabrechnung_id, zugewiesen_an,
+        freigabe1_eskaliert_von, freigabe1_eskalationsgrund
+      ) VALUES (?, 'spesen', ?, ?, ?, 'zugewiesen', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      eingangAm,
+      dateiname,
+      pdfPfad,
+      thumbnailPfad,
+      kontoId,
+      betrag,
+      eingereichtVon,
+      auslageDatum,
+      beschreibung,
+      spesenabrechnungId,
+      zugewiesenAn,
+      freigabe1EskaliertVon ?? null,
+      freigabe1Eskalationsgrund ?? null
+    );
+  return Number(result.lastInsertRowid);
+}
+
 // Accumulates onto beleg_seitenzahl rather than overwriting it -- mergeBelegInPdf always
 // APPENDS a Beleg's pages after whatever is already on the PDF (never inserts), so if a job
 // already has N recorded Beleg pages (e.g. from its own Aufsplitten-time upload) and gets
@@ -716,4 +769,22 @@ export function confirmGruppenAbholung(db, parentJobId, nurMitZeitstempel = fals
 // passiert im Aufrufer, pruefeUndFinalisiereSplitGruppe).
 export function listSplitGruppenAusstehend(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_pdf_pfad IS NULL").all();
+}
+
+export function listSpesenFreigabe1JobsForPerson(db, personId) {
+  return db
+    .prepare(
+      "SELECT * FROM jobs WHERE status = 'zugewiesen' AND quelle = 'spesen' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 ORDER BY eingang_am"
+    )
+    .all(personId);
+}
+
+export function listSpesenForEinreicher(db, personId) {
+  return db.prepare("SELECT * FROM jobs WHERE quelle = 'spesen' AND eingereicht_von = ? ORDER BY eingang_am DESC").all(personId);
+}
+
+export function listAdminEskalierteSpesenFreigaben(db) {
+  return db
+    .prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND quelle = 'spesen' AND freigabe1_eskaliert_an_admin = 1 ORDER BY eingang_am")
+    .all();
 }

@@ -5,7 +5,8 @@ import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, setKontierung, ablehnenJob, getJobById } from '../../src/db/jobsRepo.js';
+import { createJob, setKontierung, ablehnenJob, getJobById, createSpesenPosition } from '../../src/db/jobsRepo.js';
+import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createAblehnungRouter } from '../../src/routes/ablehnung.js';
@@ -69,6 +70,28 @@ test('GET /abgelehnt/:id returns 403 for a person other than zugewiesen_an', asy
   const app = buildTestApp(db);
   const res = await request(app).get(`/abgelehnt/${id}`).set('x-test-person-id', '3');
   assert.equal(res.status, 403);
+  db.close();
+});
+
+test('GET /abgelehnt/:id returns 403 for a rejected Spesen position even when status/zugewiesen_an would otherwise match', async () => {
+  const db = openDatabase(':memory:');
+  for (const id of ['1', '2']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '1', stellvertreter2Id: '2' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '2', eingereichtAm: '2026-08-15T08:00:00.000Z', titel: null });
+  const id = createSpesenPosition(db, {
+    eingangAm: '2026-08-15T08:00:00.000Z', eingereichtVon: '2', kontoId, betrag: '10.00', auslageDatum: '2026-08-10',
+    beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  ablehnenJob(db, id, { abgelehntVon: '1', grund: 'Kein Beleg lesbar' });
+  assert.equal(getJobById(db, id).status, 'abgelehnt');
+  assert.equal(getJobById(db, id).zugewiesen_an, '1');
+
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/abgelehnt/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 403, 'a rejected Spesen position must not be reworked through /abgelehnt/:id/ueberarbeiten -> /kontierung');
   db.close();
 });
 

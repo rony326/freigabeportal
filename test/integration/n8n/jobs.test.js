@@ -6,13 +6,15 @@ import { writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openDatabase } from '../../../src/db/index.js';
-import { createJob, getJobById, setThumbnailPfad, updateKontierungMetadaten, setQrDaten, createSplitJob, markGruppeExportiert } from '../../../src/db/jobsRepo.js';
+import { createJob, getJobById, setThumbnailPfad, updateKontierungMetadaten, setQrDaten, createSplitJob, markGruppeExportiert, createSpesenPosition } from '../../../src/db/jobsRepo.js';
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
 import { setConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createKonto } from '../../../src/db/kontenRepo.js';
+import { createSpesenabrechnung } from '../../../src/db/spesenabrechnungenRepo.js';
+import { setupMockChurchTools } from '../../helpers/mockChurchTools.js';
 
 const PDF_BYTES = Buffer.from('%PDF-1.4\n%test-fixture-not-a-real-pdf-body\n');
 
@@ -301,6 +303,38 @@ function seedAbgeschlossenJobWithFile(db, jobsDir) {
   const pdfPfad = join(jobsDir, `seed-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
   writeFileSync(pdfPfad, PDF_BYTES);
   const id = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(id);
+  return { id, pdfPfad };
+}
+
+// Mirrors listAbholbereitJobs's eligibility gate for a Spesen position: status 'abgeschlossen'
+// with aufgesplittet_von left NULL (createSpesenPosition never sets it) — same as
+// seedAbgeschlossenJobWithFile above, just via createSpesenPosition instead of createJob so the
+// Spesen-only columns (eingereicht_von, auslage_datum, beschreibung) are populated.
+function seedAbgeschlossenSpesenJob(db, jobsDir) {
+  upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [], loggedInNow: false });
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '60', eingereichtAm: '2026-08-20T08:00:00.000Z', titel: null });
+  const pdfPfad = join(jobsDir, `spesen-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+  writeFileSync(pdfPfad, PDF_BYTES);
+  const id = createSpesenPosition(db, {
+    eingangAm: '2026-08-20T08:00:00.000Z',
+    eingereichtVon: '60',
+    kontoId,
+    betrag: '42.00',
+    auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi',
+    dateiname: 'taxi.pdf',
+    pdfPfad,
+    thumbnailPfad: null,
+    spesenabrechnungId,
+    zugewiesenAn: '1',
+    freigabe1EskaliertVon: null,
+    freigabe1Eskalationsgrund: null,
+  });
   db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(id);
   return { id, pdfPfad };
 }
@@ -887,6 +921,108 @@ test('a Splitgruppe is never re-offered after a successful Abholung: it drops ou
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
+});
+
+test('GET /api/n8n/jobs/abholbereit includes quelle, eingereicht_von, auslage_datum and beschreibung for a Spesen position', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const { id: jobId } = seedAbgeschlossenSpesenJob(db, jobsDir);
+
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  const entry = res.body.find((j) => j.id === jobId);
+  assert.ok(entry, 'the Spesen job must appear in the abholbereit list');
+  assert.equal(entry.quelle, 'spesen');
+  assert.equal(entry.eingereicht_von, '60');
+  assert.equal(entry.auslage_datum, '2026-08-20');
+  assert.equal(entry.beschreibung, 'Taxi');
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /api/n8n/jobs/abholbereit includes a live-looked-up, normalized IBAN and Kontoinhaber for a Spesen position', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const config = {
+    ...testConfig(jobsDir),
+    churchtools: {
+      baseUrl: 'https://ct.example.org',
+      syncServiceToken: 'sync-token',
+      customFieldIban: 'IBAN',
+      customFieldKontoinhaber: 'Kontoinhaber',
+    },
+  };
+  const app = buildTestApp(db, config, createStubMailer());
+
+  const { id: jobId } = seedAbgeschlossenSpesenJob(db, jobsDir);
+
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/api/persons/60', method: 'GET' }).reply(200, {
+    data: {
+      id: 60,
+      customFields: [
+        { name: 'IBAN', value: 'CH93 0076 2011 6238 5295 7' },
+        { name: 'Kontoinhaber', value: 'Max Muster' },
+      ],
+    },
+  });
+
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  const entry = res.body.find((j) => j.id === jobId);
+  assert.ok(entry);
+  assert.equal(entry.iban, 'CH9300762011623852957');
+  assert.equal(entry.kontoinhaber, 'Max Muster');
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /api/n8n/jobs/abholbereit returns iban: null for a Spesen position when the ChurchTools lookup fails, without failing the whole request', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const config = {
+    ...testConfig(jobsDir),
+    churchtools: {
+      baseUrl: 'https://ct.example.org',
+      syncServiceToken: 'sync-token',
+      customFieldIban: 'IBAN',
+      customFieldKontoinhaber: 'Kontoinhaber',
+    },
+  };
+  const app = buildTestApp(db, config, createStubMailer());
+
+  const { id: jobId } = seedAbgeschlossenSpesenJob(db, jobsDir);
+
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/api/persons/60', method: 'GET' }).reply(500, {});
+
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  assert.equal(res.status, 200);
+  const entry = res.body.find((j) => j.id === jobId);
+  assert.ok(entry);
+  assert.equal(entry.iban, null);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /api/n8n/jobs/abholbereit omits quelle/eingereicht_von-style Spesen fields as null for a Lieferant job', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  seedAbgeschlossenJobWithFile(db, jobsDir);
+
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  const entry = res.body.find((j) => j.quelle === 'lieferant');
+  assert.ok(entry);
+  assert.equal(entry.eingereicht_von, null);
+  assert.equal(entry.iban, null);
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
 });
 
 test('GET /api/n8n/jobs/abholbereit carries the parent job\'s QR-Bill data on a group entry, with the same field names as an individual entry', async () => {

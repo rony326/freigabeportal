@@ -11,6 +11,8 @@ const FULL_ENV = {
   CT_GROUP_ID_BUCHHALTUNG: '10',
   CT_GROUP_ID_ADMIN: '20',
   CT_SYNC_SERVICE_TOKEN: 'test-ct-sync-service-token-please-ignore-1234567890',
+  CT_CUSTOM_FIELD_IBAN: 'IBAN',
+  CT_CUSTOM_FIELD_KONTOINHABER: 'Kontoinhaber',
   CRON_SECRET: 'test-cron-secret-please-ignore-1234567890',
   N8N_API_KEY: 'test-n8n-api-key-please-ignore-1234567890',
   DOWNLOAD_SIGNING_SECRET: 'test-download-signing-secret-please-ignore-1234567890',
@@ -91,4 +93,15 @@ test('loadConfig defaults backupDir to ./data/backups and honors BACKUP_DIR', ()
 
   const customConfig = loadConfig({ ...FULL_ENV, BACKUP_DIR: '/srv/backups' });
   assert.equal(customConfig.backupDir, '/srv/backups');
+});
+
+test('loadConfig exposes the ChurchTools custom-field names for IBAN/Kontoinhaber', () => {
+  const config = loadConfig(FULL_ENV);
+  assert.equal(config.churchtools.customFieldIban, 'IBAN');
+  assert.equal(config.churchtools.customFieldKontoinhaber, 'Kontoinhaber');
+});
+
+test('loadConfig throws when CT_CUSTOM_FIELD_IBAN is missing', () => {
+  const { CT_CUSTOM_FIELD_IBAN, ...incomplete } = FULL_ENV;
+  assert.throws(() => loadConfig(incomplete), /Fehlende Umgebungsvariable: CT_CUSTOM_FIELD_IBAN/);
 });

@@ -83,13 +83,25 @@ sequenceDiagram
 
   | Feld | Beschreibung |
   |---|---|
-  | `id`, `eingang_am`, `quelle`, `absender`, `dateiname` | wie beim Rechnungseingang übergeben |
+  | `id`, `eingang_am`, `quelle`, `absender`, `dateiname` | wie beim Rechnungseingang übergeben — `quelle` ist bei einer Spesen-Position `"spesen"` statt `"scanner"`/`"lieferant"` (siehe unten) |
   | `lieferant`, `rechnungsnummer`, `betrag`, `zahlungsziel` | bei der Kontierung erfasste Rechnungsdaten |
   | `konto_id` | ID des zugeordneten Kontos, `null` falls noch keines gesetzt |
   | `konto_kontonummer`, `konto_bezeichnung` | Kontonummer und Bezeichnung des Kontos, `null` falls `konto_id` leer ist |
+  | `eingereicht_von` | ChurchTools-Personen-ID der einreichenden Person, nur bei `quelle: "spesen"` gesetzt, sonst `null` |
+  | `auslage_datum` | Datum der Auslage (von der einreichenden Person erfasst), nur bei `quelle: "spesen"` gesetzt, sonst `null` |
+  | `beschreibung` | Verwendungszweck der Spesen-Position, nur bei `quelle: "spesen"` gesetzt, sonst `null` |
+  | `iban`, `kontoinhaber` | aus den ChurchTools-Custom-Fields der einreichenden Person nachgeschlagen (live, bei jedem Abruf), nur bei `quelle: "spesen"` — `null`, wenn kein Custom-Field hinterlegt ist oder der ChurchTools-Abruf fehlschlägt |
   | `qr_iban`, `qr_referenz`, `qr_betrag`, `qr_waehrung`, `qr_creditor_name` | aus einer erkannten Swiss-QR-Bill übernommen, sonst `null` |
   | `qr_erkannt_am` | Zeitpunkt der QR-Erkennung, `null` falls keine QR-Bill erkannt wurde |
   | `download_url` | signierte, 15 Minuten gültige Download-URL |
+
+  Für eine Spesen-Position (`quelle: "spesen"`) ist `betrag` die einzelne
+  Auslage und `konto_id`/`konto_kontonummer`/`konto_bezeichnung` das von der
+  einreichenden Person gewählte Konto — es gibt kein separates
+  Kontierungs-/Freigabe-1-Ergebnis wie bei einer Rechnung, da die
+  Spesen-Position bereits bei der Einreichung ihr Konto erhält. Siehe
+  [Spesen-Einreichung-Spec](superpowers/specs/2026-08-17-spesen-einreichung-design.md)
+  für den vollständigen Workflow.
 
 - Der `download_url` ist eine HMAC-signierte, 15 Minuten gültige URL auf
   `GET /downloads/:jobId` — **keine** Session nötig, siehe

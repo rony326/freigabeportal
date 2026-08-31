@@ -41,6 +41,8 @@ export function loadConfig(env = process.env) {
       groupIdAdmin: required(env, 'CT_GROUP_ID_ADMIN'),
       groupIdManager: env.CT_GROUP_ID_MANAGER || null,
       syncServiceToken: requiredSecret(env, 'CT_SYNC_SERVICE_TOKEN'),
+      customFieldIban: required(env, 'CT_CUSTOM_FIELD_IBAN'),
+      customFieldKontoinhaber: required(env, 'CT_CUSTOM_FIELD_KONTOINHABER'),
     },
     cronSecret: requiredSecret(env, 'CRON_SECRET'),
     n8nApiKey: requiredSecret(env, 'N8N_API_KEY'),

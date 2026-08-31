@@ -48,6 +48,18 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       });
       return null;
     }
+    // Belt-and-suspenders: spesenFreigabe1.js's "Freigeben" branch already reroutes a Spesen
+    // position to Stellvertreter2 the instant Freigabe 1 completes, whenever the submitter is
+    // this Konto's own Freigeber2 — so getEffectiveFreigeber2Id should never resolve back to the
+    // submitter in the first place. This is a direct, independent check in case that reroute is
+    // ever bypassed (a bug, a future code path creating a Spesen job without going through
+    // spesenFreigabe1.js) — the core guarantee (never approve your own claim) must hold either way.
+    if (job.quelle === 'spesen' && job.eingereicht_von === req.currentPerson.churchtools_person_id) {
+      res.status(403).render('error', {
+        message: 'Du hast diese Spesen-Position selbst eingereicht und kannst sie nicht selbst freigeben.',
+      });
+      return null;
+    }
     return { job, konto };
   }
 
@@ -58,11 +70,13 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       return res.status(500).render('error', { message: 'Freigabe 1 fehlt für diesen Job — bitte an den Portal-Admin wenden.' });
     }
     const freigeber1Person = getPersonById(db, freigabe1.person_id);
+    const spesenEinreicher = job.quelle === 'spesen' ? getPersonById(db, job.eingereicht_von) : null;
     res.status(status).render('freigabe2', {
       job,
       konto,
       freigabe1,
       freigeber1Person,
+      spesenEinreicher,
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values,
       errors,

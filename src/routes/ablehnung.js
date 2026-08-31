@@ -17,6 +17,13 @@ export function createAblehnungRouter({ db, config, csrfProtection = (req, res, 
       res.status(403).render('error', { message: 'Dieser Job ist für dich aktuell nicht zur Überarbeitung verfügbar.' });
       return null;
     }
+    // A rejected Spesen position satisfies the status/zugewiesen_an checks below exactly like an
+    // ordinary invoice, which would let /:id/ueberarbeiten silently clear ablehnungsgrund and
+    // redirect to /kontierung/:id — wrong for Spesen (see kontierung.js's identical guard).
+    if (job.quelle === 'spesen') {
+      res.status(403).render('error', { message: 'Diese Spesen-Position kann nicht über die Kontierung bearbeitet werden.' });
+      return null;
+    }
     const authorized = job.freigabe1_eskaliert_an_admin
       ? isSuperadmin(req.currentPerson)
       : job.zugewiesen_an === req.currentPerson.churchtools_person_id;

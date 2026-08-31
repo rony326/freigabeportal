@@ -6,7 +6,8 @@ import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByDebitorUndRechnungsnummer } from '../../src/db/jobsRepo.js';
+import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByDebitorUndRechnungsnummer, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -839,6 +840,28 @@ test('listAbgeschlossenJobsForPerson excludes a job that has been admin-escalate
 
   assert.equal(listAbgeschlossenJobsForPerson(db, '3').length, 0);
   assert.equal(listAbgeschlossenJobsForPerson(db, '4').length, 0);
+  db.close();
+});
+
+test('listFreigabe2JobsForPerson excludes a Spesen position whose own submitter is the resolved freigeber2/stellvertreter2', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '3', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '3', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+
+  // Not yet escalated: konten.freigeber2_id ('3') matches jobs.eingereicht_von ('3') — the
+  // submitter must not see their own claim, even though the plain freigeber2_id join would
+  // otherwise match them.
+  assert.equal(listFreigabe2JobsForPerson(db, '3').length, 0, 'the submitter must never see their own Spesen claim, escalated or not');
+
+  eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Selbsteinreichung durch Freigeber2' });
+  assert.equal(listFreigabe2JobsForPerson(db, '3').length, 0, 'still excluded once escalated');
+  assert.equal(listFreigabe2JobsForPerson(db, '4').length, 1, 'the Stellvertreter2 it was rerouted to sees it normally');
   db.close();
 });
 
@@ -1869,5 +1892,216 @@ test('listSplitGruppenAusstehend returns aufgesplittet parents without a merged 
 
   markGruppeExportiert(db, parentId, { pdfPfad: '/tmp/gruppe.pdf', zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
   assert.deepEqual(listSplitGruppenAusstehend(db), []);
+  db.close();
+});
+
+test('createSpesenPosition inserts a quelle=spesen job in status zugewiesen with Spesen-specific fields', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '4', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '5', vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Test', freigeber1Id: '1', stellvertreter1Id: '3', freigeber2Id: '4', stellvertreter2Id: '5' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '2', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: 'August' });
+
+  const id = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z',
+    eingereichtVon: '2',
+    kontoId,
+    betrag: '61.75',
+    auslageDatum: '2026-08-20',
+    beschreibung: 'Bahnticket',
+    dateiname: 'ticket.pdf',
+    pdfPfad: '/tmp/ticket.pdf',
+    thumbnailPfad: null,
+    spesenabrechnungId,
+    zugewiesenAn: '1',
+    freigabe1EskaliertVon: null,
+    freigabe1Eskalationsgrund: null,
+  });
+
+  const job = getJobById(db, id);
+  assert.equal(job.quelle, 'spesen');
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.eingereicht_von, '2');
+  assert.equal(job.auslage_datum, '2026-08-20');
+  assert.equal(job.beschreibung, 'Bahnticket');
+  assert.equal(job.spesenabrechnung_id, spesenabrechnungId);
+  assert.equal(job.zugewiesen_an, '1');
+  assert.equal(job.konto_id, kontoId);
+  db.close();
+});
+
+test('createSpesenPosition records the self-submission escalation reason when given', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '4', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '5', vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Test', freigeber1Id: '1', stellvertreter1Id: '3', freigeber2Id: '4', stellvertreter2Id: '5' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '1', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: 'August' });
+
+  const id = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z',
+    eingereichtVon: '1',
+    kontoId,
+    betrag: '10.00',
+    auslageDatum: '2026-08-20',
+    beschreibung: 'Parkgebühr',
+    dateiname: 'beleg.pdf',
+    pdfPfad: '/tmp/beleg.pdf',
+    thumbnailPfad: null,
+    spesenabrechnungId,
+    zugewiesenAn: '3',
+    freigabe1EskaliertVon: '1',
+    freigabe1Eskalationsgrund: 'Selbsteinreichung durch Freigeber1',
+  });
+
+  const job = getJobById(db, id);
+  assert.equal(job.zugewiesen_an, '3');
+  assert.equal(job.freigabe1_eskaliert_von, '1');
+  assert.equal(job.freigabe1_eskalationsgrund, 'Selbsteinreichung durch Freigeber1');
+  db.close();
+});
+
+test('listPoolJobs excludes quelle=spesen jobs', () => {
+  const db = openDatabase(':memory:');
+  createJob(db, { eingangAm: '2026-08-31T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare(
+    "INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad, status) VALUES ('2026-08-31T08:00:00.000Z', 'spesen', 'b.pdf', '/tmp/b.pdf', 'unzugewiesen')"
+  ).run();
+  assert.equal(listPoolJobs(db).length, 1);
+  db.close();
+});
+
+test('listZugewiesenJobsForPerson excludes quelle=spesen jobs', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f@example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '4', vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Test', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '1', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: 'August' });
+  createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '1', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'x', dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  assert.equal(listZugewiesenJobsForPerson(db, '1').length, 0);
+  db.close();
+});
+
+test('listAbgelehntJobsForPerson excludes quelle=spesen jobs', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f@example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '4', vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Test', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '1', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: 'August' });
+  const id = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '1', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'x', dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  ablehnenJob(db, id, { abgelehntVon: '1', grund: 'nein' });
+  assert.equal(listAbgelehntJobsForPerson(db, '1').length, 0);
+  db.close();
+});
+
+test('listAdminEskalierteKontierungen excludes quelle=spesen jobs', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f@example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '4', vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Test', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '1', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: 'August' });
+  const id = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '1', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'x', dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  eskalierenFreigabe1AnAdmin(db, id, { eskaliertVon: '1', grund: 'Befangen' });
+  assert.equal(listAdminEskalierteKontierungen(db).length, 0);
+  db.close();
+});
+
+test('listSpesenFreigabe1JobsForPerson returns only quelle=spesen jobs assigned to that person, not admin-escalated ones', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f@example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '4', vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '5', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Test', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '5', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: 'August' });
+  const offeneId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '5', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'x', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  const eskaliertId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '5', kontoId, betrag: '20.00', auslageDatum: '2026-08-20',
+    beschreibung: 'y', dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  eskalierenFreigabe1AnAdmin(db, eskaliertId, { eskaliertVon: '1', grund: 'Befangen' });
+
+  const result = listSpesenFreigabe1JobsForPerson(db, '1');
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, offeneId);
+  db.close();
+});
+
+test('listSpesenForEinreicher returns every quelle=spesen job for that submitter regardless of status', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f@example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '4', vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '9', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Test', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '9', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: 'August' });
+  const zugewiesenId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '9', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'x', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  const abgelehntId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '9', kontoId, betrag: '20.00', auslageDatum: '2026-08-20',
+    beschreibung: 'y', dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  ablehnenJob(db, abgelehntId, { abgelehntVon: '1', grund: 'nein' });
+
+  const result = listSpesenForEinreicher(db, '9');
+  assert.equal(result.length, 2);
+  assert.ok(result.some((j) => j.id === zugewiesenId));
+  assert.ok(result.some((j) => j.id === abgelehntId && j.ablehnungsgrund === 'nein'));
+  db.close();
+});
+
+test('listAdminEskalierteSpesenFreigaben returns only admin-escalated quelle=spesen jobs', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f@example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '4', vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '5', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Test', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  createJob(db, { eingangAm: '2026-08-31T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/r.pdf' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '5', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: 'August' });
+  const spesenId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '5', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'x', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  eskalierenFreigabe1AnAdmin(db, spesenId, { eskaliertVon: '1', grund: 'Befangen' });
+
+  const result = listAdminEskalierteSpesenFreigaben(db);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, spesenId);
   db.close();
 });

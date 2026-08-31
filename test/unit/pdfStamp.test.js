@@ -113,6 +113,43 @@ test('omitting stampData.konto skips the Konto line without error', async () => 
   assert.match(stampText, /Freigabe 1/);
 });
 
+test('stampData.zahlungsdaten prints Kontoinhaber and IBAN between the Konto line and Freigabe 1 (Spesen only)', async () => {
+  const pdf = await buildPdfFixture(['Beleg Seite 1']);
+  const stampData = sampleStampData();
+  stampData.zahlungsdaten = { iban: 'CH93 0076 2011 6238 5295 7', kontoinhaber: 'Max Muster' };
+  const stamped = await stampAndFinalize(pdf, stampData);
+  const reloaded = await PDFDocument.load(stamped);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
+  assert.match(stampText, /Zahlungsdaten/);
+  assert.match(stampText, /Kontoinhaber: Max Muster/);
+  assert.match(stampText, /IBAN: CH93 0076 2011 6238 5295 7/);
+  const kontoIndex = stampText.indexOf('Konto: 3000');
+  const zahlungsdatenIndex = stampText.indexOf('Zahlungsdaten');
+  const freigabe1Index = stampText.indexOf('Freigabe 1');
+  assert.ok(
+    kontoIndex >= 0 && zahlungsdatenIndex >= 0 && freigabe1Index >= 0 && kontoIndex < zahlungsdatenIndex && zahlungsdatenIndex < freigabe1Index
+  );
+});
+
+test('omitting stampData.zahlungsdaten skips the Zahlungsdaten block without error', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const stamped = await stampAndFinalize(pdf, sampleStampData());
+  const reloaded = await PDFDocument.load(stamped);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
+  assert.doesNotMatch(stampText, /Zahlungsdaten/);
+  assert.doesNotMatch(stampText, /IBAN:/);
+});
+
+test('stampData.zahlungsdaten with both iban and kontoinhaber null skips the Zahlungsdaten block without error', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const stampData = sampleStampData();
+  stampData.zahlungsdaten = { iban: null, kontoinhaber: null };
+  const stamped = await stampAndFinalize(pdf, stampData);
+  const reloaded = await PDFDocument.load(stamped);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
+  assert.doesNotMatch(stampText, /Zahlungsdaten/);
+});
+
 test('the appended stamp page reuses the original document\'s page size', async () => {
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const original = await PDFDocument.load(pdf);

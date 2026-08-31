@@ -8,6 +8,8 @@ import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampAndFinalize } from '../services/pdfStamp.js';
 import { setZeitstempel } from '../services/zeitstempel.js';
+import { fetchPersonById, extractCustomFieldValue } from '../services/churchtools.js';
+import { normalizeIban } from '../services/ibanUtils.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
 import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
@@ -222,6 +224,25 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
       const freigeber1Person = getPersonById(db, freigabe1.person_id);
       const zeitpunkt = new Date().toISOString();
+
+      // Non-blocking, best-effort, same tolerance as the Zeitstempel/TSA step below: a
+      // ChurchTools outage or a person with no IBAN/Kontoinhaber custom field must not prevent
+      // Freigabe 2 from completing — the stamped Zahlungsdaten block is simply omitted, same as
+      // n8n's GET /abholbereit (see n8n/jobs.js) already tolerates a failed lookup there.
+      let zahlungsdaten = null;
+      if (job.quelle === 'spesen' && job.eingereicht_von) {
+        try {
+          const einreicher = await fetchPersonById(config.churchtools, config.churchtools.syncServiceToken, job.eingereicht_von);
+          const ibanRoh = extractCustomFieldValue(einreicher, config.churchtools.customFieldIban);
+          zahlungsdaten = {
+            iban: ibanRoh ? normalizeIban(ibanRoh) : null,
+            kontoinhaber: extractCustomFieldValue(einreicher, config.churchtools.customFieldKontoinhaber),
+          };
+        } catch (err) {
+          console.error(`Zahlungsdaten-Abruf für Job ${job.id} fehlgeschlagen, Stempel-Seite ohne IBAN/Kontoinhaber:`, err.message);
+        }
+      }
+
       const freigeber2Eintrag = {
         name: `${req.currentPerson.vorname} ${req.currentPerson.nachname}`,
         identitaet: req.currentPerson.churchtools_person_id,
@@ -233,6 +254,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const stampData = {
         jobId: job.id,
         konto: { nummer: konto.kontonummer, bezeichnung: konto.bezeichnung },
+        zahlungsdaten,
         freigeber1: {
           name: `${freigeber1Person.vorname} ${freigeber1Person.nachname}`,
           identitaet: freigeber1Person.churchtools_person_id,

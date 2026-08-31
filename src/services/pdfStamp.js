@@ -134,6 +134,23 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
       }
       y -= 12;
     }
+    // Only ever populated for a Spesen position (see freigabe2.js) — the account the
+    // reimbursement is actually paid to, so it's visible on the document itself and not only in
+    // the n8n/Paperless API response, which was the whole point of asking for it here.
+    if (stampData.zahlungsdaten && (stampData.zahlungsdaten.iban || stampData.zahlungsdaten.kontoinhaber)) {
+      stampPage.drawText('Zahlungsdaten', { x: 60, y, size: 11, font: boldFont, color: rgb(0, 0, 0) });
+      y -= BLOCK_HEADING_GAP;
+      const zahlungsdatenLines = [];
+      if (stampData.zahlungsdaten.kontoinhaber) zahlungsdatenLines.push(`Kontoinhaber: ${stampData.zahlungsdaten.kontoinhaber}`);
+      if (stampData.zahlungsdaten.iban) zahlungsdatenLines.push(`IBAN: ${stampData.zahlungsdaten.iban}`);
+      for (const line of zahlungsdatenLines) {
+        for (const wrapped of wrapLine(font, line, 10, maxWidth)) {
+          stampPage.drawText(wrapped, { x: 60, y, size: 10, font, color: rgb(0, 0, 0) });
+          y -= 14;
+        }
+      }
+      y -= BLOCK_GAP;
+    }
     y = drawFreigabeBlock(stampPage, font, 'Freigabe 1', stampData.freigeber1, y, maxWidth);
     y -= BLOCK_GAP;
     y = drawFreigabeBlock(stampPage, font, 'Freigabe 2', stampData.freigeber2, y, maxWidth);

@@ -72,7 +72,7 @@ async function loginAs(app, client, { id, vorname, nachname, email, gruppen }) {
   return agent;
 }
 
-function buildTestApp(db, { withErrorHandler = false, mailer } = {}) {
+function buildTestApp(db, { withErrorHandler = false, mailer, churchtoolsConfig } = {}) {
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../views', import.meta.url).pathname);
@@ -85,7 +85,14 @@ function buildTestApp(db, { withErrorHandler = false, mailer } = {}) {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret', publicBaseUrl: 'https://portal.example.org' };
+  // churchtoolsConfig lets a test opt into the fields the Spesen Zahlungsdaten lookup needs
+  // (baseUrl, syncServiceToken, customFieldIban, customFieldKontoinhaber) without dragging every
+  // other test in this file through the full createApp()+OAuth-login dance just to set them.
+  const config = {
+    churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', ...churchtoolsConfig },
+    downloadSigningSecret: 'test-secret',
+    publicBaseUrl: 'https://portal.example.org',
+  };
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, config));
   app.use('/freigabe2', requireLogin(), createFreigabe2Router({ db, config, mailer }));
@@ -1253,5 +1260,101 @@ test('GET /freigabe2/:id shows Verwendungszweck/Auslage-Datum/Eingereicht-von in
   assert.match(res.text, /Ein Reicher/);
   assert.doesNotMatch(res.text, /Rechnungsnummer/);
   assert.doesNotMatch(res.text, /Zahlungsziel/);
+  db.close();
+});
+
+test('POST /freigabe2/:id prints the submitter\'s live-looked-up IBAN and Kontoinhaber on the stamped PDF for a Spesen position', async () => {
+  const { mkdtempSync, rmSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-spesen-zahlungsdaten-test-'));
+  const pdfPfad = join(dir, 'beleg.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Taxiquittung']));
+
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '4', vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '5', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '5', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '5', kontoId, betrag: '61.75', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'beleg.pdf', pdfPfad, thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  createFreigabe(db, { jobId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-31T08:10:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+
+  const churchtoolsConfig = { baseUrl: 'https://ct.example.org', syncServiceToken: 'sync-token', customFieldIban: 'IBAN', customFieldKontoinhaber: 'Kontoinhaber' };
+  const client = setupMockChurchTools(churchtoolsConfig.baseUrl);
+  client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(200, {
+    data: { id: 5, customFields: [{ name: 'IBAN', value: 'CH93 0076 2011 6238 5295 7' }, { name: 'Kontoinhaber', value: 'Ein Reicher' }] },
+  });
+  const app = buildTestApp(db, { churchtoolsConfig });
+
+  const res = await request(app)
+    .post(`/freigabe2/${jobId}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
+
+  const stampedBytes = readFileSync(pdfPfad);
+  const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
+  const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
+  assert.match(stampPageText, /Zahlungsdaten/);
+  assert.match(stampPageText, /Kontoinhaber: Ein Reicher/);
+  assert.match(stampPageText, /IBAN: CH9300762011623852957/, 'normalizeIban strips spaces before it reaches the stamp page, matching the n8n /abholbereit response');
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /freigabe2/:id completes normally, with no Zahlungsdaten block, when the ChurchTools IBAN lookup fails for a Spesen position', async () => {
+  const { mkdtempSync, rmSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-spesen-zahlungsdaten-fail-test-'));
+  const pdfPfad = join(dir, 'beleg.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Taxiquittung']));
+
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '4', vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '5', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '5', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '5', kontoId, betrag: '61.75', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'beleg.pdf', pdfPfad, thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  createFreigabe(db, { jobId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-31T08:10:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+
+  const churchtoolsConfig = { baseUrl: 'https://ct.example.org', syncServiceToken: 'sync-token', customFieldIban: 'IBAN', customFieldKontoinhaber: 'Kontoinhaber' };
+  const client = setupMockChurchTools(churchtoolsConfig.baseUrl);
+  client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(500, {});
+  const app = buildTestApp(db, { churchtoolsConfig });
+
+  const res = await request(app)
+    .post(`/freigabe2/${jobId}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res.status, 302, 'a failed IBAN lookup must not block Freigabe 2 from completing');
+  assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
+
+  const stampedBytes = readFileSync(pdfPfad);
+  const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
+  const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
+  assert.doesNotMatch(stampPageText, /Zahlungsdaten/);
+
+  rmSync(dir, { recursive: true, force: true });
   db.close();
 });

@@ -17,6 +17,9 @@
     <% } %>
 
     <% if (!ergebnis) { %>
+      <% if (typeof hinweis !== 'undefined' && hinweis) { %>
+        <div class="alert alert-info col-12 col-lg-6"><%= hinweis %></div>
+      <% } %>
       <p>Lade ein PDF hoch, um zu prüfen, ob es einen gültigen RFC3161-Zeitstempel enthält.</p>
       <form method="post" action="/zeitstempel-pruefen" enctype="multipart/form-data" class="col-12 col-lg-6">
         <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
@@ -26,7 +29,7 @@
         </div>
         <div class="mb-3">
           <label class="form-label" for="jobId">Job-ID (optional, für Hash-Abgleich)</label>
-          <input type="number" class="form-control" id="jobId" name="jobId" min="1">
+          <input type="number" class="form-control" id="jobId" name="jobId" min="1" value="<%= jobId || '' %>">
           <div class="form-text">Steht auf der archivierten PDF-Seite mit den Freigabe-Angaben. Wenn angegeben, wird der Hash der hochgeladenen Datei mit dem in der Datenbank hinterlegten Hash dieses Jobs verglichen.</div>
         </div>
         <button type="submit" class="btn btn-primary">Prüfen</button>

@@ -371,7 +371,7 @@ test('GET /zeitstempel-pruefen?jobId= returns 403 for a person not authorized to
   db.close();
 });
 
-test('GET /zeitstempel-pruefen?jobId= returns 404 when the job\'s PDF file no longer exists', async () => {
+test('GET /zeitstempel-pruefen?jobId= falls back to the upload form, with jobId pre-filled and a hint, when the job\'s PDF file no longer exists', async () => {
   const db = openDatabase(':memory:');
   seedPerson(db, '1');
   seedPerson(db, '3');
@@ -382,7 +382,10 @@ test('GET /zeitstempel-pruefen?jobId= returns 404 when the job\'s PDF file no lo
 
   const app = buildTestApp(db);
   const res = await request(app).get(`/zeitstempel-pruefen?jobId=${id}`).set('x-test-person-id', '1');
-  assert.equal(res.status, 404);
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<input type="file"[^>]*name="pdf"/, 'must fall back to the plain upload form, not a dead-end error page');
+  assert.match(res.text, new RegExp(`id="jobId"[^>]*value="${id}"`), 'jobId is pre-filled so the person does not have to look it up');
+  assert.match(res.text, /nicht mehr vor \(bereits abgeholt/);
   db.close();
 });
 

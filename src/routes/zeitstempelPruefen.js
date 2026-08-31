@@ -21,7 +21,18 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
         return res.status(403).render('error', { message: 'Kein Zugriff auf diesen Job.' });
       }
       if (!job.pdf_pfad || !existsSync(job.pdf_pfad)) {
-        return res.status(404).render('error', { message: 'PDF-Datei für diesen Job ist nicht mehr vorhanden.' });
+        // n8n deletes the local PDF once a job is abgeholt — but zeitstempel_datei_hash survives
+        // in the DB regardless, so verification is still possible via the plain upload form
+        // (hash-compared against that stored value). A bare 404 here was a dead end for anyone
+        // whose job had already been picked up; pre-filling jobId spares them hunting it down.
+        return res.render('zeitstempel-pruefen', {
+          ergebnis: null,
+          errors: [],
+          jobId,
+          job: null,
+          hinweis:
+            'Die Originaldatei liegt im Portal nicht mehr vor (bereits abgeholt/archiviert). Lade die archivierte Kopie hoch, um sie zu prüfen — die Job-ID ist bereits eingetragen.',
+        });
       }
       const ergebnis = await verifyZeitstempel(readFileSync(job.pdf_pfad), job.zeitstempel_datei_hash);
       res.render('zeitstempel-pruefen', { ergebnis, errors: [], jobId, job });

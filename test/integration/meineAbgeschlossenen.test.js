@@ -72,7 +72,7 @@ test('GET /meine-abgeschlossenen lists an abgeschlossen job with a "Jetzt prüfe
   db.close();
 });
 
-test('GET /meine-abgeschlossenen shows a set zeitstempel_gesetzt_am, and no "Jetzt prüfen" link for an abgeholt job (file no longer available)', async () => {
+test('GET /meine-abgeschlossenen shows a set zeitstempel_gesetzt_am, and still a "Jetzt prüfen" link for an abgeholt job (falls back to upload-and-hash-compare)', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db, '50');
   for (const id of ['1', '2', '3']) {
@@ -89,7 +89,7 @@ test('GET /meine-abgeschlossenen shows a set zeitstempel_gesetzt_am, and no "Jet
   const rowMatch = res.text.match(new RegExp(`<tr id="abgeschlossen-row-${id}">[\\s\\S]*?</tr>`));
   assert.ok(rowMatch, 'expected a row for the abgeholt job');
   assert.match(rowMatch[0], /gesetzt am 2026-08-20T10:00:00\.000Z/);
-  assert.doesNotMatch(rowMatch[0], /Jetzt prüfen/, 'no verify link once the file is gone (abgeholt)');
+  assert.match(rowMatch[0], new RegExp(`href="/zeitstempel-pruefen\\?jobId=${id}"`), 'verify link stays available even once abgeholt');
   db.close();
 });
 

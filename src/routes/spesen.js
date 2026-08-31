@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { listKonten, getKontoById } from '../db/kontenRepo.js';
+import { listKonten } from '../db/kontenRepo.js';
 import { createSpesenabrechnung } from '../db/spesenabrechnungenRepo.js';
 import { createSpesenPosition, getJobById } from '../db/jobsRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
@@ -35,7 +35,6 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
     // uses for its own multipart POST routes.
     uploadBelege.any()(req, res, (uploadErr) => {
       csrfProtection(req, res, async (csrfErr) => {
-        if (uploadErr) return next(uploadErr);
         if (csrfErr) return next(csrfErr);
         try {
           const alleKonten = listKonten(db);
@@ -62,6 +61,17 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
             beschreibung: (beschreibungen[i] || '').trim(),
             beleg: belegByIndex.get(i) || null,
           }));
+
+          // A multer error (oversized Beleg, too many files) must not discard the whole
+          // submission with a generic 500 — fold it into the same 400 re-render as every other
+          // validation failure below, mirroring kontierung.js's identical uploadErr handling.
+          if (uploadErr) {
+            return res.status(400).render('spesen-neu', {
+              alleKonten,
+              values: { titel: req.body.titel || '', positionen },
+              errors: [uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Ein Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.'],
+            });
+          }
 
           const errors = [];
           const heute = new Date().toISOString().slice(0, 10);
@@ -174,7 +184,6 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
 
           for (const jobId of erstellteJobIds) {
             const job = getJobById(db, jobId);
-            const konto = getKontoById(db, job.konto_id);
             const zustaendig = getPersonById(db, job.zugewiesen_an);
             if (!zustaendig) continue;
             const istEskaliert = eskaliert.some((e) => e.jobId === jobId);

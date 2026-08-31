@@ -11,7 +11,6 @@ import { PNG_1X1 } from '../helpers/imageFixture.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createSpesenRouter } from '../../src/routes/spesen.js';
-import { fetchCsrfToken } from '../helpers/csrf.js';
 
 function createStubMailer() {
   const sent = [];
@@ -241,5 +240,47 @@ test('POST /spesen accepts a PNG Beleg and wraps it into a standalone PDF', asyn
   assert.equal(res.status, 302);
   const job = db.prepare("SELECT * FROM jobs WHERE quelle = 'spesen'").get();
   assert.ok(job.pdf_pfad.endsWith('.pdf'));
+  db.close();
+});
+
+test('POST /spesen with every position row removed re-renders the form with a working "+ Position hinzufügen" button and the Konto-Optionen template, not a bare live row', async () => {
+  const db = openDatabase(':memory:');
+  seedGrundlagen(db);
+  const app = buildTestApp(db, createStubMailer());
+
+  // Simulates the "all rows removed via Entfernen, then submit" case: no posKontoId (or any
+  // other position field) is present at all, so positionen resolves to [] server-side.
+  const res = await request(app).post('/spesen').set('x-test-person-id', '5').field('_csrf', 'valid-token');
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Mindestens eine Position ist erforderlich\./);
+  // The view must not rely on a live '.position-zeile select' to source Konto options — with
+  // zero rows, only the unconditionally-rendered <template> can supply them.
+  assert.match(res.text, /<template id="konto-optionen-template">/);
+  assert.match(res.text, /id="zeile-hinzufuegen"/);
+  assert.doesNotMatch(res.text, /class="[^"]*position-zeile[^"]*"/, 'no position rows should be rendered for an empty positionen array');
+  db.close();
+});
+
+test('POST /spesen with a Beleg exceeding MAX_BELEG_SIZE 400s with a form re-render, not a 500', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedGrundlagen(db);
+  const app = buildTestApp(db, createStubMailer());
+  // MAX_BELEG_SIZE is 20 MiB — one byte over trips multer's LIMIT_FILE_SIZE error.
+  const oversizedBeleg = Buffer.alloc(20 * 1024 * 1024 + 1, 1);
+
+  const res = await request(app)
+    .post('/spesen')
+    .set('x-test-person-id', '5')
+    .field('_csrf', 'valid-token')
+    .field('posKontoId', String(kontoId))
+    .field('posBetrag', '10.00')
+    .field('posAuslageDatum', '2026-08-20')
+    .field('posBeschreibung', 'x')
+    .attach('posBeleg_0', oversizedBeleg, { filename: 'zugross.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /höchstens 20 MB/);
+  assert.equal(db.prepare("SELECT COUNT(*) AS c FROM jobs WHERE quelle = 'spesen'").get().c, 0, 'no job may be created out of a rejected upload');
   db.close();
 });

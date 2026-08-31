@@ -223,5 +223,24 @@ test('POST /auth/logout destroys the session', async () => {
   const csrfToken = await fetchCsrfToken(agent, '/pool');
   const res = await agent.post('/auth/logout').type('form').send({ _csrf: csrfToken });
   assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/auth/abgemeldet');
+
+  const poolRes = await agent.get('/pool');
+  assert.equal(poolRes.status, 401, 'the session must actually be gone, not just redirected away from');
+  db.close();
+});
+
+test('GET /auth/abgemeldet renders a confirmation page instead of bouncing straight back into ChurchTools SSO login', async () => {
+  // Regression guard for the "Abmelden funktioniert nicht" bug: redirecting straight to '/' after
+  // logout used to auto-trigger /auth/login -> ChurchTools authorize -> silent re-approval whenever
+  // the ChurchTools-side session was still active, so the button looked like it did nothing. This
+  // page must actually render (not redirect onward) and must not claim anyone is still logged in.
+  const config = testConfig();
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config });
+  const res = await request(app).get('/auth/abgemeldet');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /abgemeldet/i);
+  assert.doesNotMatch(res.text, /Angemeldet als/);
   db.close();
 });

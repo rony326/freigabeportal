@@ -69,8 +69,17 @@ export function createAuthRouter({ db, config, csrfProtection = (req, res, next)
   router.post('/logout', csrfProtection, (req, res, next) => {
     req.session.destroy((err) => {
       if (err) return next(err);
-      res.redirect('/');
+      // Redirecting straight to '/' used to immediately bounce an anonymous visitor to
+      // /auth/login (see app.js), which silently re-authenticates via ChurchTools SSO as long as
+      // the ChurchTools-side session is still active in this browser — the button looked like it
+      // did nothing. Landing on a real confirmation page first breaks that instant loop and makes
+      // the (real, momentary) logout visible before anyone can click their way back in.
+      res.redirect('/auth/abgemeldet');
     });
+  });
+
+  router.get('/abgemeldet', (req, res) => {
+    res.render('abgemeldet', { churchtoolsBaseUrl: config.churchtools.baseUrl });
   });
 
   return router;

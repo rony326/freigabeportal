@@ -818,6 +818,13 @@ test('POST /kontierung/:id on a Split-Kind with a newly attached Beleg accumulat
   assert.match(allText, /Beleg A Seite 1/, 'the Beleg recorded at Aufsplitten time must still reach the merged archival document');
   assert.match(allText, /Beleg B Seite 1/, 'the Beleg attached later, through this Kontierung POST, must also reach it');
   assert.match(allText, /Beleg B Seite 2/, 'including its second page');
+  // Negative check: a beleg_seitenzahl that over-counts (e.g. incremented before the merge that
+  // justifies it, then left stale by a failed merge) would make haengeBelegSeitenAn's slice
+  // over-reach past the Belege into the Kind's own Freigabe-2 stamp page. The Kind's individual
+  // stamp always reads "Job-ID: <kindId>" with no "Splitgruppe —" prefix (see pdfStamp.js), so
+  // its presence here — with the exactly-right page count above already passing — would mean
+  // pages leaked in beyond what was actually attached.
+  assert.doesNotMatch(allText, new RegExp(`Job-ID: ${kindId}\\b`), "the Kind's own individual stamp page must never leak into the combined archival document");
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

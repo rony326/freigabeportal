@@ -270,8 +270,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         // Bewusst nicht auf Splitkinder eingeschränkt -- bei einem gewöhnlichen Job liest diese
         // Spalte schlicht niemand.
         if (req.file) {
-          addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
+          // Merge first, count second: if mergeBelegFuerJob throws (e.g. a truncated-but-
+          // well-signed image that only fails inside embedPng), beleg_seitenzahl must not have
+          // already been incremented for pages that were never actually written -- an inflated
+          // count later makes haengeBelegSeitenAn's slice over-reach into the child's own
+          // Freigabe-2 Stempelseite, corrupting the archival document silently.
           await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
+          addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
         }
 
         if (job.freigabe1_eskaliert_an_admin) {
@@ -397,8 +402,9 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       // der Interessenskonflikt-Eskalationsmail heraus geöffnete. Ein hier angehängter Beleg muss
       // deshalb genauso in beleg_seitenzahl einfliessen, sonst fehlt er später im Gruppendokument.
       if (req.file) {
-        addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
+        // Merge first, count second -- see the identical comment at the Ablehnungs-Pfad above.
         await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
+        addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
       }
 
       if (job.qr_iban && debitor) {

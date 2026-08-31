@@ -1,4 +1,23 @@
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PageSizes } from 'pdf-lib';
+
+const A4_HOCH = PageSizes.A4; // [595.28, 841.89] pt
+const A4_QUER = [A4_HOCH[1], A4_HOCH[0]];
+
+// Adds one A4 page to `doc` (portrait or landscape, matching the source's own aspect ratio) and
+// draws `drawable` onto it scaled to fit and centered. Without this, a Beleg gets embedded at its
+// native size — for a photo, pdf-lib treats raw pixel dimensions as PDF points 1:1, so e.g. a
+// 3024x4032 phone photo becomes a ~42x56 inch page. `draw` abstracts over page.drawImage (for an
+// embedded image) vs. page.drawPage (for an embedded PDF page), which take the same options shape.
+function fuegeBelegSeiteAlsA4Hinzu(doc, drawable, sourceWidth, sourceHeight, draw) {
+  const istQuer = sourceWidth > sourceHeight;
+  const [pageWidth, pageHeight] = istQuer ? A4_QUER : A4_HOCH;
+  const scale = Math.min(pageWidth / sourceWidth, pageHeight / sourceHeight);
+  const width = sourceWidth * scale;
+  const height = sourceHeight * scale;
+  const page = doc.addPage([pageWidth, pageHeight]);
+  draw(page, drawable, { x: (pageWidth - width) / 2, y: (pageHeight - height) / 2, width, height });
+  return page;
+}
 
 // Sniffs real file-signature bytes rather than trusting the client-declared Content-Type — same
 // approach as detectImageMimetype() in erscheinungsbild.js and isPdf() in n8n/jobs.js, combined
@@ -55,20 +74,24 @@ export async function mergeBelegInPdf(pdfBuffer, belegBuffer, belegMimetype) {
 
   if (belegMimetype === 'application/pdf') {
     const belegDoc = await PDFDocument.load(belegBytes);
-    const copiedPages = await doc.copyPages(belegDoc, belegDoc.getPageIndices());
-    copiedPages.forEach((page) => doc.addPage(page));
+    const embeddedPages = await doc.embedPdf(belegDoc, belegDoc.getPageIndices());
+    embeddedPages.forEach((embeddedPage) => {
+      fuegeBelegSeiteAlsA4Hinzu(doc, embeddedPage, embeddedPage.width, embeddedPage.height, (page, img, opts) =>
+        page.drawPage(img, opts)
+      );
+    });
   } else {
     const image = belegMimetype === 'image/png' ? await doc.embedPng(belegBytes) : await doc.embedJpg(belegBytes);
-    const page = doc.addPage([image.width, image.height]);
-    page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+    fuegeBelegSeiteAlsA4Hinzu(doc, image, image.width, image.height, (page, img, opts) => page.drawImage(img, opts));
   }
 
   return Buffer.from(await doc.save());
 }
 
 // Unlike mergeBelegInPdf, there is no existing job PDF to merge into here — a Spesen position's
-// Beleg *is* the entire job document. A PDF Beleg is returned as-is; an image Beleg is embedded
-// as the sole page of a brand-new PDF, at its own natural pixel dimensions (same convention
+// Beleg *is* the entire job document. A PDF Beleg is returned as-is (its own pages are left
+// untouched — only a Beleg merged into an existing job PDF goes through the A4 normalization); an
+// image Beleg is embedded as the sole page of a brand-new PDF, fitted to A4 (same convention
 // mergeBelegInPdf's image branch already uses for a merged image page).
 export async function buildBelegPdf(belegBuffer, belegMimetype) {
   const belegBytes = toOwnedUint8Array(belegBuffer);
@@ -77,7 +100,6 @@ export async function buildBelegPdf(belegBuffer, belegMimetype) {
   }
   const doc = await PDFDocument.create();
   const image = belegMimetype === 'image/png' ? await doc.embedPng(belegBytes) : await doc.embedJpg(belegBytes);
-  const page = doc.addPage([image.width, image.height]);
-  page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+  fuegeBelegSeiteAlsA4Hinzu(doc, image, image.width, image.height, (page, img, opts) => page.drawImage(img, opts));
   return Buffer.from(await doc.save());
 }

@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PageSizes } from 'pdf-lib';
 import { mergeBelegInPdf, detectBelegMimetype, countBelegSeiten, buildBelegPdf } from '../../src/services/belegAnhaengen.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
-import { PNG_1X1, JPEG_1X1 } from '../helpers/imageFixture.js';
+import { PNG_1X1, JPEG_1X1, buildSolidPng } from '../helpers/imageFixture.js';
+
+const [A4_HOCH_BREITE, A4_HOCH_HOEHE] = PageSizes.A4;
 
 test('merging a PDF Beleg appends its pages after the original pages', async () => {
   const original = await buildPdfFixture(['Original Seite 1', 'Original Seite 2']);
@@ -110,4 +112,40 @@ test('buildBelegPdf wraps a JPEG Beleg into a fresh one-page PDF', async () => {
 
   const reloaded = await PDFDocument.load(result);
   assert.equal(reloaded.getPageCount(), 1);
+});
+
+test('a huge landscape image is normalized to an A4 landscape page, not embedded at its own pixel size', async () => {
+  const original = await buildPdfFixture(['Original Seite 1']);
+  const riesigesQuerbild = buildSolidPng(4032, 3024); // e.g. a phone photo, in raw pixels
+
+  const merged = await mergeBelegInPdf(original, riesigesQuerbild, 'image/png');
+
+  const reloaded = await PDFDocument.load(merged);
+  const belegSeite = reloaded.getPage(1);
+  assert.deepEqual(belegSeite.getSize(), { width: A4_HOCH_HOEHE, height: A4_HOCH_BREITE });
+});
+
+test('a huge portrait image is normalized to an A4 portrait page', async () => {
+  const original = await buildPdfFixture(['Original Seite 1']);
+  const riesigesHochbild = buildSolidPng(3024, 4032);
+
+  const merged = await mergeBelegInPdf(original, riesigesHochbild, 'image/png');
+
+  const reloaded = await PDFDocument.load(merged);
+  const belegSeite = reloaded.getPage(1);
+  assert.deepEqual(belegSeite.getSize(), { width: A4_HOCH_BREITE, height: A4_HOCH_HOEHE });
+});
+
+test('an oversized PDF Beleg page is also normalized to fit within A4', async () => {
+  const original = await buildPdfFixture(['Original Seite 1']);
+  // A PDF page that is itself much larger than A4 (e.g. from a scanning app using pixel-as-point).
+  const riesigerPdfBeleg = await buildPdfFixture(['Riesige Beleg Seite'], { width: 3024, height: 4032 });
+
+  const merged = await mergeBelegInPdf(original, riesigerPdfBeleg, 'application/pdf');
+
+  const reloaded = await PDFDocument.load(merged);
+  const belegSeite = reloaded.getPage(1);
+  const { width, height } = belegSeite.getSize();
+  const a4MaxSeite = A4_HOCH_HOEHE; // the longer A4 edge — bounds either orientation
+  assert.ok(width <= a4MaxSeite + 0.01 && height <= a4MaxSeite + 0.01);
 });

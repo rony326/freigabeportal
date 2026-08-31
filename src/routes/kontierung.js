@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { mkdirSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { mergeBelegInPdf, detectBelegMimetype } from '../services/belegAnhaengen.js';
+import { mergeBelegInPdf, detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
 import {
   getJobById,
   setKontierung,
@@ -16,6 +16,7 @@ import {
   markJobAufgesplittet,
   createSplitJob,
   setJobBetrag,
+  addBelegSeiten,
 } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById, listKonten } from '../db/kontenRepo.js';
 import { listDebitoren, getDebitorById, createDebitor } from '../db/debitorenRepo.js';
@@ -30,6 +31,23 @@ import { isValidIban } from '../services/ibanUtils.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+// teilPosition landet später wörtlich auf der gemeinsamen Stempelseite der Splitgruppe
+// (stampGruppenDokument, pdfStamp.js), die mit pdf-lib's Helvetica-Standardfont gezeichnet wird —
+// und der kann ausschliesslich WinAnsi (Windows-1252) darstellen. Ein Emoji o.ä. würde das
+// Stempeln erst beim asynchronen Gruppen-Merge zum Scheitern bringen, wo niemand mehr eine
+// Rückmeldung bekommt und der Nachhol-Cron-Job denselben Fehler endlos wiederholt. Deshalb wird
+// dieses eine Feld schon beim Absenden geprüft, wo die Person die Zeile direkt korrigieren kann.
+//
+// Bewusst eine explizite Positivliste statt \p{L}/\p{N}: Unicode-Buchstaben/-Ziffern umfassen auch
+// Kyrillisch, CJK, Latin-Extended-A (Ř, Ł, ...) und eingekreiste Ziffern, die Helvetica allesamt
+// NICHT kodieren kann — und \s liesse Tab/Zeilenumbruch durch, die ebenfalls werfen. Umgekehrt
+// waren WinAnsi-sichere Alltagszeichen wie & % + ' vorher fälschlich verboten.
+// \u0020-\u007E ist druckbares ASCII (schliesst rohe Tabs/Zeilenumbrüche bewusst aus),
+// \u00A0-\u00FF ist Latin-1 Supplement (deutsche Umlaute, französische/skandinavische Akzente
+// usw.); der Rest sind die Windows-1252-Extras ausserhalb von Latin-1, die hier realistisch
+// vorkommen: Œ œ Š š Ž ž Ÿ sowie Halbgeviert-/Geviertstrich (die im Rest dieses Codes ohnehin
+// schon in PDF-Texten verwendet werden).
+const POSITION_PATTERN = /^[\u0020-\u007E\u00A0-\u00FFŒœŠšŽžŸ–—]*$/;
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 // Aufsplitten sends one optional beleg file per Teil row (teilBeleg_<i>) via uploadBeleg.any(),
 // which has no field-name allowlist — without a files cap, a request forging many parts could
@@ -245,8 +263,20 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           return renderFehler('Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.', 409);
         }
 
+        // beleg_seitenzahl mitzuführen ist hier genauso Pflicht wie beim Aufsplitten: auch ein
+        // Splitkind (aufgesplittet_von gesetzt) landet auf diesem Pfad, wenn seine Zeile abgelehnt
+        // und überarbeitet wird. Ohne die Fortschreibung wüsste der spätere Gruppen-Merge nichts
+        // von diesen Belegseiten und liesse sie kommentarlos aus dem Archivdokument weg.
+        // Bewusst nicht auf Splitkinder eingeschränkt -- bei einem gewöhnlichen Job liest diese
+        // Spalte schlicht niemand.
         if (req.file) {
+          // Merge first, count second: if mergeBelegFuerJob throws (e.g. a truncated-but-
+          // well-signed image that only fails inside embedPng), beleg_seitenzahl must not have
+          // already been incremented for pages that were never actually written -- an inflated
+          // count later makes haengeBelegSeitenAn's slice over-reach into the child's own
+          // Freigabe-2 Stempelseite, corrupting the archival document silently.
           await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
+          addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
         }
 
         if (job.freigabe1_eskaliert_an_admin) {
@@ -367,8 +397,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         throw err;
       }
 
+      // Siehe Ablehnungs-Pfad oben: ein Splitkind erreicht auch die normale Kontierung -- etwa
+      // eine per hinweis_konto_id angelegte Zeile, die aus dem Pool geclaimt wird, oder eine aus
+      // der Interessenskonflikt-Eskalationsmail heraus geöffnete. Ein hier angehängter Beleg muss
+      // deshalb genauso in beleg_seitenzahl einfliessen, sonst fehlt er später im Gruppendokument.
       if (req.file) {
+        // Merge first, count second -- see the identical comment at the Ablehnungs-Pfad above.
         await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
+        addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
       }
 
       if (job.qr_iban && debitor) {
@@ -526,11 +562,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const kontoIds = [].concat(req.body.teilKontoId || []);
       const betraege = [].concat(req.body.teilBetrag || []);
       const konflikte = [].concat(req.body.teilInteressenskonflikt || []);
+      const positionen = [].concat(req.body.teilPosition || []);
       const begruendung = req.body.begruendung || '';
       const teileEingabe = kontoIds.map((kontoId, i) => ({
         kontoId,
         betrag: betraege[i] || '',
         interessenskonflikt: konflikte[i] === 'true',
+        position: (positionen[i] || '').trim() || null,
       }));
 
       const errors = [];
@@ -571,7 +609,11 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           errors.push('Jede Zeile braucht einen gültigen Betrag (z.B. 123.45).');
           return;
         }
-        aufgeloesteTeile.push({ konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt, originalIndex });
+        if (teil.position && !POSITION_PATTERN.test(teil.position)) {
+          errors.push('Position auf der Rechnung darf keine Sonderzeichen enthalten (z.B. Emoji), die nicht gestempelt werden können.');
+          return;
+        }
+        aufgeloesteTeile.push({ konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt, position: teil.position, originalIndex });
       });
 
       if (errors.length === 0) {
@@ -610,10 +652,17 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         const pdfPfad = neuerDateipfad(config.jobsDir, job.pdf_pfad);
         const thumbnailPfad = job.thumbnail_pfad ? neuerDateipfad(config.jobsDir, job.thumbnail_pfad) : null;
         const beleg = teilBelegByIndex.get(teil.originalIndex);
+        // Die Seitenzahl des Belegs wird hier — und nur hier — festgehalten: mergeBelegFuerJob
+        // hängt die Belegseiten direkt hinter die Rechnungsseiten, aber die spätere
+        // Einzel-Freigabe-2 dieses Kindes hängt noch eigene Stempelseiten dahinter. Ohne diesen
+        // Wert könnte der Gruppen-Merge die Belegseiten nachher nicht mehr von den Stempelseiten
+        // unterscheiden (siehe haengeBelegSeitenAn in splitGruppenExport.js).
+        let belegSeitenzahl = null;
         if (beleg) {
+          belegSeitenzahl = await countBelegSeiten(beleg.file.buffer, beleg.mimetype);
           await mergeBelegFuerJob(pdfPfad, beleg.file, beleg.mimetype);
         }
-        vorbereiteteTeile.push({ ...teil, pdfPfad, thumbnailPfad });
+        vorbereiteteTeile.push({ ...teil, pdfPfad, thumbnailPfad, belegSeitenzahl });
       }
 
       db.exec('BEGIN');
@@ -638,6 +687,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
               thumbnailPfad,
               hinweisKontoId: teil.konto.id,
               betrag: teil.betrag,
+              position: teil.position,
+              belegSeitenzahl: teil.belegSeitenzahl,
             });
             fremdeKonten.push({ id: kindId, konto: teil.konto });
             continue;
@@ -649,6 +700,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             kontoId: teil.konto.id,
             betrag: teil.betrag,
             zugewiesenAn: req.currentPerson.churchtools_person_id,
+            position: teil.position,
+            belegSeitenzahl: teil.belegSeitenzahl,
           });
 
           if (teil.interessenskonflikt) {

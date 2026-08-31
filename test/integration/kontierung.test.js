@@ -6,12 +6,13 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
+import * as mupdf from 'mupdf';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { PNG_1X1 } from '../helpers/imageFixture.js';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById, deactivateKonto } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob, listSplitKinder, updateKontierungMetadaten } from '../../src/db/jobsRepo.js';
+import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob, listSplitKinder, updateKontierungMetadaten, createSplitJob } from '../../src/db/jobsRepo.js';
 import { listFreigabenByJob, createFreigabe } from '../../src/db/freigabenRepo.js';
 import { buildAuditLog } from '../../src/services/auditLog.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
@@ -20,6 +21,26 @@ import { createKontierungRouter } from '../../src/routes/kontierung.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { fetchCsrfToken } from '../helpers/csrf.js';
+import { stampAndFinalize } from '../../src/services/pdfStamp.js';
+import { pruefeUndFinalisiereSplitGruppe } from '../../src/services/splitGruppenExport.js';
+
+function extrahierterSeitenText(pdfBytes, pageIndex) {
+  const doc = mupdf.Document.openDocument(pdfBytes, 'application/pdf');
+  try {
+    const page = doc.loadPage(pageIndex);
+    try {
+      return page.toStructuredText().asText();
+    } finally {
+      page.destroy();
+    }
+  } finally {
+    doc.destroy();
+  }
+}
+
+function alleSeitenText(pdfBytes, seitenzahl) {
+  return Array.from({ length: seitenzahl }, (_, i) => extrahierterSeitenText(pdfBytes, i)).join('\n');
+}
 
 function createStubMailer() {
   const sent = [];
@@ -713,6 +734,144 @@ test('POST /kontierung/:id aktion=ablehnen with a Beleg image attached still mer
   db.close();
 });
 
+test('POST /kontierung/:id on a Split-Kind with a newly attached Beleg accumulates onto beleg_seitenzahl instead of overwriting it, and both Belege reach the final Splitgruppen-Merge', async () => {
+  // Full chain: a Split-Kind (aufgesplittet_von set) that already carries a Beleg recorded at
+  // Aufsplitten time reaches this normal Kontierung POST after an Ablehnung + Überarbeiten (see
+  // ablehnung.js's wiederOeffnenJob, which is the only way a Split-Kind's status goes back to
+  // 'zugewiesen'). A second Beleg attached here must add to beleg_seitenzahl, not replace it —
+  // otherwise the later, asynchronous Splitgruppen-Merge would silently drop the first Beleg's
+  // pages from the archival document. This test proves both the DB bookkeeping (addBelegSeiten)
+  // and that the resulting value actually locates the right pages once merged.
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'split-kontierung-beleg-test-'));
+  const kontoId = seedKontoAndPersonen(db);
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
+
+  // The parent invoice has 1 page — every Split-Kind's own PDF starts as a copy of exactly those
+  // pages (see splitGruppenExport.js's basisSeitenzahl, derived from the parent's PDF).
+  const parentPdfPfad = join(dir, 'parent.pdf');
+  writeFileSync(parentPdfPfad, await buildPdfFixture(['Rechnung Seite 1']));
+  const parentId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad: parentPdfPfad });
+  const parentJob = getJobById(db, parentId);
+
+  // Split-Kind with a Beleg already recorded from Aufsplitten time (1 page).
+  const kindPdfPfad = join(dir, 'kind.pdf');
+  writeFileSync(kindPdfPfad, await buildPdfFixture(['Rechnung Seite 1', 'Beleg A Seite 1']));
+  const kindId = createSplitJob(db, parentJob, {
+    pdfPfad: kindPdfPfad,
+    kontoId,
+    betrag: '50.00',
+    zugewiesenAn: '1',
+    position: 'Pos. 1',
+    belegSeitenzahl: 1,
+  });
+  assert.equal(getJobById(db, kindId).status, 'zugewiesen', 'sanity: this is the state a Split-Kind is in when it reaches Kontierung again after Ablehnung + Überarbeiten');
+
+  const app = buildTestApp(db, createStubMailer());
+  const belegB = await buildPdfFixture(['Beleg B Seite 1', 'Beleg B Seite 2']);
+
+  const res = await request(app)
+    .post(`/kontierung/${kindId}`)
+    .set('x-test-person-id', '1')
+    .field('kontoId', String(kontoId))
+    .field('debitorId', String(debitorId))
+    .field('absender', 'Muster AG')
+    .field('rechnungsnummer', 'RE-1')
+    .field('betrag', '50.00')
+    .field('zahlungsziel', '2026-09-01')
+    .field('interessenskonflikt', 'nein')
+    .field('begruendung', '')
+    .attach('beleg', belegB, { filename: 'beleg-b.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 302);
+  const kindNachKontierung = getJobById(db, kindId);
+  assert.equal(kindNachKontierung.status, 'freigabe2');
+  assert.equal(
+    kindNachKontierung.beleg_seitenzahl,
+    3,
+    "accumulates onto the 1 page already recorded at Aufsplitten time — must not overwrite it with just the new Beleg's own 2 pages"
+  );
+
+  const kindDocNachMerge = await PDFDocument.load(readFileSync(kindPdfPfad));
+  assert.equal(kindDocNachMerge.getPageCount(), 4, '1 Rechnungsseite + Beleg A (1) + Beleg B (2), appended in that order');
+
+  // Drive the Split-Kind through its own Freigabe-2 stamping (mirrors freigabe2.js: it stamps
+  // the child's PDF in place BEFORE any group merge ever runs), then finalize the whole Gruppe.
+  createFreigabe(db, { jobId: kindId, personId: '3', rolle: 'freigeber2', zeitpunkt: '2026-08-15T10:00:00.000Z', ip: '5.6.7.8', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  const gestempelt = await stampAndFinalize(readFileSync(kindPdfPfad), {
+    jobId: kindId,
+    konto: { nummer: '3000', bezeichnung: 'Unterhalt' },
+    freigeber1: { name: 'Person1 Muster', identitaet: '1', zeitpunkt: '2026-08-15T09:00:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null },
+    freigeber2: { name: 'Person3 Muster', identitaet: '3', zeitpunkt: '2026-08-15T10:00:00.000Z', ip: '5.6.7.8', interessenskonflikt: false, kommentar: null },
+    verlauf: [],
+  });
+  writeFileSync(kindPdfPfad, gestempelt);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(kindId);
+
+  const ergebnis = await pruefeUndFinalisiereSplitGruppe(db, parentId);
+  assert.equal(ergebnis.status, 'exportiert');
+
+  const gruppenBytes = readFileSync(getJobById(db, parentId).gruppe_pdf_pfad);
+  const gruppenDoc = await PDFDocument.load(gruppenBytes);
+  const allText = alleSeitenText(gruppenBytes, gruppenDoc.getPageCount());
+  assert.match(allText, /Beleg A Seite 1/, 'the Beleg recorded at Aufsplitten time must still reach the merged archival document');
+  assert.match(allText, /Beleg B Seite 1/, 'the Beleg attached later, through this Kontierung POST, must also reach it');
+  assert.match(allText, /Beleg B Seite 2/, 'including its second page');
+  // Negative check: a beleg_seitenzahl that over-counts (e.g. incremented before the merge that
+  // justifies it, then left stale by a failed merge) would make haengeBelegSeitenAn's slice
+  // over-reach past the Belege into the Kind's own Freigabe-2 stamp page. The Kind's individual
+  // stamp always reads "Job-ID: <kindId>" with no "Splitgruppe —" prefix (see pdfStamp.js), so
+  // its presence here — with the exactly-right page count above already passing — would mean
+  // pages leaked in beyond what was actually attached.
+  assert.doesNotMatch(allText, new RegExp(`Job-ID: ${kindId}\\b`), "the Kind's own individual stamp page must never leak into the combined archival document");
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /kontierung/:id aktion=ablehnen on a Split-Kind with a newly attached Beleg accumulates onto beleg_seitenzahl too, not just the normal Kontierung path', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'split-kontierung-ablehnen-beleg-test-'));
+  const kontoId = seedKontoAndPersonen(db);
+
+  const parentPdfPfad = join(dir, 'parent.pdf');
+  writeFileSync(parentPdfPfad, await buildPdfFixture(['Rechnung Seite 1']));
+  const parentId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad: parentPdfPfad });
+  const parentJob = getJobById(db, parentId);
+
+  const kindPdfPfad = join(dir, 'kind.pdf');
+  writeFileSync(kindPdfPfad, await buildPdfFixture(['Rechnung Seite 1', 'Beleg A Seite 1']));
+  const kindId = createSplitJob(db, parentJob, {
+    pdfPfad: kindPdfPfad,
+    kontoId,
+    betrag: '50.00',
+    zugewiesenAn: '1',
+    position: 'Pos. 1',
+    belegSeitenzahl: 1,
+  });
+
+  const app = buildTestApp(db, createStubMailer());
+  const belegB = await buildPdfFixture(['Beleg B Seite 1', 'Beleg B Seite 2']);
+
+  const res = await request(app)
+    .post(`/kontierung/${kindId}`)
+    .set('x-test-person-id', '1')
+    .field('aktion', 'ablehnen')
+    .field('begruendung', 'Nochmals fehlerhaft')
+    .attach('beleg', belegB, { filename: 'beleg-b.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 302);
+  const kind = getJobById(db, kindId);
+  assert.equal(kind.status, 'abgelehnt');
+  assert.equal(kind.beleg_seitenzahl, 3, 'the Ablehnung-Pfad must accumulate onto the 1 page recorded at Aufsplitten time too, not overwrite it');
+  const kindDoc = await PDFDocument.load(readFileSync(kindPdfPfad));
+  assert.equal(kindDoc.getPageCount(), 4);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
 test('POST /kontierung/:id/zurueck-in-pool releases the job and redirects to /pool', async () => {
   const db = openDatabase(':memory:');
   seedKontoAndPersonen(db);
@@ -1362,6 +1521,174 @@ test('POST /kontierung/:id/aufsplitten creates independent split jobs, each with
     assert.equal(freigaben[0].rolle, 'freigeber1');
     assert.equal(freigaben[0].person_id, '1');
   }
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten persists teilPosition as rechnungsposition on each split child', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '100.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['60.00', '40.00'],
+      teilPosition: ['Pos. 1', 'Pos. 2'],
+    });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  assert.deepEqual(kinder.map((k) => k.rechnungsposition).sort(), ['Pos. 1', 'Pos. 2']);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten rejects a teilPosition with characters the Splitgruppen-Stempel cannot render (e.g. an emoji), nothing persisted', async () => {
+  // Ohne diese Prüfung würde die Zeile klaglos angelegt und erst der spätere, asynchrone
+  // Gruppen-Merge am WinAnsi-only-Helvetica scheitern -- dauerhaft, weil der Nachhol-Cron-Job
+  // immer wieder dieselbe Eingabe vorfindet und niemand eine Rückmeldung bekommt.
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '100.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['60.00', '40.00'],
+      teilPosition: ['Pos. 1 \u{1F600}', 'Pos. 2'],
+    });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Position auf der Rechnung darf keine Sonderzeichen enthalten/);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  assert.equal(getJobById(db, id).status, 'zugewiesen', 'der Elternjob darf nicht aufgesplittet werden');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten accepts a teilPosition with German letters, digits and ordinary punctuation', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '100.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['60.00', '40.00'],
+      teilPosition: ['Pos. 3.1 (Gebäude-Unterhalt), Nr. 7/8 – Zuschlag', 'Pos. 2'],
+    });
+
+  assert.equal(res.status, 302);
+  assert.equal(listSplitKinder(db, id).length, 2);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten accepts teilPosition characters the old \\p{L}/\\p{N} pattern wrongly rejected (regression check for the WinAnsi-safe rewrite)', async () => {
+  // & % + ' are all plain WinAnsi/ASCII and perfectly stampable, but the earlier
+  // \p{L}\p{N}\s.,;:()/#\-–— pattern didn't list them, so ordinary business text like "50%
+  // Anteil" or "Müller's Anteil" was rejected outright. The new explicit character class must
+  // not have overcorrected and re-introduced that regression.
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const positionen = ['Zürich Straße ÄÖÜ ß', 'Pos. 1 & 2', '50% Anteil', 'Nr. 7+8', "Müller's Anteil"];
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '100.00',
+      teilKontoId: positionen.map(() => String(kontoId)),
+      teilBetrag: positionen.map(() => '20.00'),
+      teilPosition: positionen,
+    });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 5);
+  assert.deepEqual(kinder.map((k) => k.rechnungsposition).sort(), [...positionen].sort());
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten rejects teilPosition characters that would crash the WinAnsi-only Splitgruppen-Stempel (Cyrillic, Latin-Extended-A, circled digits, a raw tab), nothing persisted', async () => {
+  // These all matched the old \p{L}/\p{N}/\s pattern (Unicode letters/digits/whitespace go far
+  // beyond what Helvetica/WinAnsi can encode) and would have sailed through Aufsplitten, only to
+  // permanently wedge the invoice's later, asynchronous Splitgruppen-Merge.
+  const boeseWerte = [
+    'Позиция 1', // Cyrillic
+    'Řada', // Latin-Extended-A (Czech)
+    'Łódź', // Latin-Extended-A (Polish)
+    'Pos ①', // circled digit
+    'Pos\tX', // raw tab character
+  ];
+
+  for (const wert of boeseWerte) {
+    const db = openDatabase(':memory:');
+    const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+    const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+    const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+    const res = await request(app)
+      .post(`/kontierung/${id}/aufsplitten`)
+      .set('x-test-person-id', '1')
+      .type('form')
+      .send({
+        gesamtbetrag: '100.00',
+        teilKontoId: [String(kontoId), String(kontoId)],
+        teilBetrag: ['60.00', '40.00'],
+        teilPosition: [wert, 'Pos. 2'],
+      });
+
+    assert.equal(res.status, 400, `"${wert}" should have been rejected`);
+    assert.match(res.text, /Position auf der Rechnung darf keine Sonderzeichen enthalten/);
+    assert.equal(listSplitKinder(db, id).length, 0, `"${wert}" must not have persisted a split child`);
+    db.close();
+    rmSync(jobsDir, { recursive: true, force: true });
+  }
+});
+
+test('POST /kontierung/:id/aufsplitten records the Beleg page count on the split child so a later Splitgruppen-Merge can locate those pages exactly', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = await seedJobMitEchtemPdf(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+  const beleg = await buildPdfFixture(['Quittung Seite 1', 'Quittung Seite 2']);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .field('gesamtbetrag', '200.00')
+    .field('teilKontoId', String(kontoId))
+    .field('teilKontoId', String(kontoId))
+    .field('teilBetrag', '120.00')
+    .field('teilBetrag', '80.00')
+    .attach('teilBeleg_0', beleg, { filename: 'beleg.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.find((k) => k.betrag === '120.00').beleg_seitenzahl, 2);
+  assert.equal(kinder.find((k) => k.betrag === '80.00').beleg_seitenzahl, null);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });

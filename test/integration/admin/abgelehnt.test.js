@@ -2,13 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { mkdtempSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../../src/db/index.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createKonto } from '../../../src/db/kontenRepo.js';
-import { createJob, claimJob, setKontierung, ablehnenJob, getJobById, setThumbnailPfad } from '../../../src/db/jobsRepo.js';
+import { createJob, claimJob, setKontierung, ablehnenJob, getJobById, setThumbnailPfad, createSplitJob } from '../../../src/db/jobsRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../../src/db/freigabenRepo.js';
 import { listJobLoeschungen } from '../../../src/db/jobLoeschungenRepo.js';
 import { loadCurrentPerson } from '../../../src/middleware/roles.js';
@@ -16,6 +16,7 @@ import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { requirePermission } from '../../../src/middleware/permissions.js';
 import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { createAdminAbgelehntRouter } from '../../../src/routes/admin/abgelehnt.js';
+import { buildPdfFixture } from '../../helpers/pdfFixture.js';
 
 function buildTestApp(db) {
   const app = express();
@@ -261,5 +262,52 @@ test('GET /admin/abgelehnt returns 200 for a plain person with exactly this indi
   setBerechtigungenForPerson(db, '1', ['abgelehnt_verwalten']);
   const res2 = await request(app).get('/admin/abgelehnt').set('x-test-person-id', '1');
   assert.equal(res2.status, 200);
+  db.close();
+});
+
+test('deleting the last blocking abgelehnt sibling of an otherwise complete Splitgruppe triggers the merge', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'abgelehnt-splitgruppe-test-'));
+  seedAdmin(db);
+  for (const id of ['1', '2', '3']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '2' });
+
+  const parentPfad = join(dir, 'parent.pdf');
+  writeFileSync(parentPfad, await buildPdfFixture(['Rechnung Seite 1']));
+  const parentId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad: parentPfad });
+  const parentJob = getJobById(db, parentId);
+
+  // Sibling A: already abgeschlossen, with a full Freigabe-1+2 Verlauf.
+  const kindAPfad = join(dir, 'kindA.pdf');
+  writeFileSync(kindAPfad, await buildPdfFixture(['Rechnung Seite 1']));
+  const kindAId = createSplitJob(db, parentJob, { pdfPfad: kindAPfad, kontoId, betrag: '60.00', zugewiesenAn: '1', position: 'Pos. 1' });
+  createFreigabe(db, { jobId: kindAId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-15T09:00:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  createFreigabe(db, { jobId: kindAId, personId: '3', rolle: 'freigeber2', zeitpunkt: '2026-08-15T10:00:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(kindAId);
+
+  // Sibling B: rejected by Freigeber 2 (person '3') -- this is the blocking row an admin (id '99',
+  // not person '3') is allowed to delete.
+  const kindBPfad = join(dir, 'kindB.pdf');
+  writeFileSync(kindBPfad, await buildPdfFixture(['Rechnung Seite 1']));
+  const kindBId = createSplitJob(db, parentJob, { pdfPfad: kindBPfad, kontoId, betrag: '40.00', zugewiesenAn: '1', position: 'Pos. 2' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(kindBId);
+  ablehnenJob(db, kindBId, { abgelehntVon: '3', grund: 'Falsches Konto' });
+  createFreigabe(db, { jobId: kindBId, personId: '3', rolle: 'ablehnung', zeitpunkt: '2026-08-15T10:30:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: 'Falsches Konto', eskaliertVon: null });
+
+  const app = buildTestApp(db);
+  const agent = request.agent(app);
+  const res = await agent
+    .post(`/admin/abgelehnt/${kindBId}/loeschen`)
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ begruendung: 'Doppelt erfasst, Konto von Sibling A deckt die ganze Rechnung ab.', bestaetigung: 'ja' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, kindBId).status, 'geloescht');
+  assert.ok(getJobById(db, parentId).gruppe_pdf_pfad, 'resolving the last blocking Ablehnung must trigger the Splitgruppen-Merge');
+
+  rmSync(dir, { recursive: true, force: true });
   db.close();
 });

@@ -6,7 +6,7 @@ import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -1529,5 +1529,284 @@ test('setQrDaten stores the decoded QR-bill fields and sets qr_erkannt_am', () =
   assert.equal(job.qr_waehrung, 'CHF');
   assert.equal(job.qr_creditor_name, 'Muster AG');
   assert.ok(job.qr_erkannt_am, 'qr_erkannt_am should be set');
+  db.close();
+});
+
+test('jobs table has the new Splitgruppen columns and immutability triggers on the gruppe_zeitstempel_* pair', () => {
+  const db = openDatabase(':memory:');
+  const spalten = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name));
+  assert.ok(spalten.has('rechnungsposition'));
+  assert.ok(spalten.has('gruppe_pdf_pfad'));
+  assert.ok(spalten.has('gruppe_zeitstempel_gesetzt_am'));
+  assert.ok(spalten.has('gruppe_zeitstempel_datei_hash'));
+  assert.ok(spalten.has('beleg_seitenzahl'));
+  assert.ok(spalten.has('gruppe_abgeholt_am'));
+
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET gruppe_zeitstempel_gesetzt_am = '2026-08-01T00:00:00.000Z', gruppe_zeitstempel_datei_hash = 'abc' WHERE id = ?").run(id);
+
+  assert.throws(
+    () => db.prepare("UPDATE jobs SET gruppe_zeitstempel_datei_hash = 'anders' WHERE id = ?").run(id),
+    /unveraenderlich/
+  );
+  assert.throws(
+    () => db.prepare("UPDATE jobs SET gruppe_zeitstempel_gesetzt_am = '2026-09-01T00:00:00.000Z' WHERE id = ?").run(id),
+    /unveraenderlich/
+  );
+  db.close();
+});
+
+test('cron_log accepts split-gruppen-nachholen as a valid job name', () => {
+  const db = openDatabase(':memory:');
+  db.prepare("INSERT INTO cron_log (job, gestartet_am, status) VALUES ('split-gruppen-nachholen', '2026-08-01T00:00:00.000Z', 'laufend')").run();
+  const row = db.prepare("SELECT * FROM cron_log WHERE job = 'split-gruppen-nachholen'").get();
+  assert.ok(row);
+  db.close();
+});
+
+test('createSplitJob persists an optional position (rechnungsposition) on the split child', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  const parentJob = getJobById(db, parentId);
+
+  const kindId = createSplitJob(db, parentJob, { pdfPfad: '/tmp/b.pdf', kontoId, betrag: '10.00', zugewiesenAn: '1', position: 'Pos. 2' });
+  assert.equal(getJobById(db, kindId).rechnungsposition, 'Pos. 2');
+
+  const kindOhnePosition = createSplitJob(db, parentJob, { pdfPfad: '/tmp/c.pdf', kontoId, betrag: '5.00', zugewiesenAn: '1' });
+  assert.equal(getJobById(db, kindOhnePosition).rechnungsposition, null);
+  db.close();
+});
+
+test('createSplitJob persists the recorded beleg_seitenzahl, defaulting to NULL when no Beleg was attached', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  const parentJob = getJobById(db, parentId);
+
+  const mitBeleg = createSplitJob(db, parentJob, { pdfPfad: '/tmp/b.pdf', kontoId, betrag: '10.00', zugewiesenAn: '1', belegSeitenzahl: 3 });
+  assert.equal(getJobById(db, mitBeleg).beleg_seitenzahl, 3);
+
+  const ohneBeleg = createSplitJob(db, parentJob, { pdfPfad: '/tmp/c.pdf', kontoId, betrag: '5.00', zugewiesenAn: '1' });
+  assert.equal(getJobById(db, ohneBeleg).beleg_seitenzahl, null);
+  db.close();
+});
+
+function abschliesseKind(db, kindId) {
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(kindId);
+}
+
+test('pruefeSplitGruppenVollstaendigkeit reports unvollstaendig while a sibling is still open, vollstaendig once all are abgeschlossen, and blockiert on a rejected sibling', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  const parentJob = getJobById(db, parentId);
+  const kind1 = createSplitJob(db, parentJob, { pdfPfad: '/tmp/b.pdf', kontoId, betrag: '10.00', zugewiesenAn: '1' });
+  const kind2 = createSplitJob(db, parentJob, { pdfPfad: '/tmp/c.pdf', kontoId, betrag: '5.00', zugewiesenAn: '1' });
+
+  assert.equal(pruefeSplitGruppenVollstaendigkeit(db, parentId).vollstaendig, false);
+
+  abschliesseKind(db, kind1);
+  assert.equal(pruefeSplitGruppenVollstaendigkeit(db, parentId).vollstaendig, false);
+
+  abschliesseKind(db, kind2);
+  const vollstaendig = pruefeSplitGruppenVollstaendigkeit(db, parentId);
+  assert.equal(vollstaendig.vollstaendig, true);
+  assert.equal(vollstaendig.blockiert, false);
+  assert.equal(vollstaendig.kinder.length, 2);
+
+  db.prepare("UPDATE jobs SET status = 'abgelehnt' WHERE id = ?").run(kind2);
+  const blockiert = pruefeSplitGruppenVollstaendigkeit(db, parentId);
+  assert.equal(blockiert.vollstaendig, false);
+  assert.equal(blockiert.blockiert, true);
+
+  db.prepare("UPDATE jobs SET status = 'geloescht' WHERE id = ?").run(kind2);
+  const nachLoeschung = pruefeSplitGruppenVollstaendigkeit(db, parentId);
+  assert.equal(nachLoeschung.blockiert, false);
+  assert.equal(nachLoeschung.vollstaendig, true);
+  assert.equal(nachLoeschung.kinder.length, 1);
+  db.close();
+});
+
+test('pruefeSplitGruppenVollstaendigkeit blocks completeness while a sibling is still an unclaimed hinweis_konto_id-only row (fremdes Konto, not yet via Kontierung geclaimt)', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  const parentJob = getJobById(db, parentId);
+  const kind1 = createSplitJob(db, parentJob, { pdfPfad: '/tmp/b.pdf', kontoId, betrag: '10.00', zugewiesenAn: '1' });
+  const hinweisKindId = createSplitJob(db, parentJob, { pdfPfad: '/tmp/c.pdf', hinweisKontoId: kontoId, betrag: '10.00' });
+  abschliesseKind(db, kind1);
+
+  // The hinweis-only sibling is still 'unzugewiesen' -- not yet claimed via Kontierung by its
+  // actual Freigeber 1 -- so the group must NOT be considered complete yet.
+  const nochOffen = pruefeSplitGruppenVollstaendigkeit(db, parentId);
+  assert.equal(nochOffen.vollstaendig, false);
+  assert.equal(nochOffen.kinder.length, 2, 'the unclaimed row still counts toward the group, it just is not abgeschlossen yet');
+
+  // Once it's claimed (konto_id set) and driven through to abgeschlossen like any normal job,
+  // the group becomes complete.
+  db.prepare("UPDATE jobs SET konto_id = ?, status = 'abgeschlossen' WHERE id = ?").run(kontoId, hinweisKindId);
+  const vollstaendig = pruefeSplitGruppenVollstaendigkeit(db, parentId);
+  assert.equal(vollstaendig.vollstaendig, true);
+  assert.equal(vollstaendig.kinder.length, 2);
+  db.close();
+});
+
+test('markGruppeExportiert persists the merged file path and Zeitstempel fields on the parent job', () => {
+  const db = openDatabase(':memory:');
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  markGruppeExportiert(db, parentId, { pdfPfad: '/tmp/gruppe.pdf', zeitstempelGesetztAm: '2026-08-01T01:00:00.000Z', zeitstempelDateiHash: 'deadbeef' });
+  const job = getJobById(db, parentId);
+  assert.equal(job.gruppe_pdf_pfad, '/tmp/gruppe.pdf');
+  assert.equal(job.gruppe_zeitstempel_gesetzt_am, '2026-08-01T01:00:00.000Z');
+  assert.equal(job.gruppe_zeitstempel_datei_hash, 'deadbeef');
+  db.close();
+});
+
+test('markGruppeExportiert reports whether it wrote, and refuses to overwrite an already exported group (double-merge race guard)', () => {
+  const db = openDatabase(':memory:');
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+
+  assert.equal(markGruppeExportiert(db, parentId, { pdfPfad: '/tmp/erste.pdf', zeitstempelGesetztAm: null, zeitstempelDateiHash: null }), true);
+  assert.equal(markGruppeExportiert(db, parentId, { pdfPfad: '/tmp/zweite.pdf', zeitstempelGesetztAm: null, zeitstempelDateiHash: null }), false);
+  assert.equal(getJobById(db, parentId).gruppe_pdf_pfad, '/tmp/erste.pdf');
+  db.close();
+});
+
+test('listAbholbereitJobs no longer returns Splitkinder even once abgeschlossen', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  const parentJob = getJobById(db, parentId);
+  const kindId = createSplitJob(db, parentJob, { pdfPfad: '/tmp/b.pdf', kontoId, betrag: '10.00', zugewiesenAn: '1' });
+  abschliesseKind(db, kindId);
+
+  const normalerJobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'n.pdf', pdfPfad: '/tmp/n.pdf' });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(normalerJobId);
+
+  const abholbereit = listAbholbereitJobs(db);
+  assert.deepEqual(abholbereit.map((j) => j.id), [normalerJobId]);
+  db.close();
+});
+
+test('listAbholbereitGruppen returns only parent jobs with a set gruppe_pdf_pfad, and marks them fetched', () => {
+  const db = openDatabase(':memory:');
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
+
+  assert.equal(listAbholbereitGruppen(db).length, 0);
+
+  markGruppeExportiert(db, parentId, { pdfPfad: '/tmp/gruppe.pdf', zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+  const gruppen = listAbholbereitGruppen(db);
+  assert.equal(gruppen.length, 1);
+  assert.equal(gruppen[0].id, parentId);
+  assert.ok(gruppen[0].fetched_by_n8n_at);
+
+  const nurMitZeitstempel = listAbholbereitGruppen(db, 15 * 60 * 1000, true);
+  assert.equal(nurMitZeitstempel.length, 0, 'group has no Zeitstempel yet, must be excluded when nurMitZeitstempel is required');
+  db.close();
+});
+
+test('listAbholbereitGruppen no longer returns a group once it has been collected (gruppe_abgeholt_am set)', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
+  const kindId = createSplitJob(db, getJobById(db, parentId), { pdfPfad: '/tmp/b.pdf', kontoId, betrag: '10.00', zugewiesenAn: '1' });
+  abschliesseKind(db, kindId);
+  markGruppeExportiert(db, parentId, { pdfPfad: '/tmp/gruppe.pdf', zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+
+  // Ohne das Stale-Fenster zu umgehen wäre nichts zu sehen -- also erst abholen, dann das
+  // fetched_by_n8n_at künstlich altern lassen, genau wie n8n es nach 15 Minuten erlebt.
+  assert.equal(confirmGruppenAbholung(db, parentId).parent.id, parentId);
+  db.prepare("UPDATE jobs SET fetched_by_n8n_at = '2000-01-01T00:00:00.000Z' WHERE id = ?").run(parentId);
+
+  assert.deepEqual(listAbholbereitGruppen(db), [], 'eine abgeholte Gruppe darf n8n nie wieder angeboten werden');
+  db.close();
+});
+
+test('listAbholbereitGruppen skips a nested split parent that is itself a Splitkind of an outer group', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const aeusseresElternteil = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(aeusseresElternteil);
+
+  // Ein Splitkind, das seinerseits weiter aufgesplittet wurde: es hat ein eigenes Gruppen-PDF,
+  // gehört aber zum Dokument der äusseren Gruppe und darf n8n nie als eigenständige Gruppe
+  // angeboten werden -- dieselbe Regel, die listAbholbereitJobs per aufgesplittet_von IS NULL hat.
+  const verschachteltesKind = createSplitJob(db, getJobById(db, aeusseresElternteil), { pdfPfad: '/tmp/b.pdf', kontoId, betrag: '10.00', zugewiesenAn: '1' });
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(verschachteltesKind);
+  markGruppeExportiert(db, verschachteltesKind, { pdfPfad: '/tmp/gruppe-innen.pdf', zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+
+  assert.deepEqual(listAbholbereitGruppen(db).map((j) => j.id), []);
+
+  // Gegenprobe: dieselbe Zeile ohne aufgesplittet_von wäre sehr wohl abholbereit.
+  db.prepare('UPDATE jobs SET aufgesplittet_von = NULL WHERE id = ?').run(verschachteltesKind);
+  assert.deepEqual(listAbholbereitGruppen(db).map((j) => j.id), [verschachteltesKind]);
+  db.close();
+});
+
+test('istGruppenElternjob is true only for a job with a set gruppe_pdf_pfad', () => {
+  const db = openDatabase(':memory:');
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  assert.equal(istGruppenElternjob(db, parentId), false);
+  markGruppeExportiert(db, parentId, { pdfPfad: '/tmp/gruppe.pdf', zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+  assert.equal(istGruppenElternjob(db, parentId), true);
+  db.close();
+});
+
+test('confirmGruppenAbholung sets every abgeschlossen child to abgeholt and returns parent+kinder, no-ops for a non-group job', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  const parentJob = getJobById(db, parentId);
+  const kind1 = createSplitJob(db, parentJob, { pdfPfad: '/tmp/b.pdf', kontoId, betrag: '10.00', zugewiesenAn: '1' });
+  const kind2 = createSplitJob(db, parentJob, { pdfPfad: '/tmp/c.pdf', kontoId, betrag: '5.00', zugewiesenAn: '1' });
+  abschliesseKind(db, kind1);
+  abschliesseKind(db, kind2);
+  markGruppeExportiert(db, parentId, { pdfPfad: '/tmp/gruppe.pdf', zeitstempelGesetztAm: '2026-08-01T02:00:00.000Z', zeitstempelDateiHash: 'abc' });
+
+  const einzelnerJobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'n.pdf', pdfPfad: '/tmp/n.pdf' });
+  assert.equal(confirmGruppenAbholung(db, einzelnerJobId), null);
+
+  const ergebnis = confirmGruppenAbholung(db, parentId);
+  assert.equal(ergebnis.parent.id, parentId);
+  assert.deepEqual(ergebnis.kinder.map((k) => k.id).sort(), [kind1, kind2].sort());
+  assert.equal(getJobById(db, kind1).status, 'abgeholt');
+  assert.equal(getJobById(db, kind2).status, 'abgeholt');
+  assert.ok(getJobById(db, parentId).gruppe_abgeholt_am, 'der Elternjob braucht seinen eigenen Endzustand — sein status bleibt "aufgesplittet"');
+  db.close();
+});
+
+test('confirmGruppenAbholung is idempotent: a second call on the same group returns null (already collected)', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  const kindId = createSplitJob(db, getJobById(db, parentId), { pdfPfad: '/tmp/b.pdf', kontoId, betrag: '10.00', zugewiesenAn: '1' });
+  abschliesseKind(db, kindId);
+  markGruppeExportiert(db, parentId, { pdfPfad: '/tmp/gruppe.pdf', zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+
+  assert.ok(confirmGruppenAbholung(db, parentId));
+  assert.equal(confirmGruppenAbholung(db, parentId), null, 'die zweite Bestätigung darf bereits gelöschte Dateien nicht erneut bestätigen');
+  db.close();
+});
+
+test('confirmGruppenAbholung refuses when nurMitZeitstempel is required but the group has no Zeitstempel', () => {
+  const db = openDatabase(':memory:');
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  markGruppeExportiert(db, parentId, { pdfPfad: '/tmp/gruppe.pdf', zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+  assert.equal(confirmGruppenAbholung(db, parentId, true), null);
+  assert.ok(confirmGruppenAbholung(db, parentId, false));
+  db.close();
+});
+
+test('listSplitGruppenAusstehend returns aufgesplittet parents without a merged PDF yet', () => {
+  const db = openDatabase(':memory:');
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
+  assert.deepEqual(listSplitGruppenAusstehend(db).map((j) => j.id), [parentId]);
+
+  markGruppeExportiert(db, parentId, { pdfPfad: '/tmp/gruppe.pdf', zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+  assert.deepEqual(listSplitGruppenAusstehend(db), []);
   db.close();
 });

@@ -127,7 +127,7 @@ export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZei
   const zeitstempelBedingung = nurMitZeitstempel ? ' AND zeitstempel_gesetzt_am IS NOT NULL' : '';
   const rows = db
     .prepare(
-      `SELECT * FROM jobs WHERE status = 'abgeschlossen'
+      `SELECT * FROM jobs WHERE status = 'abgeschlossen' AND aufgesplittet_von IS NULL
        AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)${zeitstempelBedingung}`
     )
     .all(staleThreshold);
@@ -556,15 +556,20 @@ export function markJobAufgesplittet(db, jobId) {
 // absender, dateiname, zahlungsziel, rechnungsnummer, lieferant, debitor_id and the QR-decode
 // results are carried over from the parent; konto_id, betrag, zugewiesen_an are specific to this
 // one split line.
-export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId, hinweisKontoId, betrag, zugewiesenAn }) {
+// belegSeitenzahl: how many pages the (optional) attached Beleg contributed to pdfPfad, recorded
+// here at Aufsplitten time rather than re-derived later — see countBelegSeiten (belegAnhaengen.js)
+// and haengeBelegSeitenAn (splitGruppenExport.js) for why a later page-count delta cannot answer
+// this question any more once the child has been individually stamped.
+export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId, hinweisKontoId, betrag, zugewiesenAn, position, belegSeitenzahl }) {
   const status = kontoId ? 'zugewiesen' : 'unzugewiesen';
   const result = db
     .prepare(
       `INSERT INTO jobs (
          eingang_am, quelle, absender, dateiname, pdf_pfad, thumbnail_pfad, status,
          konto_id, zugewiesen_an, hinweis_konto_id, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id, aufgesplittet_von,
-         qr_iban, qr_referenz, qr_betrag, qr_waehrung, qr_creditor_name, qr_erkannt_am
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         qr_iban, qr_referenz, qr_betrag, qr_waehrung, qr_creditor_name, qr_erkannt_am,
+         rechnungsposition, beleg_seitenzahl
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       parentJob.eingang_am,
@@ -588,11 +593,117 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
       parentJob.qr_betrag,
       parentJob.qr_waehrung,
       parentJob.qr_creditor_name,
-      parentJob.qr_erkannt_am
+      parentJob.qr_erkannt_am,
+      position || null,
+      belegSeitenzahl ?? null
     );
   return Number(result.lastInsertRowid);
 }
 
+// Accumulates onto beleg_seitenzahl rather than overwriting it -- mergeBelegInPdf always
+// APPENDS a Beleg's pages after whatever is already on the PDF (never inserts), so if a job
+// already has N recorded Beleg pages (e.g. from its own Aufsplitten-time upload) and gets
+// another Beleg merged in later (Kontierung/Ablehnung-rework), the total grows by exactly the
+// new Beleg's page count. This invariant only holds because every mergeBelegFuerJob call
+// happens strictly before a job's own Freigabe-2 stamping (the one-time, always-last append) --
+// no route merges a Beleg into an already-'abgeschlossen' job.
+export function addBelegSeiten(db, jobId, zusatzSeitenzahl) {
+  if (!zusatzSeitenzahl) return;
+  db.prepare('UPDATE jobs SET beleg_seitenzahl = COALESCE(beleg_seitenzahl, 0) + ? WHERE id = ?').run(zusatzSeitenzahl, jobId);
+}
+
 export function listSplitKinder(db, parentJobId) {
   return db.prepare('SELECT * FROM jobs WHERE aufgesplittet_von = ? ORDER BY id').all(parentJobId);
+}
+
+// Eine per hinweis_konto_id angelegte Zeile (Konto ausserhalb der Freigabe-Befugnis der
+// aufsplittenden Person, siehe kontierung.js's istEigenesKonto-Zweig) ist NICHT dauerhaft
+// ausgenommen -- sie steht nur vorübergehend 'unzugewiesen', bis die zuständige Person sie über
+// die normale Kontierung claimt und sie danach den ganz normalen Weg bis 'abgeschlossen' geht.
+// Bis dahin zählt sie ganz normal als "noch offen", genau wie jede andere nicht-abgeschlossene
+// Zeile -- nur eine mit status='geloescht' aufgelöste (vormals abgelehnte) Zeile wird ignoriert.
+export function pruefeSplitGruppenVollstaendigkeit(db, parentJobId) {
+  const kinder = listSplitKinder(db, parentJobId).filter((k) => k.status !== 'geloescht');
+  if (kinder.length === 0) return { vollstaendig: false, blockiert: false, kinder: [] };
+  const blockiert = kinder.some((k) => k.status === 'abgelehnt');
+  const vollstaendig = !blockiert && kinder.every((k) => k.status === 'abgeschlossen');
+  return { vollstaendig, blockiert, kinder };
+}
+
+// Conditional on gruppe_pdf_pfad still being NULL, and reports (boolean) whether it actually
+// wrote: pruefeUndFinalisiereSplitGruppe's own "already exported?" early return happens several
+// awaits before this UPDATE, so two concurrent trigger points (e.g. the nachhol-Cron-Job and a
+// Freigabe-2-Abschluss) can both get past it. The loser of that race must not overwrite the
+// winner's merged document — it learns from the false return value that its own freshly written
+// file is now orphaned and deletes it. The gruppe_zeitstempel_* immutability triggers cannot
+// cover this: they only fire when BOTH the old and the new value are non-NULL, which is not the
+// case for a group exported without a configured TSA.
+export function markGruppeExportiert(db, parentJobId, { pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash }) {
+  const result = db
+    .prepare(
+      'UPDATE jobs SET gruppe_pdf_pfad = ?, gruppe_zeitstempel_gesetzt_am = ?, gruppe_zeitstempel_datei_hash = ? WHERE id = ? AND gruppe_pdf_pfad IS NULL'
+    )
+    .run(pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash, parentJobId);
+  return result.changes > 0;
+}
+
+// Mirrors listAbholbereitJobs's stale/refetch semantics, scoped to Splitgruppen-Elternjobs
+// (status bleibt 'aufgesplittet', nie 'abgeschlossen' -- daher eine eigene Query statt eines
+// Filters auf listAbholbereitJobs).
+// gruppe_abgeholt_am IS NULL is this listing's terminal-state gate, standing in for the
+// status='abgeschlossen' -> 'abgeholt' flip that retires an ordinary Job from
+// listAbholbereitJobs: an Elternjob keeps status 'aufgesplittet' forever, so without this the
+// stale-Fenster alone would re-offer an already collected group to n8n every 15 minutes for good.
+// aufgesplittet_von IS NULL mirrors listAbholbereitJobs's identical guard: a Splitkind that was
+// itself split further is part of an outer group's document and must never be offered to n8n as
+// a standalone top-level group.
+export function listAbholbereitGruppen(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false) {
+  const staleThreshold = new Date(Date.now() - staleAfterMs).toISOString();
+  const zeitstempelBedingung = nurMitZeitstempel ? ' AND gruppe_zeitstempel_gesetzt_am IS NOT NULL' : '';
+  const rows = db
+    .prepare(
+      `SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_pdf_pfad IS NOT NULL
+       AND gruppe_abgeholt_am IS NULL AND aufgesplittet_von IS NULL
+       AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)${zeitstempelBedingung}`
+    )
+    .all(staleThreshold);
+
+  const now = new Date().toISOString();
+  for (const row of rows) {
+    db.prepare('UPDATE jobs SET fetched_by_n8n_at = ? WHERE id = ?').run(now, row.id);
+    row.fetched_by_n8n_at = now;
+  }
+  return rows;
+}
+
+export function istGruppenElternjob(db, id) {
+  const job = getJobById(db, id);
+  return Boolean(job && job.gruppe_pdf_pfad);
+}
+
+// Analog zu confirmAbholung, aber für eine ganze Splitgruppe: setzt jedes abgeschlossene Kind auf
+// 'abgeholt' und liefert Eltern- und Kind-Datensätze zurück, damit der Aufrufer (n8n-Route) alle
+// betroffenen Dateien (Kind-PDFs, Kind-Thumbnails, Gruppen-PDF) von der Platte löschen kann.
+// Setzt zusätzlich gruppe_abgeholt_am auf dem Elternjob -- der Endzustand der Gruppe, den der
+// Elternjob-Status ('aufgesplittet') selbst nie erreicht. Damit ist der Aufruf idempotent wie
+// confirmAbholung: ein zweiter Aufruf liefert null (und der n8n-Route damit ihren bestehenden
+// 409-Pfad), statt bereits gelöschte Dateien erneut zur Abholung zu bestätigen.
+export function confirmGruppenAbholung(db, parentJobId, nurMitZeitstempel = false) {
+  const parent = getJobById(db, parentJobId);
+  if (!parent || !parent.gruppe_pdf_pfad || parent.gruppe_abgeholt_am) return null;
+  if (nurMitZeitstempel && !parent.gruppe_zeitstempel_gesetzt_am) return null;
+
+  const kinder = listSplitKinder(db, parentJobId).filter((k) => k.status === 'abgeschlossen');
+  for (const kind of kinder) {
+    db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ? AND status = 'abgeschlossen'").run(kind.id);
+  }
+  db.prepare('UPDATE jobs SET gruppe_abgeholt_am = ? WHERE id = ?').run(new Date().toISOString(), parentJobId);
+  return { parent, kinder };
+}
+
+// Arbeitsliste für den split-gruppen-nachholen Cron-Job: Elternjobs, deren Splitgruppe noch nicht
+// gemergt wurde (unabhängig davon, ob sie schon vollständig ist -- die Vollständigkeitsprüfung
+// passiert im Aufrufer, pruefeUndFinalisiereSplitGruppe).
+export function listSplitGruppenAusstehend(db) {
+  return db.prepare("SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_pdf_pfad IS NULL").all();
 }

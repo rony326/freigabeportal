@@ -30,6 +30,12 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'qr_creditor_name', ddl: 'ALTER TABLE jobs ADD COLUMN qr_creditor_name TEXT' },
   { column: 'qr_erkannt_am', ddl: 'ALTER TABLE jobs ADD COLUMN qr_erkannt_am TEXT' },
   { column: 'typ', ddl: 'ALTER TABLE jobs ADD COLUMN typ TEXT' },
+  { column: 'rechnungsposition', ddl: 'ALTER TABLE jobs ADD COLUMN rechnungsposition TEXT' },
+  { column: 'gruppe_pdf_pfad', ddl: 'ALTER TABLE jobs ADD COLUMN gruppe_pdf_pfad TEXT' },
+  { column: 'gruppe_zeitstempel_gesetzt_am', ddl: 'ALTER TABLE jobs ADD COLUMN gruppe_zeitstempel_gesetzt_am TEXT' },
+  { column: 'gruppe_zeitstempel_datei_hash', ddl: 'ALTER TABLE jobs ADD COLUMN gruppe_zeitstempel_datei_hash TEXT' },
+  { column: 'beleg_seitenzahl', ddl: 'ALTER TABLE jobs ADD COLUMN beleg_seitenzahl INTEGER' },
+  { column: 'gruppe_abgeholt_am', ddl: 'ALTER TABLE jobs ADD COLUMN gruppe_abgeholt_am TEXT' },
 ];
 
 function migrateJobsTable(db) {
@@ -62,6 +68,26 @@ function migrateJobsTable(db) {
       AND NEW.zeitstempel_gesetzt_am <> OLD.zeitstempel_gesetzt_am
     BEGIN
       SELECT RAISE(ABORT, 'zeitstempel_gesetzt_am ist unveraenderlich, sobald gesetzt');
+    END
+  `);
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_gruppe_zeitstempel_hash_unveraenderlich
+    BEFORE UPDATE OF gruppe_zeitstempel_datei_hash ON jobs
+    WHEN OLD.gruppe_zeitstempel_datei_hash IS NOT NULL
+      AND NEW.gruppe_zeitstempel_datei_hash IS NOT NULL
+      AND NEW.gruppe_zeitstempel_datei_hash <> OLD.gruppe_zeitstempel_datei_hash
+    BEGIN
+      SELECT RAISE(ABORT, 'gruppe_zeitstempel_datei_hash ist unveraenderlich, sobald gesetzt');
+    END
+  `);
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_gruppe_zeitstempel_gesetzt_am_unveraenderlich
+    BEFORE UPDATE OF gruppe_zeitstempel_gesetzt_am ON jobs
+    WHEN OLD.gruppe_zeitstempel_gesetzt_am IS NOT NULL
+      AND NEW.gruppe_zeitstempel_gesetzt_am IS NOT NULL
+      AND NEW.gruppe_zeitstempel_gesetzt_am <> OLD.gruppe_zeitstempel_gesetzt_am
+    BEGIN
+      SELECT RAISE(ABORT, 'gruppe_zeitstempel_gesetzt_am ist unveraenderlich, sobald gesetzt');
     END
   `);
 
@@ -248,6 +274,38 @@ function migratePersonBerechtigungenTable(db) {
   }
 }
 
+// Same rationale/pattern as migrateCronLogTable above, one more CHECK widening for the new
+// 'split-gruppen-nachholen' cron job. Marker value moves forward again the next time this CHECK
+// needs widening -- check the CREATE TABLE below for what it currently allows, not this comment.
+function migrateCronLogTableSplitGruppen(db) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cron_log'").get();
+  if (!tableSql || tableSql.sql.includes('split-gruppen-nachholen')) return;
+
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE cron_log RENAME TO cron_log_pre_split_gruppen_nachholen');
+    db.exec(`
+      CREATE TABLE cron_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen')),
+        gestartet_am TEXT NOT NULL,
+        beendet_am TEXT,
+        status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
+        details TEXT
+      )
+    `);
+    db.exec(`
+      INSERT INTO cron_log (id, job, gestartet_am, beendet_am, status, details)
+      SELECT id, job, gestartet_am, beendet_am, status, details FROM cron_log_pre_split_gruppen_nachholen
+    `);
+    db.exec('DROP TABLE cron_log_pre_split_gruppen_nachholen');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -260,5 +318,6 @@ export function openDatabase(dbPath) {
   migrateMailLogTable(db);
   migrateCronLogTable(db);
   migratePersonBerechtigungenTable(db);
+  migrateCronLogTableSplitGruppen(db);
   return db;
 }

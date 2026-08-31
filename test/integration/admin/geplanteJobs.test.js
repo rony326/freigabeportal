@@ -9,7 +9,7 @@ import { openDatabase } from '../../../src/db/index.js';
 import { seedDefaults, getConfigValue, setConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createJob, getJobById } from '../../../src/db/jobsRepo.js';
-import { startCronLauf } from '../../../src/db/cronLogRepo.js';
+import { startCronLauf, listRecentCronLog } from '../../../src/db/cronLogRepo.js';
 import { listMailLog } from '../../../src/db/mailLogRepo.js';
 import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
@@ -60,6 +60,7 @@ const VALID_BODY = {
   pdfBereinigungStunde: '4',
   pdfBereinigungMinute: '45',
   zeitstempelNachholenIntervallMinuten: '10',
+  splitGruppenNachholenIntervallMinuten: '20',
 };
 
 const GEPLANTE_JOBS_ROUTES = [
@@ -69,6 +70,7 @@ const GEPLANTE_JOBS_ROUTES = [
   { method: 'post', path: '/admin/geplante-jobs/pool-erinnerungen/jetzt-ausfuehren' },
   { method: 'post', path: '/admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren' },
   { method: 'post', path: '/admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren' },
+  { method: 'post', path: '/admin/geplante-jobs/split-gruppen-nachholen/jetzt-ausfuehren' },
 ];
 
 test('every Geplante-Jobs route returns 401 without any session, and config is untouched', async () => {
@@ -123,6 +125,7 @@ test('POST /admin/geplante-jobs persists a valid schedule', async () => {
   assert.equal(getConfigValue(db, 'cron_pdf_bereinigung_stunde'), '4');
   assert.equal(getConfigValue(db, 'cron_pdf_bereinigung_minute'), '45');
   assert.equal(getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'), '10');
+  assert.equal(getConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten'), '20');
   db.close();
 });
 
@@ -171,6 +174,22 @@ test('POST /admin/geplante-jobs rejects a non-positive zeitstempel-nachholen int
   assert.equal(res.status, 400);
   assert.match(res.text, /Zeitstempel-Nachholen: Intervall muss eine positive Ganzzahl/);
   assert.equal(getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'), '5');
+  db.close();
+});
+
+test('POST /admin/geplante-jobs rejects a non-positive split-gruppen-nachholen interval, config untouched', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/geplante-jobs')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ ...VALID_BODY, splitGruppenNachholenIntervallMinuten: '0' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Splitgruppen-Nachholen: Intervall muss eine positive Ganzzahl/);
+  assert.equal(getConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten'), '15');
   db.close();
 });
 
@@ -331,6 +350,58 @@ test('POST /admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren runs it n
   assert.match(res.text, /Nachgeholt: 1/);
 
   rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('GET /admin/geplante-jobs shows the Splitgruppen-Nachholen interval field and its Verlauf section', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten', '25');
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/geplante-jobs').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="splitGruppenNachholenIntervallMinuten"[^>]*value="25"/);
+  assert.match(res.text, /Splitgruppen-Nachholen — Verlauf/);
+  assert.match(res.text, /\/admin\/geplante-jobs\/split-gruppen-nachholen\/jetzt-ausfuehren/);
+  db.close();
+});
+
+test('POST /admin/geplante-jobs/split-gruppen-nachholen/jetzt-ausfuehren runs it now, logs the result, and shows feedback', async () => {
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db, { config });
+
+  const triggerRes = await request(app).post('/admin/geplante-jobs/split-gruppen-nachholen/jetzt-ausfuehren').set('x-test-person-id', '99');
+  assert.equal(triggerRes.status, 302);
+  assert.equal(triggerRes.headers.location, '/admin/geplante-jobs?getriggert=split-gruppen-nachholen');
+  assert.equal(listRecentCronLog(db, 'split-gruppen-nachholen', 10).length, 1);
+
+  const res = await request(app).get(triggerRes.headers.location).set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /alert-success/);
+  assert.match(res.text, /Nachgeholt: 0/);
+  db.close();
+});
+
+test('POST /admin/geplante-jobs/split-gruppen-nachholen/jetzt-ausfuehren shows an alert-info banner (not a false failure) when a run is already laufend', async () => {
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  startCronLauf(db, 'split-gruppen-nachholen'); // simulates a still-in-progress run
+  const app = buildTestApp(db, { config });
+
+  const triggerRes = await request(app).post('/admin/geplante-jobs/split-gruppen-nachholen/jetzt-ausfuehren').set('x-test-person-id', '99');
+  assert.equal(triggerRes.status, 302);
+
+  const res = await request(app).get(triggerRes.headers.location).set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /alert-info/);
+  assert.doesNotMatch(res.text, /alert-danger/);
+  assert.match(res.text, /Ein Splitgruppen-Nachholen-Lauf war bereits aktiv/);
   db.close();
 });
 

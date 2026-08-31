@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentSyncLogs } from '../../db/syncLogRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob } from '../../services/cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob } from '../../services/cronJobs.js';
 
 const LOG_LIMIT = 10;
 
@@ -17,10 +17,12 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       cronPdfBereinigungStunde: getConfigValue(db, 'cron_pdf_bereinigung_stunde'),
       cronPdfBereinigungMinute: getConfigValue(db, 'cron_pdf_bereinigung_minute'),
       cronZeitstempelNachholenIntervallMinuten: getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'),
+      cronSplitGruppenNachholenIntervallMinuten: getConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten'),
       syncLog: listRecentSyncLogs(db, LOG_LIMIT),
       poolErinnerungenLog: listRecentCronLog(db, 'pool-erinnerungen', LOG_LIMIT),
       pdfBereinigungLog: listRecentCronLog(db, 'pdf-bereinigung', LOG_LIMIT),
       zeitstempelNachholenLog: listRecentCronLog(db, 'zeitstempel-nachholen', LOG_LIMIT),
+      splitGruppenNachholenLog: listRecentCronLog(db, 'split-gruppen-nachholen', LOG_LIMIT),
       getriggert,
     };
   }
@@ -41,6 +43,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       pdfBereinigungStunde,
       pdfBereinigungMinute,
       zeitstempelNachholenIntervallMinuten,
+      splitGruppenNachholenIntervallMinuten,
     } = req.body;
     const errors = [];
 
@@ -64,6 +67,10 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     if (!Number.isInteger(zeitstempelIntervallNum) || zeitstempelIntervallNum <= 0) {
       errors.push('Zeitstempel-Nachholen: Intervall muss eine positive Ganzzahl (Minuten) sein.');
     }
+    const splitGruppenNachholenIntervallNum = Number(splitGruppenNachholenIntervallMinuten);
+    if (!Number.isInteger(splitGruppenNachholenIntervallNum) || splitGruppenNachholenIntervallNum <= 0) {
+      errors.push('Splitgruppen-Nachholen: Intervall muss eine positive Ganzzahl (Minuten) sein.');
+    }
 
     if (errors.length > 0) {
       return res.status(400).render('admin/geplante-jobs', {
@@ -73,10 +80,12 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
         cronPdfBereinigungStunde: pdfBereinigungStunde,
         cronPdfBereinigungMinute: pdfBereinigungMinute,
         cronZeitstempelNachholenIntervallMinuten: zeitstempelNachholenIntervallMinuten,
+        cronSplitGruppenNachholenIntervallMinuten: splitGruppenNachholenIntervallMinuten,
         syncLog: listRecentSyncLogs(db, LOG_LIMIT),
         poolErinnerungenLog: listRecentCronLog(db, 'pool-erinnerungen', LOG_LIMIT),
         pdfBereinigungLog: listRecentCronLog(db, 'pdf-bereinigung', LOG_LIMIT),
         zeitstempelNachholenLog: listRecentCronLog(db, 'zeitstempel-nachholen', LOG_LIMIT),
+        splitGruppenNachholenLog: listRecentCronLog(db, 'split-gruppen-nachholen', LOG_LIMIT),
         getriggert: null,
         errors,
         gespeichert: false,
@@ -89,6 +98,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     setConfigValue(db, 'cron_pdf_bereinigung_stunde', String(pdfStundeNum));
     setConfigValue(db, 'cron_pdf_bereinigung_minute', String(pdfMinuteNum));
     setConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten', String(zeitstempelIntervallNum));
+    setConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten', String(splitGruppenNachholenIntervallNum));
     res.redirect('/admin/geplante-jobs?gespeichert=1');
   });
 
@@ -128,6 +138,15 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     try {
       await runZeitstempelNachholenJob(db, config);
       res.redirect('/admin/geplante-jobs?getriggert=zeitstempel-nachholen');
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/split-gruppen-nachholen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+    try {
+      await runSplitGruppenNachholenJob(db, config);
+      res.redirect('/admin/geplante-jobs?getriggert=split-gruppen-nachholen');
     } catch (err) {
       next(err);
     }

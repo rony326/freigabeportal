@@ -97,7 +97,7 @@ das erste Konto anzulegen oder später Einzelrechte zuzuweisen.
 ### Zeitgesteuerte Jobs — laufen im Node-Prozess selbst
 
 Kein externer Task Scheduler nötig: Solange der Node-Prozess läuft (Infomaniaks
-Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App die vier
+Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App die fünf
 Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 
 | Job | Zeitplan | Zweck |
@@ -106,12 +106,13 @@ Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 | `pool-erinnerungen` | Intervall, Default alle 60 Min. | Reminder-/Eskalations-Mails für unbeanspruchte Pool-Rechnungen (Schwellen in Stunden, admin-konfigurierbar, Default 24h/48h — separat unter Eskalationszeiten) |
 | `pdf-bereinigung` | täglich, Default 02:30 (Europe/Zürich) | Archivierung abgeholter Jobs, Aufräumen alter `.tmp`-Stempeldateien, Mail-Log-Retention |
 | `zeitstempel-nachholen` | Intervall, Default alle 5 Min. | wiederholt fehlgeschlagene RFC3161-Zeitstempel-Versuche (nur solange die PDF noch lokal vorliegt) |
+| `split-gruppen-nachholen` | Intervall, Default alle 15 Min. | holt die Zusammenführung einer vollständig freigegebenen Splitgruppe nach, wenn sie noch aussteht oder am Zeitstempel gescheitert ist |
 
-**Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan aller vier Jobs
+**Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan aller fünf Jobs
 einstellen (wirkt ab dem nächsten planmässigen Lauf, kein Neustart nötig),
 jeden Job manuell sofort auslösen, und den Verlauf der letzten Läufe
 (Erfolg/Fehler samt Details) einsehen — sowohl geplante als auch manuell
-ausgelöste Läufe landen im selben Verlauf. Details zu allen vier Jobs:
+ausgelöste Läufe landen im selben Verlauf. Details zu allen fünf Jobs:
 [docs/geplante-jobs-und-benachrichtigungen.md](docs/geplante-jobs-und-benachrichtigungen.md).
 
 Die zugehörigen `POST /internal/cron/*`-Routen (Header `X-Cron-Secret:

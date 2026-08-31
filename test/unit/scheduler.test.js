@@ -33,6 +33,7 @@ function fakeJobs(overrides = {}) {
     runPdfBereinigungJob: () => ({ status: 'erfolg' }),
     runZeitstempelNachholenJob: async () => ({ status: 'erfolg' }),
     runDatenbankSicherungJob: () => ({ status: 'erfolg' }),
+    runSplitGruppenNachholenJob: async () => ({ status: 'erfolg' }),
     ...overrides,
   };
 }
@@ -180,6 +181,27 @@ test('startScheduler runs the zeitstempel-nachholen job on the configured interv
   assert.equal(calls, 1);
 
   t.mock.timers.tick(5 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 2);
+  db.close();
+});
+
+test('startScheduler runs the split-gruppen-nachholen job on the configured interval (default 15 minutes)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const db = seededDb();
+  let calls = 0;
+  startScheduler({
+    db,
+    config: {},
+    mailer: {},
+    jobs: fakeJobs({ runSplitGruppenNachholenJob: async () => { calls += 1; return { status: 'erfolg' }; } }),
+  });
+
+  t.mock.timers.tick(15 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+
+  t.mock.timers.tick(15 * 60 * 1000);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(calls, 2);
   db.close();

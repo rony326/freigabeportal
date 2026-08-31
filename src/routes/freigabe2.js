@@ -11,6 +11,7 @@ import { setZeitstempel } from '../services/zeitstempel.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
 import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
+import { pruefeUndFinalisiereSplitGruppe } from '../services/splitGruppenExport.js';
 
 export function createFreigabe2Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -347,6 +348,18 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           }
         }
       }
+
+      if (job.aufgesplittet_von) {
+        try {
+          await pruefeUndFinalisiereSplitGruppe(db, job.aufgesplittet_von);
+        } catch (err) {
+          // Never let a Splitgruppen-Merge-Fehler die bereits abgeschlossene Freigabe 2 dieses
+          // einzelnen Kindes scheitern lassen -- der Nachhol-Cron-Job holt einen fehlgeschlagenen
+          // Merge später nach.
+          console.error(`Splitgruppen-Prüfung für Elternjob ${job.aufgesplittet_von} fehlgeschlagen:`, err.message);
+        }
+      }
+
       res.redirect('/pool');
     } catch (err) {
       next(err);

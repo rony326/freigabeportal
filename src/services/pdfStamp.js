@@ -145,3 +145,73 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
     throw new Error('PDF konnte nicht gestempelt werden – Dokument ist ungültig oder enthält Zeichen, die nicht dargestellt werden können.');
   }
 }
+
+// Combined stamp page for a Splitgruppe: one Konto/Betrag/Position/Freigabe-1+2 block per split
+// line instead of stampAndFinalize's single Konto block, plus one shared Verlauf covering every
+// child's freigaben (caller pre-sorts/pre-labels it, see splitGruppenExport.js). Reuses
+// drawFreigabeBlock/drawVerlauf/wrapLine verbatim -- only the loop over multiple Positionen is new.
+export async function stampGruppenDokument(pdfBuffer, gruppenData) {
+  let doc;
+  try {
+    doc = await PDFDocument.load(pdfBuffer);
+  } catch {
+    throw new Error('PDF konnte nicht geladen werden – Datei ist beschädigt oder kein gültiges PDF.');
+  }
+
+  try {
+    const pages = doc.getPages();
+    if (pages.length === 0) {
+      throw new Error('PDF enthält keine Seiten und kann nicht gestempelt werden.');
+    }
+
+    const { width, height } = pages[pages.length - 1].getSize();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
+    const maxWidth = width - PAGE_MARGIN;
+    const TITLE_BOTTOM_MARGIN = 80; // room for up to ~2 wrapped title lines
+    const FREIGABE_BLOCK_BOTTOM_MARGIN = 130; // heading(18) + up to 5 lines(14 each, with a Kommentar) = 88, plus headroom
+
+    let stampPage = doc.addPage([width, height]);
+    let y = height - 50;
+    if (gruppenData.jobId != null) {
+      stampPage.drawText(`Splitgruppe — Job-ID: ${gruppenData.jobId}`, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });
+      y -= 30;
+    }
+
+    for (const position of gruppenData.positionen) {
+      if (y < TITLE_BOTTOM_MARGIN) {
+        stampPage = doc.addPage([width, height]);
+        y = height - 50;
+      }
+      const titelTeile = [`Konto: ${position.kontoNummer} — ${position.kontoBezeichnung}`, `Betrag: ${position.betrag}`];
+      if (position.position) titelTeile.push(`Position: ${position.position}`);
+      for (const line of wrapLine(boldFont, titelTeile.join(' — '), 13, maxWidth)) {
+        stampPage.drawText(line, { x: 60, y, size: 13, font: boldFont, color: rgb(0, 0, 0) });
+        y -= 17;
+      }
+      y -= 10;
+      if (y < FREIGABE_BLOCK_BOTTOM_MARGIN) {
+        stampPage = doc.addPage([width, height]);
+        y = height - 50;
+      }
+      y = drawFreigabeBlock(stampPage, font, 'Freigabe 1', position.freigeber1, y, maxWidth);
+      y -= BLOCK_GAP;
+      if (y < FREIGABE_BLOCK_BOTTOM_MARGIN) {
+        stampPage = doc.addPage([width, height]);
+        y = height - 50;
+      }
+      y = drawFreigabeBlock(stampPage, font, 'Freigabe 2', position.freigeber2, y, maxWidth);
+      y -= BLOCK_GAP + 10;
+    }
+
+    if (y < VERLAUF_BOTTOM_MARGIN + 20) {
+      stampPage = doc.addPage([width, height]);
+      y = height - 50;
+    }
+    drawVerlauf(doc, font, gruppenData.verlauf, stampPage, y, width, height);
+
+    return Buffer.from(await doc.save());
+  } catch {
+    throw new Error('PDF konnte nicht gestempelt werden – Dokument ist ungültig oder enthält Zeichen, die nicht dargestellt werden können.');
+  }
+}

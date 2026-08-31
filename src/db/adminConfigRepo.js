@@ -24,6 +24,7 @@ const DEFAULTS = {
   zeitstempel_tsa_user: '',
   zeitstempel_tsa_passwort: '',
   cron_zeitstempel_nachholen_intervall_minuten: '5',
+  cron_split_gruppen_nachholen_intervall_minuten: '15',
   zeitstempel_warnung_ab_stunden: '2',
   backup_cron_stunde: '3',
   backup_cron_minute: '0',

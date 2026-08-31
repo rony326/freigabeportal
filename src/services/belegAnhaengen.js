@@ -36,6 +36,19 @@ function toOwnedUint8Array(buffer) {
   return Uint8Array.from(buffer);
 }
 
+// Returns how many pages a Beleg will contribute once merged via mergeBelegInPdf — a PDF
+// Beleg contributes all of its own pages, an image Beleg always contributes exactly one. Used
+// to record the exact page count at Aufsplitten time (kontierung.js) so a later Splitgruppen
+// merge (splitGruppenExport.js) can locate those pages precisely instead of re-deriving them
+// from a page-count delta that a subsequent stamping step would invalidate.
+export async function countBelegSeiten(belegBuffer, belegMimetype) {
+  if (belegMimetype === 'application/pdf') {
+    const doc = await PDFDocument.load(toOwnedUint8Array(belegBuffer));
+    return doc.getPageCount();
+  }
+  return 1;
+}
+
 export async function mergeBelegInPdf(pdfBuffer, belegBuffer, belegMimetype) {
   const doc = await PDFDocument.load(toOwnedUint8Array(pdfBuffer));
   const belegBytes = toOwnedUint8Array(belegBuffer);

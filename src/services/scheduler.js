@@ -1,4 +1,4 @@
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob } from './cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob } from './cronJobs.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
 const ZEITZONE = 'Europe/Zurich';
@@ -96,12 +96,14 @@ export function startScheduler({
     runPdfBereinigungJob: bereinigungJob,
     runZeitstempelNachholenJob: zeitstempelJob,
     runDatenbankSicherungJob: sicherungJob,
+    runSplitGruppenNachholenJob: splitGruppenJob,
   } = {
     runSyncPersonenJob,
     runPoolErinnerungenJob,
     runPdfBereinigungJob,
     runZeitstempelNachholenJob,
     runDatenbankSicherungJob,
+    runSplitGruppenNachholenJob,
   },
 }) {
   scheduleDaily(
@@ -135,6 +137,14 @@ export function startScheduler({
     async () => {
       const result = await zeitstempelJob(db, config);
       if (result.status === 'fehler') console.error('Geplanter zeitstempel-nachholen-Lauf fehlgeschlagen:', result.error);
+    }
+  );
+
+  scheduleInterval(
+    () => zahlOderStandard(getConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten'), 15) * MINUTE_MS,
+    async () => {
+      const result = await splitGruppenJob(db, config);
+      if (result.status === 'fehler') console.error('Geplanter split-gruppen-nachholen-Lauf fehlgeschlagen:', result.error);
     }
   );
 

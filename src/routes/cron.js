@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob } from '../services/cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob } from '../services/cronJobs.js';
 
 function httpStatusFuer(status) {
   if (status === 'uebersprungen') return 409;
@@ -47,6 +47,15 @@ export function createCronRouter({ db, config, mailer }) {
   router.post('/zeitstempel-nachholen', async (req, res, next) => {
     try {
       const result = await runZeitstempelNachholenJob(db, config);
+      res.status(httpStatusFuer(result.status)).json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/split-gruppen-nachholen', async (req, res, next) => {
+    try {
+      const result = await runSplitGruppenNachholenJob(db, config);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);

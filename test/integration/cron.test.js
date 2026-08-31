@@ -512,3 +512,21 @@ test('POST /internal/cron/zeitstempel-nachholen runs with the correct secret and
   assert.equal(res.body.nachgeholt, 0);
   db.close();
 });
+
+test('POST /internal/cron/split-gruppen-nachholen without the secret is rejected', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).post('/internal/cron/split-gruppen-nachholen');
+  assert.equal(res.status, 401);
+  db.close();
+});
+
+test('POST /internal/cron/split-gruppen-nachholen runs with the correct secret and reports erfolg with zero pending groups', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).post('/internal/cron/split-gruppen-nachholen').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, 'erfolg');
+  assert.equal(res.body.nachgeholt, 0);
+  db.close();
+});

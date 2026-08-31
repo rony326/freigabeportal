@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS admin_config (
 -- both fields in one shot via logCronLauf and never use 'laufend'.
 CREATE TABLE IF NOT EXISTS cron_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung')),
+  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen')),
   gestartet_am TEXT NOT NULL,
   beendet_am TEXT,
   status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
@@ -135,7 +135,13 @@ CREATE TABLE IF NOT EXISTS jobs (
   qr_waehrung TEXT,
   qr_creditor_name TEXT,
   qr_erkannt_am TEXT,
-  typ TEXT
+  typ TEXT,
+  rechnungsposition TEXT,
+  gruppe_pdf_pfad TEXT,
+  gruppe_zeitstempel_gesetzt_am TEXT,
+  gruppe_zeitstempel_datei_hash TEXT,
+  beleg_seitenzahl INTEGER,
+  gruppe_abgeholt_am TEXT
 );
 
 -- Manipulationsschutz: sobald ein Zeitstempel-Hash/-Zeitpunkt für einen Job gesetzt ist, darf er
@@ -159,6 +165,24 @@ WHEN OLD.zeitstempel_gesetzt_am IS NOT NULL
   AND NEW.zeitstempel_gesetzt_am <> OLD.zeitstempel_gesetzt_am
 BEGIN
   SELECT RAISE(ABORT, 'zeitstempel_gesetzt_am ist unveraenderlich, sobald gesetzt');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_gruppe_zeitstempel_hash_unveraenderlich
+BEFORE UPDATE OF gruppe_zeitstempel_datei_hash ON jobs
+WHEN OLD.gruppe_zeitstempel_datei_hash IS NOT NULL
+  AND NEW.gruppe_zeitstempel_datei_hash IS NOT NULL
+  AND NEW.gruppe_zeitstempel_datei_hash <> OLD.gruppe_zeitstempel_datei_hash
+BEGIN
+  SELECT RAISE(ABORT, 'gruppe_zeitstempel_datei_hash ist unveraenderlich, sobald gesetzt');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_gruppe_zeitstempel_gesetzt_am_unveraenderlich
+BEFORE UPDATE OF gruppe_zeitstempel_gesetzt_am ON jobs
+WHEN OLD.gruppe_zeitstempel_gesetzt_am IS NOT NULL
+  AND NEW.gruppe_zeitstempel_gesetzt_am IS NOT NULL
+  AND NEW.gruppe_zeitstempel_gesetzt_am <> OLD.gruppe_zeitstempel_gesetzt_am
+BEGIN
+  SELECT RAISE(ABORT, 'gruppe_zeitstempel_gesetzt_am ist unveraenderlich, sobald gesetzt');
 END;
 
 CREATE TABLE IF NOT EXISTS freigaben (

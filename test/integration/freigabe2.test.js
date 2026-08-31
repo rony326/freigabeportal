@@ -2,11 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson, getPersonById } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob } from '../../src/db/jobsRepo.js';
+import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob, createSplitJob } from '../../src/db/jobsRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { buildAuditLog } from '../../src/services/auditLog.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
@@ -1180,5 +1182,43 @@ test('a Stellvertreter2 who is escalated to and ALSO has a conflict escalates to
   const adminAgent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'] });
   const adminRes = await adminAgent.get(`/freigabe2/${jobId}`);
   assert.equal(adminRes.status, 200);
+  db.close();
+});
+
+test('POST /freigabe2/:id triggers the Splitgruppe merge once the LAST sibling completes, and does nothing while a sibling remains open', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-splitgruppe-test-'));
+  const kindPfad2 = join(dir, 'kind2.pdf');
+  writeFileSync(kindPfad2, await buildPdfFixture(['Rechnung Seite 1']));
+  const { id: kind2, kontoId } = await seedFreigabe2Job(db, { pdfPfad: kindPfad2 });
+
+  const parentPfad = join(dir, 'parent.pdf');
+  writeFileSync(parentPfad, await buildPdfFixture(['Rechnung Seite 1']));
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: parentPfad });
+  db.prepare('UPDATE jobs SET aufgesplittet_von = ?, rechnungsposition = ? WHERE id = ?').run(parentId, 'Pos. 2', kind2);
+
+  // kind1 shares the same Konto/Freigeber (person '1' = freigeber1, person '3' = freigeber2) and
+  // has already been through the auto-Freigabe-1 path (see kontierung.js's istEigenesKonto
+  // branch, Task 3), landing it in 'freigabe2' too -- exactly like a real Aufsplitten result.
+  const kindPfad1 = join(dir, 'kind1.pdf');
+  writeFileSync(kindPfad1, await buildPdfFixture(['Rechnung Seite 1']));
+  const parentJob = getJobById(db, parentId);
+  const kind1 = createSplitJob(db, parentJob, { pdfPfad: kindPfad1, kontoId, betrag: '10.00', zugewiesenAn: '1', position: 'Pos. 1' });
+  createFreigabe(db, { jobId: kind1, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-15T08:30:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(kind1);
+
+  const app = buildTestApp(db);
+
+  // Completing kind1's Freigabe 2 first -- kind2 is still open, so the group must NOT export yet.
+  const res1 = await request(app).post(`/freigabe2/${kind1}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res1.status, 302);
+  assert.equal(getJobById(db, parentId).gruppe_pdf_pfad, null);
+
+  // Completing kind2's Freigabe 2 (the last remaining sibling) must trigger the merge.
+  const res2 = await request(app).post(`/freigabe2/${kind2}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res2.status, 302);
+  assert.ok(getJobById(db, parentId).gruppe_pdf_pfad, 'the group must be merged and exported once the last sibling completes Freigabe 2');
+
+  rmSync(dir, { recursive: true, force: true });
   db.close();
 });

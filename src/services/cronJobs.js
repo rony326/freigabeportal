@@ -14,11 +14,13 @@ import {
   archivierenJob,
   markZeitstempelGesetzt,
   listZeitstempelAusstehendJobs,
+  listSplitGruppenAusstehend,
 } from '../db/jobsRepo.js';
 import { pruneMailLogOlderThan } from '../db/mailLogRepo.js';
 import { sendNotification, resolveEmpfaenger } from './notify.js';
 import { logCronLauf, startCronLauf, finishCronLauf, hasRecentRunningCronLauf } from '../db/cronLogRepo.js';
 import { setZeitstempel } from './zeitstempel.js';
+import { pruefeUndFinalisiereSplitGruppe } from './splitGruppenExport.js';
 
 const TMP_MAX_ALTER_MS = 60 * 60 * 1000; // 1 Stunde
 
@@ -294,6 +296,41 @@ export function runDatenbankSicherungJob(db, config) {
       details: `Datei: ${dateiname}, Grösse: ${archiv.length} Bytes, Bereinigt: ${bereinigt}`,
     });
     return ergebnis;
+  } catch (err) {
+    finishCronLauf(db, laufId, { beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
+    return { status: 'fehler', error: err.message };
+  }
+}
+
+// Nachholt Splitgruppen, deren Merge beim ersten Versuch (Freigabe-2-Abschluss des letzten
+// Kindes, oder Löschung einer blockierenden abgelehnten Zeile) fehlgeschlagen ist -- TSA-Ausfall,
+// beschädigtes Kind-PDF -- oder die zum Zeitpunkt des letzten Auslösers noch unvollständig war.
+// Jede Gruppe wird unabhängig versucht: ein fehlerhaftes Kind-PDF in einer Gruppe darf die
+// anderen Gruppen im selben Lauf nicht blockieren.
+export async function runSplitGruppenNachholenJob(db, config) {
+  if (hasRecentRunningCronLauf(db, 'split-gruppen-nachholen')) {
+    return { status: 'uebersprungen', nachgeholt: 0, meldung: 'Ein Splitgruppen-Nachholen-Lauf ist bereits aktiv' };
+  }
+
+  const laufId = startCronLauf(db, 'split-gruppen-nachholen');
+  try {
+    const ausstehend = listSplitGruppenAusstehend(db);
+    let nachgeholt = 0;
+    let fehlgeschlagen = 0;
+    let uebersprungen = 0;
+    for (const parent of ausstehend) {
+      const ergebnis = await pruefeUndFinalisiereSplitGruppe(db, parent.id);
+      if (ergebnis.status === 'exportiert') nachgeholt += 1;
+      else if (ergebnis.status === 'fehler') fehlgeschlagen += 1;
+      else uebersprungen += 1;
+    }
+
+    finishCronLauf(db, laufId, {
+      beendetAm: new Date().toISOString(),
+      status: 'erfolg',
+      details: `Nachgeholt: ${nachgeholt}, Fehlgeschlagen: ${fehlgeschlagen}, Übersprungen: ${uebersprungen}`,
+    });
+    return { status: 'erfolg', nachgeholt, fehlgeschlagen, uebersprungen };
   } catch (err) {
     finishCronLauf(db, laufId, { beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
     return { status: 'fehler', error: err.message };

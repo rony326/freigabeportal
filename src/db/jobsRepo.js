@@ -591,6 +591,18 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
   return Number(result.lastInsertRowid);
 }
 
+// Accumulates onto beleg_seitenzahl rather than overwriting it -- mergeBelegInPdf always
+// APPENDS a Beleg's pages after whatever is already on the PDF (never inserts), so if a job
+// already has N recorded Beleg pages (e.g. from its own Aufsplitten-time upload) and gets
+// another Beleg merged in later (Kontierung/Ablehnung-rework), the total grows by exactly the
+// new Beleg's page count. This invariant only holds because every mergeBelegFuerJob call
+// happens strictly before a job's own Freigabe-2 stamping (the one-time, always-last append) --
+// no route merges a Beleg into an already-'abgeschlossen' job.
+export function addBelegSeiten(db, jobId, zusatzSeitenzahl) {
+  if (!zusatzSeitenzahl) return;
+  db.prepare('UPDATE jobs SET beleg_seitenzahl = COALESCE(beleg_seitenzahl, 0) + ? WHERE id = ?').run(zusatzSeitenzahl, jobId);
+}
+
 export function listSplitKinder(db, parentJobId) {
   return db.prepare('SELECT * FROM jobs WHERE aufgesplittet_von = ? ORDER BY id').all(parentJobId);
 }

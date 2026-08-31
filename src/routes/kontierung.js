@@ -16,6 +16,7 @@ import {
   markJobAufgesplittet,
   createSplitJob,
   setJobBetrag,
+  addBelegSeiten,
 } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById, listKonten } from '../db/kontenRepo.js';
 import { listDebitoren, getDebitorById, createDebitor } from '../db/debitorenRepo.js';
@@ -36,7 +37,17 @@ const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 // Stempeln erst beim asynchronen Gruppen-Merge zum Scheitern bringen, wo niemand mehr eine
 // Rückmeldung bekommt und der Nachhol-Cron-Job denselben Fehler endlos wiederholt. Deshalb wird
 // dieses eine Feld schon beim Absenden geprüft, wo die Person die Zeile direkt korrigieren kann.
-const POSITION_PATTERN = /^[\p{L}\p{N}\s.,;:()/#\-–—]*$/u;
+//
+// Bewusst eine explizite Positivliste statt \p{L}/\p{N}: Unicode-Buchstaben/-Ziffern umfassen auch
+// Kyrillisch, CJK, Latin-Extended-A (Ř, Ł, ...) und eingekreiste Ziffern, die Helvetica allesamt
+// NICHT kodieren kann — und \s liesse Tab/Zeilenumbruch durch, die ebenfalls werfen. Umgekehrt
+// waren WinAnsi-sichere Alltagszeichen wie & % + ' vorher fälschlich verboten.
+// \u0020-\u007E ist druckbares ASCII (schliesst rohe Tabs/Zeilenumbrüche bewusst aus),
+// \u00A0-\u00FF ist Latin-1 Supplement (deutsche Umlaute, französische/skandinavische Akzente
+// usw.); der Rest sind die Windows-1252-Extras ausserhalb von Latin-1, die hier realistisch
+// vorkommen: Œ œ Š š Ž ž Ÿ sowie Halbgeviert-/Geviertstrich (die im Rest dieses Codes ohnehin
+// schon in PDF-Texten verwendet werden).
+const POSITION_PATTERN = /^[\u0020-\u007E\u00A0-\u00FFŒœŠšŽžŸ–—]*$/;
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 // Aufsplitten sends one optional beleg file per Teil row (teilBeleg_<i>) via uploadBeleg.any(),
 // which has no field-name allowlist — without a files cap, a request forging many parts could
@@ -252,7 +263,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           return renderFehler('Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.', 409);
         }
 
+        // beleg_seitenzahl mitzuführen ist hier genauso Pflicht wie beim Aufsplitten: auch ein
+        // Splitkind (aufgesplittet_von gesetzt) landet auf diesem Pfad, wenn seine Zeile abgelehnt
+        // und überarbeitet wird. Ohne die Fortschreibung wüsste der spätere Gruppen-Merge nichts
+        // von diesen Belegseiten und liesse sie kommentarlos aus dem Archivdokument weg.
+        // Bewusst nicht auf Splitkinder eingeschränkt -- bei einem gewöhnlichen Job liest diese
+        // Spalte schlicht niemand.
         if (req.file) {
+          addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
           await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
         }
 
@@ -374,7 +392,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         throw err;
       }
 
+      // Siehe Ablehnungs-Pfad oben: ein Splitkind erreicht auch die normale Kontierung -- etwa
+      // eine per hinweis_konto_id angelegte Zeile, die aus dem Pool geclaimt wird, oder eine aus
+      // der Interessenskonflikt-Eskalationsmail heraus geöffnete. Ein hier angehängter Beleg muss
+      // deshalb genauso in beleg_seitenzahl einfliessen, sonst fehlt er später im Gruppendokument.
       if (req.file) {
+        addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
         await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
       }
 

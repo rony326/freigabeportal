@@ -953,23 +953,19 @@ test('GET /api/n8n/jobs/abholbereit includes a live-looked-up, normalized IBAN a
     churchtools: {
       baseUrl: 'https://ct.example.org',
       syncServiceToken: 'sync-token',
-      customFieldIban: 'IBAN',
-      customFieldKontoinhaber: 'Kontoinhaber',
+      customFieldIban: 'iban_1',
+      customFieldKontoinhaber: 'kontoinhaber',
     },
   };
   const app = buildTestApp(db, config, createStubMailer());
 
   const { id: jobId } = seedAbgeschlossenSpesenJob(db, jobsDir);
 
+  // ChurchTools has no separate customFields array — custom fields are flat properties directly
+  // on the person object (confirmed against a live instance).
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/api/persons/60', method: 'GET' }).reply(200, {
-    data: {
-      id: 60,
-      customFields: [
-        { name: 'IBAN', value: 'CH93 0076 2011 6238 5295 7' },
-        { name: 'Kontoinhaber', value: 'Max Muster' },
-      ],
-    },
+    data: { id: 60, iban_1: 'CH93 0076 2011 6238 5295 7', kontoinhaber: 'Max Muster' },
   });
 
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
@@ -990,8 +986,8 @@ test('GET /api/n8n/jobs/abholbereit returns iban: null for a Spesen position whe
     churchtools: {
       baseUrl: 'https://ct.example.org',
       syncServiceToken: 'sync-token',
-      customFieldIban: 'IBAN',
-      customFieldKontoinhaber: 'Kontoinhaber',
+      customFieldIban: 'iban_1',
+      customFieldKontoinhaber: 'kontoinhaber',
     },
   };
   const app = buildTestApp(db, config, createStubMailer());

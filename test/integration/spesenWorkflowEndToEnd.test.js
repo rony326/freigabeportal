@@ -25,8 +25,8 @@ function testConfig(jobsDir) {
       groupIdBuchhaltung: '10',
       groupIdAdmin: '20',
       syncServiceToken: 'token',
-      customFieldIban: 'IBAN',
-      customFieldKontoinhaber: 'Kontoinhaber',
+      customFieldIban: 'iban_1',
+      customFieldKontoinhaber: 'kontoinhaber',
     },
     cronSecret: 'cron-secret',
     n8nApiKey: 'n8n-key',
@@ -109,16 +109,12 @@ test('a Spesen position walks the full path: Einreichung -> Freigabe1 -> Freigab
   assert.equal(abgeschlossenerJob.status, 'abgeschlossen');
   assert.ok(abgeschlossenerJob.abgeschlossen_am);
 
+  // ChurchTools has no separate customFields array — custom fields are flat properties directly
+  // on the person object (confirmed against a live instance).
   client
     .intercept({ path: '/api/persons/5', method: 'GET' })
     .reply(200, {
-      data: {
-        id: 5,
-        customFields: [
-          { id: 30, name: 'IBAN', value: 'CH93 0076 2011 6238 5295 7' },
-          { id: 31, name: 'Kontoinhaber', value: 'Ein Reicher' },
-        ],
-      },
+      data: { id: 5, iban_1: 'CH93 0076 2011 6238 5295 7', kontoinhaber: 'Ein Reicher' },
     });
   const abholbereitRes = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   assert.equal(abholbereitRes.status, 200);

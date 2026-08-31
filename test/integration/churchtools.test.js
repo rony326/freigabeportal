@@ -81,25 +81,16 @@ test('resolveMemberGroupIds returns only groups the person belongs to', async ()
   assert.deepEqual(groups, ['10']);
 });
 
-test('extractCustomFieldValue finds a custom field by name and returns its trimmed value', () => {
-  const person = {
-    id: 9,
-    customFields: [
-      { id: 12, name: 'IBAN', value: '  CH93 0076 2011 6238 5295 7  ' },
-      { id: 13, name: 'Kontoinhaber', value: 'Max Muster' },
-    ],
-  };
-  assert.equal(extractCustomFieldValue(person, 'IBAN'), 'CH93 0076 2011 6238 5295 7');
+test('extractCustomFieldValue reads a flat top-level property by its exact key and returns its trimmed value', () => {
+  const person = { id: 9, iban_1: '  CH93 0076 2011 6238 5295 7  ', kontoinhaber: 'Max Muster' };
+  assert.equal(extractCustomFieldValue(person, 'iban_1'), 'CH93 0076 2011 6238 5295 7');
+  assert.equal(extractCustomFieldValue(person, 'kontoinhaber'), 'Max Muster');
 });
 
-test('extractCustomFieldValue finds a custom field by numeric id', () => {
-  const person = { id: 9, customFields: [{ id: 12, name: 'IBAN', value: 'CH930076201162385295 7' }] };
-  assert.equal(extractCustomFieldValue(person, '12'), 'CH930076201162385295 7');
-});
-
-test('extractCustomFieldValue returns null when the field is missing, empty, or the person has no customFields', () => {
-  assert.equal(extractCustomFieldValue({ id: 9, customFields: [] }, 'IBAN'), null);
-  assert.equal(extractCustomFieldValue({ id: 9, customFields: [{ id: 12, name: 'IBAN', value: '' }] }, 'IBAN'), null);
-  assert.equal(extractCustomFieldValue({ id: 9 }, 'IBAN'), null);
-  assert.equal(extractCustomFieldValue(null, 'IBAN'), null);
+test('extractCustomFieldValue returns null when the property is missing, empty, null, or the person itself is null', () => {
+  assert.equal(extractCustomFieldValue({ id: 9 }, 'iban_1'), null, 'property absent entirely');
+  assert.equal(extractCustomFieldValue({ id: 9, iban_1: '' }, 'iban_1'), null, 'empty string');
+  assert.equal(extractCustomFieldValue({ id: 9, iban_1: null }, 'iban_1'), null, 'explicit null');
+  assert.equal(extractCustomFieldValue(null, 'iban_1'), null, 'no person at all');
+  assert.equal(extractCustomFieldValue({ id: 9, iban_1: 'CH93' }, null), null, 'no field key given');
 });

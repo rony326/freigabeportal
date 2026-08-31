@@ -55,16 +55,17 @@ export async function fetchPersonById(config, loginToken, personId) {
   return data.data;
 }
 
-// ChurchTools' GET /api/persons/{id} response includes a `customFields` array — see the
-// verification note on this feature's implementation-plan Task 6 before relying on this against
-// production data; the exact shape is installation/API-version-specific and was not confirmed
-// against a real instance while writing this.
-export function extractCustomFieldValue(person, fieldNameOrId) {
-  if (!person || !Array.isArray(person.customFields)) return null;
-  const eintrag = person.customFields.find((feld) => feld.name === fieldNameOrId || String(feld.id) === String(fieldNameOrId));
-  if (!eintrag || !eintrag.value) return null;
-  const wert = String(eintrag.value).trim();
-  return wert || null;
+// Confirmed against a live instance: ChurchTools' GET /api/persons/{id} response has no separate
+// customFields array at all. Custom fields appear as flat, lowercase/underscored top-level
+// properties directly on the person object (e.g. "iban_1", "kontoinhaber") — so
+// CT_CUSTOM_FIELD_IBAN/CT_CUSTOM_FIELD_KONTOINHABER must be set to that exact property key, not a
+// display name or a numeric custom-field ID.
+export function extractCustomFieldValue(person, fieldKey) {
+  if (!person || !fieldKey) return null;
+  const wert = person[fieldKey];
+  if (wert == null) return null;
+  const getrimmt = String(wert).trim();
+  return getrimmt || null;
 }
 
 export async function fetchGroupMemberIds(config, loginToken, groupId) {

@@ -1287,10 +1287,12 @@ test('POST /freigabe2/:id prints the submitter\'s live-looked-up IBAN and Kontoi
   createFreigabe(db, { jobId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-31T08:10:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
   db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
 
-  const churchtoolsConfig = { baseUrl: 'https://ct.example.org', syncServiceToken: 'sync-token', customFieldIban: 'IBAN', customFieldKontoinhaber: 'Kontoinhaber' };
+  const churchtoolsConfig = { baseUrl: 'https://ct.example.org', syncServiceToken: 'sync-token', customFieldIban: 'iban_1', customFieldKontoinhaber: 'kontoinhaber' };
   const client = setupMockChurchTools(churchtoolsConfig.baseUrl);
+  // ChurchTools has no separate customFields array — custom fields are flat properties directly
+  // on the person object (confirmed against a live instance).
   client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(200, {
-    data: { id: 5, customFields: [{ name: 'IBAN', value: 'CH93 0076 2011 6238 5295 7' }, { name: 'Kontoinhaber', value: 'Ein Reicher' }] },
+    data: { id: 5, iban_1: 'CH93 0076 2011 6238 5295 7', kontoinhaber: 'Ein Reicher' },
   });
   const app = buildTestApp(db, { churchtoolsConfig });
 
@@ -1337,7 +1339,7 @@ test('POST /freigabe2/:id completes normally, with no Zahlungsdaten block, when 
   createFreigabe(db, { jobId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-31T08:10:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
   db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
 
-  const churchtoolsConfig = { baseUrl: 'https://ct.example.org', syncServiceToken: 'sync-token', customFieldIban: 'IBAN', customFieldKontoinhaber: 'Kontoinhaber' };
+  const churchtoolsConfig = { baseUrl: 'https://ct.example.org', syncServiceToken: 'sync-token', customFieldIban: 'iban_1', customFieldKontoinhaber: 'kontoinhaber' };
   const client = setupMockChurchTools(churchtoolsConfig.baseUrl);
   client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(500, {});
   const app = buildTestApp(db, { churchtoolsConfig });

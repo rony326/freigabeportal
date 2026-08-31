@@ -515,3 +515,138 @@ test('openDatabase is a no-op on the person_berechtigungen table when it already
   db.close();
   dbAgain.close();
 });
+
+test('jobs table accepts quelle = spesen and has the four Spesen columns', () => {
+  const db = openDatabase(':memory:');
+  const cols = db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  for (const col of ['eingereicht_von', 'auslage_datum', 'beschreibung', 'spesenabrechnung_id']) {
+    assert.ok(cols.includes(col), `jobs is missing column ${col}`);
+  }
+  assert.doesNotThrow(() =>
+    db
+      .prepare(
+        `INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad, status)
+         VALUES ('2026-08-31T08:00:00.000Z', 'spesen', 'beleg.pdf', '/tmp/beleg.pdf', 'zugewiesen')`
+      )
+      .run()
+  );
+  db.close();
+});
+
+test('spesenabrechnungen table exists and stores a Sammelabrechnung row', () => {
+  const db = openDatabase(':memory:');
+  db.prepare(
+    "INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'Ein', 'Reicher', 'e@example.org')"
+  ).run();
+  const result = db
+    .prepare("INSERT INTO spesenabrechnungen (eingereicht_von, eingereicht_am, titel) VALUES ('1', '2026-08-31T08:00:00.000Z', 'Reise Zürich')")
+    .run();
+  assert.ok(result.lastInsertRowid > 0);
+  db.close();
+});
+
+test('openDatabase rebuilds the jobs table to widen its quelle CHECK constraint on an existing on-disk database that predates Spesen', () => {
+  // Simulates the real production case: a jobs table created by an older schema.sql (CHECK only
+  // allowing 'scanner'/'lieferant') that already has real rows in it. `CREATE TABLE IF NOT
+  // EXISTS` alone no-ops on it, and SQLite has no ALTER TABLE that widens a CHECK constraint —
+  // the fix must rebuild the table without losing existing rows or their status/eskalation state.
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE debitoren (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, konto_id INTEGER, aktiv INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE konten (id INTEGER PRIMARY KEY AUTOINCREMENT, kontonummer TEXT NOT NULL, bezeichnung TEXT NOT NULL, freigeber1_id TEXT NOT NULL, stellvertreter1_id TEXT NOT NULL, freigeber2_id TEXT NOT NULL, stellvertreter2_id TEXT NOT NULL, aktiv INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE personen (churchtools_person_id TEXT PRIMARY KEY, vorname TEXT NOT NULL, nachname TEXT NOT NULL, email TEXT NOT NULL);
+    CREATE TABLE jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      eingang_am TEXT NOT NULL,
+      quelle TEXT NOT NULL CHECK (quelle IN ('scanner', 'lieferant')),
+      absender TEXT,
+      dateiname TEXT NOT NULL,
+      pdf_pfad TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('unzugewiesen','zugewiesen','kontiert','freigabe1','freigabe2','abgeschlossen','abgeholt','archiviert','abgelehnt','aufgesplittet','geloescht')) DEFAULT 'unzugewiesen',
+      konto_id INTEGER REFERENCES konten(id),
+      zugewiesen_an TEXT REFERENCES personen(churchtools_person_id),
+      abgelehnt_von TEXT REFERENCES personen(churchtools_person_id),
+      ablehnungsgrund TEXT,
+      fetched_by_n8n_at TEXT,
+      thumbnail_pfad TEXT,
+      freigabe1_eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+      freigabe1_eskalationsgrund TEXT,
+      freigabe2_eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+      freigabe2_eskalationsgrund TEXT,
+      reminder_gesendet_at TEXT,
+      eskalation_gesendet_at TEXT,
+      archiviert_am TEXT,
+      freigabe1_eskaliert_an_admin INTEGER NOT NULL DEFAULT 0,
+      freigabe2_eskaliert_an_admin INTEGER NOT NULL DEFAULT 0,
+      betrag TEXT,
+      zahlungsziel TEXT,
+      rechnungsnummer TEXT,
+      lieferant TEXT,
+      debitor_id INTEGER REFERENCES debitoren(id),
+      aufgesplittet_von INTEGER REFERENCES jobs(id),
+      datei_hash TEXT,
+      hinweis_konto_id INTEGER REFERENCES konten(id),
+      zeitstempel_gesetzt_am TEXT,
+      zeitstempel_datei_hash TEXT,
+      abgeschlossen_am TEXT,
+      qr_iban TEXT,
+      qr_referenz TEXT,
+      qr_betrag TEXT,
+      qr_waehrung TEXT,
+      qr_creditor_name TEXT,
+      qr_erkannt_am TEXT,
+      typ TEXT,
+      rechnungsposition TEXT,
+      gruppe_pdf_pfad TEXT,
+      gruppe_zeitstempel_gesetzt_am TEXT,
+      gruppe_zeitstempel_datei_hash TEXT,
+      beleg_seitenzahl INTEGER,
+      gruppe_abgeholt_am TEXT
+    );
+    INSERT INTO konten (kontonummer, bezeichnung, freigeber1_id, stellvertreter1_id, freigeber2_id, stellvertreter2_id) VALUES ('1000', 'Test', '1', '2', '3', '4');
+    INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'Frei', 'Geber', 'f@example.org');
+    INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an)
+      VALUES ('2026-08-15T08:00:00.000Z', 'lieferant', 'Firma AG', 'a.pdf', '/tmp/a.pdf', 'zugewiesen', 1, '1');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+
+  const preserved = migratedDb.prepare('SELECT * FROM jobs WHERE id = 1').get();
+  assert.equal(preserved.absender, 'Firma AG', 'existing rows must survive the table rebuild');
+  assert.equal(preserved.status, 'zugewiesen');
+  assert.equal(preserved.konto_id, 1);
+
+  assert.doesNotThrow(() =>
+    migratedDb
+      .prepare(
+        `INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad, status)
+         VALUES ('2026-08-31T08:00:00.000Z', 'spesen', 'beleg.pdf', '/tmp/beleg.pdf', 'zugewiesen')`
+      )
+      .run(),
+    'the widened CHECK constraint must accept quelle = spesen'
+  );
+
+  // The rebuild must not have dropped the trigger/index migrateJobsTable() re-creates every boot
+  // — see the comment on migrateJobsTableQuelleCheck for why this could otherwise silently break.
+  const trigger = migratedDb
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'trg_zeitstempel_hash_unveraenderlich'")
+    .get();
+  assert.ok(trigger, 'zeitstempel-immutability trigger must still exist after the rebuild');
+
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('openDatabase is a no-op on the jobs table when it already has the widened quelle CHECK constraint', () => {
+  const db1 = openDatabase(':memory:');
+  db1.close();
+  // Running openDatabase twice on a real file must not throw or duplicate the migration work.
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'twice.sqlite');
+  openDatabase(dbPath).close();
+  assert.doesNotThrow(() => openDatabase(dbPath).close());
+  rmSync(dir, { recursive: true, force: true });
+});

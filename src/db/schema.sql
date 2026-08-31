@@ -92,10 +92,17 @@ CREATE TABLE IF NOT EXISTS zuweisungsregeln (
   debitor_id INTEGER NOT NULL REFERENCES debitoren(id)
 );
 
+CREATE TABLE IF NOT EXISTS spesenabrechnungen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  eingereicht_von TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  eingereicht_am TEXT NOT NULL,
+  titel TEXT
+);
+
 CREATE TABLE IF NOT EXISTS jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   eingang_am TEXT NOT NULL,
-  quelle TEXT NOT NULL CHECK (quelle IN ('scanner', 'lieferant')),
+  quelle TEXT NOT NULL CHECK (quelle IN ('scanner', 'lieferant', 'spesen')),
   absender TEXT,
   dateiname TEXT NOT NULL,
   pdf_pfad TEXT NOT NULL,
@@ -141,7 +148,11 @@ CREATE TABLE IF NOT EXISTS jobs (
   gruppe_zeitstempel_gesetzt_am TEXT,
   gruppe_zeitstempel_datei_hash TEXT,
   beleg_seitenzahl INTEGER,
-  gruppe_abgeholt_am TEXT
+  gruppe_abgeholt_am TEXT,
+  eingereicht_von TEXT REFERENCES personen(churchtools_person_id),
+  auslage_datum TEXT,
+  beschreibung TEXT,
+  spesenabrechnung_id INTEGER REFERENCES spesenabrechnungen(id)
 );
 
 -- Manipulationsschutz: sobald ein Zeitstempel-Hash/-Zeitpunkt für einen Job gesetzt ist, darf er

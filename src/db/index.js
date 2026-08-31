@@ -36,7 +36,128 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'gruppe_zeitstempel_datei_hash', ddl: 'ALTER TABLE jobs ADD COLUMN gruppe_zeitstempel_datei_hash TEXT' },
   { column: 'beleg_seitenzahl', ddl: 'ALTER TABLE jobs ADD COLUMN beleg_seitenzahl INTEGER' },
   { column: 'gruppe_abgeholt_am', ddl: 'ALTER TABLE jobs ADD COLUMN gruppe_abgeholt_am TEXT' },
+  { column: 'eingereicht_von', ddl: 'ALTER TABLE jobs ADD COLUMN eingereicht_von TEXT REFERENCES personen(churchtools_person_id)' },
+  { column: 'auslage_datum', ddl: 'ALTER TABLE jobs ADD COLUMN auslage_datum TEXT' },
+  { column: 'beschreibung', ddl: 'ALTER TABLE jobs ADD COLUMN beschreibung TEXT' },
+  { column: 'spesenabrechnung_id', ddl: 'ALTER TABLE jobs ADD COLUMN spesenabrechnung_id INTEGER REFERENCES spesenabrechnungen(id)' },
 ];
+
+// SQLite CHECK constraints can't be widened with ALTER TABLE — same rebuild-in-a-transaction
+// approach as migrateFreigabenTable below. The marker this function checks for is `'spesen'`
+// (the newest quelle value); check schema.sql's jobs CREATE TABLE for what the CHECK currently
+// allows, not this comment.
+//
+// Must run BEFORE migrateJobsTable(db) in openDatabase(): renaming jobs aside (and later
+// dropping the renamed copy) also renames/drops every trigger and index attached to it, since
+// SQLite's ALTER TABLE RENAME rewrites their ON-clause to follow the table and DROP TABLE takes
+// dependent triggers with it. Running migrateJobsTable(db) immediately afterwards re-creates
+// idx_jobs_datei_hash and all four zeitstempel-immutability triggers unconditionally (its own
+// CREATE INDEX/TRIGGER IF NOT EXISTS statements), healing what this rebuild just dropped. This
+// function deliberately does NOT also add the four new Spesen columns — JOBS_TABLE_MIGRATIONS'
+// plain ADD COLUMN entries (which don't care about an unrelated CHECK constraint) already cover
+// that, exactly like every other jobs column added since this table's original schema.sql.
+function migrateJobsTableQuelleCheck(db) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'").get();
+  if (!tableSql || tableSql.sql.includes("'spesen'")) return;
+
+  // Only run the migration if the old jobs table has the columns it should have from
+  // the original schema.sql and JOBS_TABLE_MIGRATIONS. If it doesn't, let migrateJobsTable add
+  // them via ALTER TABLE first; a later restart will run this migration on the fully-populated
+  // table. We check for konto_id (original schema) and beleg_seitenzahl (latest migration),
+  // which covers the full range.
+  const cols = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name));
+  if (!cols.has('konto_id') || !cols.has('beleg_seitenzahl') || !cols.has('gruppe_abgeholt_am')) return;
+
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE jobs RENAME TO jobs_pre_spesen_quelle');
+    db.exec(`
+      CREATE TABLE jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        eingang_am TEXT NOT NULL,
+        quelle TEXT NOT NULL CHECK (quelle IN ('scanner', 'lieferant', 'spesen')),
+        absender TEXT,
+        dateiname TEXT NOT NULL,
+        pdf_pfad TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN (
+          'unzugewiesen','zugewiesen','kontiert','freigabe1','freigabe2',
+          'abgeschlossen','abgeholt','archiviert','abgelehnt','aufgesplittet','geloescht'
+        )) DEFAULT 'unzugewiesen',
+        konto_id INTEGER REFERENCES konten(id),
+        zugewiesen_an TEXT REFERENCES personen(churchtools_person_id),
+        abgelehnt_von TEXT REFERENCES personen(churchtools_person_id),
+        ablehnungsgrund TEXT,
+        fetched_by_n8n_at TEXT,
+        thumbnail_pfad TEXT,
+        freigabe1_eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+        freigabe1_eskalationsgrund TEXT,
+        freigabe2_eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+        freigabe2_eskalationsgrund TEXT,
+        reminder_gesendet_at TEXT,
+        eskalation_gesendet_at TEXT,
+        archiviert_am TEXT,
+        freigabe1_eskaliert_an_admin INTEGER NOT NULL DEFAULT 0,
+        freigabe2_eskaliert_an_admin INTEGER NOT NULL DEFAULT 0,
+        betrag TEXT,
+        zahlungsziel TEXT,
+        rechnungsnummer TEXT,
+        lieferant TEXT,
+        debitor_id INTEGER REFERENCES debitoren(id),
+        aufgesplittet_von INTEGER REFERENCES jobs(id),
+        datei_hash TEXT,
+        hinweis_konto_id INTEGER REFERENCES konten(id),
+        zeitstempel_gesetzt_am TEXT,
+        zeitstempel_datei_hash TEXT,
+        abgeschlossen_am TEXT,
+        qr_iban TEXT,
+        qr_referenz TEXT,
+        qr_betrag TEXT,
+        qr_waehrung TEXT,
+        qr_creditor_name TEXT,
+        qr_erkannt_am TEXT,
+        typ TEXT,
+        rechnungsposition TEXT,
+        gruppe_pdf_pfad TEXT,
+        gruppe_zeitstempel_gesetzt_am TEXT,
+        gruppe_zeitstempel_datei_hash TEXT,
+        beleg_seitenzahl INTEGER,
+        gruppe_abgeholt_am TEXT
+      )
+    `);
+    db.exec(`
+      INSERT INTO jobs (
+        id, eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an,
+        abgelehnt_von, ablehnungsgrund, fetched_by_n8n_at, thumbnail_pfad, freigabe1_eskaliert_von,
+        freigabe1_eskalationsgrund, freigabe2_eskaliert_von, freigabe2_eskalationsgrund,
+        reminder_gesendet_at, eskalation_gesendet_at, archiviert_am, freigabe1_eskaliert_an_admin,
+        freigabe2_eskaliert_an_admin, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id,
+        aufgesplittet_von, datei_hash, hinweis_konto_id, zeitstempel_gesetzt_am,
+        zeitstempel_datei_hash, abgeschlossen_am, qr_iban, qr_referenz, qr_betrag, qr_waehrung,
+        qr_creditor_name, qr_erkannt_am, typ, rechnungsposition, gruppe_pdf_pfad,
+        gruppe_zeitstempel_gesetzt_am, gruppe_zeitstempel_datei_hash, beleg_seitenzahl, gruppe_abgeholt_am
+      )
+      SELECT
+        id, eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an,
+        abgelehnt_von, ablehnungsgrund, fetched_by_n8n_at, thumbnail_pfad, freigabe1_eskaliert_von,
+        freigabe1_eskalationsgrund, freigabe2_eskaliert_von, freigabe2_eskalationsgrund,
+        reminder_gesendet_at, eskalation_gesendet_at, archiviert_am, freigabe1_eskaliert_an_admin,
+        freigabe2_eskaliert_an_admin, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id,
+        aufgesplittet_von, datei_hash, hinweis_konto_id, zeitstempel_gesetzt_am,
+        zeitstempel_datei_hash, abgeschlossen_am, qr_iban, qr_referenz, qr_betrag, qr_waehrung,
+        qr_creditor_name, qr_erkannt_am, typ, rechnungsposition, gruppe_pdf_pfad,
+        gruppe_zeitstempel_gesetzt_am, gruppe_zeitstempel_datei_hash, beleg_seitenzahl, gruppe_abgeholt_am
+      FROM jobs_pre_spesen_quelle
+    `);
+    db.exec('DROP TABLE jobs_pre_spesen_quelle');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
 
 function migrateJobsTable(db) {
   const existing = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((col) => col.name));
@@ -313,6 +434,7 @@ export function openDatabase(dbPath) {
   const db = new DatabaseSync(dbPath);
   const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
+  migrateJobsTableQuelleCheck(db);
   migrateJobsTable(db);
   migrateFreigabenTable(db);
   migrateMailLogTable(db);

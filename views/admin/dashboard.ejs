@@ -118,6 +118,16 @@
         </a>
       </div>
       <% } %>
+      <% if (adminNav.auditLog) { %>
+      <div class="col">
+        <a href="/admin/audit-log" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Audit-Log</h2>
+            <p class="card-text text-body-secondary">Durchsuchbare Gesamtsicht über Freigaben und Löschungen.</p>
+          </div>
+        </a>
+      </div>
+      <% } %>
       <% if (adminNav.backup) { %>
       <div class="col">
         <a href="/admin/backup" class="card text-decoration-none h-100">

@@ -58,6 +58,13 @@
         <% }) %>
       </div>
 
+      <template id="konto-optionen-template">
+        <option value="">— Konto wählen —</option>
+        <% alleKonten.forEach((k) => { %>
+          <option value="<%= k.id %>"><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+        <% }) %>
+      </template>
+
       <button type="button" id="zeile-hinzufuegen" class="btn btn-outline-secondary btn-sm mb-3">+ Position hinzufügen</button>
 
       <div>
@@ -68,45 +75,61 @@
 
   <script>
     (function () {
-      var kontoOptionsHtml = document.querySelector('.position-zeile select').innerHTML;
+      // Sourced from the unconditionally-rendered <template> above, not from a live
+      // '.position-zeile select' — the form can be re-rendered with zero position rows (e.g.
+      // after "Mindestens eine Position ist erforderlich." following a submit with every row
+      // removed), and reading from a row that may not exist would throw here at script-load time,
+      // before either handler below ever gets a chance to bind.
+      var kontoOptionenTemplate = document.getElementById('konto-optionen-template');
+      var kontoOptionsHtml = kontoOptionenTemplate ? kontoOptionenTemplate.innerHTML : '';
 
       function zeileEntfernenBinden(zeile) {
-        zeile.querySelector('.zeile-entfernen').addEventListener('click', function () {
-          zeile.remove();
-        });
+        var entfernenBtn = zeile.querySelector('.zeile-entfernen');
+        if (entfernenBtn) {
+          entfernenBtn.addEventListener('click', function () {
+            zeile.remove();
+          });
+        }
       }
 
       document.querySelectorAll('.position-zeile').forEach(zeileEntfernenBinden);
 
-      document.getElementById('zeile-hinzufuegen').addEventListener('click', function () {
-        var zeile = document.createElement('div');
-        zeile.className = 'row g-2 mb-3 pb-3 border-bottom align-items-start position-zeile';
-        zeile.innerHTML =
-          '<div class="col-md-3"><label class="form-label small">Konto</label>' +
-          '<select class="form-select" name="posKontoId"><option value="">— Konto wählen —</option>' + kontoOptionsHtml + '</select></div>' +
-          '<div class="col-md-2"><label class="form-label small">Betrag</label>' +
-          '<input type="text" inputmode="decimal" class="form-control" name="posBetrag" placeholder="z.B. 61.75"></div>' +
-          '<div class="col-md-2"><label class="form-label small">Auslage-Datum</label>' +
-          '<input type="date" class="form-control" name="posAuslageDatum"></div>' +
-          '<div class="col-md-3"><label class="form-label small">Verwendungszweck</label>' +
-          '<input type="text" class="form-control" name="posBeschreibung"></div>' +
-          '<div class="col-md-1"><label class="form-label small">Beleg</label>' +
-          '<input type="file" class="form-control position-beleg-input" accept="application/pdf,image/png,image/jpeg" required></div>' +
-          '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
-        document.getElementById('positionen-container').appendChild(zeile);
-        zeileEntfernenBinden(zeile);
-      });
+      var hinzufuegenBtn = document.getElementById('zeile-hinzufuegen');
+      if (hinzufuegenBtn) {
+        hinzufuegenBtn.addEventListener('click', function () {
+          var zeile = document.createElement('div');
+          zeile.className = 'row g-2 mb-3 pb-3 border-bottom align-items-start position-zeile';
+          zeile.innerHTML =
+            '<div class="col-md-3"><label class="form-label small">Konto</label>' +
+            '<select class="form-select" name="posKontoId">' + kontoOptionsHtml + '</select></div>' +
+            '<div class="col-md-2"><label class="form-label small">Betrag</label>' +
+            '<input type="text" inputmode="decimal" class="form-control" name="posBetrag" placeholder="z.B. 61.75"></div>' +
+            '<div class="col-md-2"><label class="form-label small">Auslage-Datum</label>' +
+            '<input type="date" class="form-control" name="posAuslageDatum"></div>' +
+            '<div class="col-md-3"><label class="form-label small">Verwendungszweck</label>' +
+            '<input type="text" class="form-control" name="posBeschreibung"></div>' +
+            '<div class="col-md-1"><label class="form-label small">Beleg</label>' +
+            '<input type="file" class="form-control position-beleg-input" accept="application/pdf,image/png,image/jpeg" required></div>' +
+            '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
+          var container = document.getElementById('positionen-container');
+          if (container) container.appendChild(zeile);
+          zeileEntfernenBinden(zeile);
+        });
+      }
 
       // Rename each row's file input to a positional fieldname right before submit, matching
       // current DOM order — native <input type="file"> with nothing selected is omitted
       // entirely from the multipart body, so positional array alignment (req.files vs.
       // posKontoId[i]) can't be relied on otherwise. Same trick as kontierung-aufsplitten.ejs.
-      document.querySelector('form[action="/spesen"]').addEventListener('submit', function () {
-        document.querySelectorAll('.position-zeile').forEach(function (zeile, i) {
-          var fileInput = zeile.querySelector('.position-beleg-input');
-          if (fileInput) fileInput.name = 'posBeleg_' + i;
+      var form = document.querySelector('form[action="/spesen"]');
+      if (form) {
+        form.addEventListener('submit', function () {
+          document.querySelectorAll('.position-zeile').forEach(function (zeile, i) {
+            var fileInput = zeile.querySelector('.position-beleg-input');
+            if (fileInput) fileInput.name = 'posBeleg_' + i;
+          });
         });
-      });
+      }
     })();
   </script>
   <%- include('_footer') %>

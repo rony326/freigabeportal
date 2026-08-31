@@ -6,7 +6,8 @@ import { readFileSync } from 'node:fs';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, setKontierung } from '../../src/db/jobsRepo.js';
+import { createJob, setKontierung, createSpesenPosition } from '../../src/db/jobsRepo.js';
+import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createZeitstempelPruefenRouter } from '../../src/routes/zeitstempelPruefen.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
@@ -320,6 +321,35 @@ test('GET /zeitstempel-pruefen?jobId= shows "kein Vergleichswert" for a job with
   const res = await request(app).get(`/zeitstempel-pruefen?jobId=${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
   assert.match(res.text, /kein Vergleichswert vorhanden/);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('GET /zeitstempel-pruefen?jobId= lets a Spesen position\'s own submitter verify it, even though they are neither zugewiesen_an nor Freigeber2/Stellvertreter2', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1'); // Freigeber1/zugewiesen_an
+  seedPerson(db, '3'); // Freigeber2
+  seedPerson(db, '4'); // Einreicher — no other role on this Konto at all
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const dir = mkdtempSync(join(tmpdir(), 'zeitstempel-pruefen-spesen-einreicher-test-'));
+  const pdfPfad = join(dir, 'beleg.pdf');
+  writeFileSync(pdfPfad, RFC3161_TIMESTAMPED_PDF);
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '4', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const id = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '4', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'beleg.pdf', pdfPfad, thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(id);
+
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/zeitstempel-pruefen?jobId=${id}`).set('x-test-person-id', '4');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Kryptografisch gültig \(RFC3161\)/);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

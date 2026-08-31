@@ -11,6 +11,11 @@ export function canViewJobPdf(db, config, currentPerson, job) {
   if (job.status === 'unzugewiesen') return personHasRole(currentPerson, config, 'buchhaltung');
   const personId = currentPerson.churchtools_person_id;
   if (job.zugewiesen_an === personId) return true;
+  // A Spesen position's own submitter is neither zugewiesen_an (that's the Freigeber1/Stellvertreter1
+  // reviewer) nor ever the resolved Freigeber2/Stellvertreter2 (blocked by the Vier-Augen-Prinzip
+  // self-approval guards in spesenFreigabe1.js/freigabe2.js) — without this check they could never
+  // view their own submitted Beleg or verify its Zeitstempel, even after it's fully approved.
+  if (job.eingereicht_von === personId) return true;
   if (job.konto_id) {
     const konto = getKontoById(db, job.konto_id);
     if (konto && getEffectiveFreigeber2Id(job, konto) === personId) return true;

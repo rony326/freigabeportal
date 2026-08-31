@@ -435,6 +435,31 @@ test('GET /pool shows every Spesen job the current person submitted under "Meine
   db.close();
 });
 
+test('GET /pool shows the Zeitstempel status and a "Jetzt prüfen" link for the submitter\'s own abgeschlossen Spesen position under "Meine Spesen"', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  for (const id of ['51', '52', '53']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [] });
+  }
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '50', stellvertreter1Id: '51', freigeber2Id: '52', stellvertreter2Id: '53' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '60', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '60', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '50', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '60');
+  const rowMatch = res.text.match(new RegExp(`<tr id="spesen-meine-row-${jobId}">[\\s\\S]*?</tr>`));
+  assert.ok(rowMatch, 'expected a row for the Spesen position');
+  assert.match(rowMatch[0], /ausstehend/, 'no zeitstempel_gesetzt_am set yet');
+  assert.match(rowMatch[0], new RegExp(`href="/zeitstempel-pruefen\\?jobId=${jobId}"`));
+  db.close();
+});
+
 test('GET /pool shows an admin-escalated Spesen position under a Superadmin-only section linking to /spesen-freigabe1', async () => {
   const db = openDatabase(':memory:');
   seedPortalAdminPerson(db, '99');

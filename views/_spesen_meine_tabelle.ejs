@@ -3,7 +3,7 @@
 <% } else { %>
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>Eingereicht am</th><th>Konto</th><th>Betrag</th><th>Verwendungszweck</th><th>Status</th></tr></thead>
+      <thead><tr><th>Eingereicht am</th><th>Konto</th><th>Betrag</th><th>Verwendungszweck</th><th>Status</th><th>Zeitstempel</th><th></th></tr></thead>
       <tbody>
         <% jobs.forEach((job) => { %>
           <tr id="spesen-meine-row-<%= job.id %>">
@@ -15,6 +15,22 @@
               <%= job.status %>
               <% if (job.status === 'abgelehnt' && job.ablehnungsgrund) { %>
                 — <%= job.ablehnungsgrund %>
+              <% } %>
+            </td>
+            <td>
+              <% if (['abgeschlossen', 'abgeholt', 'archiviert'].includes(job.status)) { %>
+                <% if (job.zeitstempel_gesetzt_am) { %>
+                  ✓ gesetzt am <%= job.zeitstempel_gesetzt_am %>
+                <% } else { %>
+                  ausstehend
+                <% } %>
+              <% } else { %>
+                —
+              <% } %>
+            </td>
+            <td>
+              <% if (job.status === 'abgeschlossen') { %>
+                <a href="/zeitstempel-pruefen?jobId=<%= job.id %>" class="btn btn-outline-primary btn-sm">Jetzt prüfen</a>
               <% } %>
             </td>
           </tr>

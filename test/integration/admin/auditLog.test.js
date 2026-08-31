@@ -105,3 +105,45 @@ test('GET /admin/audit-log with no entries shows an empty-state message instead 
   assert.match(res.text, /Keine Einträge gefunden/);
   db.close();
 });
+
+test('GET /admin/audit-log shows the total entry count', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const jobA = createJob(db, { eingangAm: '2026-08-01T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung-a.pdf', pdfPfad: '/tmp/a.pdf' });
+  createFreigabe(db, { jobId: jobA, personId: '99', rolle: 'freigeber1', zeitpunkt: '2026-08-01T09:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  const jobB = createJob(db, { eingangAm: '2026-08-02T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung-b.pdf', pdfPfad: '/tmp/b.pdf' });
+  logJobLoeschung(db, { jobId: jobB, dateiname: 'rechnung-b.pdf', geloeschtVon: '99', begruendung: 'Duplikat' });
+
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/audit-log').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /2 Einträge/);
+  db.close();
+});
+
+test('GET /admin/audit-log?seite=99 clamps to the last real page instead of showing an empty state', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const job = createJob(db, { eingangAm: '2026-08-01T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung-a.pdf', pdfPfad: '/tmp/a.pdf' });
+  createFreigabe(db, { jobId: job, personId: '99', rolle: 'freigeber1', zeitpunkt: '2026-08-01T09:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/audit-log?seite=99').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /Keine Einträge gefunden/);
+  assert.match(res.text, /rechnung-a\.pdf/);
+  db.close();
+});
+
+test('GET /admin/audit-log renders the disabled "Zurück" pagination control as non-focusable on the first page', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const job = createJob(db, { eingangAm: '2026-08-01T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung-a.pdf', pdfPfad: '/tmp/a.pdf' });
+  createFreigabe(db, { jobId: job, personId: '99', rolle: 'freigeber1', zeitpunkt: '2026-08-01T09:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/audit-log').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /<a[^>]*>Zurück<\/a>/, 'a disabled "Zurück" link must not remain a focusable/operable <a>');
+  db.close();
+});

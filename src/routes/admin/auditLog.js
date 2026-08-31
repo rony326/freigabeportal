@@ -24,8 +24,8 @@ export function createAuditLogRouter({ db }) {
       ereignisTyp: req.query.typ || null,
       suchbegriff: req.query.q || null,
     };
-    const seite = Math.max(1, Number(req.query.seite) || 1);
-    const { eintraege, gesamtAnzahl, proSeite } = queryGlobalAuditLog(db, filter, { seite });
+    const seiteAngefragt = Math.max(1, Number(req.query.seite) || 1);
+    const { eintraege, gesamtAnzahl, seite, proSeite } = queryGlobalAuditLog(db, filter, { seite: seiteAngefragt });
 
     res.render('admin/audit-log', {
       eintraege,

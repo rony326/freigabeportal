@@ -169,6 +169,64 @@ test('queryGlobalAuditLog clamps a negative proSeite instead of returning an unb
   db.close();
 });
 
+test('queryGlobalAuditLog exposes quelle distinguishing freigaben from job_loeschungen rows', () => {
+  const db = openDatabase(':memory:');
+  seedGrundstock(db);
+  const jobA = createJob(db, { eingangAm: '2026-08-01T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  createFreigabe(db, { jobId: jobA, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-01T09:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  const jobB = createJob(db, { eingangAm: '2026-08-02T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+  logJobLoeschung(db, { jobId: jobB, dateiname: 'b.pdf', geloeschtVon: '2', begruendung: 'Duplikat' });
+
+  const { eintraege } = queryGlobalAuditLog(db);
+  assert.equal(eintraege[0].quelle, 'loeschung');
+  assert.equal(eintraege[1].quelle, 'freigabe');
+  db.close();
+});
+
+test('queryGlobalAuditLog breaks zeitpunkt ties deterministically instead of leaving order unspecified', () => {
+  const db = openDatabase(':memory:');
+  seedGrundstock(db);
+  const job = createJob(db, { eingangAm: '2026-08-01T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  const gleicherZeitpunkt = '2026-08-01T09:00:00.000Z';
+  const ids = [];
+  for (let i = 0; i < 3; i += 1) {
+    ids.push(createFreigabe(db, { jobId: job, personId: '1', rolle: 'freigeber1', zeitpunkt: gleicherZeitpunkt, ip: '127.0.0.1', interessenskonflikt: false, kommentar: `kommentar-${i}`, eskaliertVon: null }));
+  }
+
+  const { eintraege } = queryGlobalAuditLog(db);
+  const reihenfolge = eintraege.map((e) => e.kommentar);
+  assert.deepEqual(reihenfolge, ['kommentar-2', 'kommentar-1', 'kommentar-0'], 'identical zeitpunkt rows must tie-break by insertion order (newest row_id first), not be left unspecified');
+  db.close();
+});
+
+test('queryGlobalAuditLog escapes LIKE metacharacters in suchbegriff so % and _ match literally', () => {
+  const db = openDatabase(':memory:');
+  seedGrundstock(db);
+  const jobUnderscore = createJob(db, { eingangAm: '2026-08-01T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a_b.pdf', pdfPfad: '/tmp/a.pdf' });
+  createFreigabe(db, { jobId: jobUnderscore, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-01T09:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  const jobAnyChar = createJob(db, { eingangAm: '2026-08-02T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'axb.pdf', pdfPfad: '/tmp/b.pdf' });
+  createFreigabe(db, { jobId: jobAnyChar, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-02T09:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+
+  const { eintraege } = queryGlobalAuditLog(db, { suchbegriff: 'a_b' });
+  assert.equal(eintraege.length, 1, 'literal underscore must not match "axb.pdf" as a LIKE wildcard');
+  assert.equal(eintraege[0].dateiname, 'a_b.pdf');
+  db.close();
+});
+
+test('queryGlobalAuditLog clamps an out-of-range seite to the last valid page instead of returning empty', () => {
+  const db = openDatabase(':memory:');
+  seedGrundstock(db);
+  const job = createJob(db, { eingangAm: '2026-08-01T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  for (let i = 0; i < 3; i += 1) {
+    createFreigabe(db, { jobId: job, personId: '1', rolle: 'freigeber1', zeitpunkt: `2026-08-0${i + 1}T09:00:00.000Z`, ip: '127.0.0.1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  }
+
+  const { eintraege, seite } = queryGlobalAuditLog(db, {}, { seite: 5, proSeite: 2 });
+  assert.equal(seite, 2, 'seite 5 with only 2 pages of data must clamp down to the last real page');
+  assert.equal(eintraege.length, 1, 'the last page holds the one remaining row');
+  db.close();
+});
+
 test('queryGlobalAuditLog clamps a non-positive/non-integer seite to a valid page number', () => {
   const db = openDatabase(':memory:');
   seedGrundstock(db);

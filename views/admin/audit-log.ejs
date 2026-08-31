@@ -54,6 +54,7 @@
     <% if (eintraege.length === 0) { %>
       <p>Keine Einträge gefunden.</p>
     <% } else { %>
+      <p><%= gesamtAnzahl %> Einträge</p>
       <div class="table-responsive">
         <table class="table align-middle">
           <thead><tr><th>Zeitpunkt</th><th>Ereignis</th><th>Person</th><th>Job</th><th>Konto</th><th>Kommentar/Begründung</th></tr></thead>
@@ -75,11 +76,19 @@
       <nav aria-label="Seiten">
         <ul class="pagination">
           <li class="page-item <%= seite <= 1 ? 'disabled' : '' %>">
-            <a class="page-link" href="?<%= new URLSearchParams({ ...query, seite: seite - 1 }).toString() %>">Zurück</a>
+            <% if (seite <= 1) { %>
+              <span class="page-link">Zurück</span>
+            <% } else { %>
+              <a class="page-link" href="?<%= new URLSearchParams({ ...query, seite: seite - 1 }).toString() %>">Zurück</a>
+            <% } %>
           </li>
           <li class="page-item disabled"><span class="page-link">Seite <%= seite %> von <%= gesamtSeiten %></span></li>
           <li class="page-item <%= seite >= gesamtSeiten ? 'disabled' : '' %>">
-            <a class="page-link" href="?<%= new URLSearchParams({ ...query, seite: seite + 1 }).toString() %>">Weiter</a>
+            <% if (seite >= gesamtSeiten) { %>
+              <span class="page-link">Weiter</span>
+            <% } else { %>
+              <a class="page-link" href="?<%= new URLSearchParams({ ...query, seite: seite + 1 }).toString() %>">Weiter</a>
+            <% } %>
           </li>
         </ul>
       </nav>

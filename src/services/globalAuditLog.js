@@ -5,6 +5,8 @@ const BASE_QUERY = `
   WITH audit AS (
     SELECT
       f.zeitpunkt AS zeitpunkt,
+      f.id AS row_id,
+      'freigabe' AS quelle,
       f.rolle AS ereignis_typ,
       f.person_id AS person_id,
       f.job_id AS job_id,
@@ -19,6 +21,8 @@ const BASE_QUERY = `
     UNION ALL
     SELECT
       jl.zeitpunkt AS zeitpunkt,
+      jl.id AS row_id,
+      'loeschung' AS quelle,
       'loeschung' AS ereignis_typ,
       jl.geloescht_von AS person_id,
       jl.job_id AS job_id,
@@ -57,21 +61,31 @@ function buildWhere(filter) {
     params.push(filter.ereignisTyp);
   }
   if (filter.suchbegriff) {
-    clauses.push('(kommentar LIKE ? OR dateiname LIKE ?)');
-    const muster = `%${filter.suchbegriff}%`;
+    // % and _ are LIKE wildcards; escape them so a search for a literal filename fragment like
+    // "a_b.pdf" doesn't also match "axb.pdf" via SQLite's default single-char wildcard semantics.
+    clauses.push("(kommentar LIKE ? ESCAPE '\\' OR dateiname LIKE ? ESCAPE '\\')");
+    const muster = `%${escapeLikeMuster(filter.suchbegriff)}%`;
     params.push(muster, muster);
   }
   return { where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
 
+function escapeLikeMuster(text) {
+  return text.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
 // Aggregiert freigaben (alle Jobs) und job_loeschungen zu einer gemeinsamen, durchsuchbaren
 // Zeitleiste. Filter/Pagination laufen komplett in SQL (nicht in JS über geladene Zeilen) --
 // entscheidend für eine global wachsende Tabelle, im Gegensatz zum job-lokalen buildAuditLog.
+//
+// filter.bis muss bereits ein inklusives Tagesende sein (z.B. "...T23:59:59.999Z"), nicht ein
+// bloßes Datum -- der Aufrufer (siehe src/routes/admin/auditLog.js) ist dafür verantwortlich,
+// ein reines Datum entsprechend zu erweitern, bevor er hier ankommt.
 export function queryGlobalAuditLog(db, filter = {}, { seite = 1, proSeite = 50 } = {}) {
   // A non-positive or non-integer seite/proSeite must never reach the SQL LIMIT/OFFSET clause
   // unclamped: SQLite treats a negative LIMIT as "no upper bound", which would silently return
   // the entire, unbounded audit table instead of a page of it.
-  const seiteSicher = Math.max(1, Math.trunc(seite) || 1);
+  const seiteGewuenscht = Math.max(1, Math.trunc(seite) || 1);
   const proSeiteSicher = Math.max(1, Math.trunc(proSeite) || 50);
 
   const { where, params } = buildWhere(filter);
@@ -79,14 +93,21 @@ export function queryGlobalAuditLog(db, filter = {}, { seite = 1, proSeite = 50 
 
   const gesamtAnzahl = db.prepare(`${BASE_QUERY} SELECT COUNT(*) AS anzahl FROM audit ${where}`).get(...params).anzahl;
 
+  // Eine seite jenseits der letzten tatsächlich vorhandenen Seite (z.B. nach einer Löschung von
+  // Einträgen oder einer von Hand editierten URL) fängt hier ab statt eine leere Seite ohne Weg
+  // zurück zu rendern -- die letzte gültige Seite wird stattdessen angezeigt.
+  const gesamtSeiten = Math.max(1, Math.ceil(gesamtAnzahl / proSeiteSicher));
+  const seiteSicher = Math.min(seiteGewuenscht, gesamtSeiten);
+
   const offset = (seiteSicher - 1) * proSeiteSicher;
   const rows = db
-    .prepare(`${BASE_QUERY} SELECT * FROM audit ${where} ORDER BY zeitpunkt DESC LIMIT ? OFFSET ?`)
+    .prepare(`${BASE_QUERY} SELECT * FROM audit ${where} ORDER BY zeitpunkt DESC, row_id DESC LIMIT ? OFFSET ?`)
     .all(...params, proSeiteSicher, offset);
 
   const eintraege = rows.map((row) => ({
     zeitpunkt: formatZeitpunkt(row.zeitpunkt, lokaleZeit),
     ereignis: EREIGNIS_LABEL[row.ereignis_typ] || row.ereignis_typ,
+    quelle: row.quelle,
     person: personName(db, row.person_id),
     jobId: row.job_id,
     dateiname: row.dateiname,

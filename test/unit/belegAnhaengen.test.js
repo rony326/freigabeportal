@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PDFDocument } from 'pdf-lib';
-import { mergeBelegInPdf, detectBelegMimetype, countBelegSeiten } from '../../src/services/belegAnhaengen.js';
+import { mergeBelegInPdf, detectBelegMimetype, countBelegSeiten, buildBelegPdf } from '../../src/services/belegAnhaengen.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { PNG_1X1, JPEG_1X1 } from '../helpers/imageFixture.js';
 
@@ -87,4 +87,27 @@ test('countBelegSeiten reports exactly the page count mergeBelegInPdf will add, 
     const merged = await PDFDocument.load(await mergeBelegInPdf(original, beleg, mimetype));
     assert.equal(merged.getPageCount(), 1 + (await countBelegSeiten(beleg, mimetype)));
   }
+});
+
+test('buildBelegPdf returns a PDF Beleg unchanged', async () => {
+  const original = await buildPdfFixture(['Seite 1', 'Seite 2']);
+
+  const result = await buildBelegPdf(original, 'application/pdf');
+
+  const reloaded = await PDFDocument.load(result);
+  assert.equal(reloaded.getPageCount(), 2);
+});
+
+test('buildBelegPdf wraps a PNG Beleg into a fresh one-page PDF', async () => {
+  const result = await buildBelegPdf(PNG_1X1, 'image/png');
+
+  const reloaded = await PDFDocument.load(result);
+  assert.equal(reloaded.getPageCount(), 1);
+});
+
+test('buildBelegPdf wraps a JPEG Beleg into a fresh one-page PDF', async () => {
+  const result = await buildBelegPdf(JPEG_1X1, 'image/jpeg');
+
+  const reloaded = await PDFDocument.load(result);
+  assert.equal(reloaded.getPageCount(), 1);
 });

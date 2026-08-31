@@ -242,5 +242,8 @@ test('GET /auth/abgemeldet renders a confirmation page instead of bouncing strai
   assert.equal(res.status, 200);
   assert.match(res.text, /abgemeldet/i);
   assert.doesNotMatch(res.text, /Angemeldet als/);
+  // Confirmed against the live instance (life-church.church.tools) by the user: ChurchTools'
+  // own logout is a query-param route on the base URL, not a /logout path.
+  assert.match(res.text, /https:\/\/ct\.example\.org\/\?q=logout/);
   db.close();
 });

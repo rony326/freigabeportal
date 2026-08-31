@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Meine Spesen — <%= branding.seitenTitel %></title>
+</head>
+<body>
+  <%- include('_header') %>
+  <main class="container py-4">
+    <h1 class="h3">Meine Spesen</h1>
+    <%- include('_spesen_meine_tabelle', { jobs }) %>
+  </main>
+  <%- include('_footer') %>
+</body>
+</html>

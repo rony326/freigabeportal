@@ -8,7 +8,6 @@ import {
   listAdminEskalierteFreigaben,
   listAdminEskalierteSpesenFreigaben,
   listSpesenFreigabe1JobsForPerson,
-  listSpesenForEinreicher,
 } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
@@ -41,7 +40,6 @@ export function createPoolPageRouter({ db, config }) {
       meineSpesenFreigaben: enrich(listSpesenFreigabe1JobsForPerson(db, personId)),
       meineFreigaben: enrich(listFreigabe2JobsForPerson(db, personId)),
       meineAbgelehnten: enrich(listAbgelehntJobsForPerson(db, personId)),
-      meineSpesen: enrich(listSpesenForEinreicher(db, personId)),
       adminEskalierteKontierungen: istSuperadmin ? enrich(listAdminEskalierteKontierungen(db)) : [],
       adminEskalierteFreigaben: istSuperadmin ? enrich(listAdminEskalierteFreigaben(db)) : [],
       adminEskalierteSpesenFreigaben: istSuperadmin ? enrich(listAdminEskalierteSpesenFreigaben(db)) : [],

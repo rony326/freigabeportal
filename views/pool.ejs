@@ -53,15 +53,10 @@
       <%- include('_job_table', { jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen' }) %>
     <% } %>
 
-    <% if (meineSpesen.length > 0) { %>
-      <h2 class="h4 mt-4">Meine Spesen</h2>
-      <%- include('_spesen_meine_tabelle', { jobs: meineSpesen }) %>
-    <% } %>
-
     <% if (poolJobs.length === 0 && adminEskalierteKontierungen.length === 0 && adminEskalierteFreigaben.length === 0
          && adminEskalierteSpesenFreigaben.length === 0 && meineKontierungen.length === 0 && meineSpesenFreigaben.length === 0
-         && meineFreigaben.length === 0 && meineAbgelehnten.length === 0 && meineSpesen.length === 0) { %>
-      <p class="text-muted mt-4">Keine offenen Aufgaben. Abgeschlossene Rechnungen findest du unter <a href="/meine-abgeschlossenen">Abgeschlossene Rechnungen</a>.</p>
+         && meineFreigaben.length === 0 && meineAbgelehnten.length === 0) { %>
+      <p class="text-muted mt-4">Keine offenen Aufgaben. Abgeschlossene Rechnungen findest du unter <a href="/meine-abgeschlossenen">Abgeschlossene Rechnungen</a>, deine Spesen-Einreichungen unter <a href="/meine-spesen">Meine Spesen</a>.</p>
     <% } %>
 
     <dialog id="preview-dialog" class="p-0 border-0 rounded">

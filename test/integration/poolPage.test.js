@@ -412,7 +412,7 @@ test('GET /pool shows a Spesen-Freigabe1 job under "Meine offenen Spesen-Freigab
   db.close();
 });
 
-test('GET /pool shows every Spesen job the current person submitted under "Meine Spesen", including rejected ones', async () => {
+test('GET /pool no longer shows a "Meine Spesen" section — it moved to its own page at /meine-spesen', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db, '50');
   upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
@@ -421,21 +421,20 @@ test('GET /pool shows every Spesen job the current person submitted under "Meine
   }
   const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '50', stellvertreter1Id: '51', freigeber2Id: '52', stellvertreter2Id: '53' });
   const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '60', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
-  const abgelehntId = createSpesenPosition(db, {
+  createSpesenPosition(db, {
     eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '60', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
     beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
     zugewiesenAn: '50', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
   });
-  ablehnenJob(db, abgelehntId, { abgelehntVon: '50', grund: 'Kein Beleg' });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '60');
-  assert.match(res.text, /Meine Spesen/);
-  assert.match(res.text, /Taxi/);
-  assert.match(res.text, /Kein Beleg/);
+  assert.doesNotMatch(res.text, /<h2 class="h4 mt-4">Meine Spesen<\/h2>/);
+  assert.doesNotMatch(res.text, /Taxi/);
+  assert.match(res.text, /href="\/meine-spesen"/);
   db.close();
 });
 
-test('GET /pool shows the Zeitstempel status and a "Jetzt prüfen" link for the submitter\'s own abgeschlossen Spesen position under "Meine Spesen"', async () => {
+test('GET /pool shows "Keine offenen Aufgaben" when the only thing for this person is a Spesen submission, since that now lives on its own page', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db, '50');
   upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
@@ -444,19 +443,14 @@ test('GET /pool shows the Zeitstempel status and a "Jetzt prüfen" link for the 
   }
   const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '50', stellvertreter1Id: '51', freigeber2Id: '52', stellvertreter2Id: '53' });
   const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '60', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
-  const jobId = createSpesenPosition(db, {
+  createSpesenPosition(db, {
     eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '60', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
     beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
     zugewiesenAn: '50', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
   });
-  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
   const app = buildTestApp(db);
-
   const res = await request(app).get('/pool').set('x-test-person-id', '60');
-  const rowMatch = res.text.match(new RegExp(`<tr id="spesen-meine-row-${jobId}">[\\s\\S]*?</tr>`));
-  assert.ok(rowMatch, 'expected a row for the Spesen position');
-  assert.match(rowMatch[0], /ausstehend/, 'no zeitstempel_gesetzt_am set yet');
-  assert.match(rowMatch[0], new RegExp(`href="/zeitstempel-pruefen\\?jobId=${jobId}"`));
+  assert.match(res.text, /Keine offenen Aufgaben/);
   db.close();
 });
 

@@ -2498,6 +2498,85 @@ test('POST /kontierung/:id sends no IBAN-Abweichung mail when the QR-IBAN matche
   db.close();
 });
 
+test('POST /kontierung/:id warns when the Rechnungsnummer is already recorded for the same Debitor on another job, without blocking the Kontierung', async () => {
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  const bestehenderId = createJob(db, { eingangAm: '2026-08-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/alt.pdf' });
+  updateKontierungMetadaten(db, bestehenderId, { absender: 'Muster AG', betrag: '50.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+
+  assert.equal(res.status, 302, 'Kontierung must still complete despite the duplicate Rechnungsnummer');
+  assert.equal(getJobById(db, id).status, 'freigabe2', 'the job must proceed through the normal flow, not be blocked');
+
+  const auditEintrag = db.prepare("SELECT * FROM freigaben WHERE job_id = ? AND rolle = 'rechnungsnummer_duplikat'").get(id);
+  assert.ok(auditEintrag, 'expected a rechnungsnummer_duplikat freigaben row');
+  assert.match(auditEintrag.kommentar, new RegExp(`#${bestehenderId}`));
+
+  const mailLog = listMailLog(db).filter((m) => m.typ === 'rechnungsnummer-warnung');
+  assert.ok(mailLog.length > 0, 'expected at least one rechnungsnummer-warnung mail to be logged');
+  assert.ok(mailer.sent.some((m) => /Doppelte Rechnungsnummer/.test(m.subject)));
+  db.close();
+});
+
+test('POST /kontierung/:id sends no Rechnungsnummer-Duplikat warning when the Rechnungsnummer is new for this Debitor', async () => {
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+
+  assert.equal(res.status, 302);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM freigaben WHERE job_id = ? AND rolle = 'rechnungsnummer_duplikat'").get(id).n, 0);
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'rechnungsnummer-warnung').length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id sends no Rechnungsnummer-Duplikat warning when the only other match was soft-deleted (status geloescht)', async () => {
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  const geloeschtId = createJob(db, { eingangAm: '2026-08-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/alt.pdf' });
+  updateKontierungMetadaten(db, geloeschtId, { absender: 'Muster AG', betrag: '50.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId });
+  db.prepare("UPDATE jobs SET status = 'geloescht' WHERE id = ?").run(geloeschtId);
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+
+  assert.equal(res.status, 302);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM freigaben WHERE job_id = ? AND rolle = 'rechnungsnummer_duplikat'").get(id).n, 0);
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'rechnungsnummer-warnung').length, 0);
+  db.close();
+});
+
 test('POST /kontierung/:id with ibanMerken checked creates a bestaetigt debitor_ibans row for a Lieferant with no IBAN on file yet', async () => {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');

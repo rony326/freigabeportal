@@ -17,6 +17,7 @@ import {
   createSplitJob,
   setJobBetrag,
   addBelegSeiten,
+  findJobsByDebitorUndRechnungsnummer,
 } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById, listKonten } from '../db/kontenRepo.js';
 import { listDebitoren, getDebitorById, createDebitor } from '../db/debitorenRepo.js';
@@ -442,6 +443,36 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           !findDebitorIbanByIban(db, job.qr_iban)
         ) {
           createDebitorIban(db, { debitorId: debitor.id, iban: job.qr_iban, quelle: 'bestaetigt' });
+        }
+      }
+
+      if (debitor) {
+        const duplikate = findJobsByDebitorUndRechnungsnummer(db, debitor.id, rechnungsnummer, job.id);
+        if (duplikate.length > 0) {
+          createFreigabe(db, {
+            jobId: job.id,
+            personId: req.currentPerson.churchtools_person_id,
+            rolle: 'rechnungsnummer_duplikat',
+            zeitpunkt: new Date().toISOString(),
+            ip: req.ip,
+            interessenskonflikt: false,
+            kommentar: `Rechnungsnummer "${rechnungsnummer}" ist bei ${debitor.name} bereits erfasst: Job ${duplikate.map((d) => `#${d.id}`).join(', ')}.`,
+            eskaliertVon: null,
+          });
+          const zusatzEmpfaenger = new Set([req.currentPerson.email]);
+          const freigeber1 = getPersonById(db, konto.freigeber1_id);
+          const freigeber2 = getPersonById(db, konto.freigeber2_id);
+          if (freigeber1) zusatzEmpfaenger.add(freigeber1.email);
+          if (freigeber2) zusatzEmpfaenger.add(freigeber2.email);
+          for (const email of zusatzEmpfaenger) {
+            await sendNotification(db, mailer, {
+              to: email,
+              subject: 'Freigabeportal: Doppelte Rechnungsnummer festgestellt',
+              text: `Bei der Kontierung von "${job.dateiname}" (Lieferant: ${debitor.name}) wurde die Rechnungsnummer "${rechnungsnummer}" bereits bei einem anderen Job erfasst (Job ${duplikate.map((d) => `#${d.id}`).join(', ')}). Bitte prüfen: ${config.publicBaseUrl}/kontierung/${job.id}`,
+              typ: 'rechnungsnummer-warnung',
+              jobId: job.id,
+            });
+          }
         }
       }
 

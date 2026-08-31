@@ -6,7 +6,7 @@ import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByDebitorUndRechnungsnummer } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -409,6 +409,67 @@ test('updateKontierungMetadaten stores null for empty values instead of empty st
   assert.equal(job.zahlungsziel, null);
   assert.equal(job.rechnungsnummer, null);
   assert.equal(job.lieferant, null);
+  db.close();
+});
+
+test('findJobsByDebitorUndRechnungsnummer finds another job with the same Debitor and Rechnungsnummer', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  const idBestehend = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  updateKontierungMetadaten(db, idBestehend, { absender: 'a', betrag: '10.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId });
+  const idNeu = createJob(db, { eingangAm: '2026-08-15T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+
+  const treffer = findJobsByDebitorUndRechnungsnummer(db, debitorId, 'RE-1', idNeu);
+  assert.equal(treffer.length, 1);
+  assert.equal(treffer[0].id, idBestehend);
+  db.close();
+});
+
+test('findJobsByDebitorUndRechnungsnummer excludes the job itself', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  const id = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  updateKontierungMetadaten(db, id, { absender: 'a', betrag: '10.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId });
+
+  assert.deepEqual(findJobsByDebitorUndRechnungsnummer(db, debitorId, 'RE-1', id), []);
+  db.close();
+});
+
+test('findJobsByDebitorUndRechnungsnummer ignores a matching job that was soft-deleted (status geloescht)', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const debitorId = seedDebitorMitKonto(db, kontoId);
+  const idGeloescht = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  updateKontierungMetadaten(db, idGeloescht, { absender: 'a', betrag: '10.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId });
+  db.prepare("UPDATE jobs SET status = 'geloescht' WHERE id = ?").run(idGeloescht);
+  const idNeu = createJob(db, { eingangAm: '2026-08-15T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+
+  assert.deepEqual(findJobsByDebitorUndRechnungsnummer(db, debitorId, 'RE-1', idNeu), []);
+  db.close();
+});
+
+test('findJobsByDebitorUndRechnungsnummer does not match a different Debitor or a different Rechnungsnummer', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const debitorId1 = seedDebitorMitKonto(db, kontoId, 'Debitor 1');
+  const debitorId2 = seedDebitorMitKonto(db, kontoId, 'Debitor 2');
+  const idAnderDebitor = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  updateKontierungMetadaten(db, idAnderDebitor, { absender: 'a', betrag: '10.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Debitor 1', debitorId: debitorId1 });
+  const idAndereNummer = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+  updateKontierungMetadaten(db, idAndereNummer, { absender: 'b', betrag: '10.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-2', lieferant: 'Debitor 2', debitorId: debitorId2 });
+  const idNeu = createJob(db, { eingangAm: '2026-08-15T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'c.pdf', pdfPfad: '/tmp/c.pdf' });
+
+  assert.deepEqual(findJobsByDebitorUndRechnungsnummer(db, debitorId2, 'RE-1', idNeu), []);
+  db.close();
+});
+
+test('findJobsByDebitorUndRechnungsnummer returns an empty array without a debitorId or Rechnungsnummer', () => {
+  const db = openDatabase(':memory:');
+  const id = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  assert.deepEqual(findJobsByDebitorUndRechnungsnummer(db, null, 'RE-1', id), []);
+  assert.deepEqual(findJobsByDebitorUndRechnungsnummer(db, 1, null, id), []);
   db.close();
 });
 

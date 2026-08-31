@@ -66,6 +66,16 @@ test('EREIGNIS_LABEL includes a loeschung label for the global audit log', () =>
   assert.equal(EREIGNIS_LABEL.loeschung, 'Job gelöscht');
 });
 
+test('buildAuditLog labels a rechnungsnummer_duplikat rolle as "Doppelte Rechnungsnummer festgestellt"', () => {
+  const db = openDatabase(':memory:');
+  const jobId = seedJobMitFreigabe(db, '2026-08-31T08:30:00.000Z');
+  createFreigabe(db, { jobId, personId: '1', rolle: 'rechnungsnummer_duplikat', zeitpunkt: '2026-08-31T09:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false, kommentar: 'Rechnungsnummer bereits erfasst', eskaliertVon: null });
+  const log = buildAuditLog(db, jobId);
+  assert.equal(log[1].ereignis, 'Doppelte Rechnungsnummer festgestellt');
+  assert.equal(log[1].kommentar, 'Rechnungsnummer bereits erfasst');
+  db.close();
+});
+
 test('personName and formatZeitpunkt are exported for reuse by the global audit log service', () => {
   const db = openDatabase(':memory:');
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f@example.org', gruppen: [], loggedInNow: false });

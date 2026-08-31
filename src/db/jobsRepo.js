@@ -63,6 +63,16 @@ export function findJobByDateiHash(db, dateiHash) {
   return db.prepare('SELECT * FROM jobs WHERE datei_hash = ? ORDER BY id LIMIT 1').get(dateiHash) ?? null;
 }
 
+// 'abgelehnt' jobs are deliberately still matched -- a rejected job's Rechnungsnummer resurfacing
+// on a new job is still worth flagging, even though it carries no double-payment risk by itself.
+// Only 'geloescht' (soft-deleted) rows are excluded.
+export function findJobsByDebitorUndRechnungsnummer(db, debitorId, rechnungsnummer, excludeJobId) {
+  if (!debitorId || !rechnungsnummer) return [];
+  return db
+    .prepare("SELECT * FROM jobs WHERE debitor_id = ? AND rechnungsnummer = ? AND status != 'geloescht' AND id != ? ORDER BY id")
+    .all(debitorId, rechnungsnummer, excludeJobId);
+}
+
 export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad, dateiHash }) {
   const regel = findMatchingZuweisungsregel(db, absender);
   let kontoId = null;

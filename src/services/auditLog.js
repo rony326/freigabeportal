@@ -9,6 +9,7 @@ export const EREIGNIS_LABEL = {
   freigabe1_eskalation: 'Freigabe 1: Interessenskonflikt gemeldet',
   freigabe2_eskalation: 'Freigabe 2: Interessenskonflikt gemeldet',
   iban_abweichung: 'IBAN-Abweichung festgestellt',
+  rechnungsnummer_duplikat: 'Doppelte Rechnungsnummer festgestellt',
   loeschung: 'Job gelöscht',
 };
 

@@ -360,6 +360,47 @@ test('openDatabase rebuilds the freigaben table to widen its rolle CHECK constra
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('openDatabase further widens the freigaben table rolle CHECK to include rechnungsnummer_duplikat, even for a database already migrated to include iban_abweichung', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE personen (churchtools_person_id TEXT PRIMARY KEY, vorname TEXT NOT NULL, nachname TEXT NOT NULL, email TEXT NOT NULL);
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, eingang_am TEXT NOT NULL, quelle TEXT NOT NULL, absender TEXT, dateiname TEXT NOT NULL, pdf_pfad TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'unzugewiesen');
+    CREATE TABLE freigaben (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL REFERENCES jobs(id),
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung')),
+      zeitpunkt TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      interessenskonflikt INTEGER NOT NULL DEFAULT 0,
+      kommentar TEXT,
+      eskaliert_von TEXT REFERENCES personen(churchtools_person_id)
+    );
+    INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'Frei', 'Geber', 'f@example.org');
+    INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad) VALUES ('2026-08-15T08:00:00.000Z', 'scanner', NULL, 'a.pdf', '/tmp/a.pdf');
+    INSERT INTO freigaben (job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von)
+      VALUES (1, '1', 'iban_abweichung', '2026-08-15T09:00:00.000Z', '1.2.3.4', 0, 'QR-IBAN weicht ab', NULL);
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const preserved = migratedDb.prepare('SELECT * FROM freigaben WHERE id = 1').get();
+  assert.equal(preserved.rolle, 'iban_abweichung', 'existing rows must survive the rebuild');
+  assert.doesNotThrow(() =>
+    migratedDb
+      .prepare(
+        `INSERT INTO freigaben (job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von)
+         VALUES (1, '1', 'rechnungsnummer_duplikat', '2026-08-15T09:30:00.000Z', '1.2.3.4', 0, 'Rechnungsnummer bereits erfasst', NULL)`
+      )
+      .run(),
+    'the widened CHECK constraint must accept rechnungsnummer_duplikat'
+  );
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('openDatabase rebuilds the mail_log table to widen its typ CHECK constraint to include iban-warnung', () => {
   const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
   const dbPath = join(dir, 'legacy.sqlite');
@@ -394,6 +435,45 @@ test('openDatabase rebuilds the mail_log table to widen its typ CHECK constraint
       )
       .run(),
     'the widened CHECK constraint must accept iban-warnung'
+  );
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('openDatabase further widens the mail_log table typ CHECK to include rechnungsnummer-warnung, even for a database already migrated to include iban-warnung', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, eingang_am TEXT NOT NULL, quelle TEXT NOT NULL, absender TEXT, dateiname TEXT NOT NULL, pdf_pfad TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'unzugewiesen');
+    CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL
+    );
+    INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad) VALUES ('2026-08-15T08:00:00.000Z', 'scanner', NULL, 'a.pdf', '/tmp/a.pdf');
+    INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am)
+      VALUES ('iban-warnung', 1, 'a@example.org', 'Betreff', 'Text', 'versendet', '2026-08-15T08:05:00.000Z');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const preserved = migratedDb.prepare('SELECT * FROM mail_log WHERE id = 1').get();
+  assert.equal(preserved.empfaenger, 'a@example.org', 'existing rows must survive the rebuild');
+  assert.doesNotThrow(() =>
+    migratedDb
+      .prepare(
+        `INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am)
+         VALUES ('rechnungsnummer-warnung', 1, 'b@example.org', 'Betreff', 'Text', 'versendet', '2026-08-15T09:00:00.000Z')`
+      )
+      .run(),
+    'the widened CHECK constraint must accept rechnungsnummer-warnung'
   );
   migratedDb.close();
   rmSync(dir, { recursive: true, force: true });

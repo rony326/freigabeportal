@@ -130,6 +130,7 @@ veraltet).
 | `ablehnung` | Rechnung bei Kontierung oder Freigabe 2 abgelehnt |
 | `sync-fehler` | ChurchTools-Sync fehlgeschlagen oder abgebrochen |
 | `iban-warnung` | QR-Code-IBAN weicht von der hinterlegten Lieferanten-IBAN ab |
+| `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Debitor erfasst |
 
 Der Mailer ist optional: fehlt eine vollständige SMTP-Konfiguration, fällt
 das Portal automatisch auf einen No-Op-Mailer zurück, der jeden

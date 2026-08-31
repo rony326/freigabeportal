@@ -189,7 +189,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id INTEGER NOT NULL REFERENCES jobs(id),
   person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung')),
+  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat')),
   zeitpunkt TEXT NOT NULL,
   ip TEXT NOT NULL,
   interessenskonflikt INTEGER NOT NULL DEFAULT 0,
@@ -199,7 +199,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
 
 CREATE TABLE IF NOT EXISTS mail_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung')),
+  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung')),
   job_id INTEGER REFERENCES jobs(id),
   empfaenger TEXT NOT NULL,
   betreff TEXT NOT NULL,

@@ -34,6 +34,7 @@ import { createPoolRouter } from './routes/pool.js';
 import { createPoolPageRouter } from './routes/poolPage.js';
 import { createDownloadsRouter } from './routes/downloads.js';
 import { createKontierungRouter } from './routes/kontierung.js';
+import { createSpesenRouter } from './routes/spesen.js';
 import { createFreigabe2Router } from './routes/freigabe2.js';
 import { createAblehnungRouter } from './routes/ablehnung.js';
 import { createZeitstempelPruefenRouter } from './routes/zeitstempelPruefen.js';
@@ -158,6 +159,7 @@ export function createApp({ db, config }) {
   app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer, csrfProtection }));
+  app.use('/spesen', sessionLimiter, requireLogin(), createSpesenRouter({ db, config, mailer, csrfProtection }));
   app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer, csrfProtection }));
   app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config, csrfProtection }));
   app.use('/zeitstempel-pruefen', sessionLimiter, requireLogin(), createZeitstempelPruefenRouter({ db, config, csrfProtection }));

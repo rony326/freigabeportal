@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
 import { getJobById, eskalierenFreigabe2, eskalierenFreigabe2AnAdmin, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id, markZeitstempelGesetzt } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
+import { getSpesenabrechnungById } from '../db/spesenabrechnungenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -73,12 +74,14 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     }
     const freigeber1Person = getPersonById(db, freigabe1.person_id);
     const spesenEinreicher = job.quelle === 'spesen' ? getPersonById(db, job.eingereicht_von) : null;
+    const spesenabrechnungTitel = job.quelle === 'spesen' ? getSpesenabrechnungById(db, job.spesenabrechnung_id)?.titel || null : null;
     res.status(status).render('freigabe2', {
       job,
       konto,
       freigabe1,
       freigeber1Person,
       spesenEinreicher,
+      spesenabrechnungTitel,
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values,
       errors,
@@ -225,6 +228,12 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const freigeber1Person = getPersonById(db, freigabe1.person_id);
       const zeitpunkt = new Date().toISOString();
 
+      // Plain local DB reads, unlike the live ChurchTools lookup below — a Spesen position has
+      // no separate invoice date, so its Titel (Spesenabrechnung) and Verwendungszweck are what
+      // identify the document on the permanently archived stamp page.
+      const titel = job.quelle === 'spesen' ? getSpesenabrechnungById(db, job.spesenabrechnung_id)?.titel || null : null;
+      const verwendungszweck = job.quelle === 'spesen' ? job.beschreibung || null : null;
+
       // Non-blocking, best-effort, same tolerance as the Zeitstempel/TSA step below: a
       // ChurchTools outage or a person with no IBAN/Kontoinhaber custom field must not prevent
       // Freigabe 2 from completing — the stamped Zahlungsdaten block is simply omitted, same as
@@ -254,6 +263,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const stampData = {
         jobId: job.id,
         konto: { nummer: konto.kontonummer, bezeichnung: konto.bezeichnung },
+        titel,
+        verwendungszweck,
         zahlungsdaten,
         freigeber1: {
           name: `${freigeber1Person.vorname} ${freigeber1Person.nachname}`,

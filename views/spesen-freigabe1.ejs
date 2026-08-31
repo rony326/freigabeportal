@@ -18,6 +18,9 @@
         <% if (job.freigabe1_eskaliert_von) { %>
           <p class="text-muted">Hinweis: dir zugewiesen — <%= job.freigabe1_eskalationsgrund %></p>
         <% } %>
+        <% if (spesenabrechnungTitel) { %>
+          <p><strong>Titel:</strong> <%= spesenabrechnungTitel %></p>
+        <% } %>
         <p><strong>Konto:</strong> <%= konto.kontonummer %> — <%= konto.bezeichnung %></p>
         <p><strong>Betrag:</strong> <%= job.betrag %></p>
         <p><strong>Auslage-Datum:</strong> <%= job.auslage_datum %></p>

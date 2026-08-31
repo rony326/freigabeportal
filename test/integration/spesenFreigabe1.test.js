@@ -81,6 +81,25 @@ test('GET /spesen-freigabe1/:id 200s and shows Beschreibung/Auslage-Datum/Einger
   assert.match(res.text, /Bahnticket/);
   assert.match(res.text, /2026-08-20/);
   assert.match(res.text, /Ein Reicher/);
+  assert.doesNotMatch(res.text, /<strong>Titel:<\/strong>/, 'no Titel line when the Spesenabrechnung has none');
+  db.close();
+});
+
+test('GET /spesen-freigabe1/:id shows the Spesenabrechnung Titel when one was given at submission', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: ['20'] });
+  upsertPerson(db, { id: '5', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '1', stellvertreter2Id: '1' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '5', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: 'Reise Zürich 12.–14.8.' });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '5', kontoId, betrag: '61.75', auslageDatum: '2026-08-20',
+    beschreibung: 'Bahnticket', dateiname: 'ticket.pdf', pdfPfad: '/tmp/ticket.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/spesen-freigabe1/${jobId}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<strong>Titel:<\/strong> Reise Zürich 12.–14.8./);
   db.close();
 });
 

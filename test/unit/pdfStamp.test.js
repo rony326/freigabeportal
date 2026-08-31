@@ -150,6 +150,36 @@ test('stampData.zahlungsdaten with both iban and kontoinhaber null skips the Zah
   assert.doesNotMatch(stampText, /Zahlungsdaten/);
 });
 
+test('stampData.titel and stampData.verwendungszweck print between Konto and Zahlungsdaten (Spesen only)', async () => {
+  const pdf = await buildPdfFixture(['Beleg Seite 1']);
+  const stampData = sampleStampData();
+  stampData.titel = 'Reise Zürich 12.–14.8.';
+  stampData.verwendungszweck = 'Taxi';
+  stampData.zahlungsdaten = { iban: 'CH93 0076 2011 6238 5295 7', kontoinhaber: 'Max Muster' };
+  const stamped = await stampAndFinalize(pdf, stampData);
+  const reloaded = await PDFDocument.load(stamped);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
+  assert.match(stampText, /Titel: Reise Zürich 12.–14.8./);
+  assert.match(stampText, /Verwendungszweck: Taxi/);
+  const kontoIndex = stampText.indexOf('Konto: 3000');
+  const titelIndex = stampText.indexOf('Titel:');
+  const verwendungszweckIndex = stampText.indexOf('Verwendungszweck:');
+  const zahlungsdatenIndex = stampText.indexOf('Zahlungsdaten');
+  assert.ok(
+    kontoIndex >= 0 && titelIndex >= 0 && verwendungszweckIndex >= 0 && zahlungsdatenIndex >= 0 &&
+      kontoIndex < titelIndex && titelIndex < verwendungszweckIndex && verwendungszweckIndex < zahlungsdatenIndex
+  );
+});
+
+test('omitting stampData.titel and stampData.verwendungszweck skips both lines without error', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const stamped = await stampAndFinalize(pdf, sampleStampData());
+  const reloaded = await PDFDocument.load(stamped);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
+  assert.doesNotMatch(stampText, /Titel:/);
+  assert.doesNotMatch(stampText, /Verwendungszweck:/);
+});
+
 test('the appended stamp page reuses the original document\'s page size', async () => {
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const original = await PDFDocument.load(pdf);

@@ -134,6 +134,23 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
       }
       y -= 12;
     }
+    // Only ever populated for a Spesen position (see freigabe2.js) — same prominence/style as the
+    // Konto line above, since Titel/Verwendungszweck are what identify the document (a Spesen
+    // position has no separate Rechnungsnummer/Lieferant to serve that purpose).
+    if (stampData.titel) {
+      for (const line of wrapLine(boldFont, `Titel: ${stampData.titel}`, 14, maxWidth)) {
+        stampPage.drawText(line, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });
+        y -= 18;
+      }
+      y -= 12;
+    }
+    if (stampData.verwendungszweck) {
+      for (const line of wrapLine(boldFont, `Verwendungszweck: ${stampData.verwendungszweck}`, 14, maxWidth)) {
+        stampPage.drawText(line, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });
+        y -= 18;
+      }
+      y -= 12;
+    }
     // Only ever populated for a Spesen position (see freigabe2.js) — the account the
     // reimbursement is actually paid to, so it's visible on the document itself and not only in
     // the n8n/Paperless API response, which was the whole point of asking for it here.

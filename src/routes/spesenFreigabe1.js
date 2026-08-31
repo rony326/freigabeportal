@@ -9,6 +9,7 @@ import {
   getEffectiveFreigeber2Id,
 } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
+import { getSpesenabrechnungById } from '../db/spesenabrechnungenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
@@ -52,10 +53,12 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
   }
 
   function renderForm(req, res, status, { job, konto }, values, errors) {
+    const spesenabrechnung = getSpesenabrechnungById(db, job.spesenabrechnung_id);
     res.status(status).render('spesen-freigabe1', {
       job,
       konto,
       eingereichtePerson: getPersonById(db, job.eingereicht_von),
+      spesenabrechnungTitel: spesenabrechnung?.titel || null,
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values,
       errors,

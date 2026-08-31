@@ -4,3 +4,8 @@ export function createSpesenabrechnung(db, { eingereichtVon, eingereichtAm, tite
     .run(eingereichtVon, eingereichtAm, titel ?? null);
   return Number(result.lastInsertRowid);
 }
+
+export function getSpesenabrechnungById(db, id) {
+  if (id == null) return null;
+  return db.prepare('SELECT * FROM spesenabrechnungen WHERE id = ?').get(id) ?? null;
+}

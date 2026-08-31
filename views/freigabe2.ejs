@@ -20,6 +20,9 @@
             <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %><% if (job.absender) { %> · Absender: <%= job.absender %><% } %></p>
             <p><strong>Konto:</strong> <%= konto.kontonummer %> — <%= konto.bezeichnung %></p>
             <% if (job.quelle === 'spesen') { %>
+              <% if (spesenabrechnungTitel) { %>
+                <p><strong>Titel:</strong> <%= spesenabrechnungTitel %></p>
+              <% } %>
               <p><strong>Verwendungszweck:</strong> <%= job.beschreibung %></p>
               <p><strong>Auslage-Datum:</strong> <%= job.auslage_datum %></p>
               <p><strong>Eingereicht von:</strong> <%= spesenEinreicher ? `${spesenEinreicher.vorname} ${spesenEinreicher.nachname}` : 'Unbekannt' %></p>

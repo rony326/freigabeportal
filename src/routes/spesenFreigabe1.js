@@ -4,11 +4,12 @@ import {
   eskalierenFreigabe1,
   eskalierenFreigabe1AnAdmin,
   abschliessenFreigabe1,
+  eskalierenFreigabe2,
   ablehnenJob,
   getEffectiveFreigeber2Id,
 } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
-import { createFreigabe, listFreigabenByJob } from '../db/freigabenRepo.js';
+import { createFreigabe } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
@@ -25,6 +26,19 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
     const job = getJobById(db, Number(req.params.id));
     if (!job || job.quelle !== 'spesen' || job.status !== 'zugewiesen') {
       res.status(403).render('error', { message: 'Für diese Spesen-Position ist aktuell keine Freigabe 1 möglich.' });
+      return null;
+    }
+    // Must be checked unconditionally, before the admin-escalation branch below: a superadmin
+    // who is also this claim's own submitter must never be authorized here just because the
+    // admin-escalated branch only checks group membership. Reachable via: submitter is this
+    // Konto's own Freigeber1 -> auto-escalates to Stellvertreter1 at submission -> Stellvertreter1
+    // also declares a conflict -> since freigabe1_eskaliert_von is already set, that second
+    // conflict routes straight to the admin group (SYNC-8), where the submitter — if also a
+    // superadmin — would otherwise pass isSuperadmin() and approve their own claim.
+    if (job.eingereicht_von === req.currentPerson.churchtools_person_id) {
+      res.status(403).render('error', {
+        message: 'Du hast diese Spesen-Position selbst eingereicht und kannst sie nicht selbst freigeben.',
+      });
       return null;
     }
     const authorized = job.freigabe1_eskaliert_an_admin
@@ -172,6 +186,16 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
           eskaliertVon: job.freigabe1_eskaliert_von,
         });
         abschliessenFreigabe1(db, job.id);
+        // Vier-Augen-Prinzip, second half: Freigabe 1 just completed, but if the submitter of
+        // this Spesen position is ALSO this Konto's own Freigeber2, letting the job proceed
+        // unmodified would resolve back to the submitter for Freigabe 2 too (getEffectiveFreigeber2Id
+        // would pick konto.freigeber2_id === job.eingereicht_von). Reroute to Stellvertreter2 right
+        // here, atomically with the Freigabe-1 completion, rather than ever reaching Freigabe 2 with
+        // no valid non-self approver (see freigabe2.js's loadAuthorized submitter check, which is
+        // the belt-and-suspenders backstop for this same rule).
+        if (job.quelle === 'spesen' && konto.freigeber2_id === job.eingereicht_von) {
+          eskalierenFreigabe2(db, job.id, { eskaliertVon: job.eingereicht_von, grund: 'Selbsteinreichung durch Freigeber2' });
+        }
         db.exec('COMMIT');
       } catch (err) {
         db.exec('ROLLBACK');

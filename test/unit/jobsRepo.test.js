@@ -782,6 +782,28 @@ test('listAbgeschlossenJobsForPerson excludes a job that has been admin-escalate
   db.close();
 });
 
+test('listFreigabe2JobsForPerson excludes a Spesen position whose own submitter is the resolved freigeber2/stellvertreter2', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '3', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '3', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+
+  // Not yet escalated: konten.freigeber2_id ('3') matches jobs.eingereicht_von ('3') — the
+  // submitter must not see their own claim, even though the plain freigeber2_id join would
+  // otherwise match them.
+  assert.equal(listFreigabe2JobsForPerson(db, '3').length, 0, 'the submitter must never see their own Spesen claim, escalated or not');
+
+  eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Selbsteinreichung durch Freigeber2' });
+  assert.equal(listFreigabe2JobsForPerson(db, '3').length, 0, 'still excluded once escalated');
+  assert.equal(listFreigabe2JobsForPerson(db, '4').length, 1, 'the Stellvertreter2 it was rerouted to sees it normally');
+  db.close();
+});
+
 test('listFreigabe2JobsForPerson excludes a job that has been admin-escalated past the excluded stellvertreter2', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db); // freigeber2Id: '3', stellvertreter2Id: '4'

@@ -415,6 +415,14 @@ export function listZugewiesenJobsForPerson(db, personId) {
     .all(personId);
 }
 
+// AND NOT (quelle = 'spesen' AND eingereicht_von = ?): a Spesen position whose submitter is
+// this Konto's own freigeber2/stellvertreter2 gets rerouted away from them at Freigabe-1
+// completion time (see spesenFreigabe1.js's "Freigeben" branch, which calls eskalierenFreigabe2
+// to hand it to the Stellvertreter2 instead) — but the submitter, still nominally matching this
+// query's freigeber2/stellvertreter2 condition on some *other* job, must never see their OWN
+// now-escalated claim listed here either. Without this, the Pool dashboard's "Meine Freigaben"
+// section would show a job that 403s the instant they click it (see freigabe2.js's loadAuthorized
+// submitter check), a dead end rather than an absent row.
 export function listFreigabe2JobsForPerson(db, personId) {
   return db
     .prepare(
@@ -426,9 +434,10 @@ export function listFreigabe2JobsForPerson(db, personId) {
            (jobs.freigabe2_eskaliert_von IS NULL AND konten.freigeber2_id = ?)
            OR (jobs.freigabe2_eskaliert_von IS NOT NULL AND konten.stellvertreter2_id = ?)
          )
+         AND NOT (jobs.quelle = 'spesen' AND jobs.eingereicht_von = ?)
        ORDER BY jobs.eingang_am`
     )
-    .all(personId, personId);
+    .all(personId, personId, personId);
 }
 
 // listAbgeschlossenJobsForPerson feeds the "Meine abgeschlossenen Rechnungen" section of /pool,

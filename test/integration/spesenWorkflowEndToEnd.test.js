@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
+import { getEffectiveFreigeber2Id } from '../../src/db/jobsRepo.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
@@ -171,6 +172,63 @@ test('a self-submitted Spesen position (submitter is the Konto\'s own Freigeber1
     .send({ interessenskonflikt: 'nein', begruendung: '', aktion: 'freigeben', _csrf: stellvertreter1Token });
   assert.equal(freigabe1Res.status, 302);
   assert.equal(db.prepare('SELECT status FROM jobs WHERE id = ?').get(jobId).status, 'freigabe2');
+
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('a self-submitted Spesen position (submitter is the Konto\'s own Freigeber2) reroutes to Stellvertreter2 at Freigabe-1 completion — the submitter can never approve their own Freigabe 2', async () => {
+  const db = openDatabase(':memory:');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'spesen-e2e-'));
+  const config = testConfig(jobsDir);
+  const app = createApp({ db, config });
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  const kontoId = seedGrundlagen(db);
+  const pdf = await buildPdfFixture(['Bahnticket']);
+
+  // Person 3 is this Konto's own Freigeber2, but not its Freigeber1 — Freigabe 1 assigns
+  // normally to person 1 (Freigeber1). The submitter-is-Freigeber2 hole only shows up once
+  // Freigabe 1 completes and getEffectiveFreigeber2Id resolves back to the submitter.
+  const submitterAgent = await loginAs(app, client, { id: 3, vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  const einreichenToken = await fetchCsrfToken(submitterAgent, '/spesen/neu');
+  const einreichenRes = await submitterAgent
+    .post('/spesen')
+    .field('_csrf', einreichenToken)
+    .field('posKontoId', String(kontoId))
+    .field('posBetrag', '15.00')
+    .field('posAuslageDatum', '2026-08-20')
+    .field('posBeschreibung', 'Bahnticket')
+    .attach('posBeleg_0', pdf, { filename: 'ticket.pdf', contentType: 'application/pdf' });
+  assert.equal(einreichenRes.status, 302);
+  const jobId = db.prepare("SELECT id FROM jobs WHERE quelle = 'spesen'").get().id;
+  assert.equal(db.prepare('SELECT zugewiesen_an FROM jobs WHERE id = ?').get(jobId).zugewiesen_an, '1', 'Freigabe 1 is not self-submitted here, so it assigns normally to Freigeber1');
+
+  const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: [] });
+  const freigeber1Token = await fetchCsrfToken(freigeber1Agent, `/spesen-freigabe1/${jobId}`);
+  const freigabe1Res = await freigeber1Agent
+    .post(`/spesen-freigabe1/${jobId}`)
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '', aktion: 'freigeben', _csrf: freigeber1Token });
+  assert.equal(freigabe1Res.status, 302);
+
+  const jobNachFreigabe1 = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
+  assert.equal(jobNachFreigabe1.status, 'freigabe2');
+  assert.equal(jobNachFreigabe1.freigabe2_eskaliert_von, '3', 'the reroute must record the submitter as who triggered the escalation');
+  assert.equal(jobNachFreigabe1.freigabe2_eskalationsgrund, 'Selbsteinreichung durch Freigeber2');
+  const konto = db.prepare('SELECT * FROM konten WHERE id = ?').get(kontoId);
+  assert.equal(getEffectiveFreigeber2Id(jobNachFreigabe1, konto), '4', 'getEffectiveFreigeber2Id must now resolve to Stellvertreter2, not back to the submitter');
+
+  const submitterFreigabe2ViewRes = await submitterAgent.get(`/freigabe2/${jobId}`);
+  assert.equal(submitterFreigabe2ViewRes.status, 403, 'the submitter must never be able to approve their own Freigabe 2');
+
+  const stellvertreter2Agent = await loginAs(app, client, { id: 4, vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  const stellvertreter2Token = await fetchCsrfToken(stellvertreter2Agent, `/freigabe2/${jobId}`);
+  const freigabe2Res = await stellvertreter2Agent
+    .post(`/freigabe2/${jobId}`)
+    .type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '', _csrf: stellvertreter2Token });
+  assert.equal(freigabe2Res.status, 302);
+  assert.equal(db.prepare('SELECT status FROM jobs WHERE id = ?').get(jobId).status, 'abgeschlossen', 'Stellvertreter2 must be able to complete Freigabe 2 normally');
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });

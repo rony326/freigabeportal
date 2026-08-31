@@ -104,7 +104,7 @@ export function getJobById(db, id) {
 }
 
 export function listPoolJobs(db) {
-  return db.prepare("SELECT * FROM jobs WHERE status = 'unzugewiesen' ORDER BY eingang_am").all();
+  return db.prepare("SELECT * FROM jobs WHERE status = 'unzugewiesen' AND quelle != 'spesen' ORDER BY eingang_am").all();
 }
 
 export function claimJob(db, id, personId) {
@@ -340,7 +340,7 @@ export function wiederOeffnenJob(db, jobId, personId) {
 export function listAbgelehntJobsForPerson(db, personId) {
   return db
     .prepare(
-      "SELECT * FROM jobs WHERE status = 'abgelehnt' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 ORDER BY eingang_am"
+      "SELECT * FROM jobs WHERE status = 'abgelehnt' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 AND quelle != 'spesen' ORDER BY eingang_am"
     )
     .all(personId);
 }
@@ -410,7 +410,7 @@ export function markZeitstempelGesetzt(db, jobId, zeitpunkt, hash = null) {
 export function listZugewiesenJobsForPerson(db, personId) {
   return db
     .prepare(
-      "SELECT * FROM jobs WHERE status = 'zugewiesen' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 ORDER BY eingang_am"
+      "SELECT * FROM jobs WHERE status = 'zugewiesen' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 AND quelle != 'spesen' ORDER BY eingang_am"
     )
     .all(personId);
 }
@@ -474,7 +474,7 @@ export function listAbgeschlossenJobsForPerson(db, personId) {
 // it exists in the database and its notification email links straight to it, but there is no
 // list a Portal-Admin can browse to find it without already knowing its ID.
 export function listAdminEskalierteKontierungen(db) {
-  return db.prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND freigabe1_eskaliert_an_admin = 1 ORDER BY eingang_am").all();
+  return db.prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND freigabe1_eskaliert_an_admin = 1 AND quelle != 'spesen' ORDER BY eingang_am").all();
 }
 
 export function listAdminEskalierteFreigaben(db) {
@@ -596,6 +596,50 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
       parentJob.qr_erkannt_am,
       position || null,
       belegSeitenzahl ?? null
+    );
+  return Number(result.lastInsertRowid);
+}
+
+export function createSpesenPosition(
+  db,
+  {
+    eingangAm,
+    eingereichtVon,
+    kontoId,
+    betrag,
+    auslageDatum,
+    beschreibung,
+    dateiname,
+    pdfPfad,
+    thumbnailPfad,
+    spesenabrechnungId,
+    zugewiesenAn,
+    freigabe1EskaliertVon,
+    freigabe1Eskalationsgrund,
+  }
+) {
+  const result = db
+    .prepare(
+      `INSERT INTO jobs (
+        eingang_am, quelle, dateiname, pdf_pfad, thumbnail_pfad, status, konto_id, betrag,
+        eingereicht_von, auslage_datum, beschreibung, spesenabrechnung_id, zugewiesen_an,
+        freigabe1_eskaliert_von, freigabe1_eskalationsgrund
+      ) VALUES (?, 'spesen', ?, ?, ?, 'zugewiesen', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      eingangAm,
+      dateiname,
+      pdfPfad,
+      thumbnailPfad,
+      kontoId,
+      betrag,
+      eingereichtVon,
+      auslageDatum,
+      beschreibung,
+      spesenabrechnungId,
+      zugewiesenAn,
+      freigabe1EskaliertVon ?? null,
+      freigabe1Eskalationsgrund ?? null
     );
   return Number(result.lastInsertRowid);
 }

@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PageSizes } from 'pdf-lib';
 import * as mupdf from 'mupdf';
 import { stampAndFinalize, stampGruppenDokument } from '../../src/services/pdfStamp.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
+
+const [A4_BREITE, A4_HOEHE] = PageSizes.A4;
 
 function sampleFreigeber1() {
   return { name: 'Max Muster', identitaet: 'ct-123', zeitpunkt: '2026-08-15T08:30:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null };
@@ -180,16 +182,25 @@ test('omitting stampData.titel and stampData.verwendungszweck skips both lines w
   assert.doesNotMatch(stampText, /Verwendungszweck:/);
 });
 
-test('the appended stamp page reuses the original document\'s page size', async () => {
-  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
-  const original = await PDFDocument.load(pdf);
-  const { width: originalWidth, height: originalHeight } = original.getPage(0).getSize();
+test('the appended stamp page is always A4 portrait, even when the original document is a different size', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1'], { width: 300, height: 300 });
 
   const stamped = await stampAndFinalize(pdf, sampleStampData());
   const reloaded = await PDFDocument.load(stamped);
   const stampPage = reloaded.getPage(reloaded.getPageCount() - 1);
-  assert.equal(stampPage.getWidth(), originalWidth);
-  assert.equal(stampPage.getHeight(), originalHeight);
+  assert.equal(stampPage.getWidth(), A4_BREITE);
+  assert.equal(stampPage.getHeight(), A4_HOEHE);
+});
+
+test('the appended stamp page stays A4 portrait even when the last existing page is landscape (e.g. an attached Beleg)', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1'], { width: 842, height: 595 });
+
+  const stamped = await stampAndFinalize(pdf, sampleStampData());
+  const reloaded = await PDFDocument.load(stamped);
+  const stampPage = reloaded.getPage(reloaded.getPageCount() - 1);
+  assert.equal(stampPage.getWidth(), A4_BREITE);
+  assert.equal(stampPage.getHeight(), A4_HOEHE);
+  assert.ok(stampPage.getHeight() > stampPage.getWidth(), 'stamp page must be portrait regardless of the preceding page');
 });
 
 test('Verlauf page lists every entry with its rolleLabel, name, and kommentar', async () => {

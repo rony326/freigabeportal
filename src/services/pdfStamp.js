@@ -1,5 +1,6 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, PageSizes } from 'pdf-lib';
 
+const [STAMP_WIDTH, STAMP_HEIGHT] = PageSizes.A4;
 const VERLAUF_LINE_HEIGHT = 14;
 const VERLAUF_BOTTOM_MARGIN = 40;
 const PAGE_MARGIN = 100; // 60pt left draw origin + 40pt right margin
@@ -114,9 +115,11 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
       throw new Error('PDF enthält keine Seiten und kann nicht gestempelt werden.');
     }
 
-    // New page reuses the size of the document's existing last page for visual consistency with
-    // the rest of the file, rather than assuming a fixed standard size.
-    const { width, height } = pages[pages.length - 1].getSize();
+    // Always a fixed A4 portrait page, regardless of the preceding pages' own size/orientation —
+    // an attached Beleg can end up A4 landscape (see belegAnhaengen.js), and the stamp page must
+    // stay portrait rather than inherit that.
+    const width = STAMP_WIDTH;
+    const height = STAMP_HEIGHT;
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
     const maxWidth = width - PAGE_MARGIN;
@@ -198,7 +201,10 @@ export async function stampGruppenDokument(pdfBuffer, gruppenData) {
       throw new Error('PDF enthält keine Seiten und kann nicht gestempelt werden.');
     }
 
-    const { width, height } = pages[pages.length - 1].getSize();
+    // Always a fixed A4 portrait page — see stampAndFinalize for why this no longer copies the
+    // preceding pages' own size.
+    const width = STAMP_WIDTH;
+    const height = STAMP_HEIGHT;
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
     const maxWidth = width - PAGE_MARGIN;

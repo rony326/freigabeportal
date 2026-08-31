@@ -18,6 +18,14 @@ const MAX_POSITIONEN = 25;
 
 const uploadBelege = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BELEG_SIZE, files: MAX_POSITIONEN } });
 
+// A Spesen-Beleg upload is always turned into a real PDF by buildBelegPdf, regardless of whether
+// it arrived as PDF/PNG/JPEG — so the stored download filename must always carry a .pdf extension
+// too, otherwise an image upload keeps its original .jpg/.png name even though the served bytes
+// are now a PDF.
+function mitPdfEndung(originalname) {
+  return `${originalname.replace(/\.[^./]+$/, '')}.pdf`;
+}
+
 export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
@@ -153,7 +161,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
                 betrag: pos.betrag,
                 auslageDatum: pos.auslageDatum,
                 beschreibung: pos.beschreibung,
-                dateiname: pos.beleg.originalname,
+                dateiname: mitPdfEndung(pos.beleg.originalname),
                 pdfPfad: pos.pdfPfad,
                 thumbnailPfad: pos.thumbnailPfad,
                 spesenabrechnungId,

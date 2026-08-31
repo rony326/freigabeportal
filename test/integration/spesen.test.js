@@ -240,6 +240,7 @@ test('POST /spesen accepts a PNG Beleg and wraps it into a standalone PDF', asyn
   assert.equal(res.status, 302);
   const job = db.prepare("SELECT * FROM jobs WHERE quelle = 'spesen'").get();
   assert.ok(job.pdf_pfad.endsWith('.pdf'));
+  assert.equal(job.dateiname, 'beleg.pdf', 'the served bytes are always a PDF, so the download filename must be too, not the original .png');
   db.close();
 });
 

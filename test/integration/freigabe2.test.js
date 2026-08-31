@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson, getPersonById } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob, createSplitJob } from '../../src/db/jobsRepo.js';
+import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob, createSplitJob, createSpesenPosition } from '../../src/db/jobsRepo.js';
+import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { buildAuditLog } from '../../src/services/auditLog.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
@@ -1220,5 +1221,37 @@ test('POST /freigabe2/:id triggers the Splitgruppe merge once the LAST sibling c
   assert.ok(getJobById(db, parentId).gruppe_pdf_pfad, 'the group must be merged and exported once the last sibling completes Freigabe 2');
 
   rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('GET /freigabe2/:id shows Verwendungszweck/Auslage-Datum/Eingereicht-von instead of Lieferant/Rechnungsnummer/Zahlungsziel for a Spesen position', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '4', vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
+  upsertPerson(db, { id: '5', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '5', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '5', kontoId, betrag: '61.75', auslageDatum: '2026-08-20',
+    beschreibung: 'Bahnticket', dateiname: 'ticket.pdf', pdfPfad: '/tmp/ticket.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  createFreigabe(db, { jobId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-31T08:10:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/freigabe2/${jobId}`).set('x-test-person-id', '3');
+
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Verwendungszweck/);
+  assert.match(res.text, /Bahnticket/);
+  assert.match(res.text, /Auslage-Datum/);
+  assert.match(res.text, /2026-08-20/);
+  assert.match(res.text, /Eingereicht von/);
+  assert.match(res.text, /Ein Reicher/);
+  assert.doesNotMatch(res.text, /Rechnungsnummer/);
+  assert.doesNotMatch(res.text, /Zahlungsziel/);
   db.close();
 });

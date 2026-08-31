@@ -58,11 +58,13 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       return res.status(500).render('error', { message: 'Freigabe 1 fehlt für diesen Job — bitte an den Portal-Admin wenden.' });
     }
     const freigeber1Person = getPersonById(db, freigabe1.person_id);
+    const spesenEinreicher = job.quelle === 'spesen' ? getPersonById(db, job.eingereicht_von) : null;
     res.status(status).render('freigabe2', {
       job,
       konto,
       freigabe1,
       freigeber1Person,
+      spesenEinreicher,
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values,
       errors,

@@ -14,7 +14,7 @@
                 <span class="thumbnail-placeholder text-muted">Keine Vorschau</span>
               <% } %>
             </td>
-            <td><%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></td>
+            <td><%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %></td>
             <td><%= job.absender || '—' %></td>
             <td><%= job.lieferant || '—' %></td>
             <td><%= job.kontonummer || (job.hinweisKonto ? `Hinweis: ${job.hinweisKonto.kontonummer} — ${job.hinweisKonto.bezeichnung}` : '—') %></td>

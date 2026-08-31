@@ -8,6 +8,7 @@ import {
   fetchPersonById,
   fetchGroupMemberIds,
   resolveMemberGroupIds,
+  extractCustomFieldValue,
 } from '../../src/services/churchtools.js';
 
 const CONFIG = {
@@ -78,4 +79,27 @@ test('resolveMemberGroupIds returns only groups the person belongs to', async ()
 
   const groups = await resolveMemberGroupIds(CONFIG, 'token', 7, ['10', '20']);
   assert.deepEqual(groups, ['10']);
+});
+
+test('extractCustomFieldValue finds a custom field by name and returns its trimmed value', () => {
+  const person = {
+    id: 9,
+    customFields: [
+      { id: 12, name: 'IBAN', value: '  CH93 0076 2011 6238 5295 7  ' },
+      { id: 13, name: 'Kontoinhaber', value: 'Max Muster' },
+    ],
+  };
+  assert.equal(extractCustomFieldValue(person, 'IBAN'), 'CH93 0076 2011 6238 5295 7');
+});
+
+test('extractCustomFieldValue finds a custom field by numeric id', () => {
+  const person = { id: 9, customFields: [{ id: 12, name: 'IBAN', value: 'CH930076201162385295 7' }] };
+  assert.equal(extractCustomFieldValue(person, '12'), 'CH930076201162385295 7');
+});
+
+test('extractCustomFieldValue returns null when the field is missing, empty, or the person has no customFields', () => {
+  assert.equal(extractCustomFieldValue({ id: 9, customFields: [] }, 'IBAN'), null);
+  assert.equal(extractCustomFieldValue({ id: 9, customFields: [{ id: 12, name: 'IBAN', value: '' }] }, 'IBAN'), null);
+  assert.equal(extractCustomFieldValue({ id: 9 }, 'IBAN'), null);
+  assert.equal(extractCustomFieldValue(null, 'IBAN'), null);
 });

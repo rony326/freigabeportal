@@ -163,6 +163,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           eingereicht_von: job.eingereicht_von,
           auslage_datum: job.auslage_datum,
           beschreibung: job.beschreibung,
+          rechnungsdatum: job.rechnungsdatum,
           iban,
           kontoinhaber,
           qr_iban: job.qr_iban,

@@ -596,10 +596,10 @@ test('openDatabase is a no-op on the person_berechtigungen table when it already
   dbAgain.close();
 });
 
-test('jobs table accepts quelle = spesen and has the four Spesen columns', () => {
+test('jobs table accepts quelle = spesen and has the four Spesen columns plus rechnungsdatum', () => {
   const db = openDatabase(':memory:');
   const cols = db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
-  for (const col of ['eingereicht_von', 'auslage_datum', 'beschreibung', 'spesenabrechnung_id']) {
+  for (const col of ['eingereicht_von', 'auslage_datum', 'beschreibung', 'spesenabrechnung_id', 'rechnungsdatum']) {
     assert.ok(cols.includes(col), `jobs is missing column ${col}`);
   }
   assert.doesNotThrow(() =>

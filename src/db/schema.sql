@@ -152,7 +152,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   eingereicht_von TEXT REFERENCES personen(churchtools_person_id),
   auslage_datum TEXT,
   beschreibung TEXT,
-  spesenabrechnung_id INTEGER REFERENCES spesenabrechnungen(id)
+  spesenabrechnung_id INTEGER REFERENCES spesenabrechnungen(id),
+  rechnungsdatum TEXT
 );
 
 -- Manipulationsschutz: sobald ein Zeitstempel-Hash/-Zeitpunkt für einen Job gesetzt ist, darf er

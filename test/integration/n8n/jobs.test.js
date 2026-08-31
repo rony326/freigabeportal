@@ -937,6 +937,7 @@ test('GET /api/n8n/jobs/abholbereit includes quelle, eingereicht_von, auslage_da
   assert.equal(entry.eingereicht_von, '60');
   assert.equal(entry.auslage_datum, '2026-08-20');
   assert.equal(entry.beschreibung, 'Taxi');
+  assert.equal(entry.rechnungsdatum, '2026-08-20', 'rechnungsdatum mirrors auslage_datum for a Spesen position, for Paperless');
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
@@ -1020,6 +1021,7 @@ test('GET /api/n8n/jobs/abholbereit omits quelle/eingereicht_von-style Spesen fi
   assert.ok(entry);
   assert.equal(entry.eingereicht_von, null);
   assert.equal(entry.iban, null);
+  assert.equal(entry.rechnungsdatum, null, 'no rechnungsdatum source yet for a non-Spesen job');
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });

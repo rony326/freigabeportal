@@ -40,6 +40,7 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'auslage_datum', ddl: 'ALTER TABLE jobs ADD COLUMN auslage_datum TEXT' },
   { column: 'beschreibung', ddl: 'ALTER TABLE jobs ADD COLUMN beschreibung TEXT' },
   { column: 'spesenabrechnung_id', ddl: 'ALTER TABLE jobs ADD COLUMN spesenabrechnung_id INTEGER REFERENCES spesenabrechnungen(id)' },
+  { column: 'rechnungsdatum', ddl: 'ALTER TABLE jobs ADD COLUMN rechnungsdatum TEXT' },
 ];
 
 // SQLite CHECK constraints can't be widened with ALTER TABLE — same rebuild-in-a-transaction

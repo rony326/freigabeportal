@@ -660,8 +660,8 @@ export function createSpesenPosition(
       `INSERT INTO jobs (
         eingang_am, quelle, dateiname, pdf_pfad, thumbnail_pfad, status, konto_id, betrag,
         eingereicht_von, auslage_datum, beschreibung, spesenabrechnung_id, zugewiesen_an,
-        freigabe1_eskaliert_von, freigabe1_eskalationsgrund
-      ) VALUES (?, 'spesen', ?, ?, ?, 'zugewiesen', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        freigabe1_eskaliert_von, freigabe1_eskalationsgrund, rechnungsdatum
+      ) VALUES (?, 'spesen', ?, ?, ?, 'zugewiesen', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       eingangAm,
@@ -676,7 +676,12 @@ export function createSpesenPosition(
       spesenabrechnungId,
       zugewiesenAn,
       freigabe1EskaliertVon ?? null,
-      freigabe1Eskalationsgrund ?? null
+      freigabe1Eskalationsgrund ?? null,
+      // A Spesen position has no separate invoice date — auslage_datum (when the expense actually
+      // happened) IS its document date. Mirrored into the generic rechnungsdatum column so n8n's
+      // Paperless-Versand (GET /abholbereit) has a real date to set, instead of Paperless falling
+      // back to its own (often wrong, or entirely missing for a photographed receipt) OCR guess.
+      auslageDatum
     );
   return Number(result.lastInsertRowid);
 }

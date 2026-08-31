@@ -751,3 +751,21 @@ export function confirmGruppenAbholung(db, parentJobId, nurMitZeitstempel = fals
 export function listSplitGruppenAusstehend(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_pdf_pfad IS NULL").all();
 }
+
+export function listSpesenFreigabe1JobsForPerson(db, personId) {
+  return db
+    .prepare(
+      "SELECT * FROM jobs WHERE status = 'zugewiesen' AND quelle = 'spesen' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 ORDER BY eingang_am"
+    )
+    .all(personId);
+}
+
+export function listSpesenForEinreicher(db, personId) {
+  return db.prepare("SELECT * FROM jobs WHERE quelle = 'spesen' AND eingereicht_von = ? ORDER BY eingang_am DESC").all(personId);
+}
+
+export function listAdminEskalierteSpesenFreigaben(db) {
+  return db
+    .prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND quelle = 'spesen' AND freigabe1_eskaliert_an_admin = 1 ORDER BY eingang_am")
+    .all();
+}

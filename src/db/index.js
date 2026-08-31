@@ -66,7 +66,12 @@ function migrateJobsTableQuelleCheck(db) {
   // table. We check for konto_id (original schema) and beleg_seitenzahl (latest migration),
   // which covers the full range.
   const cols = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name));
-  if (!cols.has('konto_id') || !cols.has('beleg_seitenzahl') || !cols.has('gruppe_abgeholt_am')) return;
+  if (!cols.has('konto_id') || !cols.has('beleg_seitenzahl') || !cols.has('gruppe_abgeholt_am')) {
+    console.warn(
+      "migrateJobsTableQuelleCheck: jobs table is missing one or more expected columns (konto_id/beleg_seitenzahl/gruppe_abgeholt_am) — skipping the 'spesen' CHECK-widening migration for now. This self-heals on the next restart, once migrateJobsTable(db) has added the missing columns via ALTER TABLE."
+    );
+    return;
+  }
 
   db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');

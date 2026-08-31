@@ -12,7 +12,8 @@ import { PNG_1X1 } from '../helpers/imageFixture.js';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById, deactivateKonto } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob, listSplitKinder, updateKontierungMetadaten, createSplitJob } from '../../src/db/jobsRepo.js';
+import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob, listSplitKinder, updateKontierungMetadaten, createSplitJob, createSpesenPosition } from '../../src/db/jobsRepo.js';
+import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import { listFreigabenByJob, createFreigabe } from '../../src/db/freigabenRepo.js';
 import { buildAuditLog } from '../../src/services/auditLog.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
@@ -241,6 +242,26 @@ test('GET /kontierung/:id returns 403 for a person the job is not assigned to', 
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '2');
   assert.equal(res.status, 403);
+  db.close();
+});
+
+test('GET /kontierung/:id returns 403 for a Spesen position even when status/zugewiesen_an would otherwise match', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKontoAndPersonen(db);
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '2', eingereichtAm: '2026-08-15T08:00:00.000Z', titel: null });
+  const id = createSpesenPosition(db, {
+    eingangAm: '2026-08-15T08:00:00.000Z', eingereichtVon: '2', kontoId, betrag: '10.00', auslageDatum: '2026-08-10',
+    beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  // Sanity check: status is 'zugewiesen' and zugewiesen_an is '1', exactly what loadAuthorizedJob
+  // would otherwise accept for an ordinary invoice.
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(getJobById(db, id).zugewiesen_an, '1');
+
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 403, 'a Spesen position must be reviewed via /spesen-freigabe1, never /kontierung');
   db.close();
 });
 

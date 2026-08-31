@@ -118,6 +118,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       res.status(403).render('error', { message: 'Dieser Job ist dir aktuell nicht zur Kontierung zugewiesen.' });
       return null;
     }
+    // A Spesen position satisfies the status/zugewiesen_an checks below exactly like an ordinary
+    // invoice — it goes through /spesen-freigabe1 instead, a review-only page that can't reassign
+    // its Konto or run it through Aufsplitten. Without this, that page could be bypassed entirely.
+    if (job.quelle === 'spesen') {
+      res.status(403).render('error', { message: 'Diese Spesen-Position kann nicht über die Kontierung bearbeitet werden.' });
+      return null;
+    }
     const authorized = job.freigabe1_eskaliert_an_admin
       ? isSuperadmin(req.currentPerson)
       : job.zugewiesen_an === req.currentPerson.churchtools_person_id;

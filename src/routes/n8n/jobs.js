@@ -11,6 +11,8 @@ import { getPersonById } from '../../db/personenRepo.js';
 import { getKontoById } from '../../db/kontenRepo.js';
 import { sendNotification } from '../../services/notify.js';
 import { getConfigValue } from '../../db/adminConfigRepo.js';
+import { fetchPersonById, extractCustomFieldValue } from '../../services/churchtools.js';
+import { normalizeIban } from '../../services/ibanUtils.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
@@ -122,33 +124,56 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     });
   });
 
-  router.get('/abholbereit', (req, res) => {
+  router.get('/abholbereit', async (req, res) => {
     const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
     const jobs = listAbholbereitJobs(db, undefined, nurMitZeitstempel);
-    const einzelPayload = jobs.map((job) => {
-      const konto = job.konto_id ? getKontoById(db, job.konto_id) : null;
-      return {
-        id: job.id,
-        eingang_am: job.eingang_am,
-        quelle: job.quelle,
-        absender: job.absender,
-        lieferant: job.lieferant,
-        rechnungsnummer: job.rechnungsnummer,
-        betrag: job.betrag,
-        zahlungsziel: job.zahlungsziel,
-        dateiname: job.dateiname,
-        konto_id: job.konto_id,
-        konto_kontonummer: konto?.kontonummer ?? null,
-        konto_bezeichnung: konto?.bezeichnung ?? null,
-        qr_iban: job.qr_iban,
-        qr_referenz: job.qr_referenz,
-        qr_betrag: job.qr_betrag,
-        qr_waehrung: job.qr_waehrung,
-        qr_creditor_name: job.qr_creditor_name,
-        qr_erkannt_am: job.qr_erkannt_am,
-        download_url: buildSignedDownloadUrl(config, job.id, ABHOLEN_TTL_SECONDS),
-      };
-    });
+    const einzelPayload = await Promise.all(
+      jobs.map(async (job) => {
+        const konto = job.konto_id ? getKontoById(db, job.konto_id) : null;
+        let iban = null;
+        let kontoinhaber = null;
+        if (job.quelle === 'spesen' && job.eingereicht_von) {
+          try {
+            const person = await fetchPersonById(config.churchtools, config.churchtools.syncServiceToken, job.eingereicht_von);
+            const ibanRoh = extractCustomFieldValue(person, config.churchtools.customFieldIban);
+            iban = ibanRoh ? normalizeIban(ibanRoh) : null;
+            kontoinhaber = extractCustomFieldValue(person, config.churchtools.customFieldKontoinhaber);
+          } catch (err) {
+            // A single unresolvable ChurchTools person must not block the whole Abholung
+            // response — n8n gets iban: null for this one job and decides itself how to handle
+            // a missing IBAN (e.g. skip and retry later), same tolerance-of-partial-failure
+            // pattern as this file's own thumbnail/QR best-effort steps above.
+            console.error(`IBAN-Abruf fehlgeschlagen für Spesen-Position ${job.id}:`, err.message);
+          }
+        }
+        return {
+          id: job.id,
+          eingang_am: job.eingang_am,
+          quelle: job.quelle,
+          absender: job.absender,
+          lieferant: job.lieferant,
+          rechnungsnummer: job.rechnungsnummer,
+          betrag: job.betrag,
+          zahlungsziel: job.zahlungsziel,
+          dateiname: job.dateiname,
+          konto_id: job.konto_id,
+          konto_kontonummer: konto?.kontonummer ?? null,
+          konto_bezeichnung: konto?.bezeichnung ?? null,
+          eingereicht_von: job.eingereicht_von,
+          auslage_datum: job.auslage_datum,
+          beschreibung: job.beschreibung,
+          iban,
+          kontoinhaber,
+          qr_iban: job.qr_iban,
+          qr_referenz: job.qr_referenz,
+          qr_betrag: job.qr_betrag,
+          qr_waehrung: job.qr_waehrung,
+          qr_creditor_name: job.qr_creditor_name,
+          qr_erkannt_am: job.qr_erkannt_am,
+          download_url: buildSignedDownloadUrl(config, job.id, ABHOLEN_TTL_SECONDS),
+        };
+      })
+    );
 
     const gruppen = listAbholbereitGruppen(db, undefined, nurMitZeitstempel);
     const gruppenPayload = gruppen.map((parent) => {

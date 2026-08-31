@@ -43,11 +43,11 @@
               <label class="form-label small">Auslage-Datum</label>
               <input type="date" class="form-control" name="posAuslageDatum" value="<%= pos.auslageDatum || '' %>">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
               <label class="form-label small">Verwendungszweck</label>
               <input type="text" class="form-control" name="posBeschreibung" value="<%= pos.beschreibung || '' %>">
             </div>
-            <div class="col-md-1">
+            <div class="col-md-2">
               <label class="form-label small">Beleg</label>
               <input type="file" class="form-control position-beleg-input" accept="application/pdf,image/png,image/jpeg" required>
             </div>
@@ -106,9 +106,9 @@
             '<input type="text" inputmode="decimal" class="form-control" name="posBetrag" placeholder="z.B. 61.75"></div>' +
             '<div class="col-md-2"><label class="form-label small">Auslage-Datum</label>' +
             '<input type="date" class="form-control" name="posAuslageDatum"></div>' +
-            '<div class="col-md-3"><label class="form-label small">Verwendungszweck</label>' +
+            '<div class="col-md-2"><label class="form-label small">Verwendungszweck</label>' +
             '<input type="text" class="form-control" name="posBeschreibung"></div>' +
-            '<div class="col-md-1"><label class="form-label small">Beleg</label>' +
+            '<div class="col-md-2"><label class="form-label small">Beleg</label>' +
             '<input type="file" class="form-control position-beleg-input" accept="application/pdf,image/png,image/jpeg" required></div>' +
             '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
           var container = document.getElementById('positionen-container');

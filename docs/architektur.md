@@ -94,7 +94,8 @@ und Zugriffskontrolle — siehe
 | `/api/n8n/jobs` | machine | `X-API-Key` | Rechnungseingang/-abholung durch n8n |
 | `/api/n8n/backup` | machine | `X-API-Key` | Abholung des neuesten Backup-Archivs durch n8n (Offsite-Ablage) |
 | `/api/pool` | session | Rolle `buchhaltung` | JSON-Pool-API (Beanspruchen) |
-| `/pool` | session | eingeloggt | Dashboard für jede aktive Person |
+| `/pool` | session | eingeloggt | Dashboard für jede aktive Person (nur offene Aufgaben) |
+| `/meine-abgeschlossenen` | session | eingeloggt | eigene abgeschlossene Rechnungen, paginiert |
 | `/downloads` | eigene (session bzw. public je Route) | siehe [n8n-schnittstelle.md](n8n-schnittstelle.md) | signierte PDF-/Thumbnail-Auslieferung |
 | `/kontierung` | session | eingeloggt + Job-Autorisierung | Kontierung, Aufsplitten |
 | `/freigabe2` | session | eingeloggt + Job-Autorisierung | zweite Freigabe |

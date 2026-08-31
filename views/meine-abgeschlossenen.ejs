@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Meine abgeschlossenen Rechnungen — <%= branding.seitenTitel %></title>
+</head>
+<body>
+  <%- include('_header') %>
+  <main class="container py-4">
+    <h1 class="h3">Meine abgeschlossenen Rechnungen</h1>
+
+    <% if (jobs.length === 0) { %>
+      <p>Keine abgeschlossenen Rechnungen.</p>
+    <% } else { %>
+      <p class="text-muted"><%= gesamtAnzahl %> Rechnungen</p>
+      <%- include('_abgeschlossen_table', { jobs }) %>
+
+      <nav aria-label="Seiten">
+        <ul class="pagination">
+          <li class="page-item <%= seite <= 1 ? 'disabled' : '' %>">
+            <% if (seite <= 1) { %>
+              <span class="page-link">Zurück</span>
+            <% } else { %>
+              <a class="page-link" href="?seite=<%= seite - 1 %>">Zurück</a>
+            <% } %>
+          </li>
+          <li class="page-item disabled"><span class="page-link">Seite <%= seite %> von <%= gesamtSeiten %></span></li>
+          <li class="page-item <%= seite >= gesamtSeiten ? 'disabled' : '' %>">
+            <% if (seite >= gesamtSeiten) { %>
+              <span class="page-link">Weiter</span>
+            <% } else { %>
+              <a class="page-link" href="?seite=<%= seite + 1 %>">Weiter</a>
+            <% } %>
+          </li>
+        </ul>
+      </nav>
+    <% } %>
+  </main>
+  <%- include('_footer') %>
+</body>
+</html>

@@ -32,6 +32,7 @@ import { createGeplanteJobsRouter } from './routes/admin/geplanteJobs.js';
 import { createBackupRouter } from './routes/admin/backup.js';
 import { createPoolRouter } from './routes/pool.js';
 import { createPoolPageRouter } from './routes/poolPage.js';
+import { createMeineAbgeschlossenenRouter } from './routes/meineAbgeschlossenen.js';
 import { createDownloadsRouter } from './routes/downloads.js';
 import { createKontierungRouter } from './routes/kontierung.js';
 import { createSpesenRouter } from './routes/spesen.js';
@@ -158,6 +159,7 @@ export function createApp({ db, config }) {
   // section itself stays restricted inside pool.ejs (gated on isBuchhaltung/isSuperadmin from
   // loadNavFlags) — only the route-level gate widens, not who can see the company-wide pool.
   app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config }));
+  app.use('/meine-abgeschlossenen', sessionLimiter, requireLogin(), createMeineAbgeschlossenenRouter({ db }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer, csrfProtection }));
   app.use('/spesen', sessionLimiter, requireLogin(), createSpesenRouter({ db, config, mailer, csrfProtection }));

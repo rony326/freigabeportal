@@ -1,6 +1,5 @@
-<% if (jobs.length === 0) { %>
-  <p><%= leerText %></p>
-<% } else { %>
+<% /* Callers only include this partial once they already know jobs.length > 0 (pool.ejs hides
+     the section, heading included, when a list is empty) — no empty-state branch needed here. */ %>
   <div class="table-responsive">
     <table class="table align-middle">
       <thead><tr><th>Vorschau</th><th>Quelle</th><th>Absender</th><th>Debitor</th><th>Konto</th><th>Eingang</th><th></th></tr></thead>
@@ -37,4 +36,3 @@
       </tbody>
     </table>
   </div>
-<% } %>

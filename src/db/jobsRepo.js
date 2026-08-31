@@ -450,12 +450,10 @@ export function listFreigabe2JobsForPerson(db, personId) {
     .all(personId, personId, personId);
 }
 
-// listAbgeschlossenJobsForPerson feeds the "Meine abgeschlossenen Rechnungen" section of /pool,
-// the app's most-visited page — a person's completed invoices only ever accumulate, so without a
-// cap the dashboard would grow without bound for the whole lifetime of the installation. The 50
-// newest (ORDER BY eingang_am DESC) are what that section is actually for: a recent-activity and
-// timestamp-status overview, not an archive browser.
-const ABGESCHLOSSEN_LISTE_LIMIT = 50;
+// listAbgeschlossenJobsForPerson feeds the dedicated "Meine abgeschlossenen Rechnungen" page
+// (/meine-abgeschlossenen) — a person's completed invoices only ever accumulate, so it's paginated
+// rather than capped: the newest page (ORDER BY eingang_am DESC) by default, any page on request.
+const ABGESCHLOSSEN_SEITENGROESSE = 20;
 
 // Same konto-membership logic as listFreigabe2JobsForPerson (including the
 // freigabe2_eskaliert_an_admin = 0 guard: a job that reached admin-escalation stays excluded from
@@ -467,22 +465,42 @@ const ABGESCHLOSSEN_LISTE_LIMIT = 50;
 // to 0 by the time a job reaches 'abgeschlossen', so this guard is defense-in-depth rather than
 // something normal completion flows can trip — but it keeps the two queries' access rules
 // identical rather than relying on that invariant holding forever.
-export function listAbgeschlossenJobsForPerson(db, personId) {
-  return db
-    .prepare(
-      `SELECT jobs.* FROM jobs
-       JOIN konten ON konten.id = jobs.konto_id
-       WHERE jobs.status IN ('abgeschlossen', 'abgeholt', 'archiviert')
+//
+// Returns { jobs, gesamtAnzahl, seite, proSeite } rather than a bare array, mirroring
+// queryGlobalAuditLog's pagination shape — a seite beyond the last real page (e.g. after some
+// jobs got archived off, or a hand-edited URL) clamps back to the last valid page instead of
+// rendering an empty page with no way back.
+export function listAbgeschlossenJobsForPerson(db, personId, { seite = 1, proSeite = ABGESCHLOSSEN_SEITENGROESSE } = {}) {
+  const seiteGewuenscht = Math.max(1, Math.trunc(seite) || 1);
+  const proSeiteSicher = Math.max(1, Math.trunc(proSeite) || ABGESCHLOSSEN_SEITENGROESSE);
+
+  const where = `WHERE jobs.status IN ('abgeschlossen', 'abgeholt', 'archiviert')
          AND jobs.freigabe2_eskaliert_an_admin = 0
          AND (
            jobs.zugewiesen_an = ?
            OR (jobs.freigabe2_eskaliert_von IS NULL AND konten.freigeber2_id = ?)
            OR (jobs.freigabe2_eskaliert_von IS NOT NULL AND konten.stellvertreter2_id = ?)
-         )
+         )`;
+  const params = [personId, personId, personId];
+
+  const gesamtAnzahl = db
+    .prepare(`SELECT COUNT(*) AS anzahl FROM jobs JOIN konten ON konten.id = jobs.konto_id ${where}`)
+    .get(...params).anzahl;
+  const gesamtSeiten = Math.max(1, Math.ceil(gesamtAnzahl / proSeiteSicher));
+  const seiteSicher = Math.min(seiteGewuenscht, gesamtSeiten);
+  const offset = (seiteSicher - 1) * proSeiteSicher;
+
+  const jobs = db
+    .prepare(
+      `SELECT jobs.* FROM jobs
+       JOIN konten ON konten.id = jobs.konto_id
+       ${where}
        ORDER BY jobs.eingang_am DESC
-       LIMIT ${ABGESCHLOSSEN_LISTE_LIMIT}`
+       LIMIT ? OFFSET ?`
     )
-    .all(personId, personId, personId);
+    .all(...params, proSeiteSicher, offset);
+
+  return { jobs, gesamtAnzahl, seite: seiteSicher, proSeite: proSeiteSicher };
 }
 
 // Both listZugewiesenJobsForPerson and listFreigabe2JobsForPerson deliberately exclude

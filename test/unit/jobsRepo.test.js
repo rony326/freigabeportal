@@ -775,8 +775,9 @@ test('listAbgeschlossenJobsForPerson matches a job by freigeber2_id and lists it
   for (const status of ['abgeschlossen', 'abgeholt', 'archiviert']) {
     db.prepare('UPDATE jobs SET status = ? WHERE id = ?').run(status, jobId);
     const result = listAbgeschlossenJobsForPerson(db, '3');
-    assert.equal(result.length, 1, `expected a match for status ${status}`);
-    assert.equal(result[0].id, jobId);
+    assert.equal(result.jobs.length, 1, `expected a match for status ${status}`);
+    assert.equal(result.jobs[0].id, jobId);
+    assert.equal(result.gesamtAnzahl, 1);
   }
   db.close();
 });
@@ -788,18 +789,18 @@ test('listAbgeschlossenJobsForPerson matches a job by zugewiesen_an even when th
   setKontierung(db, jobId, kontoId);
   db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
 
-  assert.equal(listAbgeschlossenJobsForPerson(db, '1').length, 1);
+  assert.equal(listAbgeschlossenJobsForPerson(db, '1').jobs.length, 1);
   db.close();
 });
 
-test('listAbgeschlossenJobsForPerson caps the list at 50 rows and returns the newest ones', () => {
-  // Completed invoices only ever accumulate, and this list feeds the most-visited page in the
-  // app (/pool) — without the LIMIT it would grow unbounded for the lifetime of the install.
+test('listAbgeschlossenJobsForPerson paginates at 20 rows per page by default, newest first', () => {
+  // Completed invoices only ever accumulate, and this feeds a dedicated page
+  // (/meine-abgeschlossenen) — pagination keeps any one page bounded for the lifetime of the install.
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db); // freigeber2Id: '3'
-  // 60 jobs with strictly increasing eingang_am, so "newest first" is unambiguous.
+  // 25 jobs with strictly increasing eingang_am, so "newest first" is unambiguous.
   const ids = [];
-  for (let i = 0; i < 60; i += 1) {
+  for (let i = 0; i < 25; i += 1) {
     const eingangAm = new Date(Date.UTC(2026, 0, 1, 0, i, 0)).toISOString();
     const jobId = createJob(db, { eingangAm, quelle: 'scanner', absender: null, dateiname: `a${i}.pdf`, pdfPfad: '/tmp/a.pdf' });
     setKontierung(db, jobId, kontoId);
@@ -807,10 +808,22 @@ test('listAbgeschlossenJobsForPerson caps the list at 50 rows and returns the ne
     ids.push(jobId);
   }
 
-  const result = listAbgeschlossenJobsForPerson(db, '3');
-  assert.equal(result.length, 50, 'the query must cap at 50 rows, not return all 60');
-  assert.equal(result[0].id, ids[59], 'newest (highest eingang_am) first');
-  assert.equal(result[49].id, ids[10], 'the 50 newest are kept — the 10 oldest are what falls off');
+  const seite1 = listAbgeschlossenJobsForPerson(db, '3');
+  assert.equal(seite1.jobs.length, 20, 'first page holds 20 rows, not all 25');
+  assert.equal(seite1.gesamtAnzahl, 25);
+  assert.equal(seite1.seite, 1);
+  assert.equal(seite1.proSeite, 20);
+  assert.equal(seite1.jobs[0].id, ids[24], 'newest (highest eingang_am) first');
+  assert.equal(seite1.jobs[19].id, ids[5], 'the 20 newest are on page 1 — the 5 oldest fall to page 2');
+
+  const seite2 = listAbgeschlossenJobsForPerson(db, '3', { seite: 2 });
+  assert.equal(seite2.jobs.length, 5, 'second page holds the remaining 5 rows');
+  assert.equal(seite2.seite, 2);
+  assert.equal(seite2.jobs[0].id, ids[4]);
+  assert.equal(seite2.jobs[4].id, ids[0]);
+
+  const seiteJenseits = listAbgeschlossenJobsForPerson(db, '3', { seite: 99 });
+  assert.equal(seiteJenseits.seite, 2, 'a page beyond the last one clamps back to the last valid page');
   db.close();
 });
 
@@ -821,7 +834,7 @@ test('listAbgeschlossenJobsForPerson excludes a job that has not reached abgesch
   setKontierung(db, jobId, kontoId);
   db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
 
-  assert.equal(listAbgeschlossenJobsForPerson(db, '3').length, 0);
+  assert.equal(listAbgeschlossenJobsForPerson(db, '3').jobs.length, 0);
   db.close();
 });
 
@@ -838,8 +851,8 @@ test('listAbgeschlossenJobsForPerson excludes a job that has been admin-escalate
   // matching listFreigabe2JobsForPerson's admin-escalation exclusion.
   db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
 
-  assert.equal(listAbgeschlossenJobsForPerson(db, '3').length, 0);
-  assert.equal(listAbgeschlossenJobsForPerson(db, '4').length, 0);
+  assert.equal(listAbgeschlossenJobsForPerson(db, '3').jobs.length, 0);
+  assert.equal(listAbgeschlossenJobsForPerson(db, '4').jobs.length, 0);
   db.close();
 });
 

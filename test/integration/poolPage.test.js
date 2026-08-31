@@ -143,7 +143,10 @@ test('GET /pool returns 200 for a logged-in person without the buchhaltung or po
   const res = await request(app).get('/pool').set('x-test-person-id', '77');
   assert.equal(res.status, 200);
   assert.doesNotMatch(res.text, /<h2 class="h4 mt-4">Pool<\/h2>/);
-  assert.match(res.text, /Meine offenen Kontierungen/);
+  // No jobs exist anywhere for this person — every section is empty, so the dashboard shows
+  // the summary empty-state instead of a heading with nothing under it.
+  assert.doesNotMatch(res.text, /Meine offenen Kontierungen/);
+  assert.match(res.text, /Keine offenen Aufgaben/);
   db.close();
 });
 
@@ -286,48 +289,6 @@ test('GET /pool lists a job the current person can rework under "Meine abgelehnt
   db.close();
 });
 
-test('GET /pool lists an abgeschlossen job under "Meine abgeschlossenen Rechnungen" with a "Jetzt prüfen" link and pending-timestamp status', async () => {
-  const db = openDatabase(':memory:');
-  seedBuchhaltungPerson(db, '50');
-  for (const id of ['1', '2', '3']) {
-    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
-  }
-  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '50', stellvertreter2Id: '3' });
-  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'fertig.pdf', pdfPfad: '/tmp/a.pdf' });
-  setKontierung(db, id, kontoId);
-  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(id);
-  const app = buildTestApp(db);
-
-  const res = await request(app).get('/pool').set('x-test-person-id', '50');
-  assert.equal(res.status, 200);
-  assert.match(res.text, /Meine abgeschlossenen Rechnungen/);
-  assert.match(res.text, new RegExp(`id="abgeschlossen-row-${id}"`));
-  assert.match(res.text, new RegExp(`/zeitstempel-pruefen\\?jobId=${id}`));
-  assert.match(res.text, /ausstehend/);
-  db.close();
-});
-
-test('GET /pool shows a set zeitstempel_gesetzt_am on the dashboard, and no "Jetzt prüfen" link for an abgeholt job (file no longer available)', async () => {
-  const db = openDatabase(':memory:');
-  seedBuchhaltungPerson(db, '50');
-  for (const id of ['1', '2', '3']) {
-    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
-  }
-  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '50', stellvertreter2Id: '3' });
-  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'abgeholt.pdf', pdfPfad: '/tmp/a.pdf' });
-  setKontierung(db, id, kontoId);
-  db.prepare("UPDATE jobs SET status = 'abgeholt', zeitstempel_gesetzt_am = '2026-08-20T10:00:00.000Z' WHERE id = ?").run(id);
-  const app = buildTestApp(db);
-
-  const res = await request(app).get('/pool').set('x-test-person-id', '50');
-  assert.equal(res.status, 200);
-  const rowMatch = res.text.match(new RegExp(`<tr id="abgeschlossen-row-${id}">[\\s\\S]*?</tr>`));
-  assert.ok(rowMatch, 'expected a row for the abgeholt job');
-  assert.match(rowMatch[0], /gesetzt am 2026-08-20T10:00:00\.000Z/);
-  assert.doesNotMatch(rowMatch[0], /Jetzt prüfen/, 'no verify link once the file is gone (abgeholt)');
-  db.close();
-});
-
 test('GET /pool lists a job escalated to the Portal-Admin group at Freigabe 1 under "An Portal-Admin eskalierte Kontierungen", with a link to /kontierung', async () => {
   const db = openDatabase(':memory:');
   seedPortalAdminPerson(db);
@@ -418,13 +379,15 @@ test('GET /pool renders the footer', async () => {
   db.close();
 });
 
-test('GET /pool shows the empty-state text when there are no abgelehnt jobs for this person', async () => {
+test('GET /pool hides the "Meine abgelehnten Jobs" section entirely when this person has no abgelehnt jobs', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.match(res.text, /Keine abgelehnten Rechnungen\./);
+  assert.doesNotMatch(res.text, /Meine abgelehnten Jobs/);
+  // No jobs exist anywhere for this person either — every section is empty.
+  assert.match(res.text, /Keine offenen Aufgaben/);
   db.close();
 });
 

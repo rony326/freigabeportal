@@ -11,39 +11,58 @@
   <main class="container-fluid px-4 py-4">
     <h1>Aufgaben</h1>
 
-    <% if (typeof isBuchhaltung !== 'undefined' && (isBuchhaltung || isSuperadmin)) { %>
+    <% if (typeof isBuchhaltung !== 'undefined' && (isBuchhaltung || isSuperadmin) && poolJobs.length > 0) { %>
       <h2 class="h4 mt-4">Pool</h2>
-      <%- include('_job_table', { jobs: poolJobs, idPrefix: 'pool', leerText: 'Keine offenen Rechnungen im Pool.' }) %>
+      <%- include('_job_table', { jobs: poolJobs, idPrefix: 'pool' }) %>
     <% } %>
 
     <% if (typeof isSuperadmin !== 'undefined' && isSuperadmin) { %>
-      <h2 class="h4 mt-4">An Superadmin eskalierte Kontierungen</h2>
-      <%- include('_job_table', { jobs: adminEskalierteKontierungen, idPrefix: 'admin-eskalation-kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren', leerText: 'Keine an Superadmin eskalierten Kontierungen.' }) %>
+      <% if (adminEskalierteKontierungen.length > 0) { %>
+        <h2 class="h4 mt-4">An Superadmin eskalierte Kontierungen</h2>
+        <%- include('_job_table', { jobs: adminEskalierteKontierungen, idPrefix: 'admin-eskalation-kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren' }) %>
+      <% } %>
 
-      <h2 class="h4 mt-4">An Superadmin eskalierte Freigaben</h2>
-      <%- include('_job_table', { jobs: adminEskalierteFreigaben, idPrefix: 'admin-eskalation-freigabe', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben', leerText: 'Keine an Superadmin eskalierten Freigaben.' }) %>
+      <% if (adminEskalierteFreigaben.length > 0) { %>
+        <h2 class="h4 mt-4">An Superadmin eskalierte Freigaben</h2>
+        <%- include('_job_table', { jobs: adminEskalierteFreigaben, idPrefix: 'admin-eskalation-freigabe', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben' }) %>
+      <% } %>
 
-      <h2 class="h4 mt-4">An Superadmin eskalierte Spesen-Freigaben</h2>
-      <%- include('_job_table', { jobs: adminEskalierteSpesenFreigaben, idPrefix: 'admin-eskalation-spesen-freigabe', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen', leerText: 'Keine an Superadmin eskalierten Spesen-Freigaben.' }) %>
+      <% if (adminEskalierteSpesenFreigaben.length > 0) { %>
+        <h2 class="h4 mt-4">An Superadmin eskalierte Spesen-Freigaben</h2>
+        <%- include('_job_table', { jobs: adminEskalierteSpesenFreigaben, idPrefix: 'admin-eskalation-spesen-freigabe', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen' }) %>
+      <% } %>
     <% } %>
 
-    <h2 class="h4 mt-4">Meine offenen Kontierungen</h2>
-    <%- include('_job_table', { jobs: meineKontierungen, idPrefix: 'kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren', leerText: 'Keine offenen Kontierungen.' }) %>
+    <% if (meineKontierungen.length > 0) { %>
+      <h2 class="h4 mt-4">Meine offenen Kontierungen</h2>
+      <%- include('_job_table', { jobs: meineKontierungen, idPrefix: 'kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren' }) %>
+    <% } %>
 
-    <h2 class="h4 mt-4">Meine offenen Spesen-Freigaben</h2>
-    <%- include('_job_table', { jobs: meineSpesenFreigaben, idPrefix: 'spesen-freigabe1', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen', leerText: 'Keine offenen Spesen-Freigaben.' }) %>
+    <% if (meineSpesenFreigaben.length > 0) { %>
+      <h2 class="h4 mt-4">Meine offenen Spesen-Freigaben</h2>
+      <%- include('_job_table', { jobs: meineSpesenFreigaben, idPrefix: 'spesen-freigabe1', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen' }) %>
+    <% } %>
 
-    <h2 class="h4 mt-4">Meine Freigaben</h2>
-    <%- include('_job_table', { jobs: meineFreigaben, idPrefix: 'freigabe2', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben', leerText: 'Keine offenen Freigaben.' }) %>
+    <% if (meineFreigaben.length > 0) { %>
+      <h2 class="h4 mt-4">Meine Freigaben</h2>
+      <%- include('_job_table', { jobs: meineFreigaben, idPrefix: 'freigabe2', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben' }) %>
+    <% } %>
 
-    <h2 class="h4 mt-4">Meine abgelehnten Jobs</h2>
-    <%- include('_job_table', { jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen', leerText: 'Keine abgelehnten Rechnungen.' }) %>
+    <% if (meineAbgelehnten.length > 0) { %>
+      <h2 class="h4 mt-4">Meine abgelehnten Jobs</h2>
+      <%- include('_job_table', { jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen' }) %>
+    <% } %>
 
-    <h2 class="h4 mt-4">Meine Spesen</h2>
-    <%- include('_spesen_meine_tabelle', { jobs: meineSpesen }) %>
+    <% if (meineSpesen.length > 0) { %>
+      <h2 class="h4 mt-4">Meine Spesen</h2>
+      <%- include('_spesen_meine_tabelle', { jobs: meineSpesen }) %>
+    <% } %>
 
-    <h2 class="h4 mt-4">Meine abgeschlossenen Rechnungen</h2>
-    <%- include('_abgeschlossen_table', { jobs: meineAbgeschlossenen }) %>
+    <% if (poolJobs.length === 0 && adminEskalierteKontierungen.length === 0 && adminEskalierteFreigaben.length === 0
+         && adminEskalierteSpesenFreigaben.length === 0 && meineKontierungen.length === 0 && meineSpesenFreigaben.length === 0
+         && meineFreigaben.length === 0 && meineAbgelehnten.length === 0 && meineSpesen.length === 0) { %>
+      <p class="text-muted mt-4">Keine offenen Aufgaben. Abgeschlossene Rechnungen findest du unter <a href="/meine-abgeschlossenen">Abgeschlossene Rechnungen</a>.</p>
+    <% } %>
 
     <dialog id="preview-dialog" class="p-0 border-0 rounded">
       <div class="d-flex justify-content-end p-2 bg-body border-bottom">

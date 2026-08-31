@@ -124,7 +124,8 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     });
   });
 
-  router.get('/abholbereit', async (req, res) => {
+  router.get('/abholbereit', async (req, res, next) => {
+    try {
     const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
     const jobs = listAbholbereitJobs(db, undefined, nurMitZeitstempel);
     const einzelPayload = await Promise.all(
@@ -217,6 +218,9 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     });
 
     res.json([...einzelPayload, ...gruppenPayload]);
+    } catch (err) {
+      next(err);
+    }
   });
 
   router.post('/:id/abholung-bestaetigen', (req, res) => {

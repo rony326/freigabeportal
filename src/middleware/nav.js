@@ -22,7 +22,9 @@ export function loadNavFlags(db, config) {
       auditLog: hasPermission('audit_log_einsehen'),
       backup: res.locals.isSuperadmin,
     };
-    res.locals.currentPath = req.path;
+    // Strip a trailing slash (e.g. "/pool/") so nav highlighting/buttons keyed on an exact
+    // path like "/pool" still match — Express routes both with and without it identically.
+    res.locals.currentPath = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
     next();
   };
 }

@@ -1,10 +1,11 @@
 # Freigabeportal
 
 Rechnungsfreigabe-Portal für eine Schweizer Kirchgemeinde: Zuweisung,
-Kontierung und Vier-Augen-Freigabe von Rechnungen, mit ChurchTools-OAuth2-Login,
-Rollen-Ableitung aus Gruppen, Personen-Sync und einer n8n-Schnittstelle für
-Eingang und Ablage. Node.js/Express, SQLite, lauffähig auf Infomaniak
-Node.js-Webhosting.
+Kontierung (inkl. Gutschriften und Aufsplitten auf mehrere Konten) und
+Vier-Augen-Freigabe von Rechnungen sowie eigene Spesen-Einreichungen durch
+Mitarbeitende, mit ChurchTools-OAuth2-Login, Rollen-Ableitung aus Gruppen,
+Personen-Sync und einer n8n-Schnittstelle für Eingang und Ablage.
+Node.js/Express, SQLite, lauffähig auf Infomaniak Node.js-Webhosting.
 
 ## Dokumentation
 
@@ -147,7 +148,8 @@ in [`docs/`](docs/README.md):
 - [Architektur](docs/architektur.md) — Systemüberblick, Middleware-Pipeline, Router-Übersicht
 - [Authentifizierung und Rechte](docs/auth-und-rechte.md) — OAuth2-Login, Rollen, Einzelrechte, Job-Autorisierung
 - [Datenmodell](docs/datenmodell.md) — ER-Diagramm und Tabellenbeschreibung
-- [Rechnungs-Workflow](docs/rechnungs-workflow.md) — Status-Modell, Kontierung, Freigabe 1/2, Ablehnung, Aufsplitten, Löschung
+- [Rechnungs-Workflow](docs/rechnungs-workflow.md) — Status-Modell, Kontierung, Gutschriften, Freigabe 1/2, Ablehnung, Aufsplitten, Splitgruppen-Export, Löschung
+- [Spesen-Einreichung](docs/spesen-einreichung.md) — Auslagen-Erstattung durch die Person selbst, eigene Freigabe-1-Seite
 - [n8n-Schnittstelle](docs/n8n-schnittstelle.md) — API-Vertrag Eingang/Abholung
 - [QR-Bill und Betrugserkennung](docs/qr-bill-und-betrugserkennung.md)
 - [Zeitstempel und Prüfbescheinigung](docs/zeitstempel-und-pruefbescheinigung.md)

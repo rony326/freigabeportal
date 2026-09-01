@@ -101,8 +101,39 @@ sequenceDiagram
   einreichenden Person gewählte Konto — es gibt kein separates
   Kontierungs-/Freigabe-1-Ergebnis wie bei einer Rechnung, da die
   Spesen-Position bereits bei der Einreichung ihr Konto erhält. Siehe
-  [Spesen-Einreichung-Spec](superpowers/specs/2026-08-17-spesen-einreichung-design.md)
-  für den vollständigen Workflow.
+  [spesen-einreichung.md](spesen-einreichung.md) für den vollständigen
+  Workflow.
+
+### Splitgruppen: kombinierte Einträge statt N Einzeljobs
+
+Eine vollständig abgeschlossene **Splitgruppe** (siehe
+[rechnungs-workflow.md](rechnungs-workflow.md#6-splitgruppen--kombinierter-export-statt-n-einzel-buchungen))
+erscheint in `/abholbereit` **nicht** als N separate Job-Einträge ihrer
+Teil-Jobs, sondern als **ein zusätzlicher Eintrag pro Elternjob**, sobald
+das kombinierte, gestempelte PDF fertig gemergt ist (`gruppe_pdf_pfad`
+gesetzt, ggf. auch zeitgestempelt). Ein Gruppen-Eintrag hat eine andere
+Feldform als ein Einzeljob-Eintrag — Unterscheidungsmerkmal ist das
+zusätzliche Feld `positionen`, das ein Einzeljob-Eintrag nie hat:
+
+| Feld | Beschreibung |
+|---|---|
+| `id` | ID des **Elternjobs** (Status `aufgesplittet`) |
+| `eingang_am`, `quelle`, `absender`, `lieferant`, `rechnungsnummer`, `betrag`, `zahlungsziel`, `dateiname` | vom Elternjob übernommen (Eingangsdaten der ursprünglichen Rechnung) |
+| `qr_iban`, `qr_referenz`, `qr_betrag`, `qr_waehrung`, `qr_creditor_name`, `qr_erkannt_am` | vom Elternjob übernommen (Aufsplitten fasst die QR-Daten nicht an) |
+| `positionen` | Array, ein Eintrag je nicht-gelöschtem Teil-Job: `{konto_id, konto_kontonummer, konto_bezeichnung, betrag, position}` (`position` = die bei Aufsplitten erfasste Freitext-"Position auf der Rechnung") |
+| `download_url` | signierte URL auf das **kombinierte** Gruppen-PDF (nicht auf einen einzelnen Teil) |
+
+Ein Gruppen-Eintrag hat kein eigenes `konto_id`/`iban`/`kontoinhaber`-Feld
+auf oberster Ebene (unterschiedliche Konten je Position) und keine
+Spesen-Felder. `abholung-bestaetigen` erkennt an der ID automatisch, ob es
+sich um einen Gruppen- oder Einzeljob-Elternjob handelt
+(`istGruppenElternjob`), und löscht bei Bestätigung sowohl das Gruppen-PDF
+als auch die PDF-Dateien aller Teil-Jobs.
+
+Eine Splitgruppe, deren letzter Teil noch offen oder deren Merge noch
+nicht gelaufen ist, liefert **weder** Gruppen- **noch** Einzeljob-Einträge
+für ihre Teile — Teil-Jobs werden nie einzeln über `/abholbereit`
+ausgeliefert, unabhängig von ihrem eigenen Status.
 
 - Der `download_url` ist eine HMAC-signierte, 15 Minuten gültige URL auf
   `GET /downloads/:jobId` — **keine** Session nötig, siehe

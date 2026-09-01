@@ -7,6 +7,11 @@ Jede Rechnung ist eine Zeile in der `jobs`-Tabelle
 (siehe [datenmodell.md](datenmodell.md)); ihr Zustand steckt fast
 vollständig in der Spalte `status`.
 
+> Spesen-Einreichungen (Auslagen von Personen selbst erfasst) durchlaufen
+> dieselbe `jobs`/Freigabe-Maschinerie, aber mit eigenem Einstieg statt
+> Kontierung durch Dritte — eigener Prozess, siehe
+> [spesen-einreichung.md](spesen-einreichung.md).
+
 ## Status-Modell
 
 | Status | Bedeutung |
@@ -96,14 +101,35 @@ flowchart TD
     E -- ja --> G["eskalierenFreigabe1AnAdmin<br/>(SYNC-8)<br/>Status bleibt zugewiesen<br/>+ Mail an Admin-Gruppe"]
 ```
 
+**Rechnung oder Gutschrift**: ein `typ`-Radio (Default `rechnung`) im
+Kontierungsformular setzt `jobs.typ`. Der Betrag bleibt in der Datenbank in
+beiden Fällen positiv — allein `typ` trägt die Bedeutung, es gibt keine
+Vorzeichen-/Gegenbuchungslogik. Bei `gutschrift` ist das Zahlungsziel
+optional (eine Gutschrift hat kein Fälligkeitsdatum), und das
+Rechnungsnummer-Feld wird in der UI zu "Gutschriftnummer" umbeschriftet
+(gleiche Spalte). Freigabe 1/2 laufen identisch zur normalen Rechnung, kein
+Shortcut. **Bekannte Lücke**: Aufsplitten (Abschnitt 5) übernimmt `typ`
+nicht an die Teil-Jobs — eine Gutschrift lässt sich aktuell effektiv nicht
+aufsplitten, jeder Teil-Job wird implizit wieder zur Rechnung.
+
 Zusätzlich, unabhängig vom Ausgang: ein optional mit hochgeladener
 **Beleg** (PDF/PNG/JPEG, z. B. bei Kreditkartenabrechnungen) wird per
 `mergeBelegInPdf` (`src/services/belegAnhaengen.js`) als zusätzliche
 Seite(n) in die bestehende Rechnungs-PDF eingefügt — als PDF durch
 Seiten-Kopie, als Bild durch eine neue, bildgrosse Seite. Beim Kontieren
-mit hinterlegtem Debitor läuft ausserdem der IBAN-Abgleich gegen den
-gescannten QR-Code (siehe
-[qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)).
+mit hinterlegtem Debitor laufen ausserdem zwei unabhängige,
+nicht-blockierende Prüfungen: der IBAN-Abgleich gegen den gescannten
+QR-Code (siehe
+[qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)) sowie
+ein Duplikat-Check auf **Debitor + Rechnungsnummer** — stimmt die
+eingegebene Rechnungsnummer mit einem bereits vorhandenen Job desselben
+Debitors überein (auch ein `abgelehnter`, aber kein `geloescht`-Job zählt
+mit), wird ein `freigaben`-Eintrag `rechnungsnummer_duplikat` geschrieben
+und Freigeber 1+2 des gewählten Kontos sowie die kontierende Person per
+Mail informiert (`typ: 'rechnungsnummer-warnung'`, siehe
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)) —
+die Kontierung wird dadurch nicht blockiert, gleiches Muster wie bei der
+IBAN-Abweichung.
 
 **Zurück in den Pool** (`POST /kontierung/:id/zurueck-in-pool`): setzt den
 Job auf `unzugewiesen` zurück und löscht alle Konto-/Eskalations-Felder —
@@ -162,13 +188,16 @@ Für Sammelrechnungen/Kreditkartenabrechnungen, die auf mehrere Konten
 verteilt werden müssen (`GET/POST /kontierung/:id/aufsplitten`):
 
 1. Die Person gibt den Gesamtbetrag und mindestens zwei Teile
-   (Konto + Betrag, optional eigener Beleg pro Teil) ein; die Summe der
-   Teile muss dem Gesamtbetrag entsprechen (Toleranz 0.005).
+   (Konto + Betrag, optional eine Freitext-**Position auf der Rechnung**
+   wie "Pos. 3", optional eigener Beleg pro Teil) ein; die Summe der Teile
+   muss dem Gesamtbetrag entsprechen (Toleranz 0.005).
 2. Der Ursprungs-Job wird auf `aufgesplittet` gesetzt und bleibt als
    historische Referenz stehen — er selbst gilt nie als freigegeben oder
    abgelehnt.
 3. Für **jeden Teil** entsteht ein komplett unabhängiger neuer Job (eigene
-   PDF-Kopie, eigener Freigabe-Verlauf):
+   PDF-Kopie, eigener Freigabe-Verlauf), inkl. desselben IBAN-Abgleichs und
+   Rechnungsnummer-Duplikat-Checks wie im normalen Kontierungsformular
+   (Abschnitt 2):
    - Konto gehört der aufsplittenden Person selbst → sofort Freigabe 1
      erteilt, direkt Status `freigabe2` (analog zum Normalfall ohne
      Konflikt).
@@ -178,13 +207,37 @@ verteilt werden müssen (`GET/POST /kontierung/:id/aufsplitten`):
      Hinweis-Konto zurück im Pool (Freigeber 1 des Ziel-Kontos bekommt
      eine Hinweis-Mail).
 
-> **Bekannte Lücke**: Der IBAN-Abgleich gegen den beim Eingang gescannten
-> QR-Code (siehe [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md))
-> läuft nur im normalen Kontierungs-Formular, **nicht** beim Aufsplitten —
-> eine über Aufsplitten kontierte Teilrechnung durchläuft diese
-> Betrugsprüfung aktuell nicht.
+> **Bekannte Lücke**: `typ` (Rechnung/Gutschrift, siehe Abschnitt 2) wird
+> nicht an die Teil-Jobs weitergegeben — siehe oben.
 
-## 6. Abholung und Archivierung
+## 6. Splitgruppen — kombinierter Export statt N Einzel-Buchungen
+
+Ohne weiteres Zutun würde jeder Teil-Job aus Abschnitt 5 einzeln über
+Abschnitt 7 an n8n/Bexio geliefert — eine aufgesplittete Rechnung mit drei
+Konten entstünde als drei unzusammenhängende Bexio-Buchungen. Stattdessen
+führt `pruefeUndFinalisiereSplitGruppe`
+(`src/services/splitGruppenExport.js`) eine **Splitgruppe** (alle
+Teil-Jobs mit demselben `aufgesplittet_von`-Elternjob) zu einem einzigen
+Dokument zusammen, sobald **alle** ihre Teile `abgeschlossen` sind (weder
+offen noch abgelehnt/gelöscht):
+
+- Die Original-Belegseiten jedes Teils werden 1:1 kopiert, dahinter **eine
+  gemeinsame** Stempel-/Verlaufsseite (`stampGruppenDokument`,
+  `src/services/pdfStamp.js`) mit allen Konten, Positionen (Freitext aus
+  Abschnitt 5) und allen Freigabe-1/2-Einträgen jedes Teils.
+- Das Ergebnis wird RFC3161-zeitgestempelt wie ein normaler Job (siehe
+  [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md))
+  und in `jobs.gruppe_pdf_pfad`/`gruppe_zeitstempel_*` **auf dem
+  Elternjob** abgelegt — der Elternjob (Status bleibt `aufgesplittet`)
+  wird dadurch selbst zum Abholobjekt für n8n, nicht mehr seine Kinder
+  einzeln (siehe [n8n-schnittstelle.md](n8n-schnittstelle.md)).
+- Ausgelöst wird der Merge-Versuch direkt nach Abschluss des jeweils
+  letzten offenen Geschwister-Teils und nach Auflösung einer blockierenden
+  Ablehnung; der Hintergrund-Job `split-gruppen-nachholen` holt einen
+  gescheiterten oder noch unvollständigen Merge alle 15 Minuten nach
+  (siehe [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)).
+
+## 7. Abholung und Archivierung
 
 Nach `abgeschlossen` übernimmt n8n: `GET /api/n8n/jobs/abholbereit` liefert
 die Liste, `POST /api/n8n/jobs/:id/abholung-bestaetigen` setzt den Job auf

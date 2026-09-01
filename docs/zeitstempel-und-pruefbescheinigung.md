@@ -46,6 +46,13 @@ mehr möglich.
 tatsächlich gesetzt wurde — ein Job ohne Zeitstempel bleibt so lange
 unsichtbar für die Abholung.
 
+**Splitgruppen** (siehe
+[rechnungs-workflow.md](rechnungs-workflow.md#6-splitgruppen--kombinierter-export-statt-n-einzel-buchungen))
+laufen durch denselben Mechanismus, aber einmal für das **kombinierte**
+Gruppen-Dokument statt einmal je Teil-Job: `gruppe_zeitstempel_gesetzt_am`/
+`gruppe_zeitstempel_datei_hash` auf dem Elternjob, nachgeholt vom eigenen
+`split-gruppen-nachholen`-Job statt von `zeitstempel-nachholen`.
+
 ## Verifikation (`/zeitstempel-pruefen`)
 
 Zwei unabhängige Prüfungen laufen bei jeder Verifikation, unabhängig

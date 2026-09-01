@@ -24,7 +24,7 @@ flowchart LR
 
     subgraph Portal["Freigabeportal (Node.js/Express)"]
         App["Express-App<br/>(Routen, Middleware)"]
-        Scheduler["In-Process-Scheduler<br/>(4 Hintergrund-Jobs)"]
+        Scheduler["In-Process-Scheduler<br/>(6 Hintergrund-Jobs)"]
         DB[("SQLite<br/>DB_PATH")]
         Files[("Dateisystem<br/>JOBS_DIR / BRANDING_DIR")]
     end
@@ -59,7 +59,7 @@ eine kleine interne JSON-Route für den Pool (`/api/pool`).
 3. `seedDefaults(db)` — schreibt Default-Werte in `admin_config`, falls noch
    nicht vorhanden (Eskalationszeiten, Cron-Zeitpläne, Sync-Schwellen, …).
 4. `createApp({ db, config })` — baut die Express-App (siehe unten).
-5. `startScheduler({ db, config, mailer })` — startet die vier
+5. `startScheduler({ db, config, mailer })` — startet die sechs
    In-Process-Hintergrund-Jobs (siehe
    [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)).
 6. `app.listen(config.port)`.
@@ -96,13 +96,16 @@ und Zugriffskontrolle — siehe
 | `/api/pool` | session | Rolle `buchhaltung` | JSON-Pool-API (Beanspruchen) |
 | `/pool` | session | eingeloggt | Dashboard für jede aktive Person (nur offene Aufgaben) |
 | `/meine-abgeschlossenen` | session | eingeloggt | eigene abgeschlossene Rechnungen, paginiert |
+| `/meine-spesen` | session | eingeloggt | eigene Spesen-Einreichungen über alle Stati, siehe [spesen-einreichung.md](spesen-einreichung.md) |
 | `/downloads` | eigene (session bzw. public je Route) | siehe [n8n-schnittstelle.md](n8n-schnittstelle.md) | signierte PDF-/Thumbnail-Auslieferung |
 | `/kontierung` | session | eingeloggt + Job-Autorisierung | Kontierung, Aufsplitten |
-| `/freigabe2` | session | eingeloggt + Job-Autorisierung | zweite Freigabe |
+| `/spesen` | session | eingeloggt | Spesen-Einreichung (Formular + Speichern) |
+| `/spesen-freigabe1` | session | eingeloggt + Job-Autorisierung | Freigabe 1 für Spesen-Positionen (review-only) |
+| `/freigabe2` | session | eingeloggt + Job-Autorisierung | zweite Freigabe (Rechnungen und Spesen) |
 | `/abgelehnt` | session | eingeloggt + Job-Autorisierung | Überarbeitung abgelehnter Rechnungen |
 | `/zeitstempel-pruefen` | session | eingeloggt | Zeitstempel-Verifikation + Zertifikat |
 | `/auth` | public | offen | ChurchTools-OAuth2-Login/-Logout |
-| `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen der vier Hintergrund-Jobs |
+| `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen der sechs Hintergrund-Jobs |
 | `/healthz` | keiner | offen | `{status:"ok"}` |
 | `/` | public | — | leitet auf `/pool` (eingeloggt) oder `/auth/login` (anonym) weiter |
 

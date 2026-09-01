@@ -22,6 +22,9 @@ erDiagram
     jobs ||--o{ jobs : "aufgesplittet_von (Parent → Teile)"
     jobs ||--o{ job_loeschungen : "Löschprotokoll (kein FK)"
     personen ||--o{ backup_wiederherstellungen : "Restore-Protokoll (kein FK)"
+    personen ||--o{ spesenabrechnungen : "eingereicht_von"
+    spesenabrechnungen ||--o{ jobs : "spesenabrechnung_id (Sammelabrechnung → Positionen)"
+    personen ||--o{ jobs : "eingereicht_von (Spesen)"
 
     personen {
         text churchtools_person_id PK
@@ -66,10 +69,16 @@ erDiagram
         text absender_muster UK
         int debitor_id FK
     }
+    spesenabrechnungen {
+        int id PK
+        text eingereicht_von FK
+        text eingereicht_am
+        text titel "optional, Freitext"
+    }
     jobs {
         int id PK
         text eingang_am
-        text quelle "scanner | lieferant"
+        text quelle "scanner | lieferant | spesen"
         text absender
         text dateiname
         text pdf_pfad
@@ -83,6 +92,7 @@ erDiagram
         text zahlungsziel
         text rechnungsnummer
         text lieferant
+        text typ "rechnung | gutschrift, NULL bei Spesen"
         int hinweis_konto_id FK
         text zeitstempel_gesetzt_am
         text zeitstempel_datei_hash
@@ -90,6 +100,16 @@ erDiagram
         text qr_referenz
         text qr_betrag
         text qr_creditor_name
+        text rechnungsposition "Freitext je Splitkind"
+        text gruppe_pdf_pfad "nur auf Splitgruppen-Elternjob"
+        text gruppe_zeitstempel_gesetzt_am
+        text gruppe_zeitstempel_datei_hash
+        int beleg_seitenzahl
+        text eingereicht_von FK "nur bei quelle=spesen"
+        text auslage_datum "nur bei quelle=spesen"
+        text beschreibung "nur bei quelle=spesen"
+        int spesenabrechnung_id FK
+        text rechnungsdatum "nur bei quelle=spesen befüllt"
     }
     freigaben {
         int id PK
@@ -162,6 +182,14 @@ Debitor ab — trifft eine Regel beim Rechnungseingang, wird der Job direkt
 diesem Debitor/Konto zugewiesen statt in den Pool zu fallen (siehe
 [rechnungs-workflow.md](rechnungs-workflow.md)).
 
+### `spesenabrechnungen`
+Reine Gruppierung für eine Spesen-Sammelabrechnung — kein eigener
+Workflow-Status, keine eigene Freigabe. Jede Position lebt und stirbt als
+unabhängiger `jobs`-Datensatz; diese Tabelle dient nur dazu, der
+einreichenden Person ihre zusammengehörigen Positionen wieder anzuzeigen
+(`titel` optional, freier Text). Details:
+[spesen-einreichung.md](spesen-einreichung.md).
+
 ### `debitor_ibans`
 Ein Debitor kann mehrere bekannte IBANs haben (`quelle`: manuell vom Admin
 erfasst, oder `bestaetigt` — automatisch übernommen, wenn eine Person bei
@@ -170,15 +198,36 @@ für den Betrugserkennungs-Abgleich, siehe
 [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md).
 
 ### `jobs`
-Die zentrale Tabelle — eine Zeile pro Rechnung/Beleg. `status` ist eine
-von elf Werten (State Machine, siehe
+Die zentrale Tabelle — eine Zeile pro Rechnung/Beleg/Spesen-Position.
+`status` ist eine von elf Werten (State Machine, siehe
 [rechnungs-workflow.md](rechnungs-workflow.md)). Die vielen
 `*_eskaliert_*`-Spalten protokollieren Interessenskonflikt-Eskalationen
 getrennt für Freigabe 1 und Freigabe 2. `aufgesplittet_von` verweist auf
 den ursprünglichen Job, wenn diese Zeile aus einer Aufsplittung entstand —
 der Elternjob bleibt (Status `aufgesplittet`) als historische Referenz
 erhalten. Die `qr_*`-Spalten cachen die beim Eingang aus dem Swiss-QR-Bill
-gelesenen Zahlungsdaten.
+gelesenen Zahlungsdaten. `typ` (`rechnung`/`gutschrift`, nur bei
+`quelle IN ('scanner','lieferant')` gesetzt) unterscheidet Gutschriften
+von Rechnungen, ohne den Betrag selbst mit Vorzeichen zu versehen — siehe
+[rechnungs-workflow.md](rechnungs-workflow.md#2-kontierung-status-zugewiesen).
+
+**Splitgruppen-Spalten** (`rechnungsposition`, `gruppe_pdf_pfad`,
+`gruppe_zeitstempel_gesetzt_am`, `gruppe_zeitstempel_datei_hash`,
+`gruppe_abgeholt_am`, `beleg_seitenzahl`): `rechnungsposition` ist Freitext
+je Splitkind, die übrigen `gruppe_*`-Spalten leben ausschliesslich auf dem
+Elternjob und tragen das Ergebnis des kombinierten Splitgruppen-Exports
+(siehe [rechnungs-workflow.md](rechnungs-workflow.md#6-splitgruppen--kombinierter-export-statt-n-einzel-buchungen)).
+`beleg_seitenzahl` hält fest, wie viele Seiten der ursprüngliche
+Beleg/die Rechnung hatte, bevor eine Stempel- oder Visumseite angehängt
+wurde — nötig, um beim Gruppen-Merge exakt die Originalseiten zu
+kopieren.
+
+**Spesen-Spalten** (`eingereicht_von`, `auslage_datum`, `beschreibung`,
+`spesenabrechnung_id`, `rechnungsdatum`): nur bei `quelle = 'spesen'`
+befüllt, siehe [spesen-einreichung.md](spesen-einreichung.md). Alle
+rechnungsspezifischen Spalten (`absender`, `lieferant`, `rechnungsnummer`,
+`debitor_id`, `zahlungsziel`, `aufgesplittet_von`, `typ`) bleiben bei
+einer Spesen-Position `NULL`.
 
 ### `freigaben`
 Append-only-Protokoll jeder Freigabe-relevanten Aktion (Freigabe 1/2,
@@ -223,6 +272,6 @@ erfolgreichen Restore als Fehler melden.
 
 ### `sync_log`, `cron_log`, `admin_config`, `sessions`
 Betriebs-/Konfigurationstabellen: Lauf-Historie des nächtlichen
-ChurchTools-Syncs bzw. der vier anderen Hintergrund-Jobs, Key-Value-Store
+ChurchTools-Syncs bzw. der fünf anderen Hintergrund-Jobs, Key-Value-Store
 für alle Admin-Einstellungen (Eskalationszeiten, Cron-Zeitpläne,
 Branding, TSA-Konfiguration, …), und der Express-Session-Store.

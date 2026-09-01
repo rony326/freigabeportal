@@ -61,6 +61,20 @@ Wichtige Details:
 - **`/pool` ist das Ziel für jeden Login** — es gibt keine separate
   Landingpage; `/` leitet eingeloggte Personen direkt dorthin weiter.
 
+## Abmelden
+
+`POST /auth/logout` zerstört die Portal-Session und leitet auf eine
+Bestätigungsseite (`GET /auth/abgemeldet`) statt direkt auf `/` weiter.
+**Grund**: ein direkter Redirect auf `/` liess eine anonyme Anfrage sofort
+wieder auf `/auth/login` springen (siehe Login-Sequenz oben) — solange die
+ChurchTools-Session im selben Browser noch aktiv ist, meldet SSO die
+Person dort augenblicklich wieder an, ohne dass sie es merkt (der
+"Abmelden"-Button wirkte, als würde er nichts tun). Die Portal-seitige
+Abmeldung ist dabei bereits vollständig und real — das Problem ist rein
+das sofortige, unsichtbare Re-Login. Die Bestätigungsseite verlinkt
+zusätzlich `{CT_BASE_URL}/?q=logout`, um bei Bedarf auch die
+ChurchTools-Session selbst zu beenden.
+
 ## Rollenmodell (Gruppen)
 
 Drei ChurchTools-Gruppen werden auf drei Rollen abgebildet

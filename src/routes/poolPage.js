@@ -61,7 +61,11 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
   router.post('/:id/zuweisen', requirePermission(db, config, 'pool_zuweisen'), csrfProtection, async (req, res, next) => {
     try {
       const job = getJobById(db, Number(req.params.id));
-      if (!job || job.status !== 'unzugewiesen') {
+      // quelle === 'spesen' mirrors the exclusion already applied by listPoolJobs/listPoolRuecklaeufer
+      // above — a Spesen position never appears in either Pool list, so this route should never
+      // reach one either. Not reachable via the UI, but a hand-crafted request could target one
+      // directly by id, so this is defense in depth alongside the status check.
+      if (!job || job.status !== 'unzugewiesen' || job.quelle === 'spesen') {
         return res.status(409).json({ error: 'Job ist nicht mehr im Pool verfügbar.' });
       }
       const zielPerson = listPersonenMitFreigeberRolle(db).find((p) => p.churchtools_person_id === req.body.personId);

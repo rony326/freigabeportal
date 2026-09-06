@@ -524,6 +524,31 @@ test('POST /pool/:id/zuweisen assigns the job to the chosen person, logs a freig
   db.close();
 });
 
+test('POST /pool/:id/zuweisen rejects a Spesen-position job with 409 even when its status is unzugewiesen (never reachable via the UI, defense in depth)', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '60', eingereichtAm: '2026-09-06T08:00:00.000Z', titel: null });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-09-06T08:00:00.000Z', eingereichtVon: '60', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  // createSpesenPosition always starts a position as 'zugewiesen' -- force it to 'unzugewiesen'
+  // to simulate a hand-crafted request against the one status check the route otherwise has.
+  db.prepare("UPDATE jobs SET status = 'unzugewiesen' WHERE id = ?").run(jobId);
+
+  const app = buildTestApp(db);
+  const res = await request(app).post(`/pool/${jobId}/zuweisen`).set('x-test-person-id', '50').type('form').send({ _csrf: 'valid-token', personId: '1' });
+  assert.equal(res.status, 409);
+  db.close();
+});
+
 test('POST /pool/:id/zuweisen rejects a personId that has no Freigeber-role on any active Konto', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db, '50');

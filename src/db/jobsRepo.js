@@ -125,7 +125,12 @@ export function listPoolRuecklaeufer(db) {
 
 export function claimJob(db, id, personId) {
   const result = db
-    .prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = ? WHERE id = ? AND status = 'unzugewiesen'")
+    .prepare(
+      `UPDATE jobs
+       SET status = 'zugewiesen', zugewiesen_an = ?,
+           pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
+       WHERE id = ? AND status = 'unzugewiesen'`
+    )
     .run(personId, id);
   return result.changes > 0;
 }
@@ -323,7 +328,11 @@ export function releaseJob(db, jobId, personId, { hinweisKontoId } = {}) {
   // job may be reassigned to an entirely different Konto, for which the old exclusion no longer
   // applies. hinweis_konto_id is always written (to the given value or NULL), not left untouched,
   // for the same "fresh start" reason — a hint from a prior, possibly-wrong release must not
-  // silently survive into the next pool cycle just because this one didn't set a new one.
+  // silently survive into the next pool cycle just because this one didn't set a new one. Also
+  // clears pool_rueckgesendet_bemerkung/-von/-am: a job can be claimed and released again while
+  // still carrying a stale Rückläufer marker from before it was last claimed, and without this it
+  // would silently reappear (and stay forever) under the Rückläufer section instead of the normal
+  // Pool listing, even though nobody sent it back this cycle.
   const result = db
     .prepare(
       `UPDATE jobs
@@ -333,18 +342,30 @@ export function releaseJob(db, jobId, personId, { hinweisKontoId } = {}) {
            freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL,
            freigabe2_eskaliert_an_admin = 0,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
-           hinweis_konto_id = ?
+           hinweis_konto_id = ?,
+           pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
        WHERE id = ? AND zugewiesen_an = ? AND status = 'zugewiesen'`
     )
     .run(hinweisKontoId || null, jobId, personId);
   return result.changes > 0;
 }
 
+// Same "genuine fresh start" reset as releaseJob (see its own comment above for the rationale
+// behind each field) — a job sent back to the group can be reclaimed by anyone, possibly onto an
+// entirely different Konto, so every stale konto_id/escalation/reminder trace from the attempt
+// that just got sent back must not silently survive into the next pool cycle. The three
+// pool_rueckgesendet_* columns are the one exception: those are this function's whole purpose and
+// are written to the given values, not cleared.
 export function sendJobBackToGroup(db, jobId, currentZugewiesenAn, { bemerkung }) {
   const result = db
     .prepare(
       `UPDATE jobs
-       SET status = 'unzugewiesen', zugewiesen_an = NULL,
+       SET status = 'unzugewiesen', zugewiesen_an = NULL, konto_id = NULL,
+           freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL,
+           freigabe1_eskaliert_an_admin = 0,
+           freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL,
+           freigabe2_eskaliert_an_admin = 0,
+           reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
            pool_rueckgesendet_bemerkung = ?, pool_rueckgesendet_von = ?, pool_rueckgesendet_am = ?
        WHERE id = ? AND zugewiesen_an = ? AND status = 'zugewiesen'`
     )
@@ -596,7 +617,8 @@ export function forceReleaseJob(db, jobId) {
            freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe1_eskaliert_an_admin = 0,
            freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0,
            abgelehnt_von = NULL, ablehnungsgrund = NULL,
-           reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL
+           reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
+           pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
        WHERE id = ? AND status IN ('zugewiesen', 'abgelehnt')`
     )
     .run(jobId);

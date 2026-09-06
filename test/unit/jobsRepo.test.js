@@ -224,6 +224,21 @@ test('claimJob atomically assigns an unzugewiesen job and rejects a second claim
   db.close();
 });
 
+test('claimJob clears a stale Rückläufer marker so a self-claimed job does not stay hidden as a Rückläufer forever', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET pool_rueckgesendet_bemerkung = 'falsche Person', pool_rueckgesendet_von = '2', pool_rueckgesendet_am = '2026-09-06T09:00:00.000Z' WHERE id = ?").run(jobId);
+
+  const claimed = claimJob(db, jobId, '1');
+  assert.equal(claimed, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.pool_rueckgesendet_bemerkung, null);
+  assert.equal(job.pool_rueckgesendet_von, null);
+  assert.equal(job.pool_rueckgesendet_am, null);
+  db.close();
+});
+
 test('assignJobToPerson assigns an unzugewiesen job to a chosen person, clearing any Rückläufer marker', () => {
   const db = openDatabase(':memory:');
   seedKonto(db);
@@ -791,6 +806,22 @@ test('releaseJob clears stale freigabe2 escalation flags carried over from a pri
   db.close();
 });
 
+test('releaseJob clears a stale Rückläufer marker so a released job does not stay hidden as a Rückläufer forever', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  db.prepare("UPDATE jobs SET pool_rueckgesendet_bemerkung = 'falsche Person', pool_rueckgesendet_von = '2', pool_rueckgesendet_am = '2026-08-15T09:00:00.000Z' WHERE id = ?").run(jobId);
+
+  const released = releaseJob(db, jobId, '1');
+  assert.equal(released, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.pool_rueckgesendet_bemerkung, null);
+  assert.equal(job.pool_rueckgesendet_von, null);
+  assert.equal(job.pool_rueckgesendet_am, null);
+  db.close();
+});
+
 test('sendJobBackToGroup releases a zugewiesen job back to unzugewiesen with a Rückläufer marker', () => {
   const db = openDatabase(':memory:');
   seedKonto(db);
@@ -816,6 +847,33 @@ test('sendJobBackToGroup refuses a job claimed by someone else', () => {
 
   const sent = sendJobBackToGroup(db, jobId, '2', { bemerkung: 'x' });
   assert.equal(sent, false);
+  db.close();
+});
+
+test('sendJobBackToGroup resets the job to a genuine fresh start, clearing konto_id and the freigabe1 escalation, like releaseJob does', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  setKontierung(db, jobId, 1);
+  eskalierenFreigabe1(db, jobId, { eskaliertVon: '1', grund: 'Befangen', stellvertreterId: '2' });
+  assert.equal(getJobById(db, jobId).konto_id, 1);
+  assert.equal(getJobById(db, jobId).freigabe1_eskaliert_von, '1');
+
+  // person '2' (the stellvertreter escalated to) sends it back to the group instead of kontieren
+  const sent = sendJobBackToGroup(db, jobId, '2', { bemerkung: 'Falsche Person, bitte an Buchhaltung' });
+  assert.equal(sent, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.zugewiesen_an, null);
+  assert.equal(job.konto_id, null);
+  assert.equal(job.freigabe1_eskaliert_von, null);
+  assert.equal(job.freigabe1_eskalationsgrund, null);
+  assert.equal(job.freigabe1_eskaliert_an_admin, 0);
+  // ... while keeping its own Rückläufer-specific fields
+  assert.equal(job.pool_rueckgesendet_bemerkung, 'Falsche Person, bitte an Buchhaltung');
+  assert.equal(job.pool_rueckgesendet_von, '2');
+  assert.ok(job.pool_rueckgesendet_am);
   db.close();
 });
 
@@ -1597,6 +1655,22 @@ test('forceReleaseJob clears stale freigabe2 escalation flags carried over from 
   assert.equal(job.freigabe2_eskaliert_von, null);
   assert.equal(job.freigabe2_eskalationsgrund, null);
   assert.equal(job.freigabe2_eskaliert_an_admin, 0);
+  db.close();
+});
+
+test('forceReleaseJob clears a stale Rückläufer marker so a force-released job does not stay hidden as a Rückläufer forever', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+  db.prepare("UPDATE jobs SET pool_rueckgesendet_bemerkung = 'falsche Person', pool_rueckgesendet_von = '2', pool_rueckgesendet_am = '2026-08-01T01:00:00.000Z' WHERE id = ?").run(jobId);
+
+  const result = forceReleaseJob(db, jobId);
+  assert.equal(result, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.pool_rueckgesendet_bemerkung, null);
+  assert.equal(job.pool_rueckgesendet_von, null);
+  assert.equal(job.pool_rueckgesendet_am, null);
   db.close();
 });
 

@@ -114,13 +114,31 @@ export function getJobById(db, id) {
 }
 
 export function listPoolJobs(db) {
-  return db.prepare("SELECT * FROM jobs WHERE status = 'unzugewiesen' AND quelle != 'spesen' ORDER BY eingang_am").all();
+  return db.prepare("SELECT * FROM jobs WHERE status = 'unzugewiesen' AND quelle != 'spesen' AND pool_rueckgesendet_bemerkung IS NULL ORDER BY eingang_am").all();
+}
+
+export function listPoolRuecklaeufer(db) {
+  return db
+    .prepare("SELECT * FROM jobs WHERE status = 'unzugewiesen' AND quelle != 'spesen' AND pool_rueckgesendet_bemerkung IS NOT NULL ORDER BY pool_rueckgesendet_am")
+    .all();
 }
 
 export function claimJob(db, id, personId) {
   const result = db
     .prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = ? WHERE id = ? AND status = 'unzugewiesen'")
     .run(personId, id);
+  return result.changes > 0;
+}
+
+export function assignJobToPerson(db, jobId, personId) {
+  const result = db
+    .prepare(
+      `UPDATE jobs
+       SET status = 'zugewiesen', zugewiesen_an = ?,
+           pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
+       WHERE id = ? AND status = 'unzugewiesen'`
+    )
+    .run(personId, jobId);
   return result.changes > 0;
 }
 

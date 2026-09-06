@@ -7,7 +7,7 @@ import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByDebitorUndRechnungsnummer, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, assignJobToPerson, listPoolRuecklaeufer, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByDebitorUndRechnungsnummer, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -221,6 +221,59 @@ test('claimJob atomically assigns an unzugewiesen job and rejects a second claim
   const job = getJobById(db, id);
   assert.equal(job.status, 'zugewiesen');
   assert.equal(job.zugewiesen_an, '1');
+  db.close();
+});
+
+test('assignJobToPerson assigns an unzugewiesen job to a chosen person, clearing any Rückläufer marker', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET pool_rueckgesendet_bemerkung = 'falsche Person', pool_rueckgesendet_von = '2', pool_rueckgesendet_am = '2026-09-06T09:00:00.000Z' WHERE id = ?").run(jobId);
+
+  const assigned = assignJobToPerson(db, jobId, '3');
+  assert.equal(assigned, true);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.zugewiesen_an, '3');
+  assert.equal(job.pool_rueckgesendet_bemerkung, null);
+  assert.equal(job.pool_rueckgesendet_von, null);
+  assert.equal(job.pool_rueckgesendet_am, null);
+  db.close();
+});
+
+test('assignJobToPerson refuses a job that is no longer unzugewiesen', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const assigned = assignJobToPerson(db, jobId, '3');
+  assert.equal(assigned, false);
+  db.close();
+});
+
+test('listPoolJobs excludes a Rückläufer (pool_rueckgesendet_bemerkung set)', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const normalId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  const rueckId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+  db.prepare("UPDATE jobs SET pool_rueckgesendet_bemerkung = 'falsche Person' WHERE id = ?").run(rueckId);
+
+  const ids = listPoolJobs(db).map((j) => j.id);
+  assert.deepEqual(ids, [normalId]);
+  db.close();
+});
+
+test('listPoolRuecklaeufer returns only jobs with a Rückläufer marker, ordered by pool_rueckgesendet_am', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const normalId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  const rueckId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+  db.prepare("UPDATE jobs SET pool_rueckgesendet_bemerkung = 'falsche Person', pool_rueckgesendet_von = '2', pool_rueckgesendet_am = '2026-09-06T09:00:00.000Z' WHERE id = ?").run(rueckId);
+
+  const ruecklaeufer = listPoolRuecklaeufer(db);
+  assert.deepEqual(ruecklaeufer.map((j) => j.id), [rueckId]);
+  assert.equal(ruecklaeufer[0].pool_rueckgesendet_bemerkung, 'falsche Person');
+  void normalId;
   db.close();
 });
 

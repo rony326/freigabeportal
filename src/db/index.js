@@ -41,6 +41,9 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'beschreibung', ddl: 'ALTER TABLE jobs ADD COLUMN beschreibung TEXT' },
   { column: 'spesenabrechnung_id', ddl: 'ALTER TABLE jobs ADD COLUMN spesenabrechnung_id INTEGER REFERENCES spesenabrechnungen(id)' },
   { column: 'rechnungsdatum', ddl: 'ALTER TABLE jobs ADD COLUMN rechnungsdatum TEXT' },
+  { column: 'pool_rueckgesendet_bemerkung', ddl: 'ALTER TABLE jobs ADD COLUMN pool_rueckgesendet_bemerkung TEXT' },
+  { column: 'pool_rueckgesendet_von', ddl: 'ALTER TABLE jobs ADD COLUMN pool_rueckgesendet_von TEXT REFERENCES personen(churchtools_person_id)' },
+  { column: 'pool_rueckgesendet_am', ddl: 'ALTER TABLE jobs ADD COLUMN pool_rueckgesendet_am TEXT' },
 ];
 
 // SQLite CHECK constraints can't be widened with ALTER TABLE — same rebuild-in-a-transaction
@@ -244,12 +247,12 @@ function migrateJobsTable(db) {
 // CHECK constraint in SQLite is to rebuild the table: rename it aside, create a fresh one from the
 // current schema, copy every row across, then drop the old one — all inside one transaction so a
 // crash mid-migration can't leave the database without a freigaben table at all. The marker value
-// this function checks for (currently 'rechnungsnummer_duplikat') moves forward each time the
+// this function checks for (currently 'freigabe1_weiterleitung') moves forward each time the
 // CHECK is widened again — it's just "the newest rolle value", not tied to any one feature; check
 // the CREATE TABLE below for what the CHECK currently allows, not this comment.
 function migrateFreigabenTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'freigaben'").get();
-  if (!tableSql || tableSql.sql.includes('rechnungsnummer_duplikat')) return;
+  if (!tableSql || tableSql.sql.includes('freigabe1_weiterleitung')) return;
 
   // node:sqlite enforces `PRAGMA foreign_keys` by default, and it must be toggled OFF outside any
   // transaction (the pragma is a documented no-op if set from inside one). Without this, a single
@@ -260,13 +263,13 @@ function migrateFreigabenTable(db) {
   db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');
   try {
-    db.exec('ALTER TABLE freigaben RENAME TO freigaben_pre_rechnungsnummer_duplikat_rolle');
+    db.exec('ALTER TABLE freigaben RENAME TO freigaben_pre_freigabe1_weiterleitung_rolle');
     db.exec(`
       CREATE TABLE freigaben (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         job_id INTEGER NOT NULL REFERENCES jobs(id),
         person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-        rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat')),
+        rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung')),
         zeitpunkt TEXT NOT NULL,
         ip TEXT NOT NULL,
         interessenskonflikt INTEGER NOT NULL DEFAULT 0,
@@ -276,9 +279,9 @@ function migrateFreigabenTable(db) {
     `);
     db.exec(`
       INSERT INTO freigaben (id, job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von)
-      SELECT id, job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von FROM freigaben_pre_rechnungsnummer_duplikat_rolle
+      SELECT id, job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von FROM freigaben_pre_freigabe1_weiterleitung_rolle
     `);
-    db.exec('DROP TABLE freigaben_pre_rechnungsnummer_duplikat_rolle');
+    db.exec('DROP TABLE freigaben_pre_freigabe1_weiterleitung_rolle');
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
@@ -364,11 +367,11 @@ function migrateCronLogTable(db) {
 }
 
 // Same rationale as migrateFreigabenTable above: an already-existing person_berechtigungen table
-// (any database whose berechtigung CHECK predates 'audit_log_einsehen') keeps its original,
+// (any database whose berechtigung CHECK predates 'pool_zuweisen') keeps its original,
 // narrower CHECK forever otherwise, since `CREATE TABLE IF NOT EXISTS` in schema.sql no-ops on it.
 function migratePersonBerechtigungenTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'person_berechtigungen'").get();
-  if (!tableSql || tableSql.sql.includes('audit_log_einsehen')) return;
+  if (!tableSql || tableSql.sql.includes('pool_zuweisen')) return;
 
   // See the matching comment in migrateFreigabenTable above: node:sqlite enforces
   // `PRAGMA foreign_keys` by default, so a single person_berechtigungen row referencing a
@@ -376,22 +379,22 @@ function migratePersonBerechtigungenTable(db) {
   db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');
   try {
-    db.exec('ALTER TABLE person_berechtigungen RENAME TO person_berechtigungen_pre_audit_log_einsehen');
+    db.exec('ALTER TABLE person_berechtigungen RENAME TO person_berechtigungen_pre_pool_zuweisen');
     db.exec(`
       CREATE TABLE person_berechtigungen (
         person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
         berechtigung TEXT NOT NULL CHECK (berechtigung IN (
           'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
-          'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen'
+          'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen', 'pool_zuweisen'
         )),
         PRIMARY KEY (person_id, berechtigung)
       )
     `);
     db.exec(`
       INSERT INTO person_berechtigungen (person_id, berechtigung)
-      SELECT person_id, berechtigung FROM person_berechtigungen_pre_audit_log_einsehen
+      SELECT person_id, berechtigung FROM person_berechtigungen_pre_pool_zuweisen
     `);
-    db.exec('DROP TABLE person_berechtigungen_pre_audit_log_einsehen');
+    db.exec('DROP TABLE person_berechtigungen_pre_pool_zuweisen');
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');

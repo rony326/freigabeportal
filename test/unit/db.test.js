@@ -401,6 +401,105 @@ test('openDatabase further widens the freigaben table rolle CHECK to include rec
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('openDatabase adds the pool_rueckgesendet_* columns via ALTER TABLE to an existing on-disk database that predates them', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      eingang_am TEXT NOT NULL,
+      quelle TEXT NOT NULL,
+      absender TEXT,
+      dateiname TEXT NOT NULL,
+      pdf_pfad TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'unzugewiesen'
+    )
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const columns = migratedDb.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  for (const expected of ['pool_rueckgesendet_bemerkung', 'pool_rueckgesendet_von', 'pool_rueckgesendet_am']) {
+    assert.ok(columns.includes(expected), `ALTER TABLE should have added ${expected} to the pre-existing table`);
+  }
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('openDatabase further widens the freigaben table rolle CHECK to include pool_zuweisung/pool_ruecksendung/freigabe1_weiterleitung, even for a database already migrated to include rechnungsnummer_duplikat', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE personen (churchtools_person_id TEXT PRIMARY KEY, vorname TEXT NOT NULL, nachname TEXT NOT NULL, email TEXT NOT NULL);
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, eingang_am TEXT NOT NULL, quelle TEXT NOT NULL, absender TEXT, dateiname TEXT NOT NULL, pdf_pfad TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'unzugewiesen');
+    CREATE TABLE freigaben (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL REFERENCES jobs(id),
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat')),
+      zeitpunkt TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      interessenskonflikt INTEGER NOT NULL DEFAULT 0,
+      kommentar TEXT,
+      eskaliert_von TEXT REFERENCES personen(churchtools_person_id)
+    );
+    INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'Frei', 'Geber', 'f@example.org');
+    INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad) VALUES ('2026-08-15T08:00:00.000Z', 'scanner', NULL, 'a.pdf', '/tmp/a.pdf');
+    INSERT INTO freigaben (job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von)
+      VALUES (1, '1', 'rechnungsnummer_duplikat', '2026-08-15T09:00:00.000Z', '1.2.3.4', 0, 'Rechnungsnummer bereits erfasst', NULL);
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const preserved = migratedDb.prepare('SELECT * FROM freigaben WHERE id = 1').get();
+  assert.equal(preserved.rolle, 'rechnungsnummer_duplikat', 'existing rows must survive the rebuild');
+  for (const rolle of ['pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung']) {
+    assert.doesNotThrow(() =>
+      migratedDb
+        .prepare(
+          `INSERT INTO freigaben (job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von)
+           VALUES (1, '1', ?, '2026-08-15T09:30:00.000Z', '1.2.3.4', 0, NULL, NULL)`
+        )
+        .run(rolle),
+      `the widened CHECK constraint must accept ${rolle}`
+    );
+  }
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('openDatabase rebuilds the person_berechtigungen table to widen its berechtigung CHECK constraint to include pool_zuweisen', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE personen (churchtools_person_id TEXT PRIMARY KEY, vorname TEXT NOT NULL, nachname TEXT NOT NULL, email TEXT NOT NULL);
+    CREATE TABLE person_berechtigungen (
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      berechtigung TEXT NOT NULL CHECK (berechtigung IN (
+        'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
+        'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen'
+      )),
+      PRIMARY KEY (person_id, berechtigung)
+    );
+    INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'Nur', 'Sync', 'n@example.org');
+    INSERT INTO person_berechtigungen (person_id, berechtigung) VALUES ('1', 'sync_einsehen');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const preserved = migratedDb.prepare('SELECT * FROM person_berechtigungen WHERE person_id = ?').get('1');
+  assert.equal(preserved.berechtigung, 'sync_einsehen', 'existing rows must survive the rebuild');
+  assert.doesNotThrow(() =>
+    migratedDb.prepare("INSERT INTO person_berechtigungen (person_id, berechtigung) VALUES ('1', 'pool_zuweisen')").run(),
+    'the widened CHECK constraint must accept pool_zuweisen'
+  );
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('openDatabase rebuilds the mail_log table to widen its typ CHECK constraint to include iban-warnung', () => {
   const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
   const dbPath = join(dir, 'legacy.sqlite');

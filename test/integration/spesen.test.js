@@ -11,6 +11,7 @@ import { PNG_1X1 } from '../helpers/imageFixture.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createSpesenRouter } from '../../src/routes/spesen.js';
+import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 
 function createStubMailer() {
   const sent = [];
@@ -61,6 +62,33 @@ test('GET /spesen/neu requires login', async () => {
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get('/spesen/neu');
   assert.equal(res.status, 401);
+  db.close();
+});
+
+test('GET /spesen/neu returns 403 when the Spesenmodul is deactivated', async () => {
+  const db = openDatabase(':memory:');
+  seedGrundlagen(db);
+  setConfigValue(db, 'modul_spesen_aktiv', '0');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get('/spesen/neu').set('x-test-person-id', '5');
+  assert.equal(res.status, 403);
+  db.close();
+});
+
+test('POST /spesen returns 403 and creates no job when the Spesenmodul is deactivated', async () => {
+  const db = openDatabase(':memory:');
+  seedGrundlagen(db);
+  setConfigValue(db, 'modul_spesen_aktiv', '0');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app)
+    .post('/spesen')
+    .set('x-test-person-id', '5')
+    .field('_csrf', 'valid-token')
+    .field('posKontoId', '1')
+    .field('posBetrag', '10.00')
+    .field('posAuslageDatum', '2026-01-01')
+    .field('posBeschreibung', 'Test');
+  assert.equal(res.status, 403);
   db.close();
 });
 

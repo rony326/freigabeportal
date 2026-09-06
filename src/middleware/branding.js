@@ -45,6 +45,7 @@ export function loadBranding(db) {
       // from the same toggle without duplicating the dunkel/dark mapping in 17 places.
       bsThemeAttr: themeAttr === 'dunkel' ? 'dark' : themeAttr === 'hell' ? 'light' : null,
     };
+    res.locals.spesenModulAktiv = getConfigValue(db, 'modul_spesen_aktiv') !== '0';
     next();
   };
 }

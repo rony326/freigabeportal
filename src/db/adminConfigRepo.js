@@ -29,6 +29,7 @@ const DEFAULTS = {
   backup_cron_stunde: '3',
   backup_cron_minute: '0',
   backup_aufbewahrung_anzahl: '14',
+  modul_spesen_aktiv: '1',
 };
 
 export function seedDefaults(db) {

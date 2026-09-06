@@ -21,6 +21,7 @@ export function loadNavFlags(db, config) {
       abgelehnt: hasPermission('abgelehnt_verwalten'),
       auditLog: hasPermission('audit_log_einsehen'),
       backup: res.locals.isSuperadmin,
+      module: res.locals.isSuperadmin,
     };
     // Strip a trailing slash (e.g. "/pool/") so nav highlighting/buttons keyed on an exact
     // path like "/pool" still match — Express routes both with and without it identically.

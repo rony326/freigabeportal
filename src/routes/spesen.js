@@ -3,6 +3,7 @@ import multer from 'multer';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { listKonten } from '../db/kontenRepo.js';
+import { getConfigValue } from '../db/adminConfigRepo.js';
 import { createSpesenabrechnung } from '../db/spesenabrechnungenRepo.js';
 import { createSpesenPosition, getJobById } from '../db/jobsRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
@@ -28,6 +29,13 @@ function mitPdfEndung(originalname) {
 
 export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
+
+  router.use((req, res, next) => {
+    if (getConfigValue(db, 'modul_spesen_aktiv') === '0') {
+      return res.status(403).render('error', { message: 'Die Spesen-Einreichung ist derzeit deaktiviert.' });
+    }
+    next();
+  });
 
   router.get('/neu', (req, res) => {
     res.render('spesen-neu', {

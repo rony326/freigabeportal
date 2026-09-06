@@ -90,3 +90,10 @@ test('seedDefaults sets zeitstempel_warnung_ab_stunden default', () => {
   assert.equal(getConfigValue(db, 'zeitstempel_warnung_ab_stunden'), '2');
   db.close();
 });
+
+test('seedDefaults sets modul_spesen_aktiv default (module enabled out of the box)', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'modul_spesen_aktiv'), '1');
+  db.close();
+});

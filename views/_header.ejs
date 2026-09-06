@@ -60,7 +60,9 @@
         </button>
         <ul class="dropdown-menu" aria-labelledby="hauptmenue-toggle">
           <li><a class="dropdown-item<%= navAktuellerPfad === '/pool' ? ' active' : '' %>" href="/pool">Aufgaben</a></li>
-          <li><a class="dropdown-item<%= navAktuellerPfad === '/spesen/neu' ? ' active' : '' %>" href="/spesen/neu">Spesen einreichen</a></li>
+          <% if (typeof spesenModulAktiv === 'undefined' || spesenModulAktiv) { %>
+            <li><a class="dropdown-item<%= navAktuellerPfad === '/spesen/neu' ? ' active' : '' %>" href="/spesen/neu">Spesen einreichen</a></li>
+          <% } %>
           <li><a class="dropdown-item<%= navAktuellerPfad === '/meine-abgeschlossenen' ? ' active' : '' %>" href="/meine-abgeschlossenen">Abgeschlossene Rechnungen</a></li>
           <li><a class="dropdown-item<%= navAktuellerPfad === '/meine-spesen' ? ' active' : '' %>" href="/meine-spesen">Meine Spesen</a></li>
           <li><a class="dropdown-item<%= navAktuellerPfad === '/zeitstempel-pruefen' ? ' active' : '' %>" href="/zeitstempel-pruefen">Zeitstempel prüfen</a></li>

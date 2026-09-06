@@ -102,6 +102,17 @@ Detail-Felder schalten per `job.quelle === 'spesen'` um
 Lieferant/Rechnungsnummer/Zahlungsziel). Rechnungen und Spesen erscheinen
 dadurch gemeinsam in "Meine Freigaben" auf `/pool`.
 
+## Modul-Deaktivierung
+
+`/admin/module` erlaubt es, das gesamte Spesenmodul auszuschalten
+(`admin_config`-Key `modul_spesen_aktiv`, Default aktiv). Deaktiviert:
+"Spesen einreichen" verschwindet aus dem Hauptmenü, `GET /spesen/neu`
+und `POST /spesen` liefern `403`. **Nicht** betroffen: bereits
+eingereichte Positionen — Freigabe 1 (`/spesen-freigabe1`), Freigabe 2
+und die n8n-Abholung laufen unverändert weiter, damit eine Deaktivierung
+keine hängenden Vorgänge hinterlässt. `/meine-spesen` bleibt als reine
+Historie ebenfalls immer erreichbar.
+
 ## Navigation
 
 - **Menü** (`_header.ejs`): "Spesen einreichen" → `/spesen/neu`, sichtbar

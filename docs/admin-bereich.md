@@ -30,6 +30,7 @@ feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 | Geplante Jobs | `/admin/geplante-jobs` | Einzelrecht `geplante_jobs_verwalten` |
 | Audit-Log | `/admin/audit-log` | Einzelrecht `audit_log_einsehen` |
 | Datenbank-Backup | `/admin/backup` | **nur** `superadmin` |
+| Module | `/admin/module` | **nur** `superadmin` |
 
 Die mit **nur `superadmin`** markierten Bereiche lassen sich als
 Einzelrecht gar nicht vergeben — strukturell abgesichert über den
@@ -90,6 +91,18 @@ ersetzt. **Nur `superadmin`** — kein vergebbares Einzelrecht, strenger
 eingestuft als die drei bereits gesperrten Bereiche, weil das Archiv das
 RFC3161-TSA-Passwort im Klartext enthält. Details:
 [2026-08-24-datenbank-backup-design.md](superpowers/specs/2026-08-24-datenbank-backup-design.md).
+
+## Module (`/admin/module`)
+
+Ein/Aus-Schalter für optionale Portal-Bereiche, gespeichert im
+`admin_config`-Key/Value-Store wie jeder andere Schalter (Default:
+alle Module aktiv). Aktuell ein Eintrag: **Spesenmodul**
+(`modul_spesen_aktiv`) — deaktiviert blendet "Spesen einreichen" aus
+dem Hauptmenü aus und lässt `GET /spesen/neu`/`POST /spesen` mit `403`
+abweisen; bereits eingereichte Spesen-Positionen laufen unverändert
+durch Freigabe 1/2 (siehe
+[spesen-einreichung.md](spesen-einreichung.md)). Gedacht als
+Sammelstelle für künftige, ebenfalls unabhängig einführbare Module.
 
 ## Personen (`/admin/personen`)
 

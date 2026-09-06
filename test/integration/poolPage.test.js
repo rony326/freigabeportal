@@ -16,12 +16,15 @@ import {
   eskalierenFreigabe1AnAdmin,
   eskalierenFreigabe2AnAdmin,
   createSpesenPosition,
+  getJobById,
 } from '../../src/db/jobsRepo.js';
+import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
+import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createPoolPageRouter } from '../../src/routes/poolPage.js';
 
-function buildTestApp(db) {
+function buildTestApp(db, mailer = { async sendMail() {} }) {
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../views', import.meta.url).pathname);
@@ -29,14 +32,23 @@ function buildTestApp(db) {
     res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null };
     next();
   });
+  app.use(express.urlencoded({ extended: false }));
   app.use((req, res, next) => {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret' };
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, downloadSigningSecret: 'test-secret', publicBaseUrl: 'https://portal.example.org' };
+  const csrfProtection = (req, res, next) => {
+    if (req.body?._csrf === 'valid-token') return next();
+    return res.status(403).send('invalid csrf');
+  };
+  app.use((req, res, next) => {
+    res.locals.csrfToken = 'valid-token';
+    next();
+  });
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, config));
-  app.use('/pool', requireLogin(), createPoolPageRouter({ db, config }));
+  app.use('/pool', requireLogin(), createPoolPageRouter({ db, config, mailer, csrfProtection }));
   return app;
 }
 
@@ -474,5 +486,57 @@ test('GET /pool shows an admin-escalated Spesen position under a Superadmin-only
   const res = await request(app).get('/pool').set('x-test-person-id', '99');
   assert.match(res.text, /An Superadmin eskalierte Spesen-Freigaben/);
   assert.match(res.text, new RegExp(`href="/spesen-freigabe1/${jobId}"`));
+  db.close();
+});
+
+test('POST /pool/:id/zuweisen returns 403 for a Buchhaltung person without the pool_zuweisen permission', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db);
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+  const res = await request(app).post(`/pool/${jobId}/zuweisen`).set('x-test-person-id', '50').type('form').send({ _csrf: 'valid-token', personId: '1' });
+  assert.equal(res.status, 403);
+  db.close();
+});
+
+test('POST /pool/:id/zuweisen assigns the job to the chosen person, logs a freigaben entry and sends a mail', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+
+  const mailer = { sent: [], async sendMail(mail) { this.sent.push(mail); } };
+  const app = buildTestApp(db, mailer);
+  const res = await request(app).post(`/pool/${jobId}/zuweisen`).set('x-test-person-id', '50').type('form').send({ _csrf: 'valid-token', personId: '1' });
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { id: jobId, status: 'zugewiesen' });
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.zugewiesen_an, '1');
+  assert.equal(listFreigabenByJob(db, jobId).some((f) => f.rolle === 'pool_zuweisung'), true);
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'p1@example.org');
+  db.close();
+});
+
+test('POST /pool/:id/zuweisen rejects a personId that has no Freigeber-role on any active Konto', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  upsertPerson(db, { id: '99', vorname: 'Ohne', nachname: 'Rolle', email: 'ohne@example.org', gruppen: [], loggedInNow: false });
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+
+  const app = buildTestApp(db);
+  const res = await request(app).post(`/pool/${jobId}/zuweisen`).set('x-test-person-id', '50').type('form').send({ _csrf: 'valid-token', personId: '99' });
+  assert.equal(res.status, 400);
   db.close();
 });

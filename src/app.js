@@ -161,7 +161,7 @@ export function createApp({ db, config }) {
   // membership, AUTH-WIDEN-1) needs somewhere to land too. The pool-of-unassigned-invoices
   // section itself stays restricted inside pool.ejs (gated on isBuchhaltung/isSuperadmin from
   // loadNavFlags) — only the route-level gate widens, not who can see the company-wide pool.
-  app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config }));
+  app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config, mailer, csrfProtection }));
   app.use('/meine-abgeschlossenen', sessionLimiter, requireLogin(), createMeineAbgeschlossenenRouter({ db }));
   app.use('/meine-spesen', sessionLimiter, requireLogin(), createMeineSpesenRouter({ db }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));

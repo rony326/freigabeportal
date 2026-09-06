@@ -13,7 +13,12 @@
 
     <% if (typeof isBuchhaltung !== 'undefined' && (isBuchhaltung || isSuperadmin) && poolJobs.length > 0) { %>
       <h2 class="h4 mt-4">Pool</h2>
-      <%- include('_job_table', { jobs: poolJobs, idPrefix: 'pool' }) %>
+      <%- include('_job_table', { jobs: poolJobs, idPrefix: 'pool', istPoolArtig: true, kannZuweisen, zielPersonen }) %>
+    <% } %>
+
+    <% if (typeof kannZuweisen !== 'undefined' && kannZuweisen && ruecklaeufer.length > 0) { %>
+      <h2 class="h4 mt-4">Rückläufer</h2>
+      <%- include('_job_table', { jobs: ruecklaeufer, idPrefix: 'ruecklaeufer', istPoolArtig: true, kannZuweisen, zielPersonen }) %>
     <% } %>
 
     <% if (typeof isSuperadmin !== 'undefined' && isSuperadmin) { %>
@@ -53,7 +58,7 @@
       <%- include('_job_table', { jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen' }) %>
     <% } %>
 
-    <% if (poolJobs.length === 0 && adminEskalierteKontierungen.length === 0 && adminEskalierteFreigaben.length === 0
+    <% if (poolJobs.length === 0 && ruecklaeufer.length === 0 && adminEskalierteKontierungen.length === 0 && adminEskalierteFreigaben.length === 0
          && adminEskalierteSpesenFreigaben.length === 0 && meineKontierungen.length === 0 && meineSpesenFreigaben.length === 0
          && meineFreigaben.length === 0 && meineAbgelehnten.length === 0) { %>
       <p class="text-muted mt-4">Keine offenen Aufgaben. Abgeschlossene Rechnungen findest du unter <a href="/meine-abgeschlossenen">Abgeschlossene Rechnungen</a>, deine Spesen-Einreichungen unter <a href="/meine-spesen">Meine Spesen</a>.</p>
@@ -86,6 +91,25 @@
           msg.appendChild(cell);
           row.replaceWith(msg);
         }
+      });
+    });
+
+    document.querySelectorAll('.zuweisen-form').forEach((form) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const id = form.dataset.jobId;
+        const personId = form.querySelector('select[name="personId"]').value;
+        const res = await fetch(`/pool/${id}/zuweisen`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' },
+          body: new URLSearchParams({ personId }),
+        });
+        if (res.ok) {
+          window.location.reload();
+          return;
+        }
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || 'Zuweisung fehlgeschlagen.');
       });
     });
 

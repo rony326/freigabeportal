@@ -540,3 +540,44 @@ test('POST /pool/:id/zuweisen rejects a personId that has no Freigeber-role on a
   assert.equal(res.status, 400);
   db.close();
 });
+
+test('GET /pool shows the An-Person-senden form on Pool rows for a pool_zuweisen holder, not for a plain Buchhaltung person', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  }
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  // The rendered <form> carries several Bootstrap utility classes alongside "zuweisen-form"
+  // (e.g. class="zuweisen-form d-inline-flex gap-1 ..."), so match on the class token itself
+  // rather than requiring it to be the sole class in the attribute.
+  assert.match(res.text, /class="zuweisen-form\b/);
+  assert.match(res.text, /Person1 Muster/);
+
+  seedBuchhaltungPerson(db, '51');
+  const resOhneRecht = await request(app).get('/pool').set('x-test-person-id', '51');
+  assert.doesNotMatch(resOhneRecht.text, /class="zuweisen-form\b/);
+  db.close();
+});
+
+test('GET /pool includes the Rückläufer section only for a person with pool_zuweisen', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET pool_rueckgesendet_bemerkung = 'Falsche Person, bitte prüfen' WHERE id = ?").run(jobId);
+
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.match(res.text, /Falsche Person, bitte prüfen/);
+
+  seedBuchhaltungPerson(db, '51');
+  const resOhneRecht = await request(app).get('/pool').set('x-test-person-id', '51');
+  assert.doesNotMatch(resOhneRecht.text, /Falsche Person, bitte prüfen/);
+  db.close();
+});

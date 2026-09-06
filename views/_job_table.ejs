@@ -19,8 +19,22 @@
             <td><%= job.kontonummer || (job.hinweisKonto ? `Hinweis: ${job.hinweisKonto.kontonummer} — ${job.hinweisKonto.bezeichnung}` : '—') %></td>
             <td><%= job.eingang_am %></td>
             <td>
-              <% if (idPrefix === 'pool') { %>
+              <% if (typeof istPoolArtig !== 'undefined' && istPoolArtig) { %>
                 <button type="button" class="beanspruchen-btn btn btn-primary btn-sm" data-job-id="<%= job.id %>">Beanspruchen</button>
+                <% if (typeof kannZuweisen !== 'undefined' && kannZuweisen) { %>
+                  <form class="zuweisen-form d-inline-flex gap-1 align-items-center mt-1" data-job-id="<%= job.id %>">
+                    <select class="form-select form-select-sm" name="personId" style="width:auto" required>
+                      <option value="">— an Person senden —</option>
+                      <% zielPersonen.forEach((p) => { %>
+                        <option value="<%= p.churchtools_person_id %>"><%= p.vorname %> <%= p.nachname %></option>
+                      <% }) %>
+                    </select>
+                    <button type="submit" class="btn btn-outline-primary btn-sm">Senden</button>
+                  </form>
+                <% } %>
+                <% if (job.pool_rueckgesendet_bemerkung) { %>
+                  <div class="text-muted small mt-1">Rückläufer von <%= job.rueckgesendetVonName %>: „<%= job.pool_rueckgesendet_bemerkung %>“</div>
+                <% } %>
               <% } else { %>
                 <a href="<%= linkPrefix %>/<%= job.id %>" class="btn btn-outline-primary btn-sm"><%= aktionLabel %></a>
                 <% if (idPrefix === 'kontierung') { %>

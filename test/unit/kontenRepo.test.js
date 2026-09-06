@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson } from '../../src/db/personenRepo.js';
+import { upsertPerson, deactivatePerson } from '../../src/db/personenRepo.js';
 import {
   createKonto,
   updateKonto,
@@ -38,6 +38,32 @@ test('listKontoReferencedPersonIds ignores deactivated Konten', async () => {
 
   const { listKontoReferencedPersonIds } = await import('../../src/db/kontenRepo.js');
   assert.deepEqual(listKontoReferencedPersonIds(db), []);
+  db.close();
+});
+
+test('listPersonenMitFreigeberRolle returns only active persons holding any of the four roles on an active Konto, sorted by name', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  deactivatePerson(db, '4');
+
+  const { listPersonenMitFreigeberRolle } = await import('../../src/db/kontenRepo.js');
+  const personen = listPersonenMitFreigeberRolle(db);
+  assert.deepEqual(
+    personen.map((p) => p.churchtools_person_id).sort(),
+    ['1', '2', '3']
+  );
+  db.close();
+});
+
+test('listPersonenMitFreigeberRolle ignores deactivated Konten', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  deactivateKonto(db, kontoId);
+
+  const { listPersonenMitFreigeberRolle } = await import('../../src/db/kontenRepo.js');
+  assert.deepEqual(listPersonenMitFreigeberRolle(db), []);
   db.close();
 });
 

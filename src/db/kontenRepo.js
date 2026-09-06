@@ -1,4 +1,4 @@
-import { getPersonById } from './personenRepo.js';
+import { getPersonById, listActivePersons } from './personenRepo.js';
 
 const ROLE_KEYS = ['freigeber1Id', 'stellvertreter1Id', 'freigeber2Id', 'stellvertreter2Id'];
 const ROLE_LABELS = {
@@ -95,4 +95,9 @@ export function listKontoReferencedPersonIds(db) {
     ids.add(row.stellvertreter2_id);
   }
   return [...ids];
+}
+
+export function listPersonenMitFreigeberRolle(db) {
+  const ids = new Set(listKontoReferencedPersonIds(db));
+  return listActivePersons(db).filter((person) => ids.has(person.churchtools_person_id));
 }

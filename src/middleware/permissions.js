@@ -9,6 +9,7 @@ export const GRANTABLE_BERECHTIGUNGEN = [
   'mails_einsehen',
   'sync_einsehen',
   'audit_log_einsehen',
+  'pool_zuweisen',
 ];
 
 export const BERECHTIGUNG_LABELS = {
@@ -19,6 +20,7 @@ export const BERECHTIGUNG_LABELS = {
   mails_einsehen: 'Mail-Protokoll einsehen',
   sync_einsehen: 'Sync-Übersicht einsehen',
   audit_log_einsehen: 'Globales Audit-Log einsehen',
+  pool_zuweisen: 'Pool-Belege an Personen zuweisen',
 };
 
 // Superadmin und Manager bekommen jedes vergebbare Recht über ihr Rollen-Bundle, unabhängig von

@@ -93,7 +93,7 @@ jeder Anfrage live gegen ChurchTools geprüft.
 
 ## Additive Einzelrechte (`person_berechtigungen`)
 
-Zusätzlich zum Gruppenmodell gibt es sieben einzeln vergebbare,
+Zusätzlich zum Gruppenmodell gibt es acht einzeln vergebbare,
 additive Rechte, unabhängig von ChurchTools-Gruppen
 (`src/middleware/permissions.js`, `src/db/personBerechtigungenRepo.js`):
 
@@ -104,6 +104,7 @@ additive Rechte, unabhängig von ChurchTools-Gruppen
 - `mails_einsehen`
 - `sync_einsehen`
 - `audit_log_einsehen`
+- `pool_zuweisen`: Pool-Belege an Personen zuweisen — erlaubt `POST /pool/:id/zuweisen`
 
 `superadmin` und `manager` erhalten jedes dieser Rechte automatisch über
 ihr Rollen-Bundle. Für alle anderen Personen sind sie rein additiv: ein
@@ -114,7 +115,7 @@ ausschliesslich von einem `superadmin` unter **Admin → Personen**
 Drei Admin-Bereiche sind bewusst **nicht** vergebbar und bleiben
 `superadmin`-exklusiv: Eskalationszeiten, Erscheinungsbild, Zeitstempel —
 strukturell abgesichert (die Datenbank-Tabelle akzeptiert per `CHECK`-
-Constraint nur die sieben oben genannten Werte; für diese drei Bereiche
+Constraint nur die acht oben genannten Werte; für diese drei Bereiche
 lässt sich gar kein Wert einfügen).
 
 Details zur Rechte-Matrix pro Admin-Seite: [admin-bereich.md](admin-bereich.md).

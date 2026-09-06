@@ -42,6 +42,9 @@ stateDiagram-v2
 
     unzugewiesen --> zugewiesen: Pool beanspruchen
     zugewiesen --> unzugewiesen: zurück in den Pool legen
+    unzugewiesen --> zugewiesen: Pool-Weiterleitung an Person\n(Triage-Team, kein Kontieren)
+    zugewiesen --> unzugewiesen: an Gruppe zurücksenden\nmit Bemerkung (Rückläufer)
+    zugewiesen --> zugewiesen: Weiterleitung an echten Freigeber1\n(falls strikte Prüfung aktiv, kein Konflikt erklärt)
 
     zugewiesen --> freigabe2: Kontierung ohne Konflikt\n(= Freigabe 1 erteilt)
     zugewiesen --> zugewiesen: Kontierung mit Interessenskonflikt\n(an Stellvertreter1 / Admin übergeben)
@@ -83,6 +86,21 @@ Zusätzlich wird beim Eingang automatisch nach einem Swiss-QR-Bill
 gesucht (siehe [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md))
 und ein Thumbnail gerendert.
 
+## 1a. Pool-Weiterleitung an Personen
+
+Ein additives Einzelrecht `pool_zuweisen` (siehe
+[auth-und-rechte.md](auth-und-rechte.md)) erlaubt es, einen
+`unzugewiesen`-Pool-Beleg direkt einer Person zuzuweisen
+(`POST /pool/:id/zuweisen`), ohne selbst zu kontieren — identisch zum
+Ergebnis von "Beanspruchen", nur mit fremder Zielperson. Wählbar sind
+aktive Personen mit einer der vier Konto-Rollen (Freigeber1/2,
+Stellvertreter1/2) auf mindestens einem aktiven Konto. Die Zielperson
+kann den Beleg mit einer Pflicht-Bemerkung an die Gruppe zurücksenden
+(`POST /kontierung/:id/an-gruppe-zurueck`) — er landet als "Rückläufer"
+(drei `pool_rueckgesendet_*`-Spalten gesetzt) nicht in der normalen
+Pool-Liste, sondern in einer eigenen Rückläufer-Sektion, nur für
+`pool_zuweisen`-Inhaber sichtbar.
+
 ## 2. Kontierung (Status `zugewiesen`)
 
 Nur die zugewiesene Person (bzw. bei SYNC-8-Eskalation an die
@@ -111,6 +129,15 @@ Rechnungsnummer-Feld wird in der UI zu "Gutschriftnummer" umbeschriftet
 Shortcut. **Bekannte Lücke**: Aufsplitten (Abschnitt 5) übernimmt `typ`
 nicht an die Teil-Jobs — eine Gutschrift lässt sich aktuell effektiv nicht
 aufsplitten, jeder Teil-Job wird implizit wieder zur Rechnung.
+
+**Strikte Freigeber1-Prüfung (optional, `/admin/module`)**: ist der
+Schalter `kontierung_strikte_freigeber1_pruefung` aktiv, gilt Freigabe 1
+nur noch als erteilt, wenn die kontierende Person tatsächlich Freigeber1
+(oder bei laufender Eskalation: Stellvertreter1) des gewählten Kontos
+ist. Andernfalls bleiben die erfassten Daten gespeichert, der Job bleibt
+`zugewiesen`, wechselt aber zum echten Freigeber1 (`freigaben`-Eintrag
+`freigabe1_weiterleitung`, Mail an ihn) — SYNC-8-Admin-Eskalationen
+bleiben davon ausgenommen. Per Default deaktiviert (`'0'`).
 
 Zusätzlich, unabhängig vom Ausgang: ein optional mit hochgeladener
 **Beleg** (PDF/PNG/JPEG, z. B. bei Kreditkartenabrechnungen) wird per

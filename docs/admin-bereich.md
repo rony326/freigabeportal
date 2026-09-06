@@ -96,13 +96,12 @@ RFC3161-TSA-Passwort im Klartext enthält. Details:
 
 Ein/Aus-Schalter für optionale Portal-Bereiche, gespeichert im
 `admin_config`-Key/Value-Store wie jeder andere Schalter (Default:
-alle Module aktiv). Aktuell ein Eintrag: **Spesenmodul**
-(`modul_spesen_aktiv`) — deaktiviert blendet "Spesen einreichen" aus
-dem Hauptmenü aus und lässt `GET /spesen/neu`/`POST /spesen` mit `403`
-abweisen; bereits eingereichte Spesen-Positionen laufen unverändert
-durch Freigabe 1/2 (siehe
-[spesen-einreichung.md](spesen-einreichung.md)). Gedacht als
-Sammelstelle für künftige, ebenfalls unabhängig einführbare Module.
+alle Module aktiv). Aktuell zwei Einträge:
+
+- **Spesenmodul** (`modul_spesen_aktiv`) — deaktiviert blendet "Spesen einreichen" aus dem Hauptmenü aus und lässt `GET /spesen/neu`/`POST /spesen` mit `403` abweisen; bereits eingereichte Spesen-Positionen laufen unverändert durch Freigabe 1/2 (siehe [spesen-einreichung.md](spesen-einreichung.md)).
+- **Strikte Freigeber1-Prüfung** (`kontierung_strikte_freigeber1_pruefung`, Default aus) — siehe [rechnungs-workflow.md](rechnungs-workflow.md#2-kontierung-status-zugewiesen).
+
+Gedacht als Sammelstelle für künftige, ebenfalls unabhängig einführbare Module.
 
 ## Personen (`/admin/personen`)
 

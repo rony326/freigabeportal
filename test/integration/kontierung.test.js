@@ -1008,6 +1008,52 @@ test('POST /kontierung/:id/zurueck-in-pool returns 403 for a person the job is n
   db.close();
 });
 
+test('POST /kontierung/:id/an-gruppe-zurueck requires a non-empty Bemerkung', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const app = buildTestApp(db, { async sendMail() {} });
+  const res = await request(app).post(`/kontierung/${jobId}/an-gruppe-zurueck`).set('x-test-person-id', '1').type('form').send({ bemerkung: '  ' });
+  assert.equal(res.status, 400);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'zugewiesen', 'a rejected empty Bemerkung must not release the job');
+  db.close();
+});
+
+test('POST /kontierung/:id/an-gruppe-zurueck sends the job back to unzugewiesen with the Bemerkung stored, no mail', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const mailer = { sent: [], async sendMail(mail) { this.sent.push(mail); } };
+  const app = buildTestApp(db, mailer);
+  const res = await request(app)
+    .post(`/kontierung/${jobId}/an-gruppe-zurueck`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ bemerkung: 'Falsche Person, bitte an Buchhaltung' });
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.pool_rueckgesendet_bemerkung, 'Falsche Person, bitte an Buchhaltung');
+  assert.equal(listFreigabenByJob(db, jobId).some((f) => f.rolle === 'pool_ruecksendung'), true);
+  assert.equal(mailer.sent.length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id/an-gruppe-zurueck returns 403 for a job not assigned to the current person', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const app = buildTestApp(db, { async sendMail() {} });
+  const res = await request(app).post(`/kontierung/${jobId}/an-gruppe-zurueck`).set('x-test-person-id', '2').type('form').send({ bemerkung: 'x' });
+  assert.equal(res.status, 403);
+  db.close();
+});
+
 test('POST /kontierung/:id with a conflict sends a Zuweisungs-Mail to stellvertreter1', async () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'

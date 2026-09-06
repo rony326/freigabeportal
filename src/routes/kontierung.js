@@ -18,6 +18,7 @@ import {
   setJobBetrag,
   addBelegSeiten,
   findJobsByDebitorUndRechnungsnummer,
+  sendJobBackToGroup,
 } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById, listKonten } from '../db/kontenRepo.js';
 import { listDebitoren, getDebitorById, createDebitor } from '../db/debitorenRepo.js';
@@ -563,6 +564,29 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     } catch (err) {
       next(err);
     }
+  });
+
+  router.post('/:id/an-gruppe-zurueck', csrfProtection, (req, res) => {
+    const job = loadAuthorizedJob(req, res);
+    if (!job) return;
+
+    const bemerkung = (req.body.bemerkung || '').trim();
+    if (!bemerkung) {
+      return res.status(400).render('error', { message: 'Bitte eine Bemerkung angeben.' });
+    }
+
+    sendJobBackToGroup(db, job.id, job.zugewiesen_an, { bemerkung });
+    createFreigabe(db, {
+      jobId: job.id,
+      personId: req.currentPerson.churchtools_person_id,
+      rolle: 'pool_ruecksendung',
+      zeitpunkt: new Date().toISOString(),
+      ip: req.ip,
+      interessenskonflikt: false,
+      kommentar: bemerkung,
+      eskaliertVon: null,
+    });
+    res.redirect('/pool');
   });
 
   function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors) {

@@ -2401,6 +2401,19 @@ test('GET /kontierung/:id offers a Konto-Hinweis picker on "Zurück in den Pool 
   db.close();
 });
 
+test('GET /kontierung/:id renders the An-Gruppe-zurücksenden form', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const app = buildTestApp(db, { async sendMail() {} });
+  const res = await request(app).get(`/kontierung/${jobId}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /an-gruppe-zurueck-form/);
+  assert.match(res.text, /name="bemerkung"/);
+  db.close();
+});
+
 test('POST /kontierung/lieferanten rejects a missing name, nothing created', async () => {
   const db = openDatabase(':memory:');
   seedKontoAndPersonen(db);

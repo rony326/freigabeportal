@@ -137,11 +137,15 @@
             <form id="zurueck-in-pool-form" method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
             </form>
+            <form id="an-gruppe-zurueck-form" method="post" action="/kontierung/<%= job.id %>/an-gruppe-zurueck">
+              <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            </form>
 
             <div class="d-flex flex-wrap gap-2">
               <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary btn-sm">Kontieren</button>
               <button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger btn-sm">Ablehnen</button>
               <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#zurueck-in-pool-modal">Zurück in den Pool legen</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#an-gruppe-zurueck-modal">An Gruppe zurücksenden</button>
               <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#aufsplitten-modal">Rechnung aufsplitten</button>
             </div>
           </div>
@@ -186,6 +190,28 @@
           <div class="modal-footer">
             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
             <button type="submit" form="zurueck-in-pool-form" class="btn btn-primary">Zurück in den Pool legen</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="an-gruppe-zurueck-modal" tabindex="-1" aria-labelledby="an-gruppe-zurueck-modal-label" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="an-gruppe-zurueck-modal-label">An Gruppe zurücksenden</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label" for="bemerkung-ruecksendung">Bemerkung <span class="text-muted">(Pflicht)</span></label>
+              <textarea class="form-control" id="bemerkung-ruecksendung" name="bemerkung" form="an-gruppe-zurueck-form" required></textarea>
+              <div class="form-text">Die Rechnung geht zurück an das Team, das Pool-Belege zuweisen kann, mit deiner Bemerkung.</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="submit" form="an-gruppe-zurueck-form" class="btn btn-primary">An Gruppe zurücksenden</button>
           </div>
         </div>
       </div>

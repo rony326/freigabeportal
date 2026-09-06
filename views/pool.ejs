@@ -82,7 +82,10 @@
           return;
         }
         const body = await res.json().catch(() => ({}));
-        const row = document.getElementById(`pool-row-${id}`);
+        // Use the button's own row rather than reconstructing `pool-row-${id}`: since Task 9
+        // this button also appears in the Rückläufer section, whose rows are id'd
+        // `ruecklaeufer-row-${id}`, not `pool-row-${id}`.
+        const row = btn.closest('tr');
         if (row) {
           const msg = document.createElement('tr');
           const cell = document.createElement('td');

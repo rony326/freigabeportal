@@ -565,6 +565,25 @@ test('GET /pool shows the An-Person-senden form on Pool rows for a pool_zuweisen
   db.close();
 });
 
+test('GET /pool wires the Beanspruchen error fallback to the button\'s own row, not a reconstructed pool-row-<id> lookup, so it also works for Rückläufer rows', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET pool_rueckgesendet_bemerkung = 'Falsche Person, bitte prüfen' WHERE id = ?").run(jobId);
+
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  // The row that .beanspruchen-btn's error fallback needs to replace is id'd `ruecklaeufer-row-<id>`
+  // here (not `pool-row-<id>`), since this job is a Rückläufer — the handler must look it up via
+  // the clicked button's own row rather than reconstructing a pool-specific id string.
+  assert.match(res.text, new RegExp(`id="ruecklaeufer-row-${jobId}"`));
+  assert.match(res.text, /const row = btn\.closest\('tr'\);/);
+  assert.doesNotMatch(res.text, /document\.getElementById\(`pool-row-\$\{id\}`\)/);
+  db.close();
+});
+
 test('GET /pool includes the Rückläufer section only for a person with pool_zuweisen', async () => {
   const db = openDatabase(':memory:');
   seedBuchhaltungPerson(db, '50');

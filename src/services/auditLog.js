@@ -11,6 +11,7 @@ export const EREIGNIS_LABEL = {
   iban_abweichung: 'IBAN-Abweichung festgestellt',
   rechnungsnummer_duplikat: 'Doppelte Rechnungsnummer festgestellt',
   pool_zuweisung: 'An Person weitergeleitet',
+  pool_ruecksendung: 'An Gruppe zurückgesendet',
   loeschung: 'Job gelöscht',
 };
 

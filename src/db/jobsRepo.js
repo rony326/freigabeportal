@@ -336,6 +336,18 @@ export function releaseJob(db, jobId, personId, { hinweisKontoId } = {}) {
   return result.changes > 0;
 }
 
+export function sendJobBackToGroup(db, jobId, currentZugewiesenAn, { bemerkung }) {
+  const result = db
+    .prepare(
+      `UPDATE jobs
+       SET status = 'unzugewiesen', zugewiesen_an = NULL,
+           pool_rueckgesendet_bemerkung = ?, pool_rueckgesendet_von = ?, pool_rueckgesendet_am = ?
+       WHERE id = ? AND zugewiesen_an = ? AND status = 'zugewiesen'`
+    )
+    .run(bemerkung, currentZugewiesenAn, new Date().toISOString(), jobId, currentZugewiesenAn);
+  return result.changes > 0;
+}
+
 // Accepts both 'freigabe2' (the original Freigabe-2 rejection) and 'zugewiesen' (rejection
 // directly at the Kontierung/Freigabe-1 stage, added later — an invoice can be invalid or a
 // duplicate before anyone has even chosen a Konto for it, so waiting until Freigabe 2 to allow

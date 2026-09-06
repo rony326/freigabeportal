@@ -97,3 +97,10 @@ test('seedDefaults sets modul_spesen_aktiv default (module enabled out of the bo
   assert.equal(getConfigValue(db, 'modul_spesen_aktiv'), '1');
   db.close();
 });
+
+test('seedDefaults sets kontierung_strikte_freigeber1_pruefung default (off out of the box)', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'kontierung_strikte_freigeber1_pruefung'), '0');
+  db.close();
+});

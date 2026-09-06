@@ -30,6 +30,7 @@ const DEFAULTS = {
   backup_cron_minute: '0',
   backup_aufbewahrung_anzahl: '14',
   modul_spesen_aktiv: '1',
+  kontierung_strikte_freigeber1_pruefung: '0',
 };
 
 export function seedDefaults(db) {

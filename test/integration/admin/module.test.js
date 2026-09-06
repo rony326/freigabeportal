@@ -108,3 +108,42 @@ test('POST /admin/module with the checkbox checked re-enables the module', async
   assert.equal(getConfigValue(db, 'modul_spesen_aktiv'), '1');
   db.close();
 });
+
+test('GET /admin/module shows the strikte Freigeber1-Prüfung checkbox unchecked by default', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/module').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /name="strikteFreigeber1Pruefung"[^>]*checked/);
+  db.close();
+});
+
+test('POST /admin/module with strikteFreigeber1Pruefung checked activates it, independently of spesenAktiv', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/module')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ spesenAktiv: '1', strikteFreigeber1Pruefung: '1' });
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'kontierung_strikte_freigeber1_pruefung'), '1');
+  assert.equal(getConfigValue(db, 'modul_spesen_aktiv'), '1');
+  db.close();
+});
+
+test('POST /admin/module without strikteFreigeber1Pruefung (unchecked) turns it off', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
+  const app = buildTestApp(db);
+  const res = await request(app).post('/admin/module').set('x-test-person-id', '99').type('form').send({ spesenAktiv: '1' });
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'kontierung_strikte_freigeber1_pruefung'), '0');
+  db.close();
+});

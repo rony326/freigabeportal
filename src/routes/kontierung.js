@@ -11,6 +11,7 @@ import {
   eskalierenFreigabe1,
   eskalierenFreigabe1AnAdmin,
   abschliessenFreigabe1,
+  weiterleitenAnEchtenFreigeber1,
   releaseJob,
   getEffectiveFreigeber2Id,
   markJobAufgesplittet,
@@ -350,6 +351,11 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       // (escalating would target themselves). Both route to the Portal-Admin group instead of
       // blocking with the old "go back to pool / contact admin" dead end.
       const eskaliertAnAdmin = hatKonflikt && Boolean(job.freigabe1_eskaliert_von || konto.stellvertreter1_id === req.currentPerson.churchtools_person_id);
+      const strikteFreigeber1Pruefung = getConfigValue(db, 'kontierung_strikte_freigeber1_pruefung') === '1';
+      const istEchterFreigeber1 =
+        konto.freigeber1_id === req.currentPerson.churchtools_person_id ||
+        (Boolean(job.freigabe1_eskaliert_von) && konto.stellvertreter1_id === req.currentPerson.churchtools_person_id);
+      const wirdWeitergeleitet = !hatKonflikt && !eskaliertAnAdmin && strikteFreigeber1Pruefung && !job.freigabe1_eskaliert_an_admin && !istEchterFreigeber1;
 
       db.exec('BEGIN');
       try {
@@ -387,17 +393,11 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             eskaliertVon: job.freigabe1_eskaliert_von,
           });
           eskalierenFreigabe1(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung, stellvertreterId: konto.stellvertreter1_id });
+        } else if (wirdWeitergeleitet) {
+          weiterleitenAnEchtenFreigeber1(db, job.id, konto.freigeber1_id);
+          createFreigabe(db, { jobId: job.id, personId: req.currentPerson.churchtools_person_id, rolle: 'freigabe1_weiterleitung', zeitpunkt: new Date().toISOString(), ip: req.ip, interessenskonflikt: false, kommentar: begruendung || null, eskaliertVon: job.freigabe1_eskaliert_von });
         } else {
-          createFreigabe(db, {
-            jobId: job.id,
-            personId: req.currentPerson.churchtools_person_id,
-            rolle: 'freigeber1',
-            zeitpunkt: new Date().toISOString(),
-            ip: req.ip,
-            interessenskonflikt: false,
-            kommentar: begruendung || null,
-            eskaliertVon: job.freigabe1_eskaliert_von,
-          });
+          createFreigabe(db, { jobId: job.id, personId: req.currentPerson.churchtools_person_id, rolle: 'freigeber1', zeitpunkt: new Date().toISOString(), ip: req.ip, interessenskonflikt: false, kommentar: begruendung || null, eskaliertVon: job.freigabe1_eskaliert_von });
           abschliessenFreigabe1(db, job.id);
         }
         db.exec('COMMIT');
@@ -502,6 +502,17 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             to: stellvertreter1.email,
             subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 1 – Kontierung an dich übergeben',
             text: `Eine Rechnung wurde dir zur Kontierung übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${job.id}`,
+            typ: 'zuweisung',
+            jobId: job.id,
+          });
+        }
+      } else if (wirdWeitergeleitet) {
+        const echterFreigeber1 = getPersonById(db, konto.freigeber1_id);
+        if (echterFreigeber1) {
+          await sendNotification(db, mailer, {
+            to: echterFreigeber1.email,
+            subject: 'Freigabeportal: Rechnung kontiert — wartet auf deine Freigabe 1',
+            text: `Eine Rechnung wurde von ${req.currentPerson.vorname} ${req.currentPerson.nachname} kontiert und wartet auf deine Freigabe 1: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${job.id}`,
             typ: 'zuweisung',
             jobId: job.id,
           });

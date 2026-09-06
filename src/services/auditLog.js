@@ -12,6 +12,7 @@ export const EREIGNIS_LABEL = {
   rechnungsnummer_duplikat: 'Doppelte Rechnungsnummer festgestellt',
   pool_zuweisung: 'An Person weitergeleitet',
   pool_ruecksendung: 'An Gruppe zurückgesendet',
+  freigabe1_weiterleitung: 'An Freigeber 1 weitergeleitet (Kontierung durch andere Person)',
   loeschung: 'Job gelöscht',
 };
 

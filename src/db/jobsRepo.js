@@ -231,6 +231,10 @@ export function eskalierenFreigabe1(db, jobId, { eskaliertVon, grund, stellvertr
   ).run(stellvertreterId, eskaliertVon, grund, jobId);
 }
 
+export function weiterleitenAnEchtenFreigeber1(db, jobId, freigeber1Id) {
+  db.prepare('UPDATE jobs SET zugewiesen_an = ? WHERE id = ?').run(freigeber1Id, jobId);
+}
+
 export function abschliessenFreigabe1(db, jobId) {
   // freigabe1_eskaliert_an_admin is deliberately NOT reset here (Batch 4 correction — an
   // earlier version of this function did clear it). A declared conflict of interest belongs to

@@ -24,6 +24,7 @@ import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { fetchCsrfToken } from '../helpers/csrf.js';
 import { stampAndFinalize } from '../../src/services/pdfStamp.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../src/services/splitGruppenExport.js';
+import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 
 function extrahierterSeitenText(pdfBytes, pageIndex) {
   const doc = mupdf.Document.openDocument(pdfBytes, 'application/pdf');
@@ -666,6 +667,99 @@ test('POST /kontierung/:id with a Konto the person has no role on is rejected, n
 
   assert.equal(res.status, 400);
   assert.equal(getJobById(db, id).konto_id, null);
+  db.close();
+});
+
+test('POST /kontierung/:id: toggle off (default) — a non-Freigeber1 person still grants Freigabe 1 directly, unchanged behavior', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db); // Konto 3000: freigeber1=1, stellvertreter1=2, freigeber2=3, stellvertreter2=4
+  upsertPerson(db, { id: '99', vorname: 'Ohne', nachname: 'Rolle', email: 'ohne@example.org', gruppen: ['10'], loggedInNow: true });
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: 1 });
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '99');
+  // Person '99' holds no freigeber1/stellvertreter1 role on Konto 1 at all, so the Kontierung
+  // form's Konto dropdown would normally not offer it (ladeKontenFuerJob is role-filtered) —
+  // pre-assigning the job's konto_id, mirroring the self-escalation fallback documented on
+  // ladeKontenFuerJob, is what makes this Konto selectable in the first place, exactly as the
+  // unit test for weiterleitenAnEchtenFreigeber1 sets up via setKontierung.
+  setKontierung(db, jobId, 1);
+  const app = buildTestApp(db, { async sendMail() {} });
+
+  const res = await request(app)
+    .post(`/kontierung/${jobId}`)
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ aktion: 'kontieren', kontoId: '1', absender: 'Muster AG', debitorId: String(debitorId), rechnungsnummer: 'RE-1', betrag: '10.00', zahlungsziel: '2026-10-01', typ: 'rechnung', interessenskonflikt: '' });
+
+  assert.equal(res.status, 302);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'freigabe2', 'toggle off must keep the old behavior: any kontierende person without a declared conflict grants Freigabe 1');
+  assert.equal(listFreigabenByJob(db, jobId).some((f) => f.rolle === 'freigeber1' && f.person_id === '99'), true);
+  db.close();
+});
+
+test('POST /kontierung/:id: toggle on — the real Freigeber1 kontiert grants Freigabe 1 as usual', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: 1 });
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1'); // person '1' IS Konto 3000's freigeber1
+  const app = buildTestApp(db, { async sendMail() {} });
+
+  const res = await request(app)
+    .post(`/kontierung/${jobId}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ aktion: 'kontieren', kontoId: '1', absender: 'Muster AG', debitorId: String(debitorId), rechnungsnummer: 'RE-1', betrag: '10.00', zahlungsziel: '2026-10-01', typ: 'rechnung', interessenskonflikt: '' });
+
+  assert.equal(res.status, 302);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(listFreigabenByJob(db, jobId).some((f) => f.rolle === 'freigeber1'), true);
+  db.close();
+});
+
+test('POST /kontierung/:id: toggle on — a person who only holds Freigeber2 on the chosen Konto is forwarded to the real Freigeber1 instead of granting Freigabe 1', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: 1 });
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '3'); // person '3' is Konto 3000's freigeber2, NOT freigeber1
+  // Same reasoning as the toggle-off test above: person '3' holds no freigeber1/stellvertreter1
+  // role on Konto 1, so it must already be the job's konto_id for the dropdown/validation to
+  // accept it at all.
+  setKontierung(db, jobId, 1);
+  const mailer = { sent: [], async sendMail(mail) { this.sent.push(mail); } };
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${jobId}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'kontieren', kontoId: '1', absender: 'Muster AG', debitorId: String(debitorId), rechnungsnummer: 'RE-1', betrag: '10.00', zahlungsziel: '2026-10-01', typ: 'rechnung', interessenskonflikt: '' });
+
+  assert.equal(res.status, 302);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'zugewiesen', 'must NOT advance to freigabe2 — Freigabe 1 was not granted');
+  assert.equal(job.zugewiesen_an, '1', 'must be handed to the real Freigeber1');
+  assert.equal(listFreigabenByJob(db, jobId).some((f) => f.rolle === 'freigeber1'), false);
+  assert.equal(listFreigabenByJob(db, jobId).some((f) => f.rolle === 'freigabe1_weiterleitung'), true);
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'p1@example.org');
+
+  // The real Freigeber1 now kontiert the same job and grants Freigabe 1 normally.
+  const res2 = await request(app)
+    .post(`/kontierung/${jobId}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ aktion: 'kontieren', kontoId: '1', absender: 'Muster AG', debitorId: String(debitorId), rechnungsnummer: 'RE-1', betrag: '10.00', zahlungsziel: '2026-10-01', typ: 'rechnung', interessenskonflikt: '' });
+  assert.equal(res2.status, 302);
+  assert.equal(getJobById(db, jobId).status, 'freigabe2');
   db.close();
 });
 

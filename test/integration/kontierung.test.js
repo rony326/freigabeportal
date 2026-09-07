@@ -24,7 +24,7 @@ import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { fetchCsrfToken } from '../helpers/csrf.js';
 import { stampAndFinalize } from '../../src/services/pdfStamp.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../src/services/splitGruppenExport.js';
-import { setConfigValue } from '../../src/db/adminConfigRepo.js';
+import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
 
 function extrahierterSeitenText(pdfBytes, pageIndex) {
   const doc = mupdf.Document.openDocument(pdfBytes, 'application/pdf');
@@ -147,6 +147,7 @@ function buildTestAppMitDateien(db, mailer, jobsDir) {
 
 test('GET /kontierung/:id is reachable for the assigned person with no group membership at all', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
   for (const id of ['2', '3', '4']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
@@ -162,6 +163,7 @@ test('GET /kontierung/:id is reachable for the assigned person with no group mem
 
 test('GET /kontierung/:id embeds the preview through the PDF.js viewer, not a raw /downloads iframe', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
   for (const id of ['2', '3', '4']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
@@ -181,6 +183,7 @@ test('GET /kontierung/:id embeds the preview through the PDF.js viewer, not a ra
 
 test('GET /kontierung/:id drops the Konto select\'s required attribute on click of Ablehnen, so the browser does not block that submission', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
   for (const id of ['2', '3', '4']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
@@ -199,6 +202,7 @@ test('GET /kontierung/:id drops the Konto select\'s required attribute on click 
 
 test('GET /kontierung/:id shows the quelle and absender that n8n submitted with the job', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, {
     eingangAm: '2026-08-15T08:00:00.000Z',
@@ -218,6 +222,7 @@ test('GET /kontierung/:id shows the quelle and absender that n8n submitted with 
 
 test('GET /kontierung/:id shows an Audit-Log with the prior Freigabe 1 and Ablehnung history after Überarbeiten', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   setKontierung(db, id, kontoId);
@@ -237,6 +242,7 @@ test('GET /kontierung/:id shows an Audit-Log with the prior Freigabe 1 and Ableh
 
 test('GET /kontierung/:id returns 403 for a person the job is not assigned to', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -248,6 +254,7 @@ test('GET /kontierung/:id returns 403 for a person the job is not assigned to', 
 
 test('GET /kontierung/:id returns 403 for a Spesen position even when status/zugewiesen_an would otherwise match', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '2', eingereichtAm: '2026-08-15T08:00:00.000Z', titel: null });
   const id = createSpesenPosition(db, {
@@ -268,6 +275,7 @@ test('GET /kontierung/:id returns 403 for a Spesen position even when status/zug
 
 test('GET /kontierung/:id returns 403 once the job has left status zugewiesen', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -280,6 +288,7 @@ test('GET /kontierung/:id returns 403 once the job has left status zugewiesen', 
 
 test('GET /kontierung/:id shows only the assigned person\'s own Konten', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -292,6 +301,7 @@ test('GET /kontierung/:id shows only the assigned person\'s own Konten', async (
 
 test('GET /kontierung/:id shows an empty Konto dropdown for a pool-claim by someone with no Konten of their own, and they can release it back to the pool', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db); // Konto 3000 belongs to persons '1'/'2'/'3'/'4' only
   upsertPerson(db, { id: '5', vorname: 'Ohne', nachname: 'Konto', email: 'p5@example.org', gruppen: ['10'], loggedInNow: true });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -315,6 +325,7 @@ test('GET /kontierung/:id shows an empty Konto dropdown for a pool-claim by some
 
 test('POST /kontierung/:id without a conflict creates the Freigabe-1 row and advances status to freigabe2', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
@@ -342,6 +353,7 @@ test('POST /kontierung/:id without a conflict creates the Freigabe-1 row and adv
 
 test('POST /kontierung/:id without a conflict still saves an optional Begründung as the Freigabe-1 Kommentar', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
@@ -363,6 +375,7 @@ test('POST /kontierung/:id without a conflict still saves an optional Begründun
 
 test('POST /kontierung/:id persists an edited absender plus betrag, zahlungsziel, rechnungsnummer and the selected Debitor as lieferant', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
@@ -398,6 +411,7 @@ test('POST /kontierung/:id persists an edited absender plus betrag, zahlungsziel
 
 test('POST /kontierung/:id rejects an invalid betrag, nothing persisted', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -419,6 +433,7 @@ test('POST /kontierung/:id rejects an invalid betrag, nothing persisted', async 
 
 test('POST /kontierung/:id rejects an invalid zahlungsziel, nothing persisted', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -440,6 +455,7 @@ test('POST /kontierung/:id rejects an invalid zahlungsziel, nothing persisted', 
 
 test('POST /kontierung/:id with typ=gutschrift does not require a Zahlungsziel and persists the type', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
@@ -463,6 +479,7 @@ test('POST /kontierung/:id with typ=gutschrift does not require a Zahlungsziel a
 
 test('POST /kontierung/:id defaults typ to rechnung when omitted, so Zahlungsziel stays required', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
@@ -485,6 +502,7 @@ test('POST /kontierung/:id defaults typ to rechnung when omitted, so Zahlungszie
 
 test('GET /kontierung/:id pre-fills the Typ radio as Rechnung by default', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -498,6 +516,7 @@ test('GET /kontierung/:id pre-fills the Typ radio as Rechnung by default', async
 
 test('POST /kontierung/:id aktion=ablehnen rejects the job directly from the Kontierung stage, no Konto needed', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -523,6 +542,7 @@ test('POST /kontierung/:id aktion=ablehnen rejects the job directly from the Kon
 
 test('POST /kontierung/:id aktion=ablehnen without a Begründung is rejected, job untouched', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -542,6 +562,7 @@ test('POST /kontierung/:id aktion=ablehnen without a Begründung is rejected, jo
 
 test('POST /kontierung/:id with a conflict reassigns to stellvertreter1 and records a freigabe1_eskalation audit entry with the Begründung', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
@@ -580,6 +601,7 @@ test('POST /kontierung/:id with a conflict reassigns to stellvertreter1 and reco
 
 test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring another conflict now escalates to Portal-Admin instead of being rejected', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
@@ -609,6 +631,7 @@ test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring a
 
 test('POST /kontierung/:id declaring a conflict while already being the Konto\'s own Stellvertretung now escalates to Portal-Admin instead of self-reassigning', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2'
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   // Represents the post-rework state: person '2' (the Konto's own stellvertreter1) is now the
@@ -633,6 +656,7 @@ test('POST /kontierung/:id declaring a conflict while already being the Konto\'s
 
 test('POST /kontierung/:id with a conflict but no Begründung is rejected, nothing persisted', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -653,6 +677,7 @@ test('POST /kontierung/:id with a conflict but no Begründung is rejected, nothi
 
 test('POST /kontierung/:id with a Konto the person has no role on is rejected, nothing persisted', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const anderesKontoId = createKonto(db, { kontonummer: '9999', bezeichnung: 'Fremd', freigeber1Id: '3', stellvertreter1Id: '4', freigeber2Id: '1', stellvertreter2Id: '2' });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -672,6 +697,7 @@ test('POST /kontierung/:id with a Konto the person has no role on is rejected, n
 
 test('POST /kontierung/:id: toggle off (default) — a non-Freigeber1 person still grants Freigabe 1 directly, unchanged behavior', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db); // Konto 3000: freigeber1=1, stellvertreter1=2, freigeber2=3, stellvertreter2=4
   upsertPerson(db, { id: '99', vorname: 'Ohne', nachname: 'Rolle', email: 'ohne@example.org', gruppen: ['10'], loggedInNow: true });
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
@@ -701,6 +727,7 @@ test('POST /kontierung/:id: toggle off (default) — a non-Freigeber1 person sti
 
 test('POST /kontierung/:id: toggle on — the real Freigeber1 kontiert grants Freigabe 1 as usual', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
@@ -724,6 +751,7 @@ test('POST /kontierung/:id: toggle on — the real Freigeber1 kontiert grants Fr
 
 test('POST /kontierung/:id: toggle on — a person who only holds Freigeber2 on the chosen Konto is forwarded to the real Freigeber1 instead of granting Freigabe 1', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
@@ -765,6 +793,7 @@ test('POST /kontierung/:id: toggle on — a person who only holds Freigeber2 on 
 
 test('POST /kontierung/:id with a Beleg PDF attached merges it into the job\'s PDF before completing Kontierung', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'beleg-test-'));
   const kontoId = seedKontoAndPersonen(db);
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
@@ -799,6 +828,7 @@ test('POST /kontierung/:id with a Beleg PDF attached merges it into the job\'s P
 
 test('POST /kontierung/:id with a non-PDF/image Beleg is rejected, nothing persisted or merged', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'beleg-test-'));
   const kontoId = seedKontoAndPersonen(db);
   const pdfPfad = join(jobsDir, 'original.pdf');
@@ -826,6 +856,7 @@ test('POST /kontierung/:id with a non-PDF/image Beleg is rejected, nothing persi
 
 test('POST /kontierung/:id aktion=ablehnen with a Beleg image attached still merges it, even though the job is being rejected', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'beleg-test-'));
   seedKontoAndPersonen(db);
   const pdfPfad = join(jobsDir, 'original.pdf');
@@ -858,6 +889,7 @@ test('POST /kontierung/:id on a Split-Kind with a newly attached Beleg accumulat
   // pages from the archival document. This test proves both the DB bookkeeping (addBelegSeiten)
   // and that the resulting value actually locates the right pages once merged.
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'split-kontierung-beleg-test-'));
   const kontoId = seedKontoAndPersonen(db);
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
@@ -947,6 +979,7 @@ test('POST /kontierung/:id on a Split-Kind with a newly attached Beleg accumulat
 
 test('POST /kontierung/:id aktion=ablehnen on a Split-Kind with a newly attached Beleg accumulates onto beleg_seitenzahl too, not just the normal Kontierung path', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'split-kontierung-ablehnen-beleg-test-'));
   const kontoId = seedKontoAndPersonen(db);
 
@@ -989,6 +1022,7 @@ test('POST /kontierung/:id aktion=ablehnen on a Split-Kind with a newly attached
 
 test('POST /kontierung/:id/zurueck-in-pool releases the job and redirects to /pool', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -1005,6 +1039,7 @@ test('POST /kontierung/:id/zurueck-in-pool releases the job and redirects to /po
 
 test('POST /kontierung/:id/zurueck-in-pool with a hinweisKontoId sets it on the job and emails that Konto\'s Freigeber1', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', ...
   const kinderbereichId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '3', stellvertreter1Id: '4', freigeber2Id: '1', stellvertreter2Id: '2' });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'brack.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -1031,6 +1066,7 @@ test('POST /kontierung/:id/zurueck-in-pool with a hinweisKontoId sets it on the 
 
 test('POST /kontierung/:id/zurueck-in-pool without a hinweisKontoId behaves exactly as before, no mail sent', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -1046,6 +1082,7 @@ test('POST /kontierung/:id/zurueck-in-pool without a hinweisKontoId behaves exac
 
 test('POST /kontierung/:id/zurueck-in-pool silently ignores an invalid hinweisKontoId, still releases, no mail sent', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -1068,6 +1105,7 @@ test('POST /kontierung/:id/zurueck-in-pool silently ignores an invalid hinweisKo
 
 test('POST /kontierung/:id/zurueck-in-pool silently ignores an inactive hinweisKontoId, still releases, no mail sent', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const inaktivKontoId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '3', stellvertreter1Id: '4', freigeber2Id: '1', stellvertreter2Id: '2' });
   deactivateKonto(db, inaktivKontoId);
@@ -1091,6 +1129,7 @@ test('POST /kontierung/:id/zurueck-in-pool silently ignores an inactive hinweisK
 
 test('POST /kontierung/:id/zurueck-in-pool returns 403 for a person the job is not assigned to', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -1104,6 +1143,7 @@ test('POST /kontierung/:id/zurueck-in-pool returns 403 for a person the job is n
 
 test('POST /kontierung/:id/an-gruppe-zurueck requires a non-empty Bemerkung', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, jobId, '1');
@@ -1117,6 +1157,7 @@ test('POST /kontierung/:id/an-gruppe-zurueck requires a non-empty Bemerkung', as
 
 test('POST /kontierung/:id/an-gruppe-zurueck sends the job back to unzugewiesen with the Bemerkung stored, no mail', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, jobId, '1');
@@ -1139,6 +1180,7 @@ test('POST /kontierung/:id/an-gruppe-zurueck sends the job back to unzugewiesen 
 
 test('POST /kontierung/:id/an-gruppe-zurueck returns 403 for a job not assigned to the current person', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, jobId, '1');
@@ -1150,6 +1192,7 @@ test('POST /kontierung/:id/an-gruppe-zurueck returns 403 for a job not assigned 
 
 test('POST /kontierung/:id with a conflict sends a Zuweisungs-Mail to stellvertreter1', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
@@ -1174,6 +1217,7 @@ test('POST /kontierung/:id with a conflict sends a Zuweisungs-Mail to stellvertr
 
 test('POST /kontierung/:id without a conflict sends a Zuweisungs-Mail to freigeber2', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
@@ -1197,6 +1241,7 @@ test('POST /kontierung/:id without a conflict sends a Zuweisungs-Mail to freigeb
 
 test('POST /kontierung/:id after a Freigabe-2 conflict + rejection + rework emails the effective stellvertreter2, not the original (recused) freigeber2', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
@@ -1247,6 +1292,7 @@ test('a Stellvertreter1 who is escalated to and ALSO has a conflict escalates to
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { upsertPerson } = await import('../../src/db/personenRepo.js');
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
@@ -1304,6 +1350,7 @@ test('a plain, non-conflict resubmission after a prior escalation succeeds norma
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { upsertPerson } = await import('../../src/db/personenRepo.js');
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob } = await import('../../src/db/jobsRepo.js');
@@ -1340,6 +1387,7 @@ test('a person who picks a Konto where they are themselves the stellvertreter1 a
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { upsertPerson } = await import('../../src/db/personenRepo.js');
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
@@ -1375,6 +1423,7 @@ test('a job admin-escalated in Freigabe 1, then rejected in Freigabe 2 and reope
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { upsertPerson } = await import('../../src/db/personenRepo.js');
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob, getJobById, setKontierung, ablehnenJob, wiederOeffnenJob, abschliessenFreigabe1 } = await import('../../src/db/jobsRepo.js');
@@ -1445,6 +1494,7 @@ test('a Portal-Admin authorized via the freigabe1_eskaliert_an_admin flag can re
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { upsertPerson } = await import('../../src/db/personenRepo.js');
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
@@ -1496,6 +1546,7 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { upsertPerson } = await import('../../src/db/personenRepo.js');
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
@@ -1569,6 +1620,7 @@ async function seedJobMitEchtemPdf(db, jobsDir, { betrag = '200.00' } = {}) {
 
 test('GET /kontierung/:id/aufsplitten works even when the job has no Betrag yet, with an empty Gesamtbetrag field to fill in', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -1585,6 +1637,7 @@ test('GET /kontierung/:id/aufsplitten works even when the job has no Betrag yet,
 
 test('GET /kontierung/:id/aufsplitten pre-fills Gesamtbetrag from the job when one is already set', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1600,6 +1653,7 @@ test('GET /kontierung/:id/aufsplitten pre-fills Gesamtbetrag from the job when o
 
 test('GET /kontierung/:id/aufsplitten prefers a betrag query param (the not-yet-saved Kontierung-Betrag) over the job\'s saved Betrag', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1613,6 +1667,7 @@ test('GET /kontierung/:id/aufsplitten prefers a betrag query param (the not-yet-
 
 test('GET /kontierung/:id/aufsplitten ignores a malformed betrag query param, falling back to the job\'s saved Betrag', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1626,6 +1681,7 @@ test('GET /kontierung/:id/aufsplitten ignores a malformed betrag query param, fa
 
 test('GET /kontierung/:id/aufsplitten lists every active Konto, not just this person\'s own, and offers an Interessenskonflikt checkbox per Zeile plus a shared Begründung field', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   upsertPerson(db, { id: '5', vorname: 'Kinder', nachname: 'Bereich', email: 'kinder@example.org', gruppen: ['10'], loggedInNow: true });
@@ -1643,6 +1699,7 @@ test('GET /kontierung/:id/aufsplitten lists every active Konto, not just this pe
 
 test('POST /kontierung/:id/aufsplitten creates independent split jobs, each with its own file, Freigabe 1 already granted, marks the parent aufgesplittet', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId, pdfPfad } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1688,6 +1745,7 @@ test('POST /kontierung/:id/aufsplitten creates independent split jobs, each with
 
 test('POST /kontierung/:id/aufsplitten persists teilPosition as rechnungsposition on each split child', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1716,6 +1774,7 @@ test('POST /kontierung/:id/aufsplitten rejects a teilPosition with characters th
   // Gruppen-Merge am WinAnsi-only-Helvetica scheitern -- dauerhaft, weil der Nachhol-Cron-Job
   // immer wieder dieselbe Eingabe vorfindet und niemand eine Rückmeldung bekommt.
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1741,6 +1800,7 @@ test('POST /kontierung/:id/aufsplitten rejects a teilPosition with characters th
 
 test('POST /kontierung/:id/aufsplitten accepts a teilPosition with German letters, digits and ordinary punctuation', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1768,6 +1828,7 @@ test('POST /kontierung/:id/aufsplitten accepts teilPosition characters the old \
   // Anteil" or "Müller's Anteil" was rejected outright. The new explicit character class must
   // not have overcorrected and re-introduced that regression.
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1806,6 +1867,7 @@ test('POST /kontierung/:id/aufsplitten rejects teilPosition characters that woul
 
   for (const wert of boeseWerte) {
     const db = openDatabase(':memory:');
+    seedDefaults(db);
     const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
     const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
     const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1831,6 +1893,7 @@ test('POST /kontierung/:id/aufsplitten rejects teilPosition characters that woul
 
 test('POST /kontierung/:id/aufsplitten records the Beleg page count on the split child so a later Splitgruppen-Merge can locate those pages exactly', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = await seedJobMitEchtemPdf(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1856,6 +1919,7 @@ test('POST /kontierung/:id/aufsplitten records the Beleg page count on the split
 
 test('POST /kontierung/:id/aufsplitten merges a per-Zeile Beleg into just that split part\'s own PDF copy', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = await seedJobMitEchtemPdf(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1886,6 +1950,7 @@ test('POST /kontierung/:id/aufsplitten merges a per-Zeile Beleg into just that s
 
 test('POST /kontierung/:id/aufsplitten rejects an invalid per-Zeile Beleg, nothing persisted', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = await seedJobMitEchtemPdf(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1913,6 +1978,7 @@ test('POST /kontierung/:id/aufsplitten rejects a request carrying more attached 
   // arbitrarily many parts (each up to MAX_BELEG_SIZE) and force a large in-memory allocation —
   // see MAX_BELEG_FILES in kontierung.js. No real Aufsplitten form ever sends this many rows.
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = await seedJobMitEchtemPdf(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1940,6 +2006,7 @@ test('POST /kontierung/:id/aufsplitten rejects a request carrying more attached 
 
 test('POST /kontierung/:id/aufsplitten rejects Teilbeträge that do not sum to the original Betrag, nothing persisted', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1964,6 +2031,7 @@ test('POST /kontierung/:id/aufsplitten rejects Teilbeträge that do not sum to t
 
 test('POST /kontierung/:id/aufsplitten rejects a missing or invalid Gesamtbetrag, nothing persisted', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -1988,6 +2056,7 @@ test('POST /kontierung/:id/aufsplitten rejects a missing or invalid Gesamtbetrag
 
 test('POST /kontierung/:id/aufsplitten succeeds for a job that never had a Betrag saved — the Gesamtbetrag field on the split page itself is enough, no prior save step needed', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const kontoId = seedKontoAndPersonen(db);
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
@@ -2019,6 +2088,7 @@ test('POST /kontierung/:id/aufsplitten succeeds for a job that never had a Betra
 
 test('POST /kontierung/:id/aufsplitten rejects fewer than two Teilbeträge', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -2042,6 +2112,7 @@ test('POST /kontierung/:id/aufsplitten rejects fewer than two Teilbeträge', asy
 
 test('POST /kontierung/:id/aufsplitten sends a part on a Konto the person is not authorized on to the Pool with a Konto-Hinweis, instead of rejecting the whole split', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   upsertPerson(db, { id: '5', vorname: 'Kinder', nachname: 'Bereich', email: 'kinder@example.org', gruppen: ['10'], loggedInNow: true });
@@ -2085,6 +2156,7 @@ test('POST /kontierung/:id/aufsplitten sends a part on a Konto the person is not
 
 test('POST /kontierung/:id/aufsplitten escalates a part with a declared Interessenskonflikt to that Konto\'s Stellvertretung', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' }); // stellvertreter1Id: '2'
   const mailer = createStubMailer();
@@ -2125,6 +2197,7 @@ test('POST /kontierung/:id/aufsplitten escalates a part with a declared Interess
 
 test('POST /kontierung/:id/aufsplitten escalates to Portal-Admin, not back to the declaring Stellvertretung, when the splitter is that Konto\'s own Stellvertretung', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2'
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
@@ -2152,7 +2225,7 @@ test('POST /kontierung/:id/aufsplitten escalates to Portal-Admin, not back to th
   const eskaliert = kinder.find((k) => k.betrag === '80.00');
   assert.equal(eskaliert.freigabe1_eskaliert_an_admin, 1, 'must escalate to Portal-Admin, not hand the conflicted part back to the declaring Stellvertretung');
   assert.equal(eskaliert.zugewiesen_an, '2', 'zugewiesen_an is left untouched by the admin-escalation write, not silently reassigned to the conflicted person');
-  const adminMail = mailer.sent.find((m) => /Portal-Admin/.test(m.subject));
+  const adminMail = mailer.sent.find((m) => /Portal-Admin/.test(m.text));
   assert.ok(adminMail, 'Portal-Admin group must be notified');
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
@@ -2160,6 +2233,7 @@ test('POST /kontierung/:id/aufsplitten escalates to Portal-Admin, not back to th
 
 test('POST /kontierung/:id/aufsplitten keeps escalating to Portal-Admin on a Zeile whose Konto\'s Stellvertretung caused the original admin escalation', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2'
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
@@ -2191,7 +2265,7 @@ test('POST /kontierung/:id/aufsplitten keeps escalating to Portal-Admin on a Zei
   // the admin) at creation time — eskalierenFreigabe1AnAdmin then deliberately leaves that value
   // untouched, exactly as the main handler leaves an existing job's zugewiesen_an untouched.
   assert.equal(eskaliert.zugewiesen_an, '99', 'zugewiesen_an is left untouched by the admin-escalation write');
-  const adminMail = mailer.sent.find((m) => /Portal-Admin/.test(m.subject));
+  const adminMail = mailer.sent.find((m) => /Portal-Admin/.test(m.text));
   assert.ok(adminMail, 'Portal-Admin group must be notified again');
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
@@ -2199,6 +2273,7 @@ test('POST /kontierung/:id/aufsplitten keeps escalating to Portal-Admin on a Zei
 
 test('POST /kontierung/:id/aufsplitten requires a Begründung when any Zeile declares an Interessenskonflikt', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
@@ -2224,6 +2299,7 @@ test('POST /kontierung/:id/aufsplitten requires a Begründung when any Zeile dec
 
 test('POST /kontierung/:id/aufsplitten handles all three outcomes in a single mixed split', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '300.00' }); // freigeber1Id: '1', stellvertreter1Id: '2'
   upsertPerson(db, { id: '5', vorname: 'Kinder', nachname: 'Bereich', email: 'kinder@example.org', gruppen: ['10'], loggedInNow: true });
@@ -2265,6 +2341,7 @@ test('POST /kontierung/:id/aufsplitten handles all three outcomes in a single mi
 
 test('POST /kontierung/:id/aufsplitten lets an admin-escalated Portal-Admin still self-approve a part on the job\'s originally-assigned Konto, despite holding no role there', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id:'1', stellvertreter1Id:'2', freigeber2Id:'3', stellvertreter2Id:'4'
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
@@ -2302,6 +2379,7 @@ test('POST /kontierung/:id/aufsplitten sends an IBAN-Abweichung warning mail and
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const { listMailLog } = await import('../../src/db/mailLogRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id:'1', freigeber2Id:'3'
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
@@ -2347,6 +2425,7 @@ test('POST /kontierung/:id/aufsplitten sends no IBAN-Abweichung mail when the QR
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const { listMailLog } = await import('../../src/db/mailLogRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const kontoId = seedKontoAndPersonen(db);
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
@@ -2381,6 +2460,7 @@ test('POST /kontierung/:id/aufsplitten sends no IBAN-Abweichung mail when the QR
 test("POST /kontierung/:id/aufsplitten copies the parent's QR-decoded data onto each split child", async () => {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const kontoId = seedKontoAndPersonen(db);
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
@@ -2418,6 +2498,7 @@ test("POST /kontierung/:id/aufsplitten copies the parent's QR-decoded data onto 
 
 test('GET /kontierung/:id marks the Konto and Lieferant dropdowns as searchable and offers a "+ Neu" trigger plus a matching Lieferant-anlegen modal', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -2435,6 +2516,7 @@ test('GET /kontierung/:id marks the Konto and Lieferant dropdowns as searchable 
 
 test('POST /kontierung/lieferanten creates a Debitor and returns it as JSON, for any logged-in Kontierung user (not just Portal-Admins)', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
   const app = buildTestApp(db, createStubMailer());
 
@@ -2457,6 +2539,7 @@ test('POST /kontierung/lieferanten creates a Debitor and returns it as JSON, for
 
 test('POST /kontierung/lieferanten trims the name and stores the optional Konto', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const app = buildTestApp(db, createStubMailer());
 
@@ -2476,6 +2559,7 @@ test('POST /kontierung/lieferanten trims the name and stores the optional Konto'
 
 test('GET /kontierung/:id offers a Konto-Hinweis picker on "Zurück in den Pool legen" that lists every active Konto, not just this person\'s own', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db); // freigeber1Id: '1' -- the assigned person below
   upsertPerson(db, { id: '9', vorname: 'Fremd', nachname: 'Person', email: 'fremd@example.org', gruppen: ['10'], loggedInNow: true });
   createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '9', stellvertreter1Id: '9', freigeber2Id: '9', stellvertreter2Id: '9' });
@@ -2497,6 +2581,7 @@ test('GET /kontierung/:id offers a Konto-Hinweis picker on "Zurück in den Pool 
 
 test('GET /kontierung/:id renders the An-Gruppe-zurücksenden form', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, jobId, '1');
@@ -2510,6 +2595,7 @@ test('GET /kontierung/:id renders the An-Gruppe-zurücksenden form', async () =>
 
 test('POST /kontierung/lieferanten rejects a missing name, nothing created', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const app = buildTestApp(db, createStubMailer());
 
@@ -2529,6 +2615,7 @@ test('POST /kontierung/lieferanten rejects a missing name, nothing created', asy
 test('GET /kontierung/:id shows the QR-decoded suggestion and prefills Betrag when no Betrag is saved yet', async () => {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -2548,6 +2635,7 @@ test('GET /kontierung/:id pre-selects a Lieferant found via QR-IBAN when no Abse
   const { createDebitorIban } = await import('../../src/db/debitorIbanRepo.js');
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const debitorId = createDebitor(db, { name: 'Erkannte AG', kontoId: null });
   createDebitorIban(db, { debitorId, iban: 'CH4431999123000889012' });
@@ -2567,6 +2655,7 @@ test('GET /kontierung/:id warns when the QR-IBAN resolves to a different Liefera
   const { createDebitorIban } = await import('../../src/db/debitorIbanRepo.js');
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const zugewiesenerDebitor = createDebitor(db, { name: 'Zugewiesen AG', kontoId });
   const erkannterDebitor = createDebitor(db, { name: 'Erkannte AG', kontoId: null });
@@ -2587,6 +2676,7 @@ test('GET /kontierung/:id warns when the QR-IBAN resolves to a different Liefera
 
 test('GET /kontierung/:id shows no QR box at all when no QR-Code was decoded', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -2601,6 +2691,7 @@ test('GET /kontierung/:id shows no QR box at all when no QR-Code was decoded', a
 test('GET /kontierung/:id shows the IBAN as its own field and offers to remember it, even for a brand-new Lieferant with no existing IBAN mapping and no pre-assigned debitor', async () => {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedKontoAndPersonen(db);
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
@@ -2622,6 +2713,7 @@ test('POST /kontierung/:id sends an IBAN-Abweichung warning mail and logs it to 
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const { listMailLog } = await import('../../src/db/mailLogRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
   createDebitorIban(db, { debitorId, iban: 'CH0000000000000000000' }); // hinterlegte IBAN weicht ab
@@ -2653,6 +2745,7 @@ test('POST /kontierung/:id sends no IBAN-Abweichung mail when the QR-IBAN matche
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const { listMailLog } = await import('../../src/db/mailLogRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
   createDebitorIban(db, { debitorId, iban: 'CH4431999123000889012' });
@@ -2676,6 +2769,7 @@ test('POST /kontierung/:id warns when the Rechnungsnummer is already recorded fo
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const { listMailLog } = await import('../../src/db/mailLogRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
   const bestehenderId = createJob(db, { eingangAm: '2026-08-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/alt.pdf' });
@@ -2708,6 +2802,7 @@ test('POST /kontierung/:id sends no Rechnungsnummer-Duplikat warning when the Re
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const { listMailLog } = await import('../../src/db/mailLogRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -2730,6 +2825,7 @@ test('POST /kontierung/:id sends no Rechnungsnummer-Duplikat warning when the on
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const { listMailLog } = await import('../../src/db/mailLogRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
   const geloeschtId = createJob(db, { eingangAm: '2026-08-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/alt.pdf' });
@@ -2756,6 +2852,7 @@ test('POST /kontierung/:id with ibanMerken checked creates a bestaetigt debitor_
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const { listDebitorIbansByDebitor } = await import('../../src/db/debitorIbanRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -2782,6 +2879,7 @@ test('POST /kontierung/:id without ibanMerken checked creates no debitor_ibans r
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const { listDebitorIbansByDebitor } = await import('../../src/db/debitorIbanRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -2809,6 +2907,7 @@ test('POST /kontierung/:id with ibanMerken checked skips the save when the decod
   const { createDebitor } = await import('../../src/db/debitorenRepo.js');
   const { listDebitorIbansByDebitor } = await import('../../src/db/debitorIbanRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });

@@ -294,10 +294,15 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           for (const email of empfaenger) {
             await sendNotification(db, mailer, {
               to: email,
-              subject: 'Freigabeportal: Rechnung abgelehnt (an Portal-Admin eskaliert)',
-              text: `Eine an die Portal-Admin-Gruppe eskalierte Rechnung wurde abgelehnt: ${job.dateiname}\n\nGrund: ${begruendung}\n\nBitte im Freigabeportal anmelden, um sie zu überarbeiten: ${config.publicBaseUrl}/abgelehnt/${job.id}`,
               typ: 'ablehnung',
               jobId: job.id,
+              variablen: {
+                empfaengerName: 'Portal-Admin-Team',
+                jobDateiname: job.dateiname,
+                grund: 'Eine an die Portal-Admin-Gruppe eskalierte Rechnung wurde abgelehnt:',
+                begruendung,
+                link: `${config.publicBaseUrl}/abgelehnt/${job.id}`,
+              },
             });
           }
         }
@@ -438,10 +443,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           for (const email of zusatzEmpfaenger) {
             await sendNotification(db, mailer, {
               to: email,
-              subject: 'Freigabeportal: IBAN-Abweichung bei Rechnung festgestellt',
-              text: `Bei der Kontierung von "${job.dateiname}" (Lieferant: ${debitor.name}) weicht die im QR-Code gefundene IBAN (${job.qr_iban}) von der hinterlegten IBAN ab. Bitte prüfen: ${config.publicBaseUrl}/kontierung/${job.id}`,
               typ: 'iban-warnung',
               jobId: job.id,
+              variablen: {
+                jobDateiname: job.dateiname,
+                debitorName: debitor.name,
+                tatsaechlicheIban: job.qr_iban,
+                link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+              },
             });
           }
         } else if (
@@ -475,10 +484,15 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           for (const email of zusatzEmpfaenger) {
             await sendNotification(db, mailer, {
               to: email,
-              subject: 'Freigabeportal: Doppelte Rechnungsnummer festgestellt',
-              text: `Bei der Kontierung von "${job.dateiname}" (Lieferant: ${debitor.name}) wurde die Rechnungsnummer "${rechnungsnummer}" bereits bei einem anderen Job erfasst (Job ${duplikate.map((d) => `#${d.id}`).join(', ')}). Bitte prüfen: ${config.publicBaseUrl}/kontierung/${job.id}`,
               typ: 'rechnungsnummer-warnung',
               jobId: job.id,
+              variablen: {
+                jobDateiname: job.dateiname,
+                debitorName: debitor.name,
+                rechnungsnummer,
+                dupJobIds: duplikate.map((d) => `#${d.id}`).join(', '),
+                link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+              },
             });
           }
         }
@@ -489,10 +503,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         for (const email of empfaenger) {
           await sendNotification(db, mailer, {
             to: email,
-            subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 1 – an Portal-Admin eskaliert',
-            text: `Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${job.id}`,
             typ: 'zuweisung',
             jobId: job.id,
+            variablen: {
+              empfaengerName: 'Portal-Admin-Team',
+              jobDateiname: job.dateiname,
+              grund: 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.',
+              link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+            },
           });
         }
       } else if (hatKonflikt) {
@@ -500,10 +518,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         if (stellvertreter1) {
           await sendNotification(db, mailer, {
             to: stellvertreter1.email,
-            subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 1 – Kontierung an dich übergeben',
-            text: `Eine Rechnung wurde dir zur Kontierung übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${job.id}`,
             typ: 'zuweisung',
             jobId: job.id,
+            variablen: {
+              empfaengerName: `${stellvertreter1.vorname} ${stellvertreter1.nachname}`,
+              jobDateiname: job.dateiname,
+              grund: `Eine Rechnung wurde dir zur Kontierung übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat.`,
+              link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+            },
           });
         }
       } else if (wirdWeitergeleitet) {
@@ -511,10 +533,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         if (echterFreigeber1) {
           await sendNotification(db, mailer, {
             to: echterFreigeber1.email,
-            subject: 'Freigabeportal: Rechnung kontiert — wartet auf deine Freigabe 1',
-            text: `Eine Rechnung wurde von ${req.currentPerson.vorname} ${req.currentPerson.nachname} kontiert und wartet auf deine Freigabe 1: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${job.id}`,
             typ: 'zuweisung',
             jobId: job.id,
+            variablen: {
+              empfaengerName: `${echterFreigeber1.vorname} ${echterFreigeber1.nachname}`,
+              jobDateiname: job.dateiname,
+              grund: `Eine Rechnung wurde von ${req.currentPerson.vorname} ${req.currentPerson.nachname} kontiert und wartet auf deine Freigabe 1.`,
+              link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+            },
           });
         }
       } else {
@@ -522,10 +548,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         if (freigeber2) {
           await sendNotification(db, mailer, {
             to: freigeber2.email,
-            subject: 'Freigabeportal: Neue Rechnung zur Freigabe 2',
-            text: `Eine Rechnung wartet auf deine Freigabe 2: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/freigabe2/${job.id}`,
             typ: 'zuweisung',
             jobId: job.id,
+            variablen: {
+              empfaengerName: `${freigeber2.vorname} ${freigeber2.nachname}`,
+              jobDateiname: job.dateiname,
+              grund: 'Eine Rechnung wartet auf deine Freigabe 2.',
+              link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
+            },
           });
         }
       }
@@ -563,10 +593,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         if (freigeber1) {
           await sendNotification(db, mailer, {
             to: freigeber1.email,
-            subject: 'Freigabeportal: Rechnung vermutlich für dein Konto — bitte aus dem Pool holen',
-            text: `Eine Rechnung wurde mit dem Hinweis in den Pool zurückgelegt, dass sie vermutlich für dein Konto ${gueltigerHinweis.kontonummer} — ${gueltigerHinweis.bezeichnung} bestimmt ist: ${job.dateiname}\n\nBitte im Freigabeportal anmelden und aus dem Pool holen: ${config.publicBaseUrl}/pool`,
             typ: 'zuweisung',
             jobId: job.id,
+            variablen: {
+              empfaengerName: `${freigeber1.vorname} ${freigeber1.nachname}`,
+              jobDateiname: job.dateiname,
+              grund: `Eine Rechnung wurde mit dem Hinweis in den Pool zurückgelegt, dass sie vermutlich für dein Konto ${gueltigerHinweis.kontonummer} — ${gueltigerHinweis.bezeichnung} bestimmt ist.`,
+              link: `${config.publicBaseUrl}/pool`,
+            },
           });
         }
       }
@@ -827,10 +861,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         if (freigeber2) {
           await sendNotification(db, mailer, {
             to: freigeber2.email,
-            subject: 'Freigabeportal: Neue Rechnung zur Freigabe 2',
-            text: `Eine Rechnung wartet auf deine Freigabe 2: ${kindJob.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/freigabe2/${kindJob.id}`,
             typ: 'zuweisung',
             jobId: kindJob.id,
+            variablen: {
+              empfaengerName: `${freigeber2.vorname} ${freigeber2.nachname}`,
+              jobDateiname: kindJob.dateiname,
+              grund: 'Eine Rechnung wartet auf deine Freigabe 2.',
+              link: `${config.publicBaseUrl}/freigabe2/${kindJob.id}`,
+            },
           });
         }
       }
@@ -840,10 +878,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         if (stellvertreter1) {
           await sendNotification(db, mailer, {
             to: stellvertreter1.email,
-            subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 1 – Kontierung an dich übergeben',
-            text: `Eine Rechnung wurde dir zur Kontierung übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${kindId}`,
             typ: 'zuweisung',
             jobId: kindId,
+            variablen: {
+              empfaengerName: `${stellvertreter1.vorname} ${stellvertreter1.nachname}`,
+              jobDateiname: job.dateiname,
+              grund: `Eine Rechnung wurde dir zur Kontierung übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat.`,
+              link: `${config.publicBaseUrl}/kontierung/${kindId}`,
+            },
           });
         }
       }
@@ -853,10 +895,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         for (const email of empfaenger) {
           await sendNotification(db, mailer, {
             to: email,
-            subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 1 – an Portal-Admin eskaliert',
-            text: `Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${kindId}`,
             typ: 'zuweisung',
             jobId: kindId,
+            variablen: {
+              empfaengerName: 'Portal-Admin-Team',
+              jobDateiname: job.dateiname,
+              grund: 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.',
+              link: `${config.publicBaseUrl}/kontierung/${kindId}`,
+            },
           });
         }
       }
@@ -866,10 +912,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         if (freigeber1) {
           await sendNotification(db, mailer, {
             to: freigeber1.email,
-            subject: 'Freigabeportal: Rechnung vermutlich für dein Konto — bitte aus dem Pool holen',
-            text: `Eine Rechnung wurde mit dem Hinweis in den Pool zurückgelegt, dass sie vermutlich für dein Konto ${konto.kontonummer} — ${konto.bezeichnung} bestimmt ist: ${job.dateiname}\n\nBitte im Freigabeportal anmelden und aus dem Pool holen: ${config.publicBaseUrl}/pool`,
             typ: 'zuweisung',
             jobId: kindId,
+            variablen: {
+              empfaengerName: `${freigeber1.vorname} ${freigeber1.nachname}`,
+              jobDateiname: job.dateiname,
+              grund: `Eine Rechnung wurde mit dem Hinweis in den Pool zurückgelegt, dass sie vermutlich für dein Konto ${konto.kontonummer} — ${konto.bezeichnung} bestimmt ist.`,
+              link: `${config.publicBaseUrl}/pool`,
+            },
           });
         }
       }
@@ -906,10 +956,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             for (const email of zusatzEmpfaenger) {
               await sendNotification(db, mailer, {
                 to: email,
-                subject: 'Freigabeportal: IBAN-Abweichung bei Rechnung festgestellt',
-                text: `Bei der Kontierung von "${job.dateiname}" (Lieferant: ${debitor.name}) weicht die im QR-Code gefundene IBAN (${job.qr_iban}) von der hinterlegten IBAN ab. Bitte prüfen: ${config.publicBaseUrl}/kontierung/${job.id}`,
                 typ: 'iban-warnung',
                 jobId: job.id,
+                variablen: {
+                  jobDateiname: job.dateiname,
+                  debitorName: debitor.name,
+                  tatsaechlicheIban: job.qr_iban,
+                  link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+                },
               });
             }
           }

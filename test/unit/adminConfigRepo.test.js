@@ -104,3 +104,28 @@ test('seedDefaults sets kontierung_strikte_freigeber1_pruefung default (off out 
   assert.equal(getConfigValue(db, 'kontierung_strikte_freigeber1_pruefung'), '0');
   db.close();
 });
+
+test('seedDefaults sets the 8 mail template defaults (betreff + text each)', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'mail_vorlage_zuweisung_betreff'), 'Freigabeportal: Neue Rechnung zur Bearbeitung');
+  assert.equal(getConfigValue(db, 'mail_vorlage_reminder_betreff'), 'Freigabeportal: Rechnung wartet im Pool');
+  assert.equal(getConfigValue(db, 'mail_vorlage_eskalation_betreff'), 'Freigabeportal: Eskalation – Rechnung seit langem unbeansprucht');
+  assert.equal(getConfigValue(db, 'mail_vorlage_ablehnung_betreff'), 'Freigabeportal: Rechnung abgelehnt');
+  assert.equal(getConfigValue(db, 'mail_vorlage_sync_fehler_betreff'), 'Freigabeportal: ChurchTools-Sync fehlgeschlagen');
+  assert.equal(getConfigValue(db, 'mail_vorlage_iban_warnung_betreff'), 'Freigabeportal: IBAN-Abweichung bei Rechnung festgestellt');
+  assert.equal(getConfigValue(db, 'mail_vorlage_rechnungsnummer_warnung_betreff'), 'Freigabeportal: Doppelte Rechnungsnummer festgestellt');
+  assert.equal(getConfigValue(db, 'mail_vorlage_digest_betreff'), 'Freigabeportal: Tägliche Zusammenfassung (%anzahl% Ereignisse)');
+  assert.match(getConfigValue(db, 'mail_vorlage_zuweisung_text'), /%empfaengerName%/);
+  assert.match(getConfigValue(db, 'mail_vorlage_digest_text'), /%eintraege%/);
+  db.close();
+});
+
+test('seedDefaults sets mail_batching_aktiv default (off out of the box)', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'mail_batching_aktiv'), '0');
+  assert.equal(getConfigValue(db, 'mail_batching_stunde'), '7');
+  assert.equal(getConfigValue(db, 'mail_batching_minute'), '0');
+  db.close();
+});

@@ -436,6 +436,75 @@ function migrateCronLogTableSplitGruppen(db) {
   }
 }
 
+// Same pattern as migrateMailLogTable above: an already-running database predating the
+// batching feature has mail_log.status CHECK'd to only 'versendet'/'fehlgeschlagen' — sendNotification
+// now needs a third value, 'geplant', for rows queued for the daily digest instead of sent immediately.
+function migrateMailLogTableGeplantStatus(db) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mail_log'").get();
+  if (!tableSql || tableSql.sql.includes('geplant')) return;
+
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE mail_log RENAME TO mail_log_pre_geplant_status');
+    db.exec(`
+      CREATE TABLE mail_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung')),
+        job_id INTEGER REFERENCES jobs(id),
+        empfaenger TEXT NOT NULL,
+        betreff TEXT NOT NULL,
+        text TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen', 'geplant')),
+        fehler_details TEXT,
+        versucht_am TEXT NOT NULL
+      )
+    `);
+    db.exec(`
+      INSERT INTO mail_log (id, typ, job_id, empfaenger, betreff, text, status, fehler_details, versucht_am)
+      SELECT id, typ, job_id, empfaenger, betreff, text, status, fehler_details, versucht_am FROM mail_log_pre_geplant_status
+    `);
+    db.exec('DROP TABLE mail_log_pre_geplant_status');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
+// Same pattern as migrateCronLogTableSplitGruppen above, one more CHECK widening for the new
+// 'mail-digest' cron job (the daily per-recipient batching digest).
+function migrateCronLogTableMailDigest(db) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cron_log'").get();
+  if (!tableSql || tableSql.sql.includes('mail-digest')) return;
+
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE cron_log RENAME TO cron_log_pre_mail_digest');
+    db.exec(`
+      CREATE TABLE cron_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest')),
+        gestartet_am TEXT NOT NULL,
+        beendet_am TEXT,
+        status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
+        details TEXT
+      )
+    `);
+    db.exec(`
+      INSERT INTO cron_log (id, job, gestartet_am, beendet_am, status, details)
+      SELECT id, job, gestartet_am, beendet_am, status, details FROM cron_log_pre_mail_digest
+    `);
+    db.exec('DROP TABLE cron_log_pre_mail_digest');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -450,5 +519,7 @@ export function openDatabase(dbPath) {
   migrateCronLogTable(db);
   migratePersonBerechtigungenTable(db);
   migrateCronLogTableSplitGruppen(db);
+  migrateMailLogTableGeplantStatus(db);
+  migrateCronLogTableMailDigest(db);
   return db;
 }

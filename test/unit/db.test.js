@@ -829,3 +829,74 @@ test('openDatabase is a no-op on the jobs table when it already has the widened 
   assert.doesNotThrow(() => openDatabase(dbPath).close());
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('openDatabase widens the mail_log table status CHECK to include geplant, even for a database already migrated to include rechnungsnummer-warnung', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, eingang_am TEXT NOT NULL, quelle TEXT NOT NULL, absender TEXT, dateiname TEXT NOT NULL, pdf_pfad TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'unzugewiesen');
+    CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL
+    );
+    INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad) VALUES ('2026-08-15T08:00:00.000Z', 'scanner', NULL, 'a.pdf', '/tmp/a.pdf');
+    INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am)
+      VALUES ('zuweisung', 1, 'a@example.org', 'Betreff', 'Text', 'versendet', '2026-08-15T08:05:00.000Z');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const preserved = migratedDb.prepare('SELECT * FROM mail_log WHERE id = 1').get();
+  assert.equal(preserved.empfaenger, 'a@example.org', 'existing rows must survive the rebuild');
+  assert.doesNotThrow(() =>
+    migratedDb
+      .prepare(
+        `INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am)
+         VALUES ('zuweisung', 1, 'b@example.org', 'Betreff', 'Text', 'geplant', '2026-08-15T09:00:00.000Z')`
+      )
+      .run(),
+    'the widened CHECK constraint must accept status = geplant'
+  );
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('openDatabase widens the cron_log table job CHECK to include mail-digest, even for a database already migrated to include split-gruppen-nachholen', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE cron_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen')),
+      gestartet_am TEXT NOT NULL,
+      beendet_am TEXT,
+      status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
+      details TEXT
+    );
+    INSERT INTO cron_log (job, gestartet_am, beendet_am, status, details) VALUES ('pdf-bereinigung', '2026-08-15T02:30:00.000Z', '2026-08-15T02:30:05.000Z', 'erfolg', 'ok');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const preserved = migratedDb.prepare('SELECT * FROM cron_log WHERE id = 1').get();
+  assert.equal(preserved.details, 'ok', 'existing rows must survive the rebuild');
+  assert.doesNotThrow(() =>
+    migratedDb
+      .prepare(
+        `INSERT INTO cron_log (job, gestartet_am, status) VALUES ('mail-digest', '2026-08-15T07:00:00.000Z', 'erfolg')`
+      )
+      .run(),
+    'the widened CHECK constraint must accept job = mail-digest'
+  );
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});

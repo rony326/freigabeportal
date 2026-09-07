@@ -15,7 +15,15 @@ import {
   markZeitstempelGesetzt,
   listZeitstempelAusstehendJobs,
   listSplitGruppenAusstehend,
+  listFreigabe2JobsForReminder,
+  markFreigabe2ReminderGesendet,
+  listFreigabe2JobsForEskalation,
+  markFreigabe2EskalationGesendet,
+  forceEskalierenFreigabe2AnAdmin,
+  getEffectiveFreigeber2Id,
 } from '../db/jobsRepo.js';
+import { getKontoById } from '../db/kontenRepo.js';
+import { getPersonById } from '../db/personenRepo.js';
 import { pruneMailLogOlderThan, listGeplantMailsGruppiertNachEmpfaenger } from '../db/mailLogRepo.js';
 import { sendNotification, resolveEmpfaenger } from './notify.js';
 import { getVorlage, renderTemplate } from './mailTemplates.js';
@@ -121,6 +129,73 @@ export async function runPoolErinnerungenJob(db, config, mailer) {
     return ergebnis;
   } catch (err) {
     logCronLauf(db, { job: 'pool-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
+    return { status: 'fehler', error: err.message };
+  }
+}
+
+export async function runFreigabe2ErinnerungenJob(db, config, mailer) {
+  const gestartetAm = new Date().toISOString();
+  try {
+    const reminderStunden = Number(getConfigValue(db, 'freigabe2_reminder_stunden'));
+    const eskalationStunden = Number(getConfigValue(db, 'freigabe2_eskalation_stunden'));
+
+    let reminderCount = 0;
+    for (const job of listFreigabe2JobsForReminder(db, reminderStunden)) {
+      const konto = getKontoById(db, job.konto_id);
+      if (!konto) continue; // deleted/unresolvable Konto -- listStalledJobs covers this separately
+      const akteurId = getEffectiveFreigeber2Id(job, konto);
+      const akteur = getPersonById(db, akteurId);
+      if (!akteur || !akteur.aktiv || akteur.ct_person_unresolved) continue; // ditto -- inactive/unresolved actor
+
+      await sendNotification(db, mailer, {
+        to: akteur.email,
+        typ: 'freigabe2-reminder',
+        jobId: job.id,
+        variablen: {
+          empfaengerName: `${akteur.vorname} ${akteur.nachname}`,
+          jobDateiname: job.dateiname,
+          stunden: reminderStunden,
+          link: `${config.publicBaseUrl}/freigabe2`,
+        },
+      });
+      markFreigabe2ReminderGesendet(db, job.id);
+      reminderCount += 1;
+    }
+
+    let eskalationCount = 0;
+    for (const job of listFreigabe2JobsForEskalation(db, eskalationStunden)) {
+      if (!forceEskalierenFreigabe2AnAdmin(db, job.id)) continue; // race: already handled between the query and here
+
+      const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'freigabe2_eskalation_empfaenger'));
+      for (const email of empfaenger) {
+        await sendNotification(db, mailer, {
+          to: email,
+          typ: 'freigabe2-eskalation',
+          jobId: job.id,
+          variablen: {
+            jobDateiname: job.dateiname,
+            stunden: eskalationStunden,
+            link: `${config.publicBaseUrl}/freigabe2`,
+          },
+        });
+      }
+      if (empfaenger.length > 0) {
+        markFreigabe2EskalationGesendet(db, job.id);
+      }
+      eskalationCount += 1;
+    }
+
+    const ergebnis = { status: 'erfolg', reminder: reminderCount, eskalation: eskalationCount };
+    logCronLauf(db, {
+      job: 'freigabe2-erinnerungen',
+      gestartetAm,
+      beendetAm: new Date().toISOString(),
+      status: 'erfolg',
+      details: `Reminder: ${ergebnis.reminder}, Eskalation: ${ergebnis.eskalation}`,
+    });
+    return ergebnis;
+  } catch (err) {
+    logCronLauf(db, { job: 'freigabe2-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
     return { status: 'fehler', error: err.message };
   }
 }

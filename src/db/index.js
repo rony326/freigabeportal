@@ -44,6 +44,9 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'pool_rueckgesendet_bemerkung', ddl: 'ALTER TABLE jobs ADD COLUMN pool_rueckgesendet_bemerkung TEXT' },
   { column: 'pool_rueckgesendet_von', ddl: 'ALTER TABLE jobs ADD COLUMN pool_rueckgesendet_von TEXT REFERENCES personen(churchtools_person_id)' },
   { column: 'pool_rueckgesendet_am', ddl: 'ALTER TABLE jobs ADD COLUMN pool_rueckgesendet_am TEXT' },
+  { column: 'freigabe2_seit', ddl: 'ALTER TABLE jobs ADD COLUMN freigabe2_seit TEXT' },
+  { column: 'freigabe2_reminder_gesendet_at', ddl: 'ALTER TABLE jobs ADD COLUMN freigabe2_reminder_gesendet_at TEXT' },
+  { column: 'freigabe2_eskalation_gesendet_at', ddl: 'ALTER TABLE jobs ADD COLUMN freigabe2_eskalation_gesendet_at TEXT' },
 ];
 
 // SQLite CHECK constraints can't be widened with ALTER TABLE — same rebuild-in-a-transaction

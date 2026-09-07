@@ -156,7 +156,10 @@ CREATE TABLE IF NOT EXISTS jobs (
   rechnungsdatum TEXT,
   pool_rueckgesendet_bemerkung TEXT,
   pool_rueckgesendet_von TEXT REFERENCES personen(churchtools_person_id),
-  pool_rueckgesendet_am TEXT
+  pool_rueckgesendet_am TEXT,
+  freigabe2_seit TEXT,
+  freigabe2_reminder_gesendet_at TEXT,
+  freigabe2_eskalation_gesendet_at TEXT
 );
 
 -- Manipulationsschutz: sobald ein Zeitstempel-Hash/-Zeitpunkt für einen Job gesetzt ist, darf er

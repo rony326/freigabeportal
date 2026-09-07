@@ -61,6 +61,46 @@ test('jobs table has an abgeschlossen_am column', () => {
   db.close();
 });
 
+test('jobs table has the three freigabe2-Erinnerung columns', () => {
+  const db = openDatabase(':memory:');
+  const columns = db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  for (const expected of ['freigabe2_seit', 'freigabe2_reminder_gesendet_at', 'freigabe2_eskalation_gesendet_at']) {
+    assert.ok(columns.includes(expected), `jobs table is missing ${expected}`);
+  }
+  db.close();
+});
+
+test('openDatabase adds the freigabe2-Erinnerung columns via ALTER TABLE to an existing on-disk database that predates them', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      eingang_am TEXT NOT NULL,
+      quelle TEXT NOT NULL,
+      absender TEXT,
+      dateiname TEXT NOT NULL,
+      pdf_pfad TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'unzugewiesen'
+    )
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const columns = migratedDb.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  for (const expected of ['freigabe2_seit', 'freigabe2_reminder_gesendet_at', 'freigabe2_eskalation_gesendet_at']) {
+    assert.ok(columns.includes(expected), `ALTER TABLE should have added ${expected} to the pre-existing table`);
+  }
+  assert.doesNotThrow(() =>
+    migratedDb
+      .prepare('UPDATE jobs SET freigabe2_seit = ?, freigabe2_reminder_gesendet_at = ?, freigabe2_eskalation_gesendet_at = ? WHERE id = 1')
+      .run('2026-09-07T08:00:00.000Z', '2026-09-08T08:00:00.000Z', '2026-09-09T08:00:00.000Z')
+  );
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('openDatabase adds betrag/zahlungsziel via ALTER TABLE to an existing on-disk database that predates those columns', () => {
   // Simulates the real production case: a jobs table that was created by an older schema.sql
   // (before betrag/zahlungsziel existed) and has already been running — CREATE TABLE IF NOT

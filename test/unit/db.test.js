@@ -988,3 +988,35 @@ test('openDatabase widens the mail_log table typ CHECK to include freigabe2-remi
   migratedDb.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('openDatabase widens the cron_log table job CHECK to include freigabe2-erinnerungen, even for a database already migrated to include mail-digest', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE cron_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest')),
+      gestartet_am TEXT NOT NULL,
+      beendet_am TEXT,
+      status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
+      details TEXT
+    );
+    INSERT INTO cron_log (job, gestartet_am, beendet_am, status, details) VALUES ('pdf-bereinigung', '2026-08-15T02:30:00.000Z', '2026-08-15T02:30:05.000Z', 'erfolg', 'ok');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const preserved = migratedDb.prepare('SELECT * FROM cron_log WHERE id = 1').get();
+  assert.equal(preserved.details, 'ok', 'existing rows must survive the rebuild');
+  assert.doesNotThrow(() =>
+    migratedDb
+      .prepare(
+        `INSERT INTO cron_log (job, gestartet_am, status) VALUES ('freigabe2-erinnerungen', '2026-08-15T07:00:00.000Z', 'erfolg')`
+      )
+      .run(),
+    'the widened CHECK constraint must accept job = freigabe2-erinnerungen'
+  );
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});

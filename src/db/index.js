@@ -545,6 +545,37 @@ function migrateMailLogTableFreigabe2(db) {
   }
 }
 
+// Same pattern as migrateCronLogTableMailDigest above, one more CHECK widening for the new
+// 'freigabe2-erinnerungen' cron job (reminder + escalation for stalled freigabe2 jobs).
+function migrateCronLogTableFreigabe2Erinnerungen(db) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cron_log'").get();
+  if (!tableSql || tableSql.sql.includes('freigabe2-erinnerungen')) return;
+
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE cron_log RENAME TO cron_log_pre_freigabe2_erinnerungen');
+    db.exec(`
+      CREATE TABLE cron_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen')),
+        gestartet_am TEXT NOT NULL,
+        beendet_am TEXT,
+        status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
+        details TEXT
+      )
+    `);
+    db.exec(`
+      INSERT INTO cron_log (id, job, gestartet_am, beendet_am, status, details)
+      SELECT id, job, gestartet_am, beendet_am, status, details FROM cron_log_pre_freigabe2_erinnerungen
+    `);
+    db.exec('DROP TABLE cron_log_pre_freigabe2_erinnerungen');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -562,5 +593,6 @@ export function openDatabase(dbPath) {
   migrateMailLogTableGeplantStatus(db);
   migrateCronLogTableMailDigest(db);
   migrateMailLogTableFreigabe2(db);
+  migrateCronLogTableFreigabe2Erinnerungen(db);
   return db;
 }

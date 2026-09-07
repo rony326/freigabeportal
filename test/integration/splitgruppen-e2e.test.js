@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
+import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, getJobById, listSplitKinder } from '../../src/db/jobsRepo.js';
@@ -62,6 +63,7 @@ test('a 3-Konten Aufsplitten flow ends in a single combined Bexio export, with a
   const config = testConfig(dir);
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   const db = openDatabase(':memory:');
+  seedDefaults(db);
 
   upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '2', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });

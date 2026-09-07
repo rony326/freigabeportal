@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
+import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
@@ -56,6 +57,7 @@ async function loginAs(app, client, { id, vorname, nachname, email, gruppen }) {
 
 test('Kontierung → Freigabe 2 Ablehnen → Meine abgelehnten Jobs → Überarbeiten → erneute Kontierung/Freigabe 2 → abgeschlossen mit vollständigem Verlauf', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'ablehnung-e2e-test-'));
   const config = testConfig(jobsDir);
   const app = createApp({ db, config });
@@ -126,6 +128,7 @@ test('Kontierung → Freigabe 2 Ablehnen → Meine abgelehnten Jobs → Überarb
 
 test('a job rejected twice before final approval carries both rejections in the Verlauf', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'ablehnung-e2e-doppel-test-'));
   const config = testConfig(jobsDir);
   const app = createApp({ db, config });

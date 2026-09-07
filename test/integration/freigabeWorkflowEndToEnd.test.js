@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
+import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
@@ -60,6 +61,7 @@ async function loginAs(app, client, { id, vorname, nachname, email, gruppen }) {
 
 test('Pool → Beanspruchen → Kontierung → Freigabe 2 completes the job with a stamped, downloadable PDF', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'e2e-test-'));
   const config = testConfig(jobsDir);
   const app = createApp({ db, config });

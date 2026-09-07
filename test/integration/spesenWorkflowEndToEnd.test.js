@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
+import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { getEffectiveFreigeber2Id } from '../../src/db/jobsRepo.js';
@@ -68,6 +69,7 @@ function seedGrundlagen(db) {
 
 test('a Spesen position walks the full path: Einreichung -> Freigabe1 -> Freigabe2 -> abholbereit with IBAN', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'spesen-e2e-'));
   const config = testConfig(jobsDir);
   const app = createApp({ db, config });
@@ -132,6 +134,7 @@ test('a Spesen position walks the full path: Einreichung -> Freigabe1 -> Freigab
 
 test('a self-submitted Spesen position (submitter is the Konto\'s own Freigeber1) is reviewable only by Stellvertreter1, never by the submitter', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'spesen-e2e-'));
   const config = testConfig(jobsDir);
   const app = createApp({ db, config });
@@ -175,6 +178,7 @@ test('a self-submitted Spesen position (submitter is the Konto\'s own Freigeber1
 
 test('a self-submitted Spesen position (submitter is the Konto\'s own Freigeber2) reroutes to Stellvertreter2 at Freigabe-1 completion — the submitter can never approve their own Freigabe 2', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'spesen-e2e-'));
   const config = testConfig(jobsDir);
   const app = createApp({ db, config });

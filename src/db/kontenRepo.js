@@ -101,3 +101,28 @@ export function listPersonenMitFreigeberRolle(db) {
   const ids = new Set(listKontoReferencedPersonIds(db));
   return listActivePersons(db).filter((person) => ids.has(person.churchtools_person_id));
 }
+
+export function listKontenForPersonAnyRole(db, personId) {
+  return db
+    .prepare(
+      `SELECT * FROM konten WHERE aktiv = 1
+       AND (freigeber1_id = ? OR stellvertreter1_id = ? OR freigeber2_id = ? OR stellvertreter2_id = ?)
+       ORDER BY kontonummer`
+    )
+    .all(personId, personId, personId, personId);
+}
+
+// Candidates for a person's self-chosen Ferienmodus-Stellvertreter: anyone who already holds one
+// of the four Konto roles on at least one Konto this person also holds a role on — prevents
+// picking a substitute with no domain relationship to the accounts they'd be standing in for.
+export function listVertretungsKandidaten(db, personId) {
+  const ids = new Set();
+  for (const konto of listKontenForPersonAnyRole(db, personId)) {
+    ids.add(konto.freigeber1_id);
+    ids.add(konto.stellvertreter1_id);
+    ids.add(konto.freigeber2_id);
+    ids.add(konto.stellvertreter2_id);
+  }
+  ids.delete(personId);
+  return listActivePersons(db).filter((person) => ids.has(person.churchtools_person_id));
+}

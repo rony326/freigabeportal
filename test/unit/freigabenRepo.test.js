@@ -71,3 +71,24 @@ test('listFreigabenByJob only returns rows for the given job', () => {
   assert.equal(listFreigabenByJob(db, otherJobId).length, 1);
   db.close();
 });
+
+test('createFreigabe stores vertretung_fuer when provided, and defaults to null otherwise', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org', gruppen: ['10'], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'bo@example.org', gruppen: ['10'], loggedInNow: true });
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+
+  const idMitVertretung = createFreigabe(db, {
+    jobId, personId: '2', rolle: 'freigeber1', zeitpunkt: '2026-09-07T10:00:00.000Z', ip: '127.0.0.1',
+    interessenskonflikt: false, kommentar: null, eskaliertVon: null, vertretungFuer: '1',
+  });
+  const idOhneVertretung = createFreigabe(db, {
+    jobId, personId: '1', rolle: 'freigeber2', zeitpunkt: '2026-09-07T10:05:00.000Z', ip: '127.0.0.1',
+    interessenskonflikt: false, kommentar: null, eskaliertVon: null,
+  });
+
+  const rows = listFreigabenByJob(db, jobId);
+  assert.equal(rows.find((r) => r.id === idMitVertretung).vertretung_fuer, '1');
+  assert.equal(rows.find((r) => r.id === idOhneVertretung).vertretung_fuer, null);
+  db.close();
+});

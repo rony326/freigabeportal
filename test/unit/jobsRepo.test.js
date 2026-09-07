@@ -648,6 +648,38 @@ test('abschliessenFreigabe2 clears freigabe2_eskaliert_an_admin, so a later rewo
   db.close();
 });
 
+test('abschliessenFreigabe1 sets freigabe2_seit to the current time', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+
+  const before = new Date().toISOString();
+  abschliessenFreigabe1(db, jobId);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'freigabe2');
+  assert.ok(job.freigabe2_seit >= before, 'freigabe2_seit should be set to roughly now');
+  db.close();
+});
+
+test('eskalierenFreigabe2 resets freigabe2_seit and clears both gesendet_at markers so the new Stellvertreter2 gets a fresh clock', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare(
+    "UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z', freigabe2_reminder_gesendet_at = '2020-01-02T00:00:00.000Z', freigabe2_eskalation_gesendet_at = '2020-01-03T00:00:00.000Z' WHERE id = ?"
+  ).run(kontoId, jobId);
+
+  const before = new Date().toISOString();
+  eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund: 'Interessenkonflikt' });
+  const job = getJobById(db, jobId);
+  assert.equal(job.freigabe2_eskaliert_von, '3');
+  assert.ok(job.freigabe2_seit >= before, 'freigabe2_seit must restart for the new responsible person');
+  assert.equal(job.freigabe2_reminder_gesendet_at, null);
+  assert.equal(job.freigabe2_eskalation_gesendet_at, null);
+  db.close();
+});
+
 test('abschliessenFreigabe2 atomically guards against completing a job twice', () => {
   const db = openDatabase(':memory:');
   seedKonto(db);

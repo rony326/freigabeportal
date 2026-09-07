@@ -250,12 +250,17 @@ export function abschliessenFreigabe1(db, jobId) {
   // the pool (releaseJob, forceReleaseJob), where the job effectively starts over, possibly even
   // under a different Konto.
   db.prepare(
-    "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL WHERE id = ?"
-  ).run(jobId);
+    "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe2_seit = ? WHERE id = ?"
+  ).run(new Date().toISOString(), jobId);
 }
 
 export function eskalierenFreigabe2(db, jobId, { eskaliertVon, grund }) {
-  db.prepare('UPDATE jobs SET freigabe2_eskaliert_von = ?, freigabe2_eskalationsgrund = ? WHERE id = ?').run(eskaliertVon, grund, jobId);
+  // freigabe2_seit restarts here (and both gesendet_at markers clear): responsibility just moved
+  // to Stellvertreter2, so the reminder/eskalation clock for the *new* responsible person must
+  // start from zero rather than inheriting however long the original Freigeber2 already sat on it.
+  db.prepare(
+    'UPDATE jobs SET freigabe2_eskaliert_von = ?, freigabe2_eskalationsgrund = ?, freigabe2_seit = ?, freigabe2_reminder_gesendet_at = NULL, freigabe2_eskalation_gesendet_at = NULL WHERE id = ?'
+  ).run(eskaliertVon, grund, new Date().toISOString(), jobId);
 }
 
 export function abschliessenFreigabe2(db, jobId) {

@@ -110,10 +110,6 @@ Seite **Admin → Datenbank-Backup** — das Archiv enthält Geheimnisse im
 Klartext (u. a. das RFC3161-TSA-Passwort), siehe
 [admin-bereich.md](admin-bereich.md#datenbank-backup-adminbackup).
 
-### `sync-personen`
-
-Siehe [personen-sync.md](personen-sync.md).
-
 ### `mail-digest`
 
 Nur relevant, wenn **Admin → Mail-Einstellungen** den Batching-Schalter
@@ -129,6 +125,10 @@ sofort — siehe unten. Läuft mit demselben Überlappungsschutz wie
 "Jetzt ausführen" leben — wie bei `datenbank-sicherung` — nicht unter
 **Admin → Geplante Jobs**, sondern auf der eigenen Seite **Admin →
 Mail-Einstellungen**.
+
+### `sync-personen`
+
+Siehe [personen-sync.md](personen-sync.md).
 
 ## Benachrichtigungen (E-Mail)
 

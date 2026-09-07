@@ -59,3 +59,15 @@ test('getVorlage throws for an unknown typ', () => {
   assert.throws(() => getVorlage(db, 'unbekannt'));
   db.close();
 });
+
+test('getVorlage resolves freigabe2-reminder and freigabe2-eskalation after seedDefaults', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const reminder = getVorlage(db, 'freigabe2-reminder');
+  assert.ok(reminder.betreff.length > 0);
+  assert.ok(reminder.text.includes('%stunden%'));
+  const eskalation = getVorlage(db, 'freigabe2-eskalation');
+  assert.ok(eskalation.betreff.length > 0);
+  assert.ok(eskalation.text.includes('%stunden%'));
+  db.close();
+});

@@ -129,3 +129,13 @@ test('seedDefaults sets mail_batching_aktiv default (off out of the box)', () =>
   assert.equal(getConfigValue(db, 'mail_batching_minute'), '0');
   db.close();
 });
+
+test('seedDefaults sets freigabe2 reminder/eskalation defaults', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(getConfigValue(db, 'freigabe2_reminder_stunden'), '24');
+  assert.equal(getConfigValue(db, 'freigabe2_eskalation_stunden'), '48');
+  assert.equal(getConfigValue(db, 'freigabe2_eskalation_empfaenger'), 'gruppe:admin');
+  assert.equal(getConfigValue(db, 'cron_freigabe2_erinnerungen_intervall_minuten'), '60');
+  db.close();
+});

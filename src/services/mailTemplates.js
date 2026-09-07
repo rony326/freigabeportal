@@ -9,6 +9,8 @@ const TYP_ZU_KEY_INFIX = {
   'iban-warnung': 'iban_warnung',
   'rechnungsnummer-warnung': 'rechnungsnummer_warnung',
   digest: 'digest',
+  'freigabe2-reminder': 'freigabe2_reminder',
+  'freigabe2-eskalation': 'freigabe2_eskalation',
 };
 
 export function renderTemplate(vorlage, variablen) {

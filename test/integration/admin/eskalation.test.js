@@ -90,11 +90,13 @@ test('GET /admin/eskalation shows the seeded freigabe2 defaults pre-filled', asy
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedAdmin(db);
+  setConfigValue(db, 'freigabe2_eskalation_empfaenger', 'freigabe2-admin@musterkirche.ch');
   const app = buildTestApp(db);
   const res = await request(app).get('/admin/eskalation').set('x-test-person-id', '99');
   assert.equal(res.status, 200);
-  assert.match(res.text, /freigabe2ReminderStunden/);
-  assert.match(res.text, /gruppe:admin/);
+  assert.match(res.text, /id="freigabe2ReminderStunden"[^>]*value="24"/);
+  assert.match(res.text, /id="freigabe2EskalationStunden"[^>]*value="48"/);
+  assert.match(res.text, /freigabe2-admin@musterkirche.ch/);
   db.close();
 });
 

@@ -88,10 +88,14 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
       });
       await sendNotification(db, mailer, {
         to: zielPerson.email,
-        subject: 'Freigabeportal: Neue Rechnung zur Kontierung zugewiesen',
-        text: `Eine Rechnung wurde dir von ${req.currentPerson.vorname} ${req.currentPerson.nachname} zur Kontierung zugewiesen: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${job.id}`,
         typ: 'zuweisung',
         jobId: job.id,
+        variablen: {
+          empfaengerName: `${zielPerson.vorname} ${zielPerson.nachname}`,
+          jobDateiname: job.dateiname,
+          grund: `Eine Rechnung wurde dir von ${req.currentPerson.vorname} ${req.currentPerson.nachname} zur Kontierung zugewiesen.`,
+          link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+        },
       });
       res.json({ id: job.id, status: 'zugewiesen' });
     } catch (err) {

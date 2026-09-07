@@ -11,7 +11,7 @@ import { PNG_1X1 } from '../helpers/imageFixture.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createSpesenRouter } from '../../src/routes/spesen.js';
-import { setConfigValue } from '../../src/db/adminConfigRepo.js';
+import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
 
 function createStubMailer() {
   const sent = [];
@@ -59,6 +59,7 @@ function seedGrundlagen(db) {
 
 test('GET /spesen/neu requires login', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get('/spesen/neu');
   assert.equal(res.status, 401);
@@ -67,6 +68,7 @@ test('GET /spesen/neu requires login', async () => {
 
 test('GET /spesen/neu returns 403 when the Spesenmodul is deactivated', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedGrundlagen(db);
   setConfigValue(db, 'modul_spesen_aktiv', '0');
   const app = buildTestApp(db, createStubMailer());
@@ -77,6 +79,7 @@ test('GET /spesen/neu returns 403 when the Spesenmodul is deactivated', async ()
 
 test('POST /spesen returns 403 and creates no job when the Spesenmodul is deactivated', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedGrundlagen(db);
   setConfigValue(db, 'modul_spesen_aktiv', '0');
   const app = buildTestApp(db, createStubMailer());
@@ -94,6 +97,7 @@ test('POST /spesen returns 403 and creates no job when the Spesenmodul is deacti
 
 test('GET /spesen/neu lists every active Konto regardless of the current person\'s roles', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedGrundlagen(db);
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get('/spesen/neu').set('x-test-person-id', '5');
@@ -105,6 +109,7 @@ test('GET /spesen/neu lists every active Konto regardless of the current person\
 
 test('POST /spesen creates one job per position, assigned to the Konto Freigeber1, status zugewiesen', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedGrundlagen(db);
   const mailer = createStubMailer();
   const app = buildTestApp(db, mailer);
@@ -137,6 +142,7 @@ test('POST /spesen creates one job per position, assigned to the Konto Freigeber
 
 test('POST /spesen with two positions on different Konten creates two independent jobs', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId1 = seedGrundlagen(db);
   const kontoId2 = createKonto(db, { kontonummer: '2000', bezeichnung: 'Büromaterial', freigeber1Id: '3', stellvertreter1Id: '4', freigeber2Id: '1', stellvertreter2Id: '2' });
   const app = buildTestApp(db, createStubMailer());
@@ -163,6 +169,7 @@ test('POST /spesen with two positions on different Konten creates two independen
 
 test('POST /spesen escalates to Stellvertreter1 and sets the escalation reason when the submitter is the Konto\'s own Freigeber1', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedGrundlagen(db);
   const mailer = createStubMailer();
   const app = buildTestApp(db, mailer);
@@ -192,6 +199,7 @@ test('POST /spesen escalates to Stellvertreter1 and sets the escalation reason w
 
 test('POST /spesen rejects a position with an inactive Konto', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedGrundlagen(db);
   deactivateKonto(db, kontoId);
   const app = buildTestApp(db, createStubMailer());
@@ -214,6 +222,7 @@ test('POST /spesen rejects a position with an inactive Konto', async () => {
 
 test('POST /spesen rejects a position with a future Auslage-Datum', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedGrundlagen(db);
   const app = buildTestApp(db, createStubMailer());
   const pdf = await buildPdfFixture(['Beleg']);
@@ -234,6 +243,7 @@ test('POST /spesen rejects a position with a future Auslage-Datum', async () => 
 
 test('POST /spesen rejects a position missing its Beleg', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedGrundlagen(db);
   const app = buildTestApp(db, createStubMailer());
 
@@ -252,6 +262,7 @@ test('POST /spesen rejects a position missing its Beleg', async () => {
 
 test('POST /spesen accepts a PNG Beleg and wraps it into a standalone PDF', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedGrundlagen(db);
   const app = buildTestApp(db, createStubMailer());
 
@@ -274,6 +285,7 @@ test('POST /spesen accepts a PNG Beleg and wraps it into a standalone PDF', asyn
 
 test('POST /spesen with every position row removed re-renders the form with a working "+ Position hinzufügen" button and the Konto-Optionen template, not a bare live row', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedGrundlagen(db);
   const app = buildTestApp(db, createStubMailer());
 
@@ -293,6 +305,7 @@ test('POST /spesen with every position row removed re-renders the form with a wo
 
 test('POST /spesen with a Beleg exceeding MAX_BELEG_SIZE 400s with a form re-render, not a 500', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const kontoId = seedGrundlagen(db);
   const app = buildTestApp(db, createStubMailer());
   // MAX_BELEG_SIZE is 20 MiB — one byte over trips multer's LIMIT_FILE_SIZE error.

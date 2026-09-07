@@ -205,14 +205,16 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
             const istEskaliert = eskaliert.some((e) => e.jobId === jobId);
             await sendNotification(db, mailer, {
               to: zustaendig.email,
-              subject: istEskaliert
-                ? 'Freigabeportal: Spesen-Position zur Prüfung — Selbsteinreichung durch Freigeber1'
-                : 'Freigabeportal: Neue Spesen-Position zur Prüfung',
-              text: `Eine Spesen-Position wartet auf deine Prüfung (Freigabe 1): ${job.dateiname}${
-                istEskaliert ? `\n\nGrund für die Zuweisung an dich: ${job.freigabe1_eskalationsgrund}` : ''
-              }\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/spesen-freigabe1/${job.id}`,
               typ: 'zuweisung',
               jobId: job.id,
+              variablen: {
+                empfaengerName: `${zustaendig.vorname} ${zustaendig.nachname}`,
+                jobDateiname: job.dateiname,
+                grund: istEskaliert
+                  ? `Eine Spesen-Position wartet auf deine Prüfung (Freigabe 1). Grund für die Zuweisung an dich: ${job.freigabe1_eskalationsgrund}`
+                  : 'Eine Spesen-Position wartet auf deine Prüfung (Freigabe 1).',
+                link: `${config.publicBaseUrl}/spesen-freigabe1/${job.id}`,
+              },
             });
           }
 

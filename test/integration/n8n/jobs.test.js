@@ -10,7 +10,7 @@ import { createJob, getJobById, setThumbnailPfad, updateKontierungMetadaten, set
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
-import { setConfigValue } from '../../../src/db/adminConfigRepo.js';
+import { setConfigValue, seedDefaults } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createKonto } from '../../../src/db/kontenRepo.js';
 import { createSpesenabrechnung } from '../../../src/db/spesenabrechnungenRepo.js';
@@ -38,6 +38,7 @@ test('POST /api/n8n/jobs without a valid API key returns 401 and creates nothing
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -56,6 +57,7 @@ test('POST /api/n8n/jobs with a valid PDF and API key creates a job', async () =
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -80,6 +82,7 @@ test('POST /api/n8n/jobs submitting the exact same PDF bytes twice returns the o
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -112,6 +115,7 @@ test('POST /api/n8n/jobs with different PDF bytes (even with identical metadata)
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -141,6 +145,7 @@ test('POST /api/n8n/jobs stores a valid eingang_am, normalized to ISO', async ()
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -164,6 +169,7 @@ test('POST /api/n8n/jobs rejects a malformed eingang_am, creates nothing', async
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -186,6 +192,7 @@ test('POST /api/n8n/jobs rejects a file that is not a real PDF, creates nothing'
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -207,6 +214,7 @@ test('POST /api/n8n/jobs rejects an invalid quelle value', async () => {
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -226,6 +234,7 @@ test('POST /api/n8n/jobs rejects a PDF larger than 20 MB, creates nothing', asyn
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -250,6 +259,7 @@ test('POST /api/n8n/jobs rejects a request missing dateiname, creates nothing', 
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -275,6 +285,7 @@ test('POST /api/n8n/jobs applies Zuweisungsregel matching and reports the result
   const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
 
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   for (const id of ['1', '2', '3', '4']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
@@ -345,6 +356,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen without a valid API key return
   const { mkdtempSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
   const res = await request(app).post('/api/n8n/jobs/1/abholung-bestaetigen');
@@ -356,6 +368,7 @@ test('GET /api/n8n/jobs/abholbereit without a valid API key returns 401', async 
   const { mkdtempSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
   const res = await request(app).get('/api/n8n/jobs/abholbereit');
@@ -367,6 +380,7 @@ test('GET /api/n8n/jobs/abholbereit returns an abgeschlossen job with a signed d
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -389,6 +403,7 @@ test('GET /api/n8n/jobs/abholbereit omits an abgeschlossen job without a Zeitste
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
@@ -407,6 +422,7 @@ test('GET /api/n8n/jobs/abholbereit lists an abgeschlossen job once it has a Zei
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
@@ -427,6 +443,7 @@ test('GET /api/n8n/jobs/abholbereit includes lieferant, rechnungsnummer, betrag 
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -454,6 +471,7 @@ test('GET /api/n8n/jobs/abholbereit includes Konto-Details and QR-Bill-Felder fo
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -486,6 +504,7 @@ test('GET /api/n8n/jobs/abholbereit returns null Konto-Details and QR-Felder whe
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -506,6 +525,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen confirms pickup, deletes the f
   const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -528,6 +548,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen returns 409 for an abgeschloss
   const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
@@ -547,6 +568,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen still confirms pickup normally
   const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -565,6 +587,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen also deletes the thumbnail fil
   const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -588,6 +611,7 @@ test('POST /api/n8n/jobs with a real PDF sets thumbnail_pfad to a valid PNG file
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
   const realPdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
@@ -614,6 +638,7 @@ test('POST /api/n8n/jobs still creates the job with 201 and thumbnail_pfad null 
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -643,6 +668,7 @@ test('POST /api/n8n/jobs with a matching Zuweisungsregel sends a Zuweisungs-Mail
   const { listMailLog } = await import('../../../src/db/mailLogRepo.js');
 
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-mail-test-'));
   for (const id of ['1', '2', '3', '4']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
@@ -683,6 +709,7 @@ test('POST /api/n8n/jobs with no matching Zuweisungsregel sends no mail (job lan
   const { listMailLog } = await import('../../../src/db/mailLogRepo.js');
 
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-mail-test-'));
   const config = { ...testConfig(jobsDir), publicBaseUrl: 'https://portal.example.org' };
   const mailer = createStubMailer();
@@ -708,6 +735,7 @@ test('POST /:id/abholung-bestaetigen still marks the job abgeholt even if deleti
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const config = testConfig(jobsDir);
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const app = buildTestApp(db, config, createStubMailer());
 
   // pdf_pfad points at a directory, not a file. unlinkSync() on a directory always throws
@@ -736,6 +764,7 @@ test('POST /api/n8n/jobs decodes a real Swiss QR-Bill PDF and stores the qr_* fi
   const { join } = await import('node:path');
   const { buildQrBillPdfFixture } = await import('../../helpers/qrBillFixture.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -772,6 +801,7 @@ test('POST /api/n8n/jobs still creates the job with qr_* columns null when the P
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -793,6 +823,7 @@ test('POST /api/n8n/jobs still creates the job with qr_* columns null when the P
 
 test('GET /api/n8n/jobs/abholbereit includes a group entry with a positionen array for a completed Splitgruppe, and no individual entries for its children', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'n8n-gruppe-test-'));
   for (const id of ['1', '2', '3', '4']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
@@ -831,6 +862,7 @@ test('GET /api/n8n/jobs/abholbereit includes a group entry with a positionen arr
 
 test('GET /api/n8n/jobs/abholbereit leaves a normal (non-split) job entry exactly in its current shape, with no positionen field', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'n8n-normal-test-'));
   const pdfPfad = join(dir, 'n.pdf');
   writeFileSync(pdfPfad, 'x');
@@ -850,6 +882,7 @@ test('GET /api/n8n/jobs/abholbereit leaves a normal (non-split) job entry exactl
 
 test('POST /api/n8n/jobs/:id/abholung-bestaetigen on a group parent id deletes every child file and the group file, and marks children abgeholt', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'n8n-gruppe-bestaetigen-test-'));
   for (const id of ['1', '2', '3', '4']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
@@ -884,6 +917,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen on a group parent id deletes e
 
 test('a Splitgruppe is never re-offered after a successful Abholung: it drops out of /abholbereit for good and a second Bestätigung is 409', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'n8n-gruppe-terminal-test-'));
   for (const id of ['1', '2', '3', '4']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
@@ -927,6 +961,7 @@ test('a Splitgruppe is never re-offered after a successful Abholung: it drops ou
 
 test('GET /api/n8n/jobs/abholbereit includes quelle, eingereicht_von, auslage_datum and beschreibung for a Spesen position', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -947,6 +982,7 @@ test('GET /api/n8n/jobs/abholbereit includes quelle, eingereicht_von, auslage_da
 
 test('GET /api/n8n/jobs/abholbereit includes a live-looked-up, normalized IBAN and Kontoinhaber for a Spesen position', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const config = {
     ...testConfig(jobsDir),
@@ -980,6 +1016,7 @@ test('GET /api/n8n/jobs/abholbereit includes a live-looked-up, normalized IBAN a
 
 test('GET /api/n8n/jobs/abholbereit returns iban: null for a Spesen position when the ChurchTools lookup fails, without failing the whole request', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const config = {
     ...testConfig(jobsDir),
@@ -1009,6 +1046,7 @@ test('GET /api/n8n/jobs/abholbereit returns iban: null for a Spesen position whe
 
 test('GET /api/n8n/jobs/abholbereit omits quelle/eingereicht_von-style Spesen fields as null for a Lieferant job', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -1027,6 +1065,7 @@ test('GET /api/n8n/jobs/abholbereit omits quelle/eingereicht_von-style Spesen fi
 
 test('GET /api/n8n/jobs/abholbereit falls back to zahlungsziel for rechnungsdatum on a Lieferant job', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
@@ -1044,6 +1083,7 @@ test('GET /api/n8n/jobs/abholbereit falls back to zahlungsziel for rechnungsdatu
 
 test('GET /api/n8n/jobs/abholbereit carries the parent job\'s QR-Bill data on a group entry, with the same field names as an individual entry', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'n8n-gruppe-qr-test-'));
   for (const id of ['1', '2', '3', '4']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });

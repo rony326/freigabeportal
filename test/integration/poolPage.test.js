@@ -23,6 +23,7 @@ import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createPoolPageRouter } from '../../src/routes/poolPage.js';
+import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 
 function buildTestApp(db, mailer = { async sendMail() {} }) {
   const app = express();
@@ -62,6 +63,7 @@ function seedPortalAdminPerson(db, id = '99') {
 
 test('GET /pool returns 401 without a session', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool');
   assert.equal(res.status, 401);
@@ -70,6 +72,7 @@ test('GET /pool returns 401 without a session', async () => {
 
 test('GET /pool carries a viewport meta tag and wraps the Pool table in table-responsive', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
@@ -81,6 +84,7 @@ test('GET /pool carries a viewport meta tag and wraps the Pool table in table-re
 
 test('GET /pool renders the nav bar as a centered container, matching every other page, even though the dashboard\'s own main is full-width', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
@@ -90,6 +94,7 @@ test('GET /pool renders the nav bar as a centered container, matching every othe
 
 test('GET /pool shows a reload button in the nav bar, next to the Menü button', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
@@ -102,6 +107,7 @@ test('GET /pool shows a reload button in the nav bar, next to the Menü button',
 
 test('GET /pool shows the quelle and absender that n8n submitted with the job', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   createJob(db, {
     eingangAm: '2026-08-15T08:00:00.000Z',
@@ -121,6 +127,7 @@ test('GET /pool shows the quelle and absender that n8n submitted with the job', 
 
 test('GET /pool shows the Debitor (Lieferant) name in its own column, and an em dash when unset', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const zugewiesenId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'mit-debitor.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '50' WHERE id = ?").run(zugewiesenId);
@@ -137,6 +144,7 @@ test('GET /pool shows the Debitor (Lieferant) name in its own column, and an em 
 
 test('GET /pool shows an em dash for absender when n8n did not submit one', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
@@ -150,6 +158,7 @@ test('GET /pool shows an em dash for absender when n8n did not submit one', asyn
 
 test('GET /pool returns 200 for a logged-in person without the buchhaltung or portal-admin group, but hides the Pool section', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   upsertPerson(db, { id: '77', vorname: 'Frei', nachname: 'Geber', email: 'a@example.org', gruppen: [], loggedInNow: true });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '77');
@@ -164,6 +173,7 @@ test('GET /pool returns 200 for a logged-in person without the buchhaltung or po
 
 test('GET /pool shows the "Zeitstempel prüfen" menu item even for a logged-in person with no group membership at all', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   upsertPerson(db, { id: '77', vorname: 'Frei', nachname: 'Geber', email: 'a@example.org', gruppen: [], loggedInNow: true });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '77');
@@ -175,6 +185,7 @@ test('GET /pool shows the "Zeitstempel prüfen" menu item even for a logged-in p
 
 test('GET /pool lists an unzugewiesen job in the Pool section with a thumbnail src and preview URL', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   setThumbnailPfad(db, id, '/tmp/a-thumb.png');
@@ -192,6 +203,7 @@ test('GET /pool lists an unzugewiesen job in the Pool section with a thumbnail s
 
 test('GET /pool shows the fallback placeholder instead of an <img> for a job with no thumbnail', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'ohne-thumbnail.pdf', pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
@@ -205,6 +217,7 @@ test('GET /pool shows the fallback placeholder instead of an <img> for a job wit
 
 test('GET /pool lists a job assigned to the current person under "Meine offenen Kontierungen"', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'zu-kontieren.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '50');
@@ -220,6 +233,7 @@ test('GET /pool lists a job assigned to the current person under "Meine offenen 
 
 test('GET /pool shows an "In den Pool legen" button next to Kontieren, posting to the existing zurueck-in-pool route', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'zu-kontieren.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '50');
@@ -234,6 +248,7 @@ test('GET /pool shows an "In den Pool legen" button next to Kontieren, posting t
 
 test('GET /pool shows an em dash for Konto when a Pool job has not been kontiert yet', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
@@ -246,6 +261,7 @@ test('GET /pool shows an em dash for Konto when a Pool job has not been kontiert
 
 test('GET /pool shows a "Hinweis: <Konto>" label for a Pool job released with a hinweis_konto_id', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '2', vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'], loggedInNow: false });
@@ -262,6 +278,7 @@ test('GET /pool shows a "Hinweis: <Konto>" label for a Pool job released with a 
 
 test('GET /pool lists a job awaiting this person\'s Freigabe 2 under "Meine Freigaben"', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
   for (const id of ['1', '2', '3']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
@@ -282,6 +299,7 @@ test('GET /pool lists a job awaiting this person\'s Freigabe 2 under "Meine Frei
 
 test('GET /pool lists a job the current person can rework under "Meine abgelehnten Jobs"', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
   for (const id of ['1', '2', '3']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
@@ -303,6 +321,7 @@ test('GET /pool lists a job the current person can rework under "Meine abgelehnt
 
 test('GET /pool lists a job escalated to the Portal-Admin group at Freigabe 1 under "An Portal-Admin eskalierte Kontierungen", with a link to /kontierung', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedPortalAdminPerson(db);
   for (const id of ['1', '2']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
@@ -324,6 +343,7 @@ test('GET /pool lists a job escalated to the Portal-Admin group at Freigabe 1 un
 
 test('GET /pool lists a job escalated to the Portal-Admin group at Freigabe 2 under "An Portal-Admin eskalierte Freigaben", with a link to /freigabe2', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedPortalAdminPerson(db);
   for (const id of ['1', '2', '3', '4']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
@@ -345,6 +365,7 @@ test('GET /pool lists a job escalated to the Portal-Admin group at Freigabe 2 un
 
 test('GET /pool hides the admin-escalation sections entirely for a non-Portal-Admin', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
 
@@ -356,6 +377,7 @@ test('GET /pool hides the admin-escalation sections entirely for a non-Portal-Ad
 
 test('GET /pool re-fetches a fresh signed URL via /downloads/:jobId/refresh-url on thumbnail click, instead of only reusing the one baked in at render time', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   setThumbnailPfad(db, id, '/tmp/a-thumb.png');
@@ -369,6 +391,7 @@ test('GET /pool re-fetches a fresh signed URL via /downloads/:jobId/refresh-url 
 
 test('GET /pool wires the thumbnail preview through the PDF.js viewer, not the raw download URL', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   setThumbnailPfad(db, id, '/tmp/a-thumb.png');
@@ -383,6 +406,7 @@ test('GET /pool wires the thumbnail preview through the PDF.js viewer, not the r
 
 test('GET /pool renders the footer', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
@@ -393,6 +417,7 @@ test('GET /pool renders the footer', async () => {
 
 test('GET /pool hides the "Meine abgelehnten Jobs" section entirely when this person has no abgelehnt jobs', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
@@ -405,6 +430,7 @@ test('GET /pool hides the "Meine abgelehnten Jobs" section entirely when this pe
 
 test('GET /pool shows a Spesen-Freigabe1 job under "Meine offenen Spesen-Freigaben" with a Prüfen link to /spesen-freigabe1', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
   upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
   for (const id of ['51', '52', '53']) {
@@ -426,6 +452,7 @@ test('GET /pool shows a Spesen-Freigabe1 job under "Meine offenen Spesen-Freigab
 
 test('GET /pool no longer shows a "Meine Spesen" section — it moved to its own page at /meine-spesen', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
   upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
   for (const id of ['51', '52', '53']) {
@@ -448,6 +475,7 @@ test('GET /pool no longer shows a "Meine Spesen" section — it moved to its own
 
 test('GET /pool shows "Keine offenen Aufgaben" when the only thing for this person is a Spesen submission, since that now lives on its own page', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
   upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
   for (const id of ['51', '52', '53']) {
@@ -468,6 +496,7 @@ test('GET /pool shows "Keine offenen Aufgaben" when the only thing for this pers
 
 test('GET /pool shows an admin-escalated Spesen position under a Superadmin-only section linking to /spesen-freigabe1', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedPortalAdminPerson(db, '99');
   upsertPerson(db, { id: '50', vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: [] });
   upsertPerson(db, { id: '60', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
@@ -491,6 +520,7 @@ test('GET /pool shows an admin-escalated Spesen position under a Superadmin-only
 
 test('POST /pool/:id/zuweisen returns 403 for a Buchhaltung person without the pool_zuweisen permission', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db);
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
@@ -501,6 +531,7 @@ test('POST /pool/:id/zuweisen returns 403 for a Buchhaltung person without the p
 
 test('POST /pool/:id/zuweisen assigns the job to the chosen person, logs a freigaben entry and sends a mail', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
   setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
   for (const id of ['1', '2', '3', '4']) {
@@ -526,6 +557,7 @@ test('POST /pool/:id/zuweisen assigns the job to the chosen person, logs a freig
 
 test('POST /pool/:id/zuweisen rejects a Spesen-position job with 409 even when its status is unzugewiesen (never reachable via the UI, defense in depth)', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
   setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
   for (const id of ['1', '2', '3', '4']) {
@@ -551,6 +583,7 @@ test('POST /pool/:id/zuweisen rejects a Spesen-position job with 409 even when i
 
 test('POST /pool/:id/zuweisen rejects a personId that has no Freigeber-role on any active Konto', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
   setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
   for (const id of ['1', '2', '3', '4']) {
@@ -568,6 +601,7 @@ test('POST /pool/:id/zuweisen rejects a personId that has no Freigeber-role on a
 
 test('GET /pool shows the An-Person-senden form on Pool rows for a pool_zuweisen holder, not for a plain Buchhaltung person', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
   setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
   for (const id of ['1', '2', '3', '4']) {
@@ -592,6 +626,7 @@ test('GET /pool shows the An-Person-senden form on Pool rows for a pool_zuweisen
 
 test('GET /pool wires the Beanspruchen error fallback to the button\'s own row, not a reconstructed pool-row-<id> lookup, so it also works for Rückläufer rows', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
   setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -611,6 +646,7 @@ test('GET /pool wires the Beanspruchen error fallback to the button\'s own row, 
 
 test('GET /pool includes the Rückläufer section only for a person with pool_zuweisen', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
   setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });

@@ -109,10 +109,14 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           if (freigeber1) {
             await sendNotification(db, mailer, {
               to: freigeber1.email,
-              subject: 'Freigabeportal: Neue Rechnung zur Kontierung',
-              text: `Eine neue Rechnung wurde dir automatisch zugewiesen: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/kontierung/${job.id}`,
               typ: 'zuweisung',
               jobId: job.id,
+              variablen: {
+                empfaengerName: `${freigeber1.vorname} ${freigeber1.nachname}`,
+                jobDateiname: job.dateiname,
+                grund: 'Eine neue Rechnung wurde dir automatisch zugewiesen.',
+                link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+              },
             });
           }
         }

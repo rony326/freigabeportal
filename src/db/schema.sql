@@ -7,7 +7,10 @@ CREATE TABLE IF NOT EXISTS personen (
   gruppen TEXT NOT NULL DEFAULT '[]',
   ct_person_unresolved INTEGER NOT NULL DEFAULT 0,
   last_synced_at TEXT,
-  last_login_at TEXT
+  last_login_at TEXT,
+  ferienmodus_von TEXT,
+  ferienmodus_bis TEXT,
+  ferienmodus_stellvertreter_id TEXT REFERENCES personen(churchtools_person_id)
 );
 
 -- Additive Einzelrechte pro Person, unabhängig von der ChurchTools-Rolle (superadmin/manager).
@@ -209,7 +212,8 @@ CREATE TABLE IF NOT EXISTS freigaben (
   ip TEXT NOT NULL,
   interessenskonflikt INTEGER NOT NULL DEFAULT 0,
   kommentar TEXT,
-  eskaliert_von TEXT REFERENCES personen(churchtools_person_id)
+  eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+  vertretung_fuer TEXT REFERENCES personen(churchtools_person_id)
 );
 
 CREATE TABLE IF NOT EXISTS mail_log (

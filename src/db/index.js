@@ -46,6 +46,30 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'pool_rueckgesendet_am', ddl: 'ALTER TABLE jobs ADD COLUMN pool_rueckgesendet_am TEXT' },
 ];
 
+const PERSONEN_TABLE_MIGRATIONS = [
+  { column: 'ferienmodus_von', ddl: 'ALTER TABLE personen ADD COLUMN ferienmodus_von TEXT' },
+  { column: 'ferienmodus_bis', ddl: 'ALTER TABLE personen ADD COLUMN ferienmodus_bis TEXT' },
+  { column: 'ferienmodus_stellvertreter_id', ddl: 'ALTER TABLE personen ADD COLUMN ferienmodus_stellvertreter_id TEXT REFERENCES personen(churchtools_person_id)' },
+];
+
+function migratePersonenTable(db) {
+  const existing = new Set(db.prepare('PRAGMA table_info(personen)').all().map((col) => col.name));
+  for (const { column, ddl } of PERSONEN_TABLE_MIGRATIONS) {
+    if (!existing.has(column)) db.exec(ddl);
+  }
+}
+
+const FREIGABEN_TABLE_VERTRETUNG_MIGRATIONS = [
+  { column: 'vertretung_fuer', ddl: 'ALTER TABLE freigaben ADD COLUMN vertretung_fuer TEXT REFERENCES personen(churchtools_person_id)' },
+];
+
+function migrateFreigabenTableVertretung(db) {
+  const existing = new Set(db.prepare('PRAGMA table_info(freigaben)').all().map((col) => col.name));
+  for (const { column, ddl } of FREIGABEN_TABLE_VERTRETUNG_MIGRATIONS) {
+    if (!existing.has(column)) db.exec(ddl);
+  }
+}
+
 // SQLite CHECK constraints can't be widened with ALTER TABLE — same rebuild-in-a-transaction
 // approach as migrateFreigabenTable below. The marker this function checks for is `'spesen'`
 // (the newest quelle value); check schema.sql's jobs CREATE TABLE for what the CHECK currently
@@ -521,5 +545,7 @@ export function openDatabase(dbPath) {
   migrateCronLogTableSplitGruppen(db);
   migrateMailLogTableGeplantStatus(db);
   migrateCronLogTableMailDigest(db);
+  migratePersonenTable(db);
+  migrateFreigabenTableVertretung(db);
   return db;
 }

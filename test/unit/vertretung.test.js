@@ -70,3 +70,35 @@ test('istAktiveVertretungFuer is false when either id is missing/null', () => {
   assert.equal(istAktiveVertretungFuer(db, null, '1'), false);
   db.close();
 });
+
+test('getAktivenVertreter returns stellvertreter when today equals von (period starts today)', () => {
+  const db = openDatabase(':memory:');
+  seedZweiPersonen(db);
+  setFerienmodus(db, '1', { von: heutePlusTage(0), bis: heutePlusTage(5), stellvertreterId: '2' });
+  assert.equal(getAktivenVertreter(db, '1'), '2');
+  db.close();
+});
+
+test('getAktivenVertreter returns stellvertreter when today equals bis (period ends today)', () => {
+  const db = openDatabase(':memory:');
+  seedZweiPersonen(db);
+  setFerienmodus(db, '1', { von: heutePlusTage(-5), bis: heutePlusTage(0), stellvertreterId: '2' });
+  assert.equal(getAktivenVertreter(db, '1'), '2');
+  db.close();
+});
+
+test('getAktivenVertreter returns null when period starts tomorrow (von = tomorrow)', () => {
+  const db = openDatabase(':memory:');
+  seedZweiPersonen(db);
+  setFerienmodus(db, '1', { von: heutePlusTage(1), bis: heutePlusTage(1), stellvertreterId: '2' });
+  assert.equal(getAktivenVertreter(db, '1'), null);
+  db.close();
+});
+
+test('getAktivenVertreter returns null when period ended yesterday (bis = yesterday)', () => {
+  const db = openDatabase(':memory:');
+  seedZweiPersonen(db);
+  setFerienmodus(db, '1', { von: heutePlusTage(-5), bis: heutePlusTage(-1), stellvertreterId: '2' });
+  assert.equal(getAktivenVertreter(db, '1'), null);
+  db.close();
+});

@@ -31,7 +31,7 @@ flowchart LR
     Fn --> Log[("sync_log / cron_log")]
 ```
 
-## Die sechs Jobs
+## Die sieben Jobs
 
 | Job | Standard-Zeitplan | Zweck |
 |---|---|---|
@@ -41,6 +41,7 @@ flowchart LR
 | `zeitstempel-nachholen` | alle 5 Minuten | wiederholt fehlgeschlagene RFC3161-Stempelversuche |
 | `split-gruppen-nachholen` | alle 15 Minuten | holt eine noch nicht zusammengeführte Splitgruppe nach (unvollständig oder am TSA gescheitert) |
 | `datenbank-sicherung` | täglich 03:00 | DB + `JOBS_DIR` + `BRANDING_DIR` als ZIP nach `BACKUP_DIR` sichern, alte Backups über die konfigurierte Aufbewahrung hinaus löschen |
+| `mail-digest` | täglich 07:00 (Europe/Zürich) | fasst alle wegen aktivem Batching nur protokollierten (`mail_log.status = 'geplant'`) Mails pro Empfänger zu einer täglichen Zusammenfassung zusammen |
 
 ### `pool-erinnerungen`
 
@@ -113,14 +114,33 @@ Klartext (u. a. das RFC3161-TSA-Passwort), siehe
 
 Siehe [personen-sync.md](personen-sync.md).
 
+### `mail-digest`
+
+Nur relevant, wenn **Admin → Mail-Einstellungen** den Batching-Schalter
+aktiviert hat — dann protokolliert `sendNotification` (siehe unten) statt
+sofort zu versenden nur eine Zeile mit `status = 'geplant'`. Dieser Job
+gruppiert alle wartenden Zeilen nach Empfänger und verschickt pro
+Empfänger eine gesammelte Digest-Mail; erfolgreiche/gescheiterte Zeilen
+werden anschliessend auf `versendet`/`fehlgeschlagen` gesetzt (gleiche
+Semantik wie ein Einzelversand). `sync-fehler` und `iban-warnung` werden
+nie eingereiht, sondern ignorieren den Batching-Schalter und laufen immer
+sofort — siehe unten. Läuft mit demselben Überlappungsschutz wie
+`zeitstempel-nachholen`. Zeitplan, Vorlagen-Bearbeitung und manuelles
+"Jetzt ausführen" leben — wie bei `datenbank-sicherung` — nicht unter
+**Admin → Geplante Jobs**, sondern auf der eigenen Seite **Admin →
+Mail-Einstellungen**.
+
 ## Benachrichtigungen (E-Mail)
 
 Jeder Mailversand läuft über `sendNotification` (`src/services/notify.js`)
-und wird protokolliert (`mail_log`, versendet oder fehlgeschlagen —
-niemals stumm verworfen). `resolveEmpfaenger` löst die Tokens
-`gruppe:buchhaltung`/`gruppe:admin` zur Versandzeit gegen die
-**aktuelle** Gruppenmitgliedschaft auf (keine feste Liste, die
-veraltet).
+und wird protokolliert (`mail_log`, `versendet`/`fehlgeschlagen`, oder bei
+aktivem Batching zunächst `geplant` — niemals stumm verworfen).
+`resolveEmpfaenger` löst die Tokens `gruppe:buchhaltung`/`gruppe:admin` zur
+Versandzeit gegen die **aktuelle** Gruppenmitgliedschaft auf (keine feste
+Liste, die veraltet). Betreff und Text jedes Typs kommen aus einer unter
+**Admin → Mail-Einstellungen** editierbaren Vorlage mit `%variable%`-
+Platzhaltern (`src/services/mailTemplates.js`), nicht mehr aus fest
+codierten Strings.
 
 | Typ | Auslöser |
 |---|---|
@@ -128,9 +148,15 @@ veraltet).
 | `reminder` | Pool-Rechnung länger als `reminder_stunden` unbeansprucht |
 | `eskalation` | Pool-Rechnung länger als `eskalation_stunden` unbeansprucht |
 | `ablehnung` | Rechnung bei Kontierung oder Freigabe 2 abgelehnt |
-| `sync-fehler` | ChurchTools-Sync fehlgeschlagen oder abgebrochen |
-| `iban-warnung` | QR-Code-IBAN weicht von der hinterlegten Lieferanten-IBAN ab |
+| `sync-fehler` | ChurchTools-Sync fehlgeschlagen oder abgebrochen — **immer sofort**, unabhängig vom Batching-Schalter |
+| `iban-warnung` | QR-Code-IBAN weicht von der hinterlegten Lieferanten-IBAN ab — **immer sofort**, unabhängig vom Batching-Schalter |
 | `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Debitor erfasst |
+
+**Batching:** Ist unter **Admin → Mail-Einstellungen** aktiviert, werden
+alle Typen ausser `sync-fehler`/`iban-warnung` nicht sofort verschickt,
+sondern als `status = 'geplant'` protokolliert und vom `mail-digest`-Job
+(siehe oben) einmal täglich pro Empfänger zu einer Sammel-Mail
+zusammengefasst.
 
 Der Mailer ist optional: fehlt eine vollständige SMTP-Konfiguration, fällt
 das Portal automatisch auf einen No-Op-Mailer zurück, der jeden

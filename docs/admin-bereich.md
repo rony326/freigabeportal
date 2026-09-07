@@ -31,6 +31,7 @@ feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 | Audit-Log | `/admin/audit-log` | Einzelrecht `audit_log_einsehen` |
 | Datenbank-Backup | `/admin/backup` | **nur** `superadmin` |
 | Module | `/admin/module` | **nur** `superadmin` |
+| Mail-Einstellungen | `/admin/mail-einstellungen` | **nur** `superadmin` |
 
 Die mit **nur `superadmin`** markierten Bereiche lassen sich als
 Einzelrecht gar nicht vergeben — strukturell abgesichert über den
@@ -102,6 +103,17 @@ alle Module aktiv). Aktuell zwei Einträge:
 - **Strikte Freigeber1-Prüfung** (`kontierung_strikte_freigeber1_pruefung`, Default aus) — siehe [rechnungs-workflow.md](rechnungs-workflow.md#2-kontierung-status-zugewiesen).
 
 Gedacht als Sammelstelle für künftige, ebenfalls unabhängig einführbare Module.
+
+## Mail-Einstellungen (`/admin/mail-einstellungen`)
+
+Editierbare Betreff-/Text-Vorlagen (`%variable%`-Platzhalter) für alle 7
+Mail-Typen plus die Digest-Vorlage, sowie der globale Batching-Schalter
+(sofort vs. täglich gesammelt) mit Versandzeit und manuellem "Jetzt
+ausführen" für den `mail-digest`-Job. **Nur `superadmin`**, wie
+Eskalationszeiten/Erscheinungsbild/Zeitstempel/Backup. Details:
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail)
+und
+[2026-09-07-mail-vorlagen-und-batching-design.md](superpowers/specs/2026-09-07-mail-vorlagen-und-batching-design.md).
 
 ## Personen (`/admin/personen`)
 

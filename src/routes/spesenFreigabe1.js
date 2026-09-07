@@ -114,10 +114,15 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
         if (einreicher) {
           await sendNotification(db, mailer, {
             to: einreicher.email,
-            subject: 'Freigabeportal: Spesen-Position abgelehnt',
-            text: `Deine Spesen-Position wurde abgelehnt: ${job.dateiname}\n\nBegründung: ${begruendung}`,
             typ: 'ablehnung',
             jobId: job.id,
+            variablen: {
+              empfaengerName: `${einreicher.vorname} ${einreicher.nachname}`,
+              jobDateiname: job.dateiname,
+              grund: 'Deine Spesen-Position wurde abgelehnt:',
+              begruendung,
+              link: `${config.publicBaseUrl}/meine-spesen`,
+            },
           });
         }
         return res.redirect('/pool');
@@ -155,10 +160,14 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
           for (const email of resolveEmpfaenger(db, config, 'gruppe:admin')) {
             await sendNotification(db, mailer, {
               to: email,
-              subject: 'Freigabeportal: Interessenskonflikt bei Spesen-Freigabe 1 – an Portal-Admin eskaliert',
-              text: `Eine Spesen-Position wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/spesen-freigabe1/${job.id}`,
               typ: 'zuweisung',
               jobId: job.id,
+              variablen: {
+                empfaengerName: 'Portal-Admin-Team',
+                jobDateiname: job.dateiname,
+                grund: 'Eine Spesen-Position wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.',
+                link: `${config.publicBaseUrl}/spesen-freigabe1/${job.id}`,
+              },
             });
           }
         } else {
@@ -166,10 +175,14 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
           if (stellvertreter1) {
             await sendNotification(db, mailer, {
               to: stellvertreter1.email,
-              subject: 'Freigabeportal: Interessenskonflikt bei Spesen-Freigabe 1 – Prüfung an dich übergeben',
-              text: `Eine Spesen-Position wurde dir zur Prüfung übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/spesen-freigabe1/${job.id}`,
               typ: 'zuweisung',
               jobId: job.id,
+              variablen: {
+                empfaengerName: `${stellvertreter1.vorname} ${stellvertreter1.nachname}`,
+                jobDateiname: job.dateiname,
+                grund: `Eine Spesen-Position wurde dir zur Prüfung übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat.`,
+                link: `${config.publicBaseUrl}/spesen-freigabe1/${job.id}`,
+              },
             });
           }
         }
@@ -209,10 +222,14 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
       if (freigeber2) {
         await sendNotification(db, mailer, {
           to: freigeber2.email,
-          subject: 'Freigabeportal: Neue Spesen-Position zur Freigabe 2',
-          text: `Eine Spesen-Position wartet auf deine Freigabe 2: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/freigabe2/${job.id}`,
           typ: 'zuweisung',
           jobId: job.id,
+          variablen: {
+            empfaengerName: `${freigeber2.vorname} ${freigeber2.nachname}`,
+            jobDateiname: job.dateiname,
+            grund: 'Eine Spesen-Position wartet auf deine Freigabe 2.',
+            link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
+          },
         });
       }
       res.redirect('/pool');

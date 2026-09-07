@@ -19,7 +19,7 @@ import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import * as mupdf from 'mupdf';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
-import { setConfigValue } from '../../src/db/adminConfigRepo.js';
+import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { setupMockTsa } from '../helpers/mockTsa.js';
 import { fetchCsrfToken } from '../helpers/csrf.js';
 
@@ -138,6 +138,7 @@ async function seedFreigabe2JobMitAdminEskalation(db, { pdfPfad }) {
 
 test('GET /freigabe2/:id is reachable for the effective freigeber2 with no group membership at all', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   upsertPerson(db, { id: '3', vorname: 'Person3', nachname: 'Muster', email: 'p3@example.org', gruppen: [], loggedInNow: true });
   const app = buildTestApp(db);
@@ -149,6 +150,7 @@ test('GET /freigabe2/:id is reachable for the effective freigeber2 with no group
 test('GET and POST /freigabe2/:id reject the person who already approved Freigabe 1 on this job, even if the Konto is edited to resolve them as Freigabe-2 approver (Vier-Augen-Prinzip)', async () => {
   const { updateKonto } = await import('../../src/db/kontenRepo.js');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id, kontoId } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   // Simulate an admin editing the Konto after Freigabe 1 completed, so person '1' (who already
   // approved Freigabe 1) is now also resolved as freigeber2 for this Konto.
@@ -173,6 +175,7 @@ test('GET and POST /freigabe2/:id reject the person who already approved Freigab
 
 test('POST /freigabe2/:id ablehnen sends the rejection email to the admin group with a direct /abgelehnt link when freigabe1_eskaliert_an_admin is set', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2JobMitAdminEskalation(db, { pdfPfad: '/tmp/a.pdf' });
   const mailer = createStubMailer();
   const app = buildTestApp(db, { mailer });
@@ -190,6 +193,7 @@ test('POST /freigabe2/:id ablehnen sends the rejection email to the admin group 
 
 test('GET /freigabe2/:id returns 403 for the wrong person even with the buchhaltung role', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
   const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '2');
@@ -199,6 +203,7 @@ test('GET /freigabe2/:id returns 403 for the wrong person even with the buchhalt
 
 test('GET /freigabe2/:id returns 403 when the job is not in status freigabe2', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen' WHERE id = ?").run(id);
   const app = buildTestApp(db);
@@ -209,6 +214,7 @@ test('GET /freigabe2/:id returns 403 when the job is not in status freigabe2', a
 
 test('GET /freigabe2/:id shows the Kontierung summary to the correct freigeber2', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
   const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
@@ -220,6 +226,7 @@ test('GET /freigabe2/:id shows the Kontierung summary to the correct freigeber2'
 
 test('GET /freigabe2/:id shows betrag, zahlungsziel, lieferant and rechnungsnummer captured during Kontierung', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const { updateKontierungMetadaten } = await import('../../src/db/jobsRepo.js');
   updateKontierungMetadaten(db, id, {
@@ -241,6 +248,7 @@ test('GET /freigabe2/:id shows betrag, zahlungsziel, lieferant and rechnungsnumm
 
 test('GET /freigabe2/:id shows Typ: Gutschrift for a credit note', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const { updateKontierungMetadaten } = await import('../../src/db/jobsRepo.js');
   updateKontierungMetadaten(db, id, {
@@ -259,6 +267,7 @@ test('GET /freigabe2/:id shows Typ: Gutschrift for a credit note', async () => {
 
 test('GET /freigabe2/:id embeds the preview through the PDF.js viewer, not a raw /downloads iframe', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
   const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
@@ -272,6 +281,7 @@ test('GET /freigabe2/:id embeds the preview through the PDF.js viewer, not a raw
 
 test('GET /freigabe2/:id shows an Audit-Log with the Freigabe 1 entry', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
   const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
@@ -284,6 +294,7 @@ test('GET /freigabe2/:id shows an Audit-Log with the Freigabe 1 entry', async ()
 
 test('GET /freigabe2/:id shows the quelle and absender that n8n submitted with the job', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   for (const id of ['1', '2', '3', '4']) {
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
   }
@@ -311,6 +322,7 @@ test('POST /freigabe2/:id without conflict approves, stamps the PDF and complete
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
@@ -351,6 +363,7 @@ test('POST /freigabe2/:id without a conflict still saves an optional Begründung
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
@@ -383,6 +396,7 @@ test('POST /freigabe2/:id sets zeitstempel_gesetzt_am when a TSA is configured a
   const { join } = await import('node:path');
   const { createHash } = await import('node:crypto');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-zeitstempel-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
@@ -422,6 +436,7 @@ test('POST /freigabe2/:id clears zeitstempel_gesetzt_am again when the stamped P
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-zeitstempel-rename-fail-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
@@ -479,6 +494,7 @@ test('POST /freigabe2/:id still completes the Freigabe when the configured TSA i
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-zeitstempel-fail-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
@@ -512,6 +528,7 @@ test('POST /freigabe2/:id still completes the Freigabe when the job already carr
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-zeitstempel-immutable-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
@@ -546,6 +563,7 @@ test('POST /freigabe2/:id leaves zeitstempel_gesetzt_am null and makes no TSA re
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-zeitstempel-unconfigured-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
@@ -576,6 +594,7 @@ test('a prior Freigabe-1 Interessenskonflikt-Eskalation in the Verlauf is labell
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-eskalation-verlauf-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
@@ -611,6 +630,7 @@ test('the top Freigabe-1 block always reflects the person who actually completed
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-eskalation-top-block-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
@@ -705,6 +725,7 @@ test('two concurrent POST /freigabe2/:id requests for the same job complete it e
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-race-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
@@ -756,6 +777,7 @@ test('two concurrent POST /freigabe2/:id requests for the same job complete it e
 
 test('POST /freigabe2/:id with a conflict reassigns to stellvertreter2 and records a freigabe2_eskalation audit entry with the Begründung', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
 
@@ -795,6 +817,7 @@ test('POST /freigabe2/:id with a conflict reassigns to stellvertreter2 and recor
 
 test('POST /freigabe2/:id from an already-escalated stellvertreter2 declaring another conflict now escalates to Portal-Admin instead of being rejected', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   eskalierenFreigabe2(db, id, { eskaliertVon: '3', grund: 'Erster Konflikt' });
   const app = buildTestApp(db);
@@ -821,6 +844,7 @@ test('POST /freigabe2/:id from an already-escalated stellvertreter2 declaring an
 
 test('POST /freigabe2/:id declaring a conflict while also clicking Ablehnen is rejected, not silently escalated', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
 
@@ -843,6 +867,7 @@ test('POST /freigabe2/:id with an unstampable PDF leaves the job in freigabe2, c
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-fail-test-'));
   const pdfPfad = join(dir, 'kaputt.pdf');
   write(pdfPfad, Buffer.alloc(0));
@@ -866,6 +891,7 @@ test('POST /freigabe2/:id with an unstampable PDF leaves the job in freigabe2, c
 
 test('POST /freigabe2/:id with a missing source PDF forwards to error middleware (500) without leaking the file path', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const pdfPfad = '/tmp/freigabe2-does-not-exist-' + Date.now() + '.pdf';
   const { id } = await seedFreigabe2Job(db, { pdfPfad });
   const app = buildTestApp(db, { withErrorHandler: true });
@@ -889,6 +915,7 @@ test('POST /freigabe2/:id forwards a genuine post-stamp write failure to error m
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-writefail-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
@@ -924,6 +951,7 @@ test('POST /freigabe2/:id with aktion=ablehnen and a Begründung rejects the job
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-ablehnen-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
@@ -956,6 +984,7 @@ test('POST /freigabe2/:id with aktion=ablehnen and a Begründung rejects the job
 
 test('POST /freigabe2/:id with aktion=ablehnen and no Begründung is rejected with 400', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
 
@@ -973,6 +1002,7 @@ test('POST /freigabe2/:id with aktion=ablehnen and no Begründung is rejected wi
 
 test('POST /freigabe2/:id with aktion=ablehnen on a job with an unstampable PDF still rejects cleanly (no stamping is attempted)', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/nonexistent/path.pdf' });
   const app = buildTestApp(db);
 
@@ -992,6 +1022,7 @@ test('after a rejected job is reworked and resubmitted through Kontierung, Freig
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-findlast-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
@@ -1048,6 +1079,7 @@ test('after a rejected job is reworked and resubmitted through Kontierung, Freig
 
 test('POST /freigabe2/:id with aktion=ablehnen on a job someone else already handled returns 403 via loadAuthorized, no double transition', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
   const app = buildTestApp(db);
   // Simulate another process having already moved the job out of freigabe2 (e.g. a concurrent
@@ -1069,6 +1101,7 @@ test('POST /freigabe2/:id with aktion=ablehnen on a job someone else already han
 
 test('POST /freigabe2/:id with a conflict sends a Zuweisungs-Mail to stellvertreter2', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' }); // freigeber2Id: '3', stellvertreter2Id: '4'
   const mailer = createStubMailer();
   const app = buildTestApp(db, { mailer });
@@ -1091,6 +1124,7 @@ test('POST /freigabe2/:id with aktion=ablehnen sends an Ablehnungs-Benachrichtig
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-mail-ablehnen-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
@@ -1120,6 +1154,7 @@ test('POST /freigabe2/:id with aktion=freigeben (no conflict, no rejection) send
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-mail-freigeben-test-'));
   const pdfPfad = join(dir, 'a.pdf');
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
@@ -1145,6 +1180,7 @@ test('a Stellvertreter2 who is escalated to and ALSO has a conflict escalates to
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { upsertPerson } = await import('../../src/db/personenRepo.js');
   const { createKonto } = await import('../../src/db/kontenRepo.js');
   const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
@@ -1195,6 +1231,7 @@ test('a Stellvertreter2 who is escalated to and ALSO has a conflict escalates to
 
 test('POST /freigabe2/:id triggers the Splitgruppe merge once the LAST sibling completes, and does nothing while a sibling remains open', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-splitgruppe-test-'));
   const kindPfad2 = join(dir, 'kind2.pdf');
   writeFileSync(kindPfad2, await buildPdfFixture(['Rechnung Seite 1']));
@@ -1233,6 +1270,7 @@ test('POST /freigabe2/:id triggers the Splitgruppe merge once the LAST sibling c
 
 test('GET /freigabe2/:id shows Verwendungszweck/Auslage-Datum/Eingereicht-von instead of Lieferant/Rechnungsnummer/Zahlungsziel for a Spesen position', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: [] });
   upsertPerson(db, { id: '2', vorname: 'Stell', nachname: 'Vertreter1', email: 's1@example.org', gruppen: [] });
   upsertPerson(db, { id: '3', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
@@ -1266,6 +1304,7 @@ test('GET /freigabe2/:id shows Verwendungszweck/Auslage-Datum/Eingereicht-von in
 
 test('GET /freigabe2/:id shows the Spesenabrechnung Titel when one was given at submission', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: [] });
   upsertPerson(db, { id: '3', vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
   upsertPerson(db, { id: '5', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
@@ -1291,6 +1330,7 @@ test('POST /freigabe2/:id prints the submitter\'s live-looked-up IBAN and Kontoi
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-spesen-zahlungsdaten-test-'));
   const pdfPfad = join(dir, 'beleg.pdf');
   writeFileSync(pdfPfad, await buildPdfFixture(['Taxiquittung']));
@@ -1343,6 +1383,7 @@ test('POST /freigabe2/:id completes normally, with no Zahlungsdaten block, when 
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-spesen-zahlungsdaten-fail-test-'));
   const pdfPfad = join(dir, 'beleg.pdf');
   writeFileSync(pdfPfad, await buildPdfFixture(['Taxiquittung']));
@@ -1389,6 +1430,7 @@ test('POST /freigabe2/:id prints the Spesenabrechnung Titel and Verwendungszweck
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-spesen-titel-test-'));
   const pdfPfad = join(dir, 'beleg.pdf');
   writeFileSync(pdfPfad, await buildPdfFixture(['Taxiquittung']));
@@ -1432,6 +1474,7 @@ test('POST /freigabe2/:id prints neither Titel nor Verwendungszweck for a non-Sp
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'freigabe2-lieferant-titel-test-'));
   const pdfPfad = join(dir, 'rechnung.pdf');
   writeFileSync(pdfPfad, await buildPdfFixture(['Rechnung Seite 1']));

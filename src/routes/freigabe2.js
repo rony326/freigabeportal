@@ -148,10 +148,14 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           for (const email of empfaenger) {
             await sendNotification(db, mailer, {
               to: email,
-              subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 2 – an Portal-Admin eskaliert',
-              text: `Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/freigabe2/${job.id}`,
               typ: 'zuweisung',
               jobId: job.id,
+              variablen: {
+                empfaengerName: 'Portal-Admin-Team',
+                jobDateiname: job.dateiname,
+                grund: 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.',
+                link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
+              },
             });
           }
         } else {
@@ -159,10 +163,14 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           if (stellvertreter2) {
             await sendNotification(db, mailer, {
               to: stellvertreter2.email,
-              subject: 'Freigabeportal: Interessenskonflikt bei Freigabe 2 – an dich übergeben',
-              text: `Eine Rechnung wurde dir zur Freigabe 2 übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/freigabe2/${job.id}`,
               typ: 'zuweisung',
               jobId: job.id,
+              variablen: {
+                empfaengerName: `${stellvertreter2.vorname} ${stellvertreter2.nachname}`,
+                jobDateiname: job.dateiname,
+                grund: `Eine Rechnung wurde dir zur Freigabe 2 übergeben, da ${req.currentPerson.vorname} ${req.currentPerson.nachname} einen Interessenskonflikt erklärt hat.`,
+                link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
+              },
             });
           }
         }
@@ -202,10 +210,15 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           for (const email of empfaenger) {
             await sendNotification(db, mailer, {
               to: email,
-              subject: 'Freigabeportal: Rechnung abgelehnt (an Portal-Admin eskaliert)',
-              text: `Eine an die Portal-Admin-Gruppe eskalierte Rechnung wurde abgelehnt: ${job.dateiname}\n\nGrund: ${begruendung}\n\nBitte im Freigabeportal anmelden, um sie zu überarbeiten: ${config.publicBaseUrl}/abgelehnt/${job.id}`,
               typ: 'ablehnung',
               jobId: job.id,
+              variablen: {
+                empfaengerName: 'Portal-Admin-Team',
+                jobDateiname: job.dateiname,
+                grund: 'Eine an die Portal-Admin-Gruppe eskalierte Rechnung wurde abgelehnt:',
+                begruendung,
+                link: `${config.publicBaseUrl}/abgelehnt/${job.id}`,
+              },
             });
           }
         } else {
@@ -213,10 +226,15 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           if (besitzer) {
             await sendNotification(db, mailer, {
               to: besitzer.email,
-              subject: 'Freigabeportal: Rechnung abgelehnt',
-              text: `Deine Rechnung wurde abgelehnt: ${job.dateiname}\n\nGrund: ${begruendung}\n\nBitte im Freigabeportal anmelden, um sie zu überarbeiten: ${config.publicBaseUrl}/abgelehnt/${job.id}`,
               typ: 'ablehnung',
               jobId: job.id,
+              variablen: {
+                empfaengerName: `${besitzer.vorname} ${besitzer.nachname}`,
+                jobDateiname: job.dateiname,
+                grund: 'Deine Rechnung wurde abgelehnt:',
+                begruendung,
+                link: `${config.publicBaseUrl}/abgelehnt/${job.id}`,
+              },
             });
           }
         }

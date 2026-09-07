@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
+import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
@@ -65,6 +66,7 @@ function seedGrundlagen(db) {
 
 test('GET /spesen-freigabe1/:id 403s for someone the job is not assigned to', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { jobId } = seedGrundlagen(db);
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get(`/spesen-freigabe1/${jobId}`).set('x-test-person-id', '5');
@@ -74,6 +76,7 @@ test('GET /spesen-freigabe1/:id 403s for someone the job is not assigned to', as
 
 test('GET /spesen-freigabe1/:id 200s and shows Beschreibung/Auslage-Datum/Eingereicht-von for the assigned Freigeber1', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { jobId } = seedGrundlagen(db);
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get(`/spesen-freigabe1/${jobId}`).set('x-test-person-id', '1');
@@ -87,6 +90,7 @@ test('GET /spesen-freigabe1/:id 200s and shows Beschreibung/Auslage-Datum/Einger
 
 test('GET /spesen-freigabe1/:id shows the Spesenabrechnung Titel when one was given at submission', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber1', email: 'f1@example.org', gruppen: ['20'] });
   upsertPerson(db, { id: '5', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
   const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '1', stellvertreter2Id: '1' });
@@ -105,6 +109,7 @@ test('GET /spesen-freigabe1/:id shows the Spesenabrechnung Titel when one was gi
 
 test('POST /spesen-freigabe1/:id freigeben (no conflict) moves the job to freigabe2 and notifies Freigeber2', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { jobId } = seedGrundlagen(db);
   const mailer = createStubMailer();
   const app = buildTestApp(db, mailer);
@@ -124,6 +129,7 @@ test('POST /spesen-freigabe1/:id freigeben (no conflict) moves the job to freiga
 
 test('POST /spesen-freigabe1/:id ablehnen sets status abgelehnt and notifies the submitter', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { jobId } = seedGrundlagen(db);
   const mailer = createStubMailer();
   const app = buildTestApp(db, mailer);
@@ -144,6 +150,7 @@ test('POST /spesen-freigabe1/:id ablehnen sets status abgelehnt and notifies the
 
 test('POST /spesen-freigabe1/:id with a declared Interessenskonflikt escalates to Stellvertreter1', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { jobId } = seedGrundlagen(db);
   const mailer = createStubMailer();
   const app = buildTestApp(db, mailer);
@@ -165,6 +172,7 @@ test('POST /spesen-freigabe1/:id with a declared Interessenskonflikt escalates t
 
 test('GET /spesen-freigabe1/:id 403s the submitter even once the job is admin-escalated and they happen to be a superadmin themselves', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   // Person 1 is both this Konto's own Freigeber1 AND in the admin group ('20') — the exact
   // combination that lets a self-submitted claim reach the admin-escalated branch (submitter is
   // Freigeber1 -> auto-escalates to Stellvertreter1 at submission -> Stellvertreter1 also
@@ -216,6 +224,7 @@ test('GET /spesen-freigabe1/:id 403s the submitter even once the job is admin-es
 
 test('POST /spesen-freigabe1/:id escalates to the admin group when the Stellvertreter1 also declares a conflict', async () => {
   const db = openDatabase(':memory:');
+  seedDefaults(db);
   const { jobId } = seedGrundlagen(db);
   const mailer = createStubMailer();
   const app = buildTestApp(db, mailer);

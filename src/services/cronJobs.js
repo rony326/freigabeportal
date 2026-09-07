@@ -35,10 +35,13 @@ async function benachrichtigeSyncFehler(db, config, mailer, meldung) {
   for (const email of empfaenger) {
     await sendNotification(db, mailer, {
       to: email,
-      subject: 'Freigabeportal: ChurchTools-Sync fehlgeschlagen',
-      text: `Der ChurchTools-Personen-Sync konnte nicht erfolgreich abgeschlossen werden: ${meldung}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/admin/sync`,
       typ: 'sync-fehler',
       jobId: null,
+      variablen: {
+        fehlerDetails: meldung,
+        zeitpunkt: new Date().toISOString(),
+        link: `${config.publicBaseUrl}/admin/sync`,
+      },
     });
   }
 }
@@ -72,10 +75,13 @@ export async function runPoolErinnerungenJob(db, config, mailer) {
       for (const email of empfaenger) {
         await sendNotification(db, mailer, {
           to: email,
-          subject: 'Freigabeportal: Rechnung wartet im Pool',
-          text: `Diese Rechnung ist seit mehr als ${reminderStunden} Stunden unbeansprucht im Pool: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
           typ: 'reminder',
           jobId: job.id,
+          variablen: {
+            jobDateiname: job.dateiname,
+            stunden: reminderStunden,
+            link: `${config.publicBaseUrl}/pool`,
+          },
         });
       }
       if (empfaenger.length > 0) {
@@ -89,10 +95,13 @@ export async function runPoolErinnerungenJob(db, config, mailer) {
       for (const email of empfaenger) {
         await sendNotification(db, mailer, {
           to: email,
-          subject: 'Freigabeportal: Eskalation – Rechnung seit langem unbeansprucht',
-          text: `Diese Rechnung ist seit mehr als ${eskalationStunden} Stunden unbeansprucht im Pool und wurde eskaliert: ${job.dateiname}\n\nBitte im Freigabeportal anmelden: ${config.publicBaseUrl}/pool`,
           typ: 'eskalation',
           jobId: job.id,
+          variablen: {
+            jobDateiname: job.dateiname,
+            stunden: eskalationStunden,
+            link: `${config.publicBaseUrl}/pool`,
+          },
         });
       }
       if (empfaenger.length > 0) {

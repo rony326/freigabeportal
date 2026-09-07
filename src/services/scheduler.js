@@ -1,4 +1,4 @@
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob } from './cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runFreigabe2ErinnerungenJob } from './cronJobs.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
 const ZEITZONE = 'Europe/Zurich';
@@ -98,6 +98,7 @@ export function startScheduler({
     runDatenbankSicherungJob: sicherungJob,
     runSplitGruppenNachholenJob: splitGruppenJob,
     runMailDigestJob: mailDigestJob,
+    runFreigabe2ErinnerungenJob: freigabe2ErinnerungenJob,
   } = {
     runSyncPersonenJob,
     runPoolErinnerungenJob,
@@ -106,6 +107,7 @@ export function startScheduler({
     runDatenbankSicherungJob,
     runSplitGruppenNachholenJob,
     runMailDigestJob,
+    runFreigabe2ErinnerungenJob,
   },
 }) {
   scheduleDaily(
@@ -131,6 +133,14 @@ export function startScheduler({
     async () => {
       const result = await erinnerungenJob(db, config, mailer);
       if (result.status === 'fehler') console.error('Geplanter pool-erinnerungen-Lauf fehlgeschlagen:', result.error);
+    }
+  );
+
+  scheduleInterval(
+    () => zahlOderStandard(getConfigValue(db, 'cron_freigabe2_erinnerungen_intervall_minuten'), 60) * MINUTE_MS,
+    async () => {
+      const result = await freigabe2ErinnerungenJob(db, config, mailer);
+      if (result.status === 'fehler') console.error('Geplanter freigabe2-erinnerungen-Lauf fehlgeschlagen:', result.error);
     }
   );
 

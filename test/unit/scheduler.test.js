@@ -35,6 +35,7 @@ function fakeJobs(overrides = {}) {
     runDatenbankSicherungJob: () => ({ status: 'erfolg' }),
     runSplitGruppenNachholenJob: async () => ({ status: 'erfolg' }),
     runMailDigestJob: async () => ({ status: 'erfolg' }),
+    runFreigabe2ErinnerungenJob: async () => ({ status: 'erfolg' }),
     ...overrides,
   };
 }
@@ -87,6 +88,54 @@ test('startScheduler picks up a saved cron_pool_erinnerungen_intervall_minuten c
 
   // Run 2 fires 60 minutes after run 1 (it was already scheduled with the old interval before
   // the config change) -- but reschedules run 3 using the now-current 15-minute interval.
+  t.mock.timers.tick(60 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 2);
+
+  t.mock.timers.tick(15 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 3, 'run 3 must honor the shortened 15-minute interval, not wait another 60');
+  db.close();
+});
+
+test('startScheduler runs the freigabe2-erinnerungen job on the configured interval (default 60 minutes)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const db = seededDb();
+  let calls = 0;
+  startScheduler({
+    db,
+    config: {},
+    mailer: {},
+    jobs: fakeJobs({ runFreigabe2ErinnerungenJob: async () => { calls += 1; return { status: 'erfolg' }; } }),
+  });
+
+  t.mock.timers.tick(60 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+
+  t.mock.timers.tick(60 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 2);
+  db.close();
+});
+
+test('startScheduler picks up a saved cron_freigabe2_erinnerungen_intervall_minuten change on the next tick', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const db = seededDb();
+  let calls = 0;
+  startScheduler({
+    db,
+    config: {},
+    mailer: {},
+    jobs: fakeJobs({ runFreigabe2ErinnerungenJob: async () => { calls += 1; return { status: 'erfolg' }; } }),
+  });
+
+  t.mock.timers.tick(60 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+
+  setConfigValue(db, 'cron_freigabe2_erinnerungen_intervall_minuten', '15');
+
   t.mock.timers.tick(60 * 60 * 1000);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(calls, 2);

@@ -12,6 +12,7 @@ export function loadNavFlags(db, config) {
       konten: hasPermission('konten_verwalten'),
       debitoren: hasPermission('debitoren_verwalten'),
       eskalation: res.locals.isSuperadmin,
+      mailEinstellungen: res.locals.isSuperadmin,
       erscheinungsbild: res.locals.isSuperadmin,
       zeitstempel: res.locals.isSuperadmin,
       personen: res.locals.isSuperadmin || res.locals.isManager,

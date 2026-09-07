@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Mail-Einstellungen — <%= branding.seitenTitel %> Admin</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <h1>Mail-Einstellungen</h1>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger">
+        <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+    <form method="post" action="/admin/mail-einstellungen" class="col-12 col-lg-8">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+
+      <h2 class="h5 mt-3">Batching</h2>
+      <div class="form-check mb-2">
+        <input type="checkbox" class="form-check-input" id="batchingAktiv" name="batchingAktiv" value="1" <%= batchingAktiv ? 'checked' : '' %>>
+        <label class="form-check-label" for="batchingAktiv">Mails gesammelt statt sofort versenden (eine tägliche Zusammenfassung pro Empfänger)</label>
+      </div>
+      <div class="row g-2 mb-4">
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="batchingStunde">Versandzeit — Stunde</label>
+          <input type="number" min="0" max="23" class="form-control" id="batchingStunde" name="batchingStunde" value="<%= batchingStunde %>" required>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="batchingMinute">Versandzeit — Minute</label>
+          <input type="number" min="0" max="59" class="form-control" id="batchingMinute" name="batchingMinute" value="<%= batchingMinute %>" required>
+        </div>
+      </div>
+      <p class="text-muted small">Sync-Fehler und IBAN-Abweichung ignorieren diesen Schalter und werden immer sofort verschickt.</p>
+
+      <h2 class="h5 mt-4">Vorlagen</h2>
+      <p class="text-muted small">Platzhalter: <code>%variable%</code>. Verfügbar je nach Vorlage u.a. <code>%empfaengerName%</code>, <code>%jobDateiname%</code>, <code>%grund%</code>, <code>%begruendung%</code>, <code>%link%</code>, <code>%portalName%</code>, <code>%stunden%</code>, <code>%fehlerDetails%</code>, <code>%zeitpunkt%</code>, <code>%debitorName%</code>, <code>%tatsaechlicheIban%</code>, <code>%rechnungsnummer%</code>, <code>%dupJobIds%</code>, <code>%anzahl%</code>, <code>%eintraege%</code> — siehe Doku für die genaue Liste pro Vorlage.</p>
+
+      <div class="mb-3">
+        <label class="form-label" for="zuweisungBetreff">Zuweisung — Betreff</label>
+        <input type="text" class="form-control" id="zuweisungBetreff" name="zuweisungBetreff" value="<%= zuweisungBetreff %>" required>
+        <label class="form-label mt-2" for="zuweisungText">Zuweisung — Text</label>
+        <textarea class="form-control" id="zuweisungText" name="zuweisungText" rows="4" required><%= zuweisungText %></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="reminderBetreff">Reminder — Betreff</label>
+        <input type="text" class="form-control" id="reminderBetreff" name="reminderBetreff" value="<%= reminderBetreff %>" required>
+        <label class="form-label mt-2" for="reminderText">Reminder — Text</label>
+        <textarea class="form-control" id="reminderText" name="reminderText" rows="4" required><%= reminderText %></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="eskalationBetreff">Eskalation — Betreff</label>
+        <input type="text" class="form-control" id="eskalationBetreff" name="eskalationBetreff" value="<%= eskalationBetreff %>" required>
+        <label class="form-label mt-2" for="eskalationText">Eskalation — Text</label>
+        <textarea class="form-control" id="eskalationText" name="eskalationText" rows="4" required><%= eskalationText %></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="ablehnungBetreff">Ablehnung — Betreff</label>
+        <input type="text" class="form-control" id="ablehnungBetreff" name="ablehnungBetreff" value="<%= ablehnungBetreff %>" required>
+        <label class="form-label mt-2" for="ablehnungText">Ablehnung — Text</label>
+        <textarea class="form-control" id="ablehnungText" name="ablehnungText" rows="4" required><%= ablehnungText %></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="syncFehlerBetreff">Sync-Fehler — Betreff</label>
+        <input type="text" class="form-control" id="syncFehlerBetreff" name="syncFehlerBetreff" value="<%= syncFehlerBetreff %>" required>
+        <label class="form-label mt-2" for="syncFehlerText">Sync-Fehler — Text</label>
+        <textarea class="form-control" id="syncFehlerText" name="syncFehlerText" rows="4" required><%= syncFehlerText %></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="ibanWarnungBetreff">IBAN-Warnung — Betreff</label>
+        <input type="text" class="form-control" id="ibanWarnungBetreff" name="ibanWarnungBetreff" value="<%= ibanWarnungBetreff %>" required>
+        <label class="form-label mt-2" for="ibanWarnungText">IBAN-Warnung — Text</label>
+        <textarea class="form-control" id="ibanWarnungText" name="ibanWarnungText" rows="4" required><%= ibanWarnungText %></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="rechnungsnummerWarnungBetreff">Rechnungsnummer-Warnung — Betreff</label>
+        <input type="text" class="form-control" id="rechnungsnummerWarnungBetreff" name="rechnungsnummerWarnungBetreff" value="<%= rechnungsnummerWarnungBetreff %>" required>
+        <label class="form-label mt-2" for="rechnungsnummerWarnungText">Rechnungsnummer-Warnung — Text</label>
+        <textarea class="form-control" id="rechnungsnummerWarnungText" name="rechnungsnummerWarnungText" rows="4" required><%= rechnungsnummerWarnungText %></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="digestBetreff">Digest (tägliche Zusammenfassung) — Betreff</label>
+        <input type="text" class="form-control" id="digestBetreff" name="digestBetreff" value="<%= digestBetreff %>" required>
+        <label class="form-label mt-2" for="digestText">Digest — Text</label>
+        <textarea class="form-control" id="digestText" name="digestText" rows="4" required><%= digestText %></textarea>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Speichern</button>
+      <% if (gespeichert) { %>
+        <div class="alert alert-success alert-dismissible fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">
+          Gespeichert.
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
+        </div>
+      <% } %>
+    </form>
+
+    <h2 class="h4 mt-4">Mail-Digest — Verlauf</h2>
+    <form method="post" action="/admin/mail-einstellungen/jetzt-ausfuehren" class="mb-2">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
+    </form>
+    <% if (getriggert === '1' && digestLog.length > 0) { %>
+      <% const letzterLauf = digestLog[0]; %>
+      <div class="alert <%= letzterLauf.status === 'erfolg' ? 'alert-success' : 'alert-danger' %>">
+        <%= letzterLauf.status === 'erfolg' ? 'Erfolgreich ausgeführt. ' + letzterLauf.details : 'Fehlgeschlagen: ' + letzterLauf.details %>
+      </div>
+    <% } %>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Gestartet</th><th>Beendet</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody>
+          <% digestLog.forEach((eintrag) => { %>
+            <tr>
+              <td><%= eintrag.gestartet_am %></td>
+              <td><%= eintrag.beendet_am %></td>
+              <td><%= eintrag.status %></td>
+              <td><%= eintrag.details || '' %></td>
+            </tr>
+          <% }) %>
+          <% if (digestLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

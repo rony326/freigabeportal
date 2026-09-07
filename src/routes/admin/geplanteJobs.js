@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentSyncLogs } from '../../db/syncLogRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob } from '../../services/cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob } from '../../services/cronJobs.js';
 
 const LOG_LIMIT = 10;
 
@@ -18,11 +18,13 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       cronPdfBereinigungMinute: getConfigValue(db, 'cron_pdf_bereinigung_minute'),
       cronZeitstempelNachholenIntervallMinuten: getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'),
       cronSplitGruppenNachholenIntervallMinuten: getConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten'),
+      cronFreigabe2ErinnerungenIntervallMinuten: getConfigValue(db, 'cron_freigabe2_erinnerungen_intervall_minuten'),
       syncLog: listRecentSyncLogs(db, LOG_LIMIT),
       poolErinnerungenLog: listRecentCronLog(db, 'pool-erinnerungen', LOG_LIMIT),
       pdfBereinigungLog: listRecentCronLog(db, 'pdf-bereinigung', LOG_LIMIT),
       zeitstempelNachholenLog: listRecentCronLog(db, 'zeitstempel-nachholen', LOG_LIMIT),
       splitGruppenNachholenLog: listRecentCronLog(db, 'split-gruppen-nachholen', LOG_LIMIT),
+      freigabe2ErinnerungenLog: listRecentCronLog(db, 'freigabe2-erinnerungen', LOG_LIMIT),
       getriggert,
     };
   }
@@ -44,6 +46,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       pdfBereinigungMinute,
       zeitstempelNachholenIntervallMinuten,
       splitGruppenNachholenIntervallMinuten,
+      freigabe2ErinnerungenIntervallMinuten,
     } = req.body;
     const errors = [];
 
@@ -71,6 +74,10 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     if (!Number.isInteger(splitGruppenNachholenIntervallNum) || splitGruppenNachholenIntervallNum <= 0) {
       errors.push('Splitgruppen-Nachholen: Intervall muss eine positive Ganzzahl (Minuten) sein.');
     }
+    const freigabe2ErinnerungenIntervallNum = Number(freigabe2ErinnerungenIntervallMinuten);
+    if (!Number.isInteger(freigabe2ErinnerungenIntervallNum) || freigabe2ErinnerungenIntervallNum <= 0) {
+      errors.push('Freigabe2-Erinnerungen: Intervall muss eine positive Ganzzahl (Minuten) sein.');
+    }
 
     if (errors.length > 0) {
       return res.status(400).render('admin/geplante-jobs', {
@@ -81,11 +88,13 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
         cronPdfBereinigungMinute: pdfBereinigungMinute,
         cronZeitstempelNachholenIntervallMinuten: zeitstempelNachholenIntervallMinuten,
         cronSplitGruppenNachholenIntervallMinuten: splitGruppenNachholenIntervallMinuten,
+        cronFreigabe2ErinnerungenIntervallMinuten: freigabe2ErinnerungenIntervallMinuten,
         syncLog: listRecentSyncLogs(db, LOG_LIMIT),
         poolErinnerungenLog: listRecentCronLog(db, 'pool-erinnerungen', LOG_LIMIT),
         pdfBereinigungLog: listRecentCronLog(db, 'pdf-bereinigung', LOG_LIMIT),
         zeitstempelNachholenLog: listRecentCronLog(db, 'zeitstempel-nachholen', LOG_LIMIT),
         splitGruppenNachholenLog: listRecentCronLog(db, 'split-gruppen-nachholen', LOG_LIMIT),
+        freigabe2ErinnerungenLog: listRecentCronLog(db, 'freigabe2-erinnerungen', LOG_LIMIT),
         getriggert: null,
         errors,
         gespeichert: false,
@@ -99,6 +108,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     setConfigValue(db, 'cron_pdf_bereinigung_minute', String(pdfMinuteNum));
     setConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten', String(zeitstempelIntervallNum));
     setConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten', String(splitGruppenNachholenIntervallNum));
+    setConfigValue(db, 'cron_freigabe2_erinnerungen_intervall_minuten', String(freigabe2ErinnerungenIntervallNum));
     res.redirect('/admin/geplante-jobs?gespeichert=1');
   });
 
@@ -147,6 +157,15 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     try {
       await runSplitGruppenNachholenJob(db, config);
       res.redirect('/admin/geplante-jobs?getriggert=split-gruppen-nachholen');
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/freigabe2-erinnerungen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+    try {
+      await runFreigabe2ErinnerungenJob(db, config, mailer);
+      res.redirect('/admin/geplante-jobs?getriggert=freigabe2-erinnerungen');
     } catch (err) {
       next(err);
     }

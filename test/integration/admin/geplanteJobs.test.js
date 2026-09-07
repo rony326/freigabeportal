@@ -61,6 +61,7 @@ const VALID_BODY = {
   pdfBereinigungMinute: '45',
   zeitstempelNachholenIntervallMinuten: '10',
   splitGruppenNachholenIntervallMinuten: '20',
+  freigabe2ErinnerungenIntervallMinuten: '15',
 };
 
 const GEPLANTE_JOBS_ROUTES = [
@@ -71,6 +72,7 @@ const GEPLANTE_JOBS_ROUTES = [
   { method: 'post', path: '/admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren' },
   { method: 'post', path: '/admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren' },
   { method: 'post', path: '/admin/geplante-jobs/split-gruppen-nachholen/jetzt-ausfuehren' },
+  { method: 'post', path: '/admin/geplante-jobs/freigabe2-erinnerungen/jetzt-ausfuehren' },
 ];
 
 test('every Geplante-Jobs route returns 401 without any session, and config is untouched', async () => {
@@ -190,6 +192,42 @@ test('POST /admin/geplante-jobs rejects a non-positive split-gruppen-nachholen i
   assert.equal(res.status, 400);
   assert.match(res.text, /Splitgruppen-Nachholen: Intervall muss eine positive Ganzzahl/);
   assert.equal(getConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten'), '15');
+  db.close();
+});
+
+test('POST /admin/geplante-jobs with an invalid freigabe2ErinnerungenIntervallMinuten value is rejected', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/geplante-jobs')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ ...VALID_BODY, freigabe2ErinnerungenIntervallMinuten: '0' });
+  assert.equal(res.status, 400);
+  db.close();
+});
+
+test('POST /admin/geplante-jobs with valid values persists freigabe2ErinnerungenIntervallMinuten', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app).post('/admin/geplante-jobs').set('x-test-person-id', '99').type('form').send(VALID_BODY);
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'cron_freigabe2_erinnerungen_intervall_minuten'), '15');
+  db.close();
+});
+
+test('POST /admin/geplante-jobs/freigabe2-erinnerungen/jetzt-ausfuehren triggers the job and redirects with getriggert marker', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app).post('/admin/geplante-jobs/freigabe2-erinnerungen/jetzt-ausfuehren').set('x-test-person-id', '99');
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/admin/geplante-jobs?getriggert=freigabe2-erinnerungen');
   db.close();
 });
 

@@ -59,6 +59,15 @@
       </div>
       <p class="text-muted small">Wie oft eine unvollständige oder fehlgeschlagene Splitgruppen-Zusammenführung nachgeholt wird.</p>
 
+      <h2 class="h5 mt-3">Freigabe2-Erinnerungen</h2>
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="freigabe2ErinnerungenIntervallMinuten">Intervall (Minuten)</label>
+          <input type="number" min="1" class="form-control" id="freigabe2ErinnerungenIntervallMinuten" name="freigabe2ErinnerungenIntervallMinuten" value="<%= cronFreigabe2ErinnerungenIntervallMinuten %>" required>
+        </div>
+      </div>
+      <p class="text-muted small">Die Reminder-/Eskalations-<strong>Schwellen</strong> werden separat unter <a href="/admin/eskalation">Eskalationszeiten</a> eingestellt — hier nur, wie oft diese Prüfung läuft.</p>
+
       <h2 class="h5 mt-3">PDF-Bereinigung &amp; Mail-Log-Retention</h2>
       <div class="row g-2 mb-3">
         <div class="col-6 col-md-3">
@@ -239,6 +248,34 @@
             </tr>
           <% }) %>
           <% if (splitGruppenNachholenLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="h4 mt-4">Freigabe2-Erinnerungen — Verlauf</h2>
+    <form method="post" action="/admin/geplante-jobs/freigabe2-erinnerungen/jetzt-ausfuehren" class="mb-2">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
+    </form>
+    <% if (getriggert === 'freigabe2-erinnerungen' && freigabe2ErinnerungenLog.length > 0) { %>
+      <% const letzteFreigabe2Erinnerung = freigabe2ErinnerungenLog[0]; %>
+      <div class="alert <%= letzteFreigabe2Erinnerung.status === 'erfolg' ? 'alert-success' : 'alert-danger' %>">
+        <%= letzteFreigabe2Erinnerung.status === 'erfolg' ? 'Erfolgreich ausgeführt. ' + letzteFreigabe2Erinnerung.details : 'Fehlgeschlagen: ' + letzteFreigabe2Erinnerung.details %>
+      </div>
+    <% } %>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Gestartet</th><th>Beendet</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody>
+          <% freigabe2ErinnerungenLog.forEach((eintrag) => { %>
+            <tr>
+              <td><%= eintrag.gestartet_am %></td>
+              <td><%= eintrag.beendet_am %></td>
+              <td><%= eintrag.status %></td>
+              <td><%= eintrag.details || '' %></td>
+            </tr>
+          <% }) %>
+          <% if (freigabe2ErinnerungenLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
         </tbody>
       </table>
     </div>

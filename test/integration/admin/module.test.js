@@ -147,3 +147,40 @@ test('POST /admin/module without strikteFreigeber1Pruefung (unchecked) turns it 
   assert.equal(getConfigValue(db, 'kontierung_strikte_freigeber1_pruefung'), '0');
   db.close();
 });
+
+test('GET /admin/module shows the audit_log_lokale_zeit checkbox pre-checked when enabled', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  setConfigValue(db, 'audit_log_lokale_zeit', '1');
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/module').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auditLogLokaleZeit"[^>]*checked/);
+  db.close();
+});
+
+test('POST /admin/module persists audit_log_lokale_zeit as "1" when the checkbox is sent, "0" when omitted', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+
+  const checked = await request(app)
+    .post('/admin/module')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ spesenAktiv: '1', auditLogLokaleZeit: '1' });
+  assert.equal(checked.status, 302);
+  assert.equal(getConfigValue(db, 'audit_log_lokale_zeit'), '1');
+
+  const unchecked = await request(app)
+    .post('/admin/module')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ spesenAktiv: '1' });
+  assert.equal(unchecked.status, 302);
+  assert.equal(getConfigValue(db, 'audit_log_lokale_zeit'), '0', 'an omitted checkbox field must clear the flag, not leave the old value in place');
+
+  db.close();
+});

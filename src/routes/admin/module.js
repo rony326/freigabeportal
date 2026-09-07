@@ -8,6 +8,7 @@ export function createModuleRouter({ db, csrfProtection = (req, res, next) => ne
     res.render('admin/module-form', {
       spesenAktiv: getConfigValue(db, 'modul_spesen_aktiv') !== '0',
       strikteFreigeber1Pruefung: getConfigValue(db, 'kontierung_strikte_freigeber1_pruefung') === '1',
+      auditLogLokaleZeit: getConfigValue(db, 'audit_log_lokale_zeit') === '1',
       gespeichert: req.query.gespeichert === '1',
     });
   });
@@ -17,6 +18,7 @@ export function createModuleRouter({ db, csrfProtection = (req, res, next) => ne
     // same convention as this app's other on/off admin_config flags (e.g. audit_log_lokale_zeit).
     setConfigValue(db, 'modul_spesen_aktiv', req.body.spesenAktiv ? '1' : '0');
     setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', req.body.strikteFreigeber1Pruefung ? '1' : '0');
+    setConfigValue(db, 'audit_log_lokale_zeit', req.body.auditLogLokaleZeit ? '1' : '0');
     res.redirect('/admin/module?gespeichert=1');
   });
 

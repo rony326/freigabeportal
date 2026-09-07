@@ -24,6 +24,11 @@
         <label class="form-check-label" for="strikteFreigeber1Pruefung">Strikte Freigeber1-Prüfung bei der Kontierung</label>
         <div class="form-text">Wenn aktiv, gilt Freigabe 1 bei der Kontierung nur noch als erteilt, wenn die kontierende Person tatsächlich Freigeber1 (oder bei laufender Eskalation: Stellvertreter1) des gewählten Kontos ist. Andernfalls wird die Rechnung nach der Kontierung direkt an den echten Freigeber1 weitergereicht.</div>
       </div>
+      <div class="form-check mb-3">
+        <input type="checkbox" class="form-check-input" id="auditLogLokaleZeit" name="auditLogLokaleZeit" value="1"<% if (auditLogLokaleZeit) { %> checked<% } %>>
+        <label class="form-check-label" for="auditLogLokaleZeit">Audit-Log-Zeiten in Lokalzeit (Europe/Zürich) anzeigen</label>
+        <div class="form-text">In der Datenbank wird weiterhin UTC gespeichert — diese Einstellung wirkt sich nur auf die Anzeige im Audit-Log aus.</div>
+      </div>
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>
         <div class="alert alert-success alert-dismissible fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">

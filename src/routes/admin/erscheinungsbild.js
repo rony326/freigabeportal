@@ -45,7 +45,6 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
       logoAusrichtung: getConfigValue(db, 'branding_logo_ausrichtung') || 'links',
       footerText: getConfigValue(db, 'footer_text') ?? '',
       seitenTitel: getConfigValue(db, 'seiten_titel') ?? '',
-      auditLogLokaleZeit: getConfigValue(db, 'audit_log_lokale_zeit') === '1',
       hasLogo: Boolean(getConfigValue(db, 'branding_logo_pfad')),
     };
   }
@@ -69,7 +68,6 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
           logoAusrichtung: req.body.logoAusrichtung || 'links',
           footerText: req.body.footerText || '',
           seitenTitel: req.body.seitenTitel || '',
-          auditLogLokaleZeit: Boolean(req.body.auditLogLokaleZeit),
           hasLogo: currentState().hasLogo,
           errors: [message],
           gespeichert: false,
@@ -79,7 +77,6 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
       const { primaryColor, secondaryColor, themeDefault, logoAusrichtung } = req.body;
       const footerText = (req.body.footerText || '').trim();
       const seitenTitel = (req.body.seitenTitel || '').trim();
-      const auditLogLokaleZeit = Boolean(req.body.auditLogLokaleZeit);
       const errors = [];
       if (!HEX_COLOR_PATTERN.test(primaryColor || '')) errors.push('Primärfarbe muss ein gültiger Hex-Farbwert sein (z.B. #2f4858).');
       if (!HEX_COLOR_PATTERN.test(secondaryColor || '')) errors.push('Sekundärfarbe muss ein gültiger Hex-Farbwert sein (z.B. #4d7ea8).');
@@ -102,7 +99,6 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
           logoAusrichtung,
           footerText,
           seitenTitel,
-          auditLogLokaleZeit,
           hasLogo: currentState().hasLogo,
           errors,
           gespeichert: false,
@@ -115,7 +111,6 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
       setConfigValue(db, 'branding_logo_ausrichtung', logoAusrichtung);
       setConfigValue(db, 'footer_text', footerText);
       setConfigValue(db, 'seiten_titel', seitenTitel || 'Freigabeportal');
-      setConfigValue(db, 'audit_log_lokale_zeit', auditLogLokaleZeit ? '1' : '0');
 
       if (req.file) {
         const ext = ALLOWED_MIMETYPES[req.file.mimetype];

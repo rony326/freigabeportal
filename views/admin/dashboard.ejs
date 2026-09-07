@@ -58,6 +58,16 @@
         </a>
       </div>
       <% } %>
+      <% if (adminNav.module) { %>
+      <div class="col">
+        <a href="/admin/module" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Module</h2>
+            <p class="card-text text-body-secondary">Optionale Bereiche und Einstellungen ein- oder ausschalten.</p>
+          </div>
+        </a>
+      </div>
+      <% } %>
       <% if (adminNav.zeitstempel) { %>
       <div class="col">
         <a href="/admin/zeitstempel" class="card text-decoration-none h-100">

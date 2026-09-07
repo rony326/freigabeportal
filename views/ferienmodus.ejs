@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Ferienmodus — <%= branding.seitenTitel %></title>
+</head>
+<body>
+  <%- include('_header') %>
+  <main class="container py-4">
+    <div class="row justify-content-center">
+      <div class="col-lg-6">
+        <h1 class="h3">Ferienmodus</h1>
+        <p class="text-muted">
+          Während eines aktiven Zeitraums erhält dein Stellvertreter zusätzlichen Zugriff auf deine
+          Kontierungs- und Freigabe-Aufgaben (Freigeber 1/2) sowie die zugehörigen Mails — du selbst
+          behältst deinen eigenen Zugriff unverändert.
+        </p>
+
+        <% if (person.ferienmodus_von) { %>
+          <div class="alert alert-info">
+            Aktueller Ferienmodus: <strong><%= person.ferienmodus_von %> – <%= person.ferienmodus_bis %></strong>,
+            Stellvertreter: <strong><%= kandidaten.find((k) => k.churchtools_person_id === person.ferienmodus_stellvertreter_id)?.vorname %> <%= kandidaten.find((k) => k.churchtools_person_id === person.ferienmodus_stellvertreter_id)?.nachname %></strong>
+          </div>
+          <form method="post" action="/ferienmodus" class="mb-4">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input type="hidden" name="aktion" value="beenden">
+            <button type="submit" class="btn btn-outline-danger btn-sm">Ferienmodus beenden</button>
+          </form>
+        <% } else { %>
+          <p>Aktuell kein Ferienmodus aktiv.</p>
+        <% } %>
+
+        <% if (errors.length > 0) { %>
+          <div class="alert alert-danger">
+            <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+          </div>
+        <% } %>
+
+        <div class="card">
+          <div class="card-body">
+            <h2 class="h6">Ferienmodus setzen</h2>
+            <form method="post" action="/ferienmodus">
+              <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+              <div class="mb-3">
+                <label class="form-label" for="von">Von</label>
+                <input type="date" class="form-control" id="von" name="von" value="<%= values.von %>" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="bis">Bis</label>
+                <input type="date" class="form-control" id="bis" name="bis" value="<%= values.bis %>" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="stellvertreterId">Stellvertreter</label>
+                <select class="form-select" id="stellvertreterId" name="stellvertreterId" required>
+                  <option value="">— bitte wählen —</option>
+                  <% kandidaten.forEach((k) => { %>
+                    <option value="<%= k.churchtools_person_id %>" <%= values.stellvertreterId === k.churchtools_person_id ? 'selected' : '' %>><%= k.vorname %> <%= k.nachname %></option>
+                  <% }) %>
+                </select>
+                <% if (kandidaten.length === 0) { %>
+                  <div class="form-text text-warning">Keine Stellvertreter-Kandidaten gefunden — du hast aktuell keine gemeinsame Konto-Rolle mit einer anderen Person.</div>
+                <% } %>
+              </div>
+              <button type="submit" class="btn btn-primary">Speichern</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <%- include('_footer') %>
+</body>
+</html>

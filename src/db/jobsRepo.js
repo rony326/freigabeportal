@@ -462,6 +462,34 @@ export function markEskalationGesendet(db, jobId) {
   db.prepare('UPDATE jobs SET eskalation_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
 }
 
+export function listFreigabe2JobsForReminder(db, stunden) {
+  const schwelle = new Date(Date.now() - stunden * 60 * 60 * 1000).toISOString();
+  return db
+    .prepare(
+      "SELECT * FROM jobs WHERE status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0 " +
+      "AND freigabe2_reminder_gesendet_at IS NULL AND freigabe2_seit < ? ORDER BY freigabe2_seit"
+    )
+    .all(schwelle);
+}
+
+export function markFreigabe2ReminderGesendet(db, jobId) {
+  db.prepare('UPDATE jobs SET freigabe2_reminder_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+}
+
+export function listFreigabe2JobsForEskalation(db, stunden) {
+  const schwelle = new Date(Date.now() - stunden * 60 * 60 * 1000).toISOString();
+  return db
+    .prepare(
+      "SELECT * FROM jobs WHERE status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0 " +
+      "AND freigabe2_eskalation_gesendet_at IS NULL AND freigabe2_seit < ? ORDER BY freigabe2_seit"
+    )
+    .all(schwelle);
+}
+
+export function markFreigabe2EskalationGesendet(db, jobId) {
+  db.prepare('UPDATE jobs SET freigabe2_eskalation_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+}
+
 export function listAbgeholtJobs(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'abgeholt' ORDER BY id").all();
 }

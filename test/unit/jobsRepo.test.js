@@ -7,7 +7,7 @@ import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, assignJobToPerson, listPoolRuecklaeufer, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, sendJobBackToGroup, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByDebitorUndRechnungsnummer, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben, weiterleitenAnEchtenFreigeber1 } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, assignJobToPerson, listPoolRuecklaeufer, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, sendJobBackToGroup, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, listFreigabe2JobsForReminder, markFreigabe2ReminderGesendet, listFreigabe2JobsForEskalation, markFreigabe2EskalationGesendet, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByDebitorUndRechnungsnummer, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben, weiterleitenAnEchtenFreigeber1 } from '../../src/db/jobsRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -1351,6 +1351,56 @@ test('markReminderGesendet and markEskalationGesendet each gate only their own l
   markReminderGesendet(db, jobId);
   assert.equal(listPoolJobsForReminder(db, 24).length, 0, 'reminder list excludes it once marked');
   assert.equal(listPoolJobsForEskalation(db, 48).length, 1, 'escalation list is independent, still includes it');
+  db.close();
+});
+
+test('listFreigabe2JobsForReminder returns only freigabe2 jobs older than the threshold with no reminder sent yet, excludes jobs already escalated to admin', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const oldJobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, oldJobId);
+  const freshJobId = createJob(db, { eingangAm: new Date().toISOString(), quelle: 'scanner', absender: null, dateiname: 'neu.pdf', pdfPfad: '/tmp/b.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = ? WHERE id = ?").run(kontoId, new Date().toISOString(), freshJobId);
+  const eskaliertJobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'admin.pdf', pdfPfad: '/tmp/c.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z', freigabe2_eskaliert_an_admin = 1 WHERE id = ?").run(kontoId, eskaliertJobId);
+
+  const ids = listFreigabe2JobsForReminder(db, 24).map((j) => j.id);
+  assert.deepEqual(ids, [oldJobId]);
+  db.close();
+});
+
+test('listFreigabe2JobsForReminder excludes a job whose reminder was already sent', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, jobId);
+  markFreigabe2ReminderGesendet(db, jobId);
+  assert.equal(listFreigabe2JobsForReminder(db, 24).length, 0);
+  db.close();
+});
+
+test('listFreigabe2JobsForEskalation returns only freigabe2 jobs older than the threshold with no escalation sent yet, excludes jobs already escalated to admin', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const oldJobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, oldJobId);
+  const eskaliertJobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'admin.pdf', pdfPfad: '/tmp/c.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z', freigabe2_eskaliert_an_admin = 1 WHERE id = ?").run(kontoId, eskaliertJobId);
+
+  const results = listFreigabe2JobsForEskalation(db, 48);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, oldJobId);
+  db.close();
+});
+
+test('markFreigabe2ReminderGesendet and markFreigabe2EskalationGesendet each gate only their own list', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, jobId);
+  markFreigabe2ReminderGesendet(db, jobId);
+  assert.equal(listFreigabe2JobsForReminder(db, 24).length, 0, 'reminder list excludes it once marked');
+  assert.equal(listFreigabe2JobsForEskalation(db, 48).length, 1, 'escalation list is independent, still includes it');
   db.close();
 });
 

@@ -4,8 +4,9 @@ import { openDatabase } from '../../src/db/index.js';
 import { createJob } from '../../src/db/jobsRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { listMailLog } from '../../src/db/mailLogRepo.js';
-import { sendNotification, sendRenderedMail, resolveEmpfaenger } from '../../src/services/notify.js';
+import { sendNotification, sendRenderedMail, resolveEmpfaenger, sendNotificationMitVertretung } from '../../src/services/notify.js';
 import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
+import { setFerienmodus } from '../../src/db/personenRepo.js';
 
 function createStubMailer({ shouldFail = false } = {}) {
   const sent = [];
@@ -245,5 +246,46 @@ test('resolveEmpfaenger returns an empty array for an empty config value', () =>
   const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
   assert.deepEqual(resolveEmpfaenger(db, CONFIG, ''), []);
   assert.deepEqual(resolveEmpfaenger(db, CONFIG, null), []);
+  db.close();
+});
+
+test('sendNotificationMitVertretung sends only to the person when no Ferienmodus is active', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org', gruppen: ['10'], loggedInNow: true });
+  const mailer = createStubMailer();
+
+  await sendNotificationMitVertretung(db, mailer, {
+    person: { churchtools_person_id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org' },
+    typ: 'zuweisung',
+    jobId: null,
+    variablen: { jobDateiname: 'a.pdf', grund: 'Test', link: 'https://portal.example.org/x' },
+  });
+
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'ana@example.org');
+  db.close();
+});
+
+test('sendNotificationMitVertretung also sends to the active Stellvertreter, with an adjusted grund', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org', gruppen: ['10'], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'bo@example.org', gruppen: ['10'], loggedInNow: true });
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  const mailer = createStubMailer();
+
+  await sendNotificationMitVertretung(db, mailer, {
+    person: { churchtools_person_id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org' },
+    typ: 'zuweisung',
+    jobId: null,
+    variablen: { jobDateiname: 'a.pdf', grund: 'Eine Rechnung wartet auf deine Freigabe 2.', link: 'https://portal.example.org/x' },
+  });
+
+  assert.equal(mailer.sent.length, 2);
+  assert.equal(mailer.sent[0].to, 'ana@example.org');
+  assert.equal(mailer.sent[1].to, 'bo@example.org');
+  assert.match(mailer.sent[1].text, /Stellvertreter für Ana Muster/);
+  assert.match(mailer.sent[1].text, /Eine Rechnung wartet auf deine Freigabe 2\./);
   db.close();
 });

@@ -16,8 +16,9 @@ import {
   listZeitstempelAusstehendJobs,
   listSplitGruppenAusstehend,
 } from '../db/jobsRepo.js';
-import { pruneMailLogOlderThan } from '../db/mailLogRepo.js';
+import { pruneMailLogOlderThan, listGeplantMailsGruppiertNachEmpfaenger } from '../db/mailLogRepo.js';
 import { sendNotification, resolveEmpfaenger } from './notify.js';
+import { getVorlage, renderTemplate } from './mailTemplates.js';
 import { logCronLauf, startCronLauf, finishCronLauf, hasRecentRunningCronLauf } from '../db/cronLogRepo.js';
 import { setZeitstempel } from './zeitstempel.js';
 import { pruefeUndFinalisiereSplitGruppe } from './splitGruppenExport.js';
@@ -340,6 +341,61 @@ export async function runSplitGruppenNachholenJob(db, config) {
       details: `Nachgeholt: ${nachgeholt}, Fehlgeschlagen: ${fehlgeschlagen}, Übersprungen: ${uebersprungen}`,
     });
     return { status: 'erfolg', nachgeholt, fehlgeschlagen, uebersprungen };
+  } catch (err) {
+    finishCronLauf(db, laufId, { beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
+    return { status: 'fehler', error: err.message };
+  }
+}
+
+// Sammelt alle wegen aktivem Batching (admin_config['mail_batching_aktiv']) nur protokollierten,
+// aber noch nicht versendeten mail_log-Zeilen (status = 'geplant') pro Empfänger und verschickt
+// dafür eine einzige Digest-Mail. Läuft mit Überlappungsschutz wie datenbank-sicherung/
+// zeitstempel-nachholen, da pro Empfänger ein echter SMTP-Roundtrip stattfindet.
+export async function runMailDigestJob(db, config, mailer) {
+  if (hasRecentRunningCronLauf(db, 'mail-digest')) {
+    return { status: 'uebersprungen', versendet: 0, empfaenger: 0, meldung: 'Ein Mail-Digest-Lauf ist bereits aktiv' };
+  }
+
+  const laufId = startCronLauf(db, 'mail-digest');
+  try {
+    const gruppen = listGeplantMailsGruppiertNachEmpfaenger(db);
+    const portalName = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
+    let versendet = 0;
+    let fehlgeschlagen = 0;
+
+    for (const [empfaenger, zeilen] of gruppen) {
+      const vorlage = getVorlage(db, 'digest');
+      const variablen = {
+        empfaengerName: empfaenger,
+        anzahl: zeilen.length,
+        eintraege: zeilen.map((z) => `- ${z.betreff}`).join('\n'),
+        link: `${config.publicBaseUrl}/pool`,
+        portalName,
+      };
+      const subject = renderTemplate(vorlage.betreff, variablen);
+      const text = renderTemplate(vorlage.text, variablen);
+
+      try {
+        await mailer.sendMail({ to: empfaenger, subject, text });
+        for (const zeile of zeilen) {
+          db.prepare("UPDATE mail_log SET status = 'versendet', versucht_am = ? WHERE id = ?").run(new Date().toISOString(), zeile.id);
+        }
+        versendet += 1;
+      } catch (err) {
+        for (const zeile of zeilen) {
+          db.prepare("UPDATE mail_log SET status = 'fehlgeschlagen', fehler_details = ?, versucht_am = ? WHERE id = ?").run(err.message, new Date().toISOString(), zeile.id);
+        }
+        fehlgeschlagen += 1;
+      }
+    }
+
+    const ergebnis = { status: 'erfolg', versendet, fehlgeschlagen, empfaenger: gruppen.size };
+    finishCronLauf(db, laufId, {
+      beendetAm: new Date().toISOString(),
+      status: 'erfolg',
+      details: `Digest-Mails versendet: ${versendet}, fehlgeschlagen: ${fehlgeschlagen}, Empfänger insgesamt: ${gruppen.size}`,
+    });
+    return ergebnis;
   } catch (err) {
     finishCronLauf(db, laufId, { beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
     return { status: 'fehler', error: err.message };

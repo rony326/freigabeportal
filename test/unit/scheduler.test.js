@@ -34,6 +34,7 @@ function fakeJobs(overrides = {}) {
     runZeitstempelNachholenJob: async () => ({ status: 'erfolg' }),
     runDatenbankSicherungJob: () => ({ status: 'erfolg' }),
     runSplitGruppenNachholenJob: async () => ({ status: 'erfolg' }),
+    runMailDigestJob: async () => ({ status: 'erfolg' }),
     ...overrides,
   };
 }
@@ -220,6 +221,24 @@ test('startScheduler runs the daily datenbank-sicherung job at the configured ti
   });
 
   t.mock.timers.tick(2 * 60 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+  db.close();
+});
+
+test('startScheduler runs the daily mail-digest job at the configured time (default 07:00)', async (t) => {
+  // 2026-01-15T00:00:00Z is 01:00 in Zurich (CET, UTC+1) -- 07:00 is 6 hours away.
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: new Date('2026-01-15T00:00:00.000Z') });
+  const db = seededDb();
+  let calls = 0;
+  startScheduler({
+    db,
+    config: {},
+    mailer: {},
+    jobs: fakeJobs({ runMailDigestJob: async () => { calls += 1; return { status: 'erfolg' }; } }),
+  });
+
+  t.mock.timers.tick(6 * 60 * 60 * 1000);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(calls, 1);
   db.close();

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
 import { createJob } from '../../src/db/jobsRepo.js';
-import { logMailAttempt, listMailLog, getMailLogById, pruneMailLogOlderThan } from '../../src/db/mailLogRepo.js';
+import { logMailAttempt, listMailLog, getMailLogById, pruneMailLogOlderThan, listGeplantMailsGruppiertNachEmpfaenger } from '../../src/db/mailLogRepo.js';
 
 test('logMailAttempt inserts a versendet row with all fields, getMailLogById returns it', () => {
   const db = openDatabase(':memory:');
@@ -68,5 +68,20 @@ test('pruneMailLogOlderThan deletes nothing and returns 0 when no rows are older
   const deleted = pruneMailLogOlderThan(db, '2020-01-01T00:00:00.000Z');
   assert.equal(deleted, 0);
   assert.equal(listMailLog(db).length, 1);
+  db.close();
+});
+
+test('listGeplantMailsGruppiertNachEmpfaenger groups geplant rows by empfaenger and ignores other statuses', () => {
+  const db = openDatabase(':memory:');
+  logMailAttempt(db, { typ: 'zuweisung', jobId: null, empfaenger: 'a@example.org', betreff: 'B1', text: 'T1', status: 'geplant' });
+  logMailAttempt(db, { typ: 'ablehnung', jobId: null, empfaenger: 'a@example.org', betreff: 'B2', text: 'T2', status: 'geplant' });
+  logMailAttempt(db, { typ: 'reminder', jobId: null, empfaenger: 'b@example.org', betreff: 'B3', text: 'T3', status: 'geplant' });
+  logMailAttempt(db, { typ: 'reminder', jobId: null, empfaenger: 'c@example.org', betreff: 'B4', text: 'T4', status: 'versendet' });
+
+  const gruppen = listGeplantMailsGruppiertNachEmpfaenger(db);
+  assert.equal(gruppen.size, 2);
+  assert.equal(gruppen.get('a@example.org').length, 2);
+  assert.equal(gruppen.get('b@example.org').length, 1);
+  assert.ok(!gruppen.has('c@example.org'), 'versendet rows are excluded');
   db.close();
 });

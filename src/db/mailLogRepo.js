@@ -20,3 +20,13 @@ export function pruneMailLogOlderThan(db, isoThreshold) {
   const result = db.prepare('DELETE FROM mail_log WHERE versucht_am < ?').run(isoThreshold);
   return Number(result.changes);
 }
+
+export function listGeplantMailsGruppiertNachEmpfaenger(db) {
+  const rows = db.prepare("SELECT * FROM mail_log WHERE status = 'geplant' ORDER BY versucht_am").all();
+  const gruppen = new Map();
+  for (const row of rows) {
+    if (!gruppen.has(row.empfaenger)) gruppen.set(row.empfaenger, []);
+    gruppen.get(row.empfaenger).push(row);
+  }
+  return gruppen;
+}

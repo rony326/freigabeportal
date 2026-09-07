@@ -1,4 +1,4 @@
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob } from './cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob } from './cronJobs.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
 const ZEITZONE = 'Europe/Zurich';
@@ -97,6 +97,7 @@ export function startScheduler({
     runZeitstempelNachholenJob: zeitstempelJob,
     runDatenbankSicherungJob: sicherungJob,
     runSplitGruppenNachholenJob: splitGruppenJob,
+    runMailDigestJob: mailDigestJob,
   } = {
     runSyncPersonenJob,
     runPoolErinnerungenJob,
@@ -104,6 +105,7 @@ export function startScheduler({
     runZeitstempelNachholenJob,
     runDatenbankSicherungJob,
     runSplitGruppenNachholenJob,
+    runMailDigestJob,
   },
 }) {
   scheduleDaily(
@@ -154,6 +156,15 @@ export function startScheduler({
     () => {
       const result = sicherungJob(db, config);
       if (result.status === 'fehler') console.error('Geplanter datenbank-sicherung-Lauf fehlgeschlagen:', result.error);
+    }
+  );
+
+  scheduleDaily(
+    () => zahlOderStandard(getConfigValue(db, 'mail_batching_stunde'), 7),
+    () => zahlOderStandard(getConfigValue(db, 'mail_batching_minute'), 0),
+    async () => {
+      const result = await mailDigestJob(db, config, mailer);
+      if (result.status === 'fehler') console.error('Geplanter mail-digest-Lauf fehlgeschlagen:', result.error);
     }
   );
 }

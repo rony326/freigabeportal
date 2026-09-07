@@ -5,13 +5,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { openDatabase } from '../../src/db/index.js';
-import { setConfigValue } from '../../src/db/adminConfigRepo.js';
+import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { createJob, getJobById } from '../../src/db/jobsRepo.js';
 import { listRecentCronLog, startCronLauf } from '../../src/db/cronLogRepo.js';
-import { runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob } from '../../src/services/cronJobs.js';
+import { runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob } from '../../src/services/cronJobs.js';
+import { logMailAttempt, listMailLog } from '../../src/db/mailLogRepo.js';
 import { setupMockTsa } from '../helpers/mockTsa.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { BACKUP_DATEINAME_PATTERN } from '../../src/services/backup.js';
+
+function createStubMailer() {
+  const sent = [];
+  return { sent, async sendMail(mail) { sent.push(mail); } };
+}
 
 const RFC3161_RESPONSE = readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url));
 
@@ -289,5 +295,61 @@ test('runSplitGruppenNachholenJob skips a group that is still incomplete without
   assert.equal(result.nachgeholt, 0);
   assert.equal(result.fehlgeschlagen, 0);
   assert.equal(result.uebersprungen, 1);
+  db.close();
+});
+
+test('runMailDigestJob sends one digest mail per recipient, grouping their geplant rows', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = createStubMailer();
+  logMailAttempt(db, { typ: 'zuweisung', jobId: null, empfaenger: 'a@example.org', betreff: 'Freigabeportal: Neue Rechnung zur Bearbeitung', text: 'Hallo Erika,...', status: 'geplant' });
+  logMailAttempt(db, { typ: 'ablehnung', jobId: null, empfaenger: 'a@example.org', betreff: 'Freigabeportal: Rechnung abgelehnt', text: 'Hallo Erika,...', status: 'geplant' });
+  logMailAttempt(db, { typ: 'reminder', jobId: null, empfaenger: 'b@example.org', betreff: 'Freigabeportal: Rechnung wartet im Pool', text: '...', status: 'geplant' });
+
+  const config = { publicBaseUrl: 'http://portal.example.org' };
+  const result = await runMailDigestJob(db, config, mailer);
+
+  assert.equal(result.status, 'erfolg');
+  assert.equal(mailer.sent.length, 2, 'one digest mail per distinct recipient');
+  const anA = mailer.sent.find((m) => m.to === 'a@example.org');
+  assert.match(anA.subject, /2 Ereignisse/);
+  assert.match(anA.text, /Freigabeportal: Neue Rechnung zur Bearbeitung/);
+  assert.match(anA.text, /Freigabeportal: Rechnung abgelehnt/);
+
+  const rows = listMailLog(db);
+  assert.ok(rows.every((r) => r.status === 'versendet'), 'all queued rows flip to versendet on success');
+  db.close();
+});
+
+test('runMailDigestJob marks every row in a failed group as fehlgeschlagen, without affecting other recipients', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const failingMailer = {
+    sent: [],
+    async sendMail(mail) {
+      if (mail.to === 'fail@example.org') throw new Error('SMTP down');
+      this.sent.push(mail);
+    },
+  };
+  logMailAttempt(db, { typ: 'reminder', jobId: null, empfaenger: 'fail@example.org', betreff: 'B', text: 'T', status: 'geplant' });
+  logMailAttempt(db, { typ: 'reminder', jobId: null, empfaenger: 'ok@example.org', betreff: 'B', text: 'T', status: 'geplant' });
+
+  const config = { publicBaseUrl: 'http://portal.example.org' };
+  await runMailDigestJob(db, config, failingMailer);
+
+  const rows = listMailLog(db);
+  assert.equal(rows.find((r) => r.empfaenger === 'fail@example.org').status, 'fehlgeschlagen');
+  assert.equal(rows.find((r) => r.empfaenger === 'ok@example.org').status, 'versendet');
+  db.close();
+});
+
+test('runMailDigestJob is a no-op returning erfolg when no rows are geplant', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = createStubMailer();
+  const result = await runMailDigestJob(db, { publicBaseUrl: 'http://portal.example.org' }, mailer);
+  assert.equal(result.status, 'erfolg');
+  assert.equal(result.empfaenger, 0);
+  assert.equal(mailer.sent.length, 0);
   db.close();
 });

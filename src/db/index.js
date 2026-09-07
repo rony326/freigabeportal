@@ -508,6 +508,43 @@ function migrateCronLogTableMailDigest(db) {
   }
 }
 
+// Same pattern as migrateMailLogTableGeplantStatus above, one more CHECK widening for the two
+// new 'freigabe2-reminder'/'freigabe2-eskalation' mail types (freigabe2-erinnerungen cron job).
+function migrateMailLogTableFreigabe2(db) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mail_log'").get();
+  if (!tableSql || tableSql.sql.includes('freigabe2-reminder')) return;
+
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE mail_log RENAME TO mail_log_pre_freigabe2');
+    db.exec(`
+      CREATE TABLE mail_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation')),
+        job_id INTEGER REFERENCES jobs(id),
+        empfaenger TEXT NOT NULL,
+        betreff TEXT NOT NULL,
+        text TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen', 'geplant')),
+        fehler_details TEXT,
+        versucht_am TEXT NOT NULL
+      )
+    `);
+    db.exec(`
+      INSERT INTO mail_log (id, typ, job_id, empfaenger, betreff, text, status, fehler_details, versucht_am)
+      SELECT id, typ, job_id, empfaenger, betreff, text, status, fehler_details, versucht_am FROM mail_log_pre_freigabe2
+    `);
+    db.exec('DROP TABLE mail_log_pre_freigabe2');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -524,5 +561,6 @@ export function openDatabase(dbPath) {
   migrateCronLogTableSplitGruppen(db);
   migrateMailLogTableGeplantStatus(db);
   migrateCronLogTableMailDigest(db);
+  migrateMailLogTableFreigabe2(db);
   return db;
 }

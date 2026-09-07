@@ -940,3 +940,51 @@ test('openDatabase widens the cron_log table job CHECK to include mail-digest, e
   migratedDb.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('openDatabase widens the mail_log table typ CHECK to include freigabe2-reminder and freigabe2-eskalation, even for a database already migrated to include geplant status', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, eingang_am TEXT NOT NULL, quelle TEXT NOT NULL, absender TEXT, dateiname TEXT NOT NULL, pdf_pfad TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'unzugewiesen');
+    CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL
+    );
+    INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad) VALUES ('2026-08-15T08:00:00.000Z', 'scanner', NULL, 'a.pdf', '/tmp/a.pdf');
+    INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am)
+      VALUES ('zuweisung', 1, 'a@example.org', 'Betreff', 'Text', 'versendet', '2026-08-15T08:05:00.000Z');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const preserved = migratedDb.prepare('SELECT * FROM mail_log WHERE id = 1').get();
+  assert.equal(preserved.empfaenger, 'a@example.org', 'existing rows must survive the rebuild');
+  assert.doesNotThrow(() =>
+    migratedDb
+      .prepare(
+        `INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am)
+         VALUES ('freigabe2-reminder', 1, 'b@example.org', 'Betreff', 'Text', 'versendet', '2026-08-15T09:00:00.000Z')`
+      )
+      .run(),
+    'the widened CHECK constraint must accept typ = freigabe2-reminder'
+  );
+  assert.doesNotThrow(() =>
+    migratedDb
+      .prepare(
+        `INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am)
+         VALUES ('freigabe2-eskalation', 1, 'c@example.org', 'Betreff', 'Text', 'versendet', '2026-08-15T09:05:00.000Z')`
+      )
+      .run(),
+    'the widened CHECK constraint must accept typ = freigabe2-eskalation'
+  );
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});

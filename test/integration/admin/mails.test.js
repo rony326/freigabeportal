@@ -82,6 +82,23 @@ test('POST /admin/mails/:id/erneut-versenden resends and appends a new versendet
   db.close();
 });
 
+test('POST /admin/mails/:id/erneut-versenden for a geplant row returns 400 and does not send or create a new mail_log row', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const id = logMailAttempt(db, { typ: 'reminder', jobId: null, empfaenger: 'x@example.org', betreff: 'B', text: 'T', status: 'geplant' });
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app).post(`/admin/mails/${id}/erneut-versenden`).set('x-test-person-id', '99');
+  assert.equal(res.status, 400);
+  assert.equal(mailer.sent.length, 0, 'a geplant row must never be sent via manual resend');
+
+  const rows = listMailLog(db);
+  assert.equal(rows.length, 1, 'no new row must be created');
+  assert.equal(rows[0].status, 'geplant', 'the original row must stay untouched');
+  db.close();
+});
+
 test('GET /admin/mails?gespeichert=1 shows "Erneut gesendet."; without it, it does not', async () => {
   const db = openDatabase(':memory:');
   seedAdmin(db);

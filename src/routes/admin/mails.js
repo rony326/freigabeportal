@@ -15,6 +15,9 @@ export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next
       if (!eintrag) {
         return res.status(404).render('error', { message: 'Mail-Eintrag nicht gefunden.' });
       }
+      if (eintrag.status === 'geplant') {
+        return res.status(400).render('error', { message: 'Diese Mail ist noch nicht versendet worden (wartet auf den nächsten Digest-Lauf) und kann nicht erneut versendet werden.' });
+      }
       await sendRenderedMail(db, mailer, {
         to: eintrag.empfaenger,
         subject: eintrag.betreff,

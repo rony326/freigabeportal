@@ -343,6 +343,56 @@ test('runMailDigestJob marks every row in a failed group as fehlgeschlagen, with
   db.close();
 });
 
+test('runMailDigestJob distinguishes two queued rows of the same typ by job_id in the digest text', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = createStubMailer();
+  const jobId1 = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung-1.pdf', pdfPfad: '/tmp/1.pdf' });
+  const jobId2 = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung-2.pdf', pdfPfad: '/tmp/2.pdf' });
+  logMailAttempt(db, { typ: 'zuweisung', jobId: jobId1, empfaenger: 'a@example.org', betreff: 'Freigabeportal: Neue Rechnung zur Bearbeitung', text: 'Hallo,...', status: 'geplant' });
+  logMailAttempt(db, { typ: 'zuweisung', jobId: jobId2, empfaenger: 'a@example.org', betreff: 'Freigabeportal: Neue Rechnung zur Bearbeitung', text: 'Hallo,...', status: 'geplant' });
+
+  const config = { publicBaseUrl: 'http://portal.example.org' };
+  const result = await runMailDigestJob(db, config, mailer);
+
+  assert.equal(result.status, 'erfolg');
+  assert.equal(mailer.sent.length, 1);
+  const mail = mailer.sent[0];
+  assert.match(mail.text, new RegExp(`Job #${jobId1}\\b`));
+  assert.match(mail.text, new RegExp(`Job #${jobId2}\\b`));
+
+  const zeilen = mail.text.split('\n').filter((zeile) => zeile.startsWith('- '));
+  assert.equal(zeilen.length, 2);
+  assert.notEqual(zeilen[0], zeilen[1], 'two different invoices of the same typ must not render as identical digest lines');
+  db.close();
+});
+
+test('runMailDigestJob marks every currently-geplant row (across all recipients) as fehlgeschlagen when the digest template itself is broken, instead of leaving them stuck at geplant', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  // Simulate a missing admin_config key (e.g. a corrupted/partial config) for the digest
+  // template's text -- getVorlage(db, 'digest') then comes back with text: null instead of
+  // throwing outright, which is exactly the "missing key" gap this fix guards against.
+  db.prepare("DELETE FROM admin_config WHERE key = 'mail_vorlage_digest_text'").run();
+  const mailer = createStubMailer();
+  logMailAttempt(db, { typ: 'zuweisung', jobId: null, empfaenger: 'a@example.org', betreff: 'B', text: 'T', status: 'geplant' });
+  logMailAttempt(db, { typ: 'reminder', jobId: null, empfaenger: 'b@example.org', betreff: 'B', text: 'T', status: 'geplant' });
+
+  const config = { publicBaseUrl: 'http://portal.example.org' };
+  const result = await runMailDigestJob(db, config, mailer);
+
+  assert.equal(result.status, 'fehler');
+  assert.equal(mailer.sent.length, 0, 'no digest mail must be sent when the template is broken');
+
+  const rows = listMailLog(db);
+  assert.ok(rows.every((r) => r.status === 'fehlgeschlagen'), 'every previously-geplant row across every recipient must flip to fehlgeschlagen, not stay geplant');
+  assert.ok(rows.every((r) => r.fehler_details), 'each row must carry a visible error explanation');
+
+  const log = listRecentCronLog(db, 'mail-digest', 1);
+  assert.equal(log[0].status, 'fehler');
+  db.close();
+});
+
 test('runMailDigestJob is a no-op returning erfolg when no rows are geplant', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);

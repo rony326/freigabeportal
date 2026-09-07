@@ -30,11 +30,34 @@ export async function sendRenderedMail(db, mailer, { to, subject, text, typ, job
 }
 
 export async function sendNotification(db, mailer, { to, typ, jobId, variablen = {} }) {
-  const vorlage = getVorlage(db, typ);
-  const portalName = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
-  const alleVariablen = { ...variablen, portalName };
-  const subject = renderTemplate(vorlage.betreff, alleVariablen);
-  const text = renderTemplate(vorlage.text, alleVariablen);
+  let subject;
+  let text;
+  try {
+    const vorlage = getVorlage(db, typ);
+    const portalName = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
+    const alleVariablen = { ...variablen, portalName };
+    subject = renderTemplate(vorlage.betreff, alleVariablen);
+    text = renderTemplate(vorlage.text, alleVariablen);
+  } catch (err) {
+    // logMailAttempt itself can fail here too (e.g. `typ` isn't even one of the values
+    // mail_log's CHECK constraint allows -- a genuinely unknown typ is a programmer error that
+    // never occurs via today's callers, but must still not escape this function). Mirrors the
+    // same nested try/catch sendRenderedMail already uses for its own failed-send logging.
+    try {
+      logMailAttempt(db, {
+        typ,
+        jobId,
+        empfaenger: to,
+        betreff: '(Vorlage konnte nicht gerendert werden)',
+        text: '(Vorlage konnte nicht gerendert werden)',
+        status: 'fehlgeschlagen',
+        fehlerDetails: err.message,
+      });
+    } catch (logErr) {
+      console.error('sendNotification: logMailAttempt failed while recording a template-rendering failure', logErr);
+    }
+    return;
+  }
 
   const batchingAktiv = getConfigValue(db, 'mail_batching_aktiv') === '1';
   if (!batchingAktiv || IMMER_SOFORT_TYPEN.has(typ)) {

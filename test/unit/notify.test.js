@@ -135,6 +135,50 @@ test('sendNotification ignores the batching switch for iban-warnung and always s
   db.close();
 });
 
+test('sendNotification never throws and logs a fehlgeschlagen row when the requested typ\'s template is missing (unrenderable)', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  // Simulate a missing admin_config key (e.g. a corrupted/partial config) rather than passing
+  // null through setConfigValue -- the admin_config.value column is NOT NULL, so the only
+  // realistic way to reproduce "getConfigValue returns null for this one key" is to never have
+  // set it (or to remove it) while every other key sendNotification touches stays intact.
+  db.prepare("DELETE FROM admin_config WHERE key = 'mail_vorlage_zuweisung_text'").run();
+  const mailer = createStubMailer();
+
+  await assert.doesNotReject(() =>
+    sendNotification(db, mailer, {
+      to: 'x@example.org',
+      typ: 'zuweisung',
+      jobId: null,
+      variablen: { empfaengerName: 'Erika Muster', jobDateiname: 'a.pdf', grund: 'G', link: 'L' },
+    })
+  );
+
+  assert.equal(mailer.sent.length, 0, 'no SMTP call must happen when the template could not be rendered');
+  const rows = listMailLog(db);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, 'fehlgeschlagen');
+  assert.equal(rows[0].typ, 'zuweisung');
+  assert.ok(rows[0].fehler_details);
+  db.close();
+});
+
+test('sendNotification never throws when the requested typ is unknown, even though mail_log cannot log a typ its CHECK constraint disallows', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = createStubMailer();
+
+  // 'unbekannter-typ' makes getVorlage() throw (unknown template) AND makes the subsequent
+  // logMailAttempt() itself throw (mail_log.typ has a CHECK constraint listing only the real
+  // typs) -- this exercises the nested try/catch around that logging call, not just the outer one.
+  await assert.doesNotReject(() =>
+    sendNotification(db, mailer, { to: 'x@example.org', typ: 'unbekannter-typ', jobId: null, variablen: {} })
+  );
+
+  assert.equal(mailer.sent.length, 0, 'no SMTP call must happen for an unknown typ');
+  db.close();
+});
+
 test('resolveEmpfaenger returns an empty array for a null/empty config value', () => {
   const db = openDatabase(':memory:');
   const config = { churchtools: { groupIdBuchhaltung: '10' } };

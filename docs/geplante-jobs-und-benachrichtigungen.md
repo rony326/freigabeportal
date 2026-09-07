@@ -158,6 +158,13 @@ sondern als `status = 'geplant'` protokolliert und vom `mail-digest`-Job
 (siehe oben) einmal täglich pro Empfänger zu einer Sammel-Mail
 zusammengefasst.
 
+Wird eine `geplant`e Zeile so als Teil einer Digest-Mail verschickt, wird
+ihr `mail_log`-Eintrag trotzdem auf `versendet` gesetzt, obwohl der darin
+gespeicherte, individuell gerenderte `text` nie eigenständig als E-Mail
+zugestellt wurde — nur die Digest-Sammel-Mail wurde tatsächlich
+verschickt. **Admin → Mail-Protokoll** zeigt also, was verschickt worden
+*wäre*, nicht wortwörtlich, was verschickt wurde.
+
 Der Mailer ist optional: fehlt eine vollständige SMTP-Konfiguration, fällt
 das Portal automatisch auf einen No-Op-Mailer zurück, der jeden
 Versandversuch als Fehlschlag protokolliert, statt den ganzen Prozess

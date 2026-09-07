@@ -359,16 +359,52 @@ export async function runMailDigestJob(db, config, mailer) {
   const laufId = startCronLauf(db, 'mail-digest');
   try {
     const gruppen = listGeplantMailsGruppiertNachEmpfaenger(db);
+
+    // Die Digest-Vorlage wird einmal VOR der Empfänger-Schleife geladen (statt pro Empfänger
+    // erneut) und eigens abgesichert: schlägt das Rendern hier fehl (fehlender/kaputter
+    // admin_config-Key), betrifft das JEDEN Empfänger gleichermassen -- ohne diesen eigenen
+    // try/catch würde die Exception aus der Schleife herausfallen, nur den Cron-Lauf als
+    // 'fehler' markieren und dabei JEDE aktuell 'geplant' stehende Zeile unangetastet lassen.
+    // Der nächste Lauf würde am selben Fehler erneut scheitern -- die Empfänger blieben so
+    // unsichtbar und dauerhaft ohne Digest. Stattdessen: alle aktuell wartenden Zeilen sofort
+    // sichtbar auf 'fehlgeschlagen' setzen, damit sie einzeln über /admin/mails' "erneut
+    // versenden" wiederholt werden können.
+    let vorlage;
+    try {
+      vorlage = getVorlage(db, 'digest');
+      if (!vorlage.betreff || !vorlage.text) {
+        throw new Error('Digest-Vorlage ist unvollständig (Betreff oder Text fehlt)');
+      }
+    } catch (err) {
+      const jetzt = new Date().toISOString();
+      let betroffen = 0;
+      for (const zeilen of gruppen.values()) {
+        for (const zeile of zeilen) {
+          db.prepare("UPDATE mail_log SET status = 'fehlgeschlagen', fehler_details = ?, versucht_am = ? WHERE id = ?").run(
+            `Digest-Vorlage konnte nicht gerendert werden: ${err.message}`,
+            jetzt,
+            zeile.id
+          );
+          betroffen += 1;
+        }
+      }
+      finishCronLauf(db, laufId, {
+        beendetAm: jetzt,
+        status: 'fehler',
+        details: `Digest-Vorlage konnte nicht gerendert werden: ${err.message}. ${betroffen} wartende(s) Mail-Log-Zeile(n) auf fehlgeschlagen gesetzt.`,
+      });
+      return { status: 'fehler', error: err.message };
+    }
+
     const portalName = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
     let versendet = 0;
     let fehlgeschlagen = 0;
 
     for (const [empfaenger, zeilen] of gruppen) {
-      const vorlage = getVorlage(db, 'digest');
       const variablen = {
         empfaengerName: empfaenger,
         anzahl: zeilen.length,
-        eintraege: zeilen.map((z) => `- ${z.betreff}`).join('\n'),
+        eintraege: zeilen.map((z) => (z.job_id != null ? `- ${z.betreff} (Job #${z.job_id})` : `- ${z.betreff}`)).join('\n'),
         link: `${config.publicBaseUrl}/pool`,
         portalName,
       };

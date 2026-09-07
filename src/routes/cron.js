@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob } from '../services/cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob } from '../services/cronJobs.js';
 
 function httpStatusFuer(status) {
   if (status === 'uebersprungen') return 409;
@@ -29,6 +29,15 @@ export function createCronRouter({ db, config, mailer }) {
   router.post('/pool-erinnerungen', async (req, res, next) => {
     try {
       const result = await runPoolErinnerungenJob(db, config, mailer);
+      res.status(httpStatusFuer(result.status)).json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/freigabe2-erinnerungen', async (req, res, next) => {
+    try {
+      const result = await runFreigabe2ErinnerungenJob(db, config, mailer);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);

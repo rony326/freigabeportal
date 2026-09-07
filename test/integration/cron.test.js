@@ -238,6 +238,186 @@ test('POST /internal/cron/pool-erinnerungen returns a JSON error body (not an HT
   db.close();
 });
 
+test('POST /internal/cron/freigabe2-erinnerungen without the secret is rejected', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).post('/internal/cron/freigabe2-erinnerungen');
+  assert.equal(res.status, 401);
+  db.close();
+});
+
+test('POST /internal/cron/freigabe2-erinnerungen sends one reminder mail to the effective Freigeber2 and marks it sent, is idempotent on a second run', async () => {
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, jobId);
+
+  const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
+  const app = createApp({ db, config });
+
+  const res1 = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(res1.status, 200);
+  assert.equal(res1.body.reminder, 1);
+  assert.equal(getJobById(db, jobId).freigabe2_reminder_gesendet_at !== null, true);
+  const mails = listMailLog(db).filter((m) => m.typ === 'freigabe2-reminder');
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0].empfaenger, 'p3@example.org', 'must go to the Konto Freigeber2, not a configured group');
+
+  const res2 = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(res2.status, 200);
+  assert.equal(res2.body.reminder, 0, 'the same job must not be reminded twice');
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'freigabe2-reminder').length, 1);
+  db.close();
+});
+
+test('POST /internal/cron/freigabe2-erinnerungen reminds the Stellvertreter2, not the original Freigeber2, once the job was escalated within freigabe2', async () => {
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+  const { createJob } = await import('../../src/db/jobsRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare(
+    "UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z', freigabe2_eskaliert_von = '3' WHERE id = ?"
+  ).run(kontoId, jobId);
+
+  const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
+  const app = createApp({ db, config });
+  const res = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.reminder, 1);
+  const mails = listMailLog(db).filter((m) => m.typ === 'freigabe2-reminder');
+  assert.equal(mails[0].empfaenger, 'p4@example.org', 'Stellvertreter2 (person 4), not the original Freigeber2 (person 3)');
+  db.close();
+});
+
+test('POST /internal/cron/freigabe2-erinnerungen hands a very-stale job to the admin group and sends the eskalation mail, independent of the reminder', async () => {
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, jobId);
+
+  const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
+  const app = createApp({ db, config });
+  const res = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.reminder, 1);
+  assert.equal(res.body.eskalation, 1);
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'freigabe2-reminder').length, 1);
+  const eskalationMails = listMailLog(db).filter((m) => m.typ === 'freigabe2-eskalation');
+  assert.equal(eskalationMails.length, 1);
+  assert.equal(eskalationMails[0].empfaenger, 'admin@example.org');
+  assert.equal(getJobById(db, jobId).freigabe2_eskaliert_an_admin, 1, 'job must actually be handed to the admin group, not just mailed about');
+  db.close();
+});
+
+test('POST /internal/cron/freigabe2-erinnerungen does not mark the reminder sent when the effective Freigeber2 is inactive, so a later sweep (or listStalledJobs) can still handle it', async () => {
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '3'").run();
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, jobId);
+
+  const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
+  const app = createApp({ db, config });
+  const res = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.reminder, 0, 'no valid recipient -> not counted as reminded');
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'freigabe2-reminder').length, 0);
+  assert.equal(getJobById(db, jobId).freigabe2_reminder_gesendet_at, null, 'must stay eligible for retry once the person is reactivated');
+  db.close();
+});
+
+test('POST /internal/cron/freigabe2-erinnerungen does not mark the escalation sent when freigabe2_eskalation_empfaenger resolves to zero recipients, but still hands the job to admin', async () => {
+  const { seedDefaults, setConfigValue } = await import('../../src/db/adminConfigRepo.js');
+  const { createJob, getJobById } = await import('../../src/db/jobsRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'freigabe2_reminder_stunden', '999999'); // suppress the reminder phase for this test
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  // Deliberately no group-20 (admin) members seeded -> resolveEmpfaenger('gruppe:admin') yields [].
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, jobId);
+
+  const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
+  const app = createApp({ db, config });
+  const res = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
+
+  assert.equal(res.status, 200);
+  assert.equal(listMailLog(db).length, 0, 'zero recipients resolved -> no mail attempt');
+  assert.equal(getJobById(db, jobId).freigabe2_eskalation_gesendet_at, null);
+  assert.equal(getJobById(db, jobId).freigabe2_eskaliert_an_admin, 1, 'the handover itself must still happen even with nobody to notify');
+  db.close();
+});
+
+test('POST /internal/cron/freigabe2-erinnerungen returns a JSON error body (not an HTML error page) when the handler throws', async () => {
+  const { seedDefaults, setConfigValue } = await import('../../src/db/adminConfigRepo.js');
+  const { createJob } = await import('../../src/db/jobsRepo.js');
+  const { createKonto } = await import('../../src/db/kontenRepo.js');
+  const { upsertPerson } = await import('../../src/db/personenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'freigabe2_reminder_stunden', 'kaputt');
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ? WHERE id = ?").run(kontoId, jobId);
+  const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
+  const app = createApp({ db, config });
+
+  const res = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(res.status, 500);
+  assert.equal(res.body.status, 'fehler');
+  assert.equal(typeof res.body.error, 'string');
+  assert.equal(res.type, 'application/json');
+  db.close();
+});
+
 test('POST /internal/cron/pdf-bereinigung without the secret is rejected', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });

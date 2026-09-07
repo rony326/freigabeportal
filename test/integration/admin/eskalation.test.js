@@ -38,7 +38,7 @@ const ESKALATION_ROUTES = [
   { method: 'post', path: '/admin/eskalation' },
 ];
 
-const VALID_BODY = { reminderStunden: '1', eskalationStunden: '2', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'x@example.org', ibanAbweichungEmpfaenger: 'gruppe:admin' };
+const VALID_BODY = { reminderStunden: '1', eskalationStunden: '2', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'x@example.org', ibanAbweichungEmpfaenger: 'gruppe:admin', freigabe2ReminderStunden: '1', freigabe2EskalationStunden: '2', freigabe2EskalationEmpfaenger: 'gruppe:admin' };
 
 test('every Eskalation route returns 401 without any session, and config is untouched', async () => {
   const db = openDatabase(':memory:');
@@ -86,6 +86,50 @@ test('GET /admin/eskalation shows the seeded defaults pre-filled', async () => {
   db.close();
 });
 
+test('GET /admin/eskalation shows the seeded freigabe2 defaults pre-filled', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/eskalation').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /freigabe2ReminderStunden/);
+  assert.match(res.text, /gruppe:admin/);
+  db.close();
+});
+
+test('POST /admin/eskalation with valid values persists the freigabe2 fields', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/eskalation')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ ...VALID_BODY, freigabe2ReminderStunden: '30', freigabe2EskalationStunden: '72', freigabe2EskalationEmpfaenger: 'admin@musterkirche.ch' });
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'freigabe2_reminder_stunden'), '30');
+  assert.equal(getConfigValue(db, 'freigabe2_eskalation_stunden'), '72');
+  assert.equal(getConfigValue(db, 'freigabe2_eskalation_empfaenger'), 'admin@musterkirche.ch');
+  db.close();
+});
+
+test('POST /admin/eskalation with an invalid freigabe2 Stunden value is rejected, existing config untouched', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/eskalation')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ ...VALID_BODY, freigabe2EskalationStunden: '0' });
+  assert.equal(res.status, 400);
+  assert.equal(getConfigValue(db, 'freigabe2_eskalation_stunden'), '48');
+  db.close();
+});
+
 test('POST /admin/eskalation with valid values persists them', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
@@ -95,7 +139,7 @@ test('POST /admin/eskalation with valid values persists them', async () => {
     .post('/admin/eskalation')
     .set('x-test-person-id', '99')
     .type('form')
-    .send({ reminderStunden: '12', eskalationStunden: '36', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'kirchenpflege@musterkirche.ch\ngruppe:buchhaltung', ibanAbweichungEmpfaenger: 'gruppe:admin' });
+    .send({ reminderStunden: '12', eskalationStunden: '36', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'kirchenpflege@musterkirche.ch\ngruppe:buchhaltung', ibanAbweichungEmpfaenger: 'gruppe:admin', freigabe2ReminderStunden: '1', freigabe2EskalationStunden: '2', freigabe2EskalationEmpfaenger: 'gruppe:admin' });
   assert.equal(res.status, 302);
   assert.equal(res.headers.location, '/admin/eskalation?gespeichert=1');
   assert.equal(getConfigValue(db, 'reminder_stunden'), '12');
@@ -183,7 +227,7 @@ test('POST /admin/eskalation saves a valid IBAN-Abweichungs-Empfänger value', a
     .post('/admin/eskalation')
     .set('x-test-person-id', '99')
     .type('form')
-    .send({ reminderStunden: '24', eskalationStunden: '48', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'gruppe:buchhaltung', ibanAbweichungEmpfaenger: 'admin@example.org' });
+    .send({ reminderStunden: '24', eskalationStunden: '48', reminderEmpfaenger: 'gruppe:buchhaltung', eskalationEmpfaenger: 'gruppe:buchhaltung', ibanAbweichungEmpfaenger: 'admin@example.org', freigabe2ReminderStunden: '1', freigabe2EskalationStunden: '2', freigabe2EskalationEmpfaenger: 'gruppe:admin' });
 
   assert.equal(res.status, 302);
   assert.equal(getConfigValue(db, 'iban_abweichung_empfaenger'), 'admin@example.org');

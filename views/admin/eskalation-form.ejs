@@ -34,6 +34,20 @@
         <label class="form-label" for="eskalationEmpfaenger">Eskalations-Empfänger (ein Ziel pro Zeile: E-Mail-Adresse oder "gruppe:buchhaltung")</label>
         <textarea class="form-control" id="eskalationEmpfaenger" name="eskalationEmpfaenger" rows="4"><%= eskalationEmpfaenger || '' %></textarea>
       </div>
+      <hr class="my-3">
+      <h2 class="h5">Freigabe 2 — Erinnerung bei Untätigkeit</h2>
+      <div class="mb-3">
+        <label class="form-label" for="freigabe2ReminderStunden">Reminder an Freigeber 2 nach (Stunden)</label>
+        <input type="number" class="form-control" id="freigabe2ReminderStunden" name="freigabe2ReminderStunden" value="<%= freigabe2ReminderStunden %>" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="freigabe2EskalationStunden">Automatische Übergabe an Admin nach (Stunden)</label>
+        <input type="number" class="form-control" id="freigabe2EskalationStunden" name="freigabe2EskalationStunden" value="<%= freigabe2EskalationStunden %>" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="freigabe2EskalationEmpfaenger">Empfänger der Übergabe-Benachrichtigung (ein Ziel pro Zeile: E-Mail-Adresse oder "gruppe:admin"/"gruppe:buchhaltung")</label>
+        <textarea class="form-control" id="freigabe2EskalationEmpfaenger" name="freigabe2EskalationEmpfaenger" rows="4"><%= freigabe2EskalationEmpfaenger || '' %></textarea>
+      </div>
       <div class="mb-3">
         <label class="form-label" for="ibanAbweichungEmpfaenger">IBAN-Abweichungs-Empfänger (ein Ziel pro Zeile: E-Mail-Adresse oder "gruppe:buchhaltung"/"gruppe:admin") <span class="text-muted">— zusätzlich zur kontierenden Person und den Freigebern des betroffenen Kontos</span></label>
         <textarea class="form-control" id="ibanAbweichungEmpfaenger" name="ibanAbweichungEmpfaenger" rows="4"><%= ibanAbweichungEmpfaenger || '' %></textarea>

@@ -175,14 +175,15 @@ test('POST /admin/personen/:id/berechtigungen returns 404 for a person that does
 
 test('GET /admin/personen shows the Ferienmodus period and Stellvertreter name for a person with an active/planned vacation', async () => {
   const db = openDatabase(':memory:');
-  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'bo@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '1', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
-  setFerienmodus(db, '2', { von: '2026-09-10', bis: '2026-09-24', stellvertreterId: '1' });
+  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'bo@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '3', vorname: 'Cé', nachname: 'Muster', email: 'ce@example.org', gruppen: ['10'], loggedInNow: false });
+  setFerienmodus(db, '2', { von: '2026-09-10', bis: '2026-09-24', stellvertreterId: '3' });
 
   const app = buildTestApp(db);
   const res = await request(app).get('/admin/personen').set('x-test-person-id', '1');
   assert.equal(res.status, 200);
   assert.match(res.text, /2026-09-10/);
-  assert.match(res.text, /Admina Portal/);
+  assert.match(res.text, /Cé Muster/);
   db.close();
 });

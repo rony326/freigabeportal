@@ -3,6 +3,7 @@ import { getJobById, wiederOeffnenJob } from '../db/jobsRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { buildAuditLog } from '../services/auditLog.js';
+import { istAktiveVertretungFuer } from '../services/vertretung.js';
 
 export function createAblehnungRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -26,7 +27,8 @@ export function createAblehnungRouter({ db, config, csrfProtection = (req, res, 
     }
     const authorized = job.freigabe1_eskaliert_an_admin
       ? isSuperadmin(req.currentPerson)
-      : job.zugewiesen_an === req.currentPerson.churchtools_person_id;
+      : job.zugewiesen_an === req.currentPerson.churchtools_person_id ||
+        istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, job.zugewiesen_an);
     if (!authorized) {
       res.status(403).render('error', { message: 'Dieser Job ist für dich aktuell nicht zur Überarbeitung verfügbar.' });
       return null;

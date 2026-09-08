@@ -65,3 +65,15 @@ export function listAllPersons(db) {
     .all()
     .map((row) => ({ ...row, gruppen: JSON.parse(row.gruppen) }));
 }
+
+export function setFerienmodus(db, personId, { von, bis, stellvertreterId }) {
+  db.prepare(
+    'UPDATE personen SET ferienmodus_von = ?, ferienmodus_bis = ?, ferienmodus_stellvertreter_id = ? WHERE churchtools_person_id = ?'
+  ).run(von, bis, stellvertreterId, personId);
+}
+
+export function clearFerienmodus(db, personId) {
+  db.prepare(
+    'UPDATE personen SET ferienmodus_von = NULL, ferienmodus_bis = NULL, ferienmodus_stellvertreter_id = NULL WHERE churchtools_person_id = ?'
+  ).run(personId);
+}

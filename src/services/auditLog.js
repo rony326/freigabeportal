@@ -58,5 +58,6 @@ export function buildAuditLog(db, jobId) {
     interessenskonflikt: Boolean(eintrag.interessenskonflikt),
     kommentar: eintrag.kommentar,
     eskaliertVonPerson: eintrag.eskaliert_von ? personName(db, eintrag.eskaliert_von) : null,
+    vertretungFuerPerson: eintrag.vertretung_fuer ? personName(db, eintrag.vertretung_fuer) : null,
   }));
 }

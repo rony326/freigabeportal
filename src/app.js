@@ -36,6 +36,7 @@ import { createPoolRouter } from './routes/pool.js';
 import { createPoolPageRouter } from './routes/poolPage.js';
 import { createMeineAbgeschlossenenRouter } from './routes/meineAbgeschlossenen.js';
 import { createMeineSpesenRouter } from './routes/meineSpesen.js';
+import { createFerienmodusRouter } from './routes/ferienmodus.js';
 import { createDownloadsRouter } from './routes/downloads.js';
 import { createKontierungRouter } from './routes/kontierung.js';
 import { createSpesenRouter } from './routes/spesen.js';
@@ -166,6 +167,7 @@ export function createApp({ db, config }) {
   app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config, mailer, csrfProtection }));
   app.use('/meine-abgeschlossenen', sessionLimiter, requireLogin(), createMeineAbgeschlossenenRouter({ db }));
   app.use('/meine-spesen', sessionLimiter, requireLogin(), createMeineSpesenRouter({ db }));
+  app.use('/ferienmodus', sessionLimiter, requireLogin(), createFerienmodusRouter({ db, csrfProtection }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer, csrfProtection }));
   app.use('/spesen', sessionLimiter, requireLogin(), createSpesenRouter({ db, config, mailer, csrfProtection }));

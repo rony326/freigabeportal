@@ -10,6 +10,8 @@ import {
   listKonten,
   validateKontoRoles,
   listKontenForPerson,
+  listKontenForPersonAnyRole,
+  listVertretungsKandidaten,
 } from '../../src/db/kontenRepo.js';
 
 function seedPersonen(db) {
@@ -201,5 +203,49 @@ test('listKontenForPerson returns only active Konten where the person is freigeb
   assert.ok(ids.includes(kontoA), 'should include Konto where person is freigeber1');
   assert.ok(!ids.includes(kontoB), 'should exclude an inactive Konto even if person is stellvertreter1');
   assert.ok(!ids.includes(kontoC), 'should exclude a Konto the person has no role on');
+  db.close();
+});
+
+test('listKontenForPersonAnyRole matches all four role columns, not just freigeber1/stellvertreter1', () => {
+  const db = openDatabase(':memory:');
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+
+  for (const id of ['1', '2', '3', '4']) {
+    const konten = listKontenForPersonAnyRole(db, id);
+    assert.equal(konten.length, 1, `person ${id} should be matched via one of the four role columns`);
+    assert.equal(konten[0].id, kontoId);
+  }
+  assert.equal(listKontenForPersonAnyRole(db, '5').length, 0);
+  db.close();
+});
+
+test('listVertretungsKandidaten returns the other active role-holders on shared Konten, excluding the person themself', () => {
+  const db = openDatabase(':memory:');
+  for (const id of ['1', '2', '3', '4', '5']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  // Person 5 has no Konto role in common with person 1 — must not be a candidate.
+
+  const kandidaten = listVertretungsKandidaten(db, '1').map((p) => p.churchtools_person_id).sort();
+  assert.deepEqual(kandidaten, ['2', '3', '4']);
+  db.close();
+});
+
+test('listVertretungsKandidaten excludes inactive persons', () => {
+  const db = openDatabase(':memory:');
+  for (const id of ['1', '2']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  upsertPerson(db, { id: '3', vorname: 'Person3', nachname: 'Muster', email: 'p3@example.org', gruppen: ['10'], loggedInNow: true });
+  upsertPerson(db, { id: '4', vorname: 'Person4', nachname: 'Muster', email: 'p4@example.org', gruppen: ['10'], loggedInNow: true });
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  deactivatePerson(db, '3');
+
+  const kandidaten = listVertretungsKandidaten(db, '1').map((p) => p.churchtools_person_id).sort();
+  assert.deepEqual(kandidaten, ['2', '4']);
   db.close();
 });

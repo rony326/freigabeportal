@@ -1073,3 +1073,47 @@ test('openDatabase widens the cron_log table job CHECK to include freigabe2-erin
   migratedDb.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('personen table has the three ferienmodus columns', () => {
+  const db = openDatabase(':memory:');
+  const columns = db.prepare('PRAGMA table_info(personen)').all().map((c) => c.name);
+  for (const expected of ['ferienmodus_von', 'ferienmodus_bis', 'ferienmodus_stellvertreter_id']) {
+    assert.ok(columns.includes(expected), `personen table is missing ${expected}`);
+  }
+  db.close();
+});
+
+test('freigaben table has a vertretung_fuer column', () => {
+  const db = openDatabase(':memory:');
+  const columns = db.prepare('PRAGMA table_info(freigaben)').all().map((c) => c.name);
+  assert.ok(columns.includes('vertretung_fuer'), 'freigaben table is missing vertretung_fuer');
+  db.close();
+});
+
+test('openDatabase adds the ferienmodus columns via ALTER TABLE to an existing on-disk database that predates them', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE personen (
+      churchtools_person_id TEXT PRIMARY KEY,
+      vorname TEXT NOT NULL,
+      nachname TEXT NOT NULL,
+      email TEXT NOT NULL,
+      aktiv INTEGER NOT NULL DEFAULT 1,
+      gruppen TEXT NOT NULL DEFAULT '[]',
+      ct_person_unresolved INTEGER NOT NULL DEFAULT 0,
+      last_synced_at TEXT,
+      last_login_at TEXT
+    )
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+  const columns = migratedDb.prepare('PRAGMA table_info(personen)').all().map((c) => c.name);
+  for (const expected of ['ferienmodus_von', 'ferienmodus_bis', 'ferienmodus_stellvertreter_id']) {
+    assert.ok(columns.includes(expected), `ALTER TABLE should have added ${expected}`);
+  }
+  migratedDb.close();
+  rmSync(dir, { recursive: true, force: true });
+});

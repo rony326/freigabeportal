@@ -84,3 +84,32 @@ test('personName and formatZeitpunkt are exported for reuse by the global audit 
   assert.equal(formatZeitpunkt('2026-08-15T08:30:00.000Z', false), '2026-08-15T08:30:00.000Z');
   db.close();
 });
+
+test('buildAuditLog resolves vertretungFuerPerson to a display name when vertretung_fuer is set', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org', gruppen: ['10'], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'bo@example.org', gruppen: ['10'], loggedInNow: true });
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  createFreigabe(db, {
+    jobId, personId: '2', rolle: 'freigeber1', zeitpunkt: '2026-09-07T10:00:00.000Z', ip: '127.0.0.1',
+    interessenskonflikt: false, kommentar: null, eskaliertVon: null, vertretungFuer: '1',
+  });
+
+  const [eintrag] = buildAuditLog(db, jobId);
+  assert.equal(eintrag.vertretungFuerPerson, 'Ana Muster');
+  db.close();
+});
+
+test('buildAuditLog leaves vertretungFuerPerson null when vertretung_fuer is not set', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'bo@example.org', gruppen: ['10'], loggedInNow: true });
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  createFreigabe(db, {
+    jobId, personId: '2', rolle: 'freigeber1', zeitpunkt: '2026-09-07T10:00:00.000Z', ip: '127.0.0.1',
+    interessenskonflikt: false, kommentar: null, eskaliertVon: null,
+  });
+
+  const [eintrag] = buildAuditLog(db, jobId);
+  assert.equal(eintrag.vertretungFuerPerson, null);
+  db.close();
+});

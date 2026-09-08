@@ -17,7 +17,7 @@ import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/dow
 import { personHasRole } from '../middleware/roles.js';
 import { personHasPermission, requirePermission } from '../middleware/permissions.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
-import { sendNotification } from '../services/notify.js';
+import { sendNotificationMitVertretung } from '../services/notify.js';
 import { personName } from '../services/auditLog.js';
 
 export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
@@ -86,12 +86,11 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
         kommentar: `Zugewiesen an ${zielPerson.vorname} ${zielPerson.nachname}`,
         eskaliertVon: null,
       });
-      await sendNotification(db, mailer, {
-        to: zielPerson.email,
+      await sendNotificationMitVertretung(db, mailer, {
+        person: zielPerson,
         typ: 'zuweisung',
         jobId: job.id,
         variablen: {
-          empfaengerName: `${zielPerson.vorname} ${zielPerson.nachname}`,
           jobDateiname: job.dateiname,
           grund: `Eine Rechnung wurde dir von ${req.currentPerson.vorname} ${req.currentPerson.nachname} zur Kontierung zugewiesen.`,
           link: `${config.publicBaseUrl}/kontierung/${job.id}`,

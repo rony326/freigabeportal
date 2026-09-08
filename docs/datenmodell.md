@@ -36,6 +36,9 @@ erDiagram
         int ct_person_unresolved
         text last_synced_at
         text last_login_at
+        text ferienmodus_von
+        text ferienmodus_bis
+        text ferienmodus_stellvertreter_id FK
     }
     person_berechtigungen {
         text person_id PK,FK
@@ -121,6 +124,7 @@ erDiagram
         int interessenskonflikt
         text kommentar
         text eskaliert_von FK
+        text vertretung_fuer FK
     }
     mail_log {
         int id PK
@@ -161,6 +165,12 @@ Person, die in ChurchTools nicht mehr auffindbar ist (z. B. nach einem
 Personen-Merge) — sie bleibt als historischer Datensatz erhalten statt
 gelöscht zu werden. `aktiv = 0` heisst deaktiviert (kein aktiver Sync-Treffer
 mehr, siehe [personen-sync.md](personen-sync.md)).
+
+**Ferienmodus** (`ferienmodus_von`, `ferienmodus_bis`, `ferienmodus_stellvertreter_id`):
+selbstverwalteter, additiver Abwesenheits-Zeitraum mit gewähltem Stellvertreter — siehe
+[Ferienmodus](rechnungs-workflow.md#ferienmodus--abwesenheits-stellvertretung). "Aktiv" wird nie
+gespeichert, sondern bei jeder Prüfung aus dem heutigen Datum berechnet
+(`src/services/vertretung.js`).
 
 ### `person_berechtigungen`
 Additive Einzelrechte, siehe [auth-und-rechte.md](auth-und-rechte.md). Ein
@@ -237,6 +247,9 @@ menschenlesbare Audit-Log auf jeder Rechnungsseite
 (`src/services/auditLog.js`) und für die Verlauf-Seite, die auf das
 finale PDF gestempelt wird. `job_id` hat bewusst **keinen** enforced
 Foreign Key.
+
+`vertretung_fuer` ist gesetzt, wenn die handelnde Person zum Zeitpunkt der Aktion aktiver
+Ferienmodus-Stellvertreter der eigentlich zuständigen Person war — sonst `NULL`.
 
 ### `mail_log`
 Jeder Zustellversuch (erfolgreich oder fehlgeschlagen), inkl. Volltext —

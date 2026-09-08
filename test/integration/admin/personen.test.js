@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../../src/db/index.js';
-import { upsertPerson } from '../../../src/db/personenRepo.js';
+import { upsertPerson, setFerienmodus } from '../../../src/db/personenRepo.js';
 import { loadCurrentPerson, requireAnyRole, requireRole } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createPersonenRouter } from '../../../src/routes/admin/personen.js';
@@ -170,5 +170,20 @@ test('POST /admin/personen/:id/berechtigungen returns 404 for a person that does
     .set('x-test-person-id', '99')
     .send({ berechtigungen: ['konten_verwalten'] });
   assert.equal(res.status, 404);
+  db.close();
+});
+
+test('GET /admin/personen shows the Ferienmodus period and Stellvertreter name for a person with an active/planned vacation', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'bo@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '3', vorname: 'Cé', nachname: 'Muster', email: 'ce@example.org', gruppen: ['10'], loggedInNow: false });
+  setFerienmodus(db, '2', { von: '2026-09-10', bis: '2026-09-24', stellvertreterId: '3' });
+
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/personen').set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /2026-09-10/);
+  assert.match(res.text, /Cé Muster/);
   db.close();
 });

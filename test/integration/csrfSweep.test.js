@@ -65,6 +65,7 @@ const SESSION_POST_ROUTES = [
   '/kontierung/1/zurueck-in-pool',
   '/kontierung/1/aufsplitten',
   '/freigabe2/1',
+  '/ferienmodus',
   '/abgelehnt/1/ueberarbeiten',
   '/zeitstempel-pruefen',
   '/admin/konten',

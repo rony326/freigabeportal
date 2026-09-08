@@ -3,6 +3,7 @@ import { listAllPersons, getPersonById } from '../../db/personenRepo.js';
 import { personHasRole, requireRole } from '../../middleware/roles.js';
 import { listBerechtigungenForPerson, setBerechtigungenForPerson } from '../../db/personBerechtigungenRepo.js';
 import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS } from '../../middleware/permissions.js';
+import { personName } from '../../services/auditLog.js';
 
 function rolleVon(person, config) {
   if (personHasRole(person, config, 'superadmin')) return 'Superadmin';
@@ -19,6 +20,7 @@ export function createPersonenRouter({ db, config, csrfProtection = (req, res, n
       ...p,
       rolle: rolleVon(p, config),
       berechtigungen: listBerechtigungenForPerson(db, p.churchtools_person_id),
+      ferienmodusStellvertreterName: p.ferienmodus_stellvertreter_id ? personName(db, p.ferienmodus_stellvertreter_id) : null,
     }));
     res.render('admin/personen-liste', {
       personen,

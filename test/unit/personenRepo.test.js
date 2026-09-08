@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson, getPersonById, deactivatePerson, listActivePersonsInGroup, listAllPersons } from '../../src/db/personenRepo.js';
+import { upsertPerson, getPersonById, deactivatePerson, listActivePersonsInGroup, listAllPersons, setFerienmodus, clearFerienmodus } from '../../src/db/personenRepo.js';
 
 test('upsertPerson inserts a new person', () => {
   const db = openDatabase(':memory:');
@@ -66,5 +66,49 @@ test('listActivePersonsInGroup returns only active persons who belong to the giv
   const result = listActivePersonsInGroup(db, '10');
   assert.equal(result.length, 1);
   assert.equal(result[0].email, 'in@example.org');
+  db.close();
+});
+
+test('setFerienmodus stores the vacation period and stellvertreter on the person row', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org', gruppen: ['10'], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'bo@example.org', gruppen: ['10'], loggedInNow: true });
+
+  setFerienmodus(db, '1', { von: '2026-09-10', bis: '2026-09-24', stellvertreterId: '2' });
+
+  const person = getPersonById(db, '1');
+  assert.equal(person.ferienmodus_von, '2026-09-10');
+  assert.equal(person.ferienmodus_bis, '2026-09-24');
+  assert.equal(person.ferienmodus_stellvertreter_id, '2');
+  db.close();
+});
+
+test('setFerienmodus overwrites a previously set period', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org', gruppen: ['10'], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'bo@example.org', gruppen: ['10'], loggedInNow: true });
+  upsertPerson(db, { id: '3', vorname: 'Cé', nachname: 'Muster', email: 'ce@example.org', gruppen: ['10'], loggedInNow: true });
+
+  setFerienmodus(db, '1', { von: '2026-09-10', bis: '2026-09-24', stellvertreterId: '2' });
+  setFerienmodus(db, '1', { von: '2026-10-01', bis: '2026-10-05', stellvertreterId: '3' });
+
+  const person = getPersonById(db, '1');
+  assert.equal(person.ferienmodus_von, '2026-10-01');
+  assert.equal(person.ferienmodus_stellvertreter_id, '3');
+  db.close();
+});
+
+test('clearFerienmodus resets all three fields to null', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'ana@example.org', gruppen: ['10'], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'bo@example.org', gruppen: ['10'], loggedInNow: true });
+  setFerienmodus(db, '1', { von: '2026-09-10', bis: '2026-09-24', stellvertreterId: '2' });
+
+  clearFerienmodus(db, '1');
+
+  const person = getPersonById(db, '1');
+  assert.equal(person.ferienmodus_von, null);
+  assert.equal(person.ferienmodus_bis, null);
+  assert.equal(person.ferienmodus_stellvertreter_id, null);
   db.close();
 });

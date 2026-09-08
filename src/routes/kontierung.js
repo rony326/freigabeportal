@@ -27,7 +27,8 @@ import { findDebitorIbanByIban, listDebitorIbansByDebitor, createDebitorIban } f
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
-import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
+import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger } from '../services/notify.js';
+import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { isValidIban } from '../services/ibanUtils.js';
@@ -130,7 +131,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     }
     const authorized = job.freigabe1_eskaliert_an_admin
       ? isSuperadmin(req.currentPerson)
-      : job.zugewiesen_an === req.currentPerson.churchtools_person_id;
+      : job.zugewiesen_an === req.currentPerson.churchtools_person_id ||
+        istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, job.zugewiesen_an);
     if (!authorized) {
       res.status(403).render('error', { message: 'Dieser Job ist dir aktuell nicht zur Kontierung zugewiesen.' });
       return null;
@@ -261,6 +263,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
               interessenskonflikt: false,
               kommentar: begruendung,
               eskaliertVon: null,
+              vertretungFuer: !job.freigabe1_eskaliert_an_admin && istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, job.zugewiesen_an) ? job.zugewiesen_an : null,
             });
           }
           db.exec('COMMIT');
@@ -359,6 +362,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const strikteFreigeber1Pruefung = getConfigValue(db, 'kontierung_strikte_freigeber1_pruefung') === '1';
       const istEchterFreigeber1 =
         konto.freigeber1_id === req.currentPerson.churchtools_person_id ||
+        istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, konto.freigeber1_id) ||
         (Boolean(job.freigabe1_eskaliert_von) && konto.stellvertreter1_id === req.currentPerson.churchtools_person_id);
       const wirdWeitergeleitet = !hatKonflikt && !eskaliertAnAdmin && strikteFreigeber1Pruefung && !job.freigabe1_eskaliert_an_admin && !istEchterFreigeber1;
 
@@ -402,7 +406,17 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           weiterleitenAnEchtenFreigeber1(db, job.id, konto.freigeber1_id);
           createFreigabe(db, { jobId: job.id, personId: req.currentPerson.churchtools_person_id, rolle: 'freigabe1_weiterleitung', zeitpunkt: new Date().toISOString(), ip: req.ip, interessenskonflikt: false, kommentar: begruendung || null, eskaliertVon: job.freigabe1_eskaliert_von });
         } else {
-          createFreigabe(db, { jobId: job.id, personId: req.currentPerson.churchtools_person_id, rolle: 'freigeber1', zeitpunkt: new Date().toISOString(), ip: req.ip, interessenskonflikt: false, kommentar: begruendung || null, eskaliertVon: job.freigabe1_eskaliert_von });
+          createFreigabe(db, {
+            jobId: job.id,
+            personId: req.currentPerson.churchtools_person_id,
+            rolle: 'freigeber1',
+            zeitpunkt: new Date().toISOString(),
+            ip: req.ip,
+            interessenskonflikt: false,
+            kommentar: begruendung || null,
+            eskaliertVon: job.freigabe1_eskaliert_von,
+            vertretungFuer: !job.freigabe1_eskaliert_an_admin && istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, job.zugewiesen_an) ? job.zugewiesen_an : null,
+          });
           abschliessenFreigabe1(db, job.id);
         }
         db.exec('COMMIT');
@@ -531,12 +545,11 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       } else if (wirdWeitergeleitet) {
         const echterFreigeber1 = getPersonById(db, konto.freigeber1_id);
         if (echterFreigeber1) {
-          await sendNotification(db, mailer, {
-            to: echterFreigeber1.email,
+          await sendNotificationMitVertretung(db, mailer, {
+            person: echterFreigeber1,
             typ: 'zuweisung',
             jobId: job.id,
             variablen: {
-              empfaengerName: `${echterFreigeber1.vorname} ${echterFreigeber1.nachname}`,
               jobDateiname: job.dateiname,
               grund: `Eine Rechnung wurde von ${req.currentPerson.vorname} ${req.currentPerson.nachname} kontiert und wartet auf deine Freigabe 1.`,
               link: `${config.publicBaseUrl}/kontierung/${job.id}`,
@@ -546,12 +559,11 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       } else {
         const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(job, konto));
         if (freigeber2) {
-          await sendNotification(db, mailer, {
-            to: freigeber2.email,
+          await sendNotificationMitVertretung(db, mailer, {
+            person: freigeber2,
             typ: 'zuweisung',
             jobId: job.id,
             variablen: {
-              empfaengerName: `${freigeber2.vorname} ${freigeber2.nachname}`,
               jobDateiname: job.dateiname,
               grund: 'Eine Rechnung wartet auf deine Freigabe 2.',
               link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
@@ -844,6 +856,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
               interessenskonflikt: false,
               kommentar: null,
               eskaliertVon: null,
+              vertretungFuer: !job.freigabe1_eskaliert_an_admin && istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, job.zugewiesen_an) ? job.zugewiesen_an : null,
             });
             abschliessenFreigabe1(db, kindId);
             selbstFreigegeben.push({ id: kindId, konto: teil.konto });
@@ -859,12 +872,11 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         const kindJob = getJobById(db, kindId);
         const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(kindJob, konto));
         if (freigeber2) {
-          await sendNotification(db, mailer, {
-            to: freigeber2.email,
+          await sendNotificationMitVertretung(db, mailer, {
+            person: freigeber2,
             typ: 'zuweisung',
             jobId: kindJob.id,
             variablen: {
-              empfaengerName: `${freigeber2.vorname} ${freigeber2.nachname}`,
               jobDateiname: kindJob.dateiname,
               grund: 'Eine Rechnung wartet auf deine Freigabe 2.',
               link: `${config.publicBaseUrl}/freigabe2/${kindJob.id}`,

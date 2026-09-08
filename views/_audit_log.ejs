@@ -6,7 +6,7 @@
         <% auditLog.forEach((eintrag) => { %>
           <li class="list-group-item">
             <div>
-              <strong><%= eintrag.ereignis %></strong> — <%= eintrag.person %><% if (eintrag.eskaliertVonPerson) { %> (eskaliert von <%= eintrag.eskaliertVonPerson %>)<% } %>
+              <strong><%= eintrag.ereignis %></strong> — <%= eintrag.person %><% if (eintrag.eskaliertVonPerson) { %> (eskaliert von <%= eintrag.eskaliertVonPerson %>)<% } %><% if (eintrag.vertretungFuerPerson) { %> (als Stellvertreter für <%= eintrag.vertretungFuerPerson %>)<% } %>
             </div>
             <div class="text-muted small"><%= eintrag.zeitpunkt %><% if (eintrag.interessenskonflikt) { %> · Interessenskonflikt<% } %></div>
             <% if (eintrag.kommentar) { %><div class="small">„<%= eintrag.kommentar %>“</div><% } %>

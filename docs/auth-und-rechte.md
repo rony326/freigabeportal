@@ -156,3 +156,31 @@ zusätzlich, ob dieselbe Person bereits Freigabe 1 für genau diesen Job
 erteilt hat — unabhängig davon, was zum Zeitpunkt der Konto-Zuweisung
 galt (Konto-Rollen können sich zwischendurch geändert haben, oder eine
 Person hat sowohl Buchhaltungs- als auch Superadmin-Rolle).
+
+## Ferienmodus — additive Abwesenheits-Stellvertretung
+
+Zusätzlich zur Job-Autorisierung oben kann jede Person für sich selbst unter `/ferienmodus`
+einen Zeitraum mit gewähltem Stellvertreter hinterlegen (`src/routes/ferienmodus.js`). Dies ist
+**nicht** dasselbe wie der pro-Konto feste `stellvertreter1_id`/`stellvertreter2_id`
+(Interessenskonflikt-Eskalation) — es ist ein zweiter, unabhängiger, personenbezogener
+Mechanismus. Details: [rechnungs-workflow.md](rechnungs-workflow.md#ferienmodus--abwesenheits-stellvertretung).
+
+Solange der Zeitraum aktiv ist (`istAktiveVertretungFuer`, `src/services/vertretung.js`), gilt
+additiv — die abwesende Person behält ihren eigenen Zugriff unverändert:
+
+- der Stellvertreter darf `/kontierung/:id` für Jobs öffnen/bearbeiten, die der abwesenden Person
+  zugewiesen sind
+- der Stellvertreter darf `/freigabe2/:id` für Jobs öffnen/bearbeiten, deren effektiver Freigeber2
+  die abwesende Person ist
+- der Stellvertreter darf `/abgelehnt/:id` für abgelehnte Jobs öffnen (und über
+  `/abgelehnt/:id/ueberarbeiten` wieder zur Kontierung zurückgeben), die der abwesenden Person
+  zugewiesen sind
+- alle drei Aufgaben erscheinen zusätzlich im eigenen `/pool`-Dashboard des Stellvertreters
+- betroffene Zuweisungs-/Freigabe-2-fällig-/Ablehnungs-Mails gehen zusätzlich an den
+  Stellvertreter (`sendNotificationMitVertretung`, `src/services/notify.js`)
+- im Audit-Log wird vermerkt, wenn eine Aktion als Stellvertreter ausgeführt wurde
+  (`freigaben.vertretung_fuer`)
+
+Auswählbar als Stellvertreter sind nur aktive Personen, die mit der eigenen Person mindestens ein
+Konto teilen (`listVertretungsKandidaten`, `src/db/kontenRepo.js`). Admin → Personen zeigt einen
+gesetzten Ferienmodus rein informativ an — Verwaltung bleibt Selbstbedienung.

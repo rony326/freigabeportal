@@ -175,8 +175,8 @@ unverändert — eigener, unabhängiger Mechanismus, kein Ferienmodus-Bezug.
 ## Audit-Vermerk
 
 An jeder `createFreigabe(...)`-Stelle, die zu einer der oben erweiterten
-Autorisierungs-Prüfungen gehört (`freigeber1`, `freigeber2`, `ablehnung`,
-`pool_zuweisung`), wird zusätzlich `vertretungFuer` übergeben, wenn
+Autorisierungs-Prüfungen gehört (`freigeber1`, `freigeber2`, `ablehnung`),
+wird zusätzlich `vertretungFuer` übergeben, wenn
 `istAktiveVertretungFuer(db, actingPersonId, urspruenglichZustaendigeId)`
 zutrifft — sonst `null` wie bisher.
 

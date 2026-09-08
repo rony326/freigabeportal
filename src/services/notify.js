@@ -1,7 +1,8 @@
 import { logMailAttempt } from '../db/mailLogRepo.js';
-import { listActivePersonsInGroup } from '../db/personenRepo.js';
+import { listActivePersonsInGroup, getPersonById } from '../db/personenRepo.js';
 import { getVorlage, renderTemplate } from './mailTemplates.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
+import { getAktivenVertreter } from './vertretung.js';
 
 const GRUPPE_BUCHHALTUNG_TOKEN = 'gruppe:buchhaltung';
 const GRUPPE_ADMIN_TOKEN = 'gruppe:admin';
@@ -91,4 +92,32 @@ export function resolveEmpfaenger(db, config, konfigWert) {
     }
   }
   return [...empfaenger];
+}
+
+// Wraps sendNotification so every call site that currently mails "the person responsible for
+// this job" also reaches their active Ferienmodus-Stellvertreter, without each call site having
+// to know about Ferienmodus itself. See docs/superpowers/specs/2026-09-07-ferienmodus-design.md.
+export async function sendNotificationMitVertretung(db, mailer, { person, typ, jobId, variablen }) {
+  await sendNotification(db, mailer, {
+    to: person.email,
+    typ,
+    jobId,
+    variablen: { ...variablen, empfaengerName: `${person.vorname} ${person.nachname}` },
+  });
+
+  const vertreterId = getAktivenVertreter(db, person.churchtools_person_id);
+  if (!vertreterId) return;
+  const vertreter = getPersonById(db, vertreterId);
+  if (!vertreter) return;
+
+  await sendNotification(db, mailer, {
+    to: vertreter.email,
+    typ,
+    jobId,
+    variablen: {
+      ...variablen,
+      empfaengerName: `${vertreter.vorname} ${vertreter.nachname}`,
+      grund: `(Als Stellvertreter für ${person.vorname} ${person.nachname} im Ferienmodus) ${variablen.grund}`,
+    },
+  });
 }

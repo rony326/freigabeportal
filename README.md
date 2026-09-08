@@ -98,22 +98,25 @@ das erste Konto anzulegen oder später Einzelrechte zuzuweisen.
 ### Zeitgesteuerte Jobs — laufen im Node-Prozess selbst
 
 Kein externer Task Scheduler nötig: Solange der Node-Prozess läuft (Infomaniaks
-Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App die fünf
+Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App die acht
 Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 
 | Job | Zeitplan | Zweck |
 |---|---|---|
 | `sync-personen` | täglich, Default 02:00 (Europe/Zürich) | ChurchTools-Personen-/Gruppen-Sync |
 | `pool-erinnerungen` | Intervall, Default alle 60 Min. | Reminder-/Eskalations-Mails für unbeanspruchte Pool-Rechnungen (Schwellen in Stunden, admin-konfigurierbar, Default 24h/48h — separat unter Eskalationszeiten) |
+| `freigabe2-erinnerungen` | Intervall, Default alle 60 Min. | Reminder an den effektiven Freigeber 2 und Übergabe an die Admin-Gruppe für seit langem unbeantwortete `freigabe2`-Jobs |
 | `pdf-bereinigung` | täglich, Default 02:30 (Europe/Zürich) | Archivierung abgeholter Jobs, Aufräumen alter `.tmp`-Stempeldateien, Mail-Log-Retention |
 | `zeitstempel-nachholen` | Intervall, Default alle 5 Min. | wiederholt fehlgeschlagene RFC3161-Zeitstempel-Versuche (nur solange die PDF noch lokal vorliegt) |
 | `split-gruppen-nachholen` | Intervall, Default alle 15 Min. | holt die Zusammenführung einer vollständig freigegebenen Splitgruppe nach, wenn sie noch aussteht oder am Zeitstempel gescheitert ist |
+| `datenbank-sicherung` | täglich, Default 03:00 (Europe/Zürich) | DB + `JOBS_DIR` + `BRANDING_DIR` als ZIP sichern, alte Backups über die konfigurierte Aufbewahrung hinaus löschen |
+| `mail-digest` | täglich, Default 07:00 (Europe/Zürich) | fasst wegen aktivem Batching nur protokollierte Mails pro Empfänger zu einer täglichen Zusammenfassung zusammen |
 
-**Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan aller fünf Jobs
+**Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan aller acht Jobs
 einstellen (wirkt ab dem nächsten planmässigen Lauf, kein Neustart nötig),
 jeden Job manuell sofort auslösen, und den Verlauf der letzten Läufe
 (Erfolg/Fehler samt Details) einsehen — sowohl geplante als auch manuell
-ausgelöste Läufe landen im selben Verlauf. Details zu allen fünf Jobs:
+ausgelöste Läufe landen im selben Verlauf. Details zu allen acht Jobs:
 [docs/geplante-jobs-und-benachrichtigungen.md](docs/geplante-jobs-und-benachrichtigungen.md).
 
 Die zugehörigen `POST /internal/cron/*`-Routen (Header `X-Cron-Secret:

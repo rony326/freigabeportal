@@ -34,11 +34,12 @@ aber mit echter Handlungskonsequenz:
    Bearbeitung erhält die aktuell zuständige Person (die tatsächliche
    Zielperson des Jobs, nicht ein konfigurierter Verteiler) eine
    persönliche Erinnerungsmail.
-2. **Eskalations-Stufe**: reagiert sie danach weitere
-   `freigabe2_eskalation_stunden` Stunden nicht, wird der Job automatisch
-   an die Admin-Gruppe übergeben (wie bei einer manuellen
-   SYNC-8-Eskalation) und die konfigurierte Eskalations-Empfänger-Gruppe
-   informiert.
+2. **Eskalations-Stufe**: reagiert sie insgesamt `freigabe2_eskalation_stunden`
+   Stunden seit Beginn ihrer Zuständigkeit (`freigabe2_seit`, derselbe
+   Startpunkt wie bei der Reminder-Stufe, nicht zusätzlich nach der
+   Reminder-Stufe gerechnet) nicht, wird der Job automatisch an die
+   Admin-Gruppe übergeben (wie bei einer manuellen SYNC-8-Eskalation) und
+   die konfigurierte Eskalations-Empfänger-Gruppe informiert.
 
 ## Nicht-Ziele (YAGNI)
 

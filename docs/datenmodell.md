@@ -124,7 +124,7 @@ erDiagram
     }
     mail_log {
         int id PK
-        text typ "6 mögliche Werte"
+        text typ "9 mögliche Werte"
         int job_id FK
         text empfaenger
         text status "versendet | fehlgeschlagen"

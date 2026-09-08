@@ -102,6 +102,12 @@ unterschiedliche Ziele:
   und Update bereits anderweitig abgeschlossen oder eskaliert), geht die
   Eskalations-Mail an die konfigurierte Empfängerliste.
 
+Jobs, die beim Deployment dieses Features bereits in `freigabe2` hängen,
+werden per Backfill mit `freigabe2_seit` = Deployment-Zeitpunkt versehen
+(nicht ihr ursprünglicher Eintrittszeitpunkt) — ihre Reminder-/
+Eskalations-Uhr beginnt also erst am Deployment-Tag neu zu laufen, statt für
+bereits lange hängende Jobs sofort auszulösen.
+
 Beide Schwellen (`freigabe2_reminder_stunden`, Default 24h;
 `freigabe2_eskalation_stunden`, Default 48h) sowie die
 Eskalations-Empfängerliste (`freigabe2_eskalation_empfaenger`,

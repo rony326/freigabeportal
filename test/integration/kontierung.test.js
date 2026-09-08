@@ -2985,3 +2985,98 @@ test('the Freigabe-2-fällig mail also reaches the Freigeber2\'s active Stellver
   assert.ok(freigabe2Mails.some((m) => m.to === 'p4@example.org'));
   db.close();
 });
+
+test('a Ferienmodus-Stellvertreter can aufsplitten the absent person\'s job; each self-approved split child\'s freigeber1-Freigabe carries vertretung_fuer', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  // seedJobMitDateien claims the job for '1' on the Konto seeded by seedKontoAndPersonen
+  // (freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4') --
+  // person '2' already legitimately holds stellvertreter1 on this Konto (unrelated to
+  // Ferienmodus), which is what makes ladeKontenFuerJob/istEigenesKonto resolve the split as
+  // self-approved for them, exactly like the plain-Kontierung Ferienmodus test above.
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const getRes = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '2');
+  assert.equal(getRes.status, 200);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '2')
+    .type('form')
+    .send({
+      gesamtbetrag: '100.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['60.00', '40.00'],
+    });
+
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) {
+    const freigeber1Eintrag = listFreigabenByJob(db, kind.id).find((f) => f.rolle === 'freigeber1');
+    assert.equal(freigeber1Eintrag.person_id, '2');
+    assert.equal(freigeber1Eintrag.vertretung_fuer, '1');
+  }
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('a split child\'s Freigabe-2-fällig mail also reaches the target Konto\'s Freigeber2 active Stellvertreter', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' }); // freigeber2Id: '3'
+  setFerienmodus(db, '3', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '4' });
+  const mailer = createStubMailer();
+  const app = buildTestAppMitDateien(db, mailer, jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      gesamtbetrag: '100.00',
+      teilKontoId: [String(kontoId), String(kontoId)],
+      teilBetrag: ['60.00', '40.00'],
+    });
+
+  assert.equal(res.status, 302);
+  const freigabe2Mails = mailer.sent.filter((m) => /Freigabe 2/.test(m.text));
+  assert.equal(freigabe2Mails.length, 4, 'two split children, each mailing both the Freigeber2 and their active Stellvertreter');
+  assert.ok(freigabe2Mails.some((m) => m.to === 'p3@example.org'));
+  assert.ok(freigabe2Mails.some((m) => m.to === 'p4@example.org'));
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id: toggle on — the strikte-Freigeber1-Prüfung forwarding mail also reaches the real Freigeber1\'s active Stellvertreter', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'
+  setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: 1 });
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '3'); // person '3' is Konto 3000's freigeber2, NOT freigeber1
+  setKontierung(db, jobId, 1);
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${jobId}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'kontieren', kontoId: '1', absender: 'Muster AG', debitorId: String(debitorId), rechnungsnummer: 'RE-1', betrag: '10.00', zahlungsziel: '2026-10-01', typ: 'rechnung', interessenskonflikt: '' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, jobId).zugewiesen_an, '1', 'must still be handed to the real Freigeber1');
+  const weiterleitungsMails = mailer.sent.filter((m) => /wartet auf deine Freigabe 1/.test(m.text));
+  assert.equal(weiterleitungsMails.length, 2);
+  assert.ok(weiterleitungsMails.some((m) => m.to === 'p1@example.org'));
+  assert.ok(weiterleitungsMails.some((m) => m.to === 'p2@example.org'));
+  db.close();
+});

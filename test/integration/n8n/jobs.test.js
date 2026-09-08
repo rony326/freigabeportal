@@ -1125,3 +1125,44 @@ test('GET /api/n8n/jobs/abholbereit carries the parent job\'s QR-Bill data on a 
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
+
+test('the automatic Zuweisungsregel-assignment mail also reaches the Freigeber1\'s active Stellvertreter', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { upsertPerson, setFerienmodus } = await import('../../../src/db/personenRepo.js');
+  const { createKonto } = await import('../../../src/db/kontenRepo.js');
+  const { createDebitor } = await import('../../../src/db/debitorenRepo.js');
+  const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
+
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const config = { ...testConfig(jobsDir), publicBaseUrl: 'https://portal.example.org' };
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, config, mailer);
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'lieferant')
+    .field('absender', 'rechnungen@lieferant.ch')
+    .field('dateiname', 'rechnung.pdf')
+    .attach('pdf', PDF_BYTES, { filename: 'rechnung.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 201);
+  assert.equal(res.body.status, 'zugewiesen');
+  const zuweisungsMails = mailer.sent.filter((m) => /automatisch zugewiesen/.test(m.text));
+  assert.ok(zuweisungsMails.some((m) => m.to === 'p1@example.org'));
+  assert.ok(zuweisungsMails.some((m) => m.to === 'p2@example.org'));
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});

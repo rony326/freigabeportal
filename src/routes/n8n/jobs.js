@@ -9,7 +9,7 @@ import { scanQrBill } from '../../services/qrBillScan.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
 import { getPersonById } from '../../db/personenRepo.js';
 import { getKontoById } from '../../db/kontenRepo.js';
-import { sendNotification } from '../../services/notify.js';
+import { sendNotification, sendNotificationMitVertretung } from '../../services/notify.js';
 import { getConfigValue } from '../../db/adminConfigRepo.js';
 import { fetchPersonById, extractCustomFieldValue } from '../../services/churchtools.js';
 import { normalizeIban } from '../../services/ibanUtils.js';
@@ -107,12 +107,11 @@ export function createN8nJobsRouter({ db, config, mailer }) {
         if (job.status === 'zugewiesen') {
           const freigeber1 = getPersonById(db, job.zugewiesen_an);
           if (freigeber1) {
-            await sendNotification(db, mailer, {
-              to: freigeber1.email,
+            await sendNotificationMitVertretung(db, mailer, {
+              person: freigeber1,
               typ: 'zuweisung',
               jobId: job.id,
               variablen: {
-                empfaengerName: `${freigeber1.vorname} ${freigeber1.nachname}`,
                 jobDateiname: job.dateiname,
                 grund: 'Eine neue Rechnung wurde dir automatisch zugewiesen.',
                 link: `${config.publicBaseUrl}/kontierung/${job.id}`,

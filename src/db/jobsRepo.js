@@ -249,8 +249,15 @@ export function abschliessenFreigabe1(db, jobId) {
   // wiederOeffnenJob's own comment). The flag is only ever cleared by a genuine full reset to
   // the pool (releaseJob, forceReleaseJob), where the job effectively starts over, possibly even
   // under a different Konto.
+  // freigabe2_reminder_gesendet_at/freigabe2_eskalation_gesendet_at are also cleared here (same
+  // reasoning as eskalierenFreigabe2 a few lines below): a job that reaches this function again
+  // after rework (rejected at Freigabe 2, wiederOeffnenJob, re-Kontiert) restarts responsibility
+  // under freigabe2, but a prior round may have already sent one or both mails. Since
+  // listFreigabe2JobsForReminder/listFreigabe2JobsForEskalation filter on `..._gesendet_at IS
+  // NULL`, leaving a marker set from the previous round would make the job permanently invisible
+  // to both queries on every subsequent round.
   db.prepare(
-    "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe2_seit = ? WHERE id = ?"
+    "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe2_seit = ?, freigabe2_reminder_gesendet_at = NULL, freigabe2_eskalation_gesendet_at = NULL WHERE id = ?"
   ).run(new Date().toISOString(), jobId);
 }
 

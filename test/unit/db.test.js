@@ -309,6 +309,59 @@ test('openDatabase backfills abgeschlossen_am for jobs that were already abgesch
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('openDatabase backfills freigabe2_seit for jobs already in freigabe2 status before the column existed, and leaves other statuses NULL', () => {
+  // Simulates the deploy-day case for the Freigabe2-Erinnerung/Eskalation feature: a database
+  // with jobs already sitting in 'freigabe2' status before freigabe2_seit existed. Without this
+  // backfill, NULL < ? is NULL/falsy in SQLite, so those jobs would be permanently invisible to
+  // listFreigabe2JobsForReminder/listFreigabe2JobsForEskalation -- exactly the jobs the whole
+  // feature exists to help.
+  const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
+  const dbPath = join(dir, 'legacy.sqlite');
+  const legacyDb = new DatabaseSync(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      eingang_am TEXT NOT NULL,
+      quelle TEXT NOT NULL,
+      absender TEXT,
+      dateiname TEXT NOT NULL,
+      pdf_pfad TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'unzugewiesen'
+    );
+    INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status)
+      VALUES ('2026-08-15T08:00:00.000Z', 'scanner', NULL, 'haengt.pdf', '/tmp/haengt.pdf', 'freigabe2');
+    INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status)
+      VALUES ('2026-08-15T08:00:00.000Z', 'scanner', NULL, 'offen.pdf', '/tmp/offen.pdf', 'zugewiesen');
+  `);
+  legacyDb.close();
+
+  const migratedDb = openDatabase(dbPath);
+
+  const columns = migratedDb.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  assert.ok(columns.includes('freigabe2_seit'), 'ALTER TABLE should have added freigabe2_seit to the pre-existing table');
+
+  const haengt = migratedDb.prepare("SELECT * FROM jobs WHERE dateiname = 'haengt.pdf'").get();
+  assert.ok(haengt.freigabe2_seit, 'a job already sitting in freigabe2 must be backfilled with a non-null freigabe2_seit');
+  assert.ok(!Number.isNaN(Date.parse(haengt.freigabe2_seit)), 'the backfilled value must be a parseable ISO timestamp');
+
+  const offen = migratedDb.prepare("SELECT * FROM jobs WHERE dateiname = 'offen.pdf'").get();
+  assert.equal(offen.freigabe2_seit, null, 'a job that is not in freigabe2 must keep freigabe2_seit NULL');
+
+  migratedDb.close();
+
+  // Idempotence: re-opening must not rewrite the already-backfilled value (only NULL rows match).
+  const reopened = openDatabase(dbPath);
+  assert.equal(
+    reopened.prepare("SELECT freigabe2_seit FROM jobs WHERE dateiname = 'haengt.pdf'").get().freigabe2_seit,
+    haengt.freigabe2_seit,
+    're-running the migration must leave an already-backfilled freigabe2_seit untouched'
+  );
+  assert.equal(reopened.prepare("SELECT freigabe2_seit FROM jobs WHERE dateiname = 'offen.pdf'").get().freigabe2_seit, null);
+  reopened.close();
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('openDatabase is a no-op on the freigaben table when it already has the widened rolle CHECK constraint', () => {
   const dir = mkdtempSync(join(tmpdir(), 'db-migration-test-'));
   const dbPath = join(dir, 'current.sqlite');

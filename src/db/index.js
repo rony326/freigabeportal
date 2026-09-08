@@ -241,6 +241,22 @@ function migrateJobsTable(db) {
   db.prepare("UPDATE jobs SET abgeschlossen_am = ? WHERE status = 'abgeschlossen' AND abgeschlossen_am IS NULL").run(
     new Date().toISOString()
   );
+
+  // Backfill: on the day this feature is deployed to a database that already has jobs sitting in
+  // 'freigabe2' status, those jobs have no freigabe2_seit (the column is new) and are therefore
+  // invisible to listFreigabe2JobsForReminder/listFreigabe2JobsForEskalation forever (NULL < ? is
+  // NULL/falsy in SQLite). Stamping them with "now" (deploy time) rather than eingang_am is
+  // deliberate: eingang_am could be months old, which would make every already-stuck job
+  // simultaneously eligible for escalation on the very first cron tick after deploy -- a mail
+  // storm and a mass, undifferentiated handover to the admin group. Starting their clock at deploy
+  // time instead means they follow the same reminder-then-escalation cadence as a job entering
+  // freigabe2 today.
+  //
+  // Idempotent by construction, no guard flag needed: it only touches rows whose freigabe2_seit is
+  // still NULL, and every row it touches gets a non-NULL value, so a second run matches nothing.
+  db.prepare("UPDATE jobs SET freigabe2_seit = ? WHERE status = 'freigabe2' AND freigabe2_seit IS NULL").run(
+    new Date().toISOString()
+  );
 }
 
 // SQLite CHECK constraints can't be widened with ALTER TABLE — unlike JOBS_TABLE_MIGRATIONS'

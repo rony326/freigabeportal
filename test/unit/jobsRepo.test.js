@@ -662,6 +662,25 @@ test('abschliessenFreigabe1 sets freigabe2_seit to the current time', () => {
   db.close();
 });
 
+test('abschliessenFreigabe1 clears both gesendet_at markers left over from a previous freigabe2 round (rework re-entry)', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  // Simulates a job that already went through freigabe2 once (got both mails sent), was then
+  // rejected and reworked, and is now re-Kontiert -- zugewiesen with the stale markers from its
+  // first round still set.
+  db.prepare(
+    "UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', konto_id = ?, freigabe2_reminder_gesendet_at = '2020-01-02T00:00:00.000Z', freigabe2_eskalation_gesendet_at = '2020-01-03T00:00:00.000Z' WHERE id = ?"
+  ).run(kontoId, jobId);
+
+  abschliessenFreigabe1(db, jobId);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.freigabe2_reminder_gesendet_at, null, 'stale reminder marker from the previous round must be cleared on rework re-entry');
+  assert.equal(job.freigabe2_eskalation_gesendet_at, null, 'stale eskalation marker from the previous round must be cleared on rework re-entry');
+  db.close();
+});
+
 test('eskalierenFreigabe2 resets freigabe2_seit and clears both gesendet_at markers so the new Stellvertreter2 gets a fresh clock', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);

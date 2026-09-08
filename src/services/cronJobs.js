@@ -163,10 +163,12 @@ export async function runFreigabe2ErinnerungenJob(db, config, mailer) {
     }
 
     let eskalationCount = 0;
+    // Same recipients apply to every job in this phase of a given run -- hoisted out of the loop
+    // instead of recomputed per job.
+    const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'freigabe2_eskalation_empfaenger'));
     for (const job of listFreigabe2JobsForEskalation(db, eskalationStunden)) {
       if (!forceEskalierenFreigabe2AnAdmin(db, job.id)) continue; // race: already handled between the query and here
 
-      const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'freigabe2_eskalation_empfaenger'));
       for (const email of empfaenger) {
         await sendNotification(db, mailer, {
           to: email,

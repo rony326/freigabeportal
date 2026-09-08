@@ -98,6 +98,16 @@
         </a>
       </div>
       <% } %>
+      <% if (adminNav.mailEinstellungen) { %>
+      <div class="col">
+        <a href="/admin/mail-einstellungen" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Mail-Einstellungen</h2>
+            <p class="card-text text-body-secondary">Mail-Vorlagen bearbeiten und Versand-Batching einstellen.</p>
+          </div>
+        </a>
+      </div>
+      <% } %>
       <% if (adminNav.sync) { %>
       <div class="col">
         <a href="/admin/sync" class="card text-decoration-none h-100">

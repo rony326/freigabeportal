@@ -281,3 +281,18 @@ deaktiviert wurde oder in ChurchTools nicht mehr auflösbar ist (erkannt
 vom nächtlichen Personen-Sync). **Admin → Personen-Sync** listet solche
 Jobs mit einer Force-Freigeben-Funktion — siehe
 [personen-sync.md](personen-sync.md#stalled-jobs).
+
+## Ferienmodus — Abwesenheits-Stellvertretung
+
+Unabhängig vom oben beschriebenen Status-Modell kann jede Person unter `/ferienmodus` einen
+Zeitraum mit gewähltem Stellvertreter hinterlegen (`personen.ferienmodus_von`/`ferienmodus_bis`/
+`ferienmodus_stellvertreter_id`). Solange der Zeitraum läuft, gilt additiv — kein Job wird
+umgeschrieben (`zugewiesen_an`, `konten.freigeber1_id`/`freigeber2_id` bleiben unverändert):
+
+- der Stellvertreter kann `zugewiesen`-Jobs der abwesenden Person kontieren
+- der Stellvertreter kann `freigabe2`-Jobs freigeben, deren effektiver Freigeber2 die abwesende
+  Person ist
+- beide Aufgaben erscheinen im `/pool`-Dashboard des Stellvertreters, zusätzlich zu dessen eigenen
+- die abwesende Person behält währenddessen ihren eigenen Zugriff unverändert
+
+Details zur Autorisierung: [auth-und-rechte.md](auth-und-rechte.md#ferienmodus--additive-abwesenheits-stellvertretung).

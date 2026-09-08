@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson } from '../../src/db/personenRepo.js';
+import { upsertPerson, setFerienmodus } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import {
@@ -659,5 +659,28 @@ test('GET /pool includes the Rückläufer section only for a person with pool_zu
   seedBuchhaltungPerson(db, '51');
   const resOhneRecht = await request(app).get('/pool').set('x-test-person-id', '51');
   assert.doesNotMatch(resOhneRecht.text, /Falsche Person, bitte prüfen/);
+  db.close();
+});
+
+test('assigning a Pool Beleg to a person on active Ferienmodus also mails their Stellvertreter', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = { sent: [], async sendMail(mail) { this.sent.push(mail); } };
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  seedBuchhaltungPerson(db, '50');
+  setBerechtigungenForPerson(db, '50', ['pool_zuweisen']);
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  const app = buildTestApp(db, mailer);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'x@example.org', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+
+  const res = await request(app).post(`/pool/${jobId}/zuweisen`).set('x-test-person-id', '50').type('form').send({ _csrf: 'valid-token', personId: '1' });
+  assert.equal(res.status, 200);
+
+  const zuweisungsMails = mailer.sent.filter((m) => /zur Kontierung zugewiesen/.test(m.text));
+  assert.ok(zuweisungsMails.some((m) => m.to === 'p1@example.org'));
+  assert.ok(zuweisungsMails.some((m) => m.to === 'p2@example.org'));
   db.close();
 });

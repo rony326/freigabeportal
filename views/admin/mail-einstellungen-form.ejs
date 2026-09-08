@@ -87,6 +87,18 @@
         <label class="form-label mt-2" for="digestText">Digest — Text</label>
         <textarea class="form-control" id="digestText" name="digestText" rows="4" required><%= digestText %></textarea>
       </div>
+      <div class="mb-3">
+        <label class="form-label" for="freigabe2ReminderBetreff">Freigabe 2 – Reminder — Betreff</label>
+        <input type="text" class="form-control" id="freigabe2ReminderBetreff" name="freigabe2ReminderBetreff" value="<%= freigabe2ReminderBetreff %>" required>
+        <label class="form-label mt-2" for="freigabe2ReminderText">Freigabe 2 – Reminder — Text</label>
+        <textarea class="form-control" id="freigabe2ReminderText" name="freigabe2ReminderText" rows="4" required><%= freigabe2ReminderText %></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="freigabe2EskalationBetreff">Freigabe 2 – Eskalation — Betreff</label>
+        <input type="text" class="form-control" id="freigabe2EskalationBetreff" name="freigabe2EskalationBetreff" value="<%= freigabe2EskalationBetreff %>" required>
+        <label class="form-label mt-2" for="freigabe2EskalationText">Freigabe 2 – Eskalation — Text</label>
+        <textarea class="form-control" id="freigabe2EskalationText" name="freigabe2EskalationText" rows="4" required><%= freigabe2EskalationText %></textarea>
+      </div>
 
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>

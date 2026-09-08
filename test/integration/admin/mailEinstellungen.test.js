@@ -48,6 +48,8 @@ const VALID_BODY = {
   ibanWarnungBetreff: 'B6', ibanWarnungText: 'T6',
   rechnungsnummerWarnungBetreff: 'B7', rechnungsnummerWarnungText: 'T7',
   digestBetreff: 'B8', digestText: 'T8',
+  freigabe2ReminderBetreff: 'B9', freigabe2ReminderText: 'T9',
+  freigabe2EskalationBetreff: 'B10', freigabe2EskalationText: 'T10',
   batchingAktiv: '1',
   batchingStunde: '6',
   batchingMinute: '30',
@@ -100,6 +102,34 @@ test('POST /admin/mail-einstellungen saves all 8 templates and the batching conf
   assert.equal(getConfigValue(db, 'mail_batching_aktiv'), '1');
   assert.equal(getConfigValue(db, 'mail_batching_stunde'), '6');
   assert.equal(getConfigValue(db, 'mail_batching_minute'), '30');
+  db.close();
+});
+
+test('POST /admin/mail-einstellungen persists the freigabe2 template fields', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app).post('/admin/mail-einstellungen').set('x-test-person-id', '99').type('form').send(VALID_BODY);
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'mail_vorlage_freigabe2_reminder_betreff'), 'B9');
+  assert.equal(getConfigValue(db, 'mail_vorlage_freigabe2_reminder_text'), 'T9');
+  assert.equal(getConfigValue(db, 'mail_vorlage_freigabe2_eskalation_betreff'), 'B10');
+  assert.equal(getConfigValue(db, 'mail_vorlage_freigabe2_eskalation_text'), 'T10');
+  db.close();
+});
+
+test('POST /admin/mail-einstellungen rejects an empty freigabe2ReminderBetreff', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/mail-einstellungen')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ ...VALID_BODY, freigabe2ReminderBetreff: '' });
+  assert.equal(res.status, 400);
   db.close();
 });
 

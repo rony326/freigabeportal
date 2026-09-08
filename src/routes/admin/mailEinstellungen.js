@@ -22,6 +22,10 @@ const VORLAGEN_FELDER = [
   ['rechnungsnummerWarnungText', 'mail_vorlage_rechnungsnummer_warnung_text'],
   ['digestBetreff', 'mail_vorlage_digest_betreff'],
   ['digestText', 'mail_vorlage_digest_text'],
+  ['freigabe2ReminderBetreff', 'mail_vorlage_freigabe2_reminder_betreff'],
+  ['freigabe2ReminderText', 'mail_vorlage_freigabe2_reminder_text'],
+  ['freigabe2EskalationBetreff', 'mail_vorlage_freigabe2_eskalation_betreff'],
+  ['freigabe2EskalationText', 'mail_vorlage_freigabe2_eskalation_text'],
 ];
 
 export function createMailEinstellungenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {

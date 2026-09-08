@@ -12,7 +12,8 @@ import { setZeitstempel } from '../services/zeitstempel.js';
 import { fetchPersonById, extractCustomFieldValue } from '../services/churchtools.js';
 import { normalizeIban } from '../services/ibanUtils.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
-import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
+import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger } from '../services/notify.js';
+import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../services/splitGruppenExport.js';
 
@@ -30,11 +31,13 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       return null;
     }
     const konto = getKontoById(db, job.konto_id);
+    const effektiverFreigeber2 = konto ? getEffectiveFreigeber2Id(job, konto) : null;
     const authorized =
       konto &&
       (job.freigabe2_eskaliert_an_admin
         ? isSuperadmin(req.currentPerson)
-        : getEffectiveFreigeber2Id(job, konto) === req.currentPerson.churchtools_person_id);
+        : effektiverFreigeber2 === req.currentPerson.churchtools_person_id ||
+          istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, effektiverFreigeber2));
     if (!authorized) {
       res.status(403).render('error', { message: 'Du bist für die Freigabe 2 dieses Jobs nicht zuständig.' });
       return null;
@@ -199,6 +202,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
             interessenskonflikt: false,
             kommentar: begruendung,
             eskaliertVon: null,
+            vertretungFuer: istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, getEffectiveFreigeber2Id(job, konto)) ? getEffectiveFreigeber2Id(job, konto) : null,
           });
           db.exec('COMMIT');
         } catch (err) {
@@ -224,12 +228,11 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         } else {
           const besitzer = getPersonById(db, job.zugewiesen_an);
           if (besitzer) {
-            await sendNotification(db, mailer, {
-              to: besitzer.email,
+            await sendNotificationMitVertretung(db, mailer, {
+              person: besitzer,
               typ: 'ablehnung',
               jobId: job.id,
               variablen: {
-                empfaengerName: `${besitzer.vorname} ${besitzer.nachname}`,
                 jobDateiname: job.dateiname,
                 grund: 'Deine Rechnung wurde abgelehnt:',
                 begruendung,
@@ -357,6 +360,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           interessenskonflikt: false,
           kommentar: begruendung || null,
           eskaliertVon: job.freigabe2_eskaliert_von,
+          vertretungFuer: istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, getEffectiveFreigeber2Id(job, konto)) ? getEffectiveFreigeber2Id(job, konto) : null,
         });
         const abgeschlossen = abschliessenFreigabe2(db, job.id);
         if (!abgeschlossen) {

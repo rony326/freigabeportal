@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson, getPersonById } from '../../src/db/personenRepo.js';
+import { upsertPerson, getPersonById, setFerienmodus } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob, createSplitJob, createSpesenPosition } from '../../src/db/jobsRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
@@ -1494,6 +1494,75 @@ test('POST /freigabe2/:id prints neither Titel nor Verwendungszweck for a non-Sp
   assert.doesNotMatch(stampPageText, /Titel:/);
   assert.doesNotMatch(stampPageText, /Verwendungszweck:/);
 
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('a Ferienmodus-Stellvertreter of the effective Freigeber2 can open and submit /freigabe2/:id', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = createStubMailer();
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  setFerienmodus(db, '3', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '4' });
+  const pdfBytes = await buildPdfFixture(['Rechnung Seite 1']);
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-vertretung-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  writeFileSync(pdfPfad, pdfBytes);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'x@example.org', dateiname: 'a.pdf', pdfPfad });
+  setKontierung(db, jobId, kontoId);
+  createFreigabe(db, { jobId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-15T09:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  const app = buildTestApp(db, { mailer });
+
+  const getRes = await request(app).get(`/freigabe2/${jobId}`).set('x-test-person-id', '4');
+  assert.equal(getRes.status, 200);
+
+  const postRes = await request(app)
+    .post(`/freigabe2/${jobId}`)
+    .set('x-test-person-id', '4')
+    .type('form')
+    .send({ aktion: 'freigeben', interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(postRes.status, 302);
+
+  const freigaben = listFreigabenByJob(db, jobId);
+  const freigeber2Eintrag = freigaben.find((f) => f.rolle === 'freigeber2');
+  assert.equal(freigeber2Eintrag.person_id, '4');
+  assert.equal(freigeber2Eintrag.vertretung_fuer, '3');
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});
+
+test('the Ablehnungs-Mail also reaches the zugewiesenen person\'s active Stellvertreter', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = createStubMailer();
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: true });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  const pdfBytes = await buildPdfFixture(['Rechnung Seite 1']);
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-ablehnung-vertretung-test-'));
+  const pdfPfad = join(dir, 'a.pdf');
+  writeFileSync(pdfPfad, pdfBytes);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'x@example.org', dateiname: 'a.pdf', pdfPfad });
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(jobId);
+  createFreigabe(db, { jobId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-15T09:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  const app = buildTestApp(db, { mailer });
+
+  await request(app)
+    .post(`/freigabe2/${jobId}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: 'Doppelt erfasst.' });
+
+  const ablehnungsMails = mailer.sent.filter((m) => /abgelehnt/.test(m.text));
+  assert.ok(ablehnungsMails.some((m) => m.to === 'p1@example.org'));
+  assert.ok(ablehnungsMails.some((m) => m.to === 'p2@example.org'));
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });

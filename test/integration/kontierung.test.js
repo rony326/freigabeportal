@@ -10,7 +10,7 @@ import * as mupdf from 'mupdf';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { PNG_1X1 } from '../helpers/imageFixture.js';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson } from '../../src/db/personenRepo.js';
+import { upsertPerson, setFerienmodus } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob, listSplitKinder, updateKontierungMetadaten, createSplitJob, createSpesenPosition } from '../../src/db/jobsRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
@@ -2923,5 +2923,65 @@ test('POST /kontierung/:id with ibanMerken checked skips the save when the decod
 
   assert.equal(res.status, 302, 'Kontierung must still complete even though the opt-in save is skipped');
   assert.equal(listDebitorIbansByDebitor(db, debitorId).length, 0);
+  db.close();
+});
+
+test('a Ferienmodus-Stellvertreter can open and submit /kontierung/:id for the absent zugewiesene person', async () => {
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = createStubMailer();
+  const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', freigeber2Id: '3'
+  const debitorId = createDebitor(db, { name: 'Lieferant AG', kontoId: null });
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  const app = buildTestApp(db, mailer);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'x@example.org', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+
+  const getRes = await request(app).get(`/kontierung/${jobId}`).set('x-test-person-id', '2');
+  assert.equal(getRes.status, 200);
+
+  const postRes = await request(app)
+    .post(`/kontierung/${jobId}`)
+    .set('x-test-person-id', '2')
+    .type('form')
+    .send({
+      kontoId: String(kontoId), typ: 'rechnung', interessenskonflikt: 'nein', absender: 'Lieferant AG',
+      betrag: '100.00', zahlungsziel: '2026-12-31', rechnungsnummer: 'RE-1', debitorId: String(debitorId),
+    });
+  assert.equal(postRes.status, 302);
+
+  const freigaben = listFreigabenByJob(db, jobId);
+  const freigeber1Eintrag = freigaben.find((f) => f.rolle === 'freigeber1');
+  assert.equal(freigeber1Eintrag.person_id, '2');
+  assert.equal(freigeber1Eintrag.vertretung_fuer, '1');
+  db.close();
+});
+
+test('the Freigabe-2-fällig mail also reaches the Freigeber2\'s active Stellvertreter', async () => {
+  const { createDebitor } = await import('../../src/db/debitorenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = createStubMailer();
+  const kontoId = seedKontoAndPersonen(db); // freigeber2Id: '3'
+  const debitorId = createDebitor(db, { name: 'Lieferant AG', kontoId: null });
+  setFerienmodus(db, '3', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '4' });
+  const app = buildTestApp(db, mailer);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'x@example.org', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+
+  await request(app)
+    .post(`/kontierung/${jobId}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({
+      kontoId: String(kontoId), typ: 'rechnung', interessenskonflikt: 'nein', absender: 'Lieferant AG',
+      betrag: '100.00', zahlungsziel: '2026-12-31', rechnungsnummer: 'RE-2', debitorId: String(debitorId),
+    });
+
+  const freigabe2Mails = mailer.sent.filter((m) => /Freigabe 2/.test(m.text));
+  assert.equal(freigabe2Mails.length, 2);
+  assert.ok(freigabe2Mails.some((m) => m.to === 'p3@example.org'));
+  assert.ok(freigabe2Mails.some((m) => m.to === 'p4@example.org'));
   db.close();
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson, getPersonById } from '../../src/db/personenRepo.js';
+import { upsertPerson, getPersonById, setFerienmodus, deactivatePerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createFerienmodusRouter } from '../../src/routes/ferienmodus.js';
@@ -109,5 +109,58 @@ test('POST /ferienmodus rejects bis before von', async () => {
     .send({ von: '2026-09-24', bis: '2026-09-10', stellvertreterId: '2' });
   assert.equal(res.status, 400);
   assert.match(res.text, /Bis-Datum/);
+  db.close();
+});
+
+test('GET /ferienmodus shows a distinct "geplant" banner when the period starts in the future', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  setFerienmodus(db, '1', { von: '2999-01-01', bis: '2999-01-31', stellvertreterId: '2' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/ferienmodus').set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Geplanter Ferienmodus/);
+  assert.doesNotMatch(res.text, /Aktueller Ferienmodus/);
+  db.close();
+});
+
+test('GET /ferienmodus shows a distinct "aktiv" banner when today falls within the period', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/ferienmodus').set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Aktueller Ferienmodus/);
+  assert.doesNotMatch(res.text, /Geplanter Ferienmodus/);
+  assert.doesNotMatch(res.text, /Ferienmodus beendet/);
+  db.close();
+});
+
+test('GET /ferienmodus shows a distinct "abgelaufen" banner once the period has already ended', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2000-01-31', stellvertreterId: '2' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/ferienmodus').set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Ferienmodus beendet/);
+  assert.doesNotMatch(res.text, /Aktueller Ferienmodus/);
+  db.close();
+});
+
+test('GET /ferienmodus still shows the Stellvertreter\'s name once they drop out of the candidate list (deactivated)', async () => {
+  const db = openDatabase(':memory:');
+  seedKontoAndPersonen(db);
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  deactivatePerson(db, '2');
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/ferienmodus').set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Person2 Muster/, 'the name must still render even though person 2 no longer appears in kandidaten');
   db.close();
 });

@@ -18,15 +18,35 @@
           behältst deinen eigenen Zugriff unverändert.
         </p>
 
-        <% if (person.ferienmodus_von) { %>
+        <% if (status === 'geplant') { %>
           <div class="alert alert-info">
-            Aktueller Ferienmodus: <strong><%= person.ferienmodus_von %> – <%= person.ferienmodus_bis %></strong>,
-            Stellvertreter: <strong><%= kandidaten.find((k) => k.churchtools_person_id === person.ferienmodus_stellvertreter_id)?.vorname %> <%= kandidaten.find((k) => k.churchtools_person_id === person.ferienmodus_stellvertreter_id)?.nachname %></strong>
+            Geplanter Ferienmodus: ab <strong><%= person.ferienmodus_von %></strong> bis <strong><%= person.ferienmodus_bis %></strong>,
+            Stellvertreter: <strong><%= stellvertreterName %></strong>
           </div>
           <form method="post" action="/ferienmodus" class="mb-4">
             <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
             <input type="hidden" name="aktion" value="beenden">
             <button type="submit" class="btn btn-outline-danger btn-sm">Ferienmodus beenden</button>
+          </form>
+        <% } else if (status === 'aktiv') { %>
+          <div class="alert alert-success">
+            Aktueller Ferienmodus: <strong><%= person.ferienmodus_von %> – <%= person.ferienmodus_bis %></strong>,
+            Stellvertreter: <strong><%= stellvertreterName %></strong>
+          </div>
+          <form method="post" action="/ferienmodus" class="mb-4">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input type="hidden" name="aktion" value="beenden">
+            <button type="submit" class="btn btn-outline-danger btn-sm">Ferienmodus beenden</button>
+          </form>
+        <% } else if (status === 'abgelaufen') { %>
+          <div class="alert alert-secondary">
+            Ferienmodus beendet: <strong><%= person.ferienmodus_von %> – <%= person.ferienmodus_bis %></strong>
+            (Stellvertreter war: <strong><%= stellvertreterName %></strong>)
+          </div>
+          <form method="post" action="/ferienmodus" class="mb-4">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input type="hidden" name="aktion" value="beenden">
+            <button type="submit" class="btn btn-outline-secondary btn-sm">Abgelaufenen Eintrag löschen</button>
           </form>
         <% } else { %>
           <p>Aktuell kein Ferienmodus aktiv.</p>

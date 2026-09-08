@@ -153,8 +153,9 @@ Selbstschutz gegen Löschung durch den eigenen Ablehner. Siehe
 
 ## Geplante Jobs (`/admin/geplante-jobs`)
 
-Zeitplan-Konfiguration und manuelles Sofort-Auslösen der vier
-Hintergrund-Jobs, inklusive ihrer Lauf-Historie. Details:
+Zeitplan-Konfiguration und manuelles Sofort-Auslösen von sechs der acht
+Hintergrund-Jobs (`datenbank-sicherung` und `mail-digest` haben eigene
+Konfigurationsseiten, siehe oben), inklusive ihrer Lauf-Historie. Details:
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md).
 
 ## Audit-Log (`/admin/audit-log`)

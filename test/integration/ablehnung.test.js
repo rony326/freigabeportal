@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson } from '../../src/db/personenRepo.js';
+import { upsertPerson, setFerienmodus } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, setKontierung, ablehnenJob, getJobById, createSpesenPosition } from '../../src/db/jobsRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
@@ -60,6 +60,16 @@ test('GET /abgelehnt/:id is reachable for zugewiesen_an with no group membership
   upsertPerson(db, { id: '1', vorname: 'Person1', nachname: 'Muster', email: 'p1@example.org', gruppen: [], loggedInNow: true });
   const app = buildTestApp(db);
   const res = await request(app).get(`/abgelehnt/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  db.close();
+});
+
+test('GET /abgelehnt/:id is reachable for a Ferienmodus-Stellvertreter of zugewiesen_an', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = await seedAbgelehntJob(db);
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/abgelehnt/${id}`).set('x-test-person-id', '2');
   assert.equal(res.status, 200);
   db.close();
 });

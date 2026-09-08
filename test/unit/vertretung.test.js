@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson } from '../../src/db/personenRepo.js';
+import { upsertPerson, deactivatePerson } from '../../src/db/personenRepo.js';
 import { setFerienmodus } from '../../src/db/personenRepo.js';
 import { getAktivenVertreter, istAktiveVertretungFuer } from '../../src/services/vertretung.js';
 
@@ -100,5 +100,32 @@ test('getAktivenVertreter returns null when period ended yesterday (bis = yester
   seedZweiPersonen(db);
   setFerienmodus(db, '1', { von: heutePlusTage(-5), bis: heutePlusTage(-1), stellvertreterId: '2' });
   assert.equal(getAktivenVertreter(db, '1'), null);
+  db.close();
+});
+
+test('getAktivenVertreter returns null when the chosen Stellvertreter has since been deactivated, even though the date window is still open', () => {
+  const db = openDatabase(':memory:');
+  seedZweiPersonen(db);
+  setFerienmodus(db, '1', { von: heutePlusTage(-1), bis: heutePlusTage(1), stellvertreterId: '2' });
+  deactivatePerson(db, '2');
+  assert.equal(getAktivenVertreter(db, '1'), null);
+  db.close();
+});
+
+test('istAktiveVertretungFuer is false once the candidate Stellvertreter has been deactivated', () => {
+  const db = openDatabase(':memory:');
+  seedZweiPersonen(db);
+  setFerienmodus(db, '1', { von: heutePlusTage(-1), bis: heutePlusTage(1), stellvertreterId: '2' });
+  deactivatePerson(db, '2');
+  assert.equal(istAktiveVertretungFuer(db, '2', '1'), false);
+  db.close();
+});
+
+test('getAktivenVertreter is unaffected by the ABSENT person\'s own aktiv flag (only the Stellvertreter\'s aktiv status is checked here)', () => {
+  const db = openDatabase(':memory:');
+  seedZweiPersonen(db);
+  setFerienmodus(db, '1', { von: heutePlusTage(-1), bis: heutePlusTage(1), stellvertreterId: '2' });
+  deactivatePerson(db, '1');
+  assert.equal(getAktivenVertreter(db, '1'), '2');
   db.close();
 });

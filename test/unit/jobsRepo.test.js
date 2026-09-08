@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson, setFerienmodus } from '../../src/db/personenRepo.js';
+import { upsertPerson, setFerienmodus, deactivatePerson } from '../../src/db/personenRepo.js';
 import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
@@ -944,6 +944,18 @@ test('listZugewiesenJobsForPerson does not include a job vertreten for someone o
   db.close();
 });
 
+test('listZugewiesenJobsForPerson does not include a job vertreten for a Stellvertreter who has since been deactivated, even though the date window is still open', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  deactivatePerson(db, '2');
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+
+  assert.equal(listZugewiesenJobsForPerson(db, '2').length, 0);
+  db.close();
+});
+
 test('listFreigabe2JobsForPerson also includes jobs whose freigeber2 is actively vertreten by this person', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db); // freigeber2Id: '3', stellvertreter2Id: '4'
@@ -1239,6 +1251,22 @@ test('listAbgelehntJobsForPerson excludes a job that has been admin-escalated pa
   // zugewiesen_an still equals '1', but the job was escalated to Portal-Admin before it ever
   // reached Freigabe 2 — it must not show up in the excluded original assignee's own listing.
   assert.equal(listAbgelehntJobsForPerson(db, '1').length, 0);
+  db.close();
+});
+
+test('listAbgelehntJobsForPerson also includes a job vertreten for someone this person is actively Stellvertreter for', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  setKontierung(db, jobId, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  ablehnenJob(db, jobId, { abgelehntVon: '3', grund: 'Falsches Konto' });
+
+  const rows = listAbgelehntJobsForPerson(db, '2');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, jobId);
   db.close();
 });
 

@@ -172,7 +172,10 @@ additiv — die abwesende Person behält ihren eigenen Zugriff unverändert:
   zugewiesen sind
 - der Stellvertreter darf `/freigabe2/:id` für Jobs öffnen/bearbeiten, deren effektiver Freigeber2
   die abwesende Person ist
-- beide Aufgaben erscheinen zusätzlich im eigenen `/pool`-Dashboard des Stellvertreters
+- der Stellvertreter darf `/abgelehnt/:id` für abgelehnte Jobs öffnen (und über
+  `/abgelehnt/:id/ueberarbeiten` wieder zur Kontierung zurückgeben), die der abwesenden Person
+  zugewiesen sind
+- alle drei Aufgaben erscheinen zusätzlich im eigenen `/pool`-Dashboard des Stellvertreters
 - betroffene Zuweisungs-/Freigabe-2-fällig-/Ablehnungs-Mails gehen zusätzlich an den
   Stellvertreter (`sendNotificationMitVertretung`, `src/services/notify.js`)
 - im Audit-Log wird vermerkt, wenn eine Aktion als Stellvertreter ausgeführt wurde

@@ -3,15 +3,26 @@ import { getPersonById } from './personenRepo.js';
 import { listZuweisungsregeln } from './zuweisungsregelnRepo.js';
 import { getDebitorById } from './debitorenRepo.js';
 
-// Reused by listZugewiesenJobsForPerson/listFreigabe2JobsForPerson below: matches any person
-// whose active Ferienmodus (today falls within ferienmodus_von..ferienmodus_bis) names the bound
-// parameter as their Stellvertreter. See src/services/vertretung.js for the single-job version
-// of this same check.
+// Reused by listZugewiesenJobsForPerson/listFreigabe2JobsForPerson/listAbgelehntJobsForPerson
+// below: matches any person whose active Ferienmodus (today falls within
+// ferienmodus_von..ferienmodus_bis) names the bound parameter as their Stellvertreter. See
+// src/services/vertretung.js for the single-job version of this same check.
+//
+// The EXISTS clause requires that Stellvertreter (== the bound parameter, since
+// ferienmodus_stellvertreter_id = ? already pins the two to be equal) to still be aktiv = 1 --
+// mirrors the identical guard added to getAktivenVertreter, closing the same gap here: a
+// deactivated substitute must stop seeing the vertretene jobs in their own dashboard. This
+// intentionally does not touch the absent person's own aktiv flag, which this subquery has never
+// checked either way.
 const VERTRETUNG_ZIEL_SUBQUERY = `
   SELECT churchtools_person_id FROM personen
   WHERE ferienmodus_stellvertreter_id = ?
     AND ferienmodus_von IS NOT NULL
     AND date('now') BETWEEN ferienmodus_von AND ferienmodus_bis
+    AND EXISTS (
+      SELECT 1 FROM personen stellvertreter
+      WHERE stellvertreter.churchtools_person_id = personen.ferienmodus_stellvertreter_id AND stellvertreter.aktiv = 1
+    )
 `;
 
 function extractDomain(email) {
@@ -416,9 +427,11 @@ export function wiederOeffnenJob(db, jobId, personId) {
 export function listAbgelehntJobsForPerson(db, personId) {
   return db
     .prepare(
-      "SELECT * FROM jobs WHERE status = 'abgelehnt' AND zugewiesen_an = ? AND freigabe1_eskaliert_an_admin = 0 AND quelle != 'spesen' ORDER BY eingang_am"
+      `SELECT * FROM jobs WHERE status = 'abgelehnt' AND freigabe1_eskaliert_an_admin = 0 AND quelle != 'spesen'
+       AND (zugewiesen_an = ? OR zugewiesen_an IN (${VERTRETUNG_ZIEL_SUBQUERY}))
+       ORDER BY eingang_am`
     )
-    .all(personId);
+    .all(personId, personId);
 }
 
 // Admin-wide, unlike listAbgelehntJobsForPerson: a Portal-Admin cleaning up rejected invoices

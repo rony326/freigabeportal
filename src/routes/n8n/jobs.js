@@ -9,7 +9,7 @@ import { scanQrBill } from '../../services/qrBillScan.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
 import { getPersonById } from '../../db/personenRepo.js';
 import { getKontoById } from '../../db/kontenRepo.js';
-import { sendNotification, sendNotificationMitVertretung } from '../../services/notify.js';
+import { sendNotificationMitVertretung } from '../../services/notify.js';
 import { getConfigValue } from '../../db/adminConfigRepo.js';
 import { fetchPersonById, extractCustomFieldValue } from '../../services/churchtools.js';
 import { normalizeIban } from '../../services/ibanUtils.js';

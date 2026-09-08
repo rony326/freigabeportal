@@ -193,6 +193,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
               'Diese Freigabe wurde inzwischen bereits von einem anderen Vorgang bearbeitet.',
             ]);
           }
+          const effektiverFreigeber2FuerAblehnung = getEffectiveFreigeber2Id(job, konto);
           createFreigabe(db, {
             jobId: job.id,
             personId: req.currentPerson.churchtools_person_id,
@@ -202,7 +203,10 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
             interessenskonflikt: false,
             kommentar: begruendung,
             eskaliertVon: null,
-            vertretungFuer: istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, getEffectiveFreigeber2Id(job, konto)) ? getEffectiveFreigeber2Id(job, konto) : null,
+            vertretungFuer:
+              !job.freigabe2_eskaliert_an_admin && istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, effektiverFreigeber2FuerAblehnung)
+                ? effektiverFreigeber2FuerAblehnung
+                : null,
           });
           db.exec('COMMIT');
         } catch (err) {
@@ -349,6 +353,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const tmpPfad = `${job.pdf_pfad}.${randomUUID()}.tmp`;
       writeFileSync(tmpPfad, stamped);
 
+      const effektiverFreigeber2FuerFreigabe = getEffectiveFreigeber2Id(job, konto);
       db.exec('BEGIN');
       try {
         createFreigabe(db, {
@@ -360,7 +365,10 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           interessenskonflikt: false,
           kommentar: begruendung || null,
           eskaliertVon: job.freigabe2_eskaliert_von,
-          vertretungFuer: istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, getEffectiveFreigeber2Id(job, konto)) ? getEffectiveFreigeber2Id(job, konto) : null,
+          vertretungFuer:
+            !job.freigabe2_eskaliert_an_admin && istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, effektiverFreigeber2FuerFreigabe)
+              ? effektiverFreigeber2FuerFreigabe
+              : null,
         });
         const abgeschlossen = abschliessenFreigabe2(db, job.id);
         if (!abgeschlossen) {

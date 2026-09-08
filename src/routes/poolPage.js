@@ -17,7 +17,7 @@ import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/dow
 import { personHasRole } from '../middleware/roles.js';
 import { personHasPermission, requirePermission } from '../middleware/permissions.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
-import { sendNotification, sendNotificationMitVertretung } from '../services/notify.js';
+import { sendNotificationMitVertretung } from '../services/notify.js';
 import { personName } from '../services/auditLog.js';
 
 export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {

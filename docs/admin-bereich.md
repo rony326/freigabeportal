@@ -63,8 +63,14 @@ anlegen (`POST /kontierung/lieferanten`).
 Konfiguriert, nach wie vielen Stunden eine unbeanspruchte Pool-Rechnung
 eine Reminder- bzw. eine Eskalations-Mail auslöst, sowie die jeweiligen
 Empfängerlisten (E-Mail-Adressen oder die Tokens `gruppe:buchhaltung` /
-`gruppe:admin`) — inklusive der IBAN-Abweichungs-Empfänger. Siehe
-[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md).
+`gruppe:admin`) — inklusive der IBAN-Abweichungs-Empfänger. Zusätzlich
+dieselben Werte für Rechnungen, die in `freigabe2` festhängen:
+`freigabe2_reminder_stunden` und `freigabe2_eskalation_stunden` (Defaults
+24 bzw. 48 Stunden) sowie die Eskalations-Empfängerliste
+`freigabe2_eskalation_empfaenger` (Default `gruppe:admin`) — der Reminder
+selbst geht an keine konfigurierbare Liste, sondern immer an die
+tatsächlich zuständige Person. Siehe
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#freigabe2-erinnerungen).
 
 ## Erscheinungsbild (`/admin/erscheinungsbild`)
 
@@ -106,8 +112,10 @@ Gedacht als Sammelstelle für künftige, ebenfalls unabhängig einführbare Modu
 
 ## Mail-Einstellungen (`/admin/mail-einstellungen`)
 
-Editierbare Betreff-/Text-Vorlagen (`%variable%`-Platzhalter) für alle 7
-Mail-Typen plus die Digest-Vorlage, sowie der globale Batching-Schalter
+Editierbare Betreff-/Text-Vorlagen (`%variable%`-Platzhalter) für alle 9
+Mail-Typen (inkl. `freigabe2-reminder`/`freigabe2-eskalation`, siehe
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#freigabe2-erinnerungen))
+plus die Digest-Vorlage, sowie der globale Batching-Schalter
 (sofort vs. täglich gesammelt) mit Versandzeit und manuellem "Jetzt
 ausführen" für den `mail-digest`-Job. **Nur `superadmin`**, wie
 Eskalationszeiten/Erscheinungsbild/Zeitstempel/Backup. Details:

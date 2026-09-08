@@ -190,6 +190,14 @@ flowchart TD
 Details zur PDF-Stempelung und zum Zeitstempel:
 [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md).
 
+Ein Job bleibt hier nicht mehr unbegrenzt liegen: der
+`freigabe2-erinnerungen`-Job schickt nach einer konfigurierbaren Frist
+einen Reminder an den effektiven Freigeber 2 und übergibt den Job nach
+einer weiteren Frist automatisch an die Admin-Gruppe (dieselbe
+`freigabe2_eskaliert_an_admin`-Übergabe wie beim Interessenskonflikt
+oben). Details:
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#freigabe2-erinnerungen).
+
 ## 4. Ablehnung, Überarbeitung, Löschung
 
 - **Ablehnen** ist sowohl bei der Kontierung (`zugewiesen`) als auch bei

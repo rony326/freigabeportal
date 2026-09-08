@@ -13,7 +13,7 @@
     <h1>Personen</h1>
     <div class="table-responsive">
       <table class="table align-middle">
-        <thead><tr><th>Name</th><th>E-Mail</th><th>Status</th><th>Rolle</th><th>Einzelrechte</th><th>Hinweis</th></tr></thead>
+        <thead><tr><th>Name</th><th>E-Mail</th><th>Status</th><th>Rolle</th><th>Einzelrechte</th><th>Hinweis</th><th>Ferienmodus</th></tr></thead>
         <tbody>
           <% personen.forEach((p) => { %>
             <tr>
@@ -65,6 +65,14 @@
               <td>
                 <% if (p.ct_person_unresolved) { %><span class="text-warning d-block">⚠️ Person in ChurchTools nicht auflösbar (nicht auflösbar)</span><% } %>
                 <% if (p.aktiv && p.gruppen.length === 0) { %><span class="text-warning d-block">⚠️ Nicht mehr in einer ChurchTools-Gruppe, aber weiterhin als Freigeber/Stellvertreter auf einem Konto hinterlegt</span><% } %>
+              </td>
+              <td>
+                <% if (p.ferienmodus_von) { %>
+                  <span class="badge text-bg-info d-block"><%= p.ferienmodus_von %> – <%= p.ferienmodus_bis %></span>
+                  <span class="text-muted small">Stellvertreter: <%= p.ferienmodusStellvertreterName %></span>
+                <% } else { %>
+                  <span class="text-muted small">—</span>
+                <% } %>
               </td>
             </tr>
           <% }) %>

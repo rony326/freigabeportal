@@ -146,6 +146,9 @@ Checkliste/Aufgaben pro Vermietung.
 | `erledigt_am` | text NULL | |
 | `erinnerung_versendet_am` | text NULL | verhindert Mehrfach-Mails |
 | `ist_standard` | int default 0 | ob aus einer Vorlage übernommen (informativ) |
+| `zugangs_gruppen` | text NULL | JSON-Array von `vermietung_zugangsgruppen`-IDs — nur bei Badge-artigen Aufgaben befüllt |
+| `gueltig_von` | text (date) NULL | nur bei Badge-artigen Aufgaben befüllt |
+| `gueltig_bis` | text (date) NULL | nur bei Badge-artigen Aufgaben befüllt |
 
 ### `vermietung_aufgaben_vorlagen` (admin-pflegbar)
 
@@ -154,11 +157,27 @@ Checkliste/Aufgaben pro Vermietung.
 | `id` | int PK | |
 | `bezeichnung` | text | |
 | `standard_frist_tage` | int | Tage vor Termin für den `faellig_am`-Vorschlag |
+| `benoetigt_zugangsdaten` | int default 0 | steuert, ob beim Übernehmen dieser Vorlage das Zusatzformular für Zugangsgruppen + Gültigkeitszeitraum erscheint (z. B. "Badge erstellen"; bei "Einweisung Technik" oder "Badge übergeben" aus) |
 | `aktiv` | int | |
 
 Beim Anlegen einer Vermietung werden aktive Vorlagen als Vorschläge
 übernommen; zusätzlich können pro Vermietung frei formulierte Punkte
 ergänzt werden ("Mischung" aus Standard-Katalog und Freitext).
+
+### `vermietung_zugangsgruppen` (admin-pflegbar)
+
+| Spalte | Typ | Bemerkung |
+|---|---|---|
+| `id` | int PK | |
+| `bezeichnung` | text | |
+| `aktiv` | int | |
+
+Katalog der Zonen/Gruppen-Namen eines externen Zugangskontroll-/
+Badge-Systems, das **nicht** technisch angebunden wird — dient nur der
+konsistenten Auswahl im Portal, damit Badge-Aufgaben (`zugangs_gruppen`
+auf `vermietung_aufgaben`) strukturiert festhalten, welche Gruppen und
+welcher Gültigkeitszeitraum nötig sind. Die tatsächliche Konfiguration
+im externen System bleibt manuelle Handarbeit von Staff.
 
 ## ChurchTools-Integration
 
@@ -269,6 +288,7 @@ Neue Unterseiten (Zugriff: `superadmin` oder
 - Preisliste verwalten: Räume aus ChurchTools laden, Tarife/Preise
   pflegen (`vermietung_raum_preise`).
 - Aufgaben-Vorlagen verwalten (`vermietung_aufgaben_vorlagen`).
+- Zugangsgruppen-Katalog verwalten (`vermietung_zugangsgruppen`).
 - Zuordnung, welche(r) CT-`resourceTypeId`(s) als "Räume" zählen
   (`admin_config`).
 - Rechnungsnummer-Präfix (`admin_config`).

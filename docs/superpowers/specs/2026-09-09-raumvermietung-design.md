@@ -235,6 +235,32 @@ Rechnungsnummer mit admin-konfigurierbarem Präfix.
 Nach Abschluss (Mail verschickt bzw. Download-Link erzeugt) wechselt der
 Status auf `rechnung_versendet`.
 
+### Swiss QR-Rechnung
+
+Die Mietrechnung braucht den offiziellen Schweizer QR-Zahlteil. Der
+bestehende `qrBill.js` liest bisher nur eingehende QR-Codes — für die
+Generierung wird `swissqrbill` (bereits `devDependency`, aktuell nur für
+Tests der Erkennung genutzt, siehe `qrBillScan.test.js`) zu einer echten
+`dependency` hochgestuft und liefert direkt eine
+Layout-konforme PDF-Erzeugung des Zahlteils.
+
+- **Kreditor-Stammdaten** (eure Organisation, nicht pro Vermietung):
+  neue `admin_config`-Werte für Firmenname, Adresse (Strasse/Nr,
+  PLZ/Ort, Land) und IBAN — einmalig gepflegt, gilt für alle
+  Mietrechnungen.
+- **Referenztyp `NON`**, da normale IBAN (keine QR-IBAN) verwendet wird
+  — keine strukturierte QRR-Referenz mit Prüfziffer nötig. Die
+  Rechnungsnummer erscheint als unstrukturierte Mitteilung auf dem
+  Zahlteil.
+- **Debitor-Block** (Kundenadresse auf dem Zahlteil): wird aus den
+  erfassten Kundendaten übernommen, wenn Name und Adresse vollständig
+  vorliegen. Ist die Kundenadresse unvollständig (z. B. nur Telefon/Mail
+  erfasst), bleibt der Debitor-Block leer — laut Swiss-QR-Bill-Standard
+  zulässig, die zahlende Person trägt ihre Adresse dann selbst ein.
+- Der QR-Zahlteil wird vom Service `vermietungRechnung.js` an das
+  generierte PDF angehängt (unterste Seite, offizielles Layout: Empfangs-
+  und Zahlteil mit Swiss-Cross-QR-Code, Beträgen, IBAN, Kreditor/Debitor).
+
 ## Admin-Bereich
 
 Neue Unterseiten (Zugriff: `superadmin` oder
@@ -246,6 +272,8 @@ Neue Unterseiten (Zugriff: `superadmin` oder
 - Zuordnung, welche(r) CT-`resourceTypeId`(s) als "Räume" zählen
   (`admin_config`).
 - Rechnungsnummer-Präfix (`admin_config`).
+- Kreditor-Stammdaten für den Swiss-QR-Zahlteil: Firmenname, Adresse,
+  IBAN (`admin_config`).
 
 Modul-Toggle (`modul_vermietung_aktiv`) ergänzt die bestehende
 `/admin/module`-Seite neben dem Spesenmodul-Schalter.

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Kreditkartenbeleg bearbeiten — <%= branding.seitenTitel %></title>
+</head>
+<body>
+  <%- include('_header') %>
+  <main class="container py-4" style="max-width: 760px">
+    <h1 class="h3">Beleg <%= beleg.status === 'entwurf' ? 'ergänzen' : 'bearbeiten' %></h1>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger"><ul class="mb-0"><% errors.forEach((e) => { %><li><%= e %></li><% }) %></ul></div>
+    <% } %>
+    <% if (beleg.pdf_pfad) { %><p><a href="/kreditkarte/belege/<%= beleg.id %>/datei" target="_blank" rel="noopener">Aktuellen Beleg ansehen</a></p><% } %>
+    <form method="post" action="/kreditkarte/belege/<%= beleg.id %>" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label" for="kreditkarteId">Karte</label>
+          <select class="form-select" id="kreditkarteId" name="kreditkarteId" required>
+            <option value="">— Karte wählen —</option>
+            <% karten.forEach((k) => { %><option value="<%= k.id %>" <%= String(k.id) === String(values.kreditkarteId) ? 'selected' : '' %>><%= k.bezeichnung %></option><% }) %>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="beleg">Datei ersetzen <span class="text-muted">(optional)</span></label>
+          <input type="file" class="form-control" id="beleg" name="beleg" accept="application/pdf,image/png,image/jpeg">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="betrag">Betrag CHF</label>
+          <input class="form-control" id="betrag" name="betrag" inputmode="decimal" value="<%= values.betrag %>" required>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="kaufdatum">Kaufdatum</label>
+          <input type="date" class="form-control" id="kaufdatum" name="kaufdatum" value="<%= values.kaufdatum %>" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="kontoId">Konto <span class="text-muted">(optional)</span></label>
+          <select class="form-select" id="kontoId" name="kontoId">
+            <option value="">— später beim Abgleich —</option>
+            <% alleKonten.forEach((k) => { %><option value="<%= k.id %>" <%= String(k.id) === String(values.kontoId) ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option><% }) %>
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label" for="beschreibung">Beschreibung</label>
+          <input class="form-control" id="beschreibung" name="beschreibung" value="<%= values.beschreibung %>" required>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary mt-3">Speichern</button>
+      <a href="/kreditkarte" class="btn btn-outline-secondary mt-3">Abbrechen</a>
+    </form>
+
+    <hr class="my-4">
+    <form method="post" action="/kreditkarte/belege/<%= beleg.id %>/verwerfen" class="row g-2 align-items-end">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <div class="col-md-9">
+        <label class="form-label" for="grund">Beleg verwerfen — Grund</label>
+        <input class="form-control" id="grund" name="grund" placeholder="z.B. doppelt hochgeladen, privat bezahlt" required>
+      </div>
+      <div class="col-md-3"><button type="submit" class="btn btn-outline-danger w-100">Verwerfen</button></div>
+    </form>
+  </main>
+  <%- include('_footer') %>
+</body>
+</html>

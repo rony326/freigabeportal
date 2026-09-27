@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Kreditkartenbelege — <%= branding.seitenTitel %></title>
+</head>
+<body>
+  <%- include('_header') %>
+  <main class="container py-4">
+    <h1 class="h3">Kreditkartenbelege</h1>
+    <p class="text-muted">Lade Belege zu Kreditkartenkäufen hier hoch, sobald du sie hast. Sie werden erst verbucht, wenn die Monatsabrechnung der Karte eintrifft und abgeglichen wird.</p>
+    <% if (gespeichert) { %><div class="alert alert-success">Gespeichert.</div><% } %>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger"><ul class="mb-0"><% errors.forEach((e) => { %><li><%= e %></li><% }) %></ul></div>
+    <% } %>
+
+    <% if (karten.length > 0) { %>
+      <div class="card mb-4"><div class="card-body">
+        <h2 class="h5">Beleg erfassen</h2>
+        <form method="post" action="/kreditkarte/belege" enctype="multipart/form-data">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" for="kreditkarteId">Karte</label>
+              <select class="form-select" id="kreditkarteId" name="kreditkarteId" required>
+                <% if (karten.length > 1) { %><option value="">— Karte wählen —</option><% } %>
+                <% karten.forEach((k) => { %>
+                  <option value="<%= k.id %>" <%= String(k.id) === String(values.kreditkarteId) ? 'selected' : '' %>><%= k.bezeichnung %><%= k.karte_endziffern ? ` (•••• ${k.karte_endziffern})` : '' %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="beleg">Beleg (PDF, PNG oder JPEG)</label>
+              <input type="file" class="form-control" id="beleg" name="beleg" accept="application/pdf,image/png,image/jpeg" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="betrag">Betrag CHF</label>
+              <input class="form-control" id="betrag" name="betrag" inputmode="decimal" value="<%= values.betrag %>" placeholder="12.50" required>
+              <div class="form-text">Rückerstattung negativ, z.B. -12.50</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="kaufdatum">Kaufdatum</label>
+              <input type="date" class="form-control" id="kaufdatum" name="kaufdatum" value="<%= values.kaufdatum %>" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="kontoId">Konto <span class="text-muted">(optional, Vorschlag)</span></label>
+              <select class="form-select" id="kontoId" name="kontoId">
+                <option value="">— später beim Abgleich —</option>
+                <% alleKonten.forEach((k) => { %>
+                  <option value="<%= k.id %>" <%= String(k.id) === String(values.kontoId) ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="beschreibung">Beschreibung</label>
+              <input class="form-control" id="beschreibung" name="beschreibung" value="<%= values.beschreibung %>" placeholder="z.B. Zugticket Bern–Zürich Jugendlager" required>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary mt-3">Beleg speichern</button>
+        </form>
+      </div></div>
+    <% } %>
+
+    <%- include('_kk_beleg_tabelle', { titel: 'Zu ergänzen', belege: entwuerfe, aktionen: true }) %>
+    <%- include('_kk_beleg_tabelle', { titel: 'Meine offenen Belege', belege: offen, aktionen: true }) %>
+    <% if (verantwortlichOffen.length > 0) { %>
+      <%- include('_kk_beleg_tabelle', { titel: 'Offene Belege meiner Karten', belege: verantwortlichOffen, aktionen: true }) %>
+    <% } %>
+    <% if (erledigt.length > 0) { %>
+      <details class="mt-4">
+        <summary class="h6">Zugeordnet / verworfen (<%= erledigt.length %>)</summary>
+        <%- include('_kk_beleg_tabelle', { titel: null, belege: erledigt, aktionen: false }) %>
+      </details>
+    <% } %>
+  </main>
+  <%- include('_footer') %>
+</body>
+</html>

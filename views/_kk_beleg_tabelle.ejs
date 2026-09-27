@@ -1,0 +1,28 @@
+<% if (belege.length > 0) { %>
+  <% if (titel) { %><h2 class="h5 mt-4"><%= titel %></h2><% } %>
+  <table class="table table-sm align-middle">
+    <thead><tr><th></th><th>Kaufdatum</th><th>Karte</th><th class="text-end">Betrag</th><th>Beschreibung</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      <% belege.forEach((b) => { %>
+        <tr>
+          <td><% if (b.thumbnail_pfad) { %><a href="/kreditkarte/belege/<%= b.id %>/datei" target="_blank" rel="noopener"><img src="/kreditkarte/belege/<%= b.id %>/thumbnail" alt="Beleg" style="max-height:48px"></a><% } else if (b.pdf_pfad) { %><a href="/kreditkarte/belege/<%= b.id %>/datei" target="_blank" rel="noopener">PDF</a><% } %></td>
+          <td><%= b.kaufdatum || '—' %></td>
+          <td><%= b.karte_bezeichnung || '—' %></td>
+          <td class="text-end"><%= b.betrag || '—' %></td>
+          <td><%= b.beschreibung || '—' %></td>
+          <td>
+            <% if (b.status === 'zugeordnet') { %>Zugeordnet (Job #<%= b.zugeordnet_job_id %>)
+            <% } else if (b.status === 'verworfen') { %>Verworfen: <%= b.verworfen_grund %><% if (b.datei_geloescht_am) { %> <span class="text-muted">(Datei gelöscht am <%= b.datei_geloescht_am.slice(0, 10) %>)</span><% } %>
+            <% } else if (b.status === 'entwurf') { %>Zu ergänzen
+            <% } else { %>Offen<% } %>
+          </td>
+          <td class="text-end">
+            <% if (aktionen && (b.status === 'offen' || b.status === 'entwurf')) { %>
+              <a href="/kreditkarte/belege/<%= b.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm"><%= b.status === 'entwurf' ? 'Ergänzen' : 'Bearbeiten' %></a>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>

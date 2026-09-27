@@ -1,7 +1,7 @@
 # Kreditkarten-Belege — Design
 
 Datum: 2026-09-27
-Status: Zur Review
+Status: Freigegeben (Review 2026-09-27)
 
 ## Ziel
 
@@ -84,7 +84,7 @@ Einschränkung gilt nur für neue Uploads.
 | `gekauft_von` | INTEGER NOT NULL → `personen` | Default = `hochgeladen_von` (6d) |
 | `hochgeladen_am` | TEXT NOT NULL | |
 | `quelle` | TEXT NOT NULL | `'web'` / `'mail'` / `'abgleich'` (direkt beim Abgleich nachgereicht) |
-| `pdf_pfad` | TEXT NOT NULL | Bilder serverseitig in PDF-Seite umgewandelt |
+| `pdf_pfad` | TEXT | Bilder serverseitig in PDF-Seite umgewandelt; NULL nur nach Fristlöschung (6f) |
 | `thumbnail_pfad` | TEXT | best effort |
 | `betrag` | TEXT | NULL nur bei `entwurf`; negativ erlaubt (Rückerstattung) |
 | `waehrung` | TEXT NOT NULL DEFAULT 'CHF' | reine Info; beim Abgleich zählt der CHF-Betrag der Zeile |
@@ -97,6 +97,7 @@ Einschränkung gilt nur für neue Uploads.
 | `verworfen_grund` | TEXT | Pflicht bei `verworfen` |
 | `verworfen_von`, `verworfen_am` | | |
 | `letzte_erinnerung_am` | TEXT | Erinnerungs-Cron (6a) |
+| `datei_geloescht_am` | TEXT | Fristlöschung verworfener Belege (6f) |
 
 Status-Übergänge:
 
@@ -112,8 +113,10 @@ stateDiagram-v2
     offen --> zugeordnet: Abgleich gespeichert
 ```
 
-`zugeordnet` und `verworfen` sind Endzustände; Dateien werden nie
-gelöscht (Soft-Status).
+`zugeordnet` und `verworfen` sind Endzustände. Zugeordnete Belege bleiben
+dauerhaft erhalten (sie sind Teil des gestempelten Buchungsdokuments);
+bei verworfenen Belegen wird die Datei nach einer Frist gelöscht, die
+Datenzeile bleibt als Nachweis erhalten (6f).
 
 ### Erweiterung `jobs`
 
@@ -397,6 +400,22 @@ Anzeige auf Abgleich-Seite und Stempelseite.
   Eingang“ inkl. Beispiel-Workflow (Postfach → Anhänge einzeln posten).
   Mehrere Anhänge ⇒ ein Request pro Anhang.
 
+### 6f Fristlöschung verworfener Belege
+
+- Erweiterung des bestehenden nächtlichen Crons `pdf-bereinigung`
+  (kein neuer Cron): Einstellung „Verworfene Kreditkartenbelege löschen
+  nach X Tagen“ in `/admin/geplante-jobs`, Default **90**.
+- Betroffen: `kk_belege` mit `status = 'verworfen'`, `verworfen_am`
+  älter als X Tage, `datei_geloescht_am IS NULL`. Gilt ebenso für
+  verworfene Entwürfe.
+- Aktion: PDF und Thumbnail vom Dateisystem entfernen, `pdf_pfad` und
+  `thumbnail_pfad` auf NULL, `datei_geloescht_am` setzen. Die Zeile
+  selbst (Karte, Betrag, Datum, Beschreibung, wer/wann/warum verworfen)
+  bleibt als Nachweis erhalten; Audit-Log-Eintrag pro Lauf mit Anzahl.
+- Datei fehlt bereits ⇒ trotzdem als gelöscht markieren (idempotent).
+- Anzeige: im Bereich „Zugeordnet / verworfen“ statt Vorschau-Link
+  „Datei gelöscht am …“.
+
 ## 7. Rechte (Übersicht)
 
 | Aktion | Berechtigt |
@@ -426,7 +445,7 @@ Variablen im bestehenden `%variable%`-Schema (u. a. `%karte%`,
 
 1. **Kern:** Abschnitte 1–5, 7, 8 (ohne die Vorlagen aus 6), inkl.
    Refactor Aufsplitten → Service.
-2. **Erweiterungen:** 6a–6e.
+2. **Erweiterungen:** 6a–6f.
 
 Etappe 1 ist allein nutzbar; Etappe 2 ändert keine Kern-Schnittstellen,
 nur zusätzliche Spalten (`gekauft_von` wird in Etappe 1 schon angelegt
@@ -460,6 +479,9 @@ Text-Fixtures; Vorschlagslogik bei doppelten Beträgen.
 - Modul aus ⇒ Upload/Markieren/n8n-Endpunkt blockiert, laufender Abgleich
   funktioniert.
 - Cron 6a: Erinnerung einmal pro Intervall, Empfänger-Dedup.
+- 6f: verworfener Beleg nach Frist ⇒ Dateien weg, Zeile bleibt,
+  `datei_geloescht_am` gesetzt; vor Frist und `zugeordnet` unberührt;
+  zweiter Lauf idempotent.
 - 6b: eindeutiger Treffer markiert automatisch, mehrdeutig nicht.
 - 6e: bekannter Absender ⇒ Entwurf + Mail; unbekannt ⇒ 422; Ergänzen ⇒
   `offen`.
@@ -474,10 +496,7 @@ Neu `docs/kreditkarten-belege.md`; ergänzen: `datenmodell.md`,
 `geplante-jobs-und-benachrichtigungen.md`, `n8n-schnittstelle.md`,
 `README.md`.
 
-## Offene Punkte für die Review
+## Offene Punkte
 
-- Default für die Erinnerungsfrist (45 Tage) — passt das zum
-  Abrechnungsrhythmus?
-- Sollen verworfene Belege nach einer Frist endgültig gelöscht werden
-  (Datenschutz), oder bleiben sie wie gelöschte Jobs dauerhaft erhalten?
-  Aktuell: dauerhaft erhalten.
+Keine — geklärt in der Review vom 2026-09-27: Erinnerungsfrist 45 Tage
+bestätigt; verworfene Belege werden nach Frist gelöscht (6f).

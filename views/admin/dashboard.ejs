@@ -38,6 +38,16 @@
         </a>
       </div>
       <% } %>
+      <% if (adminNav.kreditkarten) { %>
+      <div class="col">
+        <a href="/admin/kreditkarten" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Kreditkarten</h2>
+            <p class="card-text text-body-secondary">Karten, verantwortliche Personen und wer Belege erfassen darf.</p>
+          </div>
+        </a>
+      </div>
+      <% } %>
       <% if (adminNav.eskalation) { %>
       <div class="col">
         <a href="/admin/eskalation" class="card text-decoration-none h-100">

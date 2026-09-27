@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title><%= karte ? 'Kreditkarte bearbeiten' : 'Neue Kreditkarte' %> — <%= branding.seitenTitel %></title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4" style="max-width: 720px">
+    <%- include('./_nav') %>
+    <h1 class="h3"><%= karte ? 'Kreditkarte bearbeiten' : 'Neue Kreditkarte' %></h1>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger"><ul class="mb-0"><% errors.forEach((e) => { %><li><%= e %></li><% }) %></ul></div>
+    <% } %>
+    <form method="post" action="<%= karte ? `/admin/kreditkarten/${karte.id}` : '/admin/kreditkarten' %>">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <div class="mb-3">
+        <label class="form-label" for="bezeichnung">Bezeichnung</label>
+        <input class="form-control" id="bezeichnung" name="bezeichnung" value="<%= werte.bezeichnung %>" required>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label class="form-label" for="karteEndziffern">Letzte 4 Ziffern <span class="text-muted">(optional)</span></label>
+          <input class="form-control" id="karteEndziffern" name="karteEndziffern" value="<%= werte.karteEndziffern %>" inputmode="numeric" maxlength="4" pattern="\d{4}">
+        </div>
+        <div class="col-md-8">
+          <label class="form-label" for="karteninhaberName">Ausgestellt auf <span class="text-muted">(optional, nur Anzeige)</span></label>
+          <input class="form-control" id="karteninhaberName" name="karteninhaberName" value="<%= werte.karteninhaberName %>">
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="verantwortlichId">Verantwortliche Person (gleicht die Abrechnungen ab)</label>
+        <select class="form-select" id="verantwortlichId" name="verantwortlichId" required>
+          <option value="">— Person wählen —</option>
+          <% personen.forEach((p) => { %>
+            <option value="<%= p.churchtools_person_id %>" <%= p.churchtools_person_id === werte.verantwortlichId ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="form-check mb-2">
+        <input type="checkbox" class="form-check-input" id="erfassungOffen" name="erfassungOffen" value="1"<% if (werte.erfassungOffen) { %> checked<% } %>>
+        <label class="form-check-label" for="erfassungOffen">Alle Personen dürfen Belege auf diese Karte erfassen</label>
+      </div>
+      <div class="mb-3" id="erfasser-block">
+        <label class="form-label" for="erfasserIds">Wer darf Belege erfassen <span class="text-muted">(die verantwortliche Person immer)</span></label>
+        <select class="form-select" id="erfasserIds" name="erfasserIds" multiple size="8">
+          <% personen.forEach((p) => { %>
+            <option value="<%= p.churchtools_person_id %>" <%= werte.erfasserIds.includes(p.churchtools_person_id) ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+          <% }) %>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+      <a href="/admin/kreditkarten" class="btn btn-outline-secondary">Abbrechen</a>
+    </form>
+  </main>
+  <script>
+    (function () {
+      var checkbox = document.getElementById('erfassungOffen');
+      var block = document.getElementById('erfasser-block');
+      function update() { block.style.display = checkbox.checked ? 'none' : ''; }
+      checkbox.addEventListener('change', update);
+      update();
+    })();
+  </script>
+  <%- include('../_footer') %>
+</body>
+</html>

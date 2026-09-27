@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
+import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 
 const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
@@ -65,6 +66,17 @@ test('loadNavFlags: a plain person with one individual grant sees only that sect
   assert.equal(res.locals.adminNav.mails, true);
   assert.equal(res.locals.adminNav.konten, false);
   assert.equal(res.locals.adminNav.personen, false, 'personen list stays role-only, not grantable via individual rights');
+  db.close();
+});
+
+test('loadNavFlags sets adminNav.kreditkarten true for a superadmin, and zeigeKreditkarteNav false while the module is disabled', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'A', nachname: 'B', email: 'a@b.ch', gruppen: ['20'], loggedInNow: false });
+  setConfigValue(db, 'modul_kreditkarten_aktiv', '0');
+  const { res } = runLoadNavFlags(db, CONFIG, { churchtools_person_id: '1', gruppen: ['20'] }, '/admin');
+  assert.equal(res.locals.adminNav.kreditkarten, true);
+  assert.equal(res.locals.kreditkartenModulAktiv, false);
+  assert.equal(res.locals.zeigeKreditkarteNav, false);
   db.close();
 });
 

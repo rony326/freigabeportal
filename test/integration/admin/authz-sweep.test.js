@@ -9,11 +9,11 @@
 // alone — and each sub-router then applies its own more specific gate
 // (requirePermission for the grantable areas, requireRole('superadmin')
 // for the three hard-locked ones). This test sweeps every known
-// route/method combination across the nine admin router families below
-// (konten, debitoren, eskalation, erscheinungsbild, personen, mails,
-// abgelehnt, audit-log, geplante-jobs — zeitstempel and sync are exercised
-// by the second test below instead) against the real app and confirms each
-// returns 401 when no session/cookie is present at all.
+// route/method combination across the ten admin router families below
+// (konten, debitoren, kreditkarten, eskalation, erscheinungsbild, personen,
+// mails, abgelehnt, audit-log, geplante-jobs — zeitstempel and sync are
+// exercised by the second test below instead) against the real app and
+// confirms each returns 401 when no session/cookie is present at all.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
@@ -64,6 +64,14 @@ const ADMIN_ROUTES = [
   { method: 'get', path: '/admin/debitoren/regeln/1/bearbeiten' },
   { method: 'post', path: '/admin/debitoren/regeln/1' },
   { method: 'post', path: '/admin/debitoren/regeln/1/loeschen' },
+  // kreditkarten (7)
+  { method: 'get', path: '/admin/kreditkarten' },
+  { method: 'get', path: '/admin/kreditkarten/neu' },
+  { method: 'post', path: '/admin/kreditkarten' },
+  { method: 'get', path: '/admin/kreditkarten/1/bearbeiten' },
+  { method: 'post', path: '/admin/kreditkarten/1' },
+  { method: 'post', path: '/admin/kreditkarten/1/deaktivieren' },
+  { method: 'post', path: '/admin/kreditkarten/1/aktivieren' },
   // eskalation (2)
   { method: 'get', path: '/admin/eskalation' },
   { method: 'post', path: '/admin/eskalation' },
@@ -90,8 +98,8 @@ const ADMIN_ROUTES = [
   { method: 'post', path: '/admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren' },
 ];
 
-test('the real createApp wiring returns 401 on all 32 admin route/method combinations with no session present', async () => {
-  assert.equal(ADMIN_ROUTES.length, 32, 'sanity check: this sweep should cover exactly 32 route/method combinations');
+test('the real createApp wiring returns 401 on all 39 admin route/method combinations with no session present', async () => {
+  assert.equal(ADMIN_ROUTES.length, 39, 'sanity check: this sweep should cover exactly 39 route/method combinations');
 
   const db = openDatabase(':memory:');
   const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
@@ -149,6 +157,7 @@ test('the real createApp wiring enforces the superadmin-only hard lock and the m
   const VERGEBBAR = [
     { method: 'get', path: '/admin/konten' },
     { method: 'get', path: '/admin/debitoren' },
+    { method: 'get', path: '/admin/kreditkarten' },
     { method: 'get', path: '/admin/mails' },
     { method: 'get', path: '/admin/sync' },
     { method: 'get', path: '/admin/abgelehnt' },

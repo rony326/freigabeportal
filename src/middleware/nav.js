@@ -1,5 +1,7 @@
 import { personHasRole } from './roles.js';
 import { personHasPermission } from './permissions.js';
+import { getConfigValue } from '../db/adminConfigRepo.js';
+import { zeigeKreditkartenBereich } from '../services/kkRechte.js';
 
 export function loadNavFlags(db, config) {
   return (req, res, next) => {
@@ -23,10 +25,13 @@ export function loadNavFlags(db, config) {
       auditLog: hasPermission('audit_log_einsehen'),
       backup: res.locals.isSuperadmin,
       module: res.locals.isSuperadmin,
+      kreditkarten: hasPermission('kreditkarten_verwalten'),
     };
     // Strip a trailing slash (e.g. "/pool/") so nav highlighting/buttons keyed on an exact
     // path like "/pool" still match — Express routes both with and without it identically.
     res.locals.currentPath = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
+    res.locals.kreditkartenModulAktiv = getConfigValue(db, 'modul_kreditkarten_aktiv') === '1';
+    res.locals.zeigeKreditkarteNav = Boolean(person) && res.locals.kreditkartenModulAktiv && zeigeKreditkartenBereich(db, person.churchtools_person_id);
     next();
   };
 }

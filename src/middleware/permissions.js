@@ -10,6 +10,7 @@ export const GRANTABLE_BERECHTIGUNGEN = [
   'sync_einsehen',
   'audit_log_einsehen',
   'pool_zuweisen',
+  'kreditkarten_verwalten',
 ];
 
 export const BERECHTIGUNG_LABELS = {
@@ -21,6 +22,7 @@ export const BERECHTIGUNG_LABELS = {
   sync_einsehen: 'Sync-Übersicht einsehen',
   audit_log_einsehen: 'Globales Audit-Log einsehen',
   pool_zuweisen: 'Pool-Belege an Personen zuweisen',
+  kreditkarten_verwalten: 'Kreditkarten verwalten',
 };
 
 // Superadmin und Manager bekommen jedes vergebbare Recht über ihr Rollen-Bundle, unabhängig von

@@ -34,6 +34,7 @@ const DEFAULTS = {
   backup_cron_minute: '0',
   backup_aufbewahrung_anzahl: '14',
   modul_spesen_aktiv: '1',
+  modul_kreditkarten_aktiv: '0',
   kontierung_strikte_freigeber1_pruefung: '0',
   mail_vorlage_zuweisung_betreff: 'Freigabeportal: Neue Rechnung zur Bearbeitung',
   mail_vorlage_zuweisung_text: 'Hallo %empfaengerName%,\n\n%grund%\n\nBeleg: %jobDateiname%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',

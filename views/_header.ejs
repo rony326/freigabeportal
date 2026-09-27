@@ -65,6 +65,9 @@
           <% } %>
           <li><a class="dropdown-item<%= navAktuellerPfad === '/meine-abgeschlossenen' ? ' active' : '' %>" href="/meine-abgeschlossenen">Abgeschlossene Rechnungen</a></li>
           <li><a class="dropdown-item<%= navAktuellerPfad === '/meine-spesen' ? ' active' : '' %>" href="/meine-spesen">Meine Spesen</a></li>
+          <% if (typeof zeigeKreditkarteNav !== 'undefined' && zeigeKreditkarteNav) { %>
+            <li><a class="dropdown-item<%= navAktuellerPfad === '/kreditkarte' ? ' active' : '' %>" href="/kreditkarte">Kreditkartenbelege</a></li>
+          <% } %>
           <li><a class="dropdown-item<%= navAktuellerPfad === '/ferienmodus' ? ' active' : '' %>" href="/ferienmodus">Ferienmodus</a></li>
           <li><a class="dropdown-item<%= navAktuellerPfad === '/zeitstempel-pruefen' ? ' active' : '' %>" href="/zeitstempel-pruefen">Zeitstempel prüfen</a></li>
           <% if (navHatAdminZugang) { %>

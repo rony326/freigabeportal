@@ -6,15 +6,20 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
 import { loadCurrentPerson } from '../../src/middleware/roles.js';
-import { GRANTABLE_BERECHTIGUNGEN, personHasPermission, requirePermission, requireAdminAreaAccess } from '../../src/middleware/permissions.js';
+import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS, personHasPermission, requirePermission, requireAdminAreaAccess } from '../../src/middleware/permissions.js';
 
 const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
 
-test('GRANTABLE_BERECHTIGUNGEN lists exactly the eight catalog permissions', () => {
+test('GRANTABLE_BERECHTIGUNGEN lists exactly the nine catalog permissions', () => {
   assert.deepEqual(
     [...GRANTABLE_BERECHTIGUNGEN].sort(),
-    ['abgelehnt_verwalten', 'audit_log_einsehen', 'debitoren_verwalten', 'geplante_jobs_verwalten', 'konten_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen']
+    ['abgelehnt_verwalten', 'audit_log_einsehen', 'debitoren_verwalten', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen']
   );
+});
+
+test('kreditkarten_verwalten is grantable and labelled', () => {
+  assert.ok(GRANTABLE_BERECHTIGUNGEN.includes('kreditkarten_verwalten'));
+  assert.equal(BERECHTIGUNG_LABELS.kreditkarten_verwalten, 'Kreditkarten verwalten');
 });
 
 test('personHasPermission: superadmin has every grantable permission without any individual grant', () => {

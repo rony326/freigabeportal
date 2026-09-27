@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Kreditkarten — <%= branding.seitenTitel %></title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h1 class="h3 mb-0">Kreditkarten</h1>
+      <a href="/admin/kreditkarten/neu" class="btn btn-primary btn-sm">Neue Karte</a>
+    </div>
+    <% if (karten.length === 0) { %>
+      <p class="text-muted">Noch keine Kreditkarten erfasst.</p>
+    <% } else { %>
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Bezeichnung</th><th>Endziffern</th><th>Verantwortlich</th><th>Erfassung</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <% karten.forEach((k) => { %>
+            <tr class="<%= k.aktiv ? '' : 'text-muted' %>">
+              <td><%= k.bezeichnung %><% if (k.karteninhaber_name) { %><div class="small text-muted">Inhaber: <%= k.karteninhaber_name %></div><% } %></td>
+              <td><%= k.karte_endziffern ? '•••• ' + k.karte_endziffern : '—' %></td>
+              <td><%= k.verantwortlich ? `${k.verantwortlich.vorname} ${k.verantwortlich.nachname}` : 'Unbekannt' %></td>
+              <td><%= k.erfassung_offen ? 'Alle Personen' : 'Nur Liste' %></td>
+              <td><%= k.aktiv ? 'Aktiv' : 'Deaktiviert' %></td>
+              <td class="text-end">
+                <a href="/admin/kreditkarten/<%= k.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
+                <form method="post" action="/admin/kreditkarten/<%= k.id %>/<%= k.aktiv ? 'deaktivieren' : 'aktivieren' %>" class="d-inline">
+                  <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                  <button type="submit" class="btn btn-outline-<%= k.aktiv ? 'danger' : 'success' %> btn-sm"><%= k.aktiv ? 'Deaktivieren' : 'Reaktivieren' %></button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

@@ -14,14 +14,15 @@ CREATE TABLE IF NOT EXISTS personen (
 );
 
 -- Additive Einzelrechte pro Person, unabhängig von der ChurchTools-Rolle (superadmin/manager).
--- Nur die acht vergebbaren Rechte sind hier zulässig -- die drei hart gesperrten Admin-Bereiche
+-- Nur die neun vergebbaren Rechte sind hier zulässig -- die drei hart gesperrten Admin-Bereiche
 -- (Eskalationszeiten, Erscheinungsbild, Zeitstempel) sowie das Bearbeiten dieser Tabelle selbst
 -- sind strukturell nicht einfügbar, unabhängig von der Anwendungslogik.
 CREATE TABLE IF NOT EXISTS person_berechtigungen (
   person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
   berechtigung TEXT NOT NULL CHECK (berechtigung IN (
     'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
-    'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen', 'pool_zuweisen'
+    'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen', 'pool_zuweisen',
+    'kreditkarten_verwalten'
   )),
   PRIMARY KEY (person_id, berechtigung)
 );
@@ -56,7 +57,7 @@ CREATE TABLE IF NOT EXISTS admin_config (
 -- both fields in one shot via logCronLauf and never use 'laufend'.
 CREATE TABLE IF NOT EXISTS cron_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen')),
+  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen')),
   gestartet_am TEXT NOT NULL,
   beendet_am TEXT,
   status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
@@ -162,7 +163,12 @@ CREATE TABLE IF NOT EXISTS jobs (
   pool_rueckgesendet_am TEXT,
   freigabe2_seit TEXT,
   freigabe2_reminder_gesendet_at TEXT,
-  freigabe2_eskalation_gesendet_at TEXT
+  freigabe2_eskalation_gesendet_at TEXT,
+  kreditkarte_id INTEGER REFERENCES kreditkarten(id),
+  kk_eigenbeleg_grund TEXT,
+  kk_markiert_am TEXT,
+  kk_erinnert_am TEXT,
+  kk_text_betraege TEXT
 );
 
 -- Manipulationsschutz: sobald ein Zeitstempel-Hash/-Zeitpunkt für einen Job gesetzt ist, darf er
@@ -210,7 +216,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id INTEGER NOT NULL REFERENCES jobs(id),
   person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung')),
+  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung', 'kk_abrechnung_markiert', 'kk_markierung_aufgehoben', 'kk_abgleich')),
   zeitpunkt TEXT NOT NULL,
   ip TEXT NOT NULL,
   interessenskonflikt INTEGER NOT NULL DEFAULT 0,
@@ -221,7 +227,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
 
 CREATE TABLE IF NOT EXISTS mail_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation')),
+  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen')),
   job_id INTEGER REFERENCES jobs(id),
   empfaenger TEXT NOT NULL,
   betreff TEXT NOT NULL,
@@ -256,4 +262,66 @@ CREATE TABLE IF NOT EXISTS backup_wiederherstellungen (
   dateiname TEXT NOT NULL,
   wiederhergestellt_von TEXT NOT NULL,
   zeitpunkt TEXT NOT NULL
+);
+
+-- Kreditkarten für die Vorab-Erfassung von Belegen (siehe docs/kreditkarten-belege.md).
+-- Nur die letzten vier Ziffern werden gespeichert -- nie eine vollständige Kartennummer.
+CREATE TABLE IF NOT EXISTS kreditkarten (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bezeichnung TEXT NOT NULL,
+  karte_endziffern TEXT CHECK (karte_endziffern IS NULL OR (length(karte_endziffern) = 4 AND karte_endziffern NOT GLOB '*[^0-9]*')),
+  karteninhaber_name TEXT,
+  verantwortlich_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  erfassung_offen INTEGER NOT NULL DEFAULT 1,
+  absender_muster TEXT,
+  aktiv INTEGER NOT NULL DEFAULT 1,
+  erstellt_am TEXT NOT NULL
+);
+
+-- Nur ausgewertet, wenn kreditkarten.erfassung_offen = 0.
+CREATE TABLE IF NOT EXISTS kreditkarte_erfasser (
+  kreditkarte_id INTEGER NOT NULL REFERENCES kreditkarten(id),
+  person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  PRIMARY KEY (kreditkarte_id, person_id)
+);
+
+-- Vorab hochgeladene Belege. Bewusst KEINE jobs-Zeilen: sie tauchen erst nach dem Abgleich als
+-- Teil-Job (zugeordnet_job_id) im Freigabe-Workflow auf. betrag/kaufdatum/beschreibung/
+-- kreditkarte_id dürfen nur im Status 'entwurf' (Mail-Eingang, Etappe 2) NULL sein -- das prüft
+-- die Anwendung, nicht die DB. pdf_pfad ist nur nach der Fristlöschung verworfener Belege NULL.
+CREATE TABLE IF NOT EXISTS kk_belege (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kreditkarte_id INTEGER REFERENCES kreditkarten(id),
+  hochgeladen_von TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  gekauft_von TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+  hochgeladen_am TEXT NOT NULL,
+  quelle TEXT NOT NULL CHECK (quelle IN ('web', 'mail', 'abgleich')),
+  pdf_pfad TEXT,
+  thumbnail_pfad TEXT,
+  betrag TEXT,
+  waehrung TEXT NOT NULL DEFAULT 'CHF',
+  kaufdatum TEXT,
+  beschreibung TEXT,
+  konto_id INTEGER REFERENCES konten(id),
+  status TEXT NOT NULL CHECK (status IN ('entwurf', 'offen', 'zugeordnet', 'verworfen')),
+  zugeordnet_job_id INTEGER REFERENCES jobs(id),
+  zugeordnet_am TEXT,
+  verworfen_grund TEXT,
+  verworfen_von TEXT REFERENCES personen(churchtools_person_id),
+  verworfen_am TEXT,
+  letzte_erinnerung_am TEXT,
+  datei_geloescht_am TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_kk_belege_karte_status ON kk_belege(kreditkarte_id, status);
+
+-- Audit-Trail für Belege, die (noch) keine jobs-Zeile haben und deshalb nicht in freigaben
+-- protokolliert werden können. person_id NULL = System (Mail-Eingang, Fristlöschung).
+CREATE TABLE IF NOT EXISTS kk_beleg_ereignisse (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  beleg_id INTEGER NOT NULL REFERENCES kk_belege(id),
+  person_id TEXT REFERENCES personen(churchtools_person_id),
+  aktion TEXT NOT NULL CHECK (aktion IN ('kk_beleg_erfasst', 'kk_beleg_ergaenzt', 'kk_beleg_geaendert', 'kk_beleg_verworfen', 'kk_beleg_zugeordnet', 'kk_beleg_datei_geloescht')),
+  zeitpunkt TEXT NOT NULL,
+  kommentar TEXT
 );

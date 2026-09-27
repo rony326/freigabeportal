@@ -1117,3 +1117,93 @@ test('openDatabase adds the ferienmodus columns via ALTER TABLE to an existing o
   migratedDb.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('fresh database has the kreditkarten tables and the new jobs columns', () => {
+  const db = openDatabase(':memory:');
+  const tabellen = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name));
+  for (const name of ['kreditkarten', 'kreditkarte_erfasser', 'kk_belege', 'kk_beleg_ereignisse']) {
+    assert.ok(tabellen.has(name), `${name} fehlt`);
+  }
+  const jobCols = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name));
+  for (const col of ['kreditkarte_id', 'kk_eigenbeleg_grund', 'kk_markiert_am', 'kk_erinnert_am', 'kk_text_betraege']) {
+    assert.ok(jobCols.has(col), `jobs.${col} fehlt`);
+  }
+  db.close();
+});
+
+test('kreditkarten.karte_endziffern only accepts exactly four digits or NULL', () => {
+  const db = openDatabase(':memory:');
+  db.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'A', 'B', 'a@example.org')").run();
+  const insert = db.prepare("INSERT INTO kreditkarten (bezeichnung, karte_endziffern, verantwortlich_id, erstellt_am) VALUES ('Visa', ?, '1', '2026-09-27T00:00:00.000Z')");
+  insert.run('1234');
+  insert.run(null);
+  assert.throws(() => insert.run('123'));
+  assert.throws(() => insert.run('12a4'));
+  assert.throws(() => insert.run('12345'));
+  db.close();
+});
+
+test('kk_belege.status only accepts entwurf/offen/zugeordnet/verworfen', () => {
+  const db = openDatabase(':memory:');
+  db.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'A', 'B', 'a@example.org')").run();
+  const insert = db.prepare(
+    "INSERT INTO kk_belege (hochgeladen_von, gekauft_von, hochgeladen_am, quelle, pdf_pfad, status) VALUES ('1', '1', '2026-09-27T00:00:00.000Z', 'web', '/tmp/x.pdf', ?)"
+  );
+  for (const status of ['entwurf', 'offen', 'zugeordnet', 'verworfen']) insert.run(status);
+  assert.throws(() => insert.run('geloescht'));
+  db.close();
+});
+
+test('the widened CHECKs accept the new kreditkarten values on a fresh database', () => {
+  const db = openDatabase(':memory:');
+  db.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'A', 'B', 'a@example.org')").run();
+  db.prepare("INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad) VALUES ('2026-09-27', 'scanner', 'a.pdf', '/tmp/a.pdf')").run();
+  for (const rolle of ['kk_abrechnung_markiert', 'kk_markierung_aufgehoben', 'kk_abgleich']) {
+    db.prepare("INSERT INTO freigaben (job_id, person_id, rolle, zeitpunkt, ip) VALUES (1, '1', ?, '2026-09-27', '::1')").run(rolle);
+  }
+  db.prepare("INSERT INTO person_berechtigungen (person_id, berechtigung) VALUES ('1', 'kreditkarten_verwalten')").run();
+  for (const typ of ['kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen']) {
+    db.prepare("INSERT INTO mail_log (typ, empfaenger, betreff, text, status, versucht_am) VALUES (?, 'a@example.org', 'b', 't', 'versendet', '2026-09-27')").run(typ);
+  }
+  db.prepare("INSERT INTO cron_log (job, gestartet_am, status) VALUES ('kk-beleg-erinnerungen', '2026-09-27', 'erfolg')").run();
+  db.close();
+});
+
+test('openDatabase widens freigaben/person_berechtigungen/mail_log/cron_log on an existing on-disk database and keeps rows and freigaben.vertretung_fuer', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'db-kk-migration-test-'));
+  const dbPath = join(dir, 'portal.db');
+  try {
+    // First open builds the current (pre-kreditkarten) schema, then we narrow the four tables
+    // back to their pre-kreditkarten CHECKs by hand to simulate an already-deployed database.
+    const alt = openDatabase(dbPath);
+    alt.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'A', 'B', 'a@example.org')").run();
+    alt.prepare("INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad) VALUES ('2026-09-27', 'scanner', 'a.pdf', '/tmp/a.pdf')").run();
+    alt.exec('PRAGMA foreign_keys = OFF');
+    alt.exec('DROP TABLE freigaben');
+    alt.exec(`CREATE TABLE freigaben (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER NOT NULL REFERENCES jobs(id),
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung')),
+      zeitpunkt TEXT NOT NULL, ip TEXT NOT NULL, interessenskonflikt INTEGER NOT NULL DEFAULT 0, kommentar TEXT,
+      eskaliert_von TEXT REFERENCES personen(churchtools_person_id), vertretung_fuer TEXT REFERENCES personen(churchtools_person_id))`);
+    alt.prepare("INSERT INTO freigaben (job_id, person_id, rolle, zeitpunkt, ip, vertretung_fuer) VALUES (1, '1', 'freigeber1', '2026-09-27', '::1', '1')").run();
+    alt.exec('DROP TABLE person_berechtigungen');
+    alt.exec(`CREATE TABLE person_berechtigungen (
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      berechtigung TEXT NOT NULL CHECK (berechtigung IN ('konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten', 'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen', 'pool_zuweisen')),
+      PRIMARY KEY (person_id, berechtigung))`);
+    alt.prepare("INSERT INTO person_berechtigungen VALUES ('1', 'pool_zuweisen')").run();
+    alt.close();
+
+    const db = openDatabase(dbPath);
+    const f = db.prepare('SELECT * FROM freigaben').all();
+    assert.equal(f.length, 1);
+    assert.equal(f[0].vertretung_fuer, '1');
+    db.prepare("INSERT INTO freigaben (job_id, person_id, rolle, zeitpunkt, ip) VALUES (1, '1', 'kk_abgleich', '2026-09-27', '::1')").run();
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM person_berechtigungen').get().n, 1);
+    db.prepare("INSERT INTO person_berechtigungen VALUES ('1', 'kreditkarten_verwalten')").run();
+    db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

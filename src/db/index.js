@@ -47,6 +47,11 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'freigabe2_seit', ddl: 'ALTER TABLE jobs ADD COLUMN freigabe2_seit TEXT' },
   { column: 'freigabe2_reminder_gesendet_at', ddl: 'ALTER TABLE jobs ADD COLUMN freigabe2_reminder_gesendet_at TEXT' },
   { column: 'freigabe2_eskalation_gesendet_at', ddl: 'ALTER TABLE jobs ADD COLUMN freigabe2_eskalation_gesendet_at TEXT' },
+  { column: 'kreditkarte_id', ddl: 'ALTER TABLE jobs ADD COLUMN kreditkarte_id INTEGER REFERENCES kreditkarten(id)' },
+  { column: 'kk_eigenbeleg_grund', ddl: 'ALTER TABLE jobs ADD COLUMN kk_eigenbeleg_grund TEXT' },
+  { column: 'kk_markiert_am', ddl: 'ALTER TABLE jobs ADD COLUMN kk_markiert_am TEXT' },
+  { column: 'kk_erinnert_am', ddl: 'ALTER TABLE jobs ADD COLUMN kk_erinnert_am TEXT' },
+  { column: 'kk_text_betraege', ddl: 'ALTER TABLE jobs ADD COLUMN kk_text_betraege TEXT' },
 ];
 
 const PERSONEN_TABLE_MIGRATIONS = [
@@ -616,6 +621,96 @@ function migrateCronLogTableFreigabe2Erinnerungen(db) {
   }
 }
 
+// Gemeinsamer Helfer für die Kreditkarten-CHECK-Erweiterungen unten -- gleiches Rebuild-Muster wie
+// migrateFreigabenTable & Co. oben (rename aside, create fresh, copy, drop, alles in einer
+// Transaktion, FK-Enforcement währenddessen aus). `marker` ist der neueste erlaubte Wert: steht er
+// schon im CREATE-Statement der Tabelle, ist nichts zu tun.
+function erweitereCheckPerRebuild(db, { tabelle, marker, createSql, spalten }) {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(tabelle);
+  if (!tableSql || tableSql.sql.includes(marker)) return;
+  const altName = `${tabelle}_pre_${marker.replace(/[^a-z0-9]/gi, '_')}`;
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    db.exec(`ALTER TABLE ${tabelle} RENAME TO ${altName}`);
+    db.exec(createSql);
+    const liste = spalten.join(', ');
+    db.exec(`INSERT INTO ${tabelle} (${liste}) SELECT ${liste} FROM ${altName}`);
+    db.exec(`DROP TABLE ${altName}`);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
+// Muss NACH migrateFreigabenTableVertretung laufen: die neu erstellte Tabelle enthält
+// vertretung_fuer bereits, und die Kopie übernimmt die Spalte.
+function migrateKreditkartenChecks(db) {
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'freigaben',
+    marker: 'kk_markierung_aufgehoben',
+    createSql: `CREATE TABLE freigaben (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL REFERENCES jobs(id),
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung', 'kk_abrechnung_markiert', 'kk_markierung_aufgehoben', 'kk_abgleich')),
+      zeitpunkt TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      interessenskonflikt INTEGER NOT NULL DEFAULT 0,
+      kommentar TEXT,
+      eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+      vertretung_fuer TEXT REFERENCES personen(churchtools_person_id)
+    )`,
+    spalten: ['id', 'job_id', 'person_id', 'rolle', 'zeitpunkt', 'ip', 'interessenskonflikt', 'kommentar', 'eskaliert_von', 'vertretung_fuer'],
+  });
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'person_berechtigungen',
+    marker: 'kreditkarten_verwalten',
+    createSql: `CREATE TABLE person_berechtigungen (
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      berechtigung TEXT NOT NULL CHECK (berechtigung IN (
+        'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
+        'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen', 'pool_zuweisen',
+        'kreditkarten_verwalten'
+      )),
+      PRIMARY KEY (person_id, berechtigung)
+    )`,
+    spalten: ['person_id', 'berechtigung'],
+  });
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'mail_log',
+    marker: 'kk-beleg-eingegangen',
+    createSql: `CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL
+    )`,
+    spalten: ['id', 'typ', 'job_id', 'empfaenger', 'betreff', 'text', 'status', 'fehler_details', 'versucht_am'],
+  });
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'cron_log',
+    marker: 'kk-beleg-erinnerungen',
+    createSql: `CREATE TABLE cron_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen')),
+      gestartet_am TEXT NOT NULL,
+      beendet_am TEXT,
+      status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
+      details TEXT
+    )`,
+    spalten: ['id', 'job', 'gestartet_am', 'beendet_am', 'status', 'details'],
+  });
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -636,5 +731,6 @@ export function openDatabase(dbPath) {
   migrateCronLogTableFreigabe2Erinnerungen(db);
   migratePersonenTable(db);
   migrateFreigabenTableVertretung(db);
+  migrateKreditkartenChecks(db);
   return db;
 }

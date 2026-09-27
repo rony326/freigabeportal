@@ -48,6 +48,6 @@ export function darfBelegSehen(db, config, beleg, person) {
 
 export function zeigeKreditkartenBereich(db, personId) {
   if (listErfassbareKarten(db, personId).length > 0) return true;
-  if (db.prepare('SELECT 1 FROM kreditkarten WHERE aktiv = 1 AND verantwortlich_id = ? LIMIT 1').get(personId)) return true;
+  if (db.prepare('SELECT 1 FROM kreditkarten WHERE verantwortlich_id = ? LIMIT 1').get(personId)) return true;
   return Boolean(db.prepare('SELECT 1 FROM kk_belege WHERE hochgeladen_von = ? OR gekauft_von = ? LIMIT 1').get(personId, personId));
 }

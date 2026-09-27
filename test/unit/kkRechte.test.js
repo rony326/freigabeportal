@@ -57,12 +57,19 @@ test('darfBelegSehen: editors, superadmin, and whoever currently holds a marked 
 });
 
 test('zeigeKreditkartenBereich is true for uploaders, responsible persons and owners of receipts', () => {
-  const { db, zu } = setup();
-  setKreditkarteAktiv(db, 1, false); // the open card
+  const { db, offen, zu } = setup();
+  setKreditkarteAktiv(db, offen, false); // the open card
   assert.equal(zeigeKreditkartenBereich(db, '1'), true); // responsible for "Zu"
   assert.equal(zeigeKreditkartenBereich(db, '2'), true); // on the list of "Zu"
   assert.equal(zeigeKreditkartenBereich(db, '3'), false);
   createKkBeleg(db, { kreditkarteId: zu, hochgeladenVon: '2', gekauftVon: '3', quelle: 'web', pdfPfad: '/tmp/x.pdf', betrag: '1.00', kaufdatum: '2026-09-01', beschreibung: 'x', status: 'offen' });
   assert.equal(zeigeKreditkartenBereich(db, '3'), true);
+  db.close();
+});
+
+test('zeigeKreditkartenBereich is true for responsible person of a deactivated card', () => {
+  const { db, offen } = setup();
+  setKreditkarteAktiv(db, offen, false);
+  assert.equal(zeigeKreditkartenBereich(db, '1'), true); // responsible for deactivated "Offen"
   db.close();
 });

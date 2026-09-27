@@ -16,10 +16,12 @@ import {
   addBelegSeiten,
   findJobsByDebitorUndRechnungsnummer,
   sendJobBackToGroup,
+  hebeKkMarkierungAuf,
 } from '../db/jobsRepo.js';
 import { getKontoById, listKonten } from '../db/kontenRepo.js';
 import { listDebitoren, getDebitorById, createDebitor } from '../db/debitorenRepo.js';
 import { findDebitorIbanByIban, createDebitorIban } from '../db/debitorIbanRepo.js';
+import { getKreditkarteById, listKreditkarten } from '../db/kreditkartenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -29,6 +31,7 @@ import { buildAuditLog } from '../services/auditLog.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { isValidIban } from '../services/ibanUtils.js';
 import { ladeKontierbarenJob, ladeKontenFuerJob as ladeKontenFuerJobService } from '../services/kontierungZugriff.js';
+import { markiereAlsKkAbrechnung } from '../services/kkMarkierung.js';
 import {
   POSITION_PATTERN,
   mergeBelegFuerJob,
@@ -82,9 +85,16 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   const loadAuthorizedJob = (req, res) => ladeKontierbarenJob(db, config, req, res);
   const ladeKontenFuerJob = (req, job) => ladeKontenFuerJobService(db, req, job);
 
+  function sperreKkAbrechnung(job, res) {
+    if (!job.kreditkarte_id) return false;
+    res.status(409).render('error', { message: 'Diese Abrechnung ist einer Kreditkarte zugeordnet und wird über den Abgleich bearbeitet.' });
+    return true;
+  }
+
   router.get('/:id', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
+    if (job.kreditkarte_id) return res.redirect(`/kontierung/${job.id}/kk-abgleich`);
     const konten = ladeKontenFuerJob(req, job);
     const qrInfo = buildQrInfo(db, job);
     res.render('kontierung', {
@@ -92,6 +102,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       konten,
       alleKonten: listKonten(db),
       debitoren: listDebitoren(db),
+      kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values: {
         kontoId: job.konto_id ? String(job.konto_id) : '',
@@ -134,6 +145,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     try {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
+      if (sperreKkAbrechnung(job, res)) return;
       const konten = ladeKontenFuerJob(req, job);
       const debitoren = listDebitoren(db);
       const qrInfo = buildQrInfo(db, job);
@@ -150,6 +162,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
           values,
           qrInfo,
+          kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
           errors: Array.isArray(messages) ? messages : [messages],
           auditLog: buildAuditLog(db, job.id),
         });
@@ -570,6 +583,45 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     res.redirect('/pool');
   });
 
+  router.post('/:id/als-kk-abrechnung', csrfProtection, async (req, res, next) => {
+    try {
+      const job = loadAuthorizedJob(req, res);
+      if (!job) return;
+      if (getConfigValue(db, 'modul_kreditkarten_aktiv') !== '1') {
+        return res.status(403).render('error', { message: 'Die Kreditkarten-Belege sind derzeit deaktiviert.' });
+      }
+      const karte = getKreditkarteById(db, Number(req.body.kreditkarteId));
+      if (!karte || !karte.aktiv) return res.status(400).render('error', { message: 'Bitte eine gültige Karte wählen.' });
+      const ok = await markiereAlsKkAbrechnung(db, config, mailer, { job, karte, markiertVon: req.currentPerson, ip: req.ip, ausStatus: 'zugewiesen' });
+      if (!ok) return res.status(409).render('error', { message: 'Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.' });
+      res.redirect(karte.verantwortlich_id === req.currentPerson.churchtools_person_id ? `/kontierung/${job.id}/kk-abgleich` : '/pool');
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/:id/kk-markierung-aufheben', csrfProtection, (req, res) => {
+    const job = loadAuthorizedJob(req, res);
+    if (!job) return;
+    if (!job.kreditkarte_id) return res.status(409).render('error', { message: 'Diese Abrechnung ist keiner Kreditkarte zugeordnet.' });
+    const bemerkung = (req.body.bemerkung || '').trim();
+    if (!bemerkung) return res.status(400).render('error', { message: 'Bitte eine Bemerkung angeben.' });
+    db.exec('BEGIN');
+    try {
+      hebeKkMarkierungAuf(db, job.id);
+      sendJobBackToGroup(db, job.id, job.zugewiesen_an, { bemerkung });
+      createFreigabe(db, {
+        jobId: job.id, personId: req.currentPerson.churchtools_person_id, rolle: 'kk_markierung_aufgehoben',
+        zeitpunkt: new Date().toISOString(), ip: req.ip, interessenskonflikt: false, kommentar: bemerkung, eskaliertVon: null,
+      });
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+    res.redirect('/pool');
+  });
+
   function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors) {
     res.status(status).render('kontierung-aufsplitten', { job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors });
   }
@@ -577,6 +629,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   router.get('/:id/aufsplitten', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
+    if (sperreKkAbrechnung(job, res)) return;
     const konten = ladeKontenFuerJob(req, job);
     // The Kontierung form's own Betrag field (already pre-filled from the original Rechnung —
     // QR-erkannt or previously saved) is passed in as ?betrag=... when the Aufsplitten-Popup is
@@ -598,6 +651,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     try {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
+      if (sperreKkAbrechnung(job, res)) return;
       const konten = ladeKontenFuerJob(req, job);
       const alleKonten = listKonten(db);
 

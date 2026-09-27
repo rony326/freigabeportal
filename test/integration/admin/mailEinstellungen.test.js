@@ -50,6 +50,7 @@ const VALID_BODY = {
   digestBetreff: 'B8', digestText: 'T8',
   freigabe2ReminderBetreff: 'B9', freigabe2ReminderText: 'T9',
   freigabe2EskalationBetreff: 'B10', freigabe2EskalationText: 'T10',
+  kkAbrechnungZugewiesenBetreff: 'B11', kkAbrechnungZugewiesenText: 'T11',
   batchingAktiv: '1',
   batchingStunde: '6',
   batchingMinute: '30',

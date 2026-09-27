@@ -14,6 +14,28 @@
     <% if (typeof isBuchhaltung !== 'undefined' && (isBuchhaltung || isSuperadmin) && poolJobs.length > 0) { %>
       <h2 class="h4 mt-4">Pool</h2>
       <%- include('_job_table', { jobs: poolJobs, idPrefix: 'pool', istPoolArtig: true, kannZuweisen, zielPersonen }) %>
+      <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0) { %>
+        <form method="post" id="kk-markieren-form" class="d-flex flex-wrap gap-2 align-items-center mt-2">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <span>Kreditkartenabrechnung:</span>
+          <select class="form-select form-select-sm w-auto" id="kk-markieren-job" required>
+            <option value="">— Beleg aus dem Pool —</option>
+            <% poolJobs.forEach((j) => { %><option value="<%= j.id %>">#<%= j.id %> <%= j.dateiname %></option><% }) %>
+          </select>
+          <select class="form-select form-select-sm w-auto" name="kreditkarteId" required>
+            <option value="">— Karte —</option>
+            <% kkKarten.forEach((k) => { %><option value="<%= k.id %>"><%= k.bezeichnung %></option><% }) %>
+          </select>
+          <button type="submit" class="btn btn-outline-primary btn-sm">Zum Abgleich übergeben</button>
+        </form>
+        <script>
+          document.getElementById('kk-markieren-form').addEventListener('submit', function (e) {
+            var id = document.getElementById('kk-markieren-job').value;
+            if (!id) { e.preventDefault(); return; }
+            this.action = '/pool/' + encodeURIComponent(id) + '/als-kk-abrechnung';
+          });
+        </script>
+      <% } %>
     <% } %>
 
     <% if (typeof kannZuweisen !== 'undefined' && kannZuweisen && ruecklaeufer.length > 0) { %>

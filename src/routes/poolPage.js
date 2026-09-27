@@ -13,11 +13,14 @@ import {
   assignJobToPerson,
 } from '../db/jobsRepo.js';
 import { getKontoById, listPersonenMitFreigeberRolle } from '../db/kontenRepo.js';
+import { getKreditkarteById, listKreditkarten } from '../db/kreditkartenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { personHasRole } from '../middleware/roles.js';
 import { personHasPermission, requirePermission } from '../middleware/permissions.js';
+import { getConfigValue } from '../db/adminConfigRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { sendNotificationMitVertretung } from '../services/notify.js';
+import { markiereAlsKkAbrechnung } from '../services/kkMarkierung.js';
 import { personName } from '../services/auditLog.js';
 
 export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
@@ -45,6 +48,7 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
     const kannZuweisen = personHasPermission(db, config, req.currentPerson, 'pool_zuweisen');
     res.render('pool', {
       poolJobs: zeigtPool ? enrich(listPoolJobs(db)) : [],
+      kkKarten: zeigtPool && getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
       ruecklaeufer: kannZuweisen ? enrich(listPoolRuecklaeufer(db)) : [],
       kannZuweisen,
       zielPersonen: kannZuweisen ? listPersonenMitFreigeberRolle(db) : [],
@@ -97,6 +101,26 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
         },
       });
       res.json({ id: job.id, status: 'zugewiesen' });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/:id/als-kk-abrechnung', csrfProtection, async (req, res, next) => {
+    try {
+      const darf = personHasRole(req.currentPerson, config, 'buchhaltung') || personHasRole(req.currentPerson, config, 'superadmin');
+      if (!darf || getConfigValue(db, 'modul_kreditkarten_aktiv') !== '1') {
+        return res.status(403).render('error', { message: 'Du darfst diese Aktion nicht ausführen.' });
+      }
+      const job = getJobById(db, Number(req.params.id));
+      const karte = getKreditkarteById(db, Number(req.body.kreditkarteId));
+      if (!job || job.status !== 'unzugewiesen' || job.quelle === 'spesen') {
+        return res.status(409).render('error', { message: 'Der Beleg ist nicht mehr im Pool verfügbar.' });
+      }
+      if (!karte || !karte.aktiv) return res.status(400).render('error', { message: 'Bitte eine gültige Karte wählen.' });
+      const ok = await markiereAlsKkAbrechnung(db, config, mailer, { job, karte, markiertVon: req.currentPerson, ip: req.ip, ausStatus: 'unzugewiesen' });
+      if (!ok) return res.status(409).render('error', { message: 'Der Beleg ist nicht mehr im Pool verfügbar.' });
+      res.redirect(karte.verantwortlich_id === req.currentPerson.churchtools_person_id ? `/kontierung/${job.id}/kk-abgleich` : '/pool');
     } catch (err) {
       next(err);
     }

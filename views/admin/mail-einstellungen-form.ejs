@@ -99,6 +99,12 @@
         <label class="form-label mt-2" for="freigabe2EskalationText">Freigabe 2 – Eskalation — Text</label>
         <textarea class="form-control" id="freigabe2EskalationText" name="freigabe2EskalationText" rows="4" required><%= freigabe2EskalationText %></textarea>
       </div>
+      <div class="mb-3">
+        <label class="form-label" for="kkAbrechnungZugewiesenBetreff">Kreditkartenabrechnung zum Abgleich — Betreff</label>
+        <input type="text" class="form-control" id="kkAbrechnungZugewiesenBetreff" name="kkAbrechnungZugewiesenBetreff" value="<%= kkAbrechnungZugewiesenBetreff %>" required>
+        <label class="form-label mt-2" for="kkAbrechnungZugewiesenText">Kreditkartenabrechnung zum Abgleich — Text</label>
+        <textarea class="form-control" id="kkAbrechnungZugewiesenText" name="kkAbrechnungZugewiesenText" rows="4" required><%= kkAbrechnungZugewiesenText %></textarea>
+      </div>
 
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>

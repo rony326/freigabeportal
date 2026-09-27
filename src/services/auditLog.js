@@ -14,6 +14,9 @@ export const EREIGNIS_LABEL = {
   pool_ruecksendung: 'An Gruppe zurückgesendet',
   freigabe1_weiterleitung: 'An Freigeber 1 weitergeleitet (Kontierung durch andere Person)',
   loeschung: 'Job gelöscht',
+  kk_abrechnung_markiert: 'Als Kreditkartenabrechnung markiert',
+  kk_markierung_aufgehoben: 'Kreditkarten-Markierung aufgehoben',
+  kk_abgleich: 'Kreditkartenabrechnung abgeglichen',
 };
 
 // Swiss org, hardcoded rather than derived from the server's OS timezone — Infomaniak's hosting

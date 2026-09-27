@@ -11,6 +11,7 @@ const TYP_ZU_KEY_INFIX = {
   digest: 'digest',
   'freigabe2-reminder': 'freigabe2_reminder',
   'freigabe2-eskalation': 'freigabe2_eskalation',
+  'kk-abrechnung-zugewiesen': 'kk_abrechnung_zugewiesen',
 };
 
 export function renderTemplate(vorlage, variablen) {

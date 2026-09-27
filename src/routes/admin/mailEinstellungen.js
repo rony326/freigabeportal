@@ -26,6 +26,8 @@ const VORLAGEN_FELDER = [
   ['freigabe2ReminderText', 'mail_vorlage_freigabe2_reminder_text'],
   ['freigabe2EskalationBetreff', 'mail_vorlage_freigabe2_eskalation_betreff'],
   ['freigabe2EskalationText', 'mail_vorlage_freigabe2_eskalation_text'],
+  ['kkAbrechnungZugewiesenBetreff', 'mail_vorlage_kk_abrechnung_zugewiesen_betreff'],
+  ['kkAbrechnungZugewiesenText', 'mail_vorlage_kk_abrechnung_zugewiesen_text'],
 ];
 
 export function createMailEinstellungenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {

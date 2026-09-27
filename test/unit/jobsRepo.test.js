@@ -7,7 +7,8 @@ import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createDebitor } from '../../src/db/debitorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, assignJobToPerson, listPoolRuecklaeufer, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, sendJobBackToGroup, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, listFreigabe2JobsForReminder, markFreigabe2ReminderGesendet, listFreigabe2JobsForEskalation, markFreigabe2EskalationGesendet, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByDebitorUndRechnungsnummer, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben, weiterleitenAnEchtenFreigeber1 } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, assignJobToPerson, listPoolRuecklaeufer, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, sendJobBackToGroup, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, listFreigabe2JobsForReminder, markFreigabe2ReminderGesendet, listFreigabe2JobsForEskalation, markFreigabe2EskalationGesendet, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByDebitorUndRechnungsnummer, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben, weiterleitenAnEchtenFreigeber1, markiereJobAlsKkAbrechnung, hebeKkMarkierungAuf, setKkAbrechnungKopfdaten, hatZugewieseneKkAbrechnungFuer } from '../../src/db/jobsRepo.js';
+import { createKreditkarte } from '../../src/db/kreditkartenRepo.js';
 
 function seedKonto(db) {
   for (const id of ['1', '2', '3', '4']) {
@@ -2465,5 +2466,44 @@ test('listAdminEskalierteSpesenFreigaben returns only admin-escalated quelle=spe
   const result = listAdminEskalierteSpesenFreigaben(db);
   assert.equal(result.length, 1);
   assert.equal(result[0].id, spesenId);
+  db.close();
+});
+
+test('markiereJobAlsKkAbrechnung assigns to the responsible person, from pool or from zugewiesen, and clears the Rückläufer marker', () => {
+  const db = openDatabase(':memory:');
+  for (const id of ['1', '2']) upsertPerson(db, { id, vorname: 'A', nachname: 'B', email: `${id}@example.org`, gruppen: [] });
+  const karteId = createKreditkarte(db, { bezeichnung: 'Visa', verantwortlichId: '2', erfassungOffen: true });
+  const poolJob = createJob(db, { eingangAm: '2026-09-27T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET pool_rueckgesendet_bemerkung = 'x' WHERE id = ?").run(poolJob);
+  assert.equal(markiereJobAlsKkAbrechnung(db, poolJob, { kreditkarteId: karteId, verantwortlichId: '2', ausStatus: 'zugewiesen' }), false);
+  assert.equal(markiereJobAlsKkAbrechnung(db, poolJob, { kreditkarteId: karteId, verantwortlichId: '2', ausStatus: 'unzugewiesen' }), true);
+  const job = getJobById(db, poolJob);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.zugewiesen_an, '2');
+  assert.equal(job.kreditkarte_id, karteId);
+  assert.ok(job.kk_markiert_am);
+  assert.equal(job.pool_rueckgesendet_bemerkung, null);
+  assert.equal(hatZugewieseneKkAbrechnungFuer(db, karteId, '2'), true);
+  assert.equal(hatZugewieseneKkAbrechnungFuer(db, karteId, '1'), false);
+  assert.equal(hebeKkMarkierungAuf(db, poolJob), true);
+  assert.equal(getJobById(db, poolJob).kreditkarte_id, null);
+  db.close();
+});
+
+test('createSplitJob stores typ, beschreibung and kk_eigenbeleg_grund; setKkAbrechnungKopfdaten is inherited', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'A', nachname: 'B', email: '1@example.org', gruppen: [] });
+  const id = createJob(db, { eingangAm: '2026-09-27T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKkAbrechnungKopfdaten(db, id, { debitorId: null, lieferant: 'Viseca', rechnungsnummer: 'KK-2026-09', zahlungsziel: '2026-10-20' });
+  const parent = getJobById(db, id);
+  const kind = createSplitJob(db, parent, { pdfPfad: '/tmp/k.pdf', thumbnailPfad: null, kontoId: null, hinweisKontoId: null, betrag: '-5.00', typ: 'gutschrift', beschreibung: 'Rückerstattung', kkEigenbelegGrund: 'Beleg verloren' });
+  const k = getJobById(db, kind);
+  assert.equal(k.typ, 'gutschrift');
+  assert.equal(k.beschreibung, 'Rückerstattung');
+  assert.equal(k.kk_eigenbeleg_grund, 'Beleg verloren');
+  assert.equal(k.lieferant, 'Viseca');
+  assert.equal(k.rechnungsnummer, 'KK-2026-09');
+  assert.equal(k.zahlungsziel, '2026-10-20');
+  assert.equal(k.kreditkarte_id, null);
   db.close();
 });

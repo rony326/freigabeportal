@@ -719,7 +719,7 @@ export function markJobAufgesplittet(db, jobId) {
 // here at Aufsplitten time rather than re-derived later — see countBelegSeiten (belegAnhaengen.js)
 // and haengeBelegSeitenAn (splitGruppenExport.js) for why a later page-count delta cannot answer
 // this question any more once the child has been individually stamped.
-export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId, hinweisKontoId, betrag, zugewiesenAn, position, belegSeitenzahl }) {
+export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId, hinweisKontoId, betrag, zugewiesenAn, position, belegSeitenzahl, typ, beschreibung, kkEigenbelegGrund }) {
   const status = kontoId ? 'zugewiesen' : 'unzugewiesen';
   const result = db
     .prepare(
@@ -727,8 +727,8 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
          eingang_am, quelle, absender, dateiname, pdf_pfad, thumbnail_pfad, status,
          konto_id, zugewiesen_an, hinweis_konto_id, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id, aufgesplittet_von,
          qr_iban, qr_referenz, qr_betrag, qr_waehrung, qr_creditor_name, qr_erkannt_am,
-         rechnungsposition, beleg_seitenzahl
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         rechnungsposition, beleg_seitenzahl, typ, beschreibung, kk_eigenbeleg_grund
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       parentJob.eingang_am,
@@ -754,7 +754,10 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
       parentJob.qr_creditor_name,
       parentJob.qr_erkannt_am,
       position || null,
-      belegSeitenzahl ?? null
+      belegSeitenzahl ?? null,
+      typ ?? null,
+      beschreibung ?? null,
+      kkEigenbelegGrund ?? null
     );
   return Number(result.lastInsertRowid);
 }
@@ -933,4 +936,41 @@ export function listAdminEskalierteSpesenFreigaben(db) {
   return db
     .prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND quelle = 'spesen' AND freigabe1_eskaliert_an_admin = 1 ORDER BY eingang_am")
     .all();
+}
+
+// Markiert eine Abrechnung als "Kreditkartenabrechnung dieser Karte" und übergibt sie der
+// verantwortlichen Person. ausStatus ist 'unzugewiesen' (aus dem Pool) oder 'zugewiesen' (aus der
+// Kontierung) -- die WHERE-Bedingung schützt gegen einen parallelen Vorgang auf demselben Job.
+export function markiereJobAlsKkAbrechnung(db, jobId, { kreditkarteId, verantwortlichId, ausStatus }) {
+  const result = db
+    .prepare(
+      `UPDATE jobs
+       SET status = 'zugewiesen', zugewiesen_an = ?, kreditkarte_id = ?, kk_markiert_am = ?, kk_erinnert_am = NULL,
+           pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
+       WHERE id = ? AND status = ? AND kreditkarte_id IS NULL AND quelle != 'spesen'`
+    )
+    .run(verantwortlichId, kreditkarteId, new Date().toISOString(), jobId, ausStatus);
+  return result.changes > 0;
+}
+
+export function hebeKkMarkierungAuf(db, jobId) {
+  const result = db
+    .prepare("UPDATE jobs SET kreditkarte_id = NULL, kk_markiert_am = NULL, kk_erinnert_am = NULL WHERE id = ? AND status = 'zugewiesen' AND kreditkarte_id IS NOT NULL")
+    .run(jobId);
+  return result.changes > 0;
+}
+
+// Kopfdaten der Abrechnung (Kartenherausgeber, Abrechnungsnummer, Zahlungsziel) -- werden vor dem
+// Anlegen der Teil-Jobs auf den Elternjob geschrieben, damit createSplitJob sie wie beim
+// Aufsplitten an jedes Kind vererbt.
+export function setKkAbrechnungKopfdaten(db, jobId, { debitorId, lieferant, rechnungsnummer, zahlungsziel }) {
+  db.prepare('UPDATE jobs SET debitor_id = ?, lieferant = ?, rechnungsnummer = ?, zahlungsziel = ? WHERE id = ?').run(
+    debitorId ?? null, lieferant ?? null, rechnungsnummer ?? null, zahlungsziel ?? null, jobId
+  );
+}
+
+export function hatZugewieseneKkAbrechnungFuer(db, kreditkarteId, personId) {
+  return Boolean(
+    db.prepare("SELECT 1 FROM jobs WHERE kreditkarte_id = ? AND status = 'zugewiesen' AND zugewiesen_an = ? LIMIT 1").get(kreditkarteId, personId)
+  );
 }

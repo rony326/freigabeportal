@@ -607,18 +607,21 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     const bemerkung = (req.body.bemerkung || '').trim();
     if (!bemerkung) return res.status(400).render('error', { message: 'Bitte eine Bemerkung angeben.' });
     db.exec('BEGIN');
+    let ok = false;
     try {
-      hebeKkMarkierungAuf(db, job.id);
-      sendJobBackToGroup(db, job.id, job.zugewiesen_an, { bemerkung });
-      createFreigabe(db, {
-        jobId: job.id, personId: req.currentPerson.churchtools_person_id, rolle: 'kk_markierung_aufgehoben',
-        zeitpunkt: new Date().toISOString(), ip: req.ip, interessenskonflikt: false, kommentar: bemerkung, eskaliertVon: null,
-      });
-      db.exec('COMMIT');
+      ok = hebeKkMarkierungAuf(db, job.id) && sendJobBackToGroup(db, job.id, job.zugewiesen_an, { bemerkung });
+      if (ok) {
+        createFreigabe(db, {
+          jobId: job.id, personId: req.currentPerson.churchtools_person_id, rolle: 'kk_markierung_aufgehoben',
+          zeitpunkt: new Date().toISOString(), ip: req.ip, interessenskonflikt: false, kommentar: bemerkung, eskaliertVon: null,
+        });
+      }
+      db.exec(ok ? 'COMMIT' : 'ROLLBACK');
     } catch (err) {
       db.exec('ROLLBACK');
       throw err;
     }
+    if (!ok) return res.status(409).render('error', { message: 'Diese Abrechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.' });
     res.redirect('/pool');
   });
 

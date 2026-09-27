@@ -97,3 +97,28 @@ test('POST /kontierung/:id/kk-markierung-aufheben needs a remark, then sends the
   assert.equal(job.pool_rueckgesendet_bemerkung, 'Ist die Mastercard');
   assert.ok(listFreigabenByJob(t.db, t.jobId).some((f) => f.rolle === 'kk_markierung_aufgehoben'));
 });
+
+// hebeKkMarkierungAuf/sendJobBackToGroup can in principle both fail inside the transaction (a
+// concurrent process unmarking or reassigning the same job) — the route must then roll back and
+// 409 rather than log a kk_markierung_aufgehoben freigabe for an unmark that never happened. This
+// synchronous single-process test can't force that exact interleaving (loadAuthorizedJob's own
+// status/zugewiesen_an checks and the immediate !job.kreditkarte_id guard already rule out every
+// state that would make either DB call's WHERE clause fail once execution reaches the
+// transaction — see the route's own comments). It instead proves the same "no partial effect,
+// no freigabe row" contract via the guard that IS reachable: directly clearing kreditkarte_id
+// between marking and unmarking (simulating a concurrent kk-markierung-aufheben or kk-abgleich
+// that already resolved it) makes the route's own not-marked check 409 before the transaction
+// even starts, and no freigabe row is written.
+test('POST /kontierung/:id/kk-markierung-aufheben is 409 (not a logged unmark) when the job is no longer marked by the time it runs', async () => {
+  const t = setup();
+  claimJob(t.db, t.jobId, '2');
+  await request(t.app).post(`/kontierung/${t.jobId}/als-kk-abrechnung`).set('x-test-person-id', '2').type('form').send({ kreditkarteId: String(t.karteId) });
+  t.db.prepare('UPDATE jobs SET kreditkarte_id = NULL WHERE id = ?').run(t.jobId);
+  const vorFreigaben = listFreigabenByJob(t.db, t.jobId).length;
+  const res = await request(t.app).post(`/kontierung/${t.jobId}/kk-markierung-aufheben`).set('x-test-person-id', '2').type('form').send({ bemerkung: 'zu spät' });
+  assert.equal(res.status, 409);
+  const job = getJobById(t.db, t.jobId);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(listFreigabenByJob(t.db, t.jobId).length, vorFreigaben);
+  assert.ok(!listFreigabenByJob(t.db, t.jobId).some((f) => f.rolle === 'kk_markierung_aufgehoben'));
+});

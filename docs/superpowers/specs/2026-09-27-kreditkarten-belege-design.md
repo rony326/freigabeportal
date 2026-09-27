@@ -1,7 +1,7 @@
 # Kreditkarten-Belege — Design
 
 Datum: 2026-09-27
-Status: Zur Review (offene Punkte geklärt 2026-09-27)
+Status: Freigegeben (2026-09-27)
 
 ## Ziel
 

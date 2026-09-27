@@ -33,7 +33,7 @@ export function ladeKontierbarenJob(db, config, req, res) {
 // The form's existing pre-fill (values.kontoId defaults to job.konto_id) already assumes the
 // job's currently-assigned Konto is the expected resubmission target. listKontenForPerson
 // alone is role-filtered, though, and a Portal-Admin resolving a self-escalated job (case B in
-// the POST handler below) holds no freigeber1/stellvertreter1 role on that Konto BY
+// the Kontierung POST handler in routes/kontierung.js) holds no freigeber1/stellvertreter1 role on that Konto BY
 // DEFINITION — that's exactly what made it a self-escalation. Without this, such an admin
 // could view the form (200) but never submit it: the dropdown has nothing selectable and
 // konten.find(...) in the POST handler always fails. Unconditional, not gated on

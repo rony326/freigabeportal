@@ -22,12 +22,12 @@ import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger } fr
 // Kyrillisch, CJK, Latin-Extended-A (Ř, Ł, ...) und eingekreiste Ziffern, die Helvetica allesamt
 // NICHT kodieren kann — und \s liesse Tab/Zeilenumbruch durch, die ebenfalls werfen. Umgekehrt
 // waren WinAnsi-sichere Alltagszeichen wie & % + ' vorher fälschlich verboten.
-//  -~ ist druckbares ASCII (schliesst rohe Tabs/Zeilenumbrüche bewusst aus),
-//  -ÿ ist Latin-1 Supplement (deutsche Umlaute, französische/skandinavische Akzente
+// \u0020-\u007E ist druckbares ASCII (schliesst rohe Tabs/Zeilenumbrüche bewusst aus),
+// \u00A0-\u00FF ist Latin-1 Supplement (deutsche Umlaute, französische/skandinavische Akzente
 // usw.); der Rest sind die Windows-1252-Extras ausserhalb von Latin-1, die hier realistisch
 // vorkommen: Œ œ Š š Ž ž Ÿ sowie Halbgeviert-/Geviertstrich (die im Rest dieses Codes ohnehin
 // schon in PDF-Texten verwendet werden).
-export const POSITION_PATTERN = /^[ -~ -ÿŒœŠšŽžŸ–—]*$/;
+export const POSITION_PATTERN = /^[\u0020-\u007E\u00A0-\u00FFŒœŠšŽžŸ–—]*$/;
 
 export function neuerDateipfad(jobsDir, quelldatei) {
   mkdirSync(jobsDir, { recursive: true });

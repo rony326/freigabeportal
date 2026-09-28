@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { seedDefaults, setConfigValue } from '../../src/db/adminConfigRepo.js';
-import { createKreditkarte, setErfasser } from '../../src/db/kreditkartenRepo.js';
+import { createKreditkarte, setErfasser, setKreditkarteAktiv } from '../../src/db/kreditkartenRepo.js';
 import { getKkBelegById, listKkBelegeFuerPerson } from '../../src/db/kkBelegeRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
@@ -137,5 +137,35 @@ test('GET /kreditkarte shows the responsible person all open receipts of their c
   const res = await request(t.app).get('/kreditkarte').set('x-test-person-id', '1');
   assert.match(res.text, /Offene Belege meiner Karten/);
   assert.match(res.text, /Druckerpapier/);
+  t.cleanup();
+});
+
+test('POST /kreditkarte/belege and editing: 400 for a description with characters that cannot be stamped', async () => {
+  const t = setup();
+  const res = await upload(t.app, '3', { kreditkarteId: String(t.offen), betrag: '1.00', kaufdatum: '2026-09-01', beschreibung: 'Kaffee ☕' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Beschreibung enthält Zeichen, die nicht gestempelt werden können/);
+  assert.equal(listKkBelegeFuerPerson(t.db, '3').length, 0);
+  await upload(t.app, '3', { kreditkarteId: String(t.offen), betrag: '1.00', kaufdatum: '2026-09-01', beschreibung: 'Kaffee' });
+  const [beleg] = listKkBelegeFuerPerson(t.db, '3');
+  const edit = await request(t.app).post(`/kreditkarte/belege/${beleg.id}`).set('x-test-person-id', '3')
+    .field('kreditkarteId', String(t.offen)).field('betrag', '1.00').field('kaufdatum', '2026-09-01').field('beschreibung', 'Kaffee ☕');
+  assert.equal(edit.status, 400);
+  assert.equal(getKkBelegById(t.db, beleg.id).beschreibung, 'Kaffee');
+  t.cleanup();
+});
+
+test('editing a receipt whose card was deactivated meanwhile still works, new uploads to that card stay forbidden', async () => {
+  const t = setup();
+  await upload(t.app, '3', { kreditkarteId: String(t.offen), betrag: '1.00', kaufdatum: '2026-09-01', beschreibung: 'alt' });
+  const [beleg] = listKkBelegeFuerPerson(t.db, '3');
+  setKreditkarteAktiv(t.db, t.offen, false);
+  const edit = await request(t.app).post(`/kreditkarte/belege/${beleg.id}`).set('x-test-person-id', '3')
+    .field('kreditkarteId', String(t.offen)).field('betrag', '2.00').field('kaufdatum', '2026-09-01').field('beschreibung', 'neu');
+  assert.equal(edit.status, 302, edit.text);
+  assert.equal(getKkBelegById(t.db, beleg.id).beschreibung, 'neu');
+  const neu = await upload(t.app, '3', { kreditkarteId: String(t.offen), betrag: '1.00', kaufdatum: '2026-09-01', beschreibung: 'x' });
+  assert.equal(neu.status, 403);
+  assert.equal(listKkBelegeFuerPerson(t.db, '3').length, 1);
   t.cleanup();
 });

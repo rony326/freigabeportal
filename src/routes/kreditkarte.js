@@ -10,6 +10,7 @@ import {
 } from '../db/kkBelegeRepo.js';
 import { detectBelegMimetype } from '../services/belegAnhaengen.js';
 import { darfAufKarteErfassen, listErfassbareKarten, darfBelegBearbeiten, darfBelegSehen } from '../services/kkRechte.js';
+import { POSITION_PATTERN } from '../services/aufsplitten.js';
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, KK_DATUM_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
 
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
@@ -26,10 +27,11 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
 
   // Prüft die fachlichen Felder eines Belegs (Upload, Bearbeiten, später Ergänzen). Liefert die
   // normalisierten Werte oder Fehlermeldungen; `karteErlaubt` prüft das Erfass-Recht.
-  function pruefeFelder(req, body) {
+  // `bisherigeKarteId`: beim Bearbeiten darf die bisherige Karte des Belegs inzwischen deaktiviert sein.
+  function pruefeFelder(req, body, { bisherigeKarteId = null } = {}) {
     const errors = [];
     const karte = body.kreditkarteId ? getKreditkarteById(db, Number(body.kreditkarteId)) : null;
-    if (!karte || !karte.aktiv) errors.push('Bitte eine gültige Karte wählen.');
+    if (!karte || (!karte.aktiv && karte.id !== bisherigeKarteId)) errors.push('Bitte eine gültige Karte wählen.');
     const betrag = (body.betrag || '').trim();
     if (!KK_BETRAG_PATTERN.test(betrag)) errors.push('Bitte einen gültigen Betrag angeben (z.B. 12.50, bei Rückerstattung -12.50).');
     const kaufdatum = (body.kaufdatum || '').trim();
@@ -38,6 +40,8 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     }
     const beschreibung = (body.beschreibung || '').trim();
     if (!beschreibung) errors.push('Bitte eine Beschreibung angeben.');
+    // Die Beschreibung wird beim Abgleich zur Position und damit gestempelt.
+    else if (!POSITION_PATTERN.test(beschreibung)) errors.push('Die Beschreibung enthält Zeichen, die nicht gestempelt werden können (z.B. Emojis). Bitte nur normale Buchstaben, Ziffern und Satzzeichen verwenden.');
     const konto = body.kontoId ? getKontoById(db, Number(body.kontoId)) : null;
     if (body.kontoId && (!konto || !konto.aktiv)) errors.push('Das gewählte Konto ist nicht gültig.');
     return {
@@ -138,7 +142,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
         try {
           const beleg = ladeBearbeitbarenBeleg(req, res);
           if (!beleg) return;
-          const { errors, karte, werte } = pruefeFelder(req, req.body);
+          const { errors, karte, werte } = pruefeFelder(req, req.body, { bisherigeKarteId: beleg.kreditkarte_id });
           const karteErlaubt = karte && (karte.id === beleg.kreditkarte_id || darfAufKarteErfassen(db, karte, personId(req)));
           if (karte && !karteErlaubt) errors.push('Auf diese Karte darfst du keine Belege erfassen.');
           if (uploadErr) errors.push(uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Der Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.');

@@ -147,7 +147,13 @@ geprüft (403), nicht nur im Formular ausgeblendet.
 **Deaktivierte Karte**: eine verantwortliche Person behält den Zugriff auf
 die Seite und ihre bereits erfassten/offenen Belege auch dann, wenn ihre
 Karte inzwischen deaktiviert wurde — nur neue Uploads auf eine deaktivierte
-Karte werden abgelehnt (`pruefeFelder` verlangt `karte.aktiv`).
+Karte werden abgelehnt (`pruefeFelder` verlangt `karte.aktiv`). Einen
+bestehenden Beleg, dessen Karte inzwischen deaktiviert wurde, kann man
+weiterhin bearbeiten, solange er auf dieser Karte bleibt.
+
+**Beschreibung**: muss dem `POSITION_PATTERN` des Aufsplittens entsprechen
+(keine Emojis o. ä., `400` beim Upload und beim Bearbeiten), weil sie
+beim Abgleich als Position auf die Stempelseite übernommen wird.
 
 ### 2. Verwaltung (`/admin/kreditkarten`)
 
@@ -167,7 +173,10 @@ ist, wer den Job heute beanspruchen bzw. kontieren dürfte. Gemeinsamer
 Service `markiereAlsKkAbrechnung` (`src/services/kkMarkierung.js`):
 
 1. `jobs.kreditkarte_id` und `kk_markiert_am` setzen, Status `zugewiesen`,
-   `zugewiesen_an` = verantwortliche Person der Karte.
+   `zugewiesen_an` = verantwortliche Person der Karte. Eine bestehende
+   Freigabe-1-Eskalation (`freigabe1_eskaliert_von`, `…_eskalationsgrund`,
+   `…_eskaliert_an_admin`) wird dabei zurückgesetzt — sonst bekäme die
+   verantwortliche Person auf ihrem eigenen Abgleich ein `403`.
 2. `freigaben`-Eintrag `kk_abrechnung_markiert`.
 3. Mail `kk-abrechnung-zugewiesen` an die verantwortliche Person — entfällt,
    wenn die markierende Person selbst verantwortlich ist; diese wird
@@ -176,12 +185,18 @@ Service `markiereAlsKkAbrechnung` (`src/services/kkMarkierung.js`):
 Ein Job, der bereits einer Karte zugeordnet ist, kann nicht ein zweites
 Mal markiert werden (`markiereJobAlsKkAbrechnung` prüft
 `kreditkarte_id IS NULL` in der WHERE-Klausel) — ein Wettlauf zweier
-Markierungsversuche liefert dem zweiten ein `409`.
+Markierungsversuche liefert dem zweiten ein `409`. Ebenso ausgeschlossen
+sind Teil-Jobs einer Splitgruppe (`aufgesplittet_von IS NULL` in derselben
+WHERE-Klausel, `409`): ein markiertes Kind würde den Export seiner Gruppe
+dauerhaft blockieren. Das Markier-Formular wird für solche Jobs gar nicht
+erst angeboten (Kontierungsseite und Pool-Auswahl).
 
 `GET /kontierung/:id` eines markierten Jobs leitet automatisch auf die
 Abgleich-Seite um; die normale Einzelkontierung und das reguläre
 Aufsplitten sind für solche Jobs serverseitig gesperrt (`sperreKkAbrechnung`
-in `src/routes/kontierung.js`), nicht nur im UI ausgeblendet.
+in `src/routes/kontierung.js`), nicht nur im UI ausgeblendet — ebenso
+„Zurück in den Pool“ und „An Gruppe zurück“ (`409`); der Rückweg für einen
+markierten Job ist „Markierung aufheben“.
 
 ### Markierung aufheben
 
@@ -229,6 +244,22 @@ Die **Summenprüfung** gegen das Abrechnungstotal rechnet dagegen mit dem
 **signierten** Wert jeder Zeile (eine Rückerstattung senkt die Summe), und
 sowohl der zugehörige `kk_belege`-Eintrag als auch die Kopfdaten des
 Elternjobs behalten ebenfalls das Vorzeichen.
+
+Beim Export bleibt das Vorzeichen erhalten: `GET /api/n8n/jobs/abholbereit`
+liefert pro Gruppen-Position (und pro Einzeljob) zusätzlich `typ` und
+`betrag_signiert` (negativ bei `gutschrift`), sodass die Summe der
+`betrag_signiert` einer Gruppe deren `betrag` ergibt. Auf der
+Splitgruppen-Stempelseite steht eine solche Position als
+„Betrag: 11.50 (Gutschrift)“. Siehe
+[n8n-schnittstelle.md](n8n-schnittstelle.md).
+
+**Position aus der Beschreibung** (Spec §5.2): hat eine Zeile keine
+Position, übernimmt der Teil-Job die Beschreibung des Belegs bzw. der
+Zeile als `rechnungsposition` (auf 80 Zeichen gekürzt) — nur wenn sie
+stempelbar ist (`POSITION_PATTERN`). Bei Beleg-Zeilen wird die
+Beschreibung selbst nicht mehr geprüft, da sie dort schreibgeschützt vom
+Beleg kommt (ein Altbeleg mit Sonderzeichen bleibt so abgleichbar, dann
+eben ohne übernommene Position).
 
 Speichern läuft in `src/services/aufsplitten.js` (`erzeugeTeilJobs`) — die
 ursprüngliche Aufsplitten-Logik wurde in diesen gemeinsamen Service

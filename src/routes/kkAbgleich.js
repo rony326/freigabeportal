@@ -18,6 +18,7 @@ import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, normalis
 
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 const MAX_ZEILEN = 100;
+const POSITION_AUS_BESCHREIBUNG_MAX = 80;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BELEG_SIZE, files: MAX_ZEILEN } });
 
 function personLabel(db, id) {
@@ -157,7 +158,9 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
             const betragSigniert = normalisiereBetrag(z.betrag);
             if (Number(betragSigniert) === 0) return errors.push(`${nr}: Betrag darf nicht 0 sein.`);
             if (z.position && !POSITION_PATTERN.test(z.position)) return errors.push(`${nr}: Position enthält Zeichen, die nicht gestempelt werden können.`);
-            if (z.beschreibung && !POSITION_PATTERN.test(z.beschreibung)) return errors.push(`${nr}: Beschreibung enthält Zeichen, die nicht gestempelt werden können.`);
+            // Bei Beleg-Zeilen ist die Beschreibung schreibgeschützt (kommt vom Beleg) -- dort nicht
+            // prüfen, sonst liesse sich ein Altbeleg nie mehr abgleichen.
+            if (z.art !== 'beleg' && z.beschreibung && !POSITION_PATTERN.test(z.beschreibung)) return errors.push(`${nr}: Beschreibung enthält Zeichen, die nicht gestempelt werden können.`);
             const teil = {
               konto,
               // Eine Gutschrift hat im Portal immer einen positiven Betrag, die Bedeutung trägt `typ`.
@@ -200,6 +203,11 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
               teil.kkEigenbelegGrund = z.grund;
             } else {
               teil.kkEigenbelegGrund = 'Gebühr/Zins';
+            }
+            // Spec §5.2: ohne erfasste Position wird die Beschreibung (des Belegs bzw. der Zeile)
+            // übernommen -- nur wenn stempelbar, sonst scheitert später der Stempel.
+            if (!teil.position && teil.beschreibung && POSITION_PATTERN.test(teil.beschreibung)) {
+              teil.position = teil.beschreibung.slice(0, POSITION_AUS_BESCHREIBUNG_MAX);
             }
             teile.push(teil);
           });

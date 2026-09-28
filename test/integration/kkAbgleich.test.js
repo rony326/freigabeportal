@@ -20,6 +20,9 @@ import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../src/services/splitGruppenExport.js';
 import { abschliessenFreigabe2 } from '../../src/db/jobsRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
+import { createN8nJobsRouter } from '../../src/routes/n8n/jobs.js';
+import * as mupdf from 'mupdf';
+import { readFileSync } from 'node:fs';
 
 async function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'kk-abgleich-'));
@@ -53,6 +56,7 @@ async function setup() {
   app.use(loadNavFlags(db, config));
   app.use('/kontierung', requireLogin(), createKkAbgleichRouter({ db, config, mailer }));
   app.use('/kontierung', requireLogin(), createKontierungRouter({ db, config, mailer }));
+  app.use('/api/n8n/jobs', createN8nJobsRouter({ db, config, mailer }));
   return { db, app, dir, config, eigen, fremd, karteId, jobId, beleg, sent, cleanup: () => { db.close(); rmSync(dir, { recursive: true, force: true }); } };
 }
 
@@ -205,7 +209,8 @@ test('the foreign-Konto child opens in the normal Kontierung with Konto/Betrag/B
   const [kind] = listSplitKinder(t.db, t.jobId);
   const res = await request(t.app).get(`/kontierung/${kind.id}`).set('x-test-person-id', '5');
   assert.equal(res.status, 200);
-  assert.match(res.text, /20\.00/);
+  assert.match(res.text, new RegExp(`<option value="${t.fremd}"[^>]*selected`));
+  assert.match(res.text, /name="betrag"[^>]*value="20\.00"|value="20\.00"[^>]*name="betrag"/);
   t.cleanup();
 });
 
@@ -292,5 +297,77 @@ test('POST kk-abgleich: a receipt whose file is missing on disk is a 409', async
   const res = await post(t, '1', { gesamtbetrag: '12.00', zeilen: [{ art: 'beleg', belegId: b, kontoId: t.eigen, betrag: '12.00' }] });
   assert.equal(res.status, 409);
   assert.equal(getJobById(t.db, t.jobId).status, 'zugewiesen');
+  t.cleanup();
+});
+
+function schliesseKinderAb(t) {
+  for (const kind of listSplitKinder(t.db, t.jobId)) {
+    createFreigabe(t.db, { jobId: kind.id, personId: '3', rolle: 'freigeber2', zeitpunkt: new Date().toISOString(), ip: '::1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+    abschliessenFreigabe2(t.db, kind.id);
+  }
+}
+
+test('a refund line keeps its sign on export: betrag_signiert of the group positions sums to the group betrag', async () => {
+  const t = await setup();
+  const b = await t.beleg('30.00', 'Papier', t.eigen);
+  const res = await post(t, '1', {
+    gesamtbetrag: '18.50',
+    zeilen: [
+      { art: 'beleg', belegId: b, kontoId: t.eigen, betrag: '30.00' },
+      { art: 'gebuehr', kontoId: t.eigen, betrag: '-11.50', beschreibung: 'Rückvergütung' },
+    ],
+  });
+  assert.equal(res.status, 302, res.text);
+  schliesseKinderAb(t);
+  const exportiert = await pruefeUndFinalisiereSplitGruppe(t.db, t.jobId);
+  assert.equal(exportiert.status, 'exportiert');
+  const gruppenPdf = mupdf.Document.openDocument(readFileSync(exportiert.pdfPfad), 'application/pdf');
+  const gruppenText = Array.from({ length: gruppenPdf.countPages() }, (_, i) => gruppenPdf.loadPage(i).toStructuredText().asText()).join('\n');
+  assert.match(gruppenText, /Betrag: 11\.50 \(Gutschrift\)/);
+  const abholbereit = await request(t.app).get('/api/n8n/jobs/abholbereit');
+  assert.equal(abholbereit.status, 200);
+  const gruppe = abholbereit.body.find((e) => e.id === t.jobId);
+  assert.equal(gruppe.betrag, '18.50');
+  const [papier, rueck] = gruppe.positionen;
+  assert.equal(papier.typ, 'rechnung');
+  assert.equal(papier.betrag_signiert, '30.00');
+  assert.equal(rueck.typ, 'gutschrift');
+  assert.equal(rueck.betrag, '11.50');
+  assert.equal(rueck.betrag_signiert, '-11.50');
+  const summe = gruppe.positionen.reduce((s, p) => s + Number(p.betrag_signiert), 0);
+  assert.equal(summe.toFixed(2), gruppe.betrag);
+  t.cleanup();
+});
+
+test('a line without position takes the receipt or line description as position, truncated to 80 chars', async () => {
+  const t = await setup();
+  const lang = 'L'.repeat(100);
+  const b = await t.beleg('30.00', 'Papier vom Beleg', t.eigen);
+  const res = await post(t, '1', {
+    gesamtbetrag: '38.00',
+    zeilen: [
+      { art: 'beleg', belegId: b, kontoId: t.eigen, betrag: '30.00' },
+      { art: 'eigenbeleg', kontoId: t.eigen, betrag: '4.00', beschreibung: lang, grund: 'Beleg verloren' },
+      { art: 'gebuehr', kontoId: t.eigen, betrag: '4.00', position: 'Zeile 7', beschreibung: 'Jahresgebühr' },
+    ],
+  });
+  assert.equal(res.status, 302, res.text);
+  const [kBeleg, kLang, kMitPosition] = listSplitKinder(t.db, t.jobId);
+  assert.equal(kBeleg.rechnungsposition, 'Papier vom Beleg');
+  assert.equal(kLang.rechnungsposition, 'L'.repeat(80));
+  assert.equal(kMitPosition.rechnungsposition, 'Zeile 7');
+  t.cleanup();
+});
+
+test('POST kk-abgleich: a receipt description is not re-validated on beleg lines (read-only there)', async () => {
+  const t = await setup();
+  // Altbestand aus der Zeit vor der Upload-Validierung: direkt in der DB angelegt.
+  const pfad = join(t.dir, 'kaffee.pdf');
+  writeFileSync(pfad, await buildPdfFixture(['Beleg Kaffee']));
+  const b = createKkBeleg(t.db, { kreditkarteId: t.karteId, hochgeladenVon: '7', gekauftVon: '7', quelle: 'web', pdfPfad: pfad, betrag: '12.00', kaufdatum: '2026-09-03', beschreibung: 'Kaffee ☕', kontoId: t.eigen, status: 'offen' });
+  const res = await post(t, '1', { gesamtbetrag: '12.00', zeilen: [{ art: 'beleg', belegId: b, kontoId: t.eigen, betrag: '12.00', beschreibung: 'Kaffee ☕' }] });
+  assert.equal(res.status, 302, res.text);
+  // Nicht stempelbar -> wird nicht als Position übernommen (sonst scheitert später der Stempel).
+  assert.equal(listSplitKinder(t.db, t.jobId)[0].rechnungsposition, null);
   t.cleanup();
 });

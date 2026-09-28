@@ -16,8 +16,12 @@ const TOTAL_RE = /total|saldo|zu bezahlen|rechnungsbetrag/i;
 
 export const LEERE_ANALYSE = Object.freeze({ betraege: [], daten: [], total: null });
 
+// Belegzeilen sind kurz; längere Zeilen werden gekürzt, damit BETRAG_RE auf langen
+// Zifferngruppen-Folgen nicht quadratisch zurücksetzt.
+const MAX_ZEILENLAENGE = 500;
+
 function zeilen(text) {
-  return String(text || '').split(/\r?\n/);
+  return String(text || '').split(/\r?\n/).map((z) => z.slice(0, MAX_ZEILENLAENGE));
 }
 
 function istGueltigesDatum(iso) {

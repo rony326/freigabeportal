@@ -420,10 +420,12 @@ Abgleich muss die Abrechnung dann nicht noch einmal selbst lesen, siehe
 `src/services/kkTextAnalyse.js` liest aus dem PDF-Text der Abrechnung
 Beträge, Daten und ein Total heraus — reine Heuristiken, die nie eine
 fachliche Entscheidung erzwingen, sondern nur vorbelegen bzw. vorauswählen.
-Der analysierte Text wird dafür auf **200 000 Zeichen** gekappt und die
-Betrags-/Endziffern-Regex ist bewusst mit begrenzten Wiederholungen
-formuliert (kein unbegrenztes Backtracking) — beides verhindert, dass ein
-absichtlich präpariertes PDF die Analyse zum Hängen bringt (ReDoS).
+Der analysierte Text wird dafür auf **200 000 Zeichen** gekappt, jede
+Textzeile zusätzlich auf ihre **ersten 500 Zeichen** gekürzt (lange
+Zifferngruppen-Folgen liessen die Betrags-Regex sonst quadratisch
+zurücksetzen), und die Endziffern-Regex ist bewusst mit begrenzten
+Wiederholungen formuliert — zusammen verhindert das, dass ein absichtlich
+präpariertes PDF die Analyse zum Hängen bringt (ReDoS).
 
 - **Beträge/Daten** (`findeBetraege`/`findeDaten`): pro Textzeile, mit
   Schutz gegen Fehltreffer in Datums- oder Kartennummer-Kontexten.
@@ -473,7 +475,8 @@ Ablauf:
 3. Die Datei muss ein gültiges PDF/PNG/JPEG sein (Magic-Byte-Check),
    sonst `400`.
 4. Bei einem PDF: Swiss-QR-Bill-Scan für den Betrag (bevorzugt), sonst
-   `schlageTotalVor` auf dem extrahierten Text; Kaufdatum aus dem ersten
+   das Total aus `analysiereText` (gleiche Text- und Zeilenkappung wie
+   in 6c); Kaufdatum aus dem ersten
    nicht in der Zukunft liegenden gefundenen Datum. Beides best effort —
    ein Scheitern wird nur geloggt, nicht dem Absender gemeldet.
 5. **Immer ein Entwurf** (`status = 'entwurf'`, `quelle = 'mail'`,

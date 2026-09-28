@@ -119,3 +119,23 @@ test('schlageTotalVor completes in under 200 ms on adversarial inputs', () => {
     assert.ok(elapsed < 200, `schlageTotalVor took ${elapsed.toFixed(2)}ms on adversarial input`);
   }
 });
+
+// Lange Zeilen aus Zifferngruppen ohne gültigen Abschluss liessen BETRAG_RE quadratisch
+// zurücksetzen (200k Zeichen: mehrere Sekunden). Zeilen werden deshalb auf 500 Zeichen gekürzt.
+const LANGE_ZIFFERNZEILE = ' 111'.repeat(50000) + '.1x';
+const VIELE_TOTAL_ZEILEN = Array.from({ length: 100 }, () => `Total ${' 111'.repeat(2000)}.1x`).join('\n');
+
+for (const [name, fn] of [['findeBetraege', findeBetraege], ['schlageTotalVor', schlageTotalVor], ['analysiereText', analysiereText]]) {
+  test(`${name} stays under 200 ms on long digit-group lines`, () => {
+    for (const input of [LANGE_ZIFFERNZEILE, VIELE_TOTAL_ZEILEN]) {
+      const start = performance.now();
+      fn(input);
+      const elapsed = performance.now() - start;
+      assert.ok(elapsed < 200, `${name} took ${elapsed.toFixed(2)}ms on a ${input.length}-char input`);
+    }
+  });
+}
+
+test('findeBetraege only looks at the first 500 characters of a line', () => {
+  assert.deepEqual(findeBetraege(`${'x'.repeat(490)} 12.50 ${'y'.repeat(20)} 99.00`).map((b) => b.betrag), ['12.50']);
+});

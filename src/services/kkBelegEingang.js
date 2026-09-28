@@ -6,7 +6,7 @@ import { detectBelegMimetype } from './belegAnhaengen.js';
 import { listErfassbareKarten } from './kkRechte.js';
 import { speichereKkBelegDatei } from './kkBelegDatei.js';
 import { extrahierePdfText } from './pdfText.js';
-import { schlageTotalVor, findeDaten } from './kkTextAnalyse.js';
+import { analysiereText } from './kkTextAnalyse.js';
 import { scanQrBill } from './qrBillScan.js';
 import { sendNotification } from './notify.js';
 
@@ -30,10 +30,11 @@ export async function nimmKkBelegEntgegen(db, config, mailer, { absender, buffer
       console.error('QR-Erkennung für Mail-Beleg fehlgeschlagen:', err.message);
     }
     try {
-      const text = extrahierePdfText(buffer);
-      betrag = betrag ?? schlageTotalVor(text);
+      // analysiereText begrenzt Text- und Zeilenlänge -- Mail-Anhänge sind nicht vertrauenswürdig.
+      const analyse = analysiereText(extrahierePdfText(buffer));
+      betrag = betrag ?? analyse.total;
       const heute = new Date().toISOString().slice(0, 10);
-      kaufdatum = findeDaten(text).map((d) => d.datum).find((d) => d <= heute) ?? null;
+      kaufdatum = analyse.daten.map((d) => d.datum).find((d) => d <= heute) ?? null;
     } catch (err) {
       console.error('Textanalyse für Mail-Beleg fehlgeschlagen:', err.message);
     }

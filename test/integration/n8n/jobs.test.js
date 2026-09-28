@@ -15,6 +15,8 @@ import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createKonto } from '../../../src/db/kontenRepo.js';
 import { createSpesenabrechnung } from '../../../src/db/spesenabrechnungenRepo.js';
 import { setupMockChurchTools } from '../../helpers/mockChurchTools.js';
+import { createKreditkarte } from '../../../src/db/kreditkartenRepo.js';
+import { listFreigabenByJob } from '../../../src/db/freigabenRepo.js';
 
 const PDF_BYTES = Buffer.from('%PDF-1.4\n%test-fixture-not-a-real-pdf-body\n');
 
@@ -1207,4 +1209,42 @@ test('GET /api/n8n/jobs/abholbereit adds typ and betrag_signiert to single jobs 
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
+});
+
+test('POST /api/n8n/jobs auto-marks a statement when exactly one card matches, mails the responsible person once', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'modul_kreditkarten_aktiv', '1');
+  upsertPerson(db, { id: '1', vorname: 'Ver', nachname: 'Antwortlich', email: 'v@example.org', gruppen: [] });
+  createKreditkarte(db, { bezeichnung: 'Visa Jugend', karteEndziffern: '4242', verantwortlichId: '1', erfassungOffen: true });
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-kk-'));
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, { ...testConfig(jobsDir), publicBaseUrl: 'https://p.example.org' }, mailer);
+  const pdf = await buildPdfFixture(['Visa Business **** 4242', 'Total 12.50']);
+  const res = await request(app).post('/api/n8n/jobs').set('X-API-Key', 'n8n-key').field('quelle', 'scanner').field('dateiname', 'abrechnung.pdf').attach('pdf', pdf, 'abrechnung.pdf');
+  assert.equal(res.status, 201);
+  const job = getJobById(db, res.body.id);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.zugewiesen_an, '1');
+  assert.ok(job.kreditkarte_id);
+  assert.ok(JSON.parse(job.kk_text_betraege).betraege.length > 0);
+  assert.match(listFreigabenByJob(db, job.id).at(-1).kommentar, /automatisch/);
+  assert.equal(mailer.sent.length, 1);
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs does not auto-mark when the module is off, and still succeeds for an unreadable-text PDF', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  upsertPerson(db, { id: '1', vorname: 'Ver', nachname: 'Antwortlich', email: 'v@example.org', gruppen: [] });
+  createKreditkarte(db, { bezeichnung: 'Visa', karteEndziffern: '4242', verantwortlichId: '1', erfassungOffen: true });
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-kk-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+  const pdf = await buildPdfFixture(['Visa **** 4242']);
+  const r1 = await request(app).post('/api/n8n/jobs').set('X-API-Key', 'n8n-key').field('quelle', 'scanner').field('dateiname', 'a.pdf').attach('pdf', pdf, 'a.pdf');
+  assert.equal(getJobById(db, r1.body.id).kreditkarte_id, null);
+  setConfigValue(db, 'modul_kreditkarten_aktiv', '1');
+  const r2 = await request(app).post('/api/n8n/jobs').set('X-API-Key', 'n8n-key').field('quelle', 'scanner').field('dateiname', 'b.pdf').attach('pdf', PDF_BYTES, 'b.pdf');
+  assert.equal(r2.status, 201);
+  rmSync(jobsDir, { recursive: true, force: true });
 });

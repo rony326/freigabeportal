@@ -41,7 +41,7 @@ function extractDomain(email) {
 // the wrong thing.
 const EMAIL_PATTERN = /^[^\s@,<>"]+@[^\s@,<>"]+$/;
 
-function normalizeAbsender(absender) {
+export function normalizeAbsender(absender) {
   if (!absender) return null;
   const trimmed = absender.trim();
   const angleMatch = trimmed.match(/<([^<>]+)>\s*$/);
@@ -59,26 +59,32 @@ function normalizeAbsender(absender) {
   return EMAIL_PATTERN.test(candidate) ? candidate : null;
 }
 
-export function findMatchingZuweisungsregel(db, absender) {
+// 'exakt' = ganze Adresse gleich (case-insensitive), 'domain' = Muster ohne @ passt auf die Domain
+// oder eine Subdomain davon. Gleiche Regeln wie bisher in findMatchingZuweisungsregel, jetzt auch
+// für die Kreditkarten-Erkennung nutzbar.
+export function bewerteAbsenderMuster(absender, muster) {
   const normalized = normalizeAbsender(absender);
-  if (!normalized) return null;
+  if (!normalized || !muster) return null;
   const absenderLower = normalized.toLowerCase();
+  const musterLower = muster.toLowerCase();
+  if (musterLower === absenderLower) return 'exakt';
+  if (musterLower.includes('@')) return null;
   const domain = extractDomain(absenderLower);
-  const regeln = listZuweisungsregeln(db);
-
-  const exactMatch = regeln.find((r) => r.absender_muster.toLowerCase() === absenderLower);
-  if (exactMatch) return exactMatch;
-
-  if (domain) {
-    const domainMatch = regeln.find((r) => {
-      const muster = r.absender_muster.toLowerCase();
-      if (muster.includes('@')) return false;
-      return domain === muster || domain.endsWith(`.${muster}`);
-    });
-    if (domainMatch) return domainMatch;
-  }
-
+  if (domain && (domain === musterLower || domain.endsWith(`.${musterLower}`))) return 'domain';
   return null;
+}
+
+export function findMatchingZuweisungsregel(db, absender) {
+  const regeln = listZuweisungsregeln(db);
+  return (
+    regeln.find((r) => bewerteAbsenderMuster(absender, r.absender_muster) === 'exakt') ||
+    regeln.find((r) => bewerteAbsenderMuster(absender, r.absender_muster) === 'domain') ||
+    null
+  );
+}
+
+export function setKkTextAnalyse(db, jobId, analyse) {
+  db.prepare('UPDATE jobs SET kk_text_betraege = ? WHERE id = ?').run(JSON.stringify(analyse), jobId);
 }
 
 export function findJobByDateiHash(db, dateiHash) {

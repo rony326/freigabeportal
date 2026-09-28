@@ -31,6 +31,11 @@
         </div>
       </div>
       <div class="mb-3">
+        <label class="form-label" for="absenderMuster">Absender der Abrechnungs-Mail <span class="text-muted">(optional, z.B. viseca.ch oder abrechnung@bank.ch)</span></label>
+        <input class="form-control" id="absenderMuster" name="absenderMuster" value="<%= werte.absenderMuster %>">
+        <div class="form-text">Trifft genau eine Karte zu (Absender oder letzte 4 Ziffern im PDF), wird die Abrechnung automatisch dieser Karte zugeordnet.</div>
+      </div>
+      <div class="mb-3">
         <label class="form-label" for="verantwortlichId">Verantwortliche Person (gleicht die Abrechnungen ab)</label>
         <select class="form-select" id="verantwortlichId" name="verantwortlichId" required>
           <option value="">— Person wählen —</option>

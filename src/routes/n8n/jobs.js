@@ -3,7 +3,7 @@ import multer from 'multer';
 import { writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import crypto from 'node:crypto';
-import { createJob, getJobById, findJobByDateiHash, listAbholbereitJobs, listAbholbereitGruppen, confirmAbholung, confirmGruppenAbholung, istGruppenElternjob, listSplitKinder, setThumbnailPfad, setQrDaten } from '../../db/jobsRepo.js';
+import { createJob, getJobById, findJobByDateiHash, listAbholbereitJobs, listAbholbereitGruppen, confirmAbholung, confirmGruppenAbholung, istGruppenElternjob, listSplitKinder, setThumbnailPfad, setQrDaten, setKkTextAnalyse } from '../../db/jobsRepo.js';
 import { renderFirstPageThumbnail } from '../../services/thumbnail.js';
 import { scanQrBill } from '../../services/qrBillScan.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
@@ -13,6 +13,10 @@ import { sendNotificationMitVertretung } from '../../services/notify.js';
 import { getConfigValue } from '../../db/adminConfigRepo.js';
 import { fetchPersonById, extractCustomFieldValue } from '../../services/churchtools.js';
 import { normalizeIban } from '../../services/ibanUtils.js';
+import { extrahierePdfText } from '../../services/pdfText.js';
+import { analysiereText } from '../../services/kkTextAnalyse.js';
+import { erkenneKarte } from '../../services/kkErkennung.js';
+import { markiereAlsKkAbrechnung } from '../../services/kkMarkierung.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
@@ -111,9 +115,27 @@ export function createN8nJobsRouter({ db, config, mailer }) {
         } catch (err) {
           console.error(`QR-Code-Erkennung fehlgeschlagen für Job ${id}:`, err.message);
         }
+
+        let kkMarkiert = false;
+        if (getConfigValue(db, 'modul_kreditkarten_aktiv') === '1') {
+          try {
+            const text = extrahierePdfText(req.file.buffer);
+            const erkennung = erkenneKarte(db, { absender, text });
+            if (erkennung) {
+              setKkTextAnalyse(db, id, analysiereText(text));
+              const aktuell = getJobById(db, id);
+              kkMarkiert = await markiereAlsKkAbrechnung(db, config, mailer, {
+                job: aktuell, karte: erkennung.karte, markiertVon: null, ip: 'system', ausStatus: aktuell.status, kommentarZusatz: ` — ${erkennung.grund}`,
+              });
+            }
+          } catch (err) {
+            console.error(`Kreditkarten-Erkennung fehlgeschlagen für Job ${id}:`, err.message);
+          }
+        }
+
         const job = getJobById(db, id);
 
-        if (job.status === 'zugewiesen') {
+        if (job.status === 'zugewiesen' && !kkMarkiert) {
           const freigeber1 = getPersonById(db, job.zugewiesen_an);
           if (freigeber1) {
             await sendNotificationMitVertretung(db, mailer, {

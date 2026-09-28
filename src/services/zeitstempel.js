@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
-import { timestampPdf, extractTimestamps, verifyTimestamp } from 'pdf-rfc3161';
+import { TimestampSession, MAX_PDF_SIZE, sendTimestampRequest, parseTimestampResponse, extractTimestamps, verifyTimestamp } from 'pdf-rfc3161';
+import { freshTimestampRequest, validateTimestampBinding } from './tsaResponse.js';
+import { loadTsaTrustAnchors, verifyTsaChain } from './tsaTrust.js';
+import { loadTsaCrls } from './tsaRevocation.js';
 
 // Bounded well below the library's own defaults (timeout 30000ms, retry 3, retryDelay 1000ms —
 // worst case over 90s) because setZeitstempel runs synchronously inside the Freigabe-2 POST
@@ -17,21 +20,36 @@ function buildTsaHeaders(tsaConfig) {
   return { Authorization: `Basic ${credentials}` };
 }
 
-// Embeds a PAdES-style RFC3161 DocTimeStamp into the PDF, proving the document existed unchanged
-// since the TSA's timestamp. Throws a German-message Error on any failure (network, TSA
+// Embeds an RFC3161 DocTimeStamp after checking request binding and cryptographic integrity.
+// Configured local roots are required for chain validation. Revocation remains unchecked.
+// Throws a German-message Error on any failure (network, TSA
 // rejection, malformed PDF) — mirrors src/services/pdfStamp.js's stampAndFinalize, whose callers
 // already expect a catchable, user-facing German message rather than the library's raw error.
 // omitModificationTime is required, not optional — see this task's notes above.
 export async function setZeitstempel(pdfBuffer, tsaConfig) {
+  let session;
   try {
-    const result = await timestampPdf({
-      pdf: pdfBuffer,
-      tsa: { url: tsaConfig.url, headers: buildTsaHeaders(tsaConfig), ...TSA_TIMING },
-      omitModificationTime: true,
-    });
-    return Buffer.from(result.pdf);
+    const anchors = tsaConfig.trustAnchorsFile || tsaConfig.requireTrustedChain !== false
+      ? loadTsaTrustAnchors(tsaConfig.trustAnchorsFile, tsaConfig.trustAnchorsSha256) : null;
+    const crls = anchors ? loadTsaCrls(tsaConfig.crlFile) : [];
+    if (pdfBuffer.length > MAX_PDF_SIZE) throw new Error('PDF ueberschreitet die maximale Zeitstempel-Groesse.');
+    // No automatic LTV: it appends unsigned revisions and may fetch certificate-supplied URLs.
+    session = new TimestampSession(pdfBuffer, { enableLTV: false, hashAlgorithm: 'SHA-256', prepareOptions: { omitModificationTime: true, signatureSize: 32768 } });
+    const request = freshTimestampRequest(await session.createTimestampRequest());
+    const response = parseTimestampResponse(await sendTimestampRequest(request, {
+      url: tsaConfig.url, headers: buildTsaHeaders(tsaConfig), ...TSA_TIMING,
+    }));
+    if (![0, 1].includes(response.status) || !response.token) throw new Error('TSA hat keinen erfolgreichen Zeitstempel geliefert.');
+    const binding = validateTimestampBinding(request, response.token);
+    const stamped = Buffer.from(await session.embedTimestampToken(response.token));
+    const verification = await verifyZeitstempel(stamped);
+    if (!verification.gueltig) throw new Error('TSA-Signatur oder Dokumentbindung ist ungueltig.');
+    if (anchors) await verifyTsaChain(binding, anchors, crls);
+    return stamped;
   } catch (err) {
     throw new Error(`Zeitstempel konnte nicht gesetzt werden: ${err.message}`);
+  } finally {
+    session?.dispose();
   }
 }
 
@@ -63,7 +81,7 @@ export async function verifyZeitstempel(pdfBuffer, erwarteterHash = null) {
     const [start, length, secondStart, secondLength] = entry.byteRange;
     return start === 0 && length >= 0 && secondStart > length && secondLength >= 0 && secondStart + secondLength === pdfBuffer.length;
   }) || extrahiert[0];
-  const verifiziert = await verifyTimestamp(timestamp, { pdf: pdfBuffer });
+  const verifiziert = await verifyTimestamp(timestamp, { pdf: pdfBuffer, strictESSValidation: true });
   const [start, length, secondStart, secondLength] = timestamp.byteRange;
   const vollstaendig = start === 0 && length >= 0 && secondStart > length && secondLength >= 0 && secondStart + secondLength === pdfBuffer.length;
   return {

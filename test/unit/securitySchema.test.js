@@ -46,12 +46,48 @@ test('approval snapshot and both timestamp hashes resist value-null-value replac
   const db = openDatabase(':memory:');
   t.after(() => db.close());
   const id = createJob(db, { eingangAm: '2026-09-27T00:00:00Z', quelle: 'scanner', dateiname: 'test.pdf', pdfPfad: '/tmp/test.pdf' });
-  for (const column of ['freigabe_snapshot', 'zeitstempel_datei_hash', 'gruppe_zeitstempel_datei_hash', 'zeitstempel_gesetzt_am', 'gruppe_zeitstempel_gesetzt_am']) {
+  for (const column of ['freigabe_snapshot', 'zeitstempel_datei_hash', 'gruppe_zeitstempel_datei_hash', 'gruppe_final_datei_hash', 'zeitstempel_gesetzt_am', 'gruppe_zeitstempel_gesetzt_am']) {
     db.prepare(`UPDATE jobs SET ${column} = ? WHERE id = ?`).run('original', id);
     assert.throws(() => db.prepare(`UPDATE jobs SET ${column} = NULL WHERE id = ?`).run(id), /unveraenderlich/);
     assert.throws(() => db.prepare(`UPDATE jobs SET ${column} = ? WHERE id = ?`).run('replacement', id), /unveraenderlich/);
     assert.equal(db.prepare(`SELECT ${column} AS value FROM jobs WHERE id = ?`).get(id).value, 'original');
   }
+});
+
+test('a persisted timestamp requirement cannot be cleared', (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  const id = createJob(db, { eingangAm: '2026-09-28T00:00:00Z', quelle: 'scanner', dateiname: 'test.pdf', pdfPfad: '/tmp/test.pdf' });
+  db.prepare('UPDATE jobs SET zeitstempel_erforderlich = 1 WHERE id = ?').run(id);
+  assert.throws(() => db.prepare('UPDATE jobs SET zeitstempel_erforderlich = 0 WHERE id = ?').run(id), /Zeitstempelpflicht/);
+  assert.throws(() => db.prepare('UPDATE jobs SET zeitstempel_erforderlich = NULL WHERE id = ?').run(id), /Zeitstempelpflicht/);
+  assert.equal(db.prepare('SELECT zeitstempel_erforderlich FROM jobs WHERE id = ?').get(id).zeitstempel_erforderlich, 1);
+});
+
+test('upgrading an existing database refreshes job audit triggers to include the group final hash', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'group-schema-upgrade-'));
+  const path = join(dir, 'db.sqlite');
+  let db = openDatabase(path);
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const id = createJob(db, { eingangAm: '2026-09-28T00:00:00Z', quelle: 'scanner', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.exec(`DROP TRIGGER trg_gruppe_final_hash_unveraenderlich;
+    DROP TRIGGER audit_jobs_INSERT; DROP TRIGGER audit_jobs_UPDATE; DROP TRIGGER audit_jobs_DELETE;
+    ALTER TABLE jobs DROP COLUMN gruppe_final_datei_hash;
+    CREATE TRIGGER audit_jobs_UPDATE AFTER UPDATE ON jobs BEGIN SELECT 1; END;`);
+  db.close();
+  db = openDatabase(path);
+  db.prepare('UPDATE jobs SET gruppe_final_datei_hash = ? WHERE id = ?').run('a'.repeat(64), id);
+  const event = db.prepare("SELECT nachher FROM audit_ereignisse WHERE objekt = 'jobs' AND objekt_id = ? ORDER BY id DESC LIMIT 1").get(String(id));
+  assert.equal(JSON.parse(event.nachher).gruppe_final_datei_hash, 'a'.repeat(64));
+  // Also recover a migration interrupted after the column was added but before trigger refresh.
+  db.exec('DROP TRIGGER audit_jobs_UPDATE; CREATE TRIGGER audit_jobs_UPDATE AFTER UPDATE ON jobs BEGIN SELECT 1; END');
+  db.close();
+  db = openDatabase(path);
+  assert.throws(() => db.prepare('UPDATE jobs SET gruppe_final_datei_hash = NULL WHERE id = ?').run(id), /unveraenderlich/);
+  db.prepare('UPDATE jobs SET dateiname = ? WHERE id = ?').run('renamed.pdf', id);
+  const updated = db.prepare("SELECT nachher FROM audit_ereignisse WHERE objekt = 'jobs' AND objekt_id = ? ORDER BY id DESC LIMIT 1").get(String(id));
+  assert.equal(JSON.parse(updated.nachher).dateiname, 'renamed.pdf');
+  assert.equal(JSON.parse(updated.nachher).gruppe_final_datei_hash, 'a'.repeat(64));
 });
 
 test('group verification selects group bytes and hash, never the original invoice', () => {

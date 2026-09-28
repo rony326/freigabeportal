@@ -10,7 +10,7 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampAndFinalize } from '../services/pdfStamp.js';
 import { setZeitstempel } from '../services/zeitstempel.js';
 import { fetchPersonById, extractCustomFieldValue } from '../services/churchtools.js';
-import { normalizeIban } from '../services/ibanUtils.js';
+import { validateSpesenPayment, paymentReviewFingerprint } from '../services/paymentApproval.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger } from '../services/notify.js';
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
@@ -18,6 +18,7 @@ import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../services/splitGruppenExport.js';
 import { kkHinweisFuerJob } from '../services/kkStempel.js';
 import { writeFinalDocument } from '../services/finalDocument.js';
+import { tsaTrustOptions } from '../services/tsaTrust.js';
 
 export function createFreigabe2Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -71,7 +72,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     return { job, konto };
   }
 
-  function renderForm(req, res, status, { job, konto }, values, errors) {
+  function renderForm(req, res, status, { job, konto }, values, errors, paymentReview = null) {
     const freigaben = listFreigabenByJob(db, job.id);
     const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
     if (!freigabe1) {
@@ -90,6 +91,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values,
       errors,
+      paymentReview,
       auditLog: buildAuditLog(db, job.id),
       kkHinweis: kkHinweisFuerJob(db, job),
     });
@@ -262,19 +264,26 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const titel = job.quelle === 'spesen' ? getSpesenabrechnungById(db, job.spesenabrechnung_id)?.titel || null : null;
       const verwendungszweck = job.quelle === 'spesen' ? job.beschreibung || null : null;
 
-      // Missing payment data remains explicit in both the document and immutable snapshot.
-      // Export must not silently replace it with a later ChurchTools value.
       let zahlungsdaten = null;
       if (job.quelle === 'spesen' && job.eingereicht_von) {
         try {
           const einreicher = await fetchPersonById(config.churchtools, config.churchtools.syncServiceToken, job.eingereicht_von);
           const ibanRoh = extractCustomFieldValue(einreicher, config.churchtools.customFieldIban);
-          zahlungsdaten = {
-            iban: ibanRoh ? normalizeIban(ibanRoh) : null,
-            kontoinhaber: extractCustomFieldValue(einreicher, config.churchtools.customFieldKontoinhaber),
-          };
+          zahlungsdaten = validateSpesenPayment(ibanRoh, extractCustomFieldValue(einreicher, config.churchtools.customFieldKontoinhaber));
         } catch (err) {
-          console.error(`Zahlungsdaten-Abruf für Job ${job.id} fehlgeschlagen, Stempel-Seite ohne IBAN/Kontoinhaber:`, err.message);
+          console.error(`Zahlungsdaten-Abruf fuer Job ${job.id} fehlgeschlagen; Freigabe gesperrt.`);
+        }
+      }
+      if (job.quelle === 'spesen') {
+        if (!zahlungsdaten) {
+          return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Freigabe gesperrt: Eine gueltige Schweizer IBAN und der Kontoinhaber muessen in ChurchTools hinterlegt und abrufbar sein.']);
+        }
+        const fingerprint = paymentReviewFingerprint(job, konto, zahlungsdaten, req.currentPerson.churchtools_person_id);
+        if (req.body.zahlungsdaten_bestaetigt !== 'ja' || req.body.zahlungsdaten_stand !== fingerprint) {
+          const changed = Boolean(req.body.zahlungsdaten_stand);
+          return renderForm(req, res, changed ? 409 : 400, result, { interessenskonflikt, begruendung },
+            [changed ? 'Der Zahlungs- oder Vorgangsstand wurde geaendert. Bitte erneut pruefen und bestaetigen.' : 'Bitte die Zahlungsdaten pruefen und bestaetigen.'],
+            { ...zahlungsdaten, fingerprint });
         }
       }
 
@@ -339,6 +348,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       if (tsaUrl) {
         try {
           stamped = await setZeitstempel(stamped, {
+            ...tsaTrustOptions(config),
             url: tsaUrl,
             user: getConfigValue(db, 'zeitstempel_tsa_user') || undefined,
             passwort: getConfigValue(db, 'zeitstempel_tsa_passwort') || undefined,
@@ -394,7 +404,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         }
         if (zeitstempelGesetztAm) markZeitstempelGesetzt(db, job.id, zeitstempelGesetztAm, zeitstempelDateiHash);
         db.prepare(`UPDATE jobs SET pdf_pfad = ?, freigabe_snapshot = ?, final_datei_hash = ?, zeitstempel_erforderlich = ? WHERE id = ?`).run(
-          tmpPfad, JSON.stringify({ version: 1, job, konto, zahlungsdaten, stampData }),
+          tmpPfad, JSON.stringify({ version: 1, job, konto, zahlungsdaten, stampData,
+            zahlungsdaten_bestaetigung: job.quelle === 'spesen' ? { personId: req.currentPerson.churchtools_person_id, zeitpunkt, stand: req.body.zahlungsdaten_stand } : null }),
           createHash('sha256').update(stamped).digest('hex'), tsaUrl ? 1 : 0, job.id);
         db.exec('COMMIT');
       } catch (err) {
@@ -405,7 +416,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
 
       if (job.aufgesplittet_von) {
         try {
-          await pruefeUndFinalisiereSplitGruppe(db, job.aufgesplittet_von);
+          await pruefeUndFinalisiereSplitGruppe(db, job.aufgesplittet_von, config);
         } catch (err) {
           // Never let a Splitgruppen-Merge-Fehler die bereits abgeschlossene Freigabe 2 dieses
           // einzelnen Kindes scheitern lassen -- der Nachhol-Cron-Job holt einen fehlgeschlagenen

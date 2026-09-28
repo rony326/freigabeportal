@@ -1,22 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as mupdf from 'mupdf';
 import { openDatabase } from '../../src/db/index.js';
-import { createJob, getJobById, createSplitJob, listSplitKinder } from '../../src/db/jobsRepo.js';
+import { createJob, getJobById, createSplitJob, listSplitKinder, listAbholbereitGruppen, confirmGruppenAbholung } from '../../src/db/jobsRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
-import { setupMockTsa } from '../helpers/mockTsa.js';
+import { setupMockTsa, signedTsaResponse } from '../helpers/mockTsa.js';
 import { stampAndFinalize } from '../../src/services/pdfStamp.js';
-import { pruefeUndFinalisiereSplitGruppe } from '../../src/services/splitGruppenExport.js';
+import { pruefeUndFinalisiereSplitGruppe as finalizeGroup } from '../../src/services/splitGruppenExport.js';
 import { PDFDocument } from 'pdf-lib';
+import { createExportEvidence } from '../../src/services/archiveReceipt.js';
 
-const RFC3161_RESPONSE = readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url));
+// Isolate group consistency from the independently tested deployment trust bundle.
+const pruefeUndFinalisiereSplitGruppe = (db, id) => finalizeGroup(db, id, { tsaTrustRequired: false });
+
 
 function extractedText(pdfBytes, pageIndex) {
   const doc = mupdf.Document.openDocument(pdfBytes, 'application/pdf');
@@ -68,6 +73,7 @@ async function seedGruppe(db, dir, { anzahlKinder = 2, mitBeleg = false, gestemp
   const parentPdfPfad = join(dir, 'parent.pdf');
   writeFileSync(parentPdfPfad, await buildPdfFixture(['Rechnung Seite 1']));
   const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad: parentPdfPfad });
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
   const parentJob = getJobById(db, parentId);
 
   const kindIds = [];
@@ -211,7 +217,7 @@ test('pruefeUndFinalisiereSplitGruppe applies a fresh RFC3161 Zeitstempel to the
   const { parentId } = await seedGruppe(db, dir, { anzahlKinder: 2 });
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
   const client = setupMockTsa('https://tsa.example.org/tsr');
-  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, RFC3161_RESPONSE, { headers: { 'content-type': 'application/timestamp-reply' } });
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
 
   const ergebnis = await pruefeUndFinalisiereSplitGruppe(db, parentId);
   assert.equal(ergebnis.status, 'exportiert');
@@ -271,7 +277,7 @@ test('two concurrent merges of the same group produce exactly one merged PDF —
 
   const parent = getJobById(db, parentId);
   assert.ok(existsSync(parent.gruppe_pdf_pfad));
-  const gruppenDateien = readdirSync(dir).filter((name) => name.startsWith('gruppe-'));
+  const gruppenDateien = readdirSync(dir).filter((name) => name.startsWith('final-'));
   assert.equal(gruppenDateien.length, 1, 'die verlorene Datei des Race-Verlierers muss aufgeräumt sein');
 
   rmSync(dir, { recursive: true, force: true });
@@ -302,3 +308,160 @@ test('the merged PDF never overwrites the parent invoice, even when the parent f
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
+
+test('TSA outage persists the group requirement even after TSA is disabled', async (t) => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'group-tsa-policy-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const { parentId } = await seedGruppe(db, dir);
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(500, 'unavailable');
+  assert.equal((await pruefeUndFinalisiereSplitGruppe(db, parentId)).status, 'fehler');
+  assert.equal(getJobById(db, parentId).zeitstempel_erforderlich, 1);
+  setConfigValue(db, 'zeitstempel_tsa_url', '');
+  assert.equal((await pruefeUndFinalisiereSplitGruppe(db, parentId)).status, 'fehler');
+  assert.equal(getJobById(db, parentId).gruppe_pdf_pfad, null);
+});
+
+test('an unrelated TSA response leaves a group unfinalized and export-blocked', async (t) => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'group-tsa-reject-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const { parentId } = await seedGruppe(db, dir);
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url)));
+  const result = await pruefeUndFinalisiereSplitGruppe(db, parentId);
+  assert.equal(result.status, 'fehler');
+  assert.match(result.error, /Dokumenthash/);
+  const parent = getJobById(db, parentId);
+  assert.equal(parent.gruppe_pdf_pfad, null);
+  assert.equal(parent.gruppe_zeitstempel_gesetzt_am, null);
+  assert.equal(parent.zeitstempel_erforderlich, 1);
+  assert.deepEqual(listAbholbereitGruppen(db), []);
+  assert.equal(readdirSync(dir).filter((name) => name.startsWith('final-')).length, 0);
+});
+
+for (const requirement of ['parent', 'child']) {
+  test(`group listing, legacy ACK and manifest enforce the ${requirement} timestamp requirement without global TSA`, async (t) => {
+    const db = openDatabase(':memory:');
+    const dir = mkdtempSync(join(tmpdir(), 'group-export-gate-'));
+    t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+    const { parentId, kindIds } = await seedGruppe(db, dir);
+    db.prepare('UPDATE jobs SET zeitstempel_erforderlich = 1 WHERE id = ?').run(requirement === 'parent' ? parentId : kindIds[0]);
+    // A historical unsigned group must not bypass the gate through the legacy API.
+    db.prepare('UPDATE jobs SET gruppe_pdf_pfad = pdf_pfad WHERE id = ?').run(parentId);
+    assert.deepEqual(listAbholbereitGruppen(db), []);
+    assert.equal(confirmGruppenAbholung(db, parentId), null);
+    assert.throws(() => createExportEvidence(db, parentId), /Zeitstempel/);
+    assert.equal(getJobById(db, kindIds[0]).status, 'abgeschlossen');
+  });
+}
+
+test('child timestamp requirement is inherited and a final child hash mismatch blocks merging', async (t) => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'group-child-hash-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const { parentId, kindIds } = await seedGruppe(db, dir);
+  db.prepare('UPDATE jobs SET final_datei_hash = ? WHERE id = ?').run('0'.repeat(64), kindIds[0]);
+  assert.match((await pruefeUndFinalisiereSplitGruppe(db, parentId)).error, /Freigabe-Hash/);
+  db.prepare('UPDATE jobs SET zeitstempel_erforderlich = 1 WHERE id = ?').run(kindIds[0]);
+  assert.match((await pruefeUndFinalisiereSplitGruppe(db, parentId)).error, /verpflichtend/);
+  assert.equal(getJobById(db, parentId).zeitstempel_erforderlich, 1);
+});
+
+test('unsigned groups receive an immutable final hash and export rejects changed bytes', async (t) => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'group-final-hash-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const { parentId } = await seedGruppe(db, dir);
+  const result = await pruefeUndFinalisiereSplitGruppe(db, parentId);
+  assert.equal(result.status, 'exportiert');
+  const parent = getJobById(db, parentId);
+  assert.equal(statSync(parent.gruppe_pdf_pfad).mode & 0o777, 0o600);
+  assert.equal(parent.gruppe_final_datei_hash, createHash('sha256').update(readFileSync(parent.gruppe_pdf_pfad)).digest('hex'));
+  assert.throws(() => db.prepare('UPDATE jobs SET gruppe_final_datei_hash = NULL WHERE id = ?').run(parentId), /unveraenderlich/);
+  writeFileSync(parent.gruppe_pdf_pfad, 'changed');
+  assert.throws(() => createExportEvidence(db, parentId), /Hash/);
+});
+
+for (const mutation of ['child-status', 'child-amount', 'parent-file', 'child-file', 'new-child', 'approval', 'tsa-config']) {
+  test(`group finalization rejects ${mutation} changes during TSA I/O`, async (t) => {
+    const db = openDatabase(':memory:');
+    const dir = mkdtempSync(join(tmpdir(), 'group-stale-'));
+    t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+    const { parentId, kindIds } = await seedGruppe(db, dir);
+    setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+    const client = setupMockTsa('https://tsa.example.org/tsr');
+    client.intercept({ path: '/tsr', method: 'POST' }).reply((options) => {
+      if (mutation === 'child-status') db.prepare("UPDATE jobs SET status = 'abgelehnt' WHERE id = ?").run(kindIds[0]);
+      if (mutation === 'child-amount') db.prepare("UPDATE jobs SET betrag = '999.00' WHERE id = ?").run(kindIds[0]);
+      if (mutation === 'parent-file') writeFileSync(getJobById(db, parentId).pdf_pfad, 'changed');
+      if (mutation === 'child-file') writeFileSync(getJobById(db, kindIds[0]).pdf_pfad, 'changed');
+      if (mutation === 'new-child') createSplitJob(db, getJobById(db, parentId), { pdfPfad: getJobById(db, kindIds[0]).pdf_pfad, kontoId: getJobById(db, kindIds[0]).konto_id, betrag: '1.00', zugewiesenAn: '1' });
+      if (mutation === 'approval') createFreigabe(db, { jobId: kindIds[0], personId: '1', rolle: 'freigeber1', zeitpunkt: new Date().toISOString(), ip: '1.2.3.4', interessenskonflikt: false });
+      if (mutation === 'tsa-config') setConfigValue(db, 'zeitstempel_tsa_url', '');
+      return { statusCode: 200, data: signedTsaResponse(options), responseOptions: { headers: { 'content-type': 'application/timestamp-reply' } } };
+    });
+    const result = await pruefeUndFinalisiereSplitGruppe(db, parentId);
+    assert.equal(result.status, 'fehler');
+    assert.match(result.error, /geaendert/);
+    assert.equal(getJobById(db, parentId).gruppe_pdf_pfad, null);
+    assert.equal(getJobById(db, parentId).gruppe_final_datei_hash, null);
+    assert.equal(readdirSync(dir).filter((name) => name.startsWith('final-')).length, 0);
+  });
+}
+
+test('failed group database commit cleans its own file and retry succeeds', async (t) => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'group-db-failure-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const { parentId } = await seedGruppe(db, dir);
+  const original = readFileSync(getJobById(db, parentId).pdf_pfad);
+  db.exec("CREATE TEMP TRIGGER fail_group BEFORE UPDATE OF gruppe_pdf_pfad ON jobs BEGIN SELECT RAISE(ABORT, 'injected failure'); END");
+  assert.equal((await pruefeUndFinalisiereSplitGruppe(db, parentId)).status, 'fehler');
+  assert.equal(db.isTransaction, false);
+  assert.equal(getJobById(db, parentId).gruppe_pdf_pfad, null);
+  assert.equal(readdirSync(dir).filter((name) => name.startsWith('final-')).length, 0);
+  assert.deepEqual(readFileSync(getJobById(db, parentId).pdf_pfad), original);
+  db.exec('DROP TRIGGER fail_group');
+  assert.equal((await pruefeUndFinalisiereSplitGruppe(db, parentId)).status, 'exportiert');
+});
+
+for (const phase of ['before-commit', 'after-commit']) {
+  test(`SIGKILL ${phase} leaves a retryable or fully finalized group`, async (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'group-crash-'));
+    const dbPath = join(dir, 'db.sqlite');
+    let db = openDatabase(dbPath);
+    t.after(() => { db?.close(); rmSync(dir, { recursive: true, force: true }); });
+    const { parentId } = await seedGruppe(db, dir);
+    const original = readFileSync(getJobById(db, parentId).pdf_pfad);
+    db.close();
+    db = null;
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import { openDatabase } from './src/db/index.js';
+      import { pruefeUndFinalisiereSplitGruppe } from './src/services/splitGruppenExport.js';
+      const db = openDatabase(process.argv[1]);
+      if (process.argv[3] === 'before-commit') {
+        db.function('test_crash', () => process.kill(process.pid, 'SIGKILL'));
+        db.exec('CREATE TEMP TRIGGER crash_group BEFORE UPDATE OF gruppe_pdf_pfad ON jobs BEGIN SELECT test_crash(); END');
+      }
+      const result = await pruefeUndFinalisiereSplitGruppe(db, Number(process.argv[2]));
+      if (result.status !== 'exportiert') throw new Error(JSON.stringify(result));
+      process.kill(process.pid, 'SIGKILL');
+    `, dbPath, String(parentId), phase], { encoding: 'utf8', timeout: 30000 });
+    assert.equal(child.signal, 'SIGKILL', child.stderr);
+    db = openDatabase(dbPath);
+    const parent = getJobById(db, parentId);
+    assert.deepEqual(readFileSync(parent.pdf_pfad), original);
+    if (phase === 'before-commit') {
+      assert.equal(parent.gruppe_pdf_pfad, null);
+      assert.equal(parent.gruppe_final_datei_hash, null);
+      assert.equal((await pruefeUndFinalisiereSplitGruppe(db, parentId)).status, 'exportiert');
+    } else {
+      assert.equal(createHash('sha256').update(readFileSync(parent.gruppe_pdf_pfad)).digest('hex'), parent.gruppe_final_datei_hash);
+      assert.equal((await pruefeUndFinalisiereSplitGruppe(db, parentId)).status, 'uebersprungen');
+    }
+  });
+}

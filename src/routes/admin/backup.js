@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readdirSync, statSync, unlinkSync, createReadStream, existsSync } from 'node:fs';
+import { readdirSync, statSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
@@ -7,6 +7,7 @@ import { listBackupWiederherstellungen } from '../../db/backupWiederherstellunge
 import { getPersonById } from '../../db/personenRepo.js';
 import { runDatenbankSicherungJob } from '../../services/cronJobs.js';
 import { BACKUP_DATEINAME_PATTERN } from '../../services/backup.js';
+import { openBackupDownload } from '../../services/backupDownload.js';
 
 const SICHERUNG_LOG_LIMIT = 10;
 
@@ -108,10 +109,15 @@ export function createBackupRouter({ db, config, csrfProtection = (req, res, nex
     if (!existsSync(pfad)) {
       return res.status(404).render('error', { message: 'Backup nicht gefunden.' });
     }
+    let download;
+    try { download = openBackupDownload(pfad); }
+    catch { return res.status(404).render('error', { message: 'Backup nicht gefunden.' }); }
     res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
-    res.type('application/zip');
-    res.setHeader('Content-Length', statSync(pfad).size);
-    createReadStream(pfad).pipe(res);
+    res.type(name.endsWith('.fpbak') ? 'application/octet-stream' : 'application/zip');
+    res.setHeader('Content-Length', download.size);
+    download.stream.on('error', () => res.destroy());
+    res.on('close', () => download.stream.destroy());
+    download.stream.pipe(res);
   });
 
   router.post('/dateien/:name/loeschen', csrfProtection, (req, res) => {

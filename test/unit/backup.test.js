@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import AdmZip from 'adm-zip';
 import { createHash } from 'node:crypto';
 import { restoreOffline } from '../../src/services/offlineRestore.js';
+import { buildEncryptedBackup } from '../../src/services/backupEnvelope.js';
+import { createBackupKeyring } from '../helpers/backupKeyring.js';
 import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
@@ -22,20 +24,23 @@ import {
 
 test('backupDateiname produces a filesystem-safe name matching BACKUP_DATEINAME_PATTERN', () => {
   const name = backupDateiname(new Date('2026-08-24T13:05:00.123Z'));
-  assert.equal(name, 'backup-2026-08-24T13-05-00-123Z.zip');
+  assert.equal(name, 'backup-2026-08-24T13-05-00-123Z.fpbak');
   assert.match(name, BACKUP_DATEINAME_PATTERN);
 });
 
 test('offline restore roundtrip preserves the previous database and rebases files into a fresh generation', () => {
   const quellDir = mkdtempSync(join(tmpdir(), 'backup-quelle-'));
   const zielDir = mkdtempSync(join(tmpdir(), 'backup-ziel-'));
+  const backupKeyringFile = createBackupKeyring(quellDir);
   const quellConfig = {
+    backupKeyringFile,
     jobsDir: join(quellDir, 'jobs'),
     brandingDir: join(quellDir, 'branding'),
     backupDir: join(quellDir, 'backups'),
     dbPath: join(quellDir, 'quelle.sqlite'),
   };
   const zielConfig = {
+    backupKeyringFile,
     jobsDir: join(zielDir, 'jobs'),
     brandingDir: join(zielDir, 'branding'),
     backupDir: join(zielDir, 'backups'),
@@ -58,7 +63,7 @@ test('offline restore roundtrip preserves the previous database and rebases file
     pdfPfad: join(quellConfig.jobsDir, 'rechnung.pdf'),
   });
 
-  const archiv = buildBackupArchive(quellDb, quellConfig);
+  const archiv = buildEncryptedBackup(quellDb, quellConfig);
   quellDb.close();
 
   const zielDb = openDatabase(zielConfig.dbPath);
@@ -100,13 +105,16 @@ test('offline restore records the maintenance operator even when absent from the
   // und einen bereits vollständig erfolgreichen Restore als Fehler gemeldet.
   const quellDir = mkdtempSync(join(tmpdir(), 'backup-quelle-fk-'));
   const zielDir = mkdtempSync(join(tmpdir(), 'backup-ziel-fk-'));
+  const backupKeyringFile = createBackupKeyring(quellDir);
   const quellConfig = {
+    backupKeyringFile,
     jobsDir: join(quellDir, 'jobs'),
     brandingDir: join(quellDir, 'branding'),
     backupDir: join(quellDir, 'backups'),
     dbPath: join(quellDir, 'quelle.sqlite'),
   };
   const zielConfig = {
+    backupKeyringFile,
     jobsDir: join(zielDir, 'jobs'),
     brandingDir: join(zielDir, 'branding'),
     backupDir: join(zielDir, 'backups'),
@@ -116,7 +124,7 @@ test('offline restore records the maintenance operator even when absent from the
   const quellDb = openDatabase(quellConfig.dbPath);
   seedDefaults(quellDb);
   upsertPerson(quellDb, { id: '1', vorname: 'Alt', nachname: 'Person', email: 'alt@example.org', gruppen: [], loggedInNow: false });
-  const archiv = buildBackupArchive(quellDb, quellConfig);
+  const archiv = buildEncryptedBackup(quellDb, quellConfig);
   quellDb.close();
 
   const zielDb = openDatabase(zielConfig.dbPath);

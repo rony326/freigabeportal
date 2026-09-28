@@ -7,6 +7,26 @@ Die Portal-Seite der Archivquittung und die Backup-Format-2-Pruefung sind inzwis
 implementiert. Ein Offline-Restore mit Generationswechsel und Prozesssperre ist
 ebenfalls umgesetzt. Externe n8n-Abnahme, DigiCert-Vertrauenspruefung und die reale
 Wiederherstellungsprobe bleiben offen; Details und Grenzen stehen im Umsetzungsstand.
+Ergaenzung 2026-09-28: Neue Spesenfreigaben verlangen gueltige Schweizer
+Zahlungsdaten und eine ausdrueckliche Bestaetigung des angezeigten Stands.
+CT-Ausfall oder geaenderte Daten verhindern den Abschluss; Altfaelle bleiben offen.
+Gruppen verwenden nun ebenfalls dauerhaft geschriebene neue Dateien, einen
+transaktionalen Dateizeiger/Hash und eine gespeicherte Zeitstempelpflicht.
+Gruppenstand und Quelldateien werden nach TSA-I/O erneut geprueft.
+SIGKILL vor/nach Commit und der anschliessende Wiederanlauf sind getestet;
+verwaiste Dateien und reale Stromausfallproben bleiben betriebliche Restpunkte.
+Eingehende TSA-Antworten werden inzwischen auf Anfragebindung, Nonce,
+Dokumenthash, Signatur und vollstaendige PDF-Abdeckung geprueft. Hinzu kommen
+ESS-Bindung an das Signierzertifikat, Zeitstempel-EKU und Gueltigkeitszeitraeume.
+Kettenvalidierung zu einem lokal freigegebenen Root-CA-Buendel ist implementiert;
+fehlende Vertrauensanker sperren neue TSA-Zeitstempel. Konkrete DigiCert-Zuordnung,
+CRL-Betriebsabnahme und historische Validierung bleiben offen. Neue Zeitstempel
+verlangen nun aktuelle, lokal bereitgestellte und direkt signierte vollstaendige
+Sperrlisten fuer alle Nicht-Root-Zertifikate; fehlende Evidenz blockiert.
+Neue Backups sind inzwischen AES-256-GCM-verschluesselt; Restore prueft die
+authentifizierte Huelle vor dem ZIP. Separater Schluesselbund, n8n-Formatwechsel
+und Abnahme sind erforderlich. Unabhaengiger Herkunftsnachweis gegen kompromittierte
+Schluesselinhaber, externe unveraenderliche Ablage und Altsicherungs-Migration bleiben offen.
 
 ## Ziel und Vorgehen
 

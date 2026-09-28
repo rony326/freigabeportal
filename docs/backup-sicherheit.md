@@ -1,6 +1,6 @@
 # Backup-Sicherheitsstand
 
-Stand: 2026-09-27. Die folgenden Pruefungen sind implementiert.
+Stand: 2026-09-28. Die folgenden Pruefungen sind implementiert.
 Der [Offline-Restore](offline-restore.md) bereitet einen neuen Datenstand vor und
 schaltet ihn erst nach Validierung atomar aktiv. Prozesssperre, Pfadumsetzung,
 Rueckwechsel und Abbruchtests sind implementiert; die Betriebsabnahme bleibt offen.
@@ -9,7 +9,10 @@ wirft auch bei direktem Aufruf einen Fehler.
 
 ## Format 2
 
-Neue Backups enthalten `db.sqlite`, Dateien unter `jobs/` und `branding/`
+Neue `.fpbak`-Backups haben eine AES-256-GCM-Huelle (`FPBACK01`). Erstellung,
+CLI-Pruefung und Restore verlangen `BACKUP_KEYRING_FILE`; ohne Schluessel kein
+Klartext-Fallback. [Installation, Rotation und Grenzen](backup-verschluesselung.md).
+Das innere Format-2-ZIP enthaelt `db.sqlite`, Dateien unter `jobs/` und `branding/`
 sowie `manifest.json`. Das Manifest nennt:
 
 - `formatVersion: 2` und `erstelltAm`;
@@ -22,7 +25,7 @@ Dateien, falsche Groessen, falsche Hashes oder abweichende Dateianzahlen fuehren
 zur Ablehnung. Fehlende/alte/kuenftige oder als Text statt Zahl angegebene
 Formatversionen werden nicht stillschweigend akzeptiert.
 
-**Format-1-Backups aufbewahren.** Sie sind nicht automatisch als sicherer
+**Alte Klartext-ZIPs (Format 1 und 2) aufbewahren.** Sie sind nicht automatisch als sicherer
 Restore-Eingang zugelassen. Ein gesonderter, getesteter Konvertierungsprozess
 steht noch aus; nicht lediglich die Versionsnummer im JSON aendern.
 
@@ -65,15 +68,17 @@ protokolliert; bestehende Sicherungen werden dadurch nicht ersetzt.
 
 ## Verbleibende Grenzen
 
-SHA-256 im selben ZIP erkennt Inkonsistenzen, aber beweist nicht die Herkunft:
-wer das gesamte Archiv austauschen kann, kann auch das Manifest neu berechnen.
-Authentifizierte Verschluesselung bzw. ein unabhaengig geschuetzter Herkunftsnachweis
-und geschuetzte externe Aufbewahrung stehen noch aus.
+SHA-256 im selben ZIP erkennt Inkonsistenzen, aber beweist nicht die Herkunft.
+Die neue GCM-Huelle verhindert Manipulation durch Angreifer ohne Schluessel.
+Ein unabhaengiger Herkunftsnachweis gegen kompromittierte Schluesselinhaber
+und geschuetzte externe Aufbewahrung stehen weiterhin aus.
 
-Neue Backup-Dateien werden exklusiv mit Modus 0600 angelegt. Trotzdem enthalten sie
-weiterhin vertrauliche Konfiguration wie TSA-Zugangsdaten im Klartext.
-Nur der getrennte `BACKUP_API_KEY` darf sie abrufen; Zugriff und externe Ablage sind
-entsprechend zu beschraenken. Vorhandene Backups werden nicht automatisch umgeschrieben.
+Neue Backup-Dateien werden mit Modus 0600 verschluesselt und erst nach Datei-fsync
+atomar veroeffentlicht. Das entschluesselte ZIP enthaelt weiterhin vertrauliche
+Konfiguration; der SQLite-Snapshot liegt temporaer unverschluesselt auf dem Host.
+Nur der getrennte `BACKUP_API_KEY` darf den n8n-Download abrufen. Dieser liefert
+ausschliesslich neue `.fpbak`-Dateien; bestehende Klartext-ZIPs werden weder
+automatisch umgeschrieben noch durch Retention geloescht.
 
 Eine erfolgreiche Validierung ist **keine** Freigabe fuer einen Live-Restore.
 Prozesssperre und Generationswechsel gelten fuer den aktualisierten Server und

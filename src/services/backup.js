@@ -43,11 +43,11 @@ function validateFileReferences(db, manifest, zip) {
       throw new BackupValidationError('Belegdatei stimmt nicht mit dem finalen Datenbank-Hash ueberein.');
     }
   }
-  for (const job of db.prepare('SELECT status, pdf_pfad, thumbnail_pfad, gruppe_pdf_pfad, gruppe_abgeholt_am, final_datei_hash, zeitstempel_datei_hash, gruppe_zeitstempel_datei_hash FROM jobs').all()) {
+  for (const job of db.prepare('SELECT * FROM jobs').all()) {
     const active = !['archiviert', 'abgeholt', 'geloescht'].includes(job.status);
     check(job.pdf_pfad, 'jobs', active, job.zeitstempel_datei_hash || job.final_datei_hash);
     check(job.thumbnail_pfad, 'jobs', active);
-    check(job.gruppe_pdf_pfad, 'jobs', active && !job.gruppe_abgeholt_am, job.gruppe_zeitstempel_datei_hash);
+    check(job.gruppe_pdf_pfad, 'jobs', active && !job.gruppe_abgeholt_am, job.gruppe_zeitstempel_datei_hash || job.gruppe_final_datei_hash);
   }
   // Kreditkarten-Belege: Dateien bleiben bis zur Fristlöschung liegen, danach sind die Pfade NULL
   // (check() überspringt leere Pfade).
@@ -59,10 +59,11 @@ function validateFileReferences(db, manifest, zip) {
   if (logo?.value) check(logo.value, 'branding', true);
 }
 
-export const BACKUP_DATEINAME_PATTERN = /^backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.zip$/;
+export const BACKUP_DATEINAME_PATTERN = /^backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.(?:zip|fpbak)$/;
+export const ENCRYPTED_BACKUP_DATEINAME_PATTERN = /^backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.fpbak$/;
 
 export function backupDateiname(date = new Date()) {
-  return `backup-${date.toISOString().replace(/[:.]/g, '-')}.zip`;
+  return `backup-${date.toISOString().replace(/[:.]/g, '-')}.fpbak`;
 }
 
 export class BackupValidationError extends Error {}

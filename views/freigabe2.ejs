@@ -49,6 +49,15 @@
 
             <form method="post" action="/freigabe2/<%= job.id %>">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+              <% if (paymentReview) { %>
+                <p><strong>IBAN:</strong> <span class="text-break"><%= paymentReview.iban %></span></p>
+                <p><strong>Kontoinhaber:</strong> <span class="text-break"><%= paymentReview.kontoinhaber %></span></p>
+                <input type="hidden" name="zahlungsdaten_stand" value="<%= paymentReview.fingerprint %>">
+                <div class="form-check mb-3">
+                  <input class="form-check-input" type="checkbox" name="zahlungsdaten_bestaetigt" id="zahlungsdatenBestaetigt" value="ja">
+                  <label class="form-check-label" for="zahlungsdatenBestaetigt">IBAN, Kontoinhaber, Betrag und Konto geprueft</label>
+                </div>
+              <% } %>
               <div class="mb-3">
                 <div class="form-check">
                   <input class="form-check-input" type="radio" name="interessenskonflikt" id="f2konfliktNein" value="nein" <%= values.interessenskonflikt !== 'ja' ? 'checked' : '' %>>
@@ -63,7 +72,7 @@
                 <label class="form-label" for="f2begruendung">Begründung (bei Interessenskonflikt oder Ablehnung Pflicht)</label>
                 <textarea class="form-control" id="f2begruendung" name="begruendung"><%= values.begruendung || '' %></textarea>
               </div>
-              <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2">Freigeben</button>
+              <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2"><%= job.quelle === 'spesen' && !paymentReview ? 'Zahlungsdaten pruefen' : 'Freigeben' %></button>
               <button type="submit" name="aktion" value="ablehnen" class="btn btn-outline-danger">Ablehnen</button>
             </form>
           </div>

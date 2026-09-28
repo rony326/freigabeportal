@@ -167,7 +167,8 @@ ausgeliefert, unabhängig von ihrem eigenen Status.
 
 `GET /api/n8n/backup/latest` (`X-API-Key`, ausschliesslich der separate
 `BACKUP_API_KEY`, nicht `N8N_API_KEY`) liefert das jeweils neueste, unter `BACKUP_DIR`
-liegende Backup-Archiv aus (`404` falls noch keines existiert). Kein
+liegende `.fpbak`-Backup aus (`application/octet-stream`, `404` falls noch keines
+existiert). Alte Klartext-ZIPs werden nicht als Fallback ausgeliefert. Kein
 eigener Trigger-Mechanismus — die Datei wird vom internen Scheduler
 ohnehin produziert (siehe
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)),
@@ -177,13 +178,16 @@ dieses Repos ist dafür verantwortlich, die Datei extern abzulegen
 selbst wurde bewusst nicht gebaut, siehe
 [2026-08-24-datenbank-backup-design.md](superpowers/specs/2026-08-24-datenbank-backup-design.md#nicht-teil-von-diesem-design).
 
-**Achtung:** das Archiv enthält Geheimnisse im Klartext (u. a. das
-RFC3161-TSA-Passwort) — der Workflow, der diese Route abruft, muss die
-Datei entsprechend sicher handhaben.
+**Achtung:** Neue Archive sind AES-256-GCM-verschluesselt. n8n speichert die Bytes
+unveraendert und bekommt keinen Entschluesselungsschluessel. Der separate
+`BACKUP_KEYRING_FILE` bleibt beim Betrieb und in einer getrennten Schluesselsicherung.
+Ohne ihn werden keine neuen Sicherungen erstellt. Das entschluesselte Archiv
+enthaelt Geheimnisse (unter anderem das TSA-Passwort); alte ZIPs sind weiterhin Klartext.
 
-Neue Sicherungen verwenden Format 2 mit verbindlichem Dateimanifest und
+Neue Sicherungen verwenden innen Format 2 mit verbindlichem Dateimanifest und
 enthalten keine aktiven Sessions. Alte ZIPs werden nicht automatisch
-konvertiert. Grenzen und verbleibende Risiken: [Backup-Sicherheitsstand](backup-sicherheit.md).
+konvertiert. [Schluesselverwaltung und Formatwechsel](backup-verschluesselung.md).
+Grenzen und verbleibende Risiken: [Backup-Sicherheitsstand](backup-sicherheit.md).
 
 Ohne `BACKUP_API_KEY` ist der API-Zugriff gesperrt. Der HTTP-Live-Restore
 ist ebenfalls gesperrt; Wiederherstellungen erfolgen ueber den

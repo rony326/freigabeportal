@@ -277,6 +277,7 @@ test('deleting the last blocking abgelehnt sibling of an otherwise complete Spli
   const parentPfad = join(dir, 'parent.pdf');
   writeFileSync(parentPfad, await buildPdfFixture(['Rechnung Seite 1']));
   const parentId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad: parentPfad });
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
   const parentJob = getJobById(db, parentId);
 
   // Sibling A: already abgeschlossen, with a full Freigabe-1+2 Verlauf.

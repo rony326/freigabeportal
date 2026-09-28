@@ -144,9 +144,18 @@ Quelle bleiben die ChurchTools-Felder `CT_CUSTOM_FIELD_IBAN` und
 `CT_CUSTOM_FIELD_KONTOINHABER`. Der Export verwendet danach dieselben Werte
 wie die Stempelseite, ohne erneuten Live-Abruf. Spaetere Stammdatenkorrekturen
 aendern eine bereits freigegebene Zahlung nicht stillschweigend.
-Fehlende Werte bleiben `null`; Altfaelle ohne Snapshot sind als
-`historisch_unvollstaendig` markiert. Eine Sperre bei fehlenden Zahlungsdaten
-steht noch aus. n8n muss diese Faelle vor einer Zahlung gesondert behandeln.
+Neue Freigaben sind bei fehlenden oder nicht abrufbaren Zahlungsdaten gesperrt.
+Die Schweizer IBAN wird auf Format und Modulo-97-Pruefsumme geprueft; ein
+Kontoinhaber ist Pflicht. Auslaendische IBANs werden derzeit nicht unterstuetzt.
+Freigeber 2 ruft zuerst "Zahlungsdaten pruefen" auf und bestaetigt danach IBAN,
+Kontoinhaber, Betrag und Konto mit einer nicht vorausgewaehlten Checkbox.
+Beim Abschluss werden die ChurchTools-Daten erneut abgerufen. Geaenderte
+Zahlungsdaten oder ein geaenderter Vorgangs-/Kontostand verlangen eine neue
+Bestaetigung. Identitaet, Zeitpunkt und bestaetigter Stand werden im unveraenderlichen
+Freigabe-Snapshot gespeichert. Ablehnen und Eskalieren bleiben ohne Zahlungsdaten moeglich.
+Die Pruefsumme bestaetigt weder Kontoinhaberschaft noch die Existenz des Bankkontos.
+Altfaelle werden nicht nachtraeglich bestaetigt; Faelle ohne Snapshot sind als
+`historisch_unvollstaendig` markiert und von n8n vor einer Zahlung gesondert zu behandeln.
 Die gespeicherten Finanzdaten sind bei Zugriffsschutz und Aufbewahrung zu beruecksichtigen.
 
 ## Bewusst nicht gebaut (YAGNI)

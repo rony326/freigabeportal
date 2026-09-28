@@ -1,6 +1,6 @@
 # Offline-Wiederherstellung
 
-Stand: 2026-09-27. Implementiert und an temporaeren Datenstaenden getestet.
+Stand: 2026-09-28. Implementiert und an temporaeren Datenstaenden getestet.
 Keine produktive Wiederherstellung oder Betriebsabnahme wurde ausgefuehrt.
 HTTP-Live-Restore und der alte direkte `restoreBackupArchive`-Aufruf bleiben gesperrt.
 
@@ -37,10 +37,13 @@ ist bewusst nicht implementiert; Speicherplatz und geschuetzte Aufbewahrung einp
   DB_PATH selbst darf kein symbolischer Link sein.
 - Genuegend Platz fuer bisherigen Stand, neuen Stand und temporaere Validierung.
   Es gelten weiterhin die Grenzen aus [backup-sicherheit.md](backup-sicherheit.md).
-- Vertraute Herkunft des Backups und separat gepruefter SHA-256-Wert.
-  Ein selbst berechneter Hash beweist Konsistenz, nicht die Herkunft eines unbekannten ZIPs.
+- Authentifiziertes `.fpbak`-Backup, separat bereitgestellter Schluesselbund ueber
+  BACKUP_KEYRING_FILE und separat gepruefter SHA-256-Wert der verschluesselten Datei.
+  Ein Hash allein beweist keine Herkunft. Die GCM-Pruefung erfolgt vor dem Entpacken.
+  Klartext-ZIPs werden nicht akzeptiert; [Schluesselverwaltung](backup-verschluesselung.md).
 
-Die CLI benoetigt nur DB_PATH, JOBS_DIR, BRANDING_DIR und BACKUP_DIR, keine OAuth-
+Die CLI benoetigt DB_PATH, JOBS_DIR, BRANDING_DIR, BACKUP_DIR und fuer Verify/Restore
+BACKUP_KEYRING_FILE, keine OAuth-
 oder SMTP-Zugangsdaten. Die npm-Kommandos lesen dieselbe `.env` wie der Server;
 Arbeitsverzeichnis und Umgebung muessen zur betreffenden Installation gehoeren.
 
@@ -49,11 +52,12 @@ Arbeitsverzeichnis und Umgebung muessen zur betreffenden Installation gehoeren.
 1. Sicherung zunaechst ohne Umschalten validieren:
 
 ```sh
-npm run backup:verify -- --archive /geschuetzt/backup.zip
+npm run backup:verify -- --archive /geschuetzt/backup.fpbak
 ```
 
-Die Ausgabe enthaelt Formatversion, Dateianzahl und den berechneten SHA-256-Wert.
-Wert mit einer vertrauenswuerdigen Referenz vergleichen. Nur Format 2 wird akzeptiert.
+Die Ausgabe enthaelt innere Formatversion, Dateianzahl, Authentifizierungsverfahren,
+Schluessel-ID und SHA-256-Wert. Wert mit einer vertrauenswuerdigen Referenz vergleichen.
+Nur die authentifizierte Huelle mit innerem Format 2 wird akzeptiert.
 
 2. Dienst und andere Schreiber stoppen, dann Status pruefen:
 
@@ -67,7 +71,7 @@ PID, Zweck und Startzeit. Ein laufender Prozess muss zuerst geordnet beendet wer
 3. Nach Freigabe des Wartungsfensters wiederherstellen:
 
 ```sh
-npm run backup:restore -- --archive /geschuetzt/backup.zip --sha256 ERWARTETER_64STELLIGER_SHA256 --operator "Vorname Nachname" --reason "Genehmigte Wiederherstellung nach Vorfall ..."
+npm run backup:restore -- --archive /geschuetzt/backup.fpbak --sha256 ERWARTETER_64STELLIGER_SHA256 --operator "Vorname Nachname" --reason "Genehmigte Wiederherstellung nach Vorfall ..."
 ```
 
 Operator und Begruendung sind Pflicht. Der Operator ist die Angabe der berechtigten
@@ -132,5 +136,6 @@ exklusive Prozesssperre, falschen Hash, simulierte Fehler vor/nach Aktivierung,
 echten SIGKILL vor/nach dem Umschalten, Rueckwechsel und einen echten Serverstart
 auf dem neuen Stand samt SIGTERM. Die Fixtures sind temporaere Testdaten.
 Stromausfall-/Dateisystemtests auf dem Zielhost, Staging-Migration und betriebliche
-Abnahme stehen noch aus. Backup-Verschluesselung und ein unabhaengiger
-Herkunftsnachweis sind ebenfalls noch offen.
+Abnahme stehen noch aus. Backup-Verschluesselung ist umgesetzt; unabhaengiger
+Herkunftsnachweis gegen kompromittierte Schluesselinhaber und externe
+unveraenderliche Aufbewahrung bleiben offen.

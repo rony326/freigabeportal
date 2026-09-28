@@ -42,6 +42,13 @@ import { pruefeUndFinalisiereSplitGruppe } from './splitGruppenExport.js';
 
 const TMP_MAX_ALTER_MS = 60 * 60 * 1000; // 1 Stunde
 
+// Tage-Einstellung aus admin_config: nur eine ganze Zahl >= 1 zählt, sonst der Default -- ein
+// negativer Wert würde die Schwelle in die Zukunft legen (z.B. frisch verworfene Belege löschen).
+function tageAusConfig(db, key, standard) {
+  const wert = Number(getConfigValue(db, key));
+  return Number.isInteger(wert) && wert >= 1 ? wert : standard;
+}
+
 // The actual job bodies behind /internal/cron/* (routes/cron.js, manual/on-demand triggering)
 // and the in-process scheduler (services/scheduler.js, the normal way these now run) — extracted
 // here so both trigger paths call the exact same logic instead of risking drift between two
@@ -275,7 +282,7 @@ export function runPdfBereinigungJob(db, config) {
   // werden hier nie angefasst.
   let kkBelegeGeloescht = 0;
   try {
-    const tage = Number(getConfigValue(db, 'kk_beleg_verworfen_loeschen_tage')) || 90;
+    const tage = tageAusConfig(db, 'kk_beleg_verworfen_loeschen_tage', 90);
     const schwelle = new Date(Date.now() - tage * 24 * 60 * 60 * 1000).toISOString();
     for (const beleg of listVerworfeneKkBelegeZurLoeschung(db, schwelle)) {
       let alleWeg = true;
@@ -563,7 +570,7 @@ export async function runKkBelegErinnerungenJob(db, config, mailer) {
   }
   const gestartetAm = new Date().toISOString();
   try {
-    const tage = Number(getConfigValue(db, 'kk_beleg_erinnerung_tage')) || 45;
+    const tage = tageAusConfig(db, 'kk_beleg_erinnerung_tage', 45);
     const schwelleIso = new Date(Date.now() - tage * 86400000).toISOString();
     const link = `${config.publicBaseUrl}/kreditkarte`;
 

@@ -486,3 +486,34 @@ test('runPdfBereinigungJob deletes files of receipts discarded longer than the r
   assert.equal(runPdfBereinigungJob(t.db, { jobsDir: dir }).kkBelegeGeloescht, 0);
   rmSync(dir, { recursive: true, force: true });
 });
+
+const setzeOderEntferne = (db, key, wert) => (wert === null ? db.prepare('DELETE FROM admin_config WHERE key = ?').run(key) : setConfigValue(db, key, wert));
+
+for (const wert of ['-5', 'abc', '2.5', '0', null]) {
+  test(`runPdfBereinigungJob falls back to 90 days for kk_beleg_verworfen_loeschen_tage = ${wert}`, async () => {
+    const { mkdtempSync, writeFileSync, existsSync, rmSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const dir = mkdtempSync(join(tmpdir(), 'kk-frist-'));
+    const t = kkSetup();
+    setzeOderEntferne(t.db, 'kk_beleg_verworfen_loeschen_tage', wert);
+    const pfad = join(dir, 'jung.pdf');
+    writeFileSync(pfad, 'x');
+    const jung = createKkBeleg(t.db, { kreditkarteId: t.karte, hochgeladenVon: '2', gekauftVon: '2', quelle: 'web', pdfPfad: pfad, betrag: '1.00', kaufdatum: '2026-01-01', beschreibung: 'jung', status: 'verworfen' });
+    t.db.prepare('UPDATE kk_belege SET verworfen_am = ? WHERE id = ?').run(vorTagen(10), jung);
+    assert.equal(runPdfBereinigungJob(t.db, { jobsDir: dir }).kkBelegeGeloescht, 0);
+    assert.ok(getKkBelegById(t.db, jung).pdf_pfad);
+    assert.equal(existsSync(pfad), true);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test(`runKkBelegErinnerungenJob falls back to 45 days for kk_beleg_erinnerung_tage = ${wert}`, async () => {
+    const t = kkSetup();
+    setzeOderEntferne(t.db, 'kk_beleg_erinnerung_tage', wert);
+    createKkBeleg(t.db, { kreditkarteId: t.karte, hochgeladenVon: '2', gekauftVon: '2', quelle: 'web', pdfPfad: '/tmp/a.pdf', betrag: '1.00', kaufdatum: vorTagen(50).slice(0, 10), beschreibung: 'Alt', status: 'offen' });
+    createKkBeleg(t.db, { kreditkarteId: t.karte, hochgeladenVon: '2', gekauftVon: '2', quelle: 'web', pdfPfad: '/tmp/b.pdf', betrag: '2.00', kaufdatum: vorTagen(10).slice(0, 10), beschreibung: 'Neu', status: 'offen' });
+    const ergebnis = await runKkBelegErinnerungenJob(t.db, { publicBaseUrl: 'https://p.example.org' }, t.mailer);
+    assert.equal(ergebnis.belege, 1);
+    assert.doesNotMatch(t.sent[0].text, /Neu/);
+  });
+}

@@ -11,6 +11,8 @@ import { once } from 'node:events';
 import { openDatabase } from '../../src/db/index.js';
 import { createJob, getJobById } from '../../src/db/jobsRepo.js';
 import { setConfigValue, getConfigValue } from '../../src/db/adminConfigRepo.js';
+import { upsertPerson } from '../../src/db/personenRepo.js';
+import { createKkBeleg, getKkBelegById, markKkBelegDateiGeloescht } from '../../src/db/kkBelegeRepo.js';
 import { buildBackupArchive } from '../../src/services/backup.js';
 import { restoreOffline, rollbackOffline, offlineRestoreStatus } from '../../src/services/offlineRestore.js';
 import { acquireStorageLock, resolveStorageConfig, storagePaths } from '../../src/services/storageState.js';
@@ -38,6 +40,13 @@ function setup(t) {
   const jobId = createJob(sourceDb, { eingangAm: '2026-09-27T00:00:00Z', quelle: 'scanner', dateiname: 'invoice.pdf', pdfPfad: join(source.jobsDir, 'invoice.pdf') });
   sourceDb.prepare("UPDATE jobs SET status = 'abgeschlossen', final_datei_hash = ? WHERE id = ?").run(hash(pdf), jobId);
   setConfigValue(sourceDb, 'branding_logo_pfad', join(source.brandingDir, 'logo.png'));
+  upsertPerson(sourceDb, { id: '1', vorname: 'K', nachname: 'K', email: 'k@example.org', gruppen: [] });
+  mkdirSync(join(source.jobsDir, 'kk'));
+  writeFileSync(join(source.jobsDir, 'kk', 'beleg.pdf'), 'kk receipt');
+  writeFileSync(join(source.jobsDir, 'kk', 'beleg.png'), 'kk thumb');
+  const kkBelegId = createKkBeleg(sourceDb, { hochgeladenVon: '1', quelle: 'web', pdfPfad: join(source.jobsDir, 'kk', 'beleg.pdf'), thumbnailPfad: join(source.jobsDir, 'kk', 'beleg.png'), status: 'offen' });
+  const kkGeloeschtId = createKkBeleg(sourceDb, { hochgeladenVon: '1', quelle: 'web', pdfPfad: join(source.jobsDir, 'kk', 'weg.pdf'), status: 'verworfen' });
+  markKkBelegDateiGeloescht(sourceDb, kkGeloeschtId);
   sourceDb.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run('backup-session', '{}', '2099-01-01');
   const archive = buildBackupArchive(sourceDb, source);
   sourceDb.close();
@@ -50,7 +59,7 @@ function setup(t) {
   writeFileSync(archivePath, archive);
   const options = { expectedSha256: hash(archive), operator: 'Test Operator', reason: 'Disaster recovery test', sourceName: 'backup.zip' };
   const env = { ...process.env, DB_PATH: target.dbPath, JOBS_DIR: target.jobsDir, BRANDING_DIR: target.brandingDir, BACKUP_DIR: target.backupDir };
-  return { dir, source, target, archive, archivePath, jobId, pdf, options, env };
+  return { dir, source, target, archive, archivePath, jobId, kkBelegId, kkGeloeschtId, pdf, options, env };
 }
 
 function serverEnv(s) {
@@ -75,6 +84,13 @@ test('offline restore activates only a complete generation and keeps original fi
     assert.equal(job.pdf_pfad, join(restored.current.jobsDir, 'invoice.pdf'));
     assert.deepEqual(readFileSync(job.pdf_pfad), s.pdf);
     assert.equal(getConfigValue(db, 'branding_logo_pfad'), join(restored.current.brandingDir, 'logo.png'));
+    const kk = getKkBelegById(db, s.kkBelegId);
+    assert.equal(kk.pdf_pfad, join(restored.current.jobsDir, 'kk', 'beleg.pdf'));
+    assert.equal(kk.thumbnail_pfad, join(restored.current.jobsDir, 'kk', 'beleg.png'));
+    assert.equal(readFileSync(kk.pdf_pfad, 'utf8'), 'kk receipt');
+    const geloescht = getKkBelegById(db, s.kkGeloeschtId);
+    assert.equal(geloescht.pdf_pfad, null);
+    assert.equal(geloescht.thumbnail_pfad, null);
     assert.equal(db.prepare('SELECT count(*) AS n FROM sessions').get().n, 0);
     const audit = db.prepare("SELECT * FROM audit_ereignisse WHERE aktion = 'offline_restore_vorbereitet'").get();
     assert.equal(audit.person_name, s.options.operator);

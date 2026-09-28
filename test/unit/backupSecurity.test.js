@@ -8,6 +8,8 @@ import { DatabaseSync } from 'node:sqlite';
 import AdmZip from 'adm-zip';
 import { openDatabase } from '../../src/db/index.js';
 import { createJob } from '../../src/db/jobsRepo.js';
+import { upsertPerson } from '../../src/db/personenRepo.js';
+import { createKkBeleg, markKkBelegDateiGeloescht } from '../../src/db/kkBelegeRepo.js';
 import { buildBackupArchive, validateBackupArchive, BackupValidationError, BACKUP_LIMITS } from '../../src/services/backup.js';
 
 function setup(t) {
@@ -157,4 +159,30 @@ test('backup creation rejects document bytes that contradict a stored final hash
   const id = createJob(s.db, { eingangAm: '2026-09-27T00:00:00Z', quelle: 'scanner', dateiname: 'a.pdf', pdfPfad: join(s.config.jobsDir, 'a.pdf') });
   s.db.prepare("UPDATE jobs SET status = 'abgeschlossen', final_datei_hash = ? WHERE id = ?").run('0'.repeat(64), id);
   assert.throws(() => s.build(), /finalen Datenbank-Hash/);
+});
+
+test('kk_belege file references are validated like job files; NULL paths after retention deletion are skipped', (t) => {
+  const s = setup(t);
+  upsertPerson(s.db, { id: '1', vorname: 'A', nachname: 'B', email: 'a@example.org', gruppen: [] });
+  const fehlt = createKkBeleg(s.db, { hochgeladenVon: '1', quelle: 'web', pdfPfad: join(s.config.jobsDir, 'kk-missing.pdf'), status: 'offen' });
+  assert.throws(() => s.build(), /Dateireferenz fehlt/);
+  s.db.prepare('UPDATE kk_belege SET pdf_pfad = ? WHERE id = ?').run(join(s.dir, 'outside.pdf'), fehlt);
+  assert.throws(() => s.build(), /ausserhalb/);
+  s.db.prepare("UPDATE kk_belege SET status = 'verworfen' WHERE id = ?").run(fehlt);
+  markKkBelegDateiGeloescht(s.db, fehlt);
+  assert.doesNotThrow(() => s.build());
+});
+
+test('removing a referenced kk_belege PDF from the archive is rejected', (t) => {
+  const s = setup(t);
+  upsertPerson(s.db, { id: '1', vorname: 'A', nachname: 'B', email: 'a@example.org', gruppen: [] });
+  writeFileSync(join(s.config.jobsDir, 'kk.pdf'), 'kk receipt');
+  createKkBeleg(s.db, { hochgeladenVon: '1', quelle: 'web', pdfPfad: join(s.config.jobsDir, 'kk.pdf'), status: 'offen' });
+  const zip = new AdmZip(s.build());
+  zip.deleteFile('jobs/kk.pdf');
+  updateManifest(zip, (m) => {
+    m.dateien = m.dateien.filter((file) => file.pfad !== 'jobs/kk.pdf');
+    m.dateiAnzahlJobs -= 1;
+  });
+  assert.throws(() => validateBackupArchive(zip.toBuffer()), /Dateireferenz fehlt/);
 });

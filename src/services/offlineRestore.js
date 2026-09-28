@@ -90,6 +90,13 @@ export function restoreOffline(buffer, config, options = {}) {
               rebase(job.thumbnail_pfad, 'jobs', manifest.quellpfade, current),
               rebase(job.gruppe_pdf_pfad, 'jobs', manifest.quellpfade, current), job.id);
           }
+          // Kreditkarten-Belege liegen ebenfalls unter jobsDir. Nach der Fristlöschung verworfener
+          // Belege sind beide Pfade NULL -- rebase() reicht NULL unverändert durch.
+          for (const beleg of db.prepare('SELECT id, pdf_pfad, thumbnail_pfad FROM kk_belege WHERE pdf_pfad IS NOT NULL OR thumbnail_pfad IS NOT NULL').all()) {
+            db.prepare('UPDATE kk_belege SET pdf_pfad = ?, thumbnail_pfad = ? WHERE id = ?').run(
+              rebase(beleg.pdf_pfad, 'jobs', manifest.quellpfade, current),
+              rebase(beleg.thumbnail_pfad, 'jobs', manifest.quellpfade, current), beleg.id);
+          }
           const logo = db.prepare("SELECT value FROM admin_config WHERE key = 'branding_logo_pfad'").get();
           if (logo?.value) db.prepare("UPDATE admin_config SET value = ? WHERE key = 'branding_logo_pfad'").run(rebase(logo.value, 'branding', manifest.quellpfade, current));
           db.exec('DELETE FROM sessions');

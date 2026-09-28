@@ -49,6 +49,12 @@ function validateFileReferences(db, manifest, zip) {
     check(job.thumbnail_pfad, 'jobs', active);
     check(job.gruppe_pdf_pfad, 'jobs', active && !job.gruppe_abgeholt_am, job.gruppe_zeitstempel_datei_hash);
   }
+  // Kreditkarten-Belege: Dateien bleiben bis zur Fristlöschung liegen, danach sind die Pfade NULL
+  // (check() überspringt leere Pfade).
+  for (const beleg of db.prepare('SELECT pdf_pfad, thumbnail_pfad FROM kk_belege').all()) {
+    check(beleg.pdf_pfad, 'jobs', true);
+    check(beleg.thumbnail_pfad, 'jobs', true);
+  }
   const logo = db.prepare("SELECT value FROM admin_config WHERE key = 'branding_logo_pfad'").get();
   if (logo?.value) check(logo.value, 'branding', true);
 }

@@ -31,6 +31,18 @@ test('backup API is disabled by default and requires a distinct strong credentia
   assert.equal(loadConfig({ ...FULL_ENV, BACKUP_API_KEY: key }).backupApiKey, key);
 });
 
+test('TSA trust configuration is mandatory for issuance and cannot be disabled through the environment', () => {
+  assert.equal(loadConfig(FULL_ENV).tsaTrustRequired, true);
+  assert.equal(loadConfig({ ...FULL_ENV, TSA_TRUST_REQUIRED: 'false' }).tsaTrustRequired, true);
+  assert.throws(() => loadConfig({ ...FULL_ENV, TSA_TRUST_ANCHORS_FILE: '/root.pem' }), /TSA_TRUST/);
+  assert.throws(() => loadConfig({ ...FULL_ENV, TSA_TRUST_ANCHORS_SHA256: '0'.repeat(64) }), /TSA_TRUST/);
+  const config = loadConfig({ ...FULL_ENV, TSA_TRUST_ANCHORS_FILE: '/root.pem', TSA_TRUST_ANCHORS_SHA256: 'a'.repeat(64) });
+  assert.equal(config.tsaTrustAnchorsFile, '/root.pem');
+  assert.equal(config.tsaTrustAnchorsSha256, 'a'.repeat(64));
+  assert.equal(config.tsaCrlFile, null);
+  assert.equal(loadConfig({ ...FULL_ENV, TSA_CRL_FILE: '/crls.pem' }).tsaCrlFile, '/crls.pem');
+});
+
 test('loadConfig returns full config when all variables are set', () => {
   const config = loadConfig(FULL_ENV);
   assert.equal(config.churchtools.baseUrl, 'https://ct.example.org');

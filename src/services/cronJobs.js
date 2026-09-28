@@ -1,9 +1,11 @@
-import { existsSync, unlinkSync, readdirSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, unlinkSync, readdirSync, statSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { writeFinalDocument } from './finalDocument.js';
+import { tsaTrustOptions } from './tsaTrust.js';
 import { hasMatureArchiveReceipt, archivedBytesMatch } from './archiveReceipt.js';
-import { buildBackupArchive, backupDateiname, BACKUP_DATEINAME_PATTERN } from './backup.js';
+import { backupDateiname, ENCRYPTED_BACKUP_DATEINAME_PATTERN } from './backup.js';
+import { buildEncryptedBackup, publishEncryptedBackup } from './backupEnvelope.js';
 import { runPersonenSync } from './sync.js';
 import { hasRecentRunningSync } from '../db/syncLogRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -310,6 +312,7 @@ export async function runZeitstempelNachholenJob(db, config) {
   const laufId = startCronLauf(db, 'zeitstempel-nachholen');
   try {
     const tsaConfig = {
+      ...tsaTrustOptions(config),
       url: tsaUrl,
       user: getConfigValue(db, 'zeitstempel_tsa_user') || undefined,
       passwort: getConfigValue(db, 'zeitstempel_tsa_passwort') || undefined,
@@ -387,10 +390,10 @@ export function runDatenbankSicherungJob(db, config) {
 
   const laufId = startCronLauf(db, 'datenbank-sicherung');
   try {
-    mkdirSync(config.backupDir, { recursive: true });
-    const archiv = buildBackupArchive(db, config);
+    mkdirSync(config.backupDir, { recursive: true, mode: 0o700 });
+    const archiv = buildEncryptedBackup(db, config);
     const dateiname = backupDateiname(new Date());
-    writeFileSync(join(config.backupDir, dateiname), archiv, { mode: 0o600, flag: 'wx' });
+    publishEncryptedBackup(config.backupDir, dateiname, archiv);
 
     // Retention-Bereinigung ist absichtlich in einem eigenen try/catch isoliert (analog zu den
     // drei unabhängigen Schritten in runPdfBereinigungJob): das neue Backup ist zu diesem
@@ -401,7 +404,7 @@ export function runDatenbankSicherungJob(db, config) {
     try {
       const aufbewahrungAnzahl = Number(getConfigValue(db, 'backup_aufbewahrung_anzahl')) || 14;
       const vorhandene = readdirSync(config.backupDir)
-        .filter((name) => BACKUP_DATEINAME_PATTERN.test(name))
+        .filter((name) => ENCRYPTED_BACKUP_DATEINAME_PATTERN.test(name))
         .sort();
       const zuLoeschendeAnzahl = vorhandene.length - aufbewahrungAnzahl;
       for (let i = 0; i < zuLoeschendeAnzahl; i += 1) {
@@ -442,7 +445,7 @@ export async function runSplitGruppenNachholenJob(db, config) {
     let fehlgeschlagen = 0;
     let uebersprungen = 0;
     for (const parent of ausstehend) {
-      const ergebnis = await pruefeUndFinalisiereSplitGruppe(db, parent.id);
+      const ergebnis = await pruefeUndFinalisiereSplitGruppe(db, parent.id, config);
       if (ergebnis.status === 'exportiert') nachgeholt += 1;
       else if (ergebnis.status === 'fehler') fehlgeschlagen += 1;
       else uebersprungen += 1;

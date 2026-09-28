@@ -1,12 +1,52 @@
 # RFC3161-Zeitstempel und Prüfbescheinigung
 
-**Sicherheitsstand 2026-09-27:** Die Pruefung kontrolliert Signatur,
+**Sicherheitsstand 2026-09-28:** Die Upload-Pruefansicht kontrolliert Signatur,
 vollstaendige ByteRange-Abdeckung und optional den gespeicherten Dateihash.
 Eine vertrauenswuerdige TSA-Zertifikatskette und der Sperrstatus werden noch
 nicht geprueft. DigiCert ist als eingesetzter Anbieter bestaetigt, aber noch
 nicht ueber einen geprueften Truststore gebunden. Die Pruefbescheinigung ist
 deshalb kein vollstaendiger Vertrauens- oder Langzeitnachweis.
 Siehe [offene Abnahmepunkte](audit-umsetzungsstand-2026-09-27.md).
+
+**Ergaenzung 2026-09-28:** Vor dem Speichern neuer Zeitstempel werden der
+Erfolgsstatus, TSTInfo-Version/-Inhaltstyp, genau ein Unterzeichner,
+SHA-256-Dokumenthash und die Nonce gegen die konkrete Anfrage geprueft.
+Danach werden die Signatur, das Vorhandensein eines ESS-Attributs und die
+vollstaendige ByteRange-Abdeckung der resultierenden PDF kontrolliert.
+Fremde, wiederverwendete oder manipulierte Antworten gelten als fehlgeschlagener
+TSA-Versuch, nicht als gesetzter Zeitstempel. Diese Anfragebindung entspricht
+den Pruefanforderungen aus [RFC 3161, Abschnitt 2.2](https://www.rfc-editor.org/rfc/rfc3161.html#section-2.2).
+Zusaetzlich muss das eindeutig ueber Aussteller/Seriennummer bestimmte
+Signierzertifikat zum behaupteten Zeitstempel- und lokalen Empfangszeitpunkt
+gueltig sein. Es braucht genau eine kritische EKU ausschliesslich fuer
+`timeStamping`. ESSCertID bzw. ESSCertIDv2 werden gegen den Hash des tatsaechlichen
+Signierzertifikats geprueft, einschliesslich Aussteller/Seriennummer, falls angegeben.
+Bei ESSv2 werden SHA-256/384/512 unterstuetzt, bei ESSv1 SHA-1 ausschliesslich als
+historischer Zertifikatsbezeichner. Der Signatur-Digest muss SHA-256/384/512 sein.
+Andere Unterzeichnerkennungen als Aussteller/Seriennummer werden vorerst abgewiesen.
+Die ESS-Bindung richtet sich nach [RFC 5035](https://www.rfc-editor.org/rfc/rfc5035.html).
+
+Fuer neue Zeitstempel ist jetzt zusaetzlich eine Kette zu lokal freigegebenen,
+per Dateihash festgelegten Root-CAs erforderlich. Fehlende oder falsche
+Vertrauensanker verhindern die Uebernahme. [Konfiguration](tsa-vertrauensanker.md).
+Neue Zeitstempel verlangen ausserdem aktuelle lokale, direkt signierte CRLs fuer
+alle Nicht-Root-Zertifikate. Fehlende, veraltete oder ungueltige Listen und
+gesperrte Zertifikate verhindern die Uebernahme. Kein automatischer Netzabruf;
+Bereitstellung und Erneuerung erfolgen extern, siehe die verlinkte Konfiguration.
+Die konkrete DigiCert-Root-/CRL-Zuordnung und Betriebsabnahme, OCSP,
+zusaetzliche ESS-Kettenbeschraenkungen und historische Langzeitvalidierung bleiben offen.
+Die lokale Uhr ist dabei eine
+Betriebsvoraussetzung, keine unabhaengige Zeitquelle. Die Upload-Pruefansicht
+prueft weiterhin nur Dokumentintegritaet/Signatur und behauptet kein Zertifikatsvertrauen.
+Es wird keine automatische LTV-Anreicherung ausgefuehrt;
+dadurch werden weder unsignierte Nachtraege noch automatische Abrufe von
+Zertifikats-/Sperrlisten-URLs aus der Antwort vorgenommen. Token muessen in den
+festen 32-KiB-Signaturplatzhalter passen; bei Ueberschreitung scheitert der Versuch.
+
+Die TSA-Erfolgstests verwenden jetzt OpenSSL als lokalen, selbstsignierten Test-TSA
+und signieren jeweils die tatsaechliche Anfrage. `openssl` muss deshalb fuer den
+Testlauf installiert sein; der Produktionscode benoetigt kein OpenSSL-CLI.
+Ein erfolgreicher Test mit diesem Testzertifikat ist kein DigiCert-Vertrauensnachweis.
 
 Ziel: nach Abschluss der zweiten Freigabe kryptographisch beweisbar
 machen, dass die finale (gestempelte) PDF seither unverändert ist —
@@ -55,7 +95,11 @@ Ist die TSA-Funktion aktiv, sieht n8n einen fertigen Job erst mit gesetztem
 Zeitstempel. Neue Einzeljobs speichern diese Pflicht bei Freigabe dauerhaft;
 das spaetere Abschalten der globalen TSA-Einstellung umgeht sie nicht.
 Ohne TSA-Konfiguration abgeschlossene Einzeljobs koennen weiterhin ohne Zeitstempel
-exportiert werden. Fuer Gruppen ist die dauerhafte Pflicht noch zu ergaenzen.
+exportiert werden. Gruppen speichern die Pflicht vor der Finalisierung dauerhaft,
+sobald eine TSA konfiguriert ist oder ein aktiver Teilbeleg sie verlangt.
+Nach einem Ausfall muss die TSA fuer den erneuten Versuch wieder verfuegbar sein;
+das Abschalten erlaubt keinen ungestempelten Ersatzexport. Auch die alte
+Abholliste und Transportbestaetigung beachten die gespeicherte Pflicht.
 
 **Splitgruppen** (siehe
 [rechnungs-workflow.md](rechnungs-workflow.md#6-splitgruppen--kombinierter-export-statt-n-einzel-buchungen))
@@ -63,6 +107,13 @@ laufen durch denselben Mechanismus, aber einmal für das **kombinierte**
 Gruppen-Dokument statt einmal je Teil-Job: `gruppe_zeitstempel_gesetzt_am`/
 `gruppe_zeitstempel_datei_hash` auf dem Elternjob, nachgeholt vom eigenen
 `split-gruppen-nachholen`-Job statt von `zeitstempel-nachholen`.
+Die neue Gruppen-PDF wird exklusiv mit Modus 0600 geschrieben und per fsync
+gesichert. Unmittelbar vor dem Datenbank-Commit werden Gruppenstand, Freigaben
+und Quelldateien erneut verglichen. Dateizeiger und finaler SHA-256 werden
+gemeinsam gespeichert; `gruppe_final_datei_hash` schuetzt auch Gruppen ohne TSA.
+Die Originaldateien werden dabei nicht ersetzt. Nach SIGKILL vor dem Commit
+kann eine unreferenzierte neue Datei zurueckbleiben; die Gruppe bleibt fuer den
+Nachholjob offen. Solche Dateien werden derzeit nicht automatisch bereinigt.
 
 ## Verifikation (`/zeitstempel-pruefen`)
 

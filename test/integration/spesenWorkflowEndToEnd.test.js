@@ -104,11 +104,15 @@ test('a Spesen position walks the full path: Einreichung -> Freigabe1 -> Freigab
   const freigeber2Token = await fetchCsrfToken(freigeber2Agent, `/freigabe2/${jobId}`);
   client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(200, {
     data: { id: 5, iban_1: 'CH93 0076 2011 6238 5295 7', kontoinhaber: 'Ein Reicher' },
-  });
+  }).times(2);
+  const review = await freigeber2Agent.post(`/freigabe2/${jobId}`).type('form')
+    .send({ interessenskonflikt: 'nein', _csrf: freigeber2Token });
+  assert.equal(review.status, 400);
+  const stand = review.text.match(/name="zahlungsdaten_stand" value="([a-f0-9]+)"/)[1];
   const freigabe2Res = await freigeber2Agent
     .post(`/freigabe2/${jobId}`)
     .type('form')
-    .send({ interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber2Token });
+    .send({ interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber2Token, zahlungsdaten_stand: stand, zahlungsdaten_bestaetigt: 'ja' });
   assert.equal(freigabe2Res.status, 302);
   const abgeschlossenerJob = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
   assert.equal(abgeschlossenerJob.status, 'abgeschlossen');
@@ -226,10 +230,17 @@ test('a self-submitted Spesen position (submitter is the Konto\'s own Freigeber2
 
   const stellvertreter2Agent = await loginAs(app, client, { id: 4, vorname: 'Stell', nachname: 'Vertreter2', email: 's2@example.org', gruppen: [] });
   const stellvertreter2Token = await fetchCsrfToken(stellvertreter2Agent, `/freigabe2/${jobId}`);
+  client.intercept({ path: '/api/persons/3', method: 'GET' }).reply(200, {
+    data: { id: 3, iban_1: 'CH9300762011623852957', kontoinhaber: 'Frei Geber2' },
+  }).times(2);
+  const review = await stellvertreter2Agent.post(`/freigabe2/${jobId}`).type('form')
+    .send({ interessenskonflikt: 'nein', _csrf: stellvertreter2Token });
+  assert.equal(review.status, 400);
+  const stand = review.text.match(/name="zahlungsdaten_stand" value="([a-f0-9]+)"/)[1];
   const freigabe2Res = await stellvertreter2Agent
     .post(`/freigabe2/${jobId}`)
     .type('form')
-    .send({ interessenskonflikt: 'nein', begruendung: '', _csrf: stellvertreter2Token });
+    .send({ interessenskonflikt: 'nein', begruendung: '', _csrf: stellvertreter2Token, zahlungsdaten_stand: stand, zahlungsdaten_bestaetigt: 'ja' });
   assert.equal(freigabe2Res.status, 302);
   assert.equal(db.prepare('SELECT status FROM jobs WHERE id = ?').get(jobId).status, 'abgeschlossen', 'Stellvertreter2 must be able to complete Freigabe 2 normally');
 

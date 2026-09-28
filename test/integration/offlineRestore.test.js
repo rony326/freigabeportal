@@ -12,6 +12,8 @@ import { openDatabase } from '../../src/db/index.js';
 import { createJob, getJobById } from '../../src/db/jobsRepo.js';
 import { setConfigValue, getConfigValue } from '../../src/db/adminConfigRepo.js';
 import { buildBackupArchive } from '../../src/services/backup.js';
+import { buildEncryptedBackup } from '../../src/services/backupEnvelope.js';
+import { createBackupKeyring } from '../helpers/backupKeyring.js';
 import { restoreOffline, rollbackOffline, offlineRestoreStatus } from '../../src/services/offlineRestore.js';
 import { acquireStorageLock, resolveStorageConfig, storagePaths } from '../../src/services/storageState.js';
 
@@ -23,9 +25,10 @@ const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 function setup(t) {
   const dir = mkdtempSync(join(tmpdir(), 'offline-restore-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const backupKeyringFile = createBackupKeyring(dir);
   function paths(name) {
     const root = join(dir, name);
-    const config = { dbPath: join(root, 'db.sqlite'), jobsDir: join(root, 'jobs'), brandingDir: join(root, 'branding'), backupDir: join(root, 'backups') };
+    const config = { dbPath: join(root, 'db.sqlite'), jobsDir: join(root, 'jobs'), brandingDir: join(root, 'branding'), backupDir: join(root, 'backups'), backupKeyringFile };
     for (const path of [config.jobsDir, config.brandingDir, config.backupDir]) mkdirSync(path, { recursive: true });
     return config;
   }
@@ -39,17 +42,17 @@ function setup(t) {
   sourceDb.prepare("UPDATE jobs SET status = 'abgeschlossen', final_datei_hash = ? WHERE id = ?").run(hash(pdf), jobId);
   setConfigValue(sourceDb, 'branding_logo_pfad', join(source.brandingDir, 'logo.png'));
   sourceDb.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run('backup-session', '{}', '2099-01-01');
-  const archive = buildBackupArchive(sourceDb, source);
+  const archive = buildEncryptedBackup(sourceDb, source);
   sourceDb.close();
   const targetDb = openDatabase(target.dbPath);
   setConfigValue(targetDb, 'test_generation', 'original');
   targetDb.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run('old-session', '{}', '2099-01-01');
   targetDb.close();
   writeFileSync(join(target.jobsDir, 'keep.pdf'), 'original file');
-  const archivePath = join(dir, 'backup.zip');
+  const archivePath = join(dir, 'backup.fpbak');
   writeFileSync(archivePath, archive);
   const options = { expectedSha256: hash(archive), operator: 'Test Operator', reason: 'Disaster recovery test', sourceName: 'backup.zip' };
-  const env = { ...process.env, DB_PATH: target.dbPath, JOBS_DIR: target.jobsDir, BRANDING_DIR: target.brandingDir, BACKUP_DIR: target.backupDir };
+  const env = { ...process.env, DB_PATH: target.dbPath, JOBS_DIR: target.jobsDir, BRANDING_DIR: target.brandingDir, BACKUP_DIR: target.backupDir, BACKUP_KEYRING_FILE: backupKeyringFile };
   return { dir, source, target, archive, archivePath, jobId, pdf, options, env };
 }
 
@@ -184,12 +187,27 @@ test('CLI verifies, restores and reports the generation using only storage confi
   const verify = spawnSync(process.execPath, [cli, 'verify', '--archive', s.archivePath], { env: s.env, encoding: 'utf8', timeout: 10000 });
   assert.equal(verify.status, 0, verify.stderr);
   assert.equal(JSON.parse(verify.stdout).sha256, s.options.expectedSha256);
+  assert.equal(JSON.parse(verify.stdout).authentication.keyId, 'test-key');
   const restore = spawnSync(process.execPath, [cli, 'restore', '--archive', s.archivePath, '--sha256', s.options.expectedSha256, '--operator', 'CLI operator', '--reason', 'CLI test'], { env: s.env, encoding: 'utf8', timeout: 10000 });
   assert.equal(restore.status, 0, restore.stderr);
   const status = spawnSync(process.execPath, [cli, 'status'], { env: s.env, encoding: 'utf8', timeout: 10000 });
   assert.equal(status.status, 0, status.stderr);
   assert.equal(JSON.parse(status.stdout).locked, false);
   assert.notEqual(JSON.parse(status.stdout).pointer.current.dbPath, s.target.dbPath);
+});
+
+test('CLI rejects missing keys and tampering before activation', (t) => {
+  const s = setup(t);
+  const missing = spawnSync(process.execPath, [cli, 'verify', '--archive', s.archivePath], { env: { ...s.env, BACKUP_KEYRING_FILE: '' }, encoding: 'utf8', timeout: 10000 });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /BACKUP_KEYRING_FILE/);
+  const bytes = Buffer.from(s.archive);
+  bytes[bytes.length - 1] ^= 1;
+  writeFileSync(s.archivePath, bytes);
+  const tampered = spawnSync(process.execPath, [cli, 'restore', '--archive', s.archivePath, '--sha256', hash(bytes), '--operator', 'test', '--reason', 'tamper'], { env: s.env, encoding: 'utf8', timeout: 10000 });
+  assert.notEqual(tampered.status, 0);
+  assert.match(tampered.stderr, /Authentifizierung/);
+  assert.equal(offlineRestoreStatus(s.target).pointer, null);
 });
 
 test('real server starts on the restored generation and releases its lock after SIGTERM', { timeout: 20000 }, async (t) => {

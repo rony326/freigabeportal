@@ -3,7 +3,8 @@ import { dirname, join, resolve, relative, sep, isAbsolute } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { hostname } from 'node:os';
-import { buildBackupArchive, validateBackupArchive } from './backup.js';
+import { buildBackupArchive } from './backup.js';
+import { validateEncryptedBackup } from './backupEnvelope.js';
 import { openDatabase } from '../db/index.js';
 import { logBackupWiederherstellung } from '../db/backupWiederherstellungenRepo.js';
 import { withAuditActor } from './auditContext.js';
@@ -56,7 +57,7 @@ export function restoreOffline(buffer, config, options = {}) {
   let generation;
   let activated = false;
   try {
-    const { zip, manifest } = validateBackupArchive(buffer);
+    const { zip, manifest, authentication } = validateEncryptedBackup(buffer, config);
     const previousPointer = readStoragePointer(config, { requireComplete: false });
     const previous = previousPointer?.current || absoluteStorageConfig(config);
     if ([config.jobsDir, config.brandingDir, config.backupDir, previous.jobsDir, previous.brandingDir].filter(Boolean).some((root) => isWithin(lock.generationsPath, root))) {
@@ -97,7 +98,7 @@ export function restoreOffline(buffer, config, options = {}) {
           db.prepare(`INSERT INTO audit_ereignisse (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher, begruendung)
             VALUES (?, ?, ?, 'backup', ?, 'offline_restore_vorbereitet', ?, ?)`).run(
             new Date().toISOString(), `maintenance:${identity.operator}`, identity.operator, digest,
-            JSON.stringify({ current, previous, backupSha256: digest }), identity.reason);
+            JSON.stringify({ current, previous, backupSha256: digest, authentication }), identity.reason);
           assertDatabaseIntegrity(db);
           db.exec('COMMIT');
         } catch (err) { db.exec('ROLLBACK'); throw err; }
@@ -106,13 +107,13 @@ export function restoreOffline(buffer, config, options = {}) {
     } finally { db.close(); }
     const fd = openSync(current.dbPath, 'r');
     try { fsyncSync(fd); } finally { closeSync(fd); }
-    atomicJson(join(generation, 'ready.json'), { version: 1, backupSha256: digest, baseDbPath: lock.baseDbPath, ...identity });
+    atomicJson(join(generation, 'ready.json'), { version: 1, backupSha256: digest, authentication, baseDbPath: lock.baseDbPath, ...identity });
     for (const path of [...directories].sort((a, b) => b.length - a.length)) syncDirectory(path);
     syncDirectory(lock.generationsPath);
     syncDirectory(dirname(lock.generationsPath));
     options.onPhase?.('prepared');
     lock.assertHeld();
-    const pointer = { version: 1, baseDbPath: lock.baseDbPath, current, previous, backupSha256: digest, activatedAt: new Date().toISOString(), ...identity };
+    const pointer = { version: 1, baseDbPath: lock.baseDbPath, current, previous, backupSha256: digest, authentication, activatedAt: new Date().toISOString(), ...identity };
     journal(lock, { aktion: 'restore_activation_intent', ...pointer });
     options.onPhase?.('beforeActivation');
     atomicJson(lock.pointerPath, pointer);

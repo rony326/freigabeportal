@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson, getPersonById, setFerienmodus } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob, createSplitJob, createSpesenPosition } from '../../src/db/jobsRepo.js';
+import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob, createSplitJob, createSpesenPosition, listAbholbereitJobs } from '../../src/db/jobsRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { buildAuditLog } from '../../src/services/auditLog.js';
@@ -20,8 +20,9 @@ import * as mupdf from 'mupdf';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
-import { setupMockTsa } from '../helpers/mockTsa.js';
+import { setupMockTsa, signedTsaResponse } from '../helpers/mockTsa.js';
 import { fetchCsrfToken } from '../helpers/csrf.js';
+import { createChainedTsa } from '../helpers/chainedTsa.js';
 
 function createStubMailer() {
   const sent = [];
@@ -72,7 +73,7 @@ async function loginAs(app, client, { id, vorname, nachname, email, gruppen }) {
   return agent;
 }
 
-function buildTestApp(db, { withErrorHandler = false, mailer, churchtoolsConfig } = {}) {
+function buildTestApp(db, { withErrorHandler = false, mailer, churchtoolsConfig, trustConfig = { tsaTrustRequired: false } } = {}) {
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../views', import.meta.url).pathname);
@@ -89,6 +90,8 @@ function buildTestApp(db, { withErrorHandler = false, mailer, churchtoolsConfig 
   // (baseUrl, syncServiceToken, customFieldIban, customFieldKontoinhaber) without dragging every
   // other test in this file through the full createApp()+OAuth-login dance just to set them.
   const config = {
+    tsaTrustRequired: true,
+    ...trustConfig,
     churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', ...churchtoolsConfig },
     downloadSigningSecret: 'test-secret',
     publicBaseUrl: 'https://portal.example.org',
@@ -119,6 +122,56 @@ async function seedFreigabe2Job(db, { pdfPfad }) {
   // ablehnung.js's own reliance on this field) — Task 5's Ablehnungs-Benachrichtigung needs it.
   db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(id);
   return { id, kontoId };
+}
+
+for (const scenario of ['missing-iban', 'invalid-iban', 'missing-owner', 'unchecked', 'forged-review', 'changed-owner', 'changed-amount', 'reject', 'escalate']) {
+  test(`Spesen payment gate: ${scenario}`, async (t) => {
+    const db = openDatabase(':memory:');
+    seedDefaults(db);
+    const dir = mkdtempSync(join(tmpdir(), 'payment-gate-'));
+    t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+    const pdfPfad = join(dir, 'receipt.pdf');
+    const original = await buildPdfFixture(['Receipt']);
+    writeFileSync(pdfPfad, original);
+    const { id } = await seedFreigabe2Job(db, { pdfPfad });
+    upsertPerson(db, { id: '5', vorname: 'Ein', nachname: 'Reicher', email: 'e@example.org', gruppen: [] });
+    db.prepare("UPDATE jobs SET quelle = 'spesen', eingereicht_von = '5', betrag = '12.00' WHERE id = ?").run(id);
+    const churchtoolsConfig = { baseUrl: 'https://ct.example.org', syncServiceToken: 'sync-token', customFieldIban: 'iban_1', customFieldKontoinhaber: 'kontoinhaber' };
+    const client = setupMockChurchTools(churchtoolsConfig.baseUrl);
+    const app = buildTestApp(db, { churchtoolsConfig, mailer: createStubMailer() });
+    const post = (body) => request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send(body);
+    if (scenario === 'reject' || scenario === 'escalate') {
+      const res = await post({ aktion: scenario === 'reject' ? 'ablehnen' : 'freigeben', interessenskonflikt: scenario === 'escalate' ? 'ja' : 'nein', begruendung: 'Testgrund' });
+      assert.equal(res.status, 302);
+      assert.equal(getJobById(db, id).status, scenario === 'reject' ? 'abgelehnt' : 'freigabe2');
+      assert.equal(getJobById(db, id).freigabe_snapshot, null);
+      return;
+    }
+    const data = { id: 5, iban_1: 'CH9300762011623852957', kontoinhaber: 'Ein Reicher' };
+    if (scenario === 'missing-iban') data.iban_1 = null;
+    if (scenario === 'invalid-iban') data.iban_1 = 'CH9400762011623852957';
+    if (scenario === 'missing-owner') data.kontoinhaber = '  ';
+    client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(200, { data });
+    const review = await post({ interessenskonflikt: 'nein' });
+    assert.equal(review.status, 400);
+    if (['unchecked', 'forged-review', 'changed-owner', 'changed-amount'].includes(scenario)) {
+      const stand = review.text.match(/name="zahlungsdaten_stand" value="([a-f0-9]+)"/)[1];
+      if (scenario === 'changed-owner') data.kontoinhaber = 'Andere Person';
+      if (scenario === 'changed-amount') db.prepare("UPDATE jobs SET betrag = '99.00' WHERE id = ?").run(id);
+      client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(200, { data });
+      const res = await post({ interessenskonflikt: 'nein', zahlungsdaten_stand: scenario === 'forged-review' ? '0'.repeat(64) : stand, zahlungsdaten_bestaetigt: scenario === 'unchecked' ? '' : 'ja' });
+      assert.equal(res.status, 409);
+      assert.doesNotMatch(res.text, /id="zahlungsdatenBestaetigt"[^>]*checked/);
+      if (scenario === 'changed-owner') assert.match(res.text, /Andere Person/);
+    } else {
+      assert.match(review.text, /Freigabe gesperrt/);
+      assert.doesNotMatch(review.text, /name="zahlungsdaten_stand"/);
+    }
+    assert.equal(getJobById(db, id).status, 'freigabe2');
+    assert.equal(getJobById(db, id).freigabe_snapshot, null);
+    assert.deepEqual(readFileSync(pdfPfad), original);
+    assert.equal(listFreigabenByJob(db, id).filter((entry) => entry.rolle === 'freigeber2').length, 0);
+  });
 }
 
 async function seedFreigabe2JobMitAdminEskalation(db, { pdfPfad }) {
@@ -390,6 +443,88 @@ test('POST /freigabe2/:id without a conflict still saves an optional Begründung
   db.close();
 });
 
+test('Freigabe 2 propagates pinned trust anchors and keeps missing-anchor exports blocked', async (t) => {
+  const tsa = createChainedTsa(t);
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  t.after(() => db.close());
+  const pdfPfad = join(tsa.dir, 'approval.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Trust-gated invoice']));
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, tsa.reply);
+  const config = { tsaTrustAnchorsFile: tsa.rootFile, tsaTrustAnchorsSha256: tsa.rootSha256, tsaCrlFile: tsa.crlFile };
+  const res = await request(buildTestApp(db, { trustConfig: config })).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', aktion: 'freigeben' });
+  assert.equal(res.status, 302);
+  assert.ok(getJobById(db, id).zeitstempel_gesetzt_am);
+
+  const secondPath = join(tsa.dir, 'missing-anchor.pdf');
+  writeFileSync(secondPath, await buildPdfFixture(['No trust anchor']));
+  // Reuse the first invoice's role assignments without creating a duplicate account.
+  const job = getJobById(db, id);
+  const second = createJob(db, { eingangAm: new Date().toISOString(), quelle: 'scanner', dateiname: 'missing-anchor.pdf', pdfPfad: secondPath });
+  setKontierung(db, second, job.konto_id);
+  createFreigabe(db, { jobId: second, personId: '1', rolle: 'freigeber1', zeitpunkt: new Date().toISOString(), ip: '127.0.0.1', interessenskonflikt: false });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(second);
+  const blocked = await request(buildTestApp(db, { trustConfig: {} })).post(`/freigabe2/${second}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', aktion: 'freigeben' });
+  assert.equal(blocked.status, 302);
+  assert.equal(getJobById(db, second).zeitstempel_gesetzt_am, null);
+  assert.equal(getJobById(db, second).zeitstempel_erforderlich, 1);
+  assert.ok(!listAbholbereitJobs(db).some((entry) => entry.id === second));
+});
+
+for (const mode of ['revoked', 'missing']) {
+  test(`Freigabe 2 keeps export blocked with ${mode} revocation evidence`, async (t) => {
+    const tsa = createChainedTsa(t);
+    const db = openDatabase(':memory:');
+    seedDefaults(db);
+    t.after(() => db.close());
+    const pdfPfad = join(tsa.dir, 'blocked.pdf');
+    writeFileSync(pdfPfad, await buildPdfFixture(['CRL-gated invoice']));
+    const { id } = await seedFreigabe2Job(db, { pdfPfad });
+    setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+    const client = setupMockTsa('https://tsa.example.org/tsr');
+    if (mode === 'revoked') {
+      tsa.writeCrlBundle({ revoke: ['intermediate'] });
+      client.intercept({ path: '/tsr', method: 'POST' }).reply(200, tsa.reply);
+    }
+    const trustConfig = {
+      tsaTrustAnchorsFile: tsa.rootFile, tsaTrustAnchorsSha256: tsa.rootSha256,
+      tsaCrlFile: mode === 'revoked' ? tsa.crlFile : undefined,
+    };
+    const res = await request(buildTestApp(db, { trustConfig })).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', aktion: 'freigeben' });
+    assert.equal(res.status, 302);
+    const job = getJobById(db, id);
+    assert.equal(job.zeitstempel_gesetzt_am, null);
+    assert.equal(job.zeitstempel_datei_hash, null);
+    assert.equal(job.zeitstempel_erforderlich, 1);
+    assert.ok(!listAbholbereitJobs(db).some((entry) => entry.id === id));
+  });
+}
+
+test('Freigabe 2 does not accept an unrelated TSA response as a timestamp or unlock export', async (t) => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const dir = mkdtempSync(join(tmpdir(), 'approval-tsa-reject-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const pdfPfad = join(dir, 'a.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Invoice']));
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url)));
+  const res = await request(buildTestApp(db)).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', aktion: 'freigeben' });
+  assert.equal(res.status, 302);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'abgeschlossen');
+  assert.equal(job.zeitstempel_gesetzt_am, null);
+  assert.equal(job.zeitstempel_datei_hash, null);
+  assert.equal(job.zeitstempel_erforderlich, 1);
+  setConfigValue(db, 'zeitstempel_tsa_url', '');
+  assert.deepEqual(listAbholbereitJobs(db), []);
+});
+
 test('POST /freigabe2/:id sets zeitstempel_gesetzt_am when a TSA is configured and reachable', async () => {
   const { mkdtempSync, rmSync, readFileSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
@@ -404,9 +539,8 @@ test('POST /freigabe2/:id sets zeitstempel_gesetzt_am when a TSA is configured a
   const { id } = await seedFreigabe2Job(db, { pdfPfad });
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
 
-  const rfc3161Response = readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url));
   const client = setupMockTsa('https://tsa.example.org/tsr');
-  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, rfc3161Response, { headers: { 'content-type': 'application/timestamp-reply' } });
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
 
   const app = buildTestApp(db);
   const res = await request(app)
@@ -444,11 +578,10 @@ test('POST /freigabe2/:id rolls back when the source document disappears during 
   const { id } = await seedFreigabe2Job(db, { pdfPfad });
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
 
-  const rfc3161Response = readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url));
   const client = setupMockTsa('https://tsa.example.org/tsr');
   client.intercept({ path: '/tsr', method: 'POST' }).reply(
     200,
-    () => {
+    (options) => {
       // Runs mid-request, while the route awaits the TSA: job.pdf_pfad has already been read
       // (that happens before the TSA call) and the .tmp file has not been written yet. Turning
       // job.pdf_pfad into a *directory* here makes the route's final renameSync(tmp, pdf_pfad)
@@ -458,7 +591,7 @@ test('POST /freigabe2/:id rolls back when the source document disappears during 
       // the same, still-writable directory.
       unlinkSync(pdfPfad);
       mkdirSync(pdfPfad);
-      return rfc3161Response;
+      return signedTsaResponse(options);
     },
     { headers: { 'content-type': 'application/timestamp-reply' } }
   );
@@ -537,9 +670,8 @@ test('POST /freigabe2/:id rolls back when an existing final hash conflicts with 
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
   db.prepare("UPDATE jobs SET zeitstempel_gesetzt_am = '2026-08-01T00:00:00.000Z', zeitstempel_datei_hash = 'bereits-vorhandener-hash' WHERE id = ?").run(id);
 
-  const rfc3161Response = readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url));
   const client = setupMockTsa('https://tsa.example.org/tsr');
-  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, rfc3161Response, { headers: { 'content-type': 'application/timestamp-reply' } });
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
 
   const app = buildTestApp(db);
   const res = await request(app)
@@ -1240,6 +1372,7 @@ test('POST /freigabe2/:id triggers the Splitgruppe merge once the LAST sibling c
   const parentPfad = join(dir, 'parent.pdf');
   writeFileSync(parentPfad, await buildPdfFixture(['Rechnung Seite 1']));
   const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: parentPfad });
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
   db.prepare('UPDATE jobs SET aufgesplittet_von = ?, rechnungsposition = ? WHERE id = ?').run(parentId, 'Pos. 2', kind2);
 
   // kind1 shares the same Konto/Freigeber (person '1' = freigeber1, person '3' = freigeber2) and
@@ -1356,16 +1489,21 @@ test('POST /freigabe2/:id prints the submitter\'s live-looked-up IBAN and Kontoi
   // on the person object (confirmed against a live instance).
   client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(200, {
     data: { id: 5, iban_1: 'CH93 0076 2011 6238 5295 7', kontoinhaber: 'Ein Reicher' },
-  });
+  }).times(2);
   const app = buildTestApp(db, { churchtoolsConfig });
 
+  const review = await request(app).post(`/freigabe2/${jobId}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein' });
+  assert.equal(review.status, 400);
+  assert.equal(getJobById(db, jobId).status, 'freigabe2');
+  const stand = review.text.match(/name="zahlungsdaten_stand" value="([a-f0-9]+)"/)[1];
   const res = await request(app)
     .post(`/freigabe2/${jobId}`)
     .set('x-test-person-id', '3')
     .type('form')
-    .send({ interessenskonflikt: 'nein', begruendung: '' });
+    .send({ interessenskonflikt: 'nein', begruendung: '', zahlungsdaten_bestaetigt: 'ja', zahlungsdaten_stand: stand });
   assert.equal(res.status, 302);
   assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
+  assert.equal(JSON.parse(getJobById(db, jobId).freigabe_snapshot).zahlungsdaten_bestaetigung.personId, '3');
 
   const stampedBytes = readFileSync(getJobById(db, jobId).pdf_pfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
@@ -1378,7 +1516,7 @@ test('POST /freigabe2/:id prints the submitter\'s live-looked-up IBAN and Kontoi
   db.close();
 });
 
-test('POST /freigabe2/:id completes normally, with no Zahlungsdaten block, when the ChurchTools IBAN lookup fails for a Spesen position', async () => {
+test('POST /freigabe2/:id blocks Spesen approval without changing the PDF when ChurchTools fails', async () => {
   const { mkdtempSync, rmSync, readFileSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
@@ -1413,8 +1551,10 @@ test('POST /freigabe2/:id completes normally, with no Zahlungsdaten block, when 
     .set('x-test-person-id', '3')
     .type('form')
     .send({ interessenskonflikt: 'nein', begruendung: '' });
-  assert.equal(res.status, 302, 'a failed IBAN lookup must not block Freigabe 2 from completing');
-  assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
+  assert.equal(res.status, 400);
+  assert.equal(getJobById(db, jobId).status, 'freigabe2');
+  assert.equal(getJobById(db, jobId).freigabe_snapshot, null);
+  assert.equal(listFreigabenByJob(db, jobId).filter((entry) => entry.rolle === 'freigeber2').length, 0);
 
   const stampedBytes = readFileSync(getJobById(db, jobId).pdf_pfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
@@ -1450,12 +1590,20 @@ test('POST /freigabe2/:id prints the Spesenabrechnung Titel and Verwendungszweck
   createFreigabe(db, { jobId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-31T08:10:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
   db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
 
-  const app = buildTestApp(db);
+  const churchtoolsConfig = { baseUrl: 'https://ct.example.org', syncServiceToken: 'sync-token', customFieldIban: 'iban_1', customFieldKontoinhaber: 'kontoinhaber' };
+  const client = setupMockChurchTools(churchtoolsConfig.baseUrl);
+  client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(200, {
+    data: { id: 5, iban_1: 'CH9300762011623852957', kontoinhaber: 'Ein Reicher' },
+  }).times(2);
+  const app = buildTestApp(db, { churchtoolsConfig });
+  const review = await request(app).post(`/freigabe2/${jobId}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein' });
+  assert.equal(review.status, 400);
+  const stand = review.text.match(/name="zahlungsdaten_stand" value="([a-f0-9]+)"/)[1];
   const res = await request(app)
     .post(`/freigabe2/${jobId}`)
     .set('x-test-person-id', '3')
     .type('form')
-    .send({ interessenskonflikt: 'nein', begruendung: '' });
+    .send({ interessenskonflikt: 'nein', begruendung: '', zahlungsdaten_bestaetigt: 'ja', zahlungsdaten_stand: stand });
   assert.equal(res.status, 302);
   assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
 

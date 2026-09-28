@@ -6,7 +6,7 @@ const RIGHTS = [
 
 export function migrateSecuritySchema(db) {
   const jobColumns = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name));
-  for (const [column, type] of Object.entries({ freigabe_snapshot: 'TEXT', final_datei_hash: 'TEXT', zeitstempel_erforderlich: 'INTEGER NOT NULL DEFAULT 0' })) {
+  for (const [column, type] of Object.entries({ freigabe_snapshot: 'TEXT', final_datei_hash: 'TEXT', gruppe_final_datei_hash: 'TEXT', zeitstempel_erforderlich: 'INTEGER NOT NULL DEFAULT 0' })) {
     if (!jobColumns.has(column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} ${type}`);
   }
   for (const [trigger, column] of Object.entries({
@@ -15,11 +15,20 @@ export function migrateSecuritySchema(db) {
     trg_gruppe_zeitstempel_hash_unveraenderlich: 'gruppe_zeitstempel_datei_hash',
     trg_gruppe_zeitstempel_gesetzt_am_unveraenderlich: 'gruppe_zeitstempel_gesetzt_am',
     trg_freigabe_snapshot_unveraenderlich: 'freigabe_snapshot',
+    trg_gruppe_final_hash_unveraenderlich: 'gruppe_final_datei_hash',
   })) {
     db.exec(`DROP TRIGGER IF EXISTS ${trigger};
       CREATE TRIGGER ${trigger} BEFORE UPDATE OF ${column} ON jobs
       WHEN OLD.${column} IS NOT NULL AND NEW.${column} IS NOT OLD.${column}
       BEGIN SELECT RAISE(ABORT, '${column} ist unveraenderlich, sobald gesetzt'); END;`);
+  }
+  db.exec(`CREATE TRIGGER IF NOT EXISTS trg_zeitstempel_pflicht_bleibt
+    BEFORE UPDATE OF zeitstempel_erforderlich ON jobs
+    WHEN OLD.zeitstempel_erforderlich = 1 AND NEW.zeitstempel_erforderlich IS NOT 1
+    BEGIN SELECT RAISE(ABORT, 'Zeitstempelpflicht darf nicht aufgehoben werden'); END;`);
+  if (['INSERT', 'UPDATE', 'DELETE'].some((action) =>
+    !db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?").get(`audit_jobs_${action}`)?.sql.includes('gruppe_final_datei_hash'))) {
+    for (const action of ['INSERT', 'UPDATE', 'DELETE']) db.exec(`DROP TRIGGER IF EXISTS audit_jobs_${action}`);
   }
   const sql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'person_berechtigungen'").get().sql;
   if (!sql.includes('workflow_eingreifen')) {

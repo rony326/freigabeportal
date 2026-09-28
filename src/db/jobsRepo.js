@@ -843,16 +843,13 @@ export function pruefeSplitGruppenVollstaendigkeit(db, parentJobId) {
 // wrote: pruefeUndFinalisiereSplitGruppe's own "already exported?" early return happens several
 // awaits before this UPDATE, so two concurrent trigger points (e.g. the nachhol-Cron-Job and a
 // Freigabe-2-Abschluss) can both get past it. The loser of that race must not overwrite the
-// winner's merged document — it learns from the false return value that its own freshly written
-// file is now orphaned and deletes it. The gruppe_zeitstempel_* immutability triggers cannot
-// cover this: they only fire when BOTH the old and the new value are non-NULL, which is not the
-// case for a group exported without a configured TSA.
-export function markGruppeExportiert(db, parentJobId, { pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash }) {
+// winner's merged document. The caller also validates the source state inside its transaction.
+export function markGruppeExportiert(db, parentJobId, { pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash, finalDateiHash = null }) {
   const result = db
     .prepare(
-      'UPDATE jobs SET gruppe_pdf_pfad = ?, gruppe_zeitstempel_gesetzt_am = ?, gruppe_zeitstempel_datei_hash = ? WHERE id = ? AND gruppe_pdf_pfad IS NULL'
+      'UPDATE jobs SET gruppe_pdf_pfad = ?, gruppe_zeitstempel_gesetzt_am = ?, gruppe_zeitstempel_datei_hash = ?, gruppe_final_datei_hash = ? WHERE id = ? AND gruppe_pdf_pfad IS NULL'
     )
-    .run(pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash, parentJobId);
+    .run(pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash, finalDateiHash, parentJobId);
   return result.changes > 0;
 }
 
@@ -868,7 +865,8 @@ export function markGruppeExportiert(db, parentJobId, { pdfPfad, zeitstempelGese
 // a standalone top-level group.
 export function listAbholbereitGruppen(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false) {
   const staleThreshold = new Date(Date.now() - staleAfterMs).toISOString();
-  const zeitstempelBedingung = nurMitZeitstempel ? ' AND gruppe_zeitstempel_gesetzt_am IS NOT NULL' : '';
+  const zeitstempelBedingung = nurMitZeitstempel ? ' AND gruppe_zeitstempel_gesetzt_am IS NOT NULL' : ` AND (gruppe_zeitstempel_gesetzt_am IS NOT NULL OR (zeitstempel_erforderlich = 0 AND NOT EXISTS (
+    SELECT 1 FROM jobs child WHERE child.aufgesplittet_von = jobs.id AND child.status != 'geloescht' AND child.zeitstempel_erforderlich = 1)))`;
   const rows = db
     .prepare(
       `SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_pdf_pfad IS NOT NULL
@@ -891,8 +889,8 @@ export function istGruppenElternjob(db, id) {
 }
 
 // Analog zu confirmAbholung, aber für eine ganze Splitgruppe: setzt jedes abgeschlossene Kind auf
-// 'abgeholt' und liefert Eltern- und Kind-Datensätze zurück, damit der Aufrufer (n8n-Route) alle
-// betroffenen Dateien (Kind-PDFs, Kind-Thumbnails, Gruppen-PDF) von der Platte löschen kann.
+// 'abgeholt' und liefert Eltern- und Kind-Datensaetze zurueck. Dies ist nur ein Transport-ACK;
+// lokale Dateien bleiben bis zur Archivquittung und dem Ablauf der Aufbewahrungsfrist erhalten.
 // Setzt zusätzlich gruppe_abgeholt_am auf dem Elternjob -- der Endzustand der Gruppe, den der
 // Elternjob-Status ('aufgesplittet') selbst nie erreicht. Damit ist der Aufruf idempotent wie
 // confirmAbholung: ein zweiter Aufruf liefert null (und der n8n-Route damit ihren bestehenden
@@ -900,7 +898,9 @@ export function istGruppenElternjob(db, id) {
 export function confirmGruppenAbholung(db, parentJobId, nurMitZeitstempel = false) {
   const parent = getJobById(db, parentJobId);
   if (!parent || !parent.gruppe_pdf_pfad || parent.gruppe_abgeholt_am) return null;
-  if (nurMitZeitstempel && !parent.gruppe_zeitstempel_gesetzt_am) return null;
+  const requiresTimestamp = nurMitZeitstempel || parent.zeitstempel_erforderlich ||
+    listSplitKinder(db, parentJobId).some((child) => child.status !== 'geloescht' && child.zeitstempel_erforderlich);
+  if (requiresTimestamp && !parent.gruppe_zeitstempel_gesetzt_am) return null;
 
   const kinder = listSplitKinder(db, parentJobId).filter((k) => k.status === 'abgeschlossen');
   for (const kind of kinder) {

@@ -27,10 +27,15 @@ export function loadStorageConfig(env = process.env) {
     brandingDir: env.BRANDING_DIR || './data/branding',
     jobsDir: env.JOBS_DIR || './data/jobs',
     backupDir: env.BACKUP_DIR || './data/backups',
+    backupKeyringFile: env.BACKUP_KEYRING_FILE || null,
   };
 }
 
 export function loadConfig(env = process.env) {
+  if (Boolean(env.TSA_TRUST_ANCHORS_FILE) !== Boolean(env.TSA_TRUST_ANCHORS_SHA256) ||
+      env.TSA_TRUST_ANCHORS_SHA256 && !/^[a-f0-9]{64}$/.test(env.TSA_TRUST_ANCHORS_SHA256)) {
+    throw new Error('TSA_TRUST_ANCHORS_FILE und TSA_TRUST_ANCHORS_SHA256 muessen gemeinsam mit einem gueltigen SHA-256 gesetzt werden.');
+  }
   if (env.BACKUP_API_KEY && env.BACKUP_API_KEY === env.N8N_API_KEY) {
     throw new Error('BACKUP_API_KEY muss sich von N8N_API_KEY unterscheiden.');
   }
@@ -56,6 +61,10 @@ export function loadConfig(env = process.env) {
     cronSecret: requiredSecret(env, 'CRON_SECRET'),
     n8nApiKey: requiredSecret(env, 'N8N_API_KEY'),
     backupApiKey: env.BACKUP_API_KEY ? requiredSecret(env, 'BACKUP_API_KEY') : null,
+    tsaTrustRequired: true,
+    tsaCrlFile: env.TSA_CRL_FILE || null,
+    tsaTrustAnchorsFile: env.TSA_TRUST_ANCHORS_FILE || null,
+    tsaTrustAnchorsSha256: env.TSA_TRUST_ANCHORS_SHA256 || null,
     smtp: {
       host: env.SMTP_HOST,
       port: Number(env.SMTP_PORT) || 587,

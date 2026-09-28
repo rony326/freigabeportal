@@ -12,6 +12,7 @@ import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { requireRole } from '../../../src/middleware/roles.js';
 import { createBackupRouter } from '../../../src/routes/admin/backup.js';
+import { createBackupKeyring } from '../../helpers/backupKeyring.js';
 
 function buildTestApp(db, config) {
   const app = express();
@@ -38,6 +39,7 @@ function seedSuperadmin(db) {
 
 function testConfig(dir) {
   return {
+    backupKeyringFile: createBackupKeyring(dir),
     churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' },
     backupDir: join(dir, 'backups'),
     jobsDir: join(dir, 'jobs'),
@@ -143,7 +145,7 @@ test('GET /admin/backup/dateien/:name downloads an existing backup and 404s on a
 
   const okRes = await request(app).get(`/admin/backup/dateien/${dateiname}`).set('x-test-person-id', '99');
   assert.equal(okRes.status, 200);
-  assert.equal(okRes.headers['content-type'], 'application/zip');
+  assert.equal(okRes.headers['content-type'], 'application/octet-stream');
 
   const traversalRes = await request(app)
     .get('/admin/backup/dateien/..%2F..%2Fetc%2Fpasswd')

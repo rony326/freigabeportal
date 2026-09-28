@@ -2,17 +2,57 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { setupMockTsa } from '../helpers/mockTsa.js';
+import { setupMockTsa, signedTsaResponse } from '../helpers/mockTsa.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
-import { setZeitstempel, verifyZeitstempel } from '../../src/services/zeitstempel.js';
+import { setZeitstempel as timestampWithTrust, verifyZeitstempel } from '../../src/services/zeitstempel.js';
+import * as asn1js from 'asn1js';
+import { TimeStampReq, TimeStampResp, SignedData } from 'pkijs';
 
 const RFC3161_RESPONSE = readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url));
 const RFC3161_TIMESTAMPED_PDF = readFileSync(new URL('../fixtures/rfc3161-timestamped.pdf', import.meta.url));
 const FIXTURE_TEXT = 'RFC3161 Testfixtur, feste Bytes für reproduzierbaren Zeitstempel-Test.';
 
+// These tests isolate response integrity; mandatory chain validation is covered in tsaTrust.test.js.
+const setZeitstempel = (pdf, config) => timestampWithTrust(pdf, { requireTrustedChain: false, ...config });
+
+for (const attack of ['wrong-nonce', 'missing-nonce', 'wrong-imprint', 'wrong-algorithm', 'bad-signature', 'warning-status', 'replayed-response', 'malformed']) {
+  test(`setZeitstempel rejects ${attack} instead of returning a stamped PDF`, async () => {
+    const client = setupMockTsa('https://tsa.example.org/tsr');
+    client.intercept({ path: '/tsr', method: 'POST' }).reply(200, ({ body }) => {
+      if (attack === 'replayed-response') return RFC3161_RESPONSE;
+      if (attack === 'malformed') return Buffer.from('not an ASN.1 response');
+      const req = new TimeStampReq({ schema: asn1js.fromBER(Uint8Array.from(body).buffer).result });
+      if (attack === 'wrong-nonce') req.nonce = new asn1js.Integer({ value: 42 });
+      if (attack === 'missing-nonce') delete req.nonce;
+      if (attack === 'wrong-imprint') req.messageImprint.hashedMessage.valueBlock.valueHexView[0] ^= 1;
+      if (attack === 'wrong-algorithm') {
+        req.messageImprint.hashAlgorithm.algorithmId = '2.16.840.1.101.3.4.2.2';
+        req.messageImprint.hashedMessage = new asn1js.OctetString({ valueHex: new Uint8Array(48).buffer });
+      }
+      const signed = signedTsaResponse({ body: new Uint8Array(req.toSchema().toBER(false)) });
+      const response = new TimeStampResp({ schema: asn1js.fromBER(Uint8Array.from(signed).buffer).result });
+      if (attack === 'warning-status') response.status.status = 4;
+      if (attack === 'bad-signature') {
+        const data = new SignedData({ schema: response.timeStampToken.content });
+        data.signerInfos[0].signature.valueBlock.valueHexView[0] ^= 1;
+        response.timeStampToken.content = data.toSchema();
+      }
+      return Buffer.from(response.toSchema().toBER(false));
+    }, { headers: { 'content-type': 'application/timestamp-reply' } });
+    const pdf = await buildPdfFixture([FIXTURE_TEXT]);
+    const expected = {
+      'wrong-nonce': /Nonce/, 'missing-nonce': /Nonce/, 'wrong-imprint': /Dokumenthash/,
+      'wrong-algorithm': /Dokumenthash/, 'bad-signature': /TSA-Signatur/,
+      'warning-status': /erfolgreichen Zeitstempel/, 'replayed-response': /Dokumenthash/,
+      malformed: /Zeitstempel konnte nicht gesetzt werden/,
+    };
+    await assert.rejects(() => setZeitstempel(pdf, { url: 'https://tsa.example.org/tsr' }), expected[attack]);
+  });
+}
+
 test('setZeitstempel embeds a timestamp token received from the configured TSA', async () => {
   const client = setupMockTsa('https://tsa.example.org/tsr');
-  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, RFC3161_RESPONSE, { headers: { 'content-type': 'application/timestamp-reply' } });
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
 
   const original = await buildPdfFixture([FIXTURE_TEXT]);
   const stamped = await setZeitstempel(original, { url: 'https://tsa.example.org/tsr' });
@@ -21,6 +61,7 @@ test('setZeitstempel embeds a timestamp token received from the configured TSA',
   assert.ok(stamped.length > original.length, 'the timestamped PDF must be larger than the original');
   const result = await verifyZeitstempel(stamped);
   assert.equal(result.vorhanden, true, 'a timestamp structure must be present in the output');
+  assert.equal(result.gueltig, true, 'the response must actually sign this PDF');
 });
 
 test('setZeitstempel sends Basic-Auth headers when a TSA username is configured', async () => {
@@ -33,7 +74,7 @@ test('setZeitstempel sends Basic-Auth headers when a TSA username is configured'
       receivedAuth = headers.authorization;
       return true;
     },
-  }).reply(200, RFC3161_RESPONSE, { headers: { 'content-type': 'application/timestamp-reply' } });
+  }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
 
   const original = await buildPdfFixture([FIXTURE_TEXT]);
   await setZeitstempel(original, { url: 'https://tsa.example.org/tsr', user: 'tsauser', passwort: 'geheim' });
@@ -51,7 +92,7 @@ test('setZeitstempel omits the Authorization header when no TSA username is conf
       receivedAuth = headers.authorization;
       return true;
     },
-  }).reply(200, RFC3161_RESPONSE, { headers: { 'content-type': 'application/timestamp-reply' } });
+  }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
 
   const original = await buildPdfFixture([FIXTURE_TEXT]);
   await setZeitstempel(original, { url: 'https://tsa.example.org/tsr' });

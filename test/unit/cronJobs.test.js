@@ -6,21 +6,21 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { openDatabase } from '../../src/db/index.js';
 import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
-import { createJob, getJobById } from '../../src/db/jobsRepo.js';
+import { createJob, getJobById, listAbholbereitJobs } from '../../src/db/jobsRepo.js';
 import { listRecentCronLog, startCronLauf } from '../../src/db/cronLogRepo.js';
-import { runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob } from '../../src/services/cronJobs.js';
+import { runZeitstempelNachholenJob as retryTimestamp, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob } from '../../src/services/cronJobs.js';
+import { createBackupKeyring } from '../helpers/backupKeyring.js';
 import { logMailAttempt, listMailLog } from '../../src/db/mailLogRepo.js';
-import { setupMockTsa } from '../helpers/mockTsa.js';
+import { setupMockTsa, signedTsaResponse } from '../helpers/mockTsa.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { BACKUP_DATEINAME_PATTERN } from '../../src/services/backup.js';
+
+const runZeitstempelNachholenJob = (db, config) => retryTimestamp(db, { tsaTrustRequired: false, ...config });
 
 function createStubMailer() {
   const sent = [];
   return { sent, async sendMail(mail) { sent.push(mail); } };
 }
-
-const RFC3161_RESPONSE = readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url));
-
 async function seedAbgeschlossenJob(db, dir, { zeitstempelGesetzt = false } = {}) {
   const pdfPfad = join(dir, `job-${Math.random().toString(36).slice(2)}.pdf`);
   writeFileSync(pdfPfad, await buildPdfFixture(['Rechnung Seite 1']));
@@ -31,6 +31,28 @@ async function seedAbgeschlossenJob(db, dir, { zeitstempelGesetzt = false } = {}
   }
   return { id, pdfPfad };
 }
+
+test('timestamp retry rejects an unrelated TSA response and keeps original bytes and export lock', async (t) => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'tsa-retry-reject-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const { id, pdfPfad } = await seedAbgeschlossenJob(db, dir);
+  db.prepare('UPDATE jobs SET zeitstempel_erforderlich = 1 WHERE id = ?').run(id);
+  const original = readFileSync(pdfPfad);
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, readFileSync(new URL('../fixtures/rfc3161-response.der', import.meta.url)));
+  const result = await runZeitstempelNachholenJob(db, {});
+  assert.equal(result.fehlgeschlagen, 1);
+  assert.equal(result.nachgeholt, 0);
+  const job = getJobById(db, id);
+  assert.equal(job.zeitstempel_gesetzt_am, null);
+  assert.equal(job.zeitstempel_datei_hash, null);
+  assert.equal(job.pdf_pfad, pdfPfad);
+  assert.deepEqual(readFileSync(pdfPfad), original);
+  setConfigValue(db, 'zeitstempel_tsa_url', '');
+  assert.deepEqual(listAbholbereitJobs(db), []);
+});
 
 test('runZeitstempelNachholenJob returns uebersprungen and writes no cron_log entry when no TSA URL is configured', async () => {
   const db = openDatabase(':memory:');
@@ -47,7 +69,7 @@ test('runZeitstempelNachholenJob sets zeitstempel_gesetzt_am for a pending abges
   const { id, pdfPfad } = await seedAbgeschlossenJob(db, dir);
 
   const client = setupMockTsa('https://tsa.example.org/tsr');
-  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, RFC3161_RESPONSE, { headers: { 'content-type': 'application/timestamp-reply' } });
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
 
   const result = await runZeitstempelNachholenJob(db, {});
   assert.equal(result.status, 'erfolg');
@@ -79,7 +101,7 @@ test('runZeitstempelNachholenJob skips a job that already has a timestamp, witho
   // retried, the second TSA request would find no matching interceptor left and fail, which
   // would surface as fehlgeschlagen > 0 below.
   const client = setupMockTsa('https://tsa.example.org/tsr');
-  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, RFC3161_RESPONSE, { headers: { 'content-type': 'application/timestamp-reply' } });
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
 
   const result = await runZeitstempelNachholenJob(db, {});
   assert.equal(result.nachgeholt, 1);
@@ -159,7 +181,7 @@ test('runZeitstempelNachholenJob counts a rejected hash overwrite as fehlgeschla
   const originalBytes = readFileSync(originalPath);
 
   const client = setupMockTsa('https://tsa.example.org/tsr');
-  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, RFC3161_RESPONSE, { headers: { 'content-type': 'application/timestamp-reply' } });
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
 
   const result = await runZeitstempelNachholenJob(db, {});
   assert.equal(result.status, 'erfolg', 'a per-job rejected overwrite must not turn the whole run into a fehler status');
@@ -179,6 +201,7 @@ test('runZeitstempelNachholenJob counts a rejected hash overwrite as fehlgeschla
 test('runDatenbankSicherungJob writes a backup file, logs to cron_log, and prunes beyond the retention count', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cronjobs-backup-test-'));
   const config = {
+    backupKeyringFile: createBackupKeyring(dir),
     jobsDir: join(dir, 'jobs'),
     brandingDir: join(dir, 'branding'),
     backupDir: join(dir, 'backups'),
@@ -212,6 +235,7 @@ test('runDatenbankSicherungJob writes a backup file, logs to cron_log, and prune
 test('runDatenbankSicherungJob still reports erfolg for the new backup when pruning an old file fails', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cronjobs-backup-prune-fail-test-'));
   const config = {
+    backupKeyringFile: createBackupKeyring(dir),
     jobsDir: join(dir, 'jobs'),
     brandingDir: join(dir, 'branding'),
     backupDir: join(dir, 'backups'),
@@ -226,7 +250,7 @@ test('runDatenbankSicherungJob still reports erfolg for the new backup when prun
   // Simulate a stubborn old backup that can't be unlinked: a directory (not a file) whose name
   // still matches BACKUP_DATEINAME_PATTERN and sorts before the real backups, so unlinkSync
   // throws EISDIR on it first during pruning.
-  mkdirSync(join(config.backupDir, 'backup-2000-01-01T00-00-00-000Z.zip'));
+  mkdirSync(join(config.backupDir, 'backup-2000-01-01T00-00-00-000Z.fpbak'));
 
   const zweitesErgebnis = runDatenbankSicherungJob(db, config);
   assert.equal(

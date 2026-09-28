@@ -27,6 +27,18 @@ function updateManifest(zip, change) {
   zip.updateFile('manifest.json', Buffer.from(JSON.stringify(manifest)));
 }
 
+test('backup checks the final hash of an unsigned group independently of its original invoice', (t) => {
+  const s = setup(t);
+  const groupPath = join(s.config.jobsDir, 'group.pdf');
+  writeFileSync(groupPath, 'group document');
+  const id = createJob(s.db, { eingangAm: '2026-09-28T00:00:00Z', quelle: 'scanner', dateiname: 'a.pdf', pdfPfad: join(s.config.jobsDir, 'a.pdf') });
+  const hash = createHash('sha256').update('group document').digest('hex');
+  s.db.prepare("UPDATE jobs SET status = 'aufgesplittet', gruppe_pdf_pfad = ?, gruppe_final_datei_hash = ? WHERE id = ?").run(groupPath, hash, id);
+  assert.doesNotThrow(() => validateBackupArchive(s.build()));
+  writeFileSync(groupPath, 'tampered group');
+  assert.throws(() => s.build(), /finalen Datenbank-Hash/);
+});
+
 test('format 2 records exact per-file SHA-256 and excludes live sessions without deleting them', (t) => {
   const s = setup(t);
   s.db.prepare('INSERT INTO sessions (sid, sess, expires) VALUES (?, ?, ?)').run('secret-session', '{"token":"live-secret"}', '2099-01-01');

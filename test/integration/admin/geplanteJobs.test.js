@@ -17,7 +17,7 @@ import { requirePermission } from '../../../src/middleware/permissions.js';
 import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { createGeplanteJobsRouter } from '../../../src/routes/admin/geplanteJobs.js';
 import { setupMockChurchTools } from '../../helpers/mockChurchTools.js';
-import { setupMockTsa } from '../../helpers/mockTsa.js';
+import { setupMockTsa, signedTsaResponse } from '../../helpers/mockTsa.js';
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
 
 function createStubMailer({ shouldFail = false } = {}) {
@@ -38,7 +38,7 @@ function buildTestApp(db, { config, mailer } = {}) {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
-  const resolvedConfig = config || { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
+  const resolvedConfig = { tsaTrustRequired: false, ...(config || { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } }) };
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, resolvedConfig));
   app.use(
@@ -371,9 +371,8 @@ test('POST /admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren runs it n
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
   db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
 
-  const rfc3161Response = readFileSync(new URL('../../fixtures/rfc3161-response.der', import.meta.url));
   const client = setupMockTsa('https://tsa.example.org/tsr');
-  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, rfc3161Response, { headers: { 'content-type': 'application/timestamp-reply' } });
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
 
   const app = buildTestApp(db, { config });
 

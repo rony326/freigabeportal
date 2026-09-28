@@ -900,6 +900,7 @@ test('POST /kontierung/:id on a Split-Kind with a newly attached Beleg accumulat
   const parentPdfPfad = join(dir, 'parent.pdf');
   writeFileSync(parentPdfPfad, await buildPdfFixture(['Rechnung Seite 1']));
   const parentId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad: parentPdfPfad });
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
   const parentJob = getJobById(db, parentId);
 
   // Split-Kind with a Beleg already recorded from Aufsplitten time (1 page).

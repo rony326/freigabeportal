@@ -20,10 +20,22 @@ in [`docs/`](docs/README.md).
 
 1. `npm install`
 2. `cp .env.example .env` und Werte eintragen
-3. `npm test` — gesamte Test-Suite
+3. `npm test` — gesamte Test-Suite; benoetigt das `openssl`-CLI fuer den lokalen Test-TSA
 4. `npm run dev` — Entwicklungsserver mit Autoreload
 
 ## Deployment (Infomaniak Node.js-Hosting)
+
+**Backup-Konfiguration:** Neue Sicherungen verlangen einen separat gesicherten
+privaten Schluesselbund in `BACKUP_KEYRING_FILE`. Ohne ihn schlagen Sicherungen
+fehl. n8n erhaelt jetzt `.fpbak` statt ZIP; Klartext-Altsicherungen sind nicht zum
+Restore zugelassen. Vor Umstellung Wiederherstellungsprobe durchfuehren:
+[Verschluesselte Backups](docs/backup-verschluesselung.md).
+
+**TSA-Konfiguration:** Neue Zeitstempel verlangen ein geprueftes Root-CA-Buendel
+und dessen SHA-256 in `TSA_TRUST_ANCHORS_FILE`/`TSA_TRUST_ANCHORS_SHA256`.
+Zusaetzlich verlangt `TSA_CRL_FILE` aktuelle signierte Sperrlisten fuer alle
+Aussteller der Kette. Ohne diese Nachweise bleiben TSA-pflichtige Exporte gesperrt. Installation und
+verbleibende Pruefluecken: [TSA-Vertrauensanker](docs/tsa-vertrauensanker.md).
 
 **Betrieb und Wiederherstellung:** Der aktualisierte Server verwendet eine exklusive
 Datenspeichersperre; pro konfiguriertem DB_PATH ist ein Portal-Prozess erlaubt.
@@ -118,7 +130,7 @@ Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 | `pdf-bereinigung` | täglich, Default 02:30 (Europe/Zürich) | Archivierung abgeholter Jobs, Aufräumen alter `.tmp`-Stempeldateien, Mail-Log-Retention |
 | `zeitstempel-nachholen` | Intervall, Default alle 5 Min. | wiederholt fehlgeschlagene RFC3161-Zeitstempel-Versuche (nur solange die PDF noch lokal vorliegt) |
 | `split-gruppen-nachholen` | Intervall, Default alle 15 Min. | holt die Zusammenführung einer vollständig freigegebenen Splitgruppe nach, wenn sie noch aussteht oder am Zeitstempel gescheitert ist |
-| `datenbank-sicherung` | täglich, Default 03:00 (Europe/Zürich) | DB + `JOBS_DIR` + `BRANDING_DIR` als ZIP sichern, alte Backups über die konfigurierte Aufbewahrung hinaus löschen |
+| `datenbank-sicherung` | täglich, Default 03:00 (Europe/Zürich) | DB + `JOBS_DIR` + `BRANDING_DIR` als authentifiziert verschluesselte `.fpbak` sichern; Retention nur fuer `.fpbak`, alte ZIPs bleiben erhalten |
 | `mail-digest` | täglich, Default 07:00 (Europe/Zürich) | fasst wegen aktivem Batching nur protokollierte Mails pro Empfänger zu einer täglichen Zusammenfassung zusammen |
 
 **Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan aller acht Jobs

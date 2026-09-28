@@ -158,7 +158,15 @@ die Seite und ihre bereits erfassten/offenen Belege auch dann, wenn ihre
 Karte inzwischen deaktiviert wurde — nur neue Uploads auf eine deaktivierte
 Karte werden abgelehnt (`pruefeFelder` verlangt `karte.aktiv`). Einen
 bestehenden Beleg, dessen Karte inzwischen deaktiviert wurde, kann man
-weiterhin bearbeiten, solange er auf dieser Karte bleibt.
+weiterhin bearbeiten, solange er auf dieser Karte bleibt — das gilt nicht
+für einen Entwurf (siehe [6d](#6d-mail-eingang)).
+
+**Inaktive „Kauf getätigt von“-Person**: ist die bisherige Käuferin/der
+bisherige Käufer eines Belegs inzwischen inaktiv, steht sie/er im
+Bearbeiten-Formular weiterhin (vorausgewählt, mit „(inaktiv)“) zur Wahl und
+`pruefeFelder` akzeptiert genau diese Person — der Beleg behält beim
+Speichern seinen Käufer. Neue Uploads und ein Wechsel auf eine *andere*
+Person verlangen weiterhin eine aktive Person.
 
 **Beschreibung**: muss dem `POSITION_PATTERN` des Aufsplittens entsprechen
 (keine Emojis o. ä., `400` beim Upload und beim Bearbeiten), weil sie
@@ -504,8 +512,11 @@ frischen Mail-Entwurf ist aber in aller Regel keine Karte gesetzt, sodass
 faktisch nur die identifizierte Person selbst den Entwurf öffnen und
 bearbeiten kann. Beim Abspeichern der fehlenden Angaben (Karte, Betrag,
 Kaufdatum, Beschreibung, ggf. Konto) über `POST /kreditkarte/belege/:id`
-wechselt der Beleg von `entwurf` zu `offen`
-(`aktiviereKkBelegEntwurf`), inkl. Audit-Eintrag `kk_beleg_ergaenzt` —
+wird das Erfass-Recht (`darfAufKarteErfassen`) für die gewählte Karte
+**immer** geprüft — auch wenn es die beim Eingang vorbelegte Karte ist,
+und eine deaktivierte Karte ist nicht wählbar. Danach wechselt der Beleg von `entwurf` zu `offen`
+(`aktiviereKkBelegEntwurf`), inkl. Audit-Eintrag `kk_beleg_ergaenzt`
+(greift die Aktivierung nicht, wird nur `kk_beleg_geaendert` geloggt) —
 ab hier läuft er wie jeder andere Beleg weiter (erfasst am
 Abgleich sichtbar, editierbar/verwerfbar bis er zugeordnet wird).
 

@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson } from '../../src/db/personenRepo.js';
+import { upsertPerson, deactivatePerson } from '../../src/db/personenRepo.js';
 import { seedDefaults, setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { createKreditkarte, setErfasser, setKreditkarteAktiv } from '../../src/db/kreditkartenRepo.js';
 import { getKkBelegById, listKkBelegeFuerPerson } from '../../src/db/kkBelegeRepo.js';
@@ -203,5 +203,67 @@ test('completing an Entwurf moves it to offen; the Entwurf is not offered on any
   const b = getKkBelegById(t.db, id);
   assert.equal(b.status, 'offen');
   assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM kk_beleg_ereignisse WHERE beleg_id = ? AND aktion = 'kk_beleg_ergaenzt'").get(id).n, 1);
+  t.cleanup();
+});
+
+async function erstelleEntwurf(t, kreditkarteId) {
+  const pdf = await buildPdfFixture(['Beleg']);
+  const { pdfPfad } = await (await import('../../src/services/kkBelegDatei.js')).speichereKkBelegDatei({ jobsDir: t.dir }, pdf, 'application/pdf');
+  const { createKkBeleg } = await import('../../src/db/kkBelegeRepo.js');
+  return createKkBeleg(t.db, { kreditkarteId, hochgeladenVon: '3', gekauftVon: '3', quelle: 'mail', pdfPfad, status: 'entwurf' });
+}
+
+test('editing a receipt whose buyer became inactive keeps the buyer; switching to another inactive person stays forbidden', async () => {
+  const t = setup();
+  await upload(t.app, '3', { kreditkarteId: String(t.offen), betrag: '8.00', kaufdatum: '2026-09-01', beschreibung: 'Taxi', gekauftVon: '2' });
+  const [beleg] = listKkBelegeFuerPerson(t.db, '3');
+  deactivatePerson(t.db, '2');
+  const seite = await request(t.app).get(`/kreditkarte/belege/${beleg.id}/bearbeiten`).set('x-test-person-id', '3');
+  assert.match(seite.text, /<option value="2" selected>P2 M \(inaktiv\)<\/option>/);
+  const edit = await request(t.app).post(`/kreditkarte/belege/${beleg.id}`).set('x-test-person-id', '3')
+    .field('kreditkarteId', String(t.offen)).field('betrag', '8.00').field('kaufdatum', '2026-09-01').field('beschreibung', 'Taxi Flughafen').field('gekauftVon', '2');
+  assert.equal(edit.status, 302, edit.text);
+  const nachher = getKkBelegById(t.db, beleg.id);
+  assert.equal(nachher.beschreibung, 'Taxi Flughafen');
+  assert.equal(nachher.gekauft_von, '2');
+
+  deactivatePerson(t.db, '1');
+  const wechsel = await request(t.app).post(`/kreditkarte/belege/${beleg.id}`).set('x-test-person-id', '3')
+    .field('kreditkarteId', String(t.offen)).field('betrag', '8.00').field('kaufdatum', '2026-09-01').field('beschreibung', 'Taxi').field('gekauftVon', '1');
+  assert.equal(wechsel.status, 400);
+  assert.equal(getKkBelegById(t.db, beleg.id).gekauft_von, '2');
+  const neu = await upload(t.app, '3', { kreditkarteId: String(t.offen), betrag: '8.00', kaufdatum: '2026-09-01', beschreibung: 'Taxi', gekauftVon: '2' });
+  assert.equal(neu.status, 400);
+  t.cleanup();
+});
+
+test('completing an Entwurf requires upload rights on the chosen card, even if it is the pre-filled one', async () => {
+  const t = setup();
+  const id = await erstelleEntwurf(t, t.zu); // person 3 is not an Erfasser of the Modus-B card
+  const res = await request(t.app).post(`/kreditkarte/belege/${id}`).set('x-test-person-id', '3')
+    .field('kreditkarteId', String(t.zu)).field('betrag', '4.20').field('kaufdatum', '2026-09-01').field('beschreibung', 'Kaffee');
+  assert.equal(res.status, 400);
+  assert.equal(getKkBelegById(t.db, id).status, 'entwurf');
+
+  const id2 = await erstelleEntwurf(t, t.offen);
+  setKreditkarteAktiv(t.db, t.offen, false);
+  const res2 = await request(t.app).post(`/kreditkarte/belege/${id2}`).set('x-test-person-id', '3')
+    .field('kreditkarteId', String(t.offen)).field('betrag', '4.20').field('kaufdatum', '2026-09-01').field('beschreibung', 'Kaffee');
+  assert.equal(res2.status, 400);
+  assert.equal(getKkBelegById(t.db, id2).status, 'entwurf');
+  t.cleanup();
+});
+
+test('an Entwurf that cannot be activated is not logged as ergänzt', async () => {
+  const t = setup();
+  const id = await erstelleEntwurf(t, null);
+  // Simuliert, dass die Aktivierung nicht greift (z.B. paralleler Statuswechsel).
+  t.db.exec("CREATE TRIGGER kein_aktivieren BEFORE UPDATE OF status ON kk_belege WHEN NEW.status = 'offen' BEGIN SELECT RAISE(IGNORE); END");
+  const res = await request(t.app).post(`/kreditkarte/belege/${id}`).set('x-test-person-id', '3')
+    .field('kreditkarteId', String(t.offen)).field('betrag', '4.20').field('kaufdatum', '2026-09-01').field('beschreibung', 'Kaffee Team');
+  assert.equal(res.status, 302);
+  assert.equal(getKkBelegById(t.db, id).status, 'entwurf');
+  assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM kk_beleg_ereignisse WHERE beleg_id = ? AND aktion = 'kk_beleg_ergaenzt'").get(id).n, 0);
+  assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM kk_beleg_ereignisse WHERE beleg_id = ? AND aktion = 'kk_beleg_geaendert'").get(id).n, 1);
   t.cleanup();
 });

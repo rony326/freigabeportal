@@ -28,8 +28,9 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
 
   // Prüft die fachlichen Felder eines Belegs (Upload, Bearbeiten, später Ergänzen). Liefert die
   // normalisierten Werte oder Fehlermeldungen; `karteErlaubt` prüft das Erfass-Recht.
-  // `bisherigeKarteId`: beim Bearbeiten darf die bisherige Karte des Belegs inzwischen deaktiviert sein.
-  function pruefeFelder(req, body, { bisherigeKarteId = null } = {}) {
+  // `bisherigeKarteId`/`bisherigerKaeuferId`: beim Bearbeiten dürfen die bisherige Karte bzw. die
+  // bisherige "Kauf getätigt von"-Person des Belegs inzwischen deaktiviert sein.
+  function pruefeFelder(req, body, { bisherigeKarteId = null, bisherigerKaeuferId = null } = {}) {
     const errors = [];
     const karte = body.kreditkarteId ? getKreditkarteById(db, Number(body.kreditkarteId)) : null;
     if (!karte || (!karte.aktiv && karte.id !== bisherigeKarteId)) errors.push('Bitte eine gültige Karte wählen.');
@@ -47,7 +48,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     if (body.kontoId && (!konto || !konto.aktiv)) errors.push('Das gewählte Konto ist nicht gültig.');
     const gekauftVonId = (body.gekauftVon || '').trim() || req.currentPerson.churchtools_person_id;
     const gekauftVon = getPersonById(db, gekauftVonId);
-    if (!gekauftVon || !gekauftVon.aktiv) errors.push('Bitte eine gültige Person für "Kauf getätigt von" wählen.');
+    if (!gekauftVon || (!gekauftVon.aktiv && gekauftVonId !== bisherigerKaeuferId)) errors.push('Bitte eine gültige Person für "Kauf getätigt von" wählen.');
     return {
       errors,
       karte,
@@ -125,10 +126,16 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     // Beim Bearbeiten stehen alle Karten zur Wahl, auf die die Person erfassen darf -- plus die
     // aktuelle Karte des Belegs, damit die verantwortliche Person einen Beleg bearbeiten kann,
     // ohne selbst auf der Erfasser-Liste zu stehen.
+    // Ein Entwurf wird dagegen erst beim Ergänzen erfasst und braucht deshalb das Erfass-Recht.
     const karten = listErfassbareKarten(db, personId(req));
     const aktuelle = beleg.kreditkarte_id ? getKreditkarteById(db, beleg.kreditkarte_id) : null;
-    if (aktuelle && !karten.some((k) => k.id === aktuelle.id)) karten.push(aktuelle);
-    res.status(status).render('kreditkarte-beleg-bearbeiten', { beleg, karten, alleKonten: listKonten(db), personen: listActivePersons(db), values, errors });
+    if (aktuelle && beleg.status !== 'entwurf' && !karten.some((k) => k.id === aktuelle.id)) karten.push(aktuelle);
+    // Ist die bisherige "Kauf getätigt von"-Person inzwischen inaktiv, bleibt sie wählbar, statt beim
+    // Speichern stillschweigend durch die erste aktive Person ersetzt zu werden.
+    const personen = listActivePersons(db);
+    const kaeufer = getPersonById(db, beleg.gekauft_von);
+    if (kaeufer && !kaeufer.aktiv) personen.unshift({ ...kaeufer, inaktiv: true });
+    res.status(status).render('kreditkarte-beleg-bearbeiten', { beleg, karten, alleKonten: listKonten(db), personen, values, errors });
   }
 
   router.get('/belege/:id/bearbeiten', (req, res) => {
@@ -147,8 +154,13 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
         try {
           const beleg = ladeBearbeitbarenBeleg(req, res);
           if (!beleg) return;
-          const { errors, karte, werte } = pruefeFelder(req, req.body, { bisherigeKarteId: beleg.kreditkarte_id });
-          const karteErlaubt = karte && (karte.id === beleg.kreditkarte_id || darfAufKarteErfassen(db, karte, personId(req)));
+          const istEntwurf = beleg.status === 'entwurf';
+          const { errors, karte, werte } = pruefeFelder(req, req.body, {
+            bisherigeKarteId: istEntwurf ? null : beleg.kreditkarte_id,
+            bisherigerKaeuferId: beleg.gekauft_von,
+          });
+          // Ein Entwurf wird erst jetzt auf die Karte erfasst: keine Abkürzung über die vorbelegte Karte.
+          const karteErlaubt = karte && ((!istEntwurf && karte.id === beleg.kreditkarte_id) || darfAufKarteErfassen(db, karte, personId(req)));
           if (karte && !karteErlaubt) errors.push('Auf diese Karte darfst du keine Belege erfassen.');
           if (uploadErr) errors.push(uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Der Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.');
           const datei = uploadErr ? {} : pruefeDatei(req.file, false);
@@ -165,8 +177,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
               loescheDateienStill(neu.pdfPfad, neu.thumbnailPfad);
             }
           }
-          if (beleg.status === 'entwurf') {
-            aktiviereKkBelegEntwurf(db, beleg.id);
+          if (istEntwurf && aktiviereKkBelegEntwurf(db, beleg.id)) {
             logKkBelegEreignis(db, { belegId: beleg.id, personId: personId(req), aktion: 'kk_beleg_ergaenzt', kommentar: null });
           } else {
             logKkBelegEreignis(db, { belegId: beleg.id, personId: personId(req), aktion: 'kk_beleg_geaendert', kommentar: req.file ? 'inkl. neuer Datei' : null });

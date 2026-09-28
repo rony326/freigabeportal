@@ -47,7 +47,7 @@
           <label class="form-label" for="gekauftVon">Kauf getätigt von</label>
           <select class="form-select" id="gekauftVon" name="gekauftVon">
             <% personen.forEach((p) => { %>
-              <option value="<%= p.churchtools_person_id %>" <%= p.churchtools_person_id === String(values.gekauftVon) ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+              <option value="<%= p.churchtools_person_id %>" <%= p.churchtools_person_id === String(values.gekauftVon) ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %><%= p.inaktiv ? ' (inaktiv)' : '' %></option>
             <% }) %>
           </select>
         </div>

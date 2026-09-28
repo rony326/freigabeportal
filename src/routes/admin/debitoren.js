@@ -11,13 +11,7 @@ import {
 import { listKonten } from '../../db/kontenRepo.js';
 import { createDebitorIban, deleteDebitorIban, listDebitorIbansAll, findDebitorIbanByIban } from '../../db/debitorIbanRepo.js';
 import { normalizeIban, isValidIban } from '../../services/ibanUtils.js';
-
-const EMAIL_MUSTER_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const DOMAIN_MUSTER_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
-
-function isValidAbsenderMuster(muster) {
-  return muster.includes('@') ? EMAIL_MUSTER_PATTERN.test(muster) : DOMAIN_MUSTER_PATTERN.test(muster);
-}
+import { isValidAbsenderMuster, ABSENDER_MUSTER_FEHLER } from '../../utils/absenderMuster.js';
 
 export function createDebitorenRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -79,7 +73,7 @@ export function createDebitorenRouter({ db, csrfProtection = (req, res, next) =>
     if (!absenderMuster) errors.push('Absender-Muster ist ein Pflichtfeld.');
     if (!debitorId) errors.push('Debitor ist ein Pflichtfeld.');
     if (absenderMuster && !isValidAbsenderMuster(absenderMuster)) {
-      errors.push('Absender-Muster muss eine gültige E-Mail-Adresse oder Domain sein (z. B. "lieferant.ch" oder "rechnung@lieferant.ch").');
+      errors.push(ABSENDER_MUSTER_FEHLER);
     }
     if (absenderMuster && findZuweisungsregelByMuster(db, absenderMuster)) {
       errors.push('Dieses Absender-Muster ist bereits einem Debitor zugewiesen.');
@@ -118,7 +112,7 @@ export function createDebitorenRouter({ db, csrfProtection = (req, res, next) =>
     if (!absenderMuster) errors.push('Absender-Muster ist ein Pflichtfeld.');
     if (!debitorId) errors.push('Debitor ist ein Pflichtfeld.');
     if (absenderMuster && !isValidAbsenderMuster(absenderMuster)) {
-      errors.push('Absender-Muster muss eine gültige E-Mail-Adresse oder Domain sein (z. B. "lieferant.ch" oder "rechnung@lieferant.ch").');
+      errors.push(ABSENDER_MUSTER_FEHLER);
     }
     const existing = absenderMuster ? findZuweisungsregelByMuster(db, absenderMuster) : null;
     if (existing && existing.id !== id) {

@@ -3,6 +3,7 @@ import {
   createKreditkarte, updateKreditkarte, setKreditkarteAktiv, getKreditkarteById, listKreditkarten, listErfasserIds, setErfasser,
 } from '../../db/kreditkartenRepo.js';
 import { listActivePersons, getPersonById } from '../../db/personenRepo.js';
+import { isValidAbsenderMuster, ABSENDER_MUSTER_FEHLER } from '../../utils/absenderMuster.js';
 
 const ENDZIFFERN_PATTERN = /^\d{4}$/;
 
@@ -26,6 +27,7 @@ export function createKreditkartenAdminRouter({ db, csrfProtection = (req, res, 
     const errors = [];
     if (!werte.bezeichnung) errors.push('Bitte eine Bezeichnung angeben.');
     if (werte.karteEndziffern && !ENDZIFFERN_PATTERN.test(werte.karteEndziffern)) errors.push('Endziffern müssen genau vier Ziffern sein (nie die ganze Kartennummer).');
+    if (werte.absenderMuster && !isValidAbsenderMuster(werte.absenderMuster)) errors.push(ABSENDER_MUSTER_FEHLER);
     const verantwortlich = werte.verantwortlichId ? getPersonById(db, werte.verantwortlichId) : null;
     if (!verantwortlich || !verantwortlich.aktiv) errors.push('Bitte eine aktive verantwortliche Person wählen.');
     const aktiveIds = new Set(listActivePersons(db).map((p) => p.churchtools_person_id));

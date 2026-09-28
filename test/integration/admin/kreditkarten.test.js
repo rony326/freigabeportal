@@ -84,3 +84,28 @@ test('deaktivieren/aktivieren toggles the card', async () => {
   assert.equal(getKreditkarteById(db, id).aktiv, 1);
   db.close();
 });
+
+test('POST /admin/kreditkarten validates the Absender-Muster like the Zuweisungsregeln', async () => {
+  const db = setup();
+  const app = buildApp(db);
+  const karte = (absenderMuster) => ({ bezeichnung: 'Visa', verantwortlichId: '2', erfassungOffen: '1', absenderMuster });
+  for (const ungueltig of ['ch', 'abrechnung@bank', 'viseca ch']) {
+    const res = await request(app).post('/admin/kreditkarten').set('x-test-person-id', '1').type('form').send(karte(ungueltig));
+    assert.equal(res.status, 400, ungueltig);
+    assert.match(res.text, /Absender-Muster muss eine gültige E-Mail-Adresse oder Domain sein/);
+  }
+  assert.equal(listKreditkartenCount(db), 0);
+  for (const gueltig of ['viseca.ch', 'abrechnung@bank.ch']) {
+    const res = await request(app).post('/admin/kreditkarten').set('x-test-person-id', '1').type('form').send(karte(gueltig));
+    assert.equal(res.status, 302, gueltig);
+  }
+  const id = createKreditkarte(db, { bezeichnung: 'Alt', verantwortlichId: '2', erfassungOffen: true });
+  const edit = await request(app).post(`/admin/kreditkarten/${id}`).set('x-test-person-id', '1').type('form').send(karte('ch'));
+  assert.equal(edit.status, 400);
+  assert.equal(getKreditkarteById(db, id).absender_muster, null);
+  db.close();
+});
+
+function listKreditkartenCount(db) {
+  return db.prepare('SELECT COUNT(*) AS n FROM kreditkarten').get().n;
+}

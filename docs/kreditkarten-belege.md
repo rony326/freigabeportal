@@ -36,7 +36,7 @@ verworfener Belegdateien (6f) — siehe unten.
 | `karteninhaber_name` | Freitext, reine Anzeige, keine Rechte |
 | `verantwortlich_id` | Person, die die Karte abgleicht und alle offenen Belege der Karte sieht/verwaltet |
 | `erfassung_offen` | 1 = alle dürfen Belege erfassen (Modus A), 0 = nur `kreditkarte_erfasser` + verantwortliche Person (Modus B) |
-| `absender_muster` | optional, z. B. `viseca.ch` oder `abrechnung@bank.ch` — Basis der automatischen Kartenerkennung, siehe [6b](#6b-automatische-kartenerkennung) |
+| `absender_muster` | optional, z. B. `viseca.ch` oder `abrechnung@bank.ch` — Basis der automatischen Kartenerkennung, siehe [6b](#6b-automatische-kartenerkennung). Wird wie bei den Zuweisungsregeln geprüft (`isValidAbsenderMuster`, `src/utils/absenderMuster.js`): gültige E-Mail-Adresse oder Domain mit mindestens einem Punkt — eine blosse TLD wie `ch` wird mit `400` abgelehnt |
 | `aktiv` | Deaktivieren/Reaktivieren wie bei Konten, kein Löschen |
 
 ### `kreditkarte_erfasser`

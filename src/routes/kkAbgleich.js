@@ -59,6 +59,10 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
       console.error(`Textanalyse der Abrechnung ${job.id} fehlgeschlagen:`, err.message);
     }
     setKkTextAnalyse(db, job.id, analyse);
+    // Auf dem in-memory job-Objekt nachziehen: sonst würde ein zweiter Aufruf im selben
+    // Request (Total-Vorbelegung im GET-Handler und erneut in renderSeite) die Extraktion
+    // und das UPDATE ein zweites Mal auslösen.
+    job.kk_text_betraege = JSON.stringify(analyse);
     return analyse;
   }
 

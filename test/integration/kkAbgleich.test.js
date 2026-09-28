@@ -383,6 +383,39 @@ test('GET kk-abgleich renders without suggestions when the statement text cannot
   t.cleanup();
 });
 
+test('GET kk-abgleich extracts the statement text only once per page load', async () => {
+  const t = await setup();
+  writeFileSync(getJobById(t.db, t.jobId).pdf_pfad, await buildPdfFixture(['03.09.2026 SBB 12.50', 'Total zu bezahlen 12.50']));
+  await t.beleg('12.50', 'Zugticket');
+  // ladeAnalyse() caches its result via setKkTextAnalyse, whose UPDATE is the only statement
+  // touching kk_text_betraege -- counting it catches the extraction running twice within the
+  // same request just as reliably as spying on extrahierePdfText itself.
+  let updates = 0;
+  const originalPrepare = t.db.prepare.bind(t.db);
+  t.db.prepare = (sql) => {
+    if (sql.includes('kk_text_betraege')) updates += 1;
+    return originalPrepare(sql);
+  };
+  const res = await request(t.app).get(`/kontierung/${t.jobId}/kk-abgleich`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.equal(updates, 1, 'the analysis must be cached exactly once, not once per call site');
+  // A second page load reads the now-cached value and must not write again.
+  const res2 = await request(t.app).get(`/kontierung/${t.jobId}/kk-abgleich`).set('x-test-person-id', '1');
+  assert.equal(res2.status, 200);
+  assert.equal(updates, 1, 'a later page load must reuse the cached analysis');
+  t.cleanup();
+});
+
+test('GET kk-abgleich renders without suggestions when the cached analysis is corrupt JSON', async () => {
+  const t = await setup();
+  await t.beleg('12.50', 'Zugticket');
+  t.db.prepare('UPDATE jobs SET kk_text_betraege = ? WHERE id = ?').run('{kaputt', t.jobId);
+  const res = await request(t.app).get(`/kontierung/${t.jobId}/kk-abgleich`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /Vorschlag:/);
+  t.cleanup();
+});
+
 test('POST kk-abgleich: a receipt description is not re-validated on beleg lines (read-only there)', async () => {
   const t = await setup();
   // Altbestand aus der Zeit vor der Upload-Validierung: direkt in der DB angelegt.

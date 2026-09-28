@@ -4,6 +4,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { getKreditkarteById } from '../db/kreditkartenRepo.js';
 import { listKonten, getKontoById } from '../db/kontenRepo.js';
+import { listActivePersons, getPersonById } from '../db/personenRepo.js';
 import {
   createKkBeleg, getKkBelegById, updateKkBelegDaten, ersetzeKkBelegDatei, verwerfeKkBeleg,
   listKkBelegeFuerPerson, listOffeneKkBelegeFuerVerantwortlich, logKkBelegEreignis,
@@ -44,10 +45,13 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     else if (!POSITION_PATTERN.test(beschreibung)) errors.push('Die Beschreibung enthält Zeichen, die nicht gestempelt werden können (z.B. Emojis). Bitte nur normale Buchstaben, Ziffern und Satzzeichen verwenden.');
     const konto = body.kontoId ? getKontoById(db, Number(body.kontoId)) : null;
     if (body.kontoId && (!konto || !konto.aktiv)) errors.push('Das gewählte Konto ist nicht gültig.');
+    const gekauftVonId = (body.gekauftVon || '').trim() || req.currentPerson.churchtools_person_id;
+    const gekauftVon = getPersonById(db, gekauftVonId);
+    if (!gekauftVon || !gekauftVon.aktiv) errors.push('Bitte eine gültige Person für "Kauf getätigt von" wählen.');
     return {
       errors,
       karte,
-      werte: { kreditkarteId: karte?.id ?? null, betrag: errors.length ? betrag : normalisiereBetrag(betrag), kaufdatum, beschreibung, kontoId: konto?.id ?? null },
+      werte: { kreditkarteId: karte?.id ?? null, betrag: errors.length ? betrag : normalisiereBetrag(betrag), kaufdatum, beschreibung, kontoId: konto?.id ?? null, gekauftVon: gekauftVonId },
     };
   }
 
@@ -64,11 +68,12 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     res.status(status).render('kreditkarte', {
       karten: listErfassbareKarten(db, id),
       alleKonten: listKonten(db),
+      personen: listActivePersons(db),
       offen: meine.filter((b) => b.status === 'offen'),
       entwuerfe: meine.filter((b) => b.status === 'entwurf'),
       erledigt: meine.filter((b) => b.status === 'zugeordnet' || b.status === 'verworfen'),
       verantwortlichOffen: listOffeneKkBelegeFuerVerantwortlich(db, id),
-      values: { kreditkarteId: '', betrag: '', kaufdatum: '', beschreibung: '', kontoId: '', ...values },
+      values: { kreditkarteId: '', betrag: '', kaufdatum: '', beschreibung: '', kontoId: '', gekauftVon: id, ...values },
       errors,
       gespeichert: req.query.gespeichert === '1',
     });
@@ -96,7 +101,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
 
           const { pdfPfad, thumbnailPfad } = await speichereKkBelegDatei(config, req.file.buffer, datei.mimetype);
           const id = createKkBeleg(db, {
-            ...werte, hochgeladenVon: personId(req), gekauftVon: personId(req), quelle: 'web', pdfPfad, thumbnailPfad, status: 'offen',
+            ...werte, hochgeladenVon: personId(req), quelle: 'web', pdfPfad, thumbnailPfad, status: 'offen',
           });
           logKkBelegEreignis(db, { belegId: id, personId: personId(req), aktion: 'kk_beleg_erfasst', kommentar: `${werte.betrag} ${werte.beschreibung}` });
           res.redirect('/kreditkarte?gespeichert=1');
@@ -123,7 +128,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     const karten = listErfassbareKarten(db, personId(req));
     const aktuelle = beleg.kreditkarte_id ? getKreditkarteById(db, beleg.kreditkarte_id) : null;
     if (aktuelle && !karten.some((k) => k.id === aktuelle.id)) karten.push(aktuelle);
-    res.status(status).render('kreditkarte-beleg-bearbeiten', { beleg, karten, alleKonten: listKonten(db), values, errors });
+    res.status(status).render('kreditkarte-beleg-bearbeiten', { beleg, karten, alleKonten: listKonten(db), personen: listActivePersons(db), values, errors });
   }
 
   router.get('/belege/:id/bearbeiten', (req, res) => {
@@ -131,7 +136,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     if (!beleg) return;
     renderBearbeiten(req, res, 200, beleg, {
       kreditkarteId: String(beleg.kreditkarte_id ?? ''), betrag: beleg.betrag ?? '', kaufdatum: beleg.kaufdatum ?? '',
-      beschreibung: beleg.beschreibung ?? '', kontoId: beleg.konto_id ? String(beleg.konto_id) : '',
+      beschreibung: beleg.beschreibung ?? '', kontoId: beleg.konto_id ? String(beleg.konto_id) : '', gekauftVon: beleg.gekauft_von,
     }, []);
   });
 
@@ -150,7 +155,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
           if (datei.error) errors.push(datei.error);
           if (errors.length > 0) return renderBearbeiten(req, res, 400, beleg, req.body, errors);
 
-          const aktualisiert = updateKkBelegDaten(db, beleg.id, { ...werte, gekauftVon: beleg.gekauft_von });
+          const aktualisiert = updateKkBelegDaten(db, beleg.id, werte);
           if (!aktualisiert) return res.status(409).render('error', { message: 'Der Beleg wurde inzwischen zugeordnet oder verworfen.' });
           if (req.file) {
             const neu = await speichereKkBelegDatei(config, req.file.buffer, datei.mimetype);

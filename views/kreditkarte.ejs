@@ -53,6 +53,14 @@
                 <% }) %>
               </select>
             </div>
+            <div class="col-md-6">
+              <label class="form-label" for="gekauftVon">Kauf getätigt von</label>
+              <select class="form-select" id="gekauftVon" name="gekauftVon">
+                <% personen.forEach((p) => { %>
+                  <option value="<%= p.churchtools_person_id %>" <%= p.churchtools_person_id === String(values.gekauftVon) ? 'selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+                <% }) %>
+              </select>
+            </div>
             <div class="col-12">
               <label class="form-label" for="beschreibung">Beschreibung</label>
               <input class="form-control" id="beschreibung" name="beschreibung" value="<%= values.beschreibung %>" placeholder="z.B. Zugticket Bern–Zürich Jugendlager" required>

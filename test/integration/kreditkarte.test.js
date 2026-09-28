@@ -169,3 +169,22 @@ test('editing a receipt whose card was deactivated meanwhile still works, new up
   assert.equal(listKkBelegeFuerPerson(t.db, '3').length, 1);
   t.cleanup();
 });
+
+test('upload for someone else: gekauft_von is stored, and the buyer may edit the receipt', async () => {
+  const t = setup();
+  const res = await upload(t.app, '3', { kreditkarteId: String(t.offen), betrag: '8.00', kaufdatum: '2026-09-01', beschreibung: 'Taxi', gekauftVon: '2' });
+  assert.equal(res.status, 302);
+  const [beleg] = listKkBelegeFuerPerson(t.db, '3');
+  assert.equal(beleg.hochgeladen_von, '3');
+  assert.equal(beleg.gekauft_von, '2');
+  const alsKaeufer = await request(t.app).get(`/kreditkarte/belege/${beleg.id}/bearbeiten`).set('x-test-person-id', '2');
+  assert.equal(alsKaeufer.status, 200);
+  t.cleanup();
+});
+
+test('upload with an unknown gekauftVon person is rejected with 400', async () => {
+  const t = setup();
+  const res = await upload(t.app, '3', { kreditkarteId: String(t.offen), betrag: '8.00', kaufdatum: '2026-09-01', beschreibung: 'Taxi', gekauftVon: '999' });
+  assert.equal(res.status, 400);
+  t.cleanup();
+});

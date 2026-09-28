@@ -21,3 +21,13 @@ export function auditContext(req, res, next) {
     name: `${person.vorname} ${person.nachname}`,
   } : { id: 'anonymous', name: 'Anonymous' }, next);
 }
+
+// Multer (busboy) ruft seinen Callback aus Stream-Ereignissen auf, deren asynchroner Kontext nicht
+// der des Requests ist: ohne diesen Wrapper landen Audit-Ereignisse im Callback als 'system'.
+// Der Wrapper merkt sich den aktuellen Akteur beim Aufruf und führt den Callback darin aus.
+export function mitAuditKontext(middleware) {
+  return (req, res, callback) => {
+    const store = context.getStore();
+    middleware(req, res, (...args) => (store ? context.run(store, () => callback(...args)) : callback(...args)));
+  };
+}

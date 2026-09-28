@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { mitAuditKontext } from '../services/auditContext.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { listKonten } from '../db/kontenRepo.js';
@@ -49,7 +50,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
     // multer must run before csrfProtection: CSRF validation reads req.body._csrf, which only
     // exists once multer has parsed the multipart body — same ordering kontierung.js already
     // uses for its own multipart POST routes.
-    uploadBelege.any()(req, res, (uploadErr) => {
+    mitAuditKontext(uploadBelege.any())(req, res, (uploadErr) => {
       csrfProtection(req, res, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {

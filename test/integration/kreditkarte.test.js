@@ -12,6 +12,7 @@ import { createKreditkarte, setErfasser, setKreditkarteAktiv } from '../../src/d
 import { getKkBelegById, listKkBelegeFuerPerson } from '../../src/db/kkBelegeRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
+import { auditContext } from '../../src/services/auditContext.js';
 import { createKreditkarteRouter } from '../../src/routes/kreditkarte.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { PNG_1X1 } from '../helpers/imageFixture.js';
@@ -33,6 +34,7 @@ function setup() {
   app.use(express.urlencoded({ extended: false }));
   app.use((req, res, next) => { req.session = { personId: req.headers['x-test-person-id'] }; next(); });
   app.use(loadCurrentPerson(db));
+  app.use(auditContext);
   app.use(loadNavFlags(db, config));
   app.use('/kreditkarte', requireLogin(), createKreditkarteRouter({ db, config }));
   return { db, app, dir, offen, zu, cleanup: () => { db.close(); rmSync(dir, { recursive: true, force: true }); } };
@@ -265,5 +267,16 @@ test('an Entwurf that cannot be activated is not logged as ergänzt', async () =
   assert.equal(getKkBelegById(t.db, id).status, 'entwurf');
   assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM kk_beleg_ereignisse WHERE beleg_id = ? AND aktion = 'kk_beleg_ergaenzt'").get(id).n, 0);
   assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM kk_beleg_ereignisse WHERE beleg_id = ? AND aktion = 'kk_beleg_geaendert'").get(id).n, 1);
+  t.cleanup();
+});
+
+test('POST /kreditkarte/belege: the kk_belege audit event carries the logged-in person, not system', async () => {
+  const t = setup();
+  const res = await upload(t.app, '3', { kreditkarteId: String(t.offen), betrag: '12,50', kaufdatum: '2026-09-01', beschreibung: 'Zugticket' });
+  assert.equal(res.status, 302);
+  const [beleg] = listKkBelegeFuerPerson(t.db, '3');
+  const event = t.db.prepare("SELECT person_id, person_name FROM audit_ereignisse WHERE objekt = 'kk_belege' AND aktion = 'INSERT' AND objekt_id = ?").get(String(beleg.id));
+  assert.equal(event.person_id, '3');
+  assert.equal(event.person_name, 'P3 M');
   t.cleanup();
 });

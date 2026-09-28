@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { mitAuditKontext } from '../services/auditContext.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { getKreditkarteById } from '../db/kreditkartenRepo.js';
 import { listOffeneKkBelegeFuerKarte, getKkBelegById, ordneKkBelegZu, createKkBeleg, logKkBelegEreignis } from '../db/kkBelegeRepo.js';
@@ -117,7 +118,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
   class AbgleichKonflikt extends Error {}
 
   router.post('/:id/kk-abgleich', (req, res, next) => {
-    upload.any()(req, res, (uploadErr) => {
+    mitAuditKontext(upload.any())(req, res, (uploadErr) => {
       csrfProtection(req, res, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         const angelegteDateien = [];

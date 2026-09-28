@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { mitAuditKontext } from '../services/auditContext.js';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { getKreditkarteById } from '../db/kreditkartenRepo.js';
@@ -86,7 +87,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
   });
 
   router.post('/belege', (req, res, next) => {
-    uploadBeleg.single('beleg')(req, res, (uploadErr) => {
+    mitAuditKontext(uploadBeleg.single('beleg'))(req, res, (uploadErr) => {
       csrfProtection(req, res, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {
@@ -148,7 +149,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
   });
 
   router.post('/belege/:id', (req, res, next) => {
-    uploadBeleg.single('beleg')(req, res, (uploadErr) => {
+    mitAuditKontext(uploadBeleg.single('beleg'))(req, res, (uploadErr) => {
       csrfProtection(req, res, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {

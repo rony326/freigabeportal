@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { mitAuditKontext } from '../../services/auditContext.js';
 import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
@@ -54,7 +55,7 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
   });
 
   router.post('/', (req, res, next) => {
-    upload.single('logo')(req, res, (uploadErr) => {
+    mitAuditKontext(upload.single('logo'))(req, res, (uploadErr) => {
       // csrfProtection runs after multer parses the multipart body (including the _csrf field) —
       // any earlier and req.body would still be empty, rejecting every legitimate submission.
       csrfProtection(req, res, (csrfErr) => {

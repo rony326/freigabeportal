@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { mitAuditKontext } from '../services/auditContext.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { getJobById } from '../db/jobsRepo.js';
 import { canViewJobPdf } from '../services/jobAuthorization.js';
@@ -60,7 +61,7 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
   });
 
   router.post('/', (req, res, next) => {
-    upload.single('pdf')(req, res, async (uploadErr) => {
+    mitAuditKontext(upload.single('pdf'))(req, res, async (uploadErr) => {
       // csrfProtection must run after multer, not before: multer is what parses the multipart
       // body (including the _csrf text field) — running csrfProtection any earlier would find
       // req.body empty and reject every submission.

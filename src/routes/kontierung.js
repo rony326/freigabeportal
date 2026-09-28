@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { mitAuditKontext } from '../services/auditContext.js';
 import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
 import {
   setKontierung,
@@ -139,7 +140,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   });
 
   router.post('/:id', (req, res, next) => {
-    uploadBeleg.single('beleg')(req, res, async (uploadErr) => {
+    mitAuditKontext(uploadBeleg.single('beleg'))(req, res, async (uploadErr) => {
     // csrfProtection runs after multer parses the multipart body (the _csrf field included) —
     // any earlier and req.body would still be empty, rejecting every legitimate submission.
     csrfProtection(req, res, async (csrfErr) => {
@@ -651,7 +652,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   });
 
   router.post('/:id/aufsplitten', (req, res, next) => {
-    uploadBeleg.any()(req, res, async (uploadErr) => {
+    mitAuditKontext(uploadBeleg.any())(req, res, async (uploadErr) => {
     // csrfProtection runs after multer parses the multipart body (the _csrf field included) —
     // any earlier and req.body would still be empty, rejecting every legitimate submission.
     csrfProtection(req, res, async (csrfErr) => {

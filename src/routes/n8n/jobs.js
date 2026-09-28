@@ -15,7 +15,7 @@ import { analysiereText } from '../../services/kkTextAnalyse.js';
 import { erkenneKarte, hatErkennbareKarten } from '../../services/kkErkennung.js';
 import { markiereAlsKkAbrechnung } from '../../services/kkMarkierung.js';
 import { createExportEvidence, readExportDocument, confirmArchiveReceipt, ArchiveError } from '../../services/archiveReceipt.js';
-import { machineAuditContext } from '../../services/auditContext.js';
+import { machineAuditContext, mitAuditKontext } from '../../services/auditContext.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
@@ -47,7 +47,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
   });
 
   router.post('/', (req, res, next) => {
-    upload.single('pdf')(req, res, async (uploadErr) => {
+    mitAuditKontext(upload.single('pdf'))(req, res, async (uploadErr) => {
       try {
         if (uploadErr) {
           const message = uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Die PDF-Datei darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.';

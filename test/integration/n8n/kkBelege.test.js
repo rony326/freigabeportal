@@ -95,3 +95,14 @@ test('a %PDF-prefixed but unreadable PDF still creates an Entwurf without Betrag
   assert.equal(b.kaufdatum, null);
   t.cleanup();
 });
+
+test('audit events of an n8n kk-beleg intake are attributed to the n8n service, not system', async () => {
+  const t = setup();
+  const pdf = await buildPdfFixture(['Quittung 03.09.2026', 'Total CHF 12.50']);
+  const res = await request(t.app).post('/api/n8n/kk-belege').set('X-API-Key', 'n8n-key').field('absender', 'anna.kauf@example.org').attach('pdf', pdf, 'quittung.pdf');
+  assert.equal(res.status, 201);
+  const event = t.db.prepare("SELECT person_id, person_name FROM audit_ereignisse WHERE objekt = 'kk_belege' AND aktion = 'INSERT' AND objekt_id = ?").get(String(res.body.id));
+  assert.equal(event.person_id, 'service:n8n');
+  assert.equal(event.person_name, 'n8n');
+  t.cleanup();
+});

@@ -21,3 +21,9 @@ export function erkenneKarte(db, { absender, text }) {
   }
   return treffer.size === 1 ? [...treffer.values()][0] : null;
 }
+
+// Ohne aktive Karte mit Absender-Muster oder Endziffern kann erkenneKarte nie treffen -- der
+// Eingang spart sich dann die PDF-Textextraktion.
+export function hatErkennbareKarten(db) {
+  return listKreditkarten(db).some((karte) => karte.absender_muster || karte.karte_endziffern);
+}

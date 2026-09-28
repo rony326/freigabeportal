@@ -418,6 +418,10 @@ verlangt weiterhin `aufgesplittet_von IS NULL` — ein neu eingegangener
 Job ist zwar nie ein Splitkind, aber derselbe gemeinsame Service wird
 auch hier verwendet, sodass diese Schranke automatisch mitgilt.
 
+Hat keine aktive Karte ein Absender-Muster oder Endziffern
+(`hatErkennbareKarten`), wird der PDF-Text beim Eingang gar nicht erst
+extrahiert — die Erkennung könnte ohnehin nie treffen.
+
 Der beim Eingang bereits extrahierte PDF-Text wird zugleich analysiert
 und in `jobs.kk_text_betraege` gecacht (`setKkTextAnalyse`) — der
 Abgleich muss die Abrechnung dann nicht noch einmal selbst lesen, siehe

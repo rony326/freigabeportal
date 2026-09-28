@@ -15,7 +15,7 @@ import { fetchPersonById, extractCustomFieldValue } from '../../services/churcht
 import { normalizeIban } from '../../services/ibanUtils.js';
 import { extrahierePdfText } from '../../services/pdfText.js';
 import { analysiereText } from '../../services/kkTextAnalyse.js';
-import { erkenneKarte } from '../../services/kkErkennung.js';
+import { erkenneKarte, hatErkennbareKarten } from '../../services/kkErkennung.js';
 import { markiereAlsKkAbrechnung } from '../../services/kkMarkierung.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
@@ -117,7 +117,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
         }
 
         let kkMarkiert = false;
-        if (getConfigValue(db, 'modul_kreditkarten_aktiv') === '1') {
+        if (getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' && hatErkennbareKarten(db)) {
           try {
             const text = extrahierePdfText(req.file.buffer);
             const erkennung = erkenneKarte(db, { absender, text });

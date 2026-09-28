@@ -1248,3 +1248,21 @@ test('POST /api/n8n/jobs does not auto-mark when the module is off, and still su
   assert.equal(r2.status, 201);
   rmSync(jobsDir, { recursive: true, force: true });
 });
+
+test('POST /api/n8n/jobs skips the statement text analysis when no active card has an Absender-Muster or Endziffern', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'modul_kreditkarten_aktiv', '1');
+  upsertPerson(db, { id: '1', vorname: 'Ver', nachname: 'Antwortlich', email: 'v@example.org', gruppen: [] });
+  createKreditkarte(db, { bezeichnung: 'Visa ohne Erkennung', verantwortlichId: '1', erfassungOffen: true });
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-kk-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+  const pdf = await buildPdfFixture(['Visa Business **** 4242', 'Total 12.50']);
+  const res = await request(app).post('/api/n8n/jobs').set('X-API-Key', 'n8n-key').field('quelle', 'scanner').field('absender', 'abrechnung@viseca.ch').field('dateiname', 'abrechnung.pdf').attach('pdf', pdf, 'abrechnung.pdf');
+  assert.equal(res.status, 201);
+  const job = getJobById(db, res.body.id);
+  assert.equal(job.kk_text_betraege, null);
+  assert.equal(job.kreditkarte_id, null);
+  rmSync(jobsDir, { recursive: true, force: true });
+  db.close();
+});

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKreditkarte, setKreditkarteAktiv } from '../../src/db/kreditkartenRepo.js';
-import { erkenneKarte } from '../../src/services/kkErkennung.js';
+import { erkenneKarte, hatErkennbareKarten } from '../../src/services/kkErkennung.js';
 
 function setup() {
   const db = openDatabase(':memory:');
@@ -27,5 +27,17 @@ test('erkenneKarte returns null when nothing or more than one card matches, and 
   assert.equal(erkenneKarte(db, { absender: 'noreply@viseca.ch', text: 'Karte **** 1111' }), null);
   setKreditkarteAktiv(db, visa, false);
   assert.equal(erkenneKarte(db, { absender: 'noreply@viseca.ch', text: '' }), null);
+  db.close();
+});
+
+test('hatErkennbareKarten is true only while an active card has an Absender-Muster or Endziffern', () => {
+  const { db, visa, master } = setup();
+  assert.equal(hatErkennbareKarten(db), true);
+  setKreditkarteAktiv(db, visa, false);
+  setKreditkarteAktiv(db, master, false);
+  createKreditkarte(db, { bezeichnung: 'Ohne Erkennung', verantwortlichId: '1', erfassungOffen: true });
+  assert.equal(hatErkennbareKarten(db), false);
+  createKreditkarte(db, { bezeichnung: 'Nur Endziffern', karteEndziffern: '9999', verantwortlichId: '1', erfassungOffen: true });
+  assert.equal(hatErkennbareKarten(db), true);
   db.close();
 });

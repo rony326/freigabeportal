@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
-import { upsertPerson, getPersonById, deactivatePerson, listActivePersonsInGroup, listAllPersons, setFerienmodus, clearFerienmodus } from '../../src/db/personenRepo.js';
+import { upsertPerson, getPersonById, deactivatePerson, listActivePersonsInGroup, listAllPersons, setFerienmodus, clearFerienmodus, findActivePersonByEmail, countActivePersonsByEmail } from '../../src/db/personenRepo.js';
 
 test('upsertPerson inserts a new person', () => {
   const db = openDatabase(':memory:');
@@ -110,5 +110,20 @@ test('clearFerienmodus resets all three fields to null', () => {
   assert.equal(person.ferienmodus_von, null);
   assert.equal(person.ferienmodus_bis, null);
   assert.equal(person.ferienmodus_stellvertreter_id, null);
+  db.close();
+});
+
+test('findActivePersonByEmail matches case-insensitively, ignores inactive persons, and returns null for a shared address', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'Ana', nachname: 'Muster', email: 'Ana@Example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Bo', nachname: 'Muster', email: 'familie@example.org', gruppen: [] });
+  upsertPerson(db, { id: '3', vorname: 'Cy', nachname: 'Muster', email: 'familie@example.org', gruppen: [] });
+  assert.equal(findActivePersonByEmail(db, 'ana@example.org').churchtools_person_id, '1');
+  assert.equal(findActivePersonByEmail(db, 'familie@example.org'), null);
+  assert.equal(countActivePersonsByEmail(db, 'FAMILIE@example.org'), 2);
+  deactivatePerson(db, '3');
+  assert.equal(findActivePersonByEmail(db, 'familie@example.org').churchtools_person_id, '2');
+  assert.equal(countActivePersonsByEmail(db, 'familie@example.org'), 1);
+  assert.equal(countActivePersonsByEmail(db, null), 0);
   db.close();
 });

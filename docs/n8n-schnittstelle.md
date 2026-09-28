@@ -206,9 +206,12 @@ Antworten: `201` mit `{id, status: 'entwurf'}` bei Erfolg, `400` bei
 fehlender/ungültiger Datei, `409` `{fehler: 'modul_deaktiviert'}` wenn
 das Kreditkarten-Modul deaktiviert ist, `422`
 `{fehler: 'absender_unbekannt'}` wenn keine aktive Person zum Absender
-passt.
+passt, `422` `{fehler: 'absender_mehrdeutig'}` wenn sich **mehrere**
+aktive Personen diese Adresse teilen (z. B. eine Familienadresse) — es
+wird dann kein Beleg angelegt, da unklar ist, wem er gehört.
 
 Workflow-Skizze: IMAP-Trigger auf einem dedizierten "belege@"-Postfach →
 Anhänge aufsplitten → je Anhang ein `POST /api/n8n/kk-belege` →
-bei `422` eine Antwort-Mail "Absender unbekannt" an den ursprünglichen
-Absender schicken.
+bei `422` eine Antwort-Mail an den ursprünglichen Absender schicken
+("Absender unbekannt" bzw. bei `absender_mehrdeutig` "Adresse mehreren
+Personen zugeordnet — bitte über das Portal hochladen").

@@ -35,11 +35,17 @@ export function getAllActivePersonIds(db) {
 
 // Findet die aktive Person zu einer E-Mail-Adresse -- Basis für die Absender-Zuordnung eines per
 // Mail eingegangenen Kreditkarten-Belegs (kkBelegEingang.js). Case-insensitiver Vergleich, da
-// Mail-Header und die hier gespeicherte Adresse unterschiedlich geschrieben sein können.
+// Mail-Header und die hier gespeicherte Adresse unterschiedlich geschrieben sein können. Teilen sich
+// mehrere aktive Personen die Adresse (z.B. Familienadresse), ist die Zuordnung mehrdeutig: null.
 export function findActivePersonByEmail(db, email) {
   if (!email) return null;
-  const row = db.prepare('SELECT churchtools_person_id FROM personen WHERE aktiv = 1 AND LOWER(email) = LOWER(?) ORDER BY churchtools_person_id LIMIT 1').get(email.trim());
-  return row ? getPersonById(db, row.churchtools_person_id) : null;
+  const rows = db.prepare('SELECT churchtools_person_id FROM personen WHERE aktiv = 1 AND LOWER(email) = LOWER(?) LIMIT 2').all(email.trim());
+  return rows.length === 1 ? getPersonById(db, rows[0].churchtools_person_id) : null;
+}
+
+export function countActivePersonsByEmail(db, email) {
+  if (!email) return 0;
+  return db.prepare('SELECT COUNT(*) AS n FROM personen WHERE aktiv = 1 AND LOWER(email) = LOWER(?)').get(email.trim()).n;
 }
 
 export function deactivatePerson(db, id) {

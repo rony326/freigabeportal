@@ -488,8 +488,10 @@ Ablauf:
 
 1. Modul muss aktiv sein, sonst `409`.
 2. Der Absender muss auf eine **aktive** Person passen
-   (`findActivePersonByEmail`), sonst `422` — kein Beleg für einen
-   unbekannten Absender.
+   (`findActivePersonByEmail`), sonst `422` `absender_unbekannt` — kein
+   Beleg für einen unbekannten Absender. Teilen sich mehrere aktive
+   Personen die Adresse, ist die Zuordnung mehrdeutig: ebenfalls `422`,
+   aber mit `absender_mehrdeutig`.
 3. Die Datei muss ein gültiges PDF/PNG/JPEG sein (Magic-Byte-Check),
    sonst `400`.
 4. Bei einem PDF: Swiss-QR-Bill-Scan für den Betrag (bevorzugt), sonst

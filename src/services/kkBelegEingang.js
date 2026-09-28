@@ -1,4 +1,4 @@
-import { findActivePersonByEmail } from '../db/personenRepo.js';
+import { findActivePersonByEmail, countActivePersonsByEmail } from '../db/personenRepo.js';
 import { normalizeAbsender } from '../db/jobsRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { createKkBeleg, logKkBelegEreignis } from '../db/kkBelegeRepo.js';
@@ -15,8 +15,12 @@ import { sendNotification } from './notify.js';
 // damit der Aufrufer selbst entscheidet, wie er antwortet.
 export async function nimmKkBelegEntgegen(db, config, mailer, { absender, buffer }) {
   if (getConfigValue(db, 'modul_kreditkarten_aktiv') !== '1') return { status: 409, body: { fehler: 'modul_deaktiviert' } };
-  const person = findActivePersonByEmail(db, normalizeAbsender(absender));
-  if (!person) return { status: 422, body: { fehler: 'absender_unbekannt' } };
+  const email = normalizeAbsender(absender);
+  const person = findActivePersonByEmail(db, email);
+  if (!person) {
+    const fehler = countActivePersonsByEmail(db, email) > 1 ? 'absender_mehrdeutig' : 'absender_unbekannt';
+    return { status: 422, body: { fehler } };
+  }
   const mimetype = buffer ? detectBelegMimetype(buffer) : null;
   if (!mimetype) return { status: 400, body: { fehler: 'datei_ungueltig' } };
 

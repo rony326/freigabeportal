@@ -71,3 +71,27 @@ test('unknown sender → 422, module off → 409, bad file → 400', async () =>
   assert.equal(r3.status, 409);
   t2.cleanup();
 });
+
+test('a sender address shared by two active persons → 422 absender_mehrdeutig, nothing created', async () => {
+  const t = setup();
+  upsertPerson(t.db, { id: '3', vorname: 'Zweite', nachname: 'Kauf', email: 'anna.kauf@example.org', gruppen: [] });
+  const pdf = await buildPdfFixture(['x']);
+  const res = await request(t.app).post('/api/n8n/kk-belege').set('X-API-Key', 'n8n-key').field('absender', 'anna.kauf@example.org').attach('pdf', pdf, 'x.pdf');
+  assert.equal(res.status, 422);
+  assert.deepEqual(res.body, { fehler: 'absender_mehrdeutig' });
+  assert.equal(t.db.prepare('SELECT COUNT(*) AS n FROM kk_belege').get().n, 0);
+  assert.equal(t.sent.length, 0);
+  t.cleanup();
+});
+
+test('a %PDF-prefixed but unreadable PDF still creates an Entwurf without Betrag and Kaufdatum', async () => {
+  const t = setup();
+  const kaputt = Buffer.from('%PDF-1.4\n%kein-lesbarer-pdf-inhalt\n');
+  const res = await request(t.app).post('/api/n8n/kk-belege').set('X-API-Key', 'n8n-key').field('absender', 'anna.kauf@example.org').attach('pdf', kaputt, 'x.pdf');
+  assert.equal(res.status, 201);
+  const b = getKkBelegById(t.db, res.body.id);
+  assert.equal(b.status, 'entwurf');
+  assert.equal(b.betrag, null);
+  assert.equal(b.kaufdatum, null);
+  t.cleanup();
+});

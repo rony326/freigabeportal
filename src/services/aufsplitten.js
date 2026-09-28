@@ -1,6 +1,7 @@
 import { mkdirSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mergeBelegInPdf, countBelegSeiten } from './belegAnhaengen.js';
+import { loescheDateienStill } from './kkBelegDatei.js';
 import {
   getJobById, createSplitJob, abschliessenFreigabe1, eskalierenFreigabe1, eskalierenFreigabe1AnAdmin, getEffectiveFreigeber2Id,
 } from '../db/jobsRepo.js';
@@ -59,20 +60,30 @@ export function pruefeIbanAbgleich(db, debitorId, qrIban) {
 // per-Zeile loop in erzeugeTeilJobs already accepts if a later Zeile throws mid-transaction.
 export async function bereiteTeilDateienVor(config, job, teile) {
   const vorbereitet = [];
-  for (const teil of teile) {
-    const pdfPfad = neuerDateipfad(config.jobsDir, job.pdf_pfad);
-    const thumbnailPfad = job.thumbnail_pfad ? neuerDateipfad(config.jobsDir, job.thumbnail_pfad) : null;
-    // Die Seitenzahl des Belegs wird hier — und nur hier — festgehalten: mergeBelegFuerJob
-    // hängt die Belegseiten direkt hinter die Rechnungsseiten, aber die spätere
-    // Einzel-Freigabe-2 dieses Kindes hängt noch eigene Stempelseiten dahinter. Ohne diesen
-    // Wert könnte der Gruppen-Merge die Belegseiten nachher nicht mehr von den Stempelseiten
-    // unterscheiden (siehe haengeBelegSeitenAn in splitGruppenExport.js).
-    let belegSeitenzahl = null;
-    if (teil.beleg) {
-      belegSeitenzahl = await countBelegSeiten(teil.beleg.buffer, teil.beleg.mimetype);
-      await mergeBelegFuerJob(pdfPfad, teil.beleg, teil.beleg.mimetype);
+  // Scheitert ein späterer Teil (z. B. unlesbarer Beleg), werden die bis dahin angelegten
+  // Kopien wieder entfernt, damit keine verwaisten Dateien zurückbleiben.
+  const angelegt = [];
+  try {
+    for (const teil of teile) {
+      const pdfPfad = neuerDateipfad(config.jobsDir, job.pdf_pfad);
+      angelegt.push(pdfPfad);
+      const thumbnailPfad = job.thumbnail_pfad ? neuerDateipfad(config.jobsDir, job.thumbnail_pfad) : null;
+      angelegt.push(thumbnailPfad);
+      // Die Seitenzahl des Belegs wird hier — und nur hier — festgehalten: mergeBelegFuerJob
+      // hängt die Belegseiten direkt hinter die Rechnungsseiten, aber die spätere
+      // Einzel-Freigabe-2 dieses Kindes hängt noch eigene Stempelseiten dahinter. Ohne diesen
+      // Wert könnte der Gruppen-Merge die Belegseiten nachher nicht mehr von den Stempelseiten
+      // unterscheiden (siehe haengeBelegSeitenAn in splitGruppenExport.js).
+      let belegSeitenzahl = null;
+      if (teil.beleg) {
+        belegSeitenzahl = await countBelegSeiten(teil.beleg.buffer, teil.beleg.mimetype);
+        await mergeBelegFuerJob(pdfPfad, teil.beleg, teil.beleg.mimetype);
+      }
+      vorbereitet.push({ ...teil, pdfPfad, thumbnailPfad, belegSeitenzahl });
     }
-    vorbereitet.push({ ...teil, pdfPfad, thumbnailPfad, belegSeitenzahl });
+  } catch (err) {
+    loescheDateienStill(...angelegt);
+    throw err;
   }
   return vorbereitet;
 }

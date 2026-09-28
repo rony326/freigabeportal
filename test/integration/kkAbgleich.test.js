@@ -132,6 +132,7 @@ test('POST kk-abgleich with all three line kinds creates the children, assigns r
   assert.equal(kKaffee.beleg_seitenzahl, null);
   assert.equal(kGebuehr.kk_eigenbeleg_grund, 'Gebühr/Zins');
   assert.equal(kGebuehr.typ, 'gutschrift');
+  assert.equal(kGebuehr.betrag, '11.50');
   assert.equal(getKkBelegById(t.db, b1).status, 'zugeordnet');
   assert.equal(getKkBelegById(t.db, b1).zugeordnet_job_id, kPapier.id);
   assert.equal(getKkBelegById(t.db, uebrig).status, 'offen');
@@ -218,5 +219,78 @@ test('after all children are approved, the Splitgruppe exports one merged docume
   const ergebnis = await pruefeUndFinalisiereSplitGruppe(t.db, t.jobId);
   assert.equal(ergebnis.status, 'exportiert');
   assert.ok(existsSync(ergebnis.pdfPfad));
+  t.cleanup();
+});
+
+test('a negative line on a foreign Konto becomes a positive Gutschrift the Freigeber1 can kontieren', async () => {
+  const t = await setup();
+  const res = await post(t, '1', { gesamtbetrag: '-7.25', zeilen: [{ art: 'eigenbeleg', kontoId: t.fremd, betrag: '-7.25', beschreibung: 'Rueckerstattung', grund: 'Gutschrift ohne Beleg' }] });
+  assert.equal(res.status, 302, res.text);
+  assert.equal(getJobById(t.db, t.jobId).betrag, '-7.25');
+  const [kind] = listSplitKinder(t.db, t.jobId);
+  assert.equal(kind.betrag, '7.25');
+  assert.equal(kind.typ, 'gutschrift');
+  assert.equal(kind.zugewiesen_an, '5');
+  const seite = await request(t.app).get(`/kontierung/${kind.id}`).set('x-test-person-id', '5');
+  assert.equal(seite.status, 200);
+  assert.match(seite.text, /7\.25/);
+  assert.doesNotMatch(seite.text, /-7\.25/);
+  t.cleanup();
+});
+
+test('a nachgereichter Beleg keeps its signed amount in kk_belege while the child is a positive Gutschrift', async () => {
+  const t = await setup();
+  const pdf = await buildPdfFixture(['Gutschrift Beleg']);
+  const res = await post(t, '1', {
+    gesamtbetrag: '-3.00',
+    zeilen: [{ art: 'nachreichen', kontoId: t.eigen, betrag: '-3.00', beschreibung: 'Retoure' }],
+    dateien: { zeileDatei_0: { buffer: pdf, name: 'r.pdf', type: 'application/pdf' } },
+  });
+  assert.equal(res.status, 302, res.text);
+  const [kind] = listSplitKinder(t.db, t.jobId);
+  assert.equal(kind.betrag, '3.00');
+  assert.equal(kind.typ, 'gutschrift');
+  assert.equal(t.db.prepare("SELECT betrag FROM kk_belege WHERE quelle = 'abgleich'").get().betrag, '-3.00');
+  t.cleanup();
+});
+
+test('POST kk-abgleich: a corrupt upload is a 400 without leftover files', async () => {
+  const t = await setup();
+  const dateienVorher = readdirSync(t.dir).length;
+  const res = await post(t, '1', {
+    gesamtbetrag: '5.00',
+    zeilen: [{ art: 'nachreichen', kontoId: t.eigen, betrag: '5.00', beschreibung: 'Parkhaus' }],
+    dateien: { zeileDatei_0: { buffer: Buffer.from('%PDF-1.4 kaputt'), name: 'kaputt.pdf', type: 'application/pdf' } },
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Position 1: Die Datei kann nicht gelesen werden\./);
+  assert.equal(readdirSync(t.dir).length, dateienVorher);
+  assert.equal(getJobById(t.db, t.jobId).status, 'zugewiesen');
+  t.cleanup();
+});
+
+test('POST kk-abgleich: a line of 0.00 is rejected', async () => {
+  const t = await setup();
+  const b = await t.beleg('12.00', 'Einzelkauf', t.eigen);
+  const res = await post(t, '1', {
+    gesamtbetrag: '12.00',
+    zeilen: [
+      { art: 'beleg', belegId: b, kontoId: t.eigen, betrag: '12.00' },
+      { art: 'gebuehr', kontoId: t.eigen, betrag: '0.00' },
+    ],
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Position 2: Betrag darf nicht 0 sein\./);
+  assert.equal(listSplitKinder(t.db, t.jobId).length, 0);
+  t.cleanup();
+});
+
+test('POST kk-abgleich: a receipt whose file is missing on disk is a 409', async () => {
+  const t = await setup();
+  const b = await t.beleg('12.00', 'Einzelkauf', t.eigen);
+  rmSync(getKkBelegById(t.db, b).pdf_pfad);
+  const res = await post(t, '1', { gesamtbetrag: '12.00', zeilen: [{ art: 'beleg', belegId: b, kontoId: t.eigen, betrag: '12.00' }] });
+  assert.equal(res.status, 409);
+  assert.equal(getJobById(t.db, t.jobId).status, 'zugewiesen');
   t.cleanup();
 });

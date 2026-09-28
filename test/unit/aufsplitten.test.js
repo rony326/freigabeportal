@@ -5,7 +5,11 @@ import { upsertPerson, getPersonById } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById, listKontenForPerson } from '../../src/db/kontenRepo.js';
 import { createJob, claimJob, getJobById, markJobAufgesplittet } from '../../src/db/jobsRepo.js';
 import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
-import { erzeugeTeilJobs } from '../../src/services/aufsplitten.js';
+import { mkdtempSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { erzeugeTeilJobs, bereiteTeilDateienVor } from '../../src/services/aufsplitten.js';
+import { buildPdfFixture } from '../helpers/pdfFixture.js';
 
 function setup() {
   const db = openDatabase(':memory:');
@@ -73,4 +77,18 @@ test("erzeugeTeilJobs 'pool' mode keeps today's behavior: foreign-Konto lines go
   assert.equal(kind.status, 'unzugewiesen');
   assert.equal(kind.hinweis_konto_id, fremd);
   db.close();
+});
+
+test('bereiteTeilDateienVor removes the files it already created when a later Teil fails, then rethrows', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aufsplitten-'));
+  const pdfPfad = join(dir, 'rechnung.pdf');
+  const thumbnailPfad = join(dir, 'rechnung.png');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Rechnung']));
+  writeFileSync(thumbnailPfad, 'png');
+  const job = { pdf_pfad: pdfPfad, thumbnail_pfad: thumbnailPfad };
+  const gut = { buffer: await buildPdfFixture(['Beleg']), mimetype: 'application/pdf' };
+  const kaputt = { buffer: Buffer.from('%PDF-1.4 kaputt'), mimetype: 'application/pdf' };
+  await assert.rejects(bereiteTeilDateienVor({ jobsDir: dir }, job, [{ beleg: gut }, { beleg: null }, { beleg: kaputt }]));
+  assert.deepEqual(readdirSync(dir).sort(), ['rechnung.pdf', 'rechnung.png']);
+  rmSync(dir, { recursive: true, force: true });
 });

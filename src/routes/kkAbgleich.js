@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { getKreditkarteById } from '../db/kreditkartenRepo.js';
 import { listOffeneKkBelegeFuerKarte, getKkBelegById, ordneKkBelegZu, createKkBeleg, logKkBelegEreignis } from '../db/kkBelegeRepo.js';
 import { listKonten, getKontoById } from '../db/kontenRepo.js';
@@ -11,7 +11,7 @@ import { buildAuditLog } from '../services/auditLog.js';
 import { ladeKontierbarenJob, ladeKontenFuerJob } from '../services/kontierungZugriff.js';
 import { markJobAufgesplittet, setJobBetrag, setKkAbrechnungKopfdaten } from '../db/jobsRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
-import { detectBelegMimetype } from '../services/belegAnhaengen.js';
+import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { bereiteTeilDateienVor, erzeugeTeilJobs, benachrichtigeNachAufsplitten, pruefeIbanNachAufsplitten, POSITION_PATTERN } from '../services/aufsplitten.js';
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
@@ -134,6 +134,17 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           if (werte.debitorId && !debitor) errors.push('Bitte einen gültigen Kartenherausgeber wählen.');
           if (zeilen.length === 0) errors.push('Mindestens eine Position ist nötig.');
 
+          // Nachgereichte Dateien müssen sich öffnen lassen, sonst scheitert erst die Dateiarbeit
+          // (500 statt Hinweis im Formular).
+          const unlesbareDateien = new Set();
+          for (const [i, datei] of dateiByIndex) {
+            try {
+              await countBelegSeiten(datei.buffer, datei.mimetype);
+            } catch {
+              unlesbareDateien.add(i);
+            }
+          }
+
           const teile = [];
           const verwendeteBelege = new Set();
           let belegKonflikt = false;
@@ -143,15 +154,20 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
             const konto = getKontoById(db, Number(z.kontoId));
             if (!konto || !konto.aktiv) return errors.push(`${nr}: Bitte ein gültiges Konto wählen.`);
             if (!KK_BETRAG_PATTERN.test(z.betrag)) return errors.push(`${nr}: Bitte einen gültigen Betrag angeben.`);
+            const betragSigniert = normalisiereBetrag(z.betrag);
+            if (Number(betragSigniert) === 0) return errors.push(`${nr}: Betrag darf nicht 0 sein.`);
             if (z.position && !POSITION_PATTERN.test(z.position)) return errors.push(`${nr}: Position enthält Zeichen, die nicht gestempelt werden können.`);
             if (z.beschreibung && !POSITION_PATTERN.test(z.beschreibung)) return errors.push(`${nr}: Beschreibung enthält Zeichen, die nicht gestempelt werden können.`);
             const teil = {
               konto,
-              betrag: normalisiereBetrag(z.betrag),
+              // Eine Gutschrift hat im Portal immer einen positiven Betrag, die Bedeutung trägt `typ`.
+              // Der signierte Wert bleibt für die Summenprüfung und den kk_belege-Eintrag erhalten.
+              betrag: Math.abs(Number(betragSigniert)).toFixed(2),
+              betragSigniert,
               interessenskonflikt: z.interessenskonflikt,
               position: z.position || null,
               beschreibung: z.beschreibung || null,
-              typ: Number(normalisiereBetrag(z.betrag)) < 0 ? 'gutschrift' : 'rechnung',
+              typ: Number(betragSigniert) < 0 ? 'gutschrift' : 'rechnung',
               beleg: null,
               kkBelegId: null,
               nachreichen: null,
@@ -162,7 +178,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
               if (!beleg || beleg.kreditkarte_id !== job.kreditkarte_id) return errors.push(`${nr}: Der Beleg gehört nicht zu dieser Karte.`);
               // Inzwischen verworfen/zugeordnet (anderer Tab, andere Person): kein Eingabefehler,
               // sondern ein Konflikt -- 409 wie der Transaktions-Check weiter unten.
-              if (beleg.status !== 'offen' || !beleg.pdf_pfad) {
+              if (beleg.status !== 'offen' || !beleg.pdf_pfad || !existsSync(beleg.pdf_pfad)) {
                 belegKonflikt = true;
                 return;
               }
@@ -173,6 +189,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
               teil.beleg = { buffer: readFileSync(beleg.pdf_pfad), mimetype: 'application/pdf' };
             } else if (z.art === 'nachreichen') {
               const datei = dateiByIndex.get(i);
+              if (unlesbareDateien.has(i)) return errors.push(`${nr}: Die Datei kann nicht gelesen werden.`);
               if (!datei) return errors.push(`${nr}: Bitte eine Datei auswählen.`);
               if (!z.beschreibung) return errors.push(`${nr}: Bitte eine Beschreibung angeben.`);
               teil.beleg = datei;
@@ -192,7 +209,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           }
 
           if (errors.length === 0) {
-            const summe = teile.reduce((s, t) => s + Number(t.betrag), 0);
+            const summe = teile.reduce((s, t) => s + Number(t.betragSigniert), 0);
             const total = Number(normalisiereBetrag(werte.gesamtbetrag));
             if (Math.abs(summe - total) > 0.005) errors.push(`Die Summe der Positionen (${summe.toFixed(2)}) muss dem Abrechnungstotal (${total.toFixed(2)}) entsprechen.`);
           }
@@ -206,14 +223,20 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           // Dateiarbeit vor der Transaktion (siehe aufsplitten.js). Nachgereichte Belege werden
           // zusätzlich als eigene kk_belege-Datei abgelegt, damit sie wie jeder andere Beleg
           // nachvollziehbar bleiben.
-          for (const teil of teile) {
-            if (teil.nachreichen) {
-              teil.nachreichDatei = await speichereKkBelegDatei(config, teil.nachreichen.buffer, teil.nachreichen.mimetype);
-              angelegteDateien.push(teil.nachreichDatei.pdfPfad, teil.nachreichDatei.thumbnailPfad);
+          let vorbereitet;
+          try {
+            for (const teil of teile) {
+              if (teil.nachreichen) {
+                teil.nachreichDatei = await speichereKkBelegDatei(config, teil.nachreichen.buffer, teil.nachreichen.mimetype);
+                angelegteDateien.push(teil.nachreichDatei.pdfPfad, teil.nachreichDatei.thumbnailPfad);
+              }
             }
+            vorbereitet = await bereiteTeilDateienVor(config, job, teile);
+            for (const t of vorbereitet) angelegteDateien.push(t.pdfPfad, t.thumbnailPfad);
+          } catch (err) {
+            loescheDateienStill(...angelegteDateien);
+            throw err;
           }
-          const vorbereitet = await bereiteTeilDateienVor(config, job, teile);
-          for (const t of vorbereitet) angelegteDateien.push(t.pdfPfad, t.thumbnailPfad);
 
           const personId = req.currentPerson.churchtools_person_id;
           const total = normalisiereBetrag(werte.gesamtbetrag);
@@ -256,7 +279,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
                 const belegId = createKkBeleg(db, {
                   kreditkarteId: job.kreditkarte_id, hochgeladenVon: personId, gekauftVon: personId, quelle: 'abgleich',
                   pdfPfad: teil.nachreichDatei.pdfPfad, thumbnailPfad: teil.nachreichDatei.thumbnailPfad,
-                  betrag: teil.betrag, kaufdatum: null, beschreibung: teil.beschreibung, kontoId: teil.konto.id, status: 'zugeordnet',
+                  betrag: teil.betragSigniert, kaufdatum: null, beschreibung: teil.beschreibung, kontoId: teil.konto.id, status: 'zugeordnet',
                 });
                 db.prepare('UPDATE kk_belege SET zugeordnet_job_id = ?, zugeordnet_am = ? WHERE id = ?').run(kindId, new Date().toISOString(), belegId);
                 logKkBelegEreignis(db, { belegId, personId, aktion: 'kk_beleg_zugeordnet', kommentar: `beim Abgleich nachgereicht, Job #${kindId}` });

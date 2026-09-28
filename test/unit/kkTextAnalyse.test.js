@@ -37,6 +37,10 @@ test('schlageTotalVor takes the last amount on the first Total/Saldo line', () =
   assert.equal(schlageTotalVor('nichts hier'), null);
 });
 
+test('schlageTotalVor prefers CHF amount over other currencies', () => {
+  assert.equal(schlageTotalVor('Total CHF 92.50 (approx EUR 100.00)'), '92.50');
+});
+
 test('berechneVorschlaege: amount match, amount+date match, and duplicates only as often as the amount appears', () => {
   const analyse = analysiereText(TEXT);
   const belege = [
@@ -50,4 +54,68 @@ test('berechneVorschlaege: amount match, amount+date match, and duplicates only 
   assert.equal(v.has(1), false);
   assert.equal(v.get(3), 'betrag_datum');
   assert.equal(v.has(4), false);
+});
+
+test('findeBetraege completes in under 200 ms on adversarial inputs', () => {
+  const inputs = [
+    '*'.repeat(20000),
+    ('*X').repeat(10000) + '!',
+    '1'.repeat(20000),
+    ("1'").repeat(10000),
+  ];
+
+  for (const input of inputs) {
+    const start = performance.now();
+    findeBetraege(input);
+    const elapsed = performance.now() - start;
+    assert.ok(elapsed < 200, `findeBetraege took ${elapsed.toFixed(2)}ms on adversarial input`);
+  }
+});
+
+test('findeDaten completes in under 200 ms on adversarial inputs', () => {
+  const inputs = [
+    '*'.repeat(20000),
+    ('*X').repeat(10000) + '!',
+    '1'.repeat(20000),
+    ("1'").repeat(10000),
+  ];
+
+  for (const input of inputs) {
+    const start = performance.now();
+    findeDaten(input);
+    const elapsed = performance.now() - start;
+    assert.ok(elapsed < 200, `findeDaten took ${elapsed.toFixed(2)}ms on adversarial input`);
+  }
+});
+
+test('findeEndziffern completes in under 200 ms on adversarial inputs', () => {
+  const inputs = [
+    '*'.repeat(20000),
+    ('*X').repeat(10000) + '!',
+    '1'.repeat(20000),
+    ("1'").repeat(10000),
+  ];
+
+  for (const input of inputs) {
+    const start = performance.now();
+    findeEndziffern(input);
+    const elapsed = performance.now() - start;
+    assert.ok(elapsed < 200, `findeEndziffern took ${elapsed.toFixed(2)}ms on adversarial input`);
+  }
+});
+
+test('schlageTotalVor completes in under 200 ms on adversarial inputs', () => {
+  const inputs = [
+    '*'.repeat(20000),
+    ('*X').repeat(10000) + '!',
+    '1'.repeat(20000),
+    ("1'").repeat(10000),
+  ];
+
+  for (const input of inputs) {
+    const start = performance.now();
+    schlageTotalVor(input);
+    const elapsed = performance.now() - start;
+    assert.ok(elapsed < 200, `schlageTotalVor took ${elapsed.toFixed(2)}ms on adversarial input`);
+  }
 });

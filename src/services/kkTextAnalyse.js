@@ -11,7 +11,7 @@ const DATUM_RES = [
   { re: /\b(\d{4})-(\d{2})-(\d{2})\b/g, map: (m) => `${m[1]}-${m[2]}-${m[3]}` },
   { re: /\b(\d{2})\/(\d{2})\/(\d{4})\b/g, map: (m) => `${m[3]}-${m[2]}-${m[1]}` },
 ];
-const ENDZIFFERN_RE = /(?:[*Xx•]{2,}[\s*Xx•-]*)(\d{4})\b/g;
+const ENDZIFFERN_RE = /[*Xx•]{2,4}(?:[ \-]?[*Xx•]{2,4}){0,3}[ \-]?(\d{4})(?!\d)/g;
 const TOTAL_RE = /total|saldo|zu bezahlen|rechnungsbetrag/i;
 
 export const LEERE_ANALYSE = Object.freeze({ betraege: [], daten: [], total: null });
@@ -63,13 +63,22 @@ export function findeDaten(text) {
 
 export function findeEndziffern(text) {
   const result = new Set();
-  for (const m of String(text || '').matchAll(ENDZIFFERN_RE)) result.add(m[1]);
+  const begrenzt = String(text || '').slice(0, 200000);
+  for (const m of begrenzt.matchAll(ENDZIFFERN_RE)) result.add(m[1]);
   return result;
 }
 
 export function schlageTotalVor(text) {
   for (const zeile of zeilen(text)) {
     if (!TOTAL_RE.test(zeile)) continue;
+    // Prefer amount directly after CHF token
+    const chfIdx = /\bCHF\b/i.exec(zeile)?.index;
+    if (chfIdx !== undefined) {
+      const afterChf = zeile.slice(chfIdx);
+      const betraege = betraegeInZeile(afterChf);
+      if (betraege.length > 0) return betraege[0];
+    }
+    // Otherwise return last amount on the line
     const betraege = betraegeInZeile(zeile);
     if (betraege.length > 0) return betraege.at(-1);
   }
@@ -77,7 +86,8 @@ export function schlageTotalVor(text) {
 }
 
 export function analysiereText(text) {
-  return { betraege: findeBetraege(text), daten: findeDaten(text), total: schlageTotalVor(text) };
+  const begrenzt = String(text || '').slice(0, 200000);
+  return { betraege: findeBetraege(begrenzt), daten: findeDaten(begrenzt), total: schlageTotalVor(begrenzt) };
 }
 
 function tageAbstand(a, b) {

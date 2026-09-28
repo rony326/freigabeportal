@@ -231,7 +231,7 @@ export async function stampGruppenDokument(pdfBuffer, gruppenData) {
         stampPage = doc.addPage([width, height]);
         y = height - 50;
       }
-      const titelTeile = [`Konto: ${position.kontoNummer} — ${position.kontoBezeichnung}`, `Betrag: ${position.betrag}`];
+      const titelTeile = [`Konto: ${position.kontoNummer} — ${position.kontoBezeichnung}`, `Betrag: ${position.betrag}${position.typ === 'gutschrift' ? ' (Gutschrift)' : ''}`];
       if (position.position) titelTeile.push(`Position: ${position.position}`);
       for (const line of wrapLine(boldFont, titelTeile.join(' — '), 13, maxWidth)) {
         stampPage.drawText(line, { x: 60, y, size: 13, font: boldFont, color: rgb(0, 0, 0) });

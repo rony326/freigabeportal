@@ -1166,3 +1166,45 @@ test('the automatic Zuweisungsregel-assignment mail also reaches the Freigeber1\
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
+
+test('GET /api/n8n/jobs/abholbereit adds typ and betrag_signiert to single jobs and group positions (Gutschrift negative)', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const dir = mkdtempSync(join(tmpdir(), 'n8n-typ-test-'));
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '6500', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '3', freigeber2Id: '2', stellvertreter2Id: '4' });
+  const pfad = (name) => { const p = join(dir, name); writeFileSync(p, 'x'); return p; };
+  const gutschriftId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'g.pdf', pdfPfad: pfad('g.pdf') });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', betrag = '5.00', typ = 'gutschrift' WHERE id = ?").run(gutschriftId);
+  const ohneTypId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'n.pdf', pdfPfad: pfad('n.pdf') });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', betrag = '7.5', typ = NULL WHERE id = ?").run(ohneTypId);
+
+  const parentId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'r.pdf', pdfPfad: pfad('parent.pdf') });
+  const parentJob = getJobById(db, parentId);
+  const kind1 = createSplitJob(db, parentJob, { pdfPfad: pfad('k1.pdf'), kontoId, betrag: '30.00', zugewiesenAn: '1' });
+  const kind2 = createSplitJob(db, parentJob, { pdfPfad: pfad('k2.pdf'), kontoId, betrag: '11.50', zugewiesenAn: '1', typ: 'gutschrift' });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id IN (?, ?)").run(kind1, kind2);
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet', betrag = '18.50' WHERE id = ?").run(parentId);
+  markGruppeExportiert(db, parentId, { pdfPfad: pfad('gruppe.pdf'), zeitstempelGesetztAm: null, zeitstempelDateiHash: null });
+
+  const config = testConfig(dir);
+  const app = buildTestApp(db, config, createStubMailer());
+  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', config.n8nApiKey);
+  assert.equal(res.status, 200);
+
+  const gutschrift = res.body.find((e) => e.id === gutschriftId);
+  assert.equal(gutschrift.typ, 'gutschrift');
+  assert.equal(gutschrift.betrag, '5.00');
+  assert.equal(gutschrift.betrag_signiert, '-5.00');
+  const ohneTyp = res.body.find((e) => e.id === ohneTypId);
+  assert.equal(ohneTyp.typ, 'rechnung');
+  assert.equal(ohneTyp.betrag_signiert, '7.50');
+
+  const gruppe = res.body.find((e) => e.id === parentId);
+  assert.deepEqual(gruppe.positionen.map((p) => [p.typ, p.betrag, p.betrag_signiert]), [['rechnung', '30.00', '30.00'], ['gutschrift', '11.50', '-11.50']]);
+
+  rmSync(dir, { recursive: true, force: true });
+  db.close();
+});

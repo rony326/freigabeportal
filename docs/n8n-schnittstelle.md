@@ -84,7 +84,9 @@ sequenceDiagram
   | Feld | Beschreibung |
   |---|---|
   | `id`, `eingang_am`, `quelle`, `absender`, `dateiname` | wie beim Rechnungseingang übergeben — `quelle` ist bei einer Spesen-Position `"spesen"` statt `"scanner"`/`"lieferant"` (siehe unten) |
-  | `lieferant`, `rechnungsnummer`, `betrag`, `zahlungsziel` | bei der Kontierung erfasste Rechnungsdaten |
+  | `lieferant`, `rechnungsnummer`, `betrag`, `zahlungsziel` | bei der Kontierung erfasste Rechnungsdaten — `betrag` ist immer **positiv**, auch bei einer Gutschrift |
+  | `typ` | `"rechnung"` oder `"gutschrift"` (ein Job ohne gesetzten Typ wird als `"rechnung"` geliefert) |
+  | `betrag_signiert` | `betrag` mit Vorzeichen als String mit 2 Nachkommastellen: negativ bei `typ: "gutschrift"`, sonst gleich `betrag`; `null`, wenn kein `betrag` erfasst ist |
   | `konto_id` | ID des zugeordneten Kontos, `null` falls noch keines gesetzt |
   | `konto_kontonummer`, `konto_bezeichnung` | Kontonummer und Bezeichnung des Kontos, `null` falls `konto_id` leer ist |
   | `eingereicht_von` | ChurchTools-Personen-ID der einreichenden Person, nur bei `quelle: "spesen"` gesetzt, sonst `null` |
@@ -120,8 +122,18 @@ zusätzliche Feld `positionen`, das ein Einzeljob-Eintrag nie hat:
 | `id` | ID des **Elternjobs** (Status `aufgesplittet`) |
 | `eingang_am`, `quelle`, `absender`, `lieferant`, `rechnungsnummer`, `betrag`, `zahlungsziel`, `dateiname` | vom Elternjob übernommen (Eingangsdaten der ursprünglichen Rechnung) |
 | `qr_iban`, `qr_referenz`, `qr_betrag`, `qr_waehrung`, `qr_creditor_name`, `qr_erkannt_am` | vom Elternjob übernommen (Aufsplitten fasst die QR-Daten nicht an) |
-| `positionen` | Array, ein Eintrag je nicht-gelöschtem Teil-Job: `{konto_id, konto_kontonummer, konto_bezeichnung, betrag, position}` (`position` = die bei Aufsplitten erfasste Freitext-"Position auf der Rechnung") |
+| `positionen` | Array, ein Eintrag je nicht-gelöschtem Teil-Job: `{konto_id, konto_kontonummer, konto_bezeichnung, betrag, typ, betrag_signiert, position}` (`position` = die bei Aufsplitten erfasste Freitext-"Position auf der Rechnung"; `typ`/`betrag_signiert` wie beim Einzeljob) |
 | `download_url` | signierte URL auf das **kombinierte** Gruppen-PDF (nicht auf einen einzelnen Teil) |
+
+**Gutschriften/Rückerstattungen**: `betrag` ist im Portal immer positiv,
+die Bedeutung trägt `typ`. Eine Kreditkarten-Abrechnung mit einer
+Rückerstattung (siehe [kreditkarten-belege.md](kreditkarten-belege.md))
+liefert z. B. Positionen `30.00` (`rechnung`) und `11.50` (`gutschrift`)
+bei einem Gruppen-`betrag` von `18.50`. Der n8n-Workflow **muss** deshalb
+`betrag_signiert` (oder `typ`) auswerten, um Rückerstattungen korrekt zu
+buchen — wer nur `betrag` liest, bucht eine Gutschrift als Aufwand. Die
+Summe der `betrag_signiert` aller Positionen ergibt den Gruppen-`betrag`.
+Die Felder sind additiv; alle bisherigen Felder bleiben unverändert.
 
 Ein Gruppen-Eintrag hat kein eigenes `konto_id`/`iban`/`kontoinhaber`-Feld
 auf oberster Ebene (unterschiedliche Konten je Position) und keine

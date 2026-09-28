@@ -87,6 +87,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId) {
         kontoNummer: konto.kontonummer,
         kontoBezeichnung: konto.bezeichnung,
         betrag: kind.betrag,
+        typ: kind.typ,
         position: kind.rechnungsposition,
         kkHinweis: kkHinweisFuerJob(db, kind),
         freigeber1: buildFreigabeEintrag(getPersonById(db, freigabe1.person_id), freigabe1),

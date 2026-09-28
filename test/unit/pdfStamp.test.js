@@ -446,3 +446,14 @@ test('stampGruppenDokument does not clip Freigabe blocks when both Freigeber hav
   assert.match(allText, /Genehmigt nach Rücksprache mit dem Lieferanten/);
   assert.match(allText, /Verwandtschaft mit Lieferant, aber trotzdem genehmigt wegen dringender Notwendigkeit/);
 });
+
+test('stampGruppenDokument marks a Gutschrift position as "Betrag: 11.50 (Gutschrift)"', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const positionen = [samplePosition({ betrag: '30.00', typ: 'rechnung' }), samplePosition({ betrag: '11.50', typ: 'gutschrift' })];
+  const gestempelt = await stampGruppenDokument(pdf, { jobId: 1, positionen, verlauf: [] });
+  const doc = await PDFDocument.load(gestempelt);
+  const allText = doc.getPages().map((_, i) => extractedText(gestempelt, i)).join('\n');
+  assert.match(allText, /Betrag: 11\.50 \(Gutschrift\)/);
+  assert.match(allText, /Betrag: 30\.00/);
+  assert.doesNotMatch(allText, /Betrag: 30\.00 \(Gutschrift\)/);
+});

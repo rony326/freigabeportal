@@ -20,6 +20,15 @@ const ABHOLEN_TTL_SECONDS = 15 * 60;
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_PDF_SIZE } });
 
+// Eine Gutschrift trägt im Portal immer einen positiven Betrag, die Bedeutung liegt in `typ`.
+// Für n8n kommt beides zusätzlich als signierter Wert, damit Rückerstattungen korrekt gebucht werden.
+function typUndSigniert(job) {
+  const typ = job.typ || 'rechnung';
+  const betrag = Number(job.betrag);
+  const betragSigniert = job.betrag == null || Number.isNaN(betrag) ? null : (typ === 'gutschrift' ? -betrag : betrag).toFixed(2);
+  return { typ, betrag_signiert: betragSigniert };
+}
+
 function isPdf(buffer) {
   return buffer.length >= 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
 }
@@ -158,6 +167,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           lieferant: job.lieferant,
           rechnungsnummer: job.rechnungsnummer,
           betrag: job.betrag,
+          ...typUndSigniert(job),
           zahlungsziel: job.zahlungsziel,
           dateiname: job.dateiname,
           konto_id: job.konto_id,
@@ -198,6 +208,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           konto_kontonummer: konto?.kontonummer ?? null,
           konto_bezeichnung: konto?.bezeichnung ?? null,
           betrag: kind.betrag,
+          ...typUndSigniert(kind),
           position: kind.rechnungsposition,
         };
       });

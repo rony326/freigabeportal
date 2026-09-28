@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Kreditkartenabrechnung abgleichen — <%= branding.seitenTitel %></title>
+</head>
+<body>
+  <%- include('_header', { navContainerClass: 'container-fluid px-4' }) %>
+  <main class="container-fluid px-4 py-3">
+    <div class="row g-4">
+      <div class="col-lg-5">
+        <iframe id="kontierung-preview-frame" data-preview-url="<%= previewUrl %>" src="" class="w-100 rounded pdf-preview" style="height:85vh"></iframe>
+      </div>
+      <div class="col-lg-7">
+        <h1 class="h4">Abgleich: <%= karte.bezeichnung %><%= karte.karte_endziffern ? ` (•••• ${karte.karte_endziffern})` : '' %></h1>
+        <p class="text-muted mb-2"><%= job.dateiname %> · Vorgang #<%= job.id %></p>
+        <% if (errors.length > 0) { %>
+          <div class="alert alert-danger"><ul class="mb-0"><% errors.forEach((e) => { %><li><%= e %></li><% }) %></ul>
+            <% if (errors.some((e) => e.includes('Datei'))) { %><div class="small mt-2">Hinweis: Nachgereichte Dateien müssen nach einem Fehler neu ausgewählt werden.</div><% } %>
+          </div>
+        <% } %>
+
+        <form id="kk-abgleich-form" method="post" action="/kontierung/<%= job.id %>/kk-abgleich" enctype="multipart/form-data">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <div class="row g-2 mb-3">
+            <div class="col-md-3">
+              <label class="form-label" for="gesamtbetrag">Abrechnungstotal</label>
+              <input class="form-control" id="gesamtbetrag" name="gesamtbetrag" inputmode="decimal" value="<%= werte.gesamtbetrag %>" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="debitorId">Kartenherausgeber</label>
+              <select class="form-select" id="debitorId" name="debitorId">
+                <option value="">— optional —</option>
+                <% debitoren.forEach((d) => { %><option value="<%= d.id %>" <%= String(d.id) === werte.debitorId ? 'selected' : '' %>><%= d.name %></option><% }) %>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="rechnungsnummer">Abrechnungsnr.</label>
+              <input class="form-control" id="rechnungsnummer" name="rechnungsnummer" value="<%= werte.rechnungsnummer %>">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="zahlungsziel">Zahlungsziel</label>
+              <input type="date" class="form-control" id="zahlungsziel" name="zahlungsziel" value="<%= werte.zahlungsziel %>">
+            </div>
+          </div>
+
+          <h2 class="h6">Offene Belege dieser Karte</h2>
+          <% if (belege.length === 0) { %>
+            <p class="text-muted small">Keine offenen Belege erfasst.</p>
+          <% } else { %>
+            <div class="list-group mb-3" id="beleg-liste">
+              <% belege.forEach((b) => { %>
+                <label class="list-group-item d-flex gap-3 align-items-center">
+                  <input type="checkbox" class="form-check-input beleg-check" value="<%= b.id %>"
+                    data-betrag="<%= b.betrag %>" data-konto-id="<%= b.konto_id || '' %>" data-beschreibung="<%= b.beschreibung %>"
+                    <%= zeilen.some((z) => z.art === 'beleg' && String(z.belegId) === String(b.id)) ? 'checked' : '' %>>
+                  <% if (b.thumbnail_pfad) { %><a href="/kreditkarte/belege/<%= b.id %>/datei" target="_blank" rel="noopener"><img src="/kreditkarte/belege/<%= b.id %>/thumbnail" alt="" style="max-height:48px"></a><% } %>
+                  <span class="flex-grow-1">
+                    <strong><%= b.betrag %></strong> · <%= b.kaufdatum %> · <%= b.beschreibung %>
+                    <span class="small text-muted d-block">gekauft von <%= b.gekauftVonName %>, erfasst von <%= b.hochgeladenVonName %></span>
+                  </span>
+                  <span class="vorschlag-badge"></span>
+                </label>
+              <% }) %>
+            </div>
+          <% } %>
+
+          <h2 class="h6">Positionen</h2>
+          <div id="zeilen"></div>
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-neue-zeile="nachreichen">+ Beleg nachreichen</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-neue-zeile="eigenbeleg">+ Ohne Beleg (Eigenbeleg)</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-neue-zeile="gebuehr">+ Gebühr / Zins</button>
+          </div>
+
+          <div class="alert alert-secondary d-flex flex-wrap gap-4 py-2" id="summen">
+            <span>Summe Positionen: <strong id="summe">0.00</strong></span>
+            <span>Total: <strong id="total">0.00</strong></span>
+            <span>Differenz: <strong id="differenz">0.00</strong></span>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="begruendung">Begründung <span class="text-muted">(Pflicht bei Interessenskonflikt)</span></label>
+            <input class="form-control" id="begruendung" name="begruendung" value="<%= werte.begruendung %>">
+          </div>
+          <button type="submit" class="btn btn-primary" id="speichern-btn">Abgleich speichern</button>
+        </form>
+
+        <details class="mt-4">
+          <summary>Keine Abrechnung dieser Karte?</summary>
+          <form method="post" action="/kontierung/<%= job.id %>/kk-markierung-aufheben" class="mt-2 d-flex gap-2">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input class="form-control" name="bemerkung" placeholder="Bemerkung für die Buchhaltung" required>
+            <button type="submit" class="btn btn-outline-danger">Zurück an die Buchhaltung</button>
+          </form>
+        </details>
+        <%- include('_audit_log') %>
+      </div>
+    </div>
+  </main>
+
+  <template id="zeile-template">
+    <div class="border rounded p-2 mb-2 zeile">
+      <input type="hidden" name="zeileArt">
+      <input type="hidden" name="zeileBelegId">
+      <input type="hidden" name="zeileKonflikt" value="false">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <strong class="zeile-titel small"></strong>
+        <button type="button" class="btn-close zeile-entfernen" aria-label="Entfernen"></button>
+      </div>
+      <div class="row g-2">
+        <div class="col-md-5">
+          <select class="form-select form-select-sm" name="zeileKontoId" required>
+            <option value="">— Konto —</option>
+            <% alleKonten.forEach((k) => { %><option value="<%= k.id %>" data-eigen="<%= eigeneKontoIds.includes(k.id) ? '1' : '0' %>"><%= k.kontonummer %> — <%= k.bezeichnung %></option><% }) %>
+          </select>
+        </div>
+        <div class="col-md-2"><input class="form-control form-control-sm zeile-betrag" name="zeileBetrag" inputmode="decimal" placeholder="Betrag" required></div>
+        <div class="col-md-2"><input class="form-control form-control-sm" name="zeilePosition" placeholder="Pos."></div>
+        <div class="col-md-3">
+          <div class="form-check form-check-inline small mt-1 konflikt-wrap">
+            <input type="checkbox" class="form-check-input konflikt-check">
+            <label class="form-check-label">Konflikt</label>
+          </div>
+        </div>
+        <div class="col-md-6"><input class="form-control form-control-sm" name="zeileBeschreibung" placeholder="Beschreibung"></div>
+        <div class="col-md-6 grund-wrap"><input class="form-control form-control-sm" name="zeileGrund" placeholder="Begründung (z.B. Beleg verloren)"></div>
+        <div class="col-md-6 datei-wrap"><input type="file" class="form-control form-control-sm zeile-datei" accept="application/pdf,image/png,image/jpeg"></div>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    // See pool.ejs's thumbnail-click handler for why file= must be resolved to an absolute URL.
+    (function () {
+      var frame = document.getElementById('kontierung-preview-frame');
+      function ladeVorschau() {
+        var absoluteUrl = new URL(frame.dataset.previewUrl, window.location.origin).href;
+        frame.src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(absoluteUrl);
+      }
+      ladeVorschau();
+      // Signed preview links are short-lived (see PDF_PREVIEW_TTL_SECONDS) — if this page has
+      // been open longer than that, the embedded PDF stops loading with no obvious way to
+      // recover short of a full reload. This button re-authorizes the session and mints a fresh
+      // link instead.
+      document.getElementById('preview-refresh-btn').addEventListener('click', function () {
+        fetch('/downloads/<%= job.id %>/refresh-url')
+          .then(function (res) { return res.ok ? res.json() : Promise.reject(); })
+          .then(function (data) {
+            frame.dataset.previewUrl = data.url;
+            ladeVorschau();
+          })
+          .catch(function () {
+            alert('Vorschau konnte nicht neu geladen werden.');
+          });
+      });
+    })();
+  </script>
+  <script>
+  (function () {
+    var TITEL = { beleg: 'Beleg', nachreichen: 'Beleg nachreichen', eigenbeleg: 'Ohne Beleg (Eigenbeleg)', gebuehr: 'Gebühr / Zins' };
+    var zeilenEl = document.getElementById('zeilen');
+    var template = document.getElementById('zeile-template');
+    var startZeilen = <%- JSON.stringify(zeilen).replace(/</g, '\\u003c') %>;
+
+    function num(v) { var n = Number(String(v || '').replace(',', '.')); return isFinite(n) ? n : 0; }
+    function updateSummen() {
+      var summe = 0;
+      zeilenEl.querySelectorAll('.zeile-betrag').forEach(function (el) { summe += num(el.value); });
+      var total = num(document.getElementById('gesamtbetrag').value);
+      document.getElementById('summe').textContent = summe.toFixed(2);
+      document.getElementById('total').textContent = total.toFixed(2);
+      var diff = total - summe;
+      var diffEl = document.getElementById('differenz');
+      diffEl.textContent = diff.toFixed(2);
+      diffEl.className = Math.abs(diff) <= 0.005 ? 'text-success' : 'text-danger';
+    }
+    function neueZeile(art, daten) {
+      daten = daten || {};
+      var node = template.content.firstElementChild.cloneNode(true);
+      node.querySelector('[name=zeileArt]').value = art;
+      node.querySelector('[name=zeileBelegId]').value = daten.belegId || '';
+      node.querySelector('.zeile-titel').textContent = TITEL[art] + (daten.beschreibung && art === 'beleg' ? ': ' + daten.beschreibung : '');
+      node.querySelector('[name=zeileKontoId]').value = daten.kontoId || '';
+      node.querySelector('[name=zeileBetrag]').value = daten.betrag || '';
+      node.querySelector('[name=zeilePosition]').value = daten.position || '';
+      node.querySelector('[name=zeileBeschreibung]').value = daten.beschreibung || '';
+      node.querySelector('[name=zeileGrund]').value = daten.grund || '';
+      node.querySelector('.grund-wrap').style.display = art === 'eigenbeleg' ? '' : 'none';
+      node.querySelector('.datei-wrap').style.display = art === 'nachreichen' ? '' : 'none';
+      if (art === 'beleg') node.querySelector('[name=zeileBeschreibung]').readOnly = true;
+      var konflikt = node.querySelector('.konflikt-check');
+      konflikt.checked = Boolean(daten.interessenskonflikt);
+      node.querySelector('[name=zeileKonflikt]').value = konflikt.checked ? 'true' : 'false';
+      konflikt.addEventListener('change', function () { node.querySelector('[name=zeileKonflikt]').value = konflikt.checked ? 'true' : 'false'; });
+      var kontoSelect = node.querySelector('[name=zeileKontoId]');
+      function updateKonflikt() {
+        var opt = kontoSelect.selectedOptions[0];
+        node.querySelector('.konflikt-wrap').style.visibility = opt && opt.dataset.eigen === '1' ? 'visible' : 'hidden';
+      }
+      kontoSelect.addEventListener('change', updateKonflikt);
+      updateKonflikt();
+      node.querySelector('.zeile-entfernen').addEventListener('click', function () {
+        if (art === 'beleg') {
+          var cb = document.querySelector('.beleg-check[value="' + daten.belegId + '"]');
+          if (cb) cb.checked = false;
+        }
+        node.remove();
+        updateSummen();
+      });
+      node.querySelector('.zeile-betrag').addEventListener('input', updateSummen);
+      node.dataset.belegId = daten.belegId || '';
+      zeilenEl.appendChild(node);
+      updateSummen();
+    }
+    document.querySelectorAll('.beleg-check').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        if (cb.checked) {
+          neueZeile('beleg', { belegId: cb.value, betrag: cb.dataset.betrag, kontoId: cb.dataset.kontoId, beschreibung: cb.dataset.beschreibung });
+        } else {
+          var zeile = zeilenEl.querySelector('.zeile[data-beleg-id="' + cb.value + '"]');
+          if (zeile) zeile.remove();
+          updateSummen();
+        }
+      });
+    });
+    document.querySelectorAll('[data-neue-zeile]').forEach(function (btn) {
+      btn.addEventListener('click', function () { neueZeile(btn.dataset.neueZeile); });
+    });
+    document.getElementById('gesamtbetrag').addEventListener('input', updateSummen);
+    // Rename each line's file input to zeileDatei_<i> right before submit, matching the line's
+    // position -- same trick as kontierung-aufsplitten.ejs (teilBeleg_<i>).
+    document.getElementById('kk-abgleich-form').addEventListener('submit', function () {
+      zeilenEl.querySelectorAll('.zeile').forEach(function (zeile, i) {
+        var input = zeile.querySelector('.zeile-datei');
+        input.name = input.files && input.files.length ? 'zeileDatei_' + i : '';
+      });
+    });
+    if (startZeilen.length) {
+      startZeilen.forEach(function (z) { neueZeile(z.art, z); });
+    } else {
+      document.querySelectorAll('.beleg-check:checked').forEach(function (cb) { cb.dispatchEvent(new Event('change')); });
+    }
+    updateSummen();
+    window.kkAbgleich = { neueZeile: neueZeile, updateSummen: updateSummen };
+  })();
+  </script>
+  <%- include('_footer') %>
+</body>
+</html>

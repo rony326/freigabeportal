@@ -24,7 +24,13 @@ import {
   listKkAbrechnungenFuerErinnerung,
   markKkAbrechnungErinnert,
 } from '../db/jobsRepo.js';
-import { listKkBelegeFuerErinnerung, markKkBelegErinnert } from '../db/kkBelegeRepo.js';
+import {
+  listKkBelegeFuerErinnerung,
+  markKkBelegErinnert,
+  listVerworfeneKkBelegeZurLoeschung,
+  markKkBelegDateiGeloescht,
+  logKkBelegEreignis,
+} from '../db/kkBelegeRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { pruneMailLogOlderThan, listGeplantMailsGruppiertNachEmpfaenger } from '../db/mailLogRepo.js';
@@ -264,13 +270,40 @@ export function runPdfBereinigungJob(db, config) {
     console.error('Bereinigung von mail_log fehlgeschlagen:', err.message);
   }
 
-  const ergebnis = { status: 'erfolg', archiviert, tmpGeloescht, mailLogGeloescht };
+  // Verworfene Kreditkartenbelege: nach der Frist nur die Dateien löschen, die Zeile bleibt als
+  // Nachweis (wer/wann/warum verworfen). Zugeordnete Belege sind Teil eines Buchungsdokuments und
+  // werden hier nie angefasst.
+  let kkBelegeGeloescht = 0;
+  try {
+    const tage = Number(getConfigValue(db, 'kk_beleg_verworfen_loeschen_tage')) || 90;
+    const schwelle = new Date(Date.now() - tage * 24 * 60 * 60 * 1000).toISOString();
+    for (const beleg of listVerworfeneKkBelegeZurLoeschung(db, schwelle)) {
+      let alleWeg = true;
+      for (const pfad of [beleg.pdf_pfad, beleg.thumbnail_pfad]) {
+        if (!pfad) continue;
+        try {
+          if (existsSync(pfad)) unlinkSync(pfad);
+        } catch (err) {
+          console.error(`Löschen von ${pfad} (Kreditkartenbeleg ${beleg.id}) fehlgeschlagen:`, err.message);
+          alleWeg = alleWeg && !existsSync(pfad);
+        }
+      }
+      if (!alleWeg) continue;
+      markKkBelegDateiGeloescht(db, beleg.id);
+      logKkBelegEreignis(db, { belegId: beleg.id, personId: null, aktion: 'kk_beleg_datei_geloescht', kommentar: `Frist ${tage} Tage nach Verwerfen` });
+      kkBelegeGeloescht += 1;
+    }
+  } catch (err) {
+    console.error('Fristlöschung verworfener Kreditkartenbelege fehlgeschlagen:', err.message);
+  }
+
+  const ergebnis = { status: 'erfolg', archiviert, tmpGeloescht, mailLogGeloescht, kkBelegeGeloescht };
   logCronLauf(db, {
     job: 'pdf-bereinigung',
     gestartetAm,
     beendetAm: new Date().toISOString(),
     status: 'erfolg',
-    details: `Archiviert: ${archiviert}, Tmp gelöscht: ${tmpGeloescht}, Mail-Log bereinigt: ${mailLogGeloescht}`,
+    details: `Archiviert: ${archiviert}, Tmp gelöscht: ${tmpGeloescht}, Mail-Log bereinigt: ${mailLogGeloescht}, KK-Belege gelöscht: ${kkBelegeGeloescht}`,
   });
   return ergebnis;
 }

@@ -16,6 +16,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       cronPoolErinnerungenIntervallMinuten: getConfigValue(db, 'cron_pool_erinnerungen_intervall_minuten'),
       cronPdfBereinigungStunde: getConfigValue(db, 'cron_pdf_bereinigung_stunde'),
       cronPdfBereinigungMinute: getConfigValue(db, 'cron_pdf_bereinigung_minute'),
+      kkBelegVerworfenLoeschenTage: getConfigValue(db, 'kk_beleg_verworfen_loeschen_tage'),
       cronZeitstempelNachholenIntervallMinuten: getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'),
       cronSplitGruppenNachholenIntervallMinuten: getConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten'),
       cronFreigabe2ErinnerungenIntervallMinuten: getConfigValue(db, 'cron_freigabe2_erinnerungen_intervall_minuten'),
@@ -49,6 +50,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       poolErinnerungenIntervallMinuten,
       pdfBereinigungStunde,
       pdfBereinigungMinute,
+      kkBelegVerworfenLoeschenTage,
       zeitstempelNachholenIntervallMinuten,
       splitGruppenNachholenIntervallMinuten,
       freigabe2ErinnerungenIntervallMinuten,
@@ -71,6 +73,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     const syncMinuteNum = ganzzahlImBereich(syncPersonenMinute, 0, 59, 'Personen-Sync: Minute');
     const pdfStundeNum = ganzzahlImBereich(pdfBereinigungStunde, 0, 23, 'PDF-Bereinigung: Stunde');
     const pdfMinuteNum = ganzzahlImBereich(pdfBereinigungMinute, 0, 59, 'PDF-Bereinigung: Minute');
+    const kkBelegVerworfenLoeschenTageNum = ganzzahlImBereich(kkBelegVerworfenLoeschenTage, 1, 3650, 'Verworfene Kreditkartenbelege: Tage');
     const intervallNum = Number(poolErinnerungenIntervallMinuten);
     if (!Number.isInteger(intervallNum) || intervallNum <= 0) {
       errors.push('Pool-Erinnerungen: Intervall muss eine positive Ganzzahl (Minuten) sein.');
@@ -99,6 +102,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
         cronPoolErinnerungenIntervallMinuten: poolErinnerungenIntervallMinuten,
         cronPdfBereinigungStunde: pdfBereinigungStunde,
         cronPdfBereinigungMinute: pdfBereinigungMinute,
+        kkBelegVerworfenLoeschenTage,
         cronZeitstempelNachholenIntervallMinuten: zeitstempelNachholenIntervallMinuten,
         cronSplitGruppenNachholenIntervallMinuten: splitGruppenNachholenIntervallMinuten,
         cronFreigabe2ErinnerungenIntervallMinuten: freigabe2ErinnerungenIntervallMinuten,
@@ -124,6 +128,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     setConfigValue(db, 'cron_pool_erinnerungen_intervall_minuten', String(intervallNum));
     setConfigValue(db, 'cron_pdf_bereinigung_stunde', String(pdfStundeNum));
     setConfigValue(db, 'cron_pdf_bereinigung_minute', String(pdfMinuteNum));
+    setConfigValue(db, 'kk_beleg_verworfen_loeschen_tage', String(kkBelegVerworfenLoeschenTageNum));
     setConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten', String(zeitstempelIntervallNum));
     setConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten', String(splitGruppenNachholenIntervallNum));
     setConfigValue(db, 'cron_freigabe2_erinnerungen_intervall_minuten', String(freigabe2ErinnerungenIntervallNum));

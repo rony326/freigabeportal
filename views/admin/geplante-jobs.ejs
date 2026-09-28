@@ -98,6 +98,10 @@
           <label class="form-label" for="pdfBereinigungMinute">Minute (0–59)</label>
           <input type="number" min="0" max="59" class="form-control" id="pdfBereinigungMinute" name="pdfBereinigungMinute" value="<%= cronPdfBereinigungMinute %>" required>
         </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="kkBelegVerworfenLoeschenTage">Verworfene Kreditkartenbelege löschen nach (Tagen)</label>
+          <input type="number" min="1" max="3650" class="form-control" id="kkBelegVerworfenLoeschenTage" name="kkBelegVerworfenLoeschenTage" value="<%= kkBelegVerworfenLoeschenTage %>" required>
+        </div>
       </div>
 
       <button type="submit" class="btn btn-primary">Speichern</button>

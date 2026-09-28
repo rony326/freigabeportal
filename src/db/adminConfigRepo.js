@@ -69,6 +69,7 @@ const DEFAULTS = {
   mail_vorlage_kk_beleg_erinnerung_text: 'Hallo %empfaengerName%,\n\nfolgende Kreditkartenbelege bzw. -abrechnungen sind seit mehr als %tage% Tagen offen (%anzahl%):\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_kk_beleg_eingegangen_betreff: 'Freigabeportal: Kreditkartenbeleg eingegangen – bitte ergänzen',
   mail_vorlage_kk_beleg_eingegangen_text: 'Hallo %empfaengerName%,\n\ndein per Mail eingereichter Kreditkartenbeleg ist im Portal eingegangen. Bitte ergänze Karte, Betrag, Kaufdatum und Beschreibung: %link%\n\nFreundliche Grüsse\n%portalName%',
+  kk_beleg_verworfen_loeschen_tage: '90',
 };
 
 export function seedDefaults(db) {

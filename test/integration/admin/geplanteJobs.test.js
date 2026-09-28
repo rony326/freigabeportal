@@ -59,6 +59,7 @@ const VALID_BODY = {
   poolErinnerungenIntervallMinuten: '30',
   pdfBereinigungStunde: '4',
   pdfBereinigungMinute: '45',
+  kkBelegVerworfenLoeschenTage: '90',
   zeitstempelNachholenIntervallMinuten: '10',
   splitGruppenNachholenIntervallMinuten: '20',
   freigabe2ErinnerungenIntervallMinuten: '15',
@@ -131,6 +132,7 @@ test('POST /admin/geplante-jobs persists a valid schedule', async () => {
   assert.equal(getConfigValue(db, 'cron_pool_erinnerungen_intervall_minuten'), '30');
   assert.equal(getConfigValue(db, 'cron_pdf_bereinigung_stunde'), '4');
   assert.equal(getConfigValue(db, 'cron_pdf_bereinigung_minute'), '45');
+  assert.equal(getConfigValue(db, 'kk_beleg_verworfen_loeschen_tage'), '90');
   assert.equal(getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'), '10');
   assert.equal(getConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten'), '20');
   assert.equal(getConfigValue(db, 'kk_beleg_erinnerungen_aktiv'), '1');
@@ -253,6 +255,22 @@ test('POST /admin/geplante-jobs with an invalid kkBelegErinnerungTage value is r
   assert.equal(res.status, 400);
   assert.match(res.text, /Kreditkartenbelege: Tage/);
   assert.equal(getConfigValue(db, 'kk_beleg_erinnerung_tage'), '45');
+  db.close();
+});
+
+test('POST /admin/geplante-jobs with an invalid kkBelegVerworfenLoeschenTage value is rejected, config untouched', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/geplante-jobs')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ ...VALID_BODY, kkBelegVerworfenLoeschenTage: '0' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Verworfene Kreditkartenbelege: Tage/);
+  assert.equal(getConfigValue(db, 'kk_beleg_verworfen_loeschen_tage'), '90');
   db.close();
 });
 

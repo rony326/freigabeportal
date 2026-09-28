@@ -11,7 +11,7 @@ import { createKreditkarte } from '../../src/db/kreditkartenRepo.js';
 import { createKkBeleg, getKkBelegById } from '../../src/db/kkBelegeRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { listRecentCronLog, startCronLauf } from '../../src/db/cronLogRepo.js';
-import { runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runKkBelegErinnerungenJob } from '../../src/services/cronJobs.js';
+import { runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runKkBelegErinnerungenJob, runPdfBereinigungJob } from '../../src/services/cronJobs.js';
 import { logMailAttempt, listMailLog } from '../../src/db/mailLogRepo.js';
 import { setupMockTsa } from '../helpers/mockTsa.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
@@ -455,4 +455,34 @@ test('runKkBelegErinnerungenJob is skipped when the module or the job is off', a
   setConfigValue(t.db, 'kk_beleg_erinnerungen_aktiv', '1');
   setConfigValue(t.db, 'modul_kreditkarten_aktiv', '0');
   assert.equal((await runKkBelegErinnerungenJob(t.db, {}, t.mailer)).status, 'uebersprungen');
+});
+
+test('runPdfBereinigungJob deletes files of receipts discarded longer than the retention period, keeps the row, is idempotent', async () => {
+  const { mkdtempSync, writeFileSync, existsSync, rmSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'kk-frist-'));
+  const t = kkSetup();
+  const datei = (name) => { const p = join(dir, name); writeFileSync(p, 'x'); return p; };
+  const alt = createKkBeleg(t.db, { kreditkarteId: t.karte, hochgeladenVon: '2', gekauftVon: '2', quelle: 'web', pdfPfad: datei('alt.pdf'), thumbnailPfad: datei('alt.png'), betrag: '1.00', kaufdatum: '2026-01-01', beschreibung: 'alt', status: 'verworfen' });
+  t.db.prepare('UPDATE kk_belege SET verworfen_am = ?, verworfen_grund = ? WHERE id = ?').run(vorTagen(100), 'doppelt', alt);
+  const jung = createKkBeleg(t.db, { kreditkarteId: t.karte, hochgeladenVon: '2', gekauftVon: '2', quelle: 'web', pdfPfad: datei('jung.pdf'), betrag: '1.00', kaufdatum: '2026-01-01', beschreibung: 'jung', status: 'verworfen' });
+  t.db.prepare('UPDATE kk_belege SET verworfen_am = ? WHERE id = ?').run(vorTagen(10), jung);
+  const zugeordnet = createKkBeleg(t.db, { kreditkarteId: t.karte, hochgeladenVon: '2', gekauftVon: '2', quelle: 'web', pdfPfad: datei('zu.pdf'), betrag: '1.00', kaufdatum: '2026-01-01', beschreibung: 'zu', status: 'zugeordnet' });
+  const weg = createKkBeleg(t.db, { kreditkarteId: t.karte, hochgeladenVon: '2', gekauftVon: '2', quelle: 'web', pdfPfad: join(dir, 'gibtsnicht.pdf'), betrag: '1.00', kaufdatum: '2026-01-01', beschreibung: 'weg', status: 'verworfen' });
+  t.db.prepare('UPDATE kk_belege SET verworfen_am = ? WHERE id = ?').run(vorTagen(100), weg);
+
+  const r1 = runPdfBereinigungJob(t.db, { jobsDir: dir });
+  assert.equal(r1.kkBelegeGeloescht, 2);
+  const a = getKkBelegById(t.db, alt);
+  assert.equal(a.pdf_pfad, null);
+  assert.equal(a.thumbnail_pfad, null);
+  assert.ok(a.datei_geloescht_am);
+  assert.equal(a.verworfen_grund, 'doppelt');
+  assert.equal(existsSync(join(dir, 'alt.pdf')), false);
+  assert.ok(getKkBelegById(t.db, jung).pdf_pfad);
+  assert.ok(getKkBelegById(t.db, zugeordnet).pdf_pfad);
+  assert.ok(getKkBelegById(t.db, weg).datei_geloescht_am);
+  assert.equal(runPdfBereinigungJob(t.db, { jobsDir: dir }).kkBelegeGeloescht, 0);
+  rmSync(dir, { recursive: true, force: true });
 });

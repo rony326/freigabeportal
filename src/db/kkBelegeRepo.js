@@ -112,3 +112,17 @@ export function listKkBelegeFuerErinnerung(db, schwelleIso) {
 export function markKkBelegErinnert(db, id) {
   db.prepare('UPDATE kk_belege SET letzte_erinnerung_am = ? WHERE id = ?').run(new Date().toISOString(), id);
 }
+
+// Arbeitsliste für die Fristlöschung verworfener Kreditkartenbelege (pdf-bereinigung Cron-Job,
+// cronJobs.js): nach der konfigurierten Aufbewahrungsfrist wird nur die Datei gelöscht, die Zeile
+// bleibt als Nachweis (wer/wann/warum verworfen). Zugeordnete Belege sind hier ausgeschlossen, da
+// sie Teil eines Buchungsdokuments sind und nie angefasst werden.
+export function listVerworfeneKkBelegeZurLoeschung(db, schwelleIso) {
+  return db
+    .prepare("SELECT * FROM kk_belege WHERE status = 'verworfen' AND verworfen_am <= ? AND datei_geloescht_am IS NULL ORDER BY id")
+    .all(schwelleIso);
+}
+
+export function markKkBelegDateiGeloescht(db, id) {
+  db.prepare('UPDATE kk_belege SET pdf_pfad = NULL, thumbnail_pfad = NULL, datei_geloescht_am = ? WHERE id = ? AND datei_geloescht_am IS NULL').run(new Date().toISOString(), id);
+}

@@ -55,13 +55,13 @@
                 <label class="list-group-item d-flex gap-3 align-items-center">
                   <input type="checkbox" class="form-check-input beleg-check" value="<%= b.id %>"
                     data-betrag="<%= b.betrag %>" data-konto-id="<%= b.konto_id || '' %>" data-beschreibung="<%= b.beschreibung %>"
-                    <%= zeilen.some((z) => z.art === 'beleg' && String(z.belegId) === String(b.id)) ? 'checked' : '' %>>
+                    <%= (zeilen.length > 0 ? zeilen.some((z) => z.art === 'beleg' && String(z.belegId) === String(b.id)) : (errors.length === 0 && b.vorschlag)) ? 'checked' : '' %>>
                   <% if (b.thumbnail_pfad) { %><a href="/kreditkarte/belege/<%= b.id %>/datei" target="_blank" rel="noopener"><img src="/kreditkarte/belege/<%= b.id %>/thumbnail" alt="" style="max-height:48px"></a><% } %>
                   <span class="flex-grow-1">
                     <strong><%= b.betrag %></strong> · <%= b.kaufdatum %> · <%= b.beschreibung %>
                     <span class="small text-muted d-block">gekauft von <%= b.gekauftVonName %>, erfasst von <%= b.hochgeladenVonName %></span>
                   </span>
-                  <span class="vorschlag-badge"></span>
+                  <% if (b.vorschlag) { %><span class="badge text-bg-info"><%= b.vorschlag === 'betrag_datum' ? 'Vorschlag: Betrag + Datum' : 'Vorschlag: Betrag gefunden' %></span><% } %>
                 </label>
               <% }) %>
             </div>

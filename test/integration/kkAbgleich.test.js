@@ -359,6 +359,30 @@ test('a line without position takes the receipt or line description as position,
   t.cleanup();
 });
 
+test('GET kk-abgleich pre-checks receipts whose amount appears on the statement and fills the total', async () => {
+  const t = await setup();
+  writeFileSync(getJobById(t.db, t.jobId).pdf_pfad, await buildPdfFixture(['03.09.2026 SBB 12.50', 'Total zu bezahlen 12.50']));
+  const treffer = await t.beleg('12.50', 'Zugticket');
+  await t.beleg('77.00', 'Nicht auf der Abrechnung');
+  const res = await request(t.app).get(`/kontierung/${t.jobId}/kk-abgleich`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, new RegExp(`value="${treffer}"[^>]*checked`));
+  assert.match(res.text, /Vorschlag: Betrag \+ Datum/);
+  assert.match(res.text, /id="gesamtbetrag"[^>]*value="12.50"/);
+  assert.ok(getJobById(t.db, t.jobId).kk_text_betraege, 'analysis is cached');
+  t.cleanup();
+});
+
+test('GET kk-abgleich renders without suggestions when the statement text cannot be read', async () => {
+  const t = await setup();
+  writeFileSync(getJobById(t.db, t.jobId).pdf_pfad, Buffer.from('%PDF-1.4\nkaputt'));
+  await t.beleg('12.50', 'Zugticket');
+  const res = await request(t.app).get(`/kontierung/${t.jobId}/kk-abgleich`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /Vorschlag:/);
+  t.cleanup();
+});
+
 test('POST kk-abgleich: a receipt description is not re-validated on beleg lines (read-only there)', async () => {
   const t = await setup();
   // Altbestand aus der Zeit vor der Upload-Validierung: direkt in der DB angelegt.

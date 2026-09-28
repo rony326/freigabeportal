@@ -9,12 +9,14 @@ import { getPersonById } from '../db/personenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { ladeKontierbarenJob, ladeKontenFuerJob } from '../services/kontierungZugriff.js';
-import { markJobAufgesplittet, setJobBetrag, setKkAbrechnungKopfdaten } from '../db/jobsRepo.js';
+import { markJobAufgesplittet, setJobBetrag, setKkAbrechnungKopfdaten, setKkTextAnalyse } from '../db/jobsRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { bereiteTeilDateienVor, erzeugeTeilJobs, benachrichtigeNachAufsplitten, pruefeIbanNachAufsplitten, POSITION_PATTERN } from '../services/aufsplitten.js';
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
+import { extrahierePdfText } from '../services/pdfText.js';
+import { analysiereText, LEERE_ANALYSE, berechneVorschlaege } from '../services/kkTextAnalyse.js';
 
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 const MAX_ZEILEN = 100;
@@ -39,20 +41,45 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
     return job;
   }
 
-  function offeneBelege(karteId) {
-    return listOffeneKkBelegeFuerKarte(db, karteId).map((b) => ({
+  // Einmal pro Abrechnung berechnet und in jobs.kk_text_betraege gecacht. Scheitert die
+  // Extraktion, wird eine leere Analyse gecacht -- keine Vorschläge, aber auch kein erneuter Versuch
+  // bei jedem Seitenaufruf.
+  function ladeAnalyse(job) {
+    if (job.kk_text_betraege) {
+      try {
+        return JSON.parse(job.kk_text_betraege);
+      } catch {
+        return LEERE_ANALYSE;
+      }
+    }
+    let analyse = LEERE_ANALYSE;
+    try {
+      analyse = analysiereText(extrahierePdfText(readFileSync(job.pdf_pfad)));
+    } catch (err) {
+      console.error(`Textanalyse der Abrechnung ${job.id} fehlgeschlagen:`, err.message);
+    }
+    setKkTextAnalyse(db, job.id, analyse);
+    return analyse;
+  }
+
+  function offeneBelege(karteId, analyse) {
+    const roheBelege = listOffeneKkBelegeFuerKarte(db, karteId);
+    const vorschlaege = berechneVorschlaege(roheBelege, analyse);
+    return roheBelege.map((b) => ({
       ...b,
       gekauftVonName: personLabel(db, b.gekauft_von),
       hochgeladenVonName: personLabel(db, b.hochgeladen_von),
+      vorschlag: vorschlaege.get(b.id) ?? null,
     }));
   }
 
   function renderSeite(req, res, status, job, { werte, zeilen, errors }) {
     const karte = getKreditkarteById(db, job.kreditkarte_id);
+    const analyse = ladeAnalyse(job);
     res.status(status).render('kk-abgleich', {
       job,
       karte,
-      belege: offeneBelege(karte.id),
+      belege: offeneBelege(karte.id, analyse),
       alleKonten: listKonten(db),
       eigeneKontoIds: ladeKontenFuerJob(db, req, job).map((k) => k.id),
       debitoren: listDebitoren(db),
@@ -69,7 +96,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
     if (!job) return;
     renderSeite(req, res, 200, job, {
       werte: {
-        gesamtbetrag: job.betrag || job.qr_betrag || '',
+        gesamtbetrag: job.betrag || job.qr_betrag || ladeAnalyse(job).total || '',
         debitorId: job.debitor_id ? String(job.debitor_id) : '',
         rechnungsnummer: job.rechnungsnummer || '',
         zahlungsziel: job.zahlungsziel || '',

@@ -9,8 +9,9 @@ const GRUPPE_ADMIN_TOKEN = 'gruppe:admin';
 
 // sync-fehler (ChurchTools-Ausfall) und iban-warnung (Betrugsverdacht) sind betriebs-/
 // sicherheitskritisch und ignorieren den globalen Batching-Schalter -- sie warten nie auf den
-// nächsten Digest-Lauf.
-const IMMER_SOFORT_TYPEN = new Set(['sync-fehler', 'iban-warnung']);
+// nächsten Digest-Lauf. kk-beleg-eingegangen kommt dazu: die Person, die per Mail einen Beleg
+// eingereicht hat, soll sofort den Ergänzen-Link bekommen statt bis zum nächsten Digest zu warten.
+const IMMER_SOFORT_TYPEN = new Set(['sync-fehler', 'iban-warnung', 'kk-beleg-eingegangen']);
 
 // The low-level "send now and log the attempt" primitive -- what sendNotification used to be
 // before templating/batching existed. Kept as its own export because /admin/mails' "erneut

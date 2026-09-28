@@ -111,6 +111,12 @@
         <label class="form-label mt-2" for="kkBelegErinnerungText">Kreditkartenbelege – Erinnerung — Text</label>
         <textarea class="form-control" id="kkBelegErinnerungText" name="kkBelegErinnerungText" rows="4" required><%= kkBelegErinnerungText %></textarea>
       </div>
+      <div class="mb-3">
+        <label class="form-label" for="kkBelegEingegangenBetreff">Kreditkartenbeleg eingegangen — Betreff</label>
+        <input type="text" class="form-control" id="kkBelegEingegangenBetreff" name="kkBelegEingegangenBetreff" value="<%= kkBelegEingegangenBetreff %>" required>
+        <label class="form-label mt-2" for="kkBelegEingegangenText">Kreditkartenbeleg eingegangen — Text</label>
+        <textarea class="form-control" id="kkBelegEingegangenText" name="kkBelegEingegangenText" rows="4" required><%= kkBelegEingegangenText %></textarea>
+      </div>
 
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>

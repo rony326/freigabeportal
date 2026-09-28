@@ -13,6 +13,7 @@ const TYP_ZU_KEY_INFIX = {
   'freigabe2-eskalation': 'freigabe2_eskalation',
   'kk-abrechnung-zugewiesen': 'kk_abrechnung_zugewiesen',
   'kk-beleg-erinnerung': 'kk_beleg_erinnerung',
+  'kk-beleg-eingegangen': 'kk_beleg_eingegangen',
 };
 
 export function renderTemplate(vorlage, variablen) {

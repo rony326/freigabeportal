@@ -188,3 +188,20 @@ test('upload with an unknown gekauftVon person is rejected with 400', async () =
   assert.equal(res.status, 400);
   t.cleanup();
 });
+
+test('completing an Entwurf moves it to offen; the Entwurf is not offered on any card list before', async () => {
+  const t = setup();
+  const pdf = await buildPdfFixture(['Beleg']);
+  const { pdfPfad } = await (await import('../../src/services/kkBelegDatei.js')).speichereKkBelegDatei({ jobsDir: t.dir }, pdf, 'application/pdf');
+  const { createKkBeleg } = await import('../../src/db/kkBelegeRepo.js');
+  const id = createKkBeleg(t.db, { kreditkarteId: null, hochgeladenVon: '3', gekauftVon: '3', quelle: 'mail', pdfPfad, status: 'entwurf' });
+  const seite = await request(t.app).get('/kreditkarte').set('x-test-person-id', '3');
+  assert.match(seite.text, /Zu ergänzen/);
+  const res = await request(t.app).post(`/kreditkarte/belege/${id}`).set('x-test-person-id', '3')
+    .field('kreditkarteId', String(t.offen)).field('betrag', '4.20').field('kaufdatum', '2026-09-01').field('beschreibung', 'Kaffee Team');
+  assert.equal(res.status, 302);
+  const b = getKkBelegById(t.db, id);
+  assert.equal(b.status, 'offen');
+  assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM kk_beleg_ereignisse WHERE beleg_id = ? AND aktion = 'kk_beleg_ergaenzt'").get(id).n, 1);
+  t.cleanup();
+});

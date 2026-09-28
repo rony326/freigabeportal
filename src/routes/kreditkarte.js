@@ -7,7 +7,7 @@ import { listKonten, getKontoById } from '../db/kontenRepo.js';
 import { listActivePersons, getPersonById } from '../db/personenRepo.js';
 import {
   createKkBeleg, getKkBelegById, updateKkBelegDaten, ersetzeKkBelegDatei, verwerfeKkBeleg,
-  listKkBelegeFuerPerson, listOffeneKkBelegeFuerVerantwortlich, logKkBelegEreignis,
+  listKkBelegeFuerPerson, listOffeneKkBelegeFuerVerantwortlich, logKkBelegEreignis, aktiviereKkBelegEntwurf,
 } from '../db/kkBelegeRepo.js';
 import { detectBelegMimetype } from '../services/belegAnhaengen.js';
 import { darfAufKarteErfassen, listErfassbareKarten, darfBelegBearbeiten, darfBelegSehen } from '../services/kkRechte.js';
@@ -165,7 +165,12 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
               loescheDateienStill(neu.pdfPfad, neu.thumbnailPfad);
             }
           }
-          logKkBelegEreignis(db, { belegId: beleg.id, personId: personId(req), aktion: 'kk_beleg_geaendert', kommentar: req.file ? 'inkl. neuer Datei' : null });
+          if (beleg.status === 'entwurf') {
+            aktiviereKkBelegEntwurf(db, beleg.id);
+            logKkBelegEreignis(db, { belegId: beleg.id, personId: personId(req), aktion: 'kk_beleg_ergaenzt', kommentar: null });
+          } else {
+            logKkBelegEreignis(db, { belegId: beleg.id, personId: personId(req), aktion: 'kk_beleg_geaendert', kommentar: req.file ? 'inkl. neuer Datei' : null });
+          }
           res.redirect('/kreditkarte?gespeichert=1');
         } catch (err) {
           next(err);

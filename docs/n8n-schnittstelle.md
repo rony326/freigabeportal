@@ -172,3 +172,43 @@ selbst wurde bewusst nicht gebaut, siehe
 **Achtung:** das Archiv enthält Geheimnisse im Klartext (u. a. das
 RFC3161-TSA-Passwort) — der Workflow, der diese Route abruft, muss die
 Datei entsprechend sicher handhaben.
+
+## Kreditkarten-Beleg-Eingang
+
+`POST /api/n8n/kk-belege` (`X-API-Key`, `multipart/form-data`) nimmt
+einen per Mail eingereichten Kreditkartenbeleg entgegen und legt ihn als
+Entwurf (`status = 'entwurf'`) ab, den die einreichende Person im Portal
+noch ergänzen muss (Karte, Betrag, Kaufdatum, Beschreibung — siehe
+"Zu ergänzen" auf `/kreditkarte`). Die fachliche Logik steckt in
+`src/services/kkBelegEingang.js` (`nimmKkBelegEntgegen`), damit sie
+später auch von einem nativen Mail-Modul wiederverwendet werden kann.
+
+**Vertrag** (`POST /api/n8n/kk-belege`, `multipart/form-data`):
+
+| Feld | Pflicht | Beschreibung |
+|---|---|---|
+| `pdf` | ja | der Beleg — trotz des Feldnamens PDF, PNG **oder** JPEG (Magic-Byte-Erkennung), max. 20 MB |
+| `absender` | ja | `From:`-Header der eingehenden Mail (roh, mit oder ohne Display-Name) — bestimmt, welcher aktiven Person der Beleg zugeordnet wird |
+
+Ablauf: Absender wird über `normalizeAbsender` (siehe
+[architektur.md](architektur.md)) auf eine einzelne E-Mail-Adresse
+reduziert und gegen die aktiven Personen abgeglichen
+(`findActivePersonByEmail`). Ein Bild-Beleg wird wie bei einem regulären
+Web-Upload in eine A4-PDF-Seite umgewandelt. Aus dem PDF-Text und einem
+eventuellen Swiss-QR-Code werden Betrag und Kaufdatum als Vorschlag
+extrahiert (bestmöglich, kein Fehler bei leerem Ergebnis); ist genau eine
+Karte für die Person erfassbar, wird sie vorbelegt. Die Person erhält
+sofort (nicht erst mit dem nächsten Digest) eine Mail mit dem
+Ergänzen-Link (`kk-beleg-eingegangen`, siehe
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)).
+
+Antworten: `201` mit `{id, status: 'entwurf'}` bei Erfolg, `400` bei
+fehlender/ungültiger Datei, `409` `{fehler: 'modul_deaktiviert'}` wenn
+das Kreditkarten-Modul deaktiviert ist, `422`
+`{fehler: 'absender_unbekannt'}` wenn keine aktive Person zum Absender
+passt.
+
+Workflow-Skizze: IMAP-Trigger auf einem dedizierten "belege@"-Postfach →
+Anhänge aufsplitten → je Anhang ein `POST /api/n8n/kk-belege` →
+bei `422` eine Antwort-Mail "Absender unbekannt" an den ursprünglichen
+Absender schicken.

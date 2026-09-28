@@ -28,6 +28,17 @@ export function updateKkBelegDaten(db, id, { kreditkarteId, betrag, kaufdatum, b
   return result.changes > 0;
 }
 
+// Ein per Mail eingegangener Beleg landet als 'entwurf' (Karte/Betrag/Datum/Beschreibung ggf.
+// unvollständig) und wird erst über kreditkarte.js' "Ergänzen"-Bearbeitung zu 'offen' -- die
+// WHERE-Bedingung stellt sicher, dass wirklich alle Pflichtfelder gesetzt sind, bevor der Beleg
+// wie ein regulär hochgeladener Beleg auf Karten-/Abgleichlisten erscheint.
+export function aktiviereKkBelegEntwurf(db, id) {
+  const result = db
+    .prepare("UPDATE kk_belege SET status = 'offen' WHERE id = ? AND status = 'entwurf' AND kreditkarte_id IS NOT NULL AND betrag IS NOT NULL AND kaufdatum IS NOT NULL AND beschreibung IS NOT NULL")
+    .run(id);
+  return result.changes > 0;
+}
+
 export function ersetzeKkBelegDatei(db, id, { pdfPfad, thumbnailPfad }) {
   const result = db.prepare(`UPDATE kk_belege SET pdf_pfad = ?, thumbnail_pfad = ? WHERE id = ? AND ${BEARBEITBAR}`).run(pdfPfad, thumbnailPfad ?? null, id);
   return result.changes > 0;

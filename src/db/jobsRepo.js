@@ -946,8 +946,9 @@ export function markiereJobAlsKkAbrechnung(db, jobId, { kreditkarteId, verantwor
     .prepare(
       `UPDATE jobs
        SET status = 'zugewiesen', zugewiesen_an = ?, kreditkarte_id = ?, kk_markiert_am = ?, kk_erinnert_am = NULL,
-           pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
-       WHERE id = ? AND status = ? AND kreditkarte_id IS NULL AND quelle != 'spesen'`
+           pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL,
+           freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe1_eskaliert_an_admin = 0
+       WHERE id = ? AND status = ? AND kreditkarte_id IS NULL AND quelle != 'spesen' AND aufgesplittet_von IS NULL`
     )
     .run(verantwortlichId, kreditkarteId, new Date().toISOString(), jobId, ausStatus);
   return result.changes > 0;

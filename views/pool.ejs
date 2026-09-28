@@ -20,7 +20,7 @@
           <span>Kreditkartenabrechnung:</span>
           <select class="form-select form-select-sm w-auto" id="kk-markieren-job" required>
             <option value="">— Beleg aus dem Pool —</option>
-            <% poolJobs.forEach((j) => { %><option value="<%= j.id %>">#<%= j.id %> <%= j.dateiname %></option><% }) %>
+            <% poolJobs.filter((j) => !j.aufgesplittet_von).forEach((j) => { %><option value="<%= j.id %>">#<%= j.id %> <%= j.dateiname %></option><% }) %>
           </select>
           <select class="form-select form-select-sm w-auto" name="kreditkarteId" required>
             <option value="">— Karte —</option>

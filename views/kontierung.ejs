@@ -151,7 +151,7 @@
               <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#an-gruppe-zurueck-modal">An Gruppe zurücksenden</button>
               <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#aufsplitten-modal">Rechnung aufsplitten</button>
             </div>
-            <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0) { %>
+            <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0 && !job.aufgesplittet_von) { %>
               <form method="post" action="/kontierung/<%= job.id %>/als-kk-abrechnung" class="d-flex flex-wrap gap-2 align-items-center mt-3">
                 <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                 <label class="form-label mb-0" for="kk-karte">Kreditkartenabrechnung für</label>

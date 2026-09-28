@@ -524,6 +524,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     try {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
+      if (sperreKkAbrechnung(job, res)) return;
 
       // The hint is best-effort, not a hard requirement — an unparseable, non-existent, or
       // deactivated Konto id is simply ignored (releases the job exactly as if no hint had been
@@ -566,6 +567,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   router.post('/:id/an-gruppe-zurueck', csrfProtection, (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
+    if (sperreKkAbrechnung(job, res)) return;
 
     const bemerkung = (req.body.bemerkung || '').trim();
     if (!bemerkung) {

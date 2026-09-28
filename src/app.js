@@ -51,6 +51,7 @@ import { createKreditkarteRouter } from './routes/kreditkarte.js';
 import { createMailerOrFallback } from './services/mailer.js';
 import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
 import { getVersionInfo } from './utils/version.js';
+import { auditContext } from './services/auditContext.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -127,6 +128,7 @@ export function createApp({ db, config }) {
     return attachCsrfToken(req, res, next);
   });
   app.use(loadCurrentPerson(db));
+  app.use(auditContext);
   app.use(loadNavFlags(db, config));
 
   const mailer = createMailerOrFallback(config.smtp);
@@ -153,7 +155,7 @@ export function createApp({ db, config }) {
   app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db, csrfProtection }));
   app.use('/admin/personen', requireAnyRole(config, ['superadmin', 'manager']), createPersonenRouter({ db, config, csrfProtection }));
   app.use('/admin/mails', requirePermission(db, config, 'mails_einsehen'), createMailsRouter({ db, mailer, csrfProtection }));
-  app.use('/admin/sync', requirePermission(db, config, 'sync_einsehen'), createSyncRouter({ db, csrfProtection }));
+  app.use('/admin/sync', requirePermission(db, config, 'sync_einsehen'), createSyncRouter({ db, config, csrfProtection }));
   app.use('/admin/abgelehnt', requirePermission(db, config, 'abgelehnt_verwalten'), createAdminAbgelehntRouter({ db, csrfProtection }));
   app.use('/admin/audit-log', requirePermission(db, config, 'audit_log_einsehen'), createAuditLogRouter({ db }));
   app.use('/admin/geplante-jobs', requirePermission(db, config, 'geplante_jobs_verwalten'), createGeplanteJobsRouter({ db, config, mailer, csrfProtection }));
@@ -162,7 +164,7 @@ export function createApp({ db, config }) {
   app.use('/admin/mail-einstellungen', requireRole(config, 'superadmin'), createMailEinstellungenRouter({ db, config, mailer, csrfProtection }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
-  app.use('/api/n8n/backup', machineLimiter, requireApiKey(config), createN8nBackupRouter({ config }));
+  app.use('/api/n8n/backup', machineLimiter, requireApiKey({ n8nApiKey: config.backupApiKey }), createN8nBackupRouter({ config }));
   app.use('/api/n8n/kk-belege', machineLimiter, requireApiKey(config), createN8nKkBelegeRouter({ db, config, mailer }));
   app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db, csrfProtection }));
   // Dashboard for every logged-in person, not just Buchhaltung/Superadmin: "/" always redirects

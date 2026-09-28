@@ -426,7 +426,7 @@ test('POST /internal/cron/pdf-bereinigung without the secret is rejected', async
   db.close();
 });
 
-test('POST /internal/cron/pdf-bereinigung archives an abgeholt job once its PDF and thumbnail are deleted', async () => {
+test('POST /internal/cron/pdf-bereinigung retains an abgeholt job without an archive receipt', async () => {
   const { mkdtempSync, rmSync, writeFileSync, existsSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
@@ -450,17 +450,17 @@ test('POST /internal/cron/pdf-bereinigung archives an abgeholt job once its PDF 
 
   assert.equal(res.status, 200);
   assert.equal(res.body.status, 'erfolg');
-  assert.equal(res.body.archiviert, 1);
-  assert.equal(existsSync(pdfPfad), false);
-  assert.equal(existsSync(thumbPfad), false);
-  assert.equal(getJobById(db, jobId).status, 'archiviert');
-  assert.ok(getJobById(db, jobId).archiviert_am);
+  assert.equal(res.body.archiviert, 0);
+  assert.equal(existsSync(pdfPfad), true);
+  assert.equal(existsSync(thumbPfad), true);
+  assert.equal(getJobById(db, jobId).status, 'abgeholt');
+  assert.equal(getJobById(db, jobId).archiviert_am, null);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
 
-test('POST /internal/cron/pdf-bereinigung archives an abgeholt job immediately if its files are already gone (idempotent, covers pre-existing orphans)', async () => {
+test('POST /internal/cron/pdf-bereinigung does not invent archival evidence for missing historical files', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
@@ -480,8 +480,8 @@ test('POST /internal/cron/pdf-bereinigung archives an abgeholt job immediately i
   const res = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
 
   assert.equal(res.status, 200);
-  assert.equal(res.body.archiviert, 1);
-  assert.equal(getJobById(db, jobId).status, 'archiviert');
+  assert.equal(res.body.archiviert, 0);
+  assert.equal(getJobById(db, jobId).status, 'abgeholt');
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
@@ -626,7 +626,7 @@ test('POST /internal/cron/pdf-bereinigung is idempotent: a second run with nothi
   const app = createApp({ db, config });
 
   const res1 = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
-  assert.equal(res1.body.archiviert, 1);
+  assert.equal(res1.body.archiviert, 0);
 
   const res2 = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
   assert.equal(res2.status, 200);

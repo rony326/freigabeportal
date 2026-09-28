@@ -11,6 +11,8 @@ export const GRANTABLE_BERECHTIGUNGEN = [
   'audit_log_einsehen',
   'pool_zuweisen',
   'kreditkarten_verwalten',
+  'sync_verwalten',
+  'workflow_eingreifen',
 ];
 
 export const BERECHTIGUNG_LABELS = {
@@ -23,6 +25,8 @@ export const BERECHTIGUNG_LABELS = {
   audit_log_einsehen: 'Globales Audit-Log einsehen',
   pool_zuweisen: 'Pool-Belege an Personen zuweisen',
   kreditkarten_verwalten: 'Kreditkarten verwalten',
+  sync_verwalten: 'Sync konfigurieren',
+  workflow_eingreifen: 'Blockierte Vorgaenge bearbeiten',
 };
 
 // Superadmin und Manager bekommen jedes vergebbare Recht über ihr Rollen-Bundle, unabhängig von
@@ -30,7 +34,7 @@ export const BERECHTIGUNG_LABELS = {
 export function personHasPermission(db, config, person, permission) {
   if (!person) return false;
   if (personHasRole(person, config, 'superadmin')) return true;
-  if (personHasRole(person, config, 'manager')) return true;
+  if (personHasRole(person, config, 'manager') && !['sync_verwalten', 'workflow_eingreifen'].includes(permission)) return true;
   return personHasBerechtigung(db, person.churchtools_person_id, permission);
 }
 

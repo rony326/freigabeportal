@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { getJobById } from '../db/jobsRepo.js';
 import { canViewJobPdf } from '../services/jobAuthorization.js';
 import { verifyZeitstempel } from '../services/zeitstempel.js';
+import { jobDocument } from '../services/jobDocument.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
@@ -16,7 +17,7 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
       if (!jobId) {
         return res.render('zeitstempel-pruefen', { ergebnis: null, errors: [], jobId: null, job: null });
       }
-      const job = getJobById(db, jobId);
+      const job = jobDocument(getJobById(db, jobId));
       if (!job || !canViewJobPdf(db, config, req.currentPerson, job)) {
         return res.status(403).render('error', { message: 'Kein Zugriff auf diesen Job.' });
       }
@@ -44,7 +45,7 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
   router.get('/zertifikat', async (req, res, next) => {
     try {
       const jobId = Number(req.query.jobId);
-      const job = jobId ? getJobById(db, jobId) : null;
+      const job = jobId ? jobDocument(getJobById(db, jobId)) : null;
       if (!job || !canViewJobPdf(db, config, req.currentPerson, job)) {
         return res.status(403).render('error', { message: 'Kein Zugriff auf diesen Job.' });
       }
@@ -75,7 +76,7 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
         }
         let vergleichsJob = null;
         if (req.body.jobId) {
-          vergleichsJob = getJobById(db, Number(req.body.jobId));
+          vergleichsJob = jobDocument(getJobById(db, Number(req.body.jobId)));
           if (!vergleichsJob || !canViewJobPdf(db, config, req.currentPerson, vergleichsJob)) {
             return res.status(403).render('error', { message: 'Kein Zugriff auf diesen Job.' });
           }

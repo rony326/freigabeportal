@@ -58,7 +58,7 @@ async function loginAs(app, client, { id, vorname, nachname, email, gruppen }) {
   return agent;
 }
 
-test('a 3-Konten Aufsplitten flow ends in a single combined Bexio export, with all Splitkind files cleaned up after Abholung', async () => {
+test('a 3-Konten Aufsplitten flow exports one combined document and retains files pending archival evidence', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'splitgruppen-e2e-test-'));
   const config = testConfig(dir);
   const client = setupMockChurchTools(config.churchtools.baseUrl);
@@ -135,9 +135,9 @@ test('a 3-Konten Aufsplitten flow ends in a single combined Bexio export, with a
 
   for (const kind of kinder) {
     assert.equal(getJobById(db, kind.id).status, 'abgeholt');
-    assert.equal(existsSync(kind.pdf_pfad), false, `Splitkind ${kind.id}'s own PDF must be deleted after Abholung`);
+    assert.equal(existsSync(getJobById(db, kind.id).pdf_pfad), true, `Splitkind ${kind.id}'s final PDF must remain until archival is confirmed`);
   }
-  assert.equal(existsSync(parentVorAbholung.gruppe_pdf_pfad), false, 'the merged Gruppen-PDF must be deleted after Abholung');
+  assert.equal(existsSync(parentVorAbholung.gruppe_pdf_pfad), true, 'the merged Gruppen-PDF must remain until archival is confirmed');
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

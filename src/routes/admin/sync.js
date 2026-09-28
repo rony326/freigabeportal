@@ -4,6 +4,7 @@ import { listRecentSyncLogs } from '../../db/syncLogRepo.js';
 import { listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin } from '../../db/jobsRepo.js';
 import { getPersonById } from '../../db/personenRepo.js';
 import { validateEmpfaengerListe } from './eskalation.js';
+import { requirePermission, personHasPermission } from '../../middleware/permissions.js';
 
 function ladeStalledJobsMitNamen(db) {
   return listStalledJobs(db).map(({ job, akteurId, grund }) => {
@@ -16,8 +17,13 @@ function ladeStalledJobsMitNamen(db) {
   });
 }
 
-export function createSyncRouter({ db, csrfProtection = (req, res, next) => next() }) {
+export function createSyncRouter({ db, config = { churchtools: {} }, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
+  router.use((req, res, next) => {
+    res.locals.canConfigureSync = personHasPermission(db, config, req.currentPerson, 'sync_verwalten');
+    res.locals.canIntervene = personHasPermission(db, config, req.currentPerson, 'workflow_eingreifen');
+    next();
+  });
 
   router.get('/', (req, res) => {
     res.render('admin/sync', {
@@ -31,7 +37,7 @@ export function createSyncRouter({ db, csrfProtection = (req, res, next) => next
     });
   });
 
-  router.post('/', csrfProtection, (req, res) => {
+  router.post('/', requirePermission(db, config, 'sync_verwalten'), csrfProtection, (req, res, next) => {
     const { maxDeaktivierungProzent, maxDeaktivierungAnzahl, syncFehlerEmpfaenger } = req.body;
     const errors = [];
 
@@ -57,20 +63,42 @@ export function createSyncRouter({ db, csrfProtection = (req, res, next) => next
       });
     }
 
-    setConfigValue(db, 'sync_max_deaktivierung_prozent', String(prozentNum));
-    setConfigValue(db, 'sync_max_deaktivierung_anzahl', String(anzahlNum));
-    setConfigValue(db, 'sync_fehler_empfaenger', syncFehlerEmpfaenger.trim());
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      setConfigValue(db, 'sync_max_deaktivierung_prozent', String(prozentNum));
+      setConfigValue(db, 'sync_max_deaktivierung_anzahl', String(anzahlNum));
+      setConfigValue(db, 'sync_fehler_empfaenger', syncFehlerEmpfaenger.trim());
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      return next(err);
+    }
     res.redirect('/admin/sync?gespeichert=1');
   });
 
-  router.post('/stalled/:jobId/freigeben', csrfProtection, (req, res) => {
+  router.post('/stalled/:jobId/freigeben', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, (req, res, next) => {
     const jobId = Number(req.params.jobId);
-    // Try the pool-release path first (covers zugewiesen/abgelehnt); if that's not the job's
-    // status, fall back to the admin-escalation path (covers freigabe2). Exactly one of the two
-    // can ever apply to a given status, so trying both in order is safe and needs no extra
-    // status lookup here.
-    if (!forceReleaseJob(db, jobId)) {
-      forceEskalierenFreigabe2AnAdmin(db, jobId);
+    const reason = typeof req.body?.begruendung === 'string' ? req.body.begruendung.trim() : '';
+    if (!reason || reason.length > 2000) {
+      return res.status(400).render('error', { message: 'Eine Begruendung (max. 2000 Zeichen) ist erforderlich.' });
+    }
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const stalled = listStalledJobs(db).find(({ job }) => job.id === jobId);
+      if (!stalled) {
+        db.exec('ROLLBACK');
+        return res.status(409).render('error', { message: 'Der Vorgang ist nicht mehr blockiert.' });
+      }
+      if (!forceReleaseJob(db, jobId)) forceEskalierenFreigabe2AnAdmin(db, jobId);
+      db.prepare(`INSERT INTO audit_ereignisse
+        (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, begruendung)
+        VALUES (?, ?, ?, 'jobs', ?, 'workflow_eingriff', ?)`).run(
+        new Date().toISOString(), req.currentPerson.churchtools_person_id,
+        `${req.currentPerson.vorname} ${req.currentPerson.nachname}`, String(jobId), reason);
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      return next(err);
     }
     res.redirect('/admin/sync');
   });

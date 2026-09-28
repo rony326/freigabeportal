@@ -286,12 +286,13 @@ offen noch abgelehnt/gelöscht):
 ## 7. Abholung und Archivierung
 
 Nach `abgeschlossen` übernimmt n8n: `GET /api/n8n/jobs/abholbereit` liefert
-die Liste, `POST /api/n8n/jobs/:id/abholung-bestaetigen` setzt den Job auf
-`abgeholt` und löscht PDF/Thumbnail vom Portal-Server (die Ablage
-übernimmt ab hier n8n). Der nächtliche `pdf-bereinigung`-Job setzt jeden
-`abgeholt`-Job, dessen Dateien tatsächlich weg sind, endgültig auf
-`archiviert` (siehe
-[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)).
+die Liste. Der neue Archivablauf schreibt einen Exportnachweis fest und
+verlangt nach Ablage in Paperless eine Quittung mit Dokument-ID und Dateihash.
+Der alte `abholung-bestaetigen`-Endpunkt setzt nur `abgeholt`, ohne Dateien zu loeschen.
+Erst mit Archivquittung, nach sieben Tagen und erneutem Hashvergleich darf
+`pdf-bereinigung` die lokale Datei entfernen und `archiviert` setzen.
+Siehe [Archivvertrag](n8n-paperless-archivierung.md) und
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md).
 
 ## "Stalled Jobs" — blockierte Rechnungen
 

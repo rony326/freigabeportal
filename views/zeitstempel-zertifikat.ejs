@@ -43,6 +43,7 @@
       <% if (job.betrag) { %><p class="mb-1"><strong>Betrag:</strong> <%= job.betrag %></p><% } %>
 
       <h2 class="h5 mt-4">Prüfergebnis</h2>
+      <p>TSA-Vertrauenskette und Sperrstatus wurden nicht geprüft. Die angegebene Uhrzeit ist nicht unabhängig bestätigt.</p>
       <ul class="list-unstyled">
         <li><%= ergebnis.vorhanden ? '✓' : '✗' %> Zeitstempel vorhanden</li>
         <li><%= ergebnis.gueltig ? '✓' : '✗' %> Kryptografisch gültig (RFC3161)</li>

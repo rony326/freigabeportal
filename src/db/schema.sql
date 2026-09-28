@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS person_berechtigungen (
   berechtigung TEXT NOT NULL CHECK (berechtigung IN (
     'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
     'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen', 'pool_zuweisen',
-    'kreditkarten_verwalten'
+    'sync_verwalten', 'workflow_eingreifen', 'kreditkarten_verwalten'
   )),
   PRIMARY KEY (person_id, berechtigung)
 );

@@ -1,6 +1,6 @@
-import { Router } from 'express';
+import { Router, json } from 'express';
 import multer from 'multer';
-import { writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import crypto from 'node:crypto';
 import { createJob, getJobById, findJobByDateiHash, listAbholbereitJobs, listAbholbereitGruppen, confirmAbholung, confirmGruppenAbholung, istGruppenElternjob, listSplitKinder, setThumbnailPfad, setQrDaten, setKkTextAnalyse } from '../../db/jobsRepo.js';
@@ -8,15 +8,14 @@ import { renderFirstPageThumbnail } from '../../services/thumbnail.js';
 import { scanQrBill } from '../../services/qrBillScan.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
 import { getPersonById } from '../../db/personenRepo.js';
-import { getKontoById } from '../../db/kontenRepo.js';
 import { sendNotificationMitVertretung } from '../../services/notify.js';
 import { getConfigValue } from '../../db/adminConfigRepo.js';
-import { fetchPersonById, extractCustomFieldValue } from '../../services/churchtools.js';
-import { normalizeIban } from '../../services/ibanUtils.js';
 import { extrahierePdfText } from '../../services/pdfText.js';
 import { analysiereText } from '../../services/kkTextAnalyse.js';
 import { erkenneKarte, hatErkennbareKarten } from '../../services/kkErkennung.js';
 import { markiereAlsKkAbrechnung } from '../../services/kkMarkierung.js';
+import { createExportEvidence, readExportDocument, confirmArchiveReceipt, ArchiveError } from '../../services/archiveReceipt.js';
+import { machineAuditContext } from '../../services/auditContext.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
@@ -39,6 +38,13 @@ function isPdf(buffer) {
 
 export function createN8nJobsRouter({ db, config, mailer }) {
   const router = Router();
+  router.use(machineAuditContext('service:n8n', 'n8n'));
+  router.param('id', (req, res, next, value) => {
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) <= 0) {
+      return res.status(400).json({ error: 'Ungueltige Job-ID.' });
+    }
+    next();
+  });
 
   router.post('/', (req, res, next) => {
     upload.single('pdf')(req, res, async (uploadErr) => {
@@ -164,24 +170,13 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     const jobs = listAbholbereitJobs(db, undefined, nurMitZeitstempel);
     const einzelPayload = await Promise.all(
       jobs.map(async (job) => {
-        const konto = job.konto_id ? getKontoById(db, job.konto_id) : null;
-        let iban = null;
-        let kontoinhaber = null;
-        if (job.quelle === 'spesen' && job.eingereicht_von) {
-          try {
-            const person = await fetchPersonById(config.churchtools, config.churchtools.syncServiceToken, job.eingereicht_von);
-            const ibanRoh = extractCustomFieldValue(person, config.churchtools.customFieldIban);
-            iban = ibanRoh ? normalizeIban(ibanRoh) : null;
-            kontoinhaber = extractCustomFieldValue(person, config.churchtools.customFieldKontoinhaber);
-          } catch (err) {
-            // A single unresolvable ChurchTools person must not block the whole Abholung
-            // response — n8n gets iban: null for this one job and decides itself how to handle
-            // a missing IBAN (e.g. skip and retry later), same tolerance-of-partial-failure
-            // pattern as this file's own thumbnail/QR best-effort steps above.
-            console.error(`IBAN-Abruf fehlgeschlagen für Spesen-Position ${job.id}:`, err.message);
-          }
-        }
+        const snapshot = job.freigabe_snapshot ? JSON.parse(job.freigabe_snapshot) : null;
+        const konto = snapshot?.konto || null;
+        const iban = snapshot?.zahlungsdaten?.iban ?? null;
+        const kontoinhaber = snapshot?.zahlungsdaten?.kontoinhaber ?? null;
         return {
+          nachweis_status: snapshot ? 'snapshot' : 'historisch_unvollstaendig',
+          export_nachweis_url: `/api/n8n/jobs/${job.id}/exportnachweis`,
           id: job.id,
           eingang_am: job.eingang_am,
           quelle: job.quelle,
@@ -198,11 +193,8 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           eingereicht_von: job.eingereicht_von,
           auslage_datum: job.auslage_datum,
           beschreibung: job.beschreibung,
-          // rechnungsdatum is only ever persisted for a Spesen position (Einreichedatum, see
-          // createSpesenPosition) — a Lieferant/Scanner job has no such column, so this falls
-          // back to its Zahlungsziel, live, giving n8n's Paperless-Versand one uniform field to
-          // read regardless of quelle.
-          rechnungsdatum: job.rechnungsdatum || job.zahlungsziel,
+          // An unknown invoice date must not be substituted with the payment deadline.
+          rechnungsdatum: job.rechnungsdatum || null,
           iban,
           kontoinhaber,
           qr_iban: job.qr_iban,
@@ -224,7 +216,8 @@ export function createN8nJobsRouter({ db, config, mailer }) {
       // plain geloescht-filter is enough here, no separate konto_id check needed.
       const kinder = listSplitKinder(db, parent.id).filter((k) => k.status !== 'geloescht');
       const positionen = kinder.map((kind) => {
-        const konto = getKontoById(db, kind.konto_id);
+        const snapshot = kind.freigabe_snapshot ? JSON.parse(kind.freigabe_snapshot) : null;
+        const konto = snapshot?.konto;
         return {
           konto_id: kind.konto_id,
           konto_kontonummer: konto?.kontonummer ?? null,
@@ -236,6 +229,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
       });
       return {
         id: parent.id,
+        export_nachweis_url: `/api/n8n/jobs/${parent.id}/exportnachweis`,
         eingang_am: parent.eingang_am,
         quelle: parent.quelle,
         absender: parent.absender,
@@ -264,58 +258,80 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     }
   });
 
-  router.post('/:id/abholung-bestaetigen', (req, res) => {
+  router.get('/archivierung-ausstehend', (req, res) => {
+    const after = req.query.nach_id ?? '0';
+    if (typeof after !== 'string' || !/^\d+$/.test(after) || !Number.isSafeInteger(Number(after))) {
+      return res.status(400).json({ error: 'Ungueltiger Cursor nach_id.' });
+    }
+    const rows = db.prepare(`SELECT j.id, j.status FROM jobs j
+      WHERE j.id > ? AND j.aufgesplittet_von IS NULL
+        AND (j.status IN ('abgeholt', 'archiviert') OR (j.status = 'aufgesplittet' AND j.gruppe_abgeholt_am IS NOT NULL))
+        AND NOT EXISTS (SELECT 1 FROM export_nachweise e JOIN archiv_quittungen q ON q.export_id = e.id WHERE e.job_id = j.id)
+      ORDER BY j.id LIMIT 100`).all(Number(after));
+    res.set('Cache-Control', 'no-store').json(rows.map((row) => ({ ...row, export_nachweis_url: `/api/n8n/jobs/${row.id}/exportnachweis` })));
+  });
+
+  router.get('/:id/exportnachweis', (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store').json(createExportEvidence(db, Number(req.params.id)));
+    } catch (err) {
+      if (err instanceof ArchiveError) return res.status(err.status).json({ error: err.message });
+      next(err);
+    }
+  });
+
+  router.post('/:id/archivierung-bestaetigen', json({ limit: '8kb' }), (req, res, next) => {
+    try {
+      const quittung = confirmArchiveReceipt(db, Number(req.params.id), req.body);
+      res.json({ id: Number(req.params.id), status: 'archiv_bestaetigt', quittung });
+    } catch (err) {
+      if (err instanceof ArchiveError) return res.status(err.status).json({ error: err.message });
+      next(err);
+    }
+  });
+
+  router.get('/:id/exportdatei/:exportId', (req, res, next) => {
+    try {
+      const bytes = readExportDocument(db, Number(req.params.id), req.params.exportId);
+      res.set('Cache-Control', 'no-store').type('application/pdf').send(bytes);
+    } catch (err) {
+      if (err instanceof ArchiveError) return res.status(err.status).json({ error: err.message });
+      next(err);
+    }
+  });
+
+  // Compatibility ACK records transport only. It never proves archival or deletes files.
+  router.post('/:id/abholung-bestaetigen', (req, res, next) => {
     const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
     const id = Number(req.params.id);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      if (istGruppenElternjob(db, id)) {
+        const ergebnis = confirmGruppenAbholung(db, id, nurMitZeitstempel);
+        if (!ergebnis) {
+          db.exec('ROLLBACK');
+          return res
+            .status(409)
+            .json({ error: 'Splitgruppe ist nicht bereit zur Abholung, oder der Zeitstempel steht noch aus.' });
+        }
+        db.exec('COMMIT');
+        return res.json({ id: ergebnis.parent.id, status: 'abgeholt', archiv_bestaetigt: false });
+      }
 
-    if (istGruppenElternjob(db, id)) {
-      const ergebnis = confirmGruppenAbholung(db, id, nurMitZeitstempel);
-      if (!ergebnis) {
+      const candidate = getJobById(db, id);
+      const job = candidate?.aufgesplittet_von ? null : confirmAbholung(db, id, nurMitZeitstempel);
+      if (!job) {
+        db.exec('ROLLBACK');
         return res
           .status(409)
-          .json({ error: 'Splitgruppe ist nicht bereit zur Abholung, oder der Zeitstempel steht noch aus.' });
+          .json({ error: 'Job ist nicht im Status "abgeschlossen" oder bereits abgeholt, oder der Zeitstempel steht noch aus.' });
       }
-      for (const kind of ergebnis.kinder) {
-        try {
-          if (kind.pdf_pfad && existsSync(kind.pdf_pfad)) unlinkSync(kind.pdf_pfad);
-        } catch (err) {
-          console.error(`Löschen der PDF für Splitkind ${kind.id} nach Abholung fehlgeschlagen:`, err.message);
-        }
-        try {
-          if (kind.thumbnail_pfad && existsSync(kind.thumbnail_pfad)) unlinkSync(kind.thumbnail_pfad);
-        } catch (err) {
-          console.error(`Löschen des Thumbnails für Splitkind ${kind.id} nach Abholung fehlgeschlagen:`, err.message);
-        }
-      }
-      try {
-        if (existsSync(ergebnis.parent.gruppe_pdf_pfad)) unlinkSync(ergebnis.parent.gruppe_pdf_pfad);
-      } catch (err) {
-        console.error(`Löschen der Gruppen-PDF für Elternjob ${ergebnis.parent.id} nach Abholung fehlgeschlagen:`, err.message);
-      }
-      return res.json({ id: ergebnis.parent.id, status: 'abgeholt' });
-    }
-
-    const job = confirmAbholung(db, id, nurMitZeitstempel);
-    if (!job) {
-      return res
-        .status(409)
-        .json({ error: 'Job ist nicht im Status "abgeschlossen" oder bereits abgeholt, oder der Zeitstempel steht noch aus.' });
-    }
-    try {
-      if (job.pdf_pfad && existsSync(job.pdf_pfad)) {
-        unlinkSync(job.pdf_pfad);
-      }
+      db.exec('COMMIT');
+      res.json({ id: job.id, status: job.status, archiv_bestaetigt: false });
     } catch (err) {
-      console.error(`Löschen der PDF für Job ${job.id} nach Abholung fehlgeschlagen:`, err.message);
+      db.exec('ROLLBACK');
+      next(err);
     }
-    try {
-      if (job.thumbnail_pfad && existsSync(job.thumbnail_pfad)) {
-        unlinkSync(job.thumbnail_pfad);
-      }
-    } catch (err) {
-      console.error(`Löschen des Thumbnails für Job ${job.id} nach Abholung fehlgeschlagen:`, err.message);
-    }
-    res.json({ id: job.id, status: job.status });
   });
 
   return router;

@@ -78,7 +78,8 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId) {
     const positionen = [];
     const verlauf = [];
     for (const kind of kinder) {
-      const konto = getKontoById(db, kind.konto_id);
+      const snapshot = kind.freigabe_snapshot ? JSON.parse(kind.freigabe_snapshot) : null;
+      const konto = snapshot?.konto || getKontoById(db, kind.konto_id);
       const freigaben = listFreigabenByJob(db, kind.id);
       const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
       const freigabe2 = freigaben.findLast((f) => f.rolle === 'freigeber2');
@@ -89,9 +90,10 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId) {
         betrag: kind.betrag,
         typ: kind.typ,
         position: kind.rechnungsposition,
-        kkHinweis: kkHinweisFuerJob(db, kind),
-        freigeber1: buildFreigabeEintrag(getPersonById(db, freigabe1.person_id), freigabe1),
-        freigeber2: buildFreigabeEintrag(getPersonById(db, freigabe2.person_id), freigabe2),
+        // Wie freigeber1/2: der bei Freigabe 2 eingefrorene Hinweis hat Vorrang vor dem Live-Wert.
+        kkHinweis: snapshot?.stampData && 'kkHinweis' in snapshot.stampData ? snapshot.stampData.kkHinweis : kkHinweisFuerJob(db, kind),
+        freigeber1: snapshot?.stampData.freigeber1 || buildFreigabeEintrag(getPersonById(db, freigabe1.person_id), freigabe1),
+        freigeber2: snapshot?.stampData.freigeber2 || buildFreigabeEintrag(getPersonById(db, freigabe2.person_id), freigabe2),
       });
 
       const praefix = `Konto ${konto.kontonummer}${kind.rechnungsposition ? ` (Pos. ${kind.rechnungsposition})` : ''}`;

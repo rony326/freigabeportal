@@ -185,7 +185,7 @@ export function assignJobToPerson(db, jobId, personId) {
 // feature is off (no TSA configured), the caller passes false so nothing changes.
 export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false) {
   const staleThreshold = new Date(Date.now() - staleAfterMs).toISOString();
-  const zeitstempelBedingung = nurMitZeitstempel ? ' AND zeitstempel_gesetzt_am IS NOT NULL' : '';
+  const zeitstempelBedingung = nurMitZeitstempel ? ' AND zeitstempel_gesetzt_am IS NOT NULL' : ' AND (zeitstempel_erforderlich = 0 OR zeitstempel_gesetzt_am IS NOT NULL)';
   const rows = db
     .prepare(
       `SELECT * FROM jobs WHERE status = 'abgeschlossen' AND aufgesplittet_von IS NULL
@@ -205,7 +205,7 @@ export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZei
 // gate: even a job n8n already knows about (e.g. from before the feature was enabled) must not
 // be confirmable without a timestamp while the feature is active.
 export function confirmAbholung(db, id, nurMitZeitstempel = false) {
-  const zeitstempelBedingung = nurMitZeitstempel ? " AND zeitstempel_gesetzt_am IS NOT NULL" : '';
+  const zeitstempelBedingung = nurMitZeitstempel ? " AND zeitstempel_gesetzt_am IS NOT NULL" : ' AND (zeitstempel_erforderlich = 0 OR zeitstempel_gesetzt_am IS NOT NULL)';
   const result = db
     .prepare(`UPDATE jobs SET status = 'abgeholt' WHERE id = ? AND status = 'abgeschlossen'${zeitstempelBedingung}`)
     .run(id);

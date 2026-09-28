@@ -21,15 +21,24 @@ function requiredSecret(env, name) {
   return value;
 }
 
-export function loadConfig(env = process.env) {
+export function loadStorageConfig(env = process.env) {
   return {
-    env: env.NODE_ENV || 'development',
-    port: Number(env.PORT) || 3000,
-    sessionSecret: requiredSecret(env, 'SESSION_SECRET'),
     dbPath: env.DB_PATH || './data/freigabeportal.sqlite',
     brandingDir: env.BRANDING_DIR || './data/branding',
     jobsDir: env.JOBS_DIR || './data/jobs',
     backupDir: env.BACKUP_DIR || './data/backups',
+  };
+}
+
+export function loadConfig(env = process.env) {
+  if (env.BACKUP_API_KEY && env.BACKUP_API_KEY === env.N8N_API_KEY) {
+    throw new Error('BACKUP_API_KEY muss sich von N8N_API_KEY unterscheiden.');
+  }
+  return {
+    env: env.NODE_ENV || 'development',
+    port: Number(env.PORT) || 3000,
+    sessionSecret: requiredSecret(env, 'SESSION_SECRET'),
+    ...loadStorageConfig(env),
     downloadSigningSecret: requiredSecret(env, 'DOWNLOAD_SIGNING_SECRET'),
     publicBaseUrl: required(env, 'PUBLIC_BASE_URL'),
     churchtools: {
@@ -46,6 +55,7 @@ export function loadConfig(env = process.env) {
     },
     cronSecret: requiredSecret(env, 'CRON_SECRET'),
     n8nApiKey: requiredSecret(env, 'N8N_API_KEY'),
+    backupApiKey: env.BACKUP_API_KEY ? requiredSecret(env, 'BACKUP_API_KEY') : null,
     smtp: {
       host: env.SMTP_HOST,
       port: Number(env.SMTP_PORT) || 587,

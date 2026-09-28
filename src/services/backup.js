@@ -1,14 +1,57 @@
 import AdmZip from 'adm-zip';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync, existsSync, readdirSync, mkdirSync, renameSync, writeFileSync, copyFileSync, cpSync } from 'node:fs';
+import { mkdtempSync, rmSync, readdirSync, readFileSync, lstatSync, openSync, closeSync, fstatSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { openDatabase } from '../db/index.js';
-import { logBackupWiederherstellung } from '../db/backupWiederherstellungenRepo.js';
+import { join, resolve, relative, isAbsolute, sep } from 'node:path';
+import { createHash } from 'node:crypto';
 
-const REQUIRED_TABLES = ['jobs', 'personen', 'konten'];
-const FORMAT_VERSION = 1;
+const REQUIRED_TABLES = ['jobs', 'personen', 'konten', 'sessions', 'admin_config', 'freigaben', 'audit_ereignisse', 'export_nachweise', 'archiv_quittungen'];
+const FORMAT_VERSION = 2;
+export const BACKUP_LIMITS = Object.freeze({
+  archiveBytes: 256 * 1024 * 1024,
+  entryBytes: 128 * 1024 * 1024,
+  totalBytes: 512 * 1024 * 1024,
+  entries: 10000,
+  manifestBytes: 4 * 1024 * 1024,
+});
+
+function sha256(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
+
+function checkArchivePath(name, directory = false) {
+  const parts = (directory ? name.slice(0, -1) : name).split('/');
+  if (typeof name !== 'string' || name.length > 1024 || /[\\\x00-\x1f\x7f:]/.test(name) ||
+      parts.some((part) => !part || part === '.' || part === '..' || /[. ]$/.test(part)) ||
+      !(name === 'db.sqlite' || name === 'manifest.json' || ['jobs', 'branding'].includes(parts[0]) && (directory || parts.length > 1))) {
+    throw new BackupValidationError('Unzulaessiger Pfad im Backup-Archiv.');
+  }
+}
+
+function validateFileReferences(db, manifest, zip) {
+  const roots = manifest.quellpfade;
+  if (!roots || !['jobs', 'branding', 'cwd'].every((key) => typeof roots[key] === 'string' && isAbsolute(roots[key]))) {
+    throw new BackupValidationError('Quellpfade fehlen im Backup-Manifest.');
+  }
+  function check(path, root, required, expectedHash = null) {
+    if (!path) return;
+    const name = relative(roots[root], resolve(roots.cwd, path));
+    if (!name || name === '..' || name.startsWith(`..${sep}`) || isAbsolute(name)) {
+      throw new BackupValidationError('Datenbank verweist auf eine Datei ausserhalb des gesicherten Verzeichnisses.');
+    }
+    const entry = zip.getEntry(`${root}/${name.split(sep).join('/')}`);
+    if (required && (!entry || entry.isDirectory)) throw new BackupValidationError('Eine aktive Datenbank-Dateireferenz fehlt im Backup.');
+    if (entry && expectedHash && sha256(entry.getData()) !== expectedHash) {
+      throw new BackupValidationError('Belegdatei stimmt nicht mit dem finalen Datenbank-Hash ueberein.');
+    }
+  }
+  for (const job of db.prepare('SELECT status, pdf_pfad, thumbnail_pfad, gruppe_pdf_pfad, gruppe_abgeholt_am, final_datei_hash, zeitstempel_datei_hash, gruppe_zeitstempel_datei_hash FROM jobs').all()) {
+    const active = !['archiviert', 'abgeholt', 'geloescht'].includes(job.status);
+    check(job.pdf_pfad, 'jobs', active, job.zeitstempel_datei_hash || job.final_datei_hash);
+    check(job.thumbnail_pfad, 'jobs', active);
+    check(job.gruppe_pdf_pfad, 'jobs', active && !job.gruppe_abgeholt_am, job.gruppe_zeitstempel_datei_hash);
+  }
+  const logo = db.prepare("SELECT value FROM admin_config WHERE key = 'branding_logo_pfad'").get();
+  if (logo?.value) check(logo.value, 'branding', true);
+}
 
 export const BACKUP_DATEINAME_PATTERN = /^backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.zip$/;
 
@@ -31,11 +74,50 @@ export function buildBackupArchive(db, config) {
   try {
     const dbSnapshotPfad = join(tmpDir, 'db.sqlite');
     db.prepare('VACUUM INTO ?').run(dbSnapshotPfad);
+    const snapshotDb = new DatabaseSync(dbSnapshotPfad);
+    try { snapshotDb.exec('PRAGMA secure_delete = ON; DELETE FROM sessions; VACUUM;'); } finally { snapshotDb.close(); }
 
     const zip = new AdmZip();
-    zip.addLocalFile(dbSnapshotPfad, '', 'db.sqlite');
-    if (existsSync(config.jobsDir)) zip.addLocalFolder(config.jobsDir, 'jobs');
-    if (existsSync(config.brandingDir)) zip.addLocalFolder(config.brandingDir, 'branding');
+    const dateien = [];
+    const names = new Set();
+    let totalBytes = 0;
+    function addFile(path, name) {
+      checkArchivePath(name);
+      const canonical = name.normalize('NFC').toLowerCase();
+      if (names.has(canonical)) throw new BackupValidationError('Doppelter portabler Dateipfad im Backup.');
+      names.add(canonical);
+      const stat = lstatSync(path);
+      if (!stat.isFile() || stat.size > BACKUP_LIMITS.entryBytes || totalBytes + stat.size > BACKUP_LIMITS.totalBytes || dateien.length >= BACKUP_LIMITS.entries - 1) {
+        throw new BackupValidationError('Backup enthaelt unzulaessige Dateien oder ueberschreitet die Groessenlimits.');
+      }
+      const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      let bytes;
+      try {
+        const opened = fstatSync(fd);
+        if (!opened.isFile() || opened.size !== stat.size || opened.ino !== stat.ino || opened.dev !== stat.dev) {
+          throw new BackupValidationError('Datei wurde waehrend der Sicherung ausgetauscht.');
+        }
+        bytes = readFileSync(fd);
+      } finally { closeSync(fd); }
+      if (bytes.length !== stat.size) throw new BackupValidationError('Datei wurde waehrend der Sicherung veraendert.');
+      totalBytes += bytes.length;
+      zip.addFile(name, bytes, '', 0o600);
+      dateien.push({ pfad: name, groesse: bytes.length, sha256: sha256(bytes) });
+    }
+    function addDirectory(path, prefix) {
+      const stat = lstatSync(path, { throwIfNoEntry: false });
+      if (!stat) return;
+      if (!stat.isDirectory()) throw new BackupValidationError('Backup-Verzeichnis darf kein symbolischer Link sein.');
+      for (const name of readdirSync(path).sort()) {
+        const child = join(path, name);
+        const stat = lstatSync(child);
+        if (stat.isDirectory()) addDirectory(child, `${prefix}/${name}`);
+        else addFile(child, `${prefix}/${name}`);
+      }
+    }
+    addFile(dbSnapshotPfad, 'db.sqlite');
+    addDirectory(config.jobsDir, 'jobs');
+    addDirectory(config.brandingDir, 'branding');
     zip.addFile(
       'manifest.json',
       Buffer.from(
@@ -43,30 +125,61 @@ export function buildBackupArchive(db, config) {
           {
             formatVersion: FORMAT_VERSION,
             erstelltAm: new Date().toISOString(),
-            // Reine Plausibilitätsangaben für den Restore (siehe validateBackupArchive) -- gezählt
-            // wird auf dem fertigen Zip, damit Schreib- und Leseseite exakt dieselbe Logik nutzen.
             dateiAnzahlJobs: zaehleDateiEintraege(zip, 'jobs/'),
             dateiAnzahlBranding: zaehleDateiEintraege(zip, 'branding/'),
+            dateien,
+            quellpfade: { jobs: resolve(config.jobsDir), branding: resolve(config.brandingDir), cwd: process.cwd() },
           },
           null,
           2
         )
       )
     );
-    return zip.toBuffer();
+    if (zip.getEntry('manifest.json').header.size > BACKUP_LIMITS.manifestBytes) throw new BackupValidationError('Backup-Manifest ist zu gross.');
+    const manifest = JSON.parse(zip.readAsText('manifest.json'));
+    const referenceDb = new DatabaseSync(dbSnapshotPfad, { readOnly: true });
+    try { validateFileReferences(referenceDb, manifest, zip); } finally { referenceDb.close(); }
+    const buffer = zip.toBuffer();
+    if (buffer.length > BACKUP_LIMITS.archiveBytes) throw new BackupValidationError('Backup-Archiv ist zu gross.');
+    return buffer;
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 
-// Validiert vollständig, BEVOR restoreBackupArchive irgendetwas Live anfasst -- wirft
-// BackupValidationError mit einer für Admins verständlichen deutschen Meldung statt eines
-// generischen Fehlers.
+// Validates untrusted archive structure/content before offline staging writes any data.
+// Content hashes are consistency checks, not an independent proof of archive origin.
 export function validateBackupArchive(buffer) {
   let zip;
   try {
+    if (!Buffer.isBuffer(buffer) || buffer.length > BACKUP_LIMITS.archiveBytes) throw new BackupValidationError('Backup-Archiv ist zu gross oder ungueltig.');
     zip = new AdmZip(buffer);
-  } catch {
+    if (zip.getEntryCount() > BACKUP_LIMITS.entries) throw new BackupValidationError('Zu viele Eintraege im Backup-Archiv.');
+    const names = new Map();
+    let totalBytes = 0;
+    for (const entry of zip.getEntries()) {
+      checkArchivePath(entry.entryName, entry.isDirectory);
+      const canonical = entry.entryName.replace(/\/$/, '').normalize('NFC').toLowerCase();
+      if (names.has(canonical)) throw new BackupValidationError('Doppelter Pfad im Backup-Archiv.');
+      names.set(canonical, entry.isDirectory);
+      const mode = (entry.attr >>> 16) & 0xf000;
+      if (mode && mode !== (entry.isDirectory ? 0x4000 : 0x8000)) throw new BackupValidationError('Links und Spezialdateien sind im Backup nicht erlaubt.');
+      const size = entry.header.size;
+      totalBytes += size;
+      if (!Number.isSafeInteger(size) || size < 0 || size > BACKUP_LIMITS.entryBytes ||
+          totalBytes > BACKUP_LIMITS.totalBytes || entry.isDirectory && size !== 0 ||
+          entry.entryName === 'manifest.json' && size > BACKUP_LIMITS.manifestBytes) {
+        throw new BackupValidationError('Entpackgroesse ueberschreitet die Backup-Limits.');
+      }
+    }
+    for (const name of names.keys()) {
+      const parts = name.split('/');
+      for (let i = 1; i < parts.length; i += 1) {
+        if (names.get(parts.slice(0, i).join('/')) === false) throw new BackupValidationError('Datei kollidiert mit einem Verzeichnispfad im Backup.');
+      }
+    }
+  } catch (err) {
+    if (err instanceof BackupValidationError) throw err;
     throw new BackupValidationError('Datei ist kein gültiges ZIP-Archiv.');
   }
 
@@ -86,27 +199,40 @@ export function validateBackupArchive(buffer) {
 
   // Harte Grenze: ein Archiv aus einer neueren Portal-Version kann Strukturen enthalten, die diese
   // Version beim Restore stillschweigend falsch behandeln würde.
-  if (Number(manifest.formatVersion) > FORMAT_VERSION) {
+  if (manifest.formatVersion !== FORMAT_VERSION) {
     throw new BackupValidationError(
-      'Dieses Backup wurde mit einer neueren Portal-Version erstellt und kann hier nicht wiederhergestellt werden.'
+      'Nur Backup-Format 2 mit Dateimanifest wird akzeptiert. Alte oder unbekannte Formate benoetigen einen gesonderten Migrationsprozess.'
     );
   }
 
-  // Weiche Plausibilitätsprüfung (Design-Spec: "erste Plausibilitätsprüfung"): eine Abweichung
-  // zwischen deklarierter und tatsächlicher Dateianzahl deutet auf ein beschädigtes oder
-  // nachträglich verändertes Archiv hin, ist aber kein Grund, einen Restore zu verweigern.
+  if (typeof manifest.erstelltAm !== 'string' || !Number.isFinite(Date.parse(manifest.erstelltAm)) || !Array.isArray(manifest.dateien)) {
+    throw new BackupValidationError('Backup-Manifest ist unvollstaendig.');
+  }
   for (const [praefix, feld] of [
     ['jobs/', 'dateiAnzahlJobs'],
     ['branding/', 'dateiAnzahlBranding'],
   ]) {
     const deklariert = manifest[feld];
-    if (typeof deklariert !== 'number') continue;
     const tatsaechlich = zaehleDateiEintraege(zip, praefix);
-    if (deklariert !== tatsaechlich) {
-      console.warn(
-        `Backup-Archiv: manifest.json meldet ${deklariert} Datei(en) unter "${praefix}", tatsächlich enthalten sind ${tatsaechlich}.`
-      );
+    if (!Number.isSafeInteger(deklariert) || deklariert !== tatsaechlich) throw new BackupValidationError('Dateianzahl stimmt nicht mit dem Manifest ueberein.');
+  }
+
+  const declared = new Set();
+  for (const file of manifest.dateien) {
+    if (!file || typeof file.pfad !== 'string' || file.pfad === 'manifest.json' || declared.has(file.pfad) ||
+        !Number.isSafeInteger(file.groesse) || file.groesse < 0 || typeof file.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(file.sha256)) {
+      throw new BackupValidationError('Ungueltiger Dateinachweis im Backup-Manifest.');
     }
+    declared.add(file.pfad);
+    const entry = zip.getEntry(file.pfad);
+    if (!entry || entry.isDirectory || entry.header.size !== file.groesse) throw new BackupValidationError('Manifestdatei fehlt oder hat eine andere Groesse.');
+    try {
+      const bytes = entry.getData();
+      if (bytes.length !== file.groesse || sha256(bytes) !== file.sha256) throw new Error('Hash mismatch');
+    } catch { throw new BackupValidationError('Backup-Datei ist beschaedigt oder stimmt nicht mit ihrem SHA-256 ueberein.'); }
+  }
+  if (zip.getEntries().some((entry) => !entry.isDirectory && entry.entryName !== 'manifest.json' && !declared.has(entry.entryName))) {
+    throw new BackupValidationError('Archiv enthaelt Dateien ausserhalb des Manifests.');
   }
 
   const dbEntry = zip.getEntry('db.sqlite');
@@ -123,12 +249,21 @@ export function validateBackupArchive(buffer) {
     // BackupValidationError herauskommt statt als roher Fehler durchzuschlagen (siehe Task 8, das
     // gezielt auf BackupValidationError für die deutsche Admin-Fehlermeldung prüft).
     try {
-      testDb = new DatabaseSync(tmpDbPfad);
+      testDb = new DatabaseSync(tmpDbPfad, { readOnly: true });
+      testDb.exec('PRAGMA trusted_schema = OFF');
+      const integrity = testDb.prepare('PRAGMA integrity_check').all();
+      if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok' || testDb.prepare('PRAGMA foreign_key_check').all().length) {
+        throw new BackupValidationError('Datenbankintegritaet oder Fremdschluesselpruefung fehlgeschlagen.');
+      }
       const tables = new Set(testDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name));
       for (const required of REQUIRED_TABLES) {
         if (!tables.has(required)) {
           throw new BackupValidationError(`db.sqlite im Archiv hat keine Tabelle "${required}" — kein gültiges Freigabeportal-Backup.`);
         }
+      }
+      validateFileReferences(testDb, manifest, zip);
+      if (testDb.prepare('SELECT 1 FROM sessions LIMIT 1').get()) {
+        throw new BackupValidationError('Backup enthaelt aktive Sessions.');
       }
     } catch (err) {
       if (err instanceof BackupValidationError) throw err;
@@ -143,79 +278,7 @@ export function validateBackupArchive(buffer) {
   return { zip, manifest };
 }
 
-function ersetzeVerzeichnisInhalt(zielVerzeichnis, quellVerzeichnis) {
-  mkdirSync(zielVerzeichnis, { recursive: true });
-  for (const name of readdirSync(zielVerzeichnis)) {
-    rmSync(join(zielVerzeichnis, name), { recursive: true, force: true });
-  }
-  if (existsSync(quellVerzeichnis)) {
-    for (const name of readdirSync(quellVerzeichnis)) {
-      cpSync(join(quellVerzeichnis, name), join(zielVerzeichnis, name), { recursive: true });
-    }
-  }
-}
-
-// Kein process.exit(), kein Versuch, die laufende `db`-Verbindung live auszutauschen -- siehe
-// Design-Spec (docs/superpowers/specs/2026-08-24-datenbank-backup-design.md, Abschnitt "Kontext").
-// `db` wird hier nur für den Sicherheits-Snapshot (VACUUM INTO vom noch unveränderten Live-Stand)
-// gebraucht.
-export function restoreBackupArchive(buffer, db, config, { wiederhergestelltVon, quellDateiname }) {
-  const { zip } = validateBackupArchive(buffer);
-
-  const sicherheitsSnapshot = buildBackupArchive(db, config);
-  mkdirSync(config.backupDir, { recursive: true });
-  const sicherheitsDateiname = backupDateiname(new Date());
-  writeFileSync(join(config.backupDir, sicherheitsDateiname), sicherheitsSnapshot);
-
-  const tmpDir = mkdtempSync(join(tmpdir(), 'freigabeportal-restore-'));
-  try {
-    zip.extractAllTo(tmpDir, true);
-
-    // Neue DB-Datei komplett schreiben, dann atomar per renameSync an DB_PATH -- niemals in-place
-    // über die von der laufenden DatabaseSync-Verbindung offen gehaltene Datei schreiben.
-    const dbTmpPfad = `${config.dbPath}.restore-${randomUUID()}.tmp`;
-    copyFileSync(join(tmpDir, 'db.sqlite'), dbTmpPfad);
-    renameSync(dbTmpPfad, config.dbPath);
-
-    ersetzeVerzeichnisInhalt(config.jobsDir, join(tmpDir, 'jobs'));
-    ersetzeVerzeichnisInhalt(config.brandingDir, join(tmpDir, 'branding'));
-  } finally {
-    rmSync(tmpDir, { recursive: true, force: true });
-  }
-
-  // `db` (die lang laufende Verbindung des aufrufenden Prozesses) zeigt weiterhin auf die alte
-  // Datei -- renameSync tauscht nur den Verzeichniseintrag, das offene File-Handle bleibt am alten
-  // Inode. Ein Log-Eintrag über `db` würde also in eine Datei geschrieben, die beim nächsten
-  // Prozess-Neustart verworfen wird, sobald die gerade wiederhergestellte Datei übernommen wird.
-  // Eine frische, kurzlebige Verbindung direkt auf die neue Datei ist der einzige Weg, wie dieser
-  // Audit-Eintrag den Neustart übersteht.
-  //
-  // openDatabase() statt `new DatabaseSync(config.dbPath)`: Der Datei-Swap ist an dieser Stelle
-  // bereits vollständig und korrekt abgeschlossen -- nur der Audit-Log-Insert steht noch aus. Ein
-  // wiederhergestelltes Archiv kann älter sein als das aktuelle Schema (z.B. von vor Task 2, ohne
-  // die Tabelle backup_wiederherstellungen). openDatabase() fährt schema.sql + Migrationen, bevor
-  // die Verbindung zurückgegeben wird, genau wie jeder andere Einstiegspunkt in dieser Codebase --
-  // damit existiert die Tabelle garantiert, statt dass ein "no such table"-Fehler hier den
-  // eigentlich erfolgreichen Restore fälschlich als fehlgeschlagen erscheinen lässt.
-  //
-  // Der komplette Audit-Schritt ist in einem eigenen try/catch isoliert (analog zur
-  // Retention-Bereinigung in runDatenbankSicherungJob): der Restore ist an dieser Stelle bereits
-  // vollständig und erfolgreich auf der Platte. Schlägt nur noch die Buchführung fehl, darf das
-  // niemals als fehlgeschlagener Restore gemeldet werden -- die Route würde sonst eine 500-Seite
-  // zeigen, obwohl die Live-Daten längst ersetzt sind und der Admin sofort neu starten muss.
-  let restoredDb;
-  try {
-    restoredDb = openDatabase(config.dbPath);
-    logBackupWiederherstellung(restoredDb, { dateiname: quellDateiname, wiederhergestelltVon });
-  } catch (err) {
-    console.error('Audit-Eintrag zur Wiederherstellung konnte nicht geschrieben werden:', err.message);
-  } finally {
-    try {
-      restoredDb?.close();
-    } catch (err) {
-      console.error('Schliessen der Verbindung zur wiederhergestellten Datenbank fehlgeschlagen:', err.message);
-    }
-  }
-
-  return { sicherheitsSnapshotDateiname: sicherheitsDateiname };
+// Retained as an explicit failure for callers of the unsafe legacy service API.
+export function restoreBackupArchive() {
+  throw new Error('Live-Restore ist gesperrt. Den Offline-Wartungsprozess backup:restore verwenden.');
 }

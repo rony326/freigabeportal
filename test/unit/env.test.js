@@ -23,6 +23,14 @@ const FULL_ENV = {
   SMTP_FROM: 'portal@example.org',
 };
 
+test('backup API is disabled by default and requires a distinct strong credential', () => {
+  assert.equal(loadConfig(FULL_ENV).backupApiKey, null);
+  assert.throws(() => loadConfig({ ...FULL_ENV, BACKUP_API_KEY: FULL_ENV.N8N_API_KEY }), /unterscheiden/);
+  assert.throws(() => loadConfig({ ...FULL_ENV, BACKUP_API_KEY: 'short' }), /zu kurz/);
+  const key = 'independent-backup-credential-1234567890';
+  assert.equal(loadConfig({ ...FULL_ENV, BACKUP_API_KEY: key }).backupApiKey, key);
+});
+
 test('loadConfig returns full config when all variables are set', () => {
   const config = loadConfig(FULL_ENV);
   assert.equal(config.churchtools.baseUrl, 'https://ct.example.org');

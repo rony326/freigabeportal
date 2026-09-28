@@ -59,7 +59,8 @@ test('runZeitstempelNachholenJob sets zeitstempel_gesetzt_am for a pending abges
   assert.equal(result.dateiFehlt, 0);
   const job = getJobById(db, id);
   assert.ok(job.zeitstempel_gesetzt_am);
-  assert.equal(job.zeitstempel_datei_hash, createHash('sha256').update(readFileSync(pdfPfad)).digest('hex'), 'the stored hash must match the final stamped bytes on disk');
+  assert.notEqual(job.pdf_pfad, pdfPfad, 'the source file must not be overwritten');
+  assert.equal(job.zeitstempel_datei_hash, createHash('sha256').update(readFileSync(job.pdf_pfad)).digest('hex'), 'the stored hash must match the final stamped bytes on disk');
 
   const log = listRecentCronLog(db, 'zeitstempel-nachholen', 1);
   assert.equal(log.length, 1);
@@ -157,6 +158,8 @@ test('runZeitstempelNachholenJob counts a rejected hash overwrite as fehlgeschla
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
   const { id } = await seedAbgeschlossenJob(db, dir);
   db.prepare('UPDATE jobs SET zeitstempel_datei_hash = ? WHERE id = ?').run('bereits-vorhandener-hash', id);
+  const originalPath = getJobById(db, id).pdf_pfad;
+  const originalBytes = readFileSync(originalPath);
 
   const client = setupMockTsa('https://tsa.example.org/tsr');
   client.intercept({ path: '/tsr', method: 'POST' }).reply(200, RFC3161_RESPONSE, { headers: { 'content-type': 'application/timestamp-reply' } });
@@ -168,6 +171,9 @@ test('runZeitstempelNachholenJob counts a rejected hash overwrite as fehlgeschla
   const job = getJobById(db, id);
   assert.equal(job.zeitstempel_gesetzt_am, null, 'must stay null — the trigger rejected the write before it could be recorded');
   assert.equal(job.zeitstempel_datei_hash, 'bereits-vorhandener-hash', 'the original hash must survive untouched');
+  assert.equal(job.pdf_pfad, originalPath);
+  assert.deepEqual(readFileSync(originalPath), originalBytes, 'a failed DB commit must not replace the existing PDF');
+  assert.equal(readdirSync(dir).filter((name) => name.startsWith('final-')).length, 0);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

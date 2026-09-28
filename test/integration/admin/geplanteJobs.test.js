@@ -376,12 +376,12 @@ test('POST /admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren runs it now, lo
   const triggerRes = await request(app).post('/admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren').set('x-test-person-id', '99');
   assert.equal(triggerRes.status, 302);
   assert.equal(triggerRes.headers.location, '/admin/geplante-jobs?getriggert=pdf-bereinigung');
-  assert.equal(getJobById(db, jobId).status, 'archiviert');
+  assert.equal(getJobById(db, jobId).status, 'abgeholt');
 
   const res = await request(app).get(triggerRes.headers.location).set('x-test-person-id', '99');
   assert.equal(res.status, 200);
   assert.match(res.text, /alert-success/);
-  assert.match(res.text, /Archiviert: 1/);
+  assert.match(res.text, /Archiviert: 0/);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

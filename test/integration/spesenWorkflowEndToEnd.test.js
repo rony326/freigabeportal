@@ -102,6 +102,9 @@ test('a Spesen position walks the full path: Einreichung -> Freigabe1 -> Freigab
 
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Frei', nachname: 'Geber2', email: 'f2@example.org', gruppen: [] });
   const freigeber2Token = await fetchCsrfToken(freigeber2Agent, `/freigabe2/${jobId}`);
+  client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(200, {
+    data: { id: 5, iban_1: 'CH93 0076 2011 6238 5295 7', kontoinhaber: 'Ein Reicher' },
+  });
   const freigabe2Res = await freigeber2Agent
     .post(`/freigabe2/${jobId}`)
     .type('form')

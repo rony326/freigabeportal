@@ -12,6 +12,7 @@ import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { requirePermission } from '../../../src/middleware/permissions.js';
 import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { createSyncRouter } from '../../../src/routes/admin/sync.js';
+import { auditContext } from '../../../src/services/auditContext.js';
 
 function buildTestApp(db) {
   const app = express();
@@ -28,8 +29,9 @@ function buildTestApp(db) {
   });
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
   app.use(loadCurrentPerson(db));
+  app.use(auditContext);
   app.use(loadNavFlags(db, config));
-  app.use('/admin/sync', requirePermission(db, config, 'sync_einsehen'), createSyncRouter({ db }));
+  app.use('/admin/sync', requirePermission(db, config, 'sync_einsehen'), createSyncRouter({ db, config }));
   return app;
 }
 
@@ -147,9 +149,12 @@ test('POST /admin/sync/stalled/:jobId/freigeben force-releases a stalled zugewie
   db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '1'").run();
 
   const app = buildTestApp(db);
-  const res = await request(app).post(`/admin/sync/stalled/${jobId}/freigeben`).set('x-test-person-id', '99');
+  const res = await request(app).post(`/admin/sync/stalled/${jobId}/freigeben`).set('x-test-person-id', '99').type('form').send({ begruendung: 'Person ausgetreten' });
   assert.equal(res.status, 302);
   assert.equal(getJobById(db, jobId).status, 'unzugewiesen');
+  const event = db.prepare("SELECT * FROM audit_ereignisse WHERE aktion = 'workflow_eingriff'").get();
+  assert.equal(event.person_id, '99');
+  assert.equal(event.begruendung, 'Person ausgetreten');
   db.close();
 });
 
@@ -167,7 +172,7 @@ test('POST /admin/sync/stalled/:jobId/freigeben escalates a stalled freigabe2 jo
   db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '3'").run();
 
   const app = buildTestApp(db);
-  const res = await request(app).post(`/admin/sync/stalled/${jobId}/freigeben`).set('x-test-person-id', '99');
+  const res = await request(app).post(`/admin/sync/stalled/${jobId}/freigeben`).set('x-test-person-id', '99').type('form').send({ begruendung: 'Person ausgetreten' });
   assert.equal(res.status, 302);
   const job = getJobById(db, jobId);
   assert.equal(job.status, 'freigabe2');
@@ -198,4 +203,53 @@ test('GET /admin/sync returns 200 for a plain person with exactly this individua
   const res2 = await request(app).get('/admin/sync').set('x-test-person-id', '1');
   assert.equal(res2.status, 200);
   db.close();
+});
+
+test('read-only and manager rights cannot change sync configuration or intervene', async (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  seedDefaults(db);
+  const app = buildTestApp(db);
+  for (const [id, gruppen] of [['reader', []], ['manager', ['30']]]) {
+    upsertPerson(db, { id, vorname: id, nachname: 'Test', email: `${id}@example.org`, gruppen, loggedInNow: true });
+    if (id === 'reader') setBerechtigungenForPerson(db, id, ['sync_einsehen']);
+    const before = db.prepare('SELECT count(*) AS n FROM audit_ereignisse').get().n;
+    const post = await request(app).post('/admin/sync').set('x-test-person-id', id).type('form')
+      .send({ maxDeaktivierungProzent: '90', maxDeaktivierungAnzahl: '90', syncFehlerEmpfaenger: 'gruppe:admin' });
+    assert.equal(post.status, 403);
+    const force = await request(app).post('/admin/sync/stalled/1/freigeben').set('x-test-person-id', id).type('form').send({ begruendung: 'Test' });
+    assert.equal(force.status, 403);
+    assert.equal(getConfigValue(db, 'sync_max_deaktivierung_prozent'), '50');
+    assert.equal(db.prepare('SELECT count(*) AS n FROM audit_ereignisse').get().n, before);
+  }
+});
+
+test('force action requires a reason and rejects a non-blocked job without mutation', async (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  seedAdmin(db);
+  const id = createJob(db, { eingangAm: '2026-09-27T00:00:00Z', quelle: 'scanner', dateiname: 'test.pdf', pdfPfad: '/tmp/test.pdf' });
+  const before = db.prepare('SELECT count(*) AS n FROM audit_ereignisse').get().n;
+  const app = buildTestApp(db);
+  const missing = await request(app).post(`/admin/sync/stalled/${id}/freigeben`).set('x-test-person-id', '99').type('form').send({ begruendung: ' ' });
+  assert.equal(missing.status, 400);
+  const nonBlocked = await request(app).post(`/admin/sync/stalled/${id}/freigeben`).set('x-test-person-id', '99').type('form').send({ begruendung: 'Unberechtigter Eingriff' });
+  assert.equal(nonBlocked.status, 409);
+  assert.equal(getJobById(db, id).status, 'unzugewiesen');
+  assert.equal(db.prepare('SELECT count(*) AS n FROM audit_ereignisse').get().n, before);
+});
+
+test('failure writing audit evidence rolls back all sync settings', async (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  seedDefaults(db);
+  seedAdmin(db);
+  db.exec(`CREATE TRIGGER fail_audit BEFORE INSERT ON audit_ereignisse
+    WHEN NEW.objekt_id = 'sync_max_deaktivierung_anzahl'
+    BEGIN SELECT RAISE(ABORT, 'simulated audit failure'); END;`);
+  const response = await request(buildTestApp(db)).post('/admin/sync').set('x-test-person-id', '99').type('form')
+    .send({ maxDeaktivierungProzent: '90', maxDeaktivierungAnzahl: '90', syncFehlerEmpfaenger: 'gruppe:admin' });
+  assert.equal(response.status, 500);
+  assert.equal(getConfigValue(db, 'sync_max_deaktivierung_prozent'), '50');
+  assert.equal(getConfigValue(db, 'sync_max_deaktivierung_anzahl'), '10');
 });

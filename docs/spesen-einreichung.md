@@ -139,15 +139,15 @@ wie Rechnungen, mit zusätzlichen Feldern (`eingereicht_von`,
 `kontoinhaber`) — siehe
 [n8n-schnittstelle.md](n8n-schnittstelle.md#abholung-fertiger-rechnungen).
 
-**IBAN/Kontoinhaber werden nicht im Portal gespeichert.** Für jede
-`quelle = 'spesen'`-Position wird bei jedem Abholung-Abruf **live**
-`fetchPersonById` gegen ChurchTools aufgerufen und das
-IBAN-/Kontoinhaber-Custom-Feld (`CT_CUSTOM_FIELD_IBAN`/
-`CT_CUSTOM_FIELD_KONTOINHABER`, `.env`-Variablen, kein Admin-UI dafür) aus
-der Antwort gelesen — konsistent mit dem Grundsatz, sensible Finanzdaten
-nicht länger als nötig im Portal zu halten. Schlägt der Abruf fehl, wird
-die Position trotzdem geliefert, aber mit `iban: null`; n8n entscheidet
-selbst, wie mit einer fehlenden IBAN umzugehen ist.
+**IBAN/Kontoinhaber werden bei Freigabe 2 im Freigabe-Snapshot gespeichert.**
+Quelle bleiben die ChurchTools-Felder `CT_CUSTOM_FIELD_IBAN` und
+`CT_CUSTOM_FIELD_KONTOINHABER`. Der Export verwendet danach dieselben Werte
+wie die Stempelseite, ohne erneuten Live-Abruf. Spaetere Stammdatenkorrekturen
+aendern eine bereits freigegebene Zahlung nicht stillschweigend.
+Fehlende Werte bleiben `null`; Altfaelle ohne Snapshot sind als
+`historisch_unvollstaendig` markiert. Eine Sperre bei fehlenden Zahlungsdaten
+steht noch aus. n8n muss diese Faelle vor einer Zahlung gesondert behandeln.
+Die gespeicherten Finanzdaten sind bei Zugriffsschutz und Aufbewahrung zu beruecksichtigen.
 
 ## Bewusst nicht gebaut (YAGNI)
 
@@ -160,7 +160,7 @@ selbst, wie mit einer fehlenden IBAN umzugehen ist.
   neu ein.
 - **Keine gemischten Sammelabrechnungen** aus Rechnungs- und
   Spesen-Positionen.
-- **Kein IBAN-Caching** im Portal — immer Live-Abruf bei Abholung.
+- **Kein Live-Abruf bei Abholung**: Zahlungsdaten kommen aus dem Freigabe-Snapshot.
 - **Kein Admin-UI** für den ChurchTools-Custom-Feld-Namen (`.env`-
   Variablen statt `admin_config`, installationsspezifische technische
   Konstante).

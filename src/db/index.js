@@ -2,6 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { currentAuditActor } from '../services/auditContext.js';
+import { migrateSecuritySchema } from './securitySchema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -667,20 +669,6 @@ function migrateKreditkartenChecks(db) {
     spalten: ['id', 'job_id', 'person_id', 'rolle', 'zeitpunkt', 'ip', 'interessenskonflikt', 'kommentar', 'eskaliert_von', 'vertretung_fuer'],
   });
   erweitereCheckPerRebuild(db, {
-    tabelle: 'person_berechtigungen',
-    marker: 'kreditkarten_verwalten',
-    createSql: `CREATE TABLE person_berechtigungen (
-      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-      berechtigung TEXT NOT NULL CHECK (berechtigung IN (
-        'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
-        'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen', 'pool_zuweisen',
-        'kreditkarten_verwalten'
-      )),
-      PRIMARY KEY (person_id, berechtigung)
-    )`,
-    spalten: ['person_id', 'berechtigung'],
-  });
-  erweitereCheckPerRebuild(db, {
     tabelle: 'mail_log',
     marker: 'kk-beleg-eingegangen',
     createSql: `CREATE TABLE mail_log (
@@ -716,6 +704,8 @@ export function openDatabase(dbPath) {
     mkdirSync(dirname(dbPath), { recursive: true });
   }
   const db = new DatabaseSync(dbPath);
+  db.function('audit_actor_id', () => currentAuditActor().id);
+  db.function('audit_actor_name', () => currentAuditActor().name);
   const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
   migrateJobsTableQuelleCheck(db);
@@ -732,5 +722,9 @@ export function openDatabase(dbPath) {
   migratePersonenTable(db);
   migrateFreigabenTableVertretung(db);
   migrateKreditkartenChecks(db);
+  // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)
+  // verwerfen die Trigger der alten Tabelle, und migrateSecuritySchema legt die Audit-Trigger mit
+  // der aktuellen Spaltenliste neu an. person_berechtigungen gehört allein migrateSecuritySchema.
+  migrateSecuritySchema(db);
   return db;
 }

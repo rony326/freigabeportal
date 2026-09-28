@@ -60,11 +60,14 @@ sequenceDiagram
     loop Polling
         n8n->>P: GET /api/n8n/jobs/abholbereit
         P-->>n8n: [{id, Kontierungs- & Konto-Metadaten, QR-Bill-Felder, download_url (15 Min gültig, signiert)}]
-        n8n->>P: GET {download_url} (unauthentifiziert, nur Signatur)
-        P-->>n8n: PDF-Stream
-        n8n->>P: POST /api/n8n/jobs/:id/abholung-bestaetigen
-        P->>P: Status → abgeholt, PDF + Thumbnail vom Server löschen
-        P-->>n8n: 200 { id, status }
+        n8n->>P: GET /api/n8n/jobs/:id/exportnachweis
+        P-->>n8n: Festgeschriebenes Manifest mit Export-ID, SHA-256 und download_pfad
+        n8n->>P: GET {download_pfad} (X-API-Key)
+        P-->>n8n: Hashgepruefte PDF
+        n8n->>n8n: In Paperless archivieren, Original erneut laden und Hash vergleichen
+        n8n->>P: POST /api/n8n/jobs/:id/archivierung-bestaetigen
+        P->>P: Quittung speichern, Status abgeholt; lokale Dateien behalten
+        P-->>n8n: 200 { id, status: archiv_bestaetigt, quittung }
     end
 ```
 
@@ -92,11 +95,13 @@ sequenceDiagram
   | `eingereicht_von` | ChurchTools-Personen-ID der einreichenden Person, nur bei `quelle: "spesen"` gesetzt, sonst `null` |
   | `auslage_datum` | Datum der Auslage (von der einreichenden Person erfasst), nur bei `quelle: "spesen"` gesetzt, sonst `null` |
   | `beschreibung` | Verwendungszweck der Spesen-Position, nur bei `quelle: "spesen"` gesetzt, sonst `null` |
-  | `rechnungsdatum` | Dokumentendatum für den Paperless-Versand — bei `quelle: "spesen"` das Einreichedatum (Datum von `eingang_am`), sonst live das `zahlungsziel` |
-  | `iban`, `kontoinhaber` | aus den ChurchTools-Custom-Fields der einreichenden Person nachgeschlagen (live, bei jedem Abruf), nur bei `quelle: "spesen"` — `null`, wenn kein Custom-Field hinterlegt ist oder der ChurchTools-Abruf fehlschlägt |
+  | `rechnungsdatum` | Gespeichertes Rechnungsdatum, sonst `null`; das Zahlungsziel wird nicht als Rechnungsdatum ausgegeben |
+  | `iban`, `kontoinhaber` | Bei Freigabe 2 gespeicherte Zahlungsdaten, nur bei `quelle: "spesen"`; fehlende Daten bleiben `null`, kein Live-Abruf beim Export |
+  | `nachweis_status` | Einzeljobs: `snapshot` oder `historisch_unvollstaendig`; bei historischen Jobs fehlen eingefrorene Konto-/Zahlungsdaten |
   | `qr_iban`, `qr_referenz`, `qr_betrag`, `qr_waehrung`, `qr_creditor_name` | aus einer erkannten Swiss-QR-Bill übernommen, sonst `null` |
   | `qr_erkannt_am` | Zeitpunkt der QR-Erkennung, `null` falls keine QR-Bill erkannt wurde |
   | `download_url` | signierte, 15 Minuten gültige Download-URL |
+  | `export_nachweis_url` | relativer API-Pfad fuer das unveraenderliche Exportmanifest; neuer Archivablauf verwendet dessen `download_pfad` |
 
   Für eine Spesen-Position (`quelle: "spesen"`) ist `betrag` die einzelne
   Auslage und `konto_id`/`konto_kontonummer`/`konto_bezeichnung` das von der
@@ -139,8 +144,9 @@ Ein Gruppen-Eintrag hat kein eigenes `konto_id`/`iban`/`kontoinhaber`-Feld
 auf oberster Ebene (unterschiedliche Konten je Position) und keine
 Spesen-Felder. `abholung-bestaetigen` erkennt an der ID automatisch, ob es
 sich um einen Gruppen- oder Einzeljob-Elternjob handelt
-(`istGruppenElternjob`), und löscht bei Bestätigung sowohl das Gruppen-PDF
-als auch die PDF-Dateien aller Teil-Jobs.
+(`istGruppenElternjob`). Die alte Bestaetigung markiert nur den Transport;
+Gruppen-PDF und Teil-PDFs bleiben erhalten. Eine Archivquittung wird auf
+dem Elternjob und dem Hash des kombinierten Dokuments gespeichert.
 
 Eine Splitgruppe, deren letzter Teil noch offen oder deren Merge noch
 nicht gelaufen ist, liefert **weder** Gruppen- **noch** Einzeljob-Einträge
@@ -150,15 +156,17 @@ ausgeliefert, unabhängig von ihrem eigenen Status.
 - Der `download_url` ist eine HMAC-signierte, 15 Minuten gültige URL auf
   `GET /downloads/:jobId` — **keine** Session nötig, siehe
   [architektur.md](architektur.md#sicherheitsmechanismen-auszug).
-- `abholung-bestaetigen` ist die einzige Stelle, an der die
-  Rechnungs-PDF/Thumbnail-Datei physisch vom Portal-Server gelöscht wird
-  — ab hier liegt die Datei nur noch bei n8n bzw. im Zielsystem der
-  Kirchgemeinde.
+- `abholung-bestaetigen` bleibt als Legacy-Transport-ACK verfuegbar und
+  liefert zusaetzlich `archiv_bestaetigt: false`. Es loescht KEINE Dateien.
+- Die Bereinigung verlangt eine passende Archivquittung und sieben volle
+  Tage seit deren Speicherung. Ohne Quittung bleiben auch Altfaelle erhalten.
+- [Archivvertrag und n8n-Umstellung](n8n-paperless-archivierung.md) beschreibt
+  die neuen Endpunkte, Wiederholungen und den Nachweis aus Paperless.
 
 ## Backup-Abholung
 
-`GET /api/n8n/backup/latest` (`X-API-Key`, dieselbe Absicherung wie
-`/api/n8n/jobs`) liefert das jeweils neueste, unter `BACKUP_DIR`
+`GET /api/n8n/backup/latest` (`X-API-Key`, ausschliesslich der separate
+`BACKUP_API_KEY`, nicht `N8N_API_KEY`) liefert das jeweils neueste, unter `BACKUP_DIR`
 liegende Backup-Archiv aus (`404` falls noch keines existiert). Kein
 eigener Trigger-Mechanismus — die Datei wird vom internen Scheduler
 ohnehin produziert (siehe
@@ -172,6 +180,17 @@ selbst wurde bewusst nicht gebaut, siehe
 **Achtung:** das Archiv enthält Geheimnisse im Klartext (u. a. das
 RFC3161-TSA-Passwort) — der Workflow, der diese Route abruft, muss die
 Datei entsprechend sicher handhaben.
+
+Neue Sicherungen verwenden Format 2 mit verbindlichem Dateimanifest und
+enthalten keine aktiven Sessions. Alte ZIPs werden nicht automatisch
+konvertiert. Grenzen und verbleibende Risiken: [Backup-Sicherheitsstand](backup-sicherheit.md).
+
+Ohne `BACKUP_API_KEY` ist der API-Zugriff gesperrt. Der HTTP-Live-Restore
+ist ebenfalls gesperrt; Wiederherstellungen erfolgen ueber den
+[Offline-Wartungsprozess](offline-restore.md).
+Die neue Archivquittung bindet Paperless-Dokument-ID und Dateihash an einen
+Export. Der alte ACK-Endpunkt gilt weiterhin nicht als Archivnachweis.
+Siehe [aktuellen Umsetzungsstand](audit-umsetzungsstand-2026-09-27.md).
 
 ## Kreditkarten-Beleg-Eingang
 

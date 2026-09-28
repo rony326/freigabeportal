@@ -93,7 +93,7 @@ jeder Anfrage live gegen ChurchTools geprüft.
 
 ## Additive Einzelrechte (`person_berechtigungen`)
 
-Zusätzlich zum Gruppenmodell gibt es neun einzeln vergebbare,
+Zusätzlich zum Gruppenmodell gibt es elf einzeln vergebbare,
 additive Rechte, unabhängig von ChurchTools-Gruppen
 (`src/middleware/permissions.js`, `src/db/personBerechtigungenRepo.js`):
 
@@ -106,9 +106,13 @@ additive Rechte, unabhängig von ChurchTools-Gruppen
 - `audit_log_einsehen`
 - `pool_zuweisen`: Pool-Belege an Personen zuweisen — erlaubt `POST /pool/:id/zuweisen`
 - `kreditkarten_verwalten`: Kreditkarten anlegen/bearbeiten/(de)aktivieren und Erfasser pflegen — erlaubt `/admin/kreditkarten/*`, siehe [kreditkarten-belege.md](kreditkarten-belege.md#rechte)
+- `sync_verwalten`: Sync konfigurieren (zusätzlich zu `sync_einsehen`)
+- `workflow_eingreifen`: blockierte Vorgänge per Force-Aktion bearbeiten
 
-`superadmin` und `manager` erhalten jedes dieser Rechte automatisch über
-ihr Rollen-Bundle. Für alle anderen Personen sind sie rein additiv: ein
+`superadmin` erhält jedes dieser Rechte automatisch über sein
+Rollen-Bundle, `manager` jedes ausser `sync_verwalten` und
+`workflow_eingreifen` (siehe
+[audit-umsetzungsstand-2026-09-27.md](audit-umsetzungsstand-2026-09-27.md)). Für alle anderen Personen sind sie rein additiv: ein
 Recht ohne jede ChurchTools-Gruppenmitgliedschaft. Vergeben werden sie
 ausschliesslich von einem `superadmin` unter **Admin → Personen**
 (`POST /admin/personen/:id/berechtigungen`).

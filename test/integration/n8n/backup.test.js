@@ -10,13 +10,13 @@ import { createN8nBackupRouter } from '../../../src/routes/n8n/backup.js';
 
 function buildTestApp(config) {
   const app = express();
-  app.use('/api/n8n/backup', requireApiKey(config), createN8nBackupRouter({ config }));
+  app.use('/api/n8n/backup', requireApiKey({ n8nApiKey: config.backupApiKey }), createN8nBackupRouter({ config }));
   return app;
 }
 
 test('GET /api/n8n/backup/latest without a valid API key returns 401', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'n8n-backup-test-'));
-  const app = buildTestApp({ n8nApiKey: 'n8n-key', backupDir: join(dir, 'backups') });
+  const app = buildTestApp({ backupApiKey: 'backup-key', backupDir: join(dir, 'backups') });
   const res = await request(app).get('/api/n8n/backup/latest');
   assert.equal(res.status, 401);
   rmSync(dir, { recursive: true, force: true });
@@ -24,8 +24,8 @@ test('GET /api/n8n/backup/latest without a valid API key returns 401', async () 
 
 test('GET /api/n8n/backup/latest returns 404 when no backup exists yet', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'n8n-backup-test-'));
-  const app = buildTestApp({ n8nApiKey: 'n8n-key', backupDir: join(dir, 'backups') });
-  const res = await request(app).get('/api/n8n/backup/latest').set('X-API-Key', 'n8n-key');
+  const app = buildTestApp({ backupApiKey: 'backup-key', backupDir: join(dir, 'backups') });
+  const res = await request(app).get('/api/n8n/backup/latest').set('X-API-Key', 'backup-key');
   assert.equal(res.status, 404);
   rmSync(dir, { recursive: true, force: true });
 });
@@ -38,8 +38,10 @@ test('GET /api/n8n/backup/latest streams the lexicographically newest matching b
   writeFileSync(join(backupDir, 'backup-2026-08-24T03-00-00-000Z.zip'), 'neu');
   writeFileSync(join(backupDir, 'nicht-passend.txt'), 'ignorieren');
 
-  const app = buildTestApp({ n8nApiKey: 'n8n-key', backupDir });
-  const res = await request(app).get('/api/n8n/backup/latest').set('X-API-Key', 'n8n-key');
+  const app = buildTestApp({ backupApiKey: 'backup-key', n8nApiKey: 'n8n-key', backupDir });
+  const denied = await request(app).get('/api/n8n/backup/latest').set('X-API-Key', 'n8n-key');
+  assert.equal(denied.status, 401);
+  const res = await request(app).get('/api/n8n/backup/latest').set('X-API-Key', 'backup-key');
   assert.equal(res.status, 200);
   assert.equal(res.headers['content-type'], 'application/zip');
   assert.equal(res.headers['content-disposition'], 'attachment; filename="backup-2026-08-24T03-00-00-000Z.zip"');
@@ -53,4 +55,10 @@ test('GET /api/n8n/backup/latest streams the lexicographically newest matching b
     assert.equal(res.text, 'neu');
   }
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('backup API stays closed when only the workflow credential is configured', async () => {
+  const app = buildTestApp({ n8nApiKey: 'n8n-key', backupDir: '/unused' });
+  const res = await request(app).get('/api/n8n/backup/latest').set('X-API-Key', 'n8n-key');
+  assert.equal(res.status, 401);
 });

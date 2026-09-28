@@ -59,10 +59,19 @@ export async function verifyZeitstempel(pdfBuffer, erwarteterHash = null) {
   if (extrahiert.length === 0) {
     return { vorhanden: false, gueltig: false, zeitpunkt: null, tsaPolicy: null, ...basis };
   }
-  const verifiziert = await verifyTimestamp(extrahiert[0], { pdf: pdfBuffer });
+  const timestamp = extrahiert.find((entry) => {
+    const [start, length, secondStart, secondLength] = entry.byteRange;
+    return start === 0 && length >= 0 && secondStart > length && secondLength >= 0 && secondStart + secondLength === pdfBuffer.length;
+  }) || extrahiert[0];
+  const verifiziert = await verifyTimestamp(timestamp, { pdf: pdfBuffer });
+  const [start, length, secondStart, secondLength] = timestamp.byteRange;
+  const vollstaendig = start === 0 && length >= 0 && secondStart > length && secondLength >= 0 && secondStart + secondLength === pdfBuffer.length;
   return {
     vorhanden: true,
-    gueltig: verifiziert.verified,
+    gueltig: verifiziert.verified && vollstaendig,
+    signaturGueltig: verifiziert.verified,
+    vollstaendig,
+    vertrauen: 'nicht_geprueft',
     zeitpunkt: verifiziert.info.genTime.toISOString(),
     tsaPolicy: verifiziert.info.policy,
     ...basis,

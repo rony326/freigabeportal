@@ -14,6 +14,7 @@ import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { fetchCsrfToken } from '../helpers/csrf.js';
+import { ARCHIVE_RETENTION_MS } from '../../src/services/archiveReceipt.js';
 
 function testConfig(jobsDir) {
   return {
@@ -55,7 +56,7 @@ async function loginAs(app, client, { id, vorname, nachname, email, gruppen }) {
   return agent;
 }
 
-test('a job driven through the full workflow to Abholung is archived by the sweep, and a second run stays idempotent', async () => {
+test('a complete workflow retains files until archive receipt and retention, then cleans up idempotently', async (t) => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'pdf-bereinigung-e2e-test-'));
@@ -97,13 +98,25 @@ test('a job driven through the full workflow to Abholung is archived by the swee
   assert.equal(bestaetigenRes.body.status, 'abgeholt');
 
   const jobAfterAbholung = getJobById(db, jobId);
-  assert.equal(existsSync(jobAfterAbholung.pdf_pfad), false, 'the immediate delete-on-pickup path already removed the PDF');
+  assert.equal(existsSync(jobAfterAbholung.pdf_pfad), true, 'transport ACK must retain the PDF');
+  const held = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(held.body.archiviert, 0);
+  const manifestRes = await request(app).get(`/api/n8n/jobs/${jobId}/exportnachweis`).set('X-API-Key', 'n8n-key');
+  assert.equal(manifestRes.status, 200);
+  const manifest = manifestRes.body;
+  const receipt = await request(app).post(`/api/n8n/jobs/${jobId}/archivierung-bestaetigen`).set('X-API-Key', 'n8n-key').send({
+    export_id: manifest.export_id, sha256: manifest.sha256, dokument_id: 123,
+    task_id: 'b2ba769c-455f-4d97-9fb6-986eac19a334',
+  });
+  assert.equal(receipt.status, 200);
+  t.mock.method(Date, 'now', () => Date.parse(receipt.body.quittung.bestaetigt_am) + ARCHIVE_RETENTION_MS);
 
   const sweep1 = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
   assert.equal(sweep1.status, 200);
   assert.equal(sweep1.body.archiviert, 1);
   assert.equal(getJobById(db, jobId).status, 'archiviert');
   assert.ok(getJobById(db, jobId).archiviert_am);
+  assert.equal(existsSync(jobAfterAbholung.pdf_pfad), false);
 
   const sweep2 = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
   assert.equal(sweep2.status, 200);

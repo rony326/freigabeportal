@@ -123,9 +123,10 @@ allen anderen Jobs dieser Liste — unter **Admin → Geplante Jobs**.
 Vier unabhängige Aufräum-Schritte in einem Lauf, jeder mit eigenem
 Fehler-Fangnetz (ein fehlgeschlagener Schritt stoppt die anderen nicht):
 
-1. Für jeden Job im Status `abgeholt`: PDF/Thumbnail-Datei (sollten durch
-   `abholung-bestaetigen` bereits gelöscht sein) endgültig entfernen,
-   danach Status → `archiviert`.
+1. Fuer Jobs im Status `abgeholt` mit Archivquittung und mindestens sieben Tagen
+   seit Bestaetigung: Hash erneut pruefen, PDF/Thumbnail entfernen, danach Status
+   `archiviert`. Ohne Quittung oder bei Hashabweichung bleiben die Dateien erhalten.
+   Gruppen-PDFs unterliegen derselben Quittungs- und Wartepflicht.
 2. Verwaiste `.tmp`-Dateien in `JOBS_DIR` löschen, die älter als eine
    Stunde sind (Reste eines abgebrochenen Stempel-Schreibvorgangs).
 3. `mail_log`-Einträge löschen, die älter als die konfigurierte
@@ -141,7 +142,8 @@ Fehler-Fangnetz (ein fehlgeschlagener Schritt stoppt die anderen nicht):
 
 Holt für jeden `abgeschlossen`-Job ohne gesetzten Zeitstempel die
 RFC3161-Stempelung nach (nur solange die PDF-Datei noch lokal existiert —
-nach der n8n-Abholung ist das nicht mehr möglich). Läuft mit
+nach der lokalen Bereinigung ist das nicht mehr möglich). Ein ausgestelltes
+Exportmanifest sperrt die automatische Aenderung dieser Dokumentversion. Läuft mit
 Überlappungsschutz (`hasRecentRunningCronLauf`): ein manueller
 "Jetzt ausführen"-Klick während eines laufenden geplanten Durchlaufs
 startet keinen zweiten, parallelen Lauf. Details:

@@ -32,6 +32,7 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 import { isValidIban } from '../services/ibanUtils.js';
 import { ladeKontierbarenJob, ladeKontenFuerJob as ladeKontenFuerJobService } from '../services/kontierungZugriff.js';
 import { markiereAlsKkAbrechnung } from '../services/kkMarkierung.js';
+import { kkHinweisFuerJob } from '../services/kkStempel.js';
 import {
   POSITION_PATTERN,
   mergeBelegFuerJob,
@@ -104,6 +105,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       debitoren: listDebitoren(db),
       kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
+      kkHinweis: kkHinweisFuerJob(db, job),
       values: {
         kontoId: job.konto_id ? String(job.konto_id) : '',
         typ: job.typ || 'rechnung',
@@ -160,6 +162,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           alleKonten: listKonten(db),
           debitoren,
           previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
+          kkHinweis: kkHinweisFuerJob(db, job),
           values,
           qrInfo,
           kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],

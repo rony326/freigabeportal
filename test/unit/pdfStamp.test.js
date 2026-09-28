@@ -379,6 +379,28 @@ test('stampGruppenDokument throws the standard German error for a corrupt PDF', 
   );
 });
 
+test('stampAndFinalize prints the kkHinweis line when given', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const stampData = sampleStampData();
+  stampData.kkHinweis = 'Ohne Beleg: Beleg verloren';
+  const stamped = await stampAndFinalize(pdf, stampData);
+  const reloaded = await PDFDocument.load(stamped);
+  const stampText = extractedText(stamped, reloaded.getPageCount() - 1);
+  assert.match(stampText, /Ohne Beleg: Beleg verloren/);
+});
+
+test('stampGruppenDokument prints position.kkHinweis under the position title', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const positionen = [samplePosition({ kkHinweis: 'Gebühr/Zins (ohne Beleg)' })];
+  const verlauf = [];
+
+  const gestempelt = await stampGruppenDokument(pdf, { jobId: 1, positionen, verlauf });
+
+  const doc = await PDFDocument.load(gestempelt);
+  const allText = doc.getPages().map((_, i) => extractedText(gestempelt, i)).join('\n');
+  assert.match(allText, /Gebühr\/Zins \(ohne Beleg\)/);
+});
+
 test('stampGruppenDokument does not clip Freigabe blocks when both Freigeber have Kommentare (regression test for variable-height blocks)', async () => {
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const freigeber1WithKommentar = {

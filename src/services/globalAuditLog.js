@@ -34,6 +34,22 @@ const BASE_QUERY = `
     FROM job_loeschungen jl
     LEFT JOIN jobs j ON j.id = jl.job_id
     LEFT JOIN konten k ON k.id = j.konto_id
+    UNION ALL
+    SELECT
+      e.zeitpunkt AS zeitpunkt,
+      e.id AS row_id,
+      'kk_beleg' AS quelle,
+      e.aktion AS ereignis_typ,
+      e.person_id AS person_id,
+      b.zugeordnet_job_id AS job_id,
+      'Kreditkartenbeleg #' || b.id || COALESCE(' — ' || b.beschreibung, '') AS dateiname,
+      b.konto_id AS konto_id,
+      k.bezeichnung AS konto_bezeichnung,
+      e.kommentar AS kommentar,
+      b.status AS job_status
+    FROM kk_beleg_ereignisse e
+    JOIN kk_belege b ON b.id = e.beleg_id
+    LEFT JOIN konten k ON k.id = b.konto_id
   )
 `;
 
@@ -108,7 +124,7 @@ export function queryGlobalAuditLog(db, filter = {}, { seite = 1, proSeite = 50 
     zeitpunkt: formatZeitpunkt(row.zeitpunkt, lokaleZeit),
     ereignis: EREIGNIS_LABEL[row.ereignis_typ] || row.ereignis_typ,
     quelle: row.quelle,
-    person: personName(db, row.person_id),
+    person: row.person_id ? personName(db, row.person_id) : 'System',
     jobId: row.job_id,
     dateiname: row.dateiname,
     kontoBezeichnung: row.konto_bezeichnung,

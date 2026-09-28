@@ -154,6 +154,14 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
       }
       y -= 12;
     }
+    // Kreditkarten-Teiljobs: macht auf dem Archivdokument sichtbar, ob ein Beleg vorliegt.
+    if (stampData.kkHinweis) {
+      for (const line of wrapLine(boldFont, stampData.kkHinweis, 12, maxWidth)) {
+        stampPage.drawText(line, { x: 60, y, size: 12, font: boldFont, color: rgb(0, 0, 0) });
+        y -= 16;
+      }
+      y -= 10;
+    }
     // Only ever populated for a Spesen position (see freigabe2.js) — the account the
     // reimbursement is actually paid to, so it's visible on the document itself and not only in
     // the n8n/Paperless API response, which was the whole point of asking for it here.
@@ -230,6 +238,13 @@ export async function stampGruppenDokument(pdfBuffer, gruppenData) {
         y -= 17;
       }
       y -= 10;
+      if (position.kkHinweis) {
+        for (const line of wrapLine(font, position.kkHinweis, 10, maxWidth)) {
+          stampPage.drawText(line, { x: 60, y, size: 10, font, color: rgb(0, 0, 0) });
+          y -= 14;
+        }
+        y -= 6;
+      }
       if (y < FREIGABE_BLOCK_BOTTOM_MARGIN) {
         stampPage = doc.addPage([width, height]);
         y = height - 50;

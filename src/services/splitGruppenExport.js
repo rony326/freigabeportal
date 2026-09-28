@@ -9,6 +9,7 @@ import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampGruppenDokument } from './pdfStamp.js';
 import { setZeitstempel } from './zeitstempel.js';
+import { kkHinweisFuerJob } from './kkStempel.js';
 
 const EREIGNIS_LABEL = {
   freigeber1: 'Freigabe 1',
@@ -87,6 +88,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId) {
         kontoBezeichnung: konto.bezeichnung,
         betrag: kind.betrag,
         position: kind.rechnungsposition,
+        kkHinweis: kkHinweisFuerJob(db, kind),
         freigeber1: buildFreigabeEintrag(getPersonById(db, freigabe1.person_id), freigabe1),
         freigeber2: buildFreigabeEintrag(getPersonById(db, freigabe2.person_id), freigabe2),
       });

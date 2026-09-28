@@ -12,6 +12,9 @@
     <div class="row g-3 justify-content-center">
       <div class="col-lg-12 col-xl-10">
         <h1 class="h3">Kontierung: <%= job.dateiname %></h1>
+        <% if (typeof kkHinweis !== 'undefined' && kkHinweis) { %>
+          <div class="alert <%= kkHinweis.startsWith('Kreditkartenbeleg') ? 'alert-info' : 'alert-warning' %> py-2"><%= kkHinweis %></div>
+        <% } %>
         <p class="text-muted">Vorgangsnummer: <%= job.id %> · Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></p>
       </div>
       <div class="w-100"></div>

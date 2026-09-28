@@ -17,6 +17,12 @@ export const EREIGNIS_LABEL = {
   kk_abrechnung_markiert: 'Als Kreditkartenabrechnung markiert',
   kk_markierung_aufgehoben: 'Kreditkarten-Markierung aufgehoben',
   kk_abgleich: 'Kreditkartenabrechnung abgeglichen',
+  kk_beleg_erfasst: 'Kreditkartenbeleg erfasst',
+  kk_beleg_ergaenzt: 'Kreditkartenbeleg ergänzt',
+  kk_beleg_geaendert: 'Kreditkartenbeleg geändert',
+  kk_beleg_verworfen: 'Kreditkartenbeleg verworfen',
+  kk_beleg_zugeordnet: 'Kreditkartenbeleg zugeordnet',
+  kk_beleg_datei_geloescht: 'Kreditkartenbeleg-Datei gelöscht (Frist)',
 };
 
 // Swiss org, hardcoded rather than derived from the server's OS timezone — Infomaniak's hosting

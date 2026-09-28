@@ -6,6 +6,8 @@ import { createJob, setKontierung } from '../../src/db/jobsRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import { logJobLoeschung } from '../../src/db/jobLoeschungenRepo.js';
+import { createKreditkarte } from '../../src/db/kreditkartenRepo.js';
+import { createKkBeleg, logKkBelegEreignis } from '../../src/db/kkBelegeRepo.js';
 import { queryGlobalAuditLog } from '../../src/services/globalAuditLog.js';
 
 function seedGrundstock(db) {
@@ -239,5 +241,21 @@ test('queryGlobalAuditLog clamps a non-positive/non-integer seite to a valid pag
 
   const mitNegativerSeite = queryGlobalAuditLog(db, {}, { seite: -3 });
   assert.equal(mitNegativerSeite.seite, 1);
+  db.close();
+});
+
+test('queryGlobalAuditLog includes kk_beleg_ereignisse with a readable label', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'A', nachname: 'B', email: 'a@example.org', gruppen: [] });
+  const karte = createKreditkarte(db, { bezeichnung: 'Visa', verantwortlichId: '1', erfassungOffen: true });
+  const beleg = createKkBeleg(db, { kreditkarteId: karte, hochgeladenVon: '1', gekauftVon: '1', quelle: 'web', pdfPfad: '/tmp/b.pdf', betrag: '1.00', kaufdatum: '2026-09-01', beschreibung: 'Zugticket', status: 'offen' });
+  logKkBelegEreignis(db, { belegId: beleg, personId: '1', aktion: 'kk_beleg_erfasst', kommentar: '1.00 Zugticket' });
+  const { eintraege } = queryGlobalAuditLog(db, {});
+  assert.equal(eintraege.length, 1);
+  assert.equal(eintraege[0].ereignis, 'Kreditkartenbeleg erfasst');
+  assert.equal(eintraege[0].quelle, 'kk_beleg');
+  assert.match(eintraege[0].dateiname, /Zugticket/);
+  const { eintraege: gefiltert } = queryGlobalAuditLog(db, { suchbegriff: 'Zugticket' });
+  assert.equal(gefiltert.length, 1);
   db.close();
 });

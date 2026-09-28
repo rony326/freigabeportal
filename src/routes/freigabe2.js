@@ -16,6 +16,7 @@ import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger } fr
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../services/splitGruppenExport.js';
+import { kkHinweisFuerJob } from '../services/kkStempel.js';
 
 export function createFreigabe2Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -89,6 +90,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       values,
       errors,
       auditLog: buildAuditLog(db, job.id),
+      kkHinweis: kkHinweisFuerJob(db, job),
     });
   }
 
@@ -291,6 +293,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         titel,
         verwendungszweck,
         zahlungsdaten,
+        kkHinweis: kkHinweisFuerJob(db, job),
         freigeber1: {
           name: `${freigeber1Person.vorname} ${freigeber1Person.nachname}`,
           identitaet: freigeber1Person.churchtools_person_id,

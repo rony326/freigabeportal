@@ -17,6 +17,9 @@
         <div class="card">
           <div class="card-body">
             <h1 class="h3">Freigabe 2: <%= job.dateiname %></h1>
+            <% if (typeof kkHinweis !== 'undefined' && kkHinweis) { %>
+              <div class="alert <%= kkHinweis.startsWith('Kreditkartenbeleg') ? 'alert-info' : 'alert-warning' %> py-2"><%= kkHinweis %></div>
+            <% } %>
             <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %><% if (job.absender) { %> · Absender: <%= job.absender %><% } %></p>
             <p><strong>Konto:</strong> <%= konto.kontonummer %> — <%= konto.bezeichnung %></p>
             <% if (job.quelle === 'spesen') { %>

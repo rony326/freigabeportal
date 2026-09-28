@@ -9,6 +9,10 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env src/index.js",
     "dev": "node --watch --env-file-if-exists=.env src/index.js",
+    "backup:verify": "node --env-file-if-exists=.env src/cli/backupRestore.js verify",
+    "backup:restore": "node --env-file-if-exists=.env src/cli/backupRestore.js restore",
+    "backup:rollback": "node --env-file-if-exists=.env src/cli/backupRestore.js rollback",
+    "backup:status": "node --env-file-if-exists=.env src/cli/backupRestore.js status",
     "test": "node --test 'test/**/*.test.js'"
   },
   "dependencies": {

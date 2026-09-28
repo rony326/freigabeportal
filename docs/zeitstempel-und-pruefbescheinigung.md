@@ -1,5 +1,13 @@
 # RFC3161-Zeitstempel und Prüfbescheinigung
 
+**Sicherheitsstand 2026-09-27:** Die Pruefung kontrolliert Signatur,
+vollstaendige ByteRange-Abdeckung und optional den gespeicherten Dateihash.
+Eine vertrauenswuerdige TSA-Zertifikatskette und der Sperrstatus werden noch
+nicht geprueft. DigiCert ist als eingesetzter Anbieter bestaetigt, aber noch
+nicht ueber einen geprueften Truststore gebunden. Die Pruefbescheinigung ist
+deshalb kein vollstaendiger Vertrauens- oder Langzeitnachweis.
+Siehe [offene Abnahmepunkte](audit-umsetzungsstand-2026-09-27.md).
+
 Ziel: nach Abschluss der zweiten Freigabe kryptographisch beweisbar
 machen, dass die finale (gestempelte) PDF seither unverändert ist —
 Voraussetzung für die langfristige Absicht, die physische
@@ -28,12 +36,14 @@ sequenceDiagram
     else kein TSA konfiguriert
         P->>P: Zeitstempel-Schritt übersprungen
     end
-    P->>P: Status → abgeschlossen (immer, unabhängig vom TSA-Ausgang)
+    P->>P: Neue PDF-Datei dauerhaft schreiben
+    P->>P: Zustand/Berechtigung erneut prüfen; Freigabe, Snapshot, Dateizeiger und Hash atomar speichern
 ```
 
-Wichtige Design-Entscheidung: **die Zeitstempelung ist best effort und
-blockiert Freigabe 2 nie.** Ein TSA-Ausfall darf die eigentliche,
-fachlich entscheidende Freigabe nicht verzögern. Ein fehlgeschlagener
+Ein TSA-Netzwerkfehler wird weiterhin zur spaeteren Nachholung vorgemerkt.
+Datei-, Datenbank- und Konsistenzfehler brechen dagegen die Finalisierung ab;
+ohne vollstaendige Speicherung gibt es keinen erfolgreichen Abschluss.
+Ein fehlgeschlagener TSA-
 Versuch wird stattdessen regelmässig vom Hintergrund-Job
 `zeitstempel-nachholen` erneut versucht (siehe
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)) —
@@ -41,10 +51,11 @@ Versuch wird stattdessen regelmässig vom Hintergrund-Job
 bevor n8n den Job abgeholt hat. Danach ist ein Nachholen technisch nicht
 mehr möglich.
 
-`n8n` sieht einen fertigen Job über `GET /api/n8n/jobs/abholbereit`
-**erst, wenn** die TSA-Funktion aktiv ist **und** der Zeitstempel
-tatsächlich gesetzt wurde — ein Job ohne Zeitstempel bleibt so lange
-unsichtbar für die Abholung.
+Ist die TSA-Funktion aktiv, sieht n8n einen fertigen Job erst mit gesetztem
+Zeitstempel. Neue Einzeljobs speichern diese Pflicht bei Freigabe dauerhaft;
+das spaetere Abschalten der globalen TSA-Einstellung umgeht sie nicht.
+Ohne TSA-Konfiguration abgeschlossene Einzeljobs koennen weiterhin ohne Zeitstempel
+exportiert werden. Fuer Gruppen ist die dauerhafte Pflicht noch zu ergaenzen.
 
 **Splitgruppen** (siehe
 [rechnungs-workflow.md](rechnungs-workflow.md#6-splitgruppen--kombinierter-export-statt-n-einzel-buchungen))
@@ -61,13 +72,15 @@ voneinander:
 1. **RFC3161-Gültigkeit**: enthält die PDF einen eingebetteten Zeitstempel,
    und ist dessen kryptographische Signatur gegen den aktuellen Inhalt der
    Datei gültig? (`extractTimestamps` + `verifyTimestamp` aus `pdf-rfc3161`.)
-   Beweist "diese Datei ist seit dem Zeitstempel unverändert" — aber nicht,
-   dass es sich um *die* Datei handelt, die zu einem bestimmten Job gehört.
+   Zusaetzlich muss der Zeitstempel die gesamte aktuelle Datei abdecken;
+   angehaengte, nicht signierte Revisionen reichen nicht aus. Ohne Truststore
+   bleibt die Identitaet und Vertrauenswuerdigkeit der TSA ungeprueft.
 2. **Hash-Abgleich gegen den in der Datenbank gespeicherten Hash**
    (`jobs.zeitstempel_datei_hash`, gesetzt beim Stempeln): SHA-256 der
    hochgeladenen/angezeigten Datei wird mit dem gespeicherten Hash
-   verglichen. Schliesst die Lücke von Punkt 1 — beweist "das ist wirklich
-   die Datei, die zu diesem Job gehört", unabhängig vom TSA-Ergebnis.
+   verglichen. Das bindet die Datei an den gespeicherten Jobstand, sofern
+   die Referenzdatenbank vertrauenswuerdig ist. Fuer Gruppen werden Gruppen-PDF
+   und Gruppenhash verwendet, nicht das urspruengliche Rechnungsdokument.
 
 ```mermaid
 flowchart TD

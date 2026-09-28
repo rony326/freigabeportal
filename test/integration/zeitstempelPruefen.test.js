@@ -78,7 +78,7 @@ test('POST /zeitstempel-pruefen with a validly timestamped PDF reports it as val
     .attach('pdf', RFC3161_TIMESTAMPED_PDF, 'timestamped.pdf');
   assert.equal(res.status, 200);
   assert.match(res.text, /Kryptografisch gültig \(RFC3161\)/);
-  assert.match(res.text, /Diese Datei ist nachweislich unverändert/);
+  assert.match(res.text, /TSA-Vertrauenskette und Sperrstatus wurden nicht geprüft/);
   assert.match(res.text, /2026-08-21T07:21:19\.000Z/);
   assert.match(res.text, /kein Vergleichswert vorhanden/);
   db.close();
@@ -218,7 +218,7 @@ test('GET /zeitstempel-pruefen?jobId= verifies the job\'s own PDF directly for a
   const res = await request(app).get(`/zeitstempel-pruefen?jobId=${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
   assert.match(res.text, /Kryptografisch gültig \(RFC3161\)/);
-  assert.match(res.text, /Diese Datei ist nachweislich unverändert/);
+  assert.match(res.text, /TSA-Vertrauenskette und Sperrstatus wurden nicht geprüft/);
   assert.doesNotMatch(res.text, /<input type="file"/);
 
   rmSync(dir, { recursive: true, force: true });

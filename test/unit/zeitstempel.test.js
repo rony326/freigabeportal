@@ -129,3 +129,17 @@ test('verifyZeitstempel reports hashUebereinstimmung:null when no erwarteterHash
   const result = await verifyZeitstempel(RFC3161_TIMESTAMPED_PDF);
   assert.equal(result.hashUebereinstimmung, null);
 });
+
+test('verifyZeitstempel rejects trailing bytes outside the signed revision', async () => {
+  const extended = Buffer.concat([RFC3161_TIMESTAMPED_PDF, Buffer.from('\n% unsigned addition\n')]);
+  const result = await verifyZeitstempel(extended);
+  assert.equal(result.vorhanden, true);
+  assert.equal(result.gueltig, false);
+  assert.equal(result.vollstaendig, false);
+});
+
+test('a valid signature alone does not claim a trusted TSA certificate', async () => {
+  const result = await verifyZeitstempel(RFC3161_TIMESTAMPED_PDF);
+  assert.equal(result.signaturGueltig, true);
+  assert.equal(result.vertrauen, 'nicht_geprueft');
+});

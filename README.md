@@ -25,6 +25,14 @@ in [`docs/`](docs/README.md).
 
 ## Deployment (Infomaniak Node.js-Hosting)
 
+**Betrieb und Wiederherstellung:** Der aktualisierte Server verwendet eine exklusive
+Datenspeichersperre; pro konfiguriertem DB_PATH ist ein Portal-Prozess erlaubt.
+Offline-Restore und Rueckwechsel laufen ueber `npm run backup:restore` bzw.
+`npm run backup:rollback`, niemals ueber die laufende Webanwendung.
+Nach einem Restore bleibt DB_PATH unveraendert; der Server liest den aktiven
+Datenstand aus `<DB_PATH>.active.json`. Ablauf, Abnahme und Umgang mit verwaisten
+Sperren: [Offline-Wiederherstellung](docs/offline-restore.md).
+
 ### Infomaniak Manager — Site-Konfiguration
 
 - **Deployment-Methode**: Git (dieses Repository), nicht ZIP/SFTP.
@@ -76,6 +84,7 @@ und dürfen nicht `changeme` enthalten — die App verweigert sonst den Start
 | Variable | Quelle |
 |---|---|
 | `SESSION_SECRET`, `DOWNLOAD_SIGNING_SECRET`, `CRON_SECRET`, `N8N_API_KEY` | neu generieren (`openssl rand -hex 32`), nie wiederverwenden |
+| `BACKUP_API_KEY` | Optionaler separater Schluessel fuer Backup-Downloads; ohne Wert ist die Backup-API gesperrt. Nicht den Job-Schluessel verwenden. |
 | `DB_PATH`, `JOBS_DIR`, `BRANDING_DIR`, `BACKUP_DIR` | Pfade im persistenten Speicherbereich der Site wählen — liegt einer davon im bei jedem Deploy ersetzten Ausführungsverzeichnis, sind die Daten (bzw. sämtliche Backups) nach dem nächsten Deploy weg |
 | `PUBLIC_BASE_URL` | die produktive Domain, `https://` |
 | `CT_BASE_URL`, `CT_CLIENT_ID`, `CT_CLIENT_SECRET`, `CT_REDIRECT_URI`, `CT_GROUP_ID_BUCHHALTUNG`, `CT_GROUP_ID_ADMIN` | aus der bereits registrierten ChurchTools-OAuth2-Anwendung |

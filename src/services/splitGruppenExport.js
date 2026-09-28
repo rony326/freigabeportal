@@ -77,7 +77,8 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId) {
     const positionen = [];
     const verlauf = [];
     for (const kind of kinder) {
-      const konto = getKontoById(db, kind.konto_id);
+      const snapshot = kind.freigabe_snapshot ? JSON.parse(kind.freigabe_snapshot) : null;
+      const konto = snapshot?.konto || getKontoById(db, kind.konto_id);
       const freigaben = listFreigabenByJob(db, kind.id);
       const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
       const freigabe2 = freigaben.findLast((f) => f.rolle === 'freigeber2');
@@ -87,8 +88,8 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId) {
         kontoBezeichnung: konto.bezeichnung,
         betrag: kind.betrag,
         position: kind.rechnungsposition,
-        freigeber1: buildFreigabeEintrag(getPersonById(db, freigabe1.person_id), freigabe1),
-        freigeber2: buildFreigabeEintrag(getPersonById(db, freigabe2.person_id), freigabe2),
+        freigeber1: snapshot?.stampData.freigeber1 || buildFreigabeEintrag(getPersonById(db, freigabe1.person_id), freigabe1),
+        freigeber2: snapshot?.stampData.freigeber2 || buildFreigabeEintrag(getPersonById(db, freigabe2.person_id), freigabe2),
       });
 
       const praefix = `Konto ${konto.kontonummer}${kind.rechnungsposition ? ` (Pos. ${kind.rechnungsposition})` : ''}`;

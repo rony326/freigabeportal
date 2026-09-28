@@ -20,6 +20,7 @@
     <h2 class="h4 mt-4">Massen-Deaktivierungs-Schutz</h2>
     <form method="post" action="/admin/sync" class="col-12 col-md-8 col-lg-6">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <fieldset <%= locals.canConfigureSync ? '' : 'disabled' %>>
       <div class="mb-3">
         <label class="form-label" for="maxDeaktivierungProzent">Max. Deaktivierung (Prozent der aktiven Personen)</label>
         <input type="number" class="form-control" id="maxDeaktivierungProzent" name="maxDeaktivierungProzent" value="<%= maxDeaktivierungProzent %>" required>
@@ -39,6 +40,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
         </div>
       <% } %>
+      </fieldset>
     </form>
 
     <h2 class="h4 mt-4">Sync-Historie</h2>
@@ -72,10 +74,11 @@
               <td><%= eintrag.akteurName %></td>
               <td><%= eintrag.grund === 'inaktiv' ? 'Person deaktiviert' : 'Person in ChurchTools nicht auflösbar' %></td>
               <td>
-                <form method="post" action="/admin/sync/stalled/<%= eintrag.job.id %>/freigeben">
+                <% if (locals.canIntervene) { %><form method="post" action="/admin/sync/stalled/<%= eintrag.job.id %>/freigeben">
                   <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                  <input class="form-control form-control-sm" name="begruendung" required maxlength="2000" aria-label="Begruendung" placeholder="Begruendung">
                   <button type="submit" class="btn btn-outline-secondary btn-sm">Freigeben</button>
-                </form>
+                </form><% } %>
               </td>
             </tr>
           <% }) %>

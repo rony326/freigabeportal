@@ -191,7 +191,7 @@ test('POST /admin/backup/dateien/:name/loeschen returns 404 for a path-traversal
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('POST /admin/backup/wiederherstellen rejects a wrong confirmation phrase without touching any file', async () => {
+test('POST /admin/backup/wiederherstellen remains locked regardless of confirmation phrase', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'backup-restore-test-'));
   const dbPath = join(dir, 'live.sqlite');
   const db = openDatabase(dbPath);
@@ -207,13 +207,13 @@ test('POST /admin/backup/wiederherstellen rejects a wrong confirmation phrase wi
     .field('bestaetigung', 'falsch')
     .attach('backup', Buffer.from('irrelevant'), { filename: 'x.zip', contentType: 'application/zip' });
 
-  assert.equal(res.status, 400);
-  assert.match(res.text, /WIEDERHERSTELLEN/);
+  assert.equal(res.status, 423);
+  assert.match(res.text, /Wartungsprozess/);
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('POST /admin/backup/wiederherstellen rejects an invalid ZIP even with the correct confirmation phrase', async () => {
+test('POST /admin/backup/wiederherstellen remains locked with a malformed ZIP', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'backup-restore-test-'));
   const dbPath = join(dir, 'live.sqlite');
   const db = openDatabase(dbPath);
@@ -229,13 +229,13 @@ test('POST /admin/backup/wiederherstellen rejects an invalid ZIP even with the c
     .field('bestaetigung', 'WIEDERHERSTELLEN')
     .attach('backup', Buffer.from('not a real zip'), { filename: 'x.zip', contentType: 'application/zip' });
 
-  assert.equal(res.status, 400);
-  assert.match(res.text, /ZIP-Archiv/);
+  assert.equal(res.status, 423);
+  assert.match(res.text, /Wartungsprozess/);
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('POST /admin/backup/wiederherstellen with a valid backup and correct confirmation replaces the live DB file and logs the restore', async () => {
+test('POST /admin/backup/wiederherstellen refuses even a valid backup while the app is running', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'backup-restore-test-'));
   const dbPath = join(dir, 'live.sqlite');
   const db = openDatabase(dbPath);
@@ -255,19 +255,15 @@ test('POST /admin/backup/wiederherstellen with a valid backup and correct confir
     .field('bestaetigung', 'WIEDERHERSTELLEN')
     .attach('backup', archivBuffer, { filename: 'mein-upload.zip', contentType: 'application/zip' });
 
-  assert.equal(res.status, 200);
-  assert.match(res.text, /Wiederherstellung auf Dateiebene abgeschlossen/);
+  assert.equal(res.status, 423);
+  assert.match(res.text, /Wartungsprozess/);
 
-  // The restore audit entry lands in the freshly-restored file on disk, not in the still-open
-  // `db` handle from before the restore (see services/backup.js's restoreBackupArchive comment) --
-  // open a fresh connection to verify it, exactly like the roundtrip test in backup.test.js does.
+  // A fresh connection must also show no restore event: the on-disk database was not replaced.
   const { openDatabase: reopen } = await import('../../../src/db/index.js');
   const { listBackupWiederherstellungen } = await import('../../../src/db/backupWiederherstellungenRepo.js');
   const wiederhergestellteDb = reopen(dbPath);
   const eintraege = listBackupWiederherstellungen(wiederhergestellteDb);
-  assert.equal(eintraege.length, 1);
-  assert.equal(eintraege[0].dateiname, 'mein-upload.zip');
-  assert.equal(eintraege[0].wiederhergestellt_von, '99');
+  assert.equal(eintraege.length, 0);
   wiederhergestellteDb.close();
 
   db.close();

@@ -28,6 +28,8 @@ export function createAuditLogRouter({ db }) {
     const { eintraege, gesamtAnzahl, seite, proSeite } = queryGlobalAuditLog(db, filter, { seite: seiteAngefragt });
 
     res.render('admin/audit-log', {
+      aenderungen: Object.values(filter).some(Boolean) ? [] : db.prepare('SELECT * FROM audit_ereignisse WHERE id < ? ORDER BY id DESC LIMIT 50')
+        .all(Number(req.query.vor) || Number.MAX_SAFE_INTEGER),
       eintraege,
       gesamtAnzahl,
       seite,

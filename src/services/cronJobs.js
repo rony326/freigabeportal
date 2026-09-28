@@ -1,6 +1,8 @@
-import { existsSync, unlinkSync, readdirSync, statSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
+import { existsSync, unlinkSync, readdirSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomUUID, createHash } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { writeFinalDocument } from './finalDocument.js';
+import { hasMatureArchiveReceipt, archivedBytesMatch } from './archiveReceipt.js';
 import { buildBackupArchive, backupDateiname, BACKUP_DATEINAME_PATTERN } from './backup.js';
 import { runPersonenSync } from './sync.js';
 import { hasRecentRunningSync } from '../db/syncLogRepo.js';
@@ -207,6 +209,7 @@ export function runPdfBereinigungJob(db, config) {
   let archiviert = 0;
   try {
     for (const job of listAbgeholtJobs(db)) {
+      if (!hasMatureArchiveReceipt(db, job) || !archivedBytesMatch(db, job)) continue;
       let pdfWeg = true;
       if (job.pdf_pfad) {
         try {
@@ -231,6 +234,16 @@ export function runPdfBereinigungJob(db, config) {
     }
   } catch (err) {
     console.error('Archivierungs-Sweep fehlgeschlagen:', err.message);
+  }
+
+  // The group receipt protects the merged document as well as its child documents.
+  for (const parent of db.prepare("SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_abgeholt_am IS NOT NULL").all()) {
+    if (!hasMatureArchiveReceipt(db, parent) || !archivedBytesMatch(db, parent)) continue;
+    try {
+      if (parent.gruppe_pdf_pfad && existsSync(parent.gruppe_pdf_pfad)) unlinkSync(parent.gruppe_pdf_pfad);
+    } catch (err) {
+      console.error(`Loeschen der archivierten Gruppen-PDF ${parent.id} fehlgeschlagen:`, err.message);
+    }
   }
 
   let tmpGeloescht = 0;
@@ -307,6 +320,8 @@ export async function runZeitstempelNachholenJob(db, config) {
     let fehlgeschlagen = 0;
     let dateiFehlt = 0;
     for (const job of ausstehend) {
+      // An issued archive manifest pins the exported revision. Never silently replace it.
+      if (db.prepare('SELECT 1 FROM export_nachweise WHERE job_id = ? OR job_id = ?').get(job.id, job.aufgesplittet_von || job.id)) continue;
       // Bekannte Einschränkung (siehe Spec): sobald n8n den Job abgeholt hat, löscht das Portal
       // die lokale PDF-Datei -- ein Zeitstempel kann für diesen Job dann nicht mehr nachgeholt
       // werden. Kein Fehler, nur ein Zählwert für die Sichtbarkeit im Log.
@@ -314,15 +329,36 @@ export async function runZeitstempelNachholenJob(db, config) {
         dateiFehlt += 1;
         continue;
       }
+      let finalPath;
       try {
         const pdfBuffer = readFileSync(job.pdf_pfad);
         const stamped = await setZeitstempel(pdfBuffer, tsaConfig);
-        const tmpPfad = `${job.pdf_pfad}.${randomUUID()}.tmp`;
-        writeFileSync(tmpPfad, stamped);
-        renameSync(tmpPfad, job.pdf_pfad);
-        markZeitstempelGesetzt(db, job.id, new Date().toISOString(), createHash('sha256').update(stamped).digest('hex'));
+        finalPath = writeFinalDocument(job.pdf_pfad, stamped);
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          const current = db.prepare('SELECT * FROM jobs WHERE id = ?').get(job.id);
+          if (db.prepare('SELECT 1 FROM export_nachweise WHERE job_id = ? OR job_id = ?').get(job.id, job.aufgesplittet_von || job.id)) {
+            throw new Error('Dokumentversion wurde inzwischen fuer den Archivexport festgeschrieben.');
+          }
+          if (!current || current.status !== 'abgeschlossen' || current.abgeholt_am ||
+              current.pdf_pfad !== job.pdf_pfad || current.zeitstempel_gesetzt_am ||
+              !readFileSync(job.pdf_pfad).equals(pdfBuffer)) {
+            throw new Error('Job oder Quelldatei wurde waehrend der Zeitstempel-Anfrage geaendert.');
+          }
+          const hash = createHash('sha256').update(stamped).digest('hex');
+          markZeitstempelGesetzt(db, job.id, new Date().toISOString(), hash);
+          db.prepare('UPDATE jobs SET pdf_pfad = ?, final_datei_hash = ? WHERE id = ?').run(finalPath, hash, job.id);
+          db.exec('COMMIT');
+        } catch (err) {
+          db.exec('ROLLBACK');
+          throw err;
+        }
+        finalPath = undefined;
         nachgeholt += 1;
       } catch (err) {
+        if (finalPath) {
+          try { unlinkSync(finalPath); } catch { /* Unreferenced file can be cleaned up later. */ }
+        }
         fehlgeschlagen += 1;
         console.error(`Zeitstempel-Nachholen für Job ${job.id} fehlgeschlagen:`, err.message);
       }
@@ -354,7 +390,7 @@ export function runDatenbankSicherungJob(db, config) {
     mkdirSync(config.backupDir, { recursive: true });
     const archiv = buildBackupArchive(db, config);
     const dateiname = backupDateiname(new Date());
-    writeFileSync(join(config.backupDir, dateiname), archiv);
+    writeFileSync(join(config.backupDir, dateiname), archiv, { mode: 0o600, flag: 'wx' });
 
     // Retention-Bereinigung ist absichtlich in einem eigenen try/catch isoliert (analog zu den
     // drei unabhängigen Schritten in runPdfBereinigungJob): das neue Backup ist zu diesem

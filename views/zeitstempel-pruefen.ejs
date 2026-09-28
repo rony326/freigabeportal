@@ -59,12 +59,15 @@
                 <% } %>
               </li>
             </ul>
-            <% if (ergebnis.gueltig && ergebnis.hashUebereinstimmung !== false) { %>
+            <p class="text-warning">TSA-Vertrauenskette und Sperrstatus wurden nicht geprüft. Die angegebene Uhrzeit ist nicht unabhängig bestätigt.</p>
+            <% if (ergebnis.gueltig && ergebnis.hashUebereinstimmung === true) { %>
               <p class="mb-3"><strong class="text-success">✓ Diese Datei ist nachweislich unverändert.</strong></p>
             <% } else if (!ergebnis.gueltig) { %>
-              <p class="mb-3 text-danger"><strong>✗ Zeitstempel vorhanden, aber ungültig — die Datei wurde nach dem Zeitstempel verändert.</strong></p>
-            <% } else { %>
+              <p class="mb-3 text-danger"><strong>✗ Zeitstempel ungültig oder aktuelle Dateiversion nicht vollständig abgedeckt.</strong></p>
+            <% } else if (ergebnis.hashUebereinstimmung === false) { %>
               <p class="mb-3 text-danger"><strong>✗ Datei weicht vom in der Datenbank hinterlegten Original ab.</strong></p>
+            <% } else { %>
+              <p>Kein unabhängiger Vergleich mit dem freigegebenen Dokument möglich.</p>
             <% } %>
             <p class="text-muted small mb-0">Zeitpunkt: <%= ergebnis.zeitpunkt %><% if (ergebnis.tsaPolicy) { %> · TSA-Policy: <%= ergebnis.tsaPolicy %><% } %></p>
             <% if (job && ergebnis.vorhanden) { %>

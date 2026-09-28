@@ -484,6 +484,8 @@ test('GET /api/n8n/jobs/abholbereit includes Konto-Details and QR-Bill-Felder fo
   updateKontierungMetadaten(db, id, { absender: null, lieferant: 'Muster AG', rechnungsnummer: 'RE-2026-042', betrag: '123.45', zahlungsziel: '2026-09-01' });
   db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, id);
   setQrDaten(db, id, { qrIban: 'CH9300762011623852957', qrReferenz: '210000000003139471430009017', qrBetrag: '123.45', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  db.prepare('UPDATE jobs SET freigabe_snapshot = ? WHERE id = ?').run(JSON.stringify({ konto: { kontonummer: '3000', bezeichnung: 'Unterhalt' } }), id);
+  db.prepare("UPDATE konten SET kontonummer = '9999' WHERE id = ?").run(kontoId);
 
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   assert.equal(res.status, 200);
@@ -521,7 +523,7 @@ test('GET /api/n8n/jobs/abholbereit returns null Konto-Details and QR-Felder whe
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('POST /api/n8n/jobs/:id/abholung-bestaetigen confirms pickup, deletes the file, and rejects a second confirmation', async () => {
+test('POST /api/n8n/jobs/:id/abholung-bestaetigen confirms transport without deleting the file', async () => {
   const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
@@ -535,7 +537,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen confirms pickup, deletes the f
   const firstRes = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
   assert.equal(firstRes.status, 200);
   assert.equal(firstRes.body.status, 'abgeholt');
-  assert.equal(existsSync(pdfPfad), false);
+  assert.equal(existsSync(pdfPfad), true);
 
   const secondRes = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
   assert.equal(secondRes.status, 409);
@@ -577,13 +579,13 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen still confirms pickup normally
   const res = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
   assert.equal(res.status, 200);
   assert.equal(getJobById(db, id).status, 'abgeholt');
-  assert.equal(existsSync(pdfPfad), false);
+  assert.equal(existsSync(pdfPfad), true);
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('POST /api/n8n/jobs/:id/abholung-bestaetigen also deletes the thumbnail file, and does not error when thumbnail_pfad is null', async () => {
+test('POST /api/n8n/jobs/:id/abholung-bestaetigen retains PDF and thumbnail pending archive evidence', async () => {
   const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const db = openDatabase(':memory:');
@@ -599,8 +601,8 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen also deletes the thumbnail fil
 
   const res = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
   assert.equal(res.status, 200);
-  assert.equal(existsSync(pdfPfad), false);
-  assert.equal(existsSync(thumbnailPfad), false, 'thumbnail file should be deleted alongside the PDF on pickup confirmation');
+  assert.equal(existsSync(pdfPfad), true);
+  assert.equal(existsSync(thumbnailPfad), true, 'transport confirmation must not delete the thumbnail');
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
@@ -728,7 +730,7 @@ test('POST /api/n8n/jobs with no matching Zuweisungsregel sends no mail (job lan
   db.close();
 });
 
-test('POST /:id/abholung-bestaetigen still marks the job abgeholt even if deleting its PDF throws', async () => {
+test('legacy transport ACK does not inspect or delete an invalid PDF path', async () => {
   const { mkdtempSync, rmSync, mkdirSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const dir = mkdtempSync(join(tmpdir(), 'abholung-unlink-fail-test-'));
@@ -738,10 +740,7 @@ test('POST /:id/abholung-bestaetigen still marks the job abgeholt even if deleti
   seedDefaults(db);
   const app = buildTestApp(db, config, createStubMailer());
 
-  // pdf_pfad points at a directory, not a file. unlinkSync() on a directory always throws
-  // EISDIR/EPERM on every platform and every user (including root, unlike a chmod-based
-  // permission-denial test, which root silently ignores) — a deterministic way to force the
-  // route's delete step to fail without relying on filesystem permissions.
+  // Transport ACK is not archival evidence; the manifest endpoint rejects this path separately.
   const pdfPfad = join(dir, 'job-is-actually-a-dir.pdf');
   mkdirSync(pdfPfad);
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
@@ -880,7 +879,7 @@ test('GET /api/n8n/jobs/abholbereit leaves a normal (non-split) job entry exactl
   db.close();
 });
 
-test('POST /api/n8n/jobs/:id/abholung-bestaetigen on a group parent id deletes every child file and the group file, and marks children abgeholt', async () => {
+test('POST /api/n8n/jobs/:id/abholung-bestaetigen on a group retains every file and marks children abgeholt', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const dir = mkdtempSync(join(tmpdir(), 'n8n-gruppe-bestaetigen-test-'));
@@ -908,8 +907,8 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen on a group parent id deletes e
 
   assert.equal(res.status, 200);
   assert.equal(getJobById(db, kindId).status, 'abgeholt');
-  assert.equal(existsSync(kindPfad), false);
-  assert.equal(existsSync(gruppenPfad), false);
+  assert.equal(existsSync(kindPfad), true);
+  assert.equal(existsSync(gruppenPfad), true);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
@@ -980,7 +979,7 @@ test('GET /api/n8n/jobs/abholbereit includes quelle, eingereicht_von, auslage_da
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('GET /api/n8n/jobs/abholbereit includes a live-looked-up, normalized IBAN and Kontoinhaber for a Spesen position', async () => {
+test('GET /api/n8n/jobs/abholbereit uses approved payment data without a live ChurchTools lookup', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
@@ -996,6 +995,7 @@ test('GET /api/n8n/jobs/abholbereit includes a live-looked-up, normalized IBAN a
   const app = buildTestApp(db, config, createStubMailer());
 
   const { id: jobId } = seedAbgeschlossenSpesenJob(db, jobsDir);
+  db.prepare('UPDATE jobs SET freigabe_snapshot = ? WHERE id = ?').run(JSON.stringify({ zahlungsdaten: { iban: 'CH9300762011623852957', kontoinhaber: 'Max Muster' } }), jobId);
 
   // ChurchTools has no separate customFields array — custom fields are flat properties directly
   // on the person object (confirmed against a live instance).
@@ -1063,7 +1063,7 @@ test('GET /api/n8n/jobs/abholbereit omits quelle/eingereicht_von-style Spesen fi
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('GET /api/n8n/jobs/abholbereit falls back to zahlungsziel for rechnungsdatum on a Lieferant job', async () => {
+test('GET /api/n8n/jobs/abholbereit never substitutes a due date for an unknown invoice date', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
@@ -1075,7 +1075,8 @@ test('GET /api/n8n/jobs/abholbereit falls back to zahlungsziel for rechnungsdatu
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   const entry = res.body.find((j) => j.id === id);
   assert.ok(entry);
-  assert.equal(entry.rechnungsdatum, '2026-09-15');
+  assert.equal(entry.rechnungsdatum, null);
+  assert.equal(entry.zahlungsziel, '2026-09-15');
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });

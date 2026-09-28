@@ -11,6 +11,28 @@
   <main class="container py-4">
     <%- include('./_nav') %>
     <h1>Globales Audit-Log</h1>
+    <% if (aenderungen.length) { %>
+    <h2 class="h4">Änderungshistorie</h2>
+    <div class="table-responsive">
+      <table class="table">
+        <thead><tr><th>Zeitpunkt</th><th>Person</th><th>Objekt</th><th>Aktion</th><th>Änderung</th></tr></thead>
+        <tbody>
+          <% aenderungen.forEach((e) => { %>
+            <tr><td><%= e.zeitpunkt %></td><td><%= e.person_name %> (<%= e.person_id %>)</td>
+              <td><%= e.objekt %> #<%= e.objekt_id %></td><td><%= e.aktion %></td>
+              <td><details><summary>Details</summary><p><%= e.begruendung || '' %></p>
+                <pre style="white-space:pre-wrap;overflow-wrap:anywhere"><%= e.vorher || '' %></pre>
+                <pre style="white-space:pre-wrap;overflow-wrap:anywhere"><%= e.nachher || '' %></pre>
+              </details></td></tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <p><a href="/admin/audit-log">Neueste Änderungen</a>
+      <% if (aenderungen.length === 50) { %> · <a href="?vor=<%= aenderungen[aenderungen.length - 1].id %>">Ältere Änderungen</a><% } %>
+    </p>
+    <% } %>
+    <h2 class="h4">Freigaben und Löschungen</h2>
 
     <form method="get" class="row g-2 mb-3">
       <div class="col-auto">

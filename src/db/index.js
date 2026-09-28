@@ -2,6 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { currentAuditActor } from '../services/auditContext.js';
+import { migrateSecuritySchema } from './securitySchema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -621,6 +623,8 @@ export function openDatabase(dbPath) {
     mkdirSync(dirname(dbPath), { recursive: true });
   }
   const db = new DatabaseSync(dbPath);
+  db.function('audit_actor_id', () => currentAuditActor().id);
+  db.function('audit_actor_name', () => currentAuditActor().name);
   const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
   migrateJobsTableQuelleCheck(db);
@@ -636,5 +640,6 @@ export function openDatabase(dbPath) {
   migrateCronLogTableFreigabe2Erinnerungen(db);
   migratePersonenTable(db);
   migrateFreigabenTableVertretung(db);
+  migrateSecuritySchema(db);
   return db;
 }

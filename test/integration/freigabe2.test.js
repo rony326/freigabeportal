@@ -345,7 +345,7 @@ test('POST /freigabe2/:id without conflict approves, stamps the PDF and complete
   assert.equal(freigaben[1].person_id, '3');
 
   const { readFileSync } = await import('node:fs');
-  const stampedBytes = readFileSync(pdfPfad);
+  const stampedBytes = readFileSync(getJobById(db, id).pdf_pfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
   // stampAndFinalize appends one new page carrying both the Freigaben and the Verlauf, always last.
   const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
@@ -381,7 +381,7 @@ test('POST /freigabe2/:id without a conflict still saves an optional Begründung
   const freigaben = listFreigabenByJob(db, id);
   assert.equal(freigaben[1].kommentar, 'Betrag und Konto passen, Freigabe erteilt.');
 
-  const stampedBytes = readFileSync(pdfPfad);
+  const stampedBytes = readFileSync(getJobById(db, id).pdf_pfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
   const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
   assert.match(stampPageText, /Betrag und Konto passen, Freigabe erteilt\./);
@@ -420,13 +420,13 @@ test('POST /freigabe2/:id sets zeitstempel_gesetzt_am when a TSA is configured a
   assert.equal(job.status, 'abgeschlossen');
   assert.ok(job.zeitstempel_gesetzt_am, 'zeitstempel_gesetzt_am must be set after a successful TSA call');
   assert.match(job.zeitstempel_datei_hash, /^[0-9a-f]{64}$/, 'zeitstempel_datei_hash must be a sha256 hex digest');
-  assert.equal(job.zeitstempel_datei_hash, createHash('sha256').update(readFileSync(pdfPfad)).digest('hex'), 'the stored hash must match the final bytes on disk');
+  assert.equal(job.zeitstempel_datei_hash, createHash('sha256').update(readFileSync(job.pdf_pfad)).digest('hex'), 'the stored hash must match the final bytes on disk');
 
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
 
-test('POST /freigabe2/:id clears zeitstempel_gesetzt_am again when the stamped PDF cannot be renamed into place', async () => {
+test('POST /freigabe2/:id rolls back when the source document disappears during finalization', async () => {
   // The DB must never claim a timestamp that is not actually on disk: markZeitstempelGesetzt runs
   // inside the completion transaction, which commits *before* the .tmp file is renamed onto
   // job.pdf_pfad. If that rename fails, the file still sitting at job.pdf_pfad is the untimestamped
@@ -470,14 +470,14 @@ test('POST /freigabe2/:id clears zeitstempel_gesetzt_am again when the stamped P
     .type('form')
     .send({ interessenskonflikt: 'nein', begruendung: '' });
 
-  assert.equal(res.status, 302, 'the Freigabe itself is already committed — a failed rename must not turn into a 500');
+  assert.equal(res.status, 500, 'a changed source must prevent finalization');
   assert.ok(statSync(pdfPfad).isDirectory(), 'the rename really must have failed for this test to mean anything');
   const job = getJobById(db, id);
-  assert.equal(job.status, 'abgeschlossen');
+  assert.equal(job.status, 'freigabe2');
   assert.equal(
     job.zeitstempel_gesetzt_am,
     null,
-    'zeitstempel_gesetzt_am must be cleared again — the timestamped bytes never reached job.pdf_pfad, so the n8n gate has to stay closed and the nachhol-job has to retry'
+    'no timestamp may be published for a failed finalization'
   );
   assert.equal(
     job.zeitstempel_datei_hash,
@@ -519,7 +519,7 @@ test('POST /freigabe2/:id still completes the Freigabe when the configured TSA i
   db.close();
 });
 
-test('POST /freigabe2/:id still completes the Freigabe when the job already carries a different zeitstempel_datei_hash (immutability trigger rejects the overwrite) — the original hash survives, untouched', async () => {
+test('POST /freigabe2/:id rolls back when an existing final hash conflicts with the new document', async () => {
   // This should never happen via the normal flow (abschliessenFreigabe2's status guard already
   // prevents a job from completing Freigabe 2 twice) — it simulates the anomaly the DB-level
   // immutability trigger (schema.sql) exists to guard against: a bug, a race condition, or a
@@ -548,9 +548,9 @@ test('POST /freigabe2/:id still completes the Freigabe when the job already carr
     .type('form')
     .send({ interessenskonflikt: 'nein', begruendung: '' });
 
-  assert.equal(res.status, 302, 'the Freigabe must still complete — the rejected hash write must not crash or roll back the whole request');
+  assert.equal(res.status, 500, 'conflicting integrity evidence must prevent completion');
   const job = getJobById(db, id);
-  assert.equal(job.status, 'abgeschlossen');
+  assert.equal(job.status, 'freigabe2');
   assert.equal(job.zeitstempel_datei_hash, 'bereits-vorhandener-hash', 'the original hash must survive untouched — the trigger rejected the conflicting overwrite');
   assert.equal(job.zeitstempel_gesetzt_am, '2026-08-01T00:00:00.000Z', 'the original timestamp must survive untouched for the same reason');
 
@@ -614,7 +614,7 @@ test('a prior Freigabe-1 Interessenskonflikt-Eskalation in the Verlauf is labell
 
   assert.equal(res.status, 302);
 
-  const stampedBytes = readFileSync(pdfPfad);
+  const stampedBytes = readFileSync(getJobById(db, id).pdf_pfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
   const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
   assert.doesNotMatch(stampPageText, /undefined/, 'a missing rolleLabel entry must never surface as the literal word "undefined"');
@@ -656,7 +656,7 @@ test('the top Freigabe-1 block always reflects the person who actually completed
     .send({ interessenskonflikt: 'nein', begruendung: '' });
   assert.equal(res.status, 302);
 
-  const stampedBytes = readFileSync(pdfPfad);
+  const stampedBytes = readFileSync(getJobById(db, id).pdf_pfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
   const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
 
@@ -748,7 +748,7 @@ test('two concurrent POST /freigabe2/:id requests for the same job complete it e
   const losers = outcomes.filter((r) => r.statusCode === 409);
   assert.equal(winners.length, 1, `expected exactly one winning redirect, got ${JSON.stringify(outcomes)}`);
   assert.equal(losers.length, 1, `expected exactly one 409 loser, got ${JSON.stringify(outcomes)}`);
-  assert.equal(losers[0].renderedView, 'freigabe2');
+  assert.equal(losers[0].renderedView, 'error');
 
   const job = getJobById(db, id);
   assert.equal(job.status, 'abgeschlossen');
@@ -763,7 +763,7 @@ test('two concurrent POST /freigabe2/:id requests for the same job complete it e
   const { readFileSync } = await import('node:fs');
   const winnerIp = ctxA.res.redirectedTo === '/pool' ? '1.2.3.4' : '1.2.3.5';
   const loserIp = winnerIp === '1.2.3.4' ? '1.2.3.5' : '1.2.3.4';
-  const stampedBytes = readFileSync(pdfPfad);
+  const stampedBytes = readFileSync(getJobById(db, id).pdf_pfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
   // stampAndFinalize appends one new page carrying the Freigaben (with their "IP: ..." lines) and
   // the Verlauf, always last.
@@ -1054,7 +1054,7 @@ test('after a rejected job is reworked and resubmitted through Kontierung, Freig
     .send({ aktion: 'freigeben', interessenskonflikt: 'nein', begruendung: '' });
   assert.equal(freigebenRes.status, 302);
 
-  const stampedPdf = readFileSync(pdfPfad);
+  const stampedPdf = readFileSync(getJobById(db, id).pdf_pfad);
   const doc = mupdf.Document.openDocument(stampedPdf, 'application/pdf');
   // stampAndFinalize appends one new last page carrying both the Freigabe blocks and the Verlauf.
   // The Freigabe-1 block must carry the NEW row's IP (9.9.9.9), not the original, superseded
@@ -1367,7 +1367,7 @@ test('POST /freigabe2/:id prints the submitter\'s live-looked-up IBAN and Kontoi
   assert.equal(res.status, 302);
   assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
 
-  const stampedBytes = readFileSync(pdfPfad);
+  const stampedBytes = readFileSync(getJobById(db, jobId).pdf_pfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
   const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
   assert.match(stampPageText, /Zahlungsdaten/);
@@ -1416,7 +1416,7 @@ test('POST /freigabe2/:id completes normally, with no Zahlungsdaten block, when 
   assert.equal(res.status, 302, 'a failed IBAN lookup must not block Freigabe 2 from completing');
   assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
 
-  const stampedBytes = readFileSync(pdfPfad);
+  const stampedBytes = readFileSync(getJobById(db, jobId).pdf_pfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
   const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
   assert.doesNotMatch(stampPageText, /Zahlungsdaten/);
@@ -1459,7 +1459,7 @@ test('POST /freigabe2/:id prints the Spesenabrechnung Titel and Verwendungszweck
   assert.equal(res.status, 302);
   assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
 
-  const stampedBytes = readFileSync(pdfPfad);
+  const stampedBytes = readFileSync(getJobById(db, jobId).pdf_pfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
   const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
   assert.match(stampPageText, /Titel: Reise Zürich 12.–14.8./);
@@ -1488,7 +1488,7 @@ test('POST /freigabe2/:id prints neither Titel nor Verwendungszweck for a non-Sp
     .send({ interessenskonflikt: 'nein', begruendung: '' });
   assert.equal(res.status, 302);
 
-  const stampedBytes = readFileSync(pdfPfad);
+  const stampedBytes = readFileSync(getJobById(db, jobId).pdf_pfad);
   const mdoc = mupdf.Document.openDocument(stampedBytes, 'application/pdf');
   const stampPageText = mdoc.loadPage(mdoc.countPages() - 1).toStructuredText().asText();
   assert.doesNotMatch(stampPageText, /Titel:/);

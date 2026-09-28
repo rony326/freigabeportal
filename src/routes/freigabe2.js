@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
-import { randomUUID, createHash } from 'node:crypto';
+import { readFileSync, unlinkSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { getJobById, eskalierenFreigabe2, eskalierenFreigabe2AnAdmin, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id, markZeitstempelGesetzt } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { getSpesenabrechnungById } from '../db/spesenabrechnungenRepo.js';
@@ -16,6 +16,7 @@ import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger } fr
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../services/splitGruppenExport.js';
+import { writeFinalDocument } from '../services/finalDocument.js';
 
 export function createFreigabe2Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -259,10 +260,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const titel = job.quelle === 'spesen' ? getSpesenabrechnungById(db, job.spesenabrechnung_id)?.titel || null : null;
       const verwendungszweck = job.quelle === 'spesen' ? job.beschreibung || null : null;
 
-      // Non-blocking, best-effort, same tolerance as the Zeitstempel/TSA step below: a
-      // ChurchTools outage or a person with no IBAN/Kontoinhaber custom field must not prevent
-      // Freigabe 2 from completing — the stamped Zahlungsdaten block is simply omitted, same as
-      // n8n's GET /abholbereit (see n8n/jobs.js) already tolerates a failed lookup there.
+      // Missing payment data remains explicit in both the document and immutable snapshot.
+      // Export must not silently replace it with a later ChurchTools value.
       let zahlungsdaten = null;
       if (job.quelle === 'spesen' && job.eingereicht_von) {
         try {
@@ -329,10 +328,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, [err.message]);
       }
 
-      // Non-blocking, best-effort: a TSA outage must never prevent Freigabe 2 from completing.
-      // Deliberately outside the DB transaction below — that transaction always commits the
-      // Freigabe itself; a failed timestamp attempt is simply retried later by the
-      // zeitstempel-nachholen cron job (see cronJobs.js) rather than rolled back here.
+      // TSA I/O stays outside the transaction. On outage, persist the timestamp requirement
+      // so export remains blocked until the retry job succeeds, even if TSA is disabled later.
       const tsaUrl = getConfigValue(db, 'zeitstempel_tsa_url');
       let zeitstempelGesetztAm = null;
       let zeitstempelDateiHash = null;
@@ -350,12 +347,26 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         }
       }
 
-      const tmpPfad = `${job.pdf_pfad}.${randomUUID()}.tmp`;
-      writeFileSync(tmpPfad, stamped);
+      // The old document remains intact until a durable new file can be referenced.
+      const tmpPfad = writeFinalDocument(job.pdf_pfad, stamped);
 
       const effektiverFreigeber2FuerFreigabe = getEffectiveFreigeber2Id(job, konto);
       db.exec('BEGIN');
       try {
+        const currentJob = getJobById(db, job.id);
+        if (!readFileSync(job.pdf_pfad).equals(pdfBuffer)) throw new Error('Das Quelldokument wurde waehrend der Freigabe veraendert.');
+        const currentKonto = getKontoById(db, konto.id);
+        req.currentPerson = getPersonById(db, req.currentPerson.churchtools_person_id);
+        if (!req.currentPerson?.aktiv || JSON.stringify(currentJob) !== JSON.stringify(job) || JSON.stringify(currentKonto) !== JSON.stringify(konto)) {
+          db.exec('ROLLBACK');
+          unlinkSync(tmpPfad);
+          return res.status(409).render('error', { message: 'Der Vorgang wurde inzwischen geaendert. Bitte erneut pruefen.' });
+        }
+        if (!loadAuthorized(req, res)) {
+          db.exec('ROLLBACK');
+          unlinkSync(tmpPfad);
+          return;
+        }
         createFreigabe(db, {
           jobId: job.id,
           personId: req.currentPerson.churchtools_person_id,
@@ -378,52 +389,15 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
             'Diese Freigabe wurde inzwischen bereits von einem anderen Vorgang abgeschlossen.',
           ]);
         }
-        if (zeitstempelGesetztAm) {
-          try {
-            markZeitstempelGesetzt(db, job.id, zeitstempelGesetztAm, zeitstempelDateiHash);
-          } catch (err) {
-            // Defense in depth: abschliessenFreigabe2's status guard above already prevents a job
-            // from completing Freigabe 2 twice, so this should never legitimately fire. If it does
-            // anyway — a bug, a race condition, or a direct/malicious DB write — the
-            // zeitstempel_datei_hash/zeitstempel_gesetzt_am immutability triggers (schema.sql)
-            // reject the conflicting write and the job's original, already-recorded values stay
-            // intact. Treat this attempt like a TSA failure: the rest of the Freigabe still
-            // completes, just without claiming a (this time unrecorded) timestamp.
-            console.error(`Job ${job.id}: Zeitstempel-Hash/-Zeitpunkt konnte nicht gespeichert werden — vermutlich bereits ein anderer Wert hinterlegt (möglicher Manipulationsversuch):`, err.message);
-            zeitstempelGesetztAm = null;
-            zeitstempelDateiHash = null;
-          }
-        }
+        if (zeitstempelGesetztAm) markZeitstempelGesetzt(db, job.id, zeitstempelGesetztAm, zeitstempelDateiHash);
+        db.prepare(`UPDATE jobs SET pdf_pfad = ?, freigabe_snapshot = ?, final_datei_hash = ?, zeitstempel_erforderlich = ? WHERE id = ?`).run(
+          tmpPfad, JSON.stringify({ version: 1, job, konto, zahlungsdaten, stampData }),
+          createHash('sha256').update(stamped).digest('hex'), tsaUrl ? 1 : 0, job.id);
         db.exec('COMMIT');
       } catch (err) {
         db.exec('ROLLBACK');
         try { unlinkSync(tmpPfad); } catch { /* best-effort cleanup */ }
         throw err;
-      }
-
-      try {
-        renameSync(tmpPfad, job.pdf_pfad);
-      } catch (err) {
-        // The job is already committed abgeschlossen at this point — a failed rename here would
-        // otherwise leave it eligible for n8n pickup with the original, unstamped PDF (no Visum,
-        // no audit trail) instead of crashing the request. Log loudly so it's noticed rather
-        // than silently shipping the wrong file.
-        console.error(`Stempel-PDF für Job ${job.id} konnte nicht final abgelegt werden:`, err.message);
-        // The RFC3161 timestamp was applied to the buffer that just failed to reach
-        // job.pdf_pfad — the file still on disk there has no timestamp at all. Leaving
-        // zeitstempel_gesetzt_am set would make the database assert a timestamp that does not
-        // exist: it would open the n8n pickup gate (listAbholbereitJobs/confirmAbholung) for an
-        // untimestamped file, and show "✓ gesetzt am …" next to a /zeitstempel-pruefen result
-        // that finds nothing. Clear it back to NULL (markZeitstempelGesetzt is a plain
-        // parameterised UPDATE, so null is the honest "not set" value) — the gate stays closed
-        // and the zeitstempel-nachholen cron job retries the job later.
-        if (zeitstempelGesetztAm) {
-          try {
-            markZeitstempelGesetzt(db, job.id, null, null);
-          } catch (clearErr) {
-            console.error(`Zurücksetzen von zeitstempel_gesetzt_am für Job ${job.id} fehlgeschlagen:`, clearErr.message);
-          }
-        }
       }
 
       if (job.aufgesplittet_von) {

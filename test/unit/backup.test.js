@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import AdmZip from 'adm-zip';
+import { createHash } from 'node:crypto';
+import { restoreOffline } from '../../src/services/offlineRestore.js';
 import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
@@ -24,7 +26,7 @@ test('backupDateiname produces a filesystem-safe name matching BACKUP_DATEINAME_
   assert.match(name, BACKUP_DATEINAME_PATTERN);
 });
 
-test('buildBackupArchive + restoreBackupArchive roundtrip: DB rows and files survive identically into a fresh location', () => {
+test('offline restore roundtrip preserves the previous database and rebases files into a fresh generation', () => {
   const quellDir = mkdtempSync(join(tmpdir(), 'backup-quelle-'));
   const zielDir = mkdtempSync(join(tmpdir(), 'backup-ziel-'));
   const quellConfig = {
@@ -60,23 +62,23 @@ test('buildBackupArchive + restoreBackupArchive roundtrip: DB rows and files sur
   quellDb.close();
 
   const zielDb = openDatabase(zielConfig.dbPath);
-  const { sicherheitsSnapshotDateiname } = restoreBackupArchive(archiv, zielDb, zielConfig, {
-    wiederhergestelltVon: '1',
-    quellDateiname: 'hochgeladenes-backup.zip',
-  });
   zielDb.close();
+  const restored = restoreOffline(archiv, zielConfig, {
+    expectedSha256: createHash('sha256').update(archiv).digest('hex'),
+    operator: '1', reason: 'Wiederherstellungsprobe', sourceName: 'hochgeladenes-backup.zip',
+  });
 
-  // Sicherheits-Snapshot des (leeren) Ziel-Standes vor dem Überschreiben wurde geschrieben.
-  assert.match(sicherheitsSnapshotDateiname, BACKUP_DATEINAME_PATTERN);
-  assert.ok(readdirSync(zielConfig.backupDir).includes(sicherheitsSnapshotDateiname));
+  const previousDb = openDatabase(zielConfig.dbPath);
+  assert.equal(previousDb.prepare('SELECT count(*) AS n FROM jobs').get().n, 0);
+  previousDb.close();
 
   // DB-Inhalt kam vollständig an.
-  const wiederhergestellteDb = openDatabase(zielConfig.dbPath);
+  const wiederhergestellteDb = openDatabase(restored.current.dbPath);
   const wiederhergestellterJob = getJobById(wiederhergestellteDb, jobId);
   assert.equal(wiederhergestellterJob.dateiname, 'rechnung.pdf');
+  assert.equal(wiederhergestellterJob.pdf_pfad, join(restored.current.jobsDir, 'rechnung.pdf'));
 
-  // Der Restore-Audit-Eintrag wurde direkt in die wiederhergestellte Datei geschrieben (siehe
-  // Kommentar in restoreBackupArchive).
+  // The restore audit entry is part of the prepared database before activation.
   const eintraege = listBackupWiederherstellungen(wiederhergestellteDb);
   assert.equal(eintraege.length, 1);
   assert.equal(eintraege[0].dateiname, 'hochgeladenes-backup.zip');
@@ -84,14 +86,14 @@ test('buildBackupArchive + restoreBackupArchive roundtrip: DB rows and files sur
   wiederhergestellteDb.close();
 
   // Dateien kamen vollständig an.
-  assert.equal(readFileSync(join(zielConfig.jobsDir, 'rechnung.pdf'), 'utf8'), 'pdf-inhalt');
-  assert.equal(readFileSync(join(zielConfig.brandingDir, 'logo.png'), 'utf8'), 'logo-inhalt');
+  assert.equal(readFileSync(join(restored.current.jobsDir, 'rechnung.pdf'), 'utf8'), 'pdf-inhalt');
+  assert.equal(readFileSync(join(restored.current.brandingDir, 'logo.png'), 'utf8'), 'logo-inhalt');
 
   rmSync(quellDir, { recursive: true, force: true });
   rmSync(zielDir, { recursive: true, force: true });
 });
 
-test('restoreBackupArchive succeeds when the restoring person does not exist in the archive', () => {
+test('offline restore records the maintenance operator even when absent from the backed-up persons', () => {
   // Der realistische Betriebsfall: Ein Admin spielt ein Archiv ein, das älter ist als sein eigenes
   // Konto -- die personen-Tabelle im Archiv kennt ihn nicht. Der Audit-Eintrag wird in genau diese
   // wiederhergestellte Datenbank geschrieben; ein Foreign Key auf personen hätte hier zugeschlagen
@@ -119,15 +121,13 @@ test('restoreBackupArchive succeeds when the restoring person does not exist in 
 
   const zielDb = openDatabase(zielConfig.dbPath);
   upsertPerson(zielDb, { id: '99', vorname: 'Neue', nachname: 'Adminperson', email: 'neu@example.org', gruppen: [], loggedInNow: false });
-  const { sicherheitsSnapshotDateiname } = restoreBackupArchive(archiv, zielDb, zielConfig, {
-    wiederhergestelltVon: '99',
-    quellDateiname: 'altes-backup.zip',
-  });
   zielDb.close();
+  const restored = restoreOffline(archiv, zielConfig, {
+    expectedSha256: createHash('sha256').update(archiv).digest('hex'),
+    operator: '99', reason: 'Wiederherstellungsprobe', sourceName: 'altes-backup.zip',
+  });
 
-  assert.match(sicherheitsSnapshotDateiname, BACKUP_DATEINAME_PATTERN);
-
-  const wiederhergestellteDb = openDatabase(zielConfig.dbPath);
+  const wiederhergestellteDb = openDatabase(restored.current.dbPath);
   // Person 99 existiert in der wiederhergestellten personen-Tabelle nicht ...
   assert.equal(wiederhergestellteDb.prepare('SELECT COUNT(*) AS n FROM personen WHERE churchtools_person_id = ?').get('99').n, 0);
   // ... der Audit-Eintrag ist trotzdem da.
@@ -139,6 +139,10 @@ test('restoreBackupArchive succeeds when the restoring person does not exist in 
 
   rmSync(quellDir, { recursive: true, force: true });
   rmSync(zielDir, { recursive: true, force: true });
+});
+
+test('the legacy live-restore service is disabled even when called directly', () => {
+  assert.throws(() => restoreBackupArchive(Buffer.from('unused')), /Live-Restore ist gesperrt/);
 });
 
 test('buildBackupArchive writes the file counts of jobs/ and branding/ into manifest.json', () => {

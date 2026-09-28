@@ -139,3 +139,15 @@ for (const [name, fn] of [['findeBetraege', findeBetraege], ['schlageTotalVor', 
 test('findeBetraege only looks at the first 500 characters of a line', () => {
   assert.deepEqual(findeBetraege(`${'x'.repeat(490)} 12.50 ${'y'.repeat(20)} 99.00`).map((b) => b.betrag), ['12.50']);
 });
+
+test('findeBetraege accepts the typographic apostrophe as thousands separator', () => {
+  assert.deepEqual(findeBetraege('Hotel 1’234.50').map((b) => b.betrag), ['1234.50']);
+});
+
+test('findeEndziffern requires 4-character mask groups', () => {
+  assert.deepEqual([...findeEndziffern('xx 1234')], []);
+  assert.deepEqual([...findeEndziffern('Ref **2026')], []);
+  assert.deepEqual([...findeEndziffern('XX1234')], []);
+  assert.deepEqual([...findeEndziffern('XXXX-XXXX-XXXX-5678')], ['5678']);
+  assert.deepEqual([...findeEndziffern('****4242')], ['4242']);
+});

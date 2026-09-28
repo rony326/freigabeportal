@@ -1,17 +1,17 @@
 // Heuristiken für Kreditkartenabrechnungen. Liefern nur Vorschläge -- nichts hier darf eine
 // fachliche Entscheidung erzwingen.
 
-// Betrag: optionales Minus, Tausendertrenner ' ' oder Leerzeichen, genau zwei Nachkommastellen
+// Betrag: optionales Minus, Tausendertrenner ' ’ oder Leerzeichen, genau zwei Nachkommastellen
 // mit . oder ,, optional gefolgt von CR oder - (Gutschrift). Die Lookbehind/-ahead-Grenzen
 // verhindern Treffer mitten in Datumsangaben (03.09.2026) oder Kartennummern.
-const BETRAG_RE = /(?<![\d.,''])(-\s?)?(\d{1,3}(?:['' ]\d{3})+|\d+)[.,](\d{2})(?![\d.,])(\s?(?:CR\b|-))?/g;
+const BETRAG_RE = /(?<![\d.,'’])(-\s?)?(\d{1,3}(?:['’ ]\d{3})+|\d+)[.,](\d{2})(?![\d.,])(\s?(?:CR\b|-))?/g;
 const DATUM_RES = [
   { re: /\b(\d{2})\.(\d{2})\.(\d{4})\b/g, map: (m) => `${m[3]}-${m[2]}-${m[1]}` },
   { re: /\b(\d{2})\.(\d{2})\.(\d{2})\b(?!\.)/g, map: (m) => `20${m[3]}-${m[2]}-${m[1]}` },
   { re: /\b(\d{4})-(\d{2})-(\d{2})\b/g, map: (m) => `${m[1]}-${m[2]}-${m[3]}` },
   { re: /\b(\d{2})\/(\d{2})\/(\d{4})\b/g, map: (m) => `${m[3]}-${m[2]}-${m[1]}` },
 ];
-const ENDZIFFERN_RE = /[*Xx•]{2,4}(?:[ \-]?[*Xx•]{2,4}){0,3}[ \-]?(\d{4})(?!\d)/g;
+const ENDZIFFERN_RE = /[*Xx•]{4}(?:[ \-]?[*Xx•]{4}){0,3}[ \-]?(\d{4})(?!\d)/g;
 const TOTAL_RE = /total|saldo|zu bezahlen|rechnungsbetrag/i;
 
 export const LEERE_ANALYSE = Object.freeze({ betraege: [], daten: [], total: null });
@@ -35,7 +35,7 @@ function betraegeInZeile(zeile) {
   for (const { re } of DATUM_RES) bereinigt = bereinigt.replace(new RegExp(re.source, 'g'), (m) => ' '.repeat(m.length));
   const treffer = [];
   for (const m of bereinigt.matchAll(BETRAG_RE)) {
-    const ganz = m[2].replace(/['' ]/g, '');
+    const ganz = m[2].replace(/['’ ]/g, '');
     const negativ = Boolean(m[1]) || Boolean(m[4]);
     treffer.push(`${negativ ? '-' : ''}${Number(`${ganz}.${m[3]}`).toFixed(2)}`);
   }

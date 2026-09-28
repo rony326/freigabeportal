@@ -429,7 +429,13 @@ präpariertes PDF die Analyse zum Hängen bringt (ReDoS).
 
 - **Beträge/Daten** (`findeBetraege`/`findeDaten`): pro Textzeile, mit
   Schutz gegen Fehltreffer in Datums- oder Kartennummer-Kontexten.
-- **Kartenendziffern** (`findeEndziffern`): Basis von 6b.
+- **Kartenendziffern** (`findeEndziffern`): Basis von 6b. Erkannt werden
+  nur maskierte Kartennummern aus **Vierergruppen** von `*`/`X`/`x`/`•`
+  (eine bis vier Gruppen, optional durch Leerzeichen oder `-` getrennt),
+  gefolgt von vier Ziffern — z. B. `**** 4242` oder
+  `XXXX-XXXX-XXXX-1234`, nicht aber `XX1234` oder `Ref **2026`.
+- Tausendertrenner in Beträgen: `'`, `’` (typografischer Apostroph) oder
+  Leerzeichen.
 - **Abrechnungstotal** (`schlageTotalVor`): erste Zeile mit
   „Total“/„Saldo“/„zu bezahlen“/„Rechnungsbetrag“ — **steht auf dieser
   Zeile ein `CHF`-Token, wird bevorzugt der Betrag direkt danach genommen**

@@ -167,3 +167,31 @@ test('pre-feature on-disk database: reopening rebuilds CHECKs without losing aud
   const jobEvent = db.prepare("SELECT * FROM audit_ereignisse WHERE objekt = 'jobs' AND aktion = 'UPDATE' ORDER BY id DESC").get();
   assert.equal(JSON.parse(jobEvent.nachher).kk_markiert_am, '2026-09-28T00:00:00Z');
 });
+
+test('legacy person_berechtigungen rebuild tolerates a row whose person no longer exists', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'security-schema-orphan-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'portal.db');
+  let db = openDatabase(dbPath);
+  db.exec(`PRAGMA foreign_keys = OFF;
+    BEGIN;
+    CREATE TABLE person_berechtigungen_alt (
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      berechtigung TEXT NOT NULL CHECK (berechtigung IN ('konten_verwalten','debitoren_verwalten','geplante_jobs_verwalten','abgelehnt_verwalten','mails_einsehen','sync_einsehen','audit_log_einsehen','pool_zuweisen','sync_verwalten','workflow_eingreifen')),
+      PRIMARY KEY (person_id, berechtigung)
+    );
+    DROP TABLE person_berechtigungen;
+    ALTER TABLE person_berechtigungen_alt RENAME TO person_berechtigungen;
+    INSERT INTO person_berechtigungen VALUES ('verschwunden', 'sync_verwalten');
+    COMMIT;
+    PRAGMA foreign_keys = ON;`);
+  db.close();
+
+  db = openDatabase(dbPath);
+  t.after(() => db.close());
+  assert.match(db.prepare("SELECT sql FROM sqlite_master WHERE name = 'person_berechtigungen'").get().sql, /'kreditkarten_verwalten'/);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM person_berechtigungen WHERE person_id = 'verschwunden'").get().n, 1);
+  assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
+  assert.equal(db.isTransaction, false);
+  assertAuditTriggersCurrent(db);
+});

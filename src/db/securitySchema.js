@@ -26,16 +26,27 @@ export function migrateSecuritySchema(db) {
   // aufgebaut, die schon 'workflow_eingreifen', aber noch nicht 'kreditkarten_verwalten' kennt.
   const sql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'person_berechtigungen'").get().sql;
   if (!RIGHTS.every((right) => sql.includes(`'${right}'`))) {
-    db.exec(`BEGIN;
-      CREATE TABLE person_berechtigungen_security (
-        person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-        berechtigung TEXT NOT NULL CHECK (berechtigung IN (${RIGHTS.map((r) => `'${r}'`).join(',')})),
-        PRIMARY KEY (person_id, berechtigung)
-      );
-      INSERT INTO person_berechtigungen_security SELECT * FROM person_berechtigungen;
-      DROP TABLE person_berechtigungen;
-      ALTER TABLE person_berechtigungen_security RENAME TO person_berechtigungen;
-      COMMIT;`);
+    // Gleiches Muster wie die Tabellen-Neuaufbauten in db/index.js: foreign_keys muss ausserhalb
+    // der Transaktion abgeschaltet werden (innerhalb ist das Pragma wirkungslos), sonst bricht eine
+    // einzige Zeile einer nicht mehr existierenden Person den Kopiervorgang und damit den Start ab.
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN');
+    try {
+      db.exec(`CREATE TABLE person_berechtigungen_security (
+          person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+          berechtigung TEXT NOT NULL CHECK (berechtigung IN (${RIGHTS.map((r) => `'${r}'`).join(',')})),
+          PRIMARY KEY (person_id, berechtigung)
+        );
+        INSERT INTO person_berechtigungen_security SELECT * FROM person_berechtigungen;
+        DROP TABLE person_berechtigungen;
+        ALTER TABLE person_berechtigungen_security RENAME TO person_berechtigungen;`);
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
   }
   db.exec(`CREATE TABLE IF NOT EXISTS audit_ereignisse (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,25 +97,34 @@ export function migrateSecuritySchema(db) {
   // They are always dropped and recreated: the snapshot freezes the column list at creation time,
   // so a trigger created before a later ALTER TABLE ADD COLUMN (e.g. jobs.kreditkarte_id) would
   // silently omit the new column from vorher/nachher.
-  for (const [table, key] of Object.entries(tables)) {
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
-    function snapshot(prefix) {
-      return `json_object(${columns.flatMap((column) => [
-        `'${column}'`, table === 'admin_config' && column === 'value'
-          ? `CASE WHEN lower(${prefix}.key) GLOB '*pass*' OR lower(${prefix}.key) GLOB '*secret*' OR lower(${prefix}.key) GLOB '*token*' THEN '[redacted]' ELSE ${prefix}.value END`
-          : `${prefix}."${column}"`,
-      ]).join(',')})`;
+  // Eine Transaktion für alle DROP/CREATE-Paare: sonst gäbe es zwischen zwei Anweisungen (oder nach
+  // einem Fehler mitten in der Schleife) Tabellen ganz ohne Audit-Trigger.
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const [table, key] of Object.entries(tables)) {
+      const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+      function snapshot(prefix) {
+        return `json_object(${columns.flatMap((column) => [
+          `'${column}'`, table === 'admin_config' && column === 'value'
+            ? `CASE WHEN lower(${prefix}.key) GLOB '*pass*' OR lower(${prefix}.key) GLOB '*secret*' OR lower(${prefix}.key) GLOB '*token*' THEN '[redacted]' ELSE ${prefix}.value END`
+            : `${prefix}."${column}"`,
+        ]).join(',')})`;
+      }
+      for (const action of ['INSERT', 'UPDATE', 'DELETE']) {
+        const prefix = action === 'DELETE' ? 'OLD' : 'NEW';
+        db.exec(`DROP TRIGGER IF EXISTS audit_${table}_${action};
+          CREATE TRIGGER audit_${table}_${action} AFTER ${action} ON ${table}
+          BEGIN INSERT INTO audit_ereignisse
+            (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, vorher, nachher)
+          VALUES (strftime('%Y-%m-%dT%H:%M:%fZ','now'), audit_actor_id(), audit_actor_name(),
+            '${table}', CAST(${prefix}."${key}" AS TEXT), '${action}',
+            ${action === 'INSERT' ? 'NULL' : snapshot('OLD')},
+            ${action === 'DELETE' ? 'NULL' : snapshot('NEW')}); END;`);
+      }
     }
-    for (const action of ['INSERT', 'UPDATE', 'DELETE']) {
-      const prefix = action === 'DELETE' ? 'OLD' : 'NEW';
-      db.exec(`DROP TRIGGER IF EXISTS audit_${table}_${action};
-        CREATE TRIGGER audit_${table}_${action} AFTER ${action} ON ${table}
-        BEGIN INSERT INTO audit_ereignisse
-          (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, vorher, nachher)
-        VALUES (strftime('%Y-%m-%dT%H:%M:%fZ','now'), audit_actor_id(), audit_actor_name(),
-          '${table}', CAST(${prefix}."${key}" AS TEXT), '${action}',
-          ${action === 'INSERT' ? 'NULL' : snapshot('OLD')},
-          ${action === 'DELETE' ? 'NULL' : snapshot('NEW')}); END;`);
-    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
   }
 }

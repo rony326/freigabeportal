@@ -6,9 +6,12 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { openDatabase } from '../../src/db/index.js';
 import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
-import { createJob, getJobById } from '../../src/db/jobsRepo.js';
+import { createJob, getJobById, markiereJobAlsKkAbrechnung } from '../../src/db/jobsRepo.js';
+import { createKreditkarte } from '../../src/db/kreditkartenRepo.js';
+import { createKkBeleg, getKkBelegById } from '../../src/db/kkBelegeRepo.js';
+import { upsertPerson } from '../../src/db/personenRepo.js';
 import { listRecentCronLog, startCronLauf } from '../../src/db/cronLogRepo.js';
-import { runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob } from '../../src/services/cronJobs.js';
+import { runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runKkBelegErinnerungenJob } from '../../src/services/cronJobs.js';
 import { logMailAttempt, listMailLog } from '../../src/db/mailLogRepo.js';
 import { setupMockTsa } from '../helpers/mockTsa.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
@@ -402,4 +405,54 @@ test('runMailDigestJob is a no-op returning erfolg when no rows are geplant', as
   assert.equal(result.empfaenger, 0);
   assert.equal(mailer.sent.length, 0);
   db.close();
+});
+
+function kkSetup() {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'modul_kreditkarten_aktiv', '1');
+  upsertPerson(db, { id: '1', vorname: 'Ver', nachname: 'Antwortlich', email: 'v@example.org', gruppen: [] });
+  upsertPerson(db, { id: '2', vorname: 'Hoch', nachname: 'Lader', email: 'h@example.org', gruppen: [] });
+  const karte = createKreditkarte(db, { bezeichnung: 'Visa', verantwortlichId: '1', erfassungOffen: true });
+  const sent = [];
+  return { db, karte, sent, mailer: { async sendMail(m) { sent.push(m); } } };
+}
+const vorTagen = (n) => new Date(Date.now() - n * 86400000).toISOString();
+
+test('runKkBelegErinnerungenJob mails uploader and responsible person once per interval, one mail per recipient', async () => {
+  const t = kkSetup();
+  const alt1 = createKkBeleg(t.db, { kreditkarteId: t.karte, hochgeladenVon: '2', gekauftVon: '2', quelle: 'web', pdfPfad: '/tmp/a.pdf', betrag: '1.00', kaufdatum: vorTagen(50).slice(0, 10), beschreibung: 'Alt 1', status: 'offen' });
+  createKkBeleg(t.db, { kreditkarteId: t.karte, hochgeladenVon: '2', gekauftVon: '2', quelle: 'web', pdfPfad: '/tmp/b.pdf', betrag: '2.00', kaufdatum: vorTagen(60).slice(0, 10), beschreibung: 'Alt 2', status: 'offen' });
+  createKkBeleg(t.db, { kreditkarteId: t.karte, hochgeladenVon: '2', gekauftVon: '2', quelle: 'web', pdfPfad: '/tmp/c.pdf', betrag: '3.00', kaufdatum: vorTagen(5).slice(0, 10), beschreibung: 'Neu', status: 'offen' });
+  const ergebnis = await runKkBelegErinnerungenJob(t.db, { publicBaseUrl: 'https://p.example.org' }, t.mailer);
+  assert.equal(ergebnis.status, 'erfolg');
+  assert.equal(ergebnis.belege, 2);
+  assert.deepEqual(t.sent.map((m) => m.to).sort(), ['h@example.org', 'v@example.org']);
+  assert.match(t.sent[0].text, /Alt 1/);
+  assert.doesNotMatch(t.sent[0].text, /Neu/);
+  assert.ok(getKkBelegById(t.db, alt1).letzte_erinnerung_am);
+  t.sent.length = 0;
+  await runKkBelegErinnerungenJob(t.db, { publicBaseUrl: 'https://p.example.org' }, t.mailer);
+  assert.equal(t.sent.length, 0, 'no second reminder within the interval');
+});
+
+test('runKkBelegErinnerungenJob reminds the assignee of a marked statement that has not been reconciled', async () => {
+  const t = kkSetup();
+  const jobId = createJob(t.db, { eingangAm: vorTagen(50), quelle: 'scanner', absender: null, dateiname: 'abrechnung.pdf', pdfPfad: '/tmp/x.pdf' });
+  markiereJobAlsKkAbrechnung(t.db, jobId, { kreditkarteId: t.karte, verantwortlichId: '1', ausStatus: 'unzugewiesen' });
+  t.db.prepare('UPDATE jobs SET kk_markiert_am = ? WHERE id = ?').run(vorTagen(50), jobId);
+  const ergebnis = await runKkBelegErinnerungenJob(t.db, { publicBaseUrl: 'https://p.example.org' }, t.mailer);
+  assert.equal(ergebnis.abrechnungen, 1);
+  assert.equal(t.sent.length, 1);
+  assert.equal(t.sent[0].to, 'v@example.org');
+  assert.match(t.sent[0].text, /abrechnung\.pdf/);
+});
+
+test('runKkBelegErinnerungenJob is skipped when the module or the job is off', async () => {
+  const t = kkSetup();
+  setConfigValue(t.db, 'kk_beleg_erinnerungen_aktiv', '0');
+  assert.equal((await runKkBelegErinnerungenJob(t.db, {}, t.mailer)).status, 'uebersprungen');
+  setConfigValue(t.db, 'kk_beleg_erinnerungen_aktiv', '1');
+  setConfigValue(t.db, 'modul_kreditkarten_aktiv', '0');
+  assert.equal((await runKkBelegErinnerungenJob(t.db, {}, t.mailer)).status, 'uebersprungen');
 });

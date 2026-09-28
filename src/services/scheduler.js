@@ -1,4 +1,4 @@
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runFreigabe2ErinnerungenJob } from './cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob } from './cronJobs.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
 const ZEITZONE = 'Europe/Zurich';
@@ -99,6 +99,7 @@ export function startScheduler({
     runSplitGruppenNachholenJob: splitGruppenJob,
     runMailDigestJob: mailDigestJob,
     runFreigabe2ErinnerungenJob: freigabe2ErinnerungenJob,
+    runKkBelegErinnerungenJob: kkBelegErinnerungenJob,
   } = {
     runSyncPersonenJob,
     runPoolErinnerungenJob,
@@ -108,6 +109,7 @@ export function startScheduler({
     runSplitGruppenNachholenJob,
     runMailDigestJob,
     runFreigabe2ErinnerungenJob,
+    runKkBelegErinnerungenJob,
   },
 }) {
   scheduleDaily(
@@ -175,6 +177,15 @@ export function startScheduler({
     async () => {
       const result = await mailDigestJob(db, config, mailer);
       if (result.status === 'fehler') console.error('Geplanter mail-digest-Lauf fehlgeschlagen:', result.error);
+    }
+  );
+
+  scheduleDaily(
+    () => zahlOderStandard(getConfigValue(db, 'cron_kk_beleg_erinnerungen_stunde'), 8),
+    () => zahlOderStandard(getConfigValue(db, 'cron_kk_beleg_erinnerungen_minute'), 0),
+    async () => {
+      const result = await kkBelegErinnerungenJob(db, config, mailer);
+      if (result.status === 'fehler') console.error('Geplanter kk-beleg-erinnerungen-Lauf fehlgeschlagen:', result.error);
     }
   );
 }

@@ -105,6 +105,12 @@
         <label class="form-label mt-2" for="kkAbrechnungZugewiesenText">Kreditkartenabrechnung zum Abgleich — Text</label>
         <textarea class="form-control" id="kkAbrechnungZugewiesenText" name="kkAbrechnungZugewiesenText" rows="4" required><%= kkAbrechnungZugewiesenText %></textarea>
       </div>
+      <div class="mb-3">
+        <label class="form-label" for="kkBelegErinnerungBetreff">Kreditkartenbelege – Erinnerung — Betreff</label>
+        <input type="text" class="form-control" id="kkBelegErinnerungBetreff" name="kkBelegErinnerungBetreff" value="<%= kkBelegErinnerungBetreff %>" required>
+        <label class="form-label mt-2" for="kkBelegErinnerungText">Kreditkartenbelege – Erinnerung — Text</label>
+        <textarea class="form-control" id="kkBelegErinnerungText" name="kkBelegErinnerungText" rows="4" required><%= kkBelegErinnerungText %></textarea>
+      </div>
 
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>

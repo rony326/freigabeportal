@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentSyncLogs } from '../../db/syncLogRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob } from '../../services/cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob } from '../../services/cronJobs.js';
 
 const LOG_LIMIT = 10;
 
@@ -19,12 +19,17 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       cronZeitstempelNachholenIntervallMinuten: getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'),
       cronSplitGruppenNachholenIntervallMinuten: getConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten'),
       cronFreigabe2ErinnerungenIntervallMinuten: getConfigValue(db, 'cron_freigabe2_erinnerungen_intervall_minuten'),
+      kkBelegErinnerungenAktiv: getConfigValue(db, 'kk_beleg_erinnerungen_aktiv') === '1',
+      kkBelegErinnerungTage: getConfigValue(db, 'kk_beleg_erinnerung_tage'),
+      cronKkBelegErinnerungenStunde: getConfigValue(db, 'cron_kk_beleg_erinnerungen_stunde'),
+      cronKkBelegErinnerungenMinute: getConfigValue(db, 'cron_kk_beleg_erinnerungen_minute'),
       syncLog: listRecentSyncLogs(db, LOG_LIMIT),
       poolErinnerungenLog: listRecentCronLog(db, 'pool-erinnerungen', LOG_LIMIT),
       pdfBereinigungLog: listRecentCronLog(db, 'pdf-bereinigung', LOG_LIMIT),
       zeitstempelNachholenLog: listRecentCronLog(db, 'zeitstempel-nachholen', LOG_LIMIT),
       splitGruppenNachholenLog: listRecentCronLog(db, 'split-gruppen-nachholen', LOG_LIMIT),
       freigabe2ErinnerungenLog: listRecentCronLog(db, 'freigabe2-erinnerungen', LOG_LIMIT),
+      kkBelegErinnerungenLog: listRecentCronLog(db, 'kk-beleg-erinnerungen', LOG_LIMIT),
       getriggert,
     };
   }
@@ -47,6 +52,10 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       zeitstempelNachholenIntervallMinuten,
       splitGruppenNachholenIntervallMinuten,
       freigabe2ErinnerungenIntervallMinuten,
+      kkBelegErinnerungenAktiv,
+      kkBelegErinnerungTage,
+      kkBelegErinnerungenStunde,
+      kkBelegErinnerungenMinute,
     } = req.body;
     const errors = [];
 
@@ -78,6 +87,10 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     if (!Number.isInteger(freigabe2ErinnerungenIntervallNum) || freigabe2ErinnerungenIntervallNum <= 0) {
       errors.push('Freigabe2-Erinnerungen: Intervall muss eine positive Ganzzahl (Minuten) sein.');
     }
+    const kkBelegErinnerungTageNum = ganzzahlImBereich(kkBelegErinnerungTage, 1, 365, 'Kreditkartenbelege: Tage');
+    const kkBelegErinnerungenStundeNum = ganzzahlImBereich(kkBelegErinnerungenStunde, 0, 23, 'Kreditkartenbelege-Erinnerungen: Stunde');
+    const kkBelegErinnerungenMinuteNum = ganzzahlImBereich(kkBelegErinnerungenMinute, 0, 59, 'Kreditkartenbelege-Erinnerungen: Minute');
+    const kkBelegErinnerungenAktivBool = kkBelegErinnerungenAktiv === '1';
 
     if (errors.length > 0) {
       return res.status(400).render('admin/geplante-jobs', {
@@ -89,12 +102,17 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
         cronZeitstempelNachholenIntervallMinuten: zeitstempelNachholenIntervallMinuten,
         cronSplitGruppenNachholenIntervallMinuten: splitGruppenNachholenIntervallMinuten,
         cronFreigabe2ErinnerungenIntervallMinuten: freigabe2ErinnerungenIntervallMinuten,
+        kkBelegErinnerungenAktiv: kkBelegErinnerungenAktivBool,
+        kkBelegErinnerungTage,
+        cronKkBelegErinnerungenStunde: kkBelegErinnerungenStunde,
+        cronKkBelegErinnerungenMinute: kkBelegErinnerungenMinute,
         syncLog: listRecentSyncLogs(db, LOG_LIMIT),
         poolErinnerungenLog: listRecentCronLog(db, 'pool-erinnerungen', LOG_LIMIT),
         pdfBereinigungLog: listRecentCronLog(db, 'pdf-bereinigung', LOG_LIMIT),
         zeitstempelNachholenLog: listRecentCronLog(db, 'zeitstempel-nachholen', LOG_LIMIT),
         splitGruppenNachholenLog: listRecentCronLog(db, 'split-gruppen-nachholen', LOG_LIMIT),
         freigabe2ErinnerungenLog: listRecentCronLog(db, 'freigabe2-erinnerungen', LOG_LIMIT),
+        kkBelegErinnerungenLog: listRecentCronLog(db, 'kk-beleg-erinnerungen', LOG_LIMIT),
         getriggert: null,
         errors,
         gespeichert: false,
@@ -109,6 +127,10 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     setConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten', String(zeitstempelIntervallNum));
     setConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten', String(splitGruppenNachholenIntervallNum));
     setConfigValue(db, 'cron_freigabe2_erinnerungen_intervall_minuten', String(freigabe2ErinnerungenIntervallNum));
+    setConfigValue(db, 'kk_beleg_erinnerungen_aktiv', kkBelegErinnerungenAktivBool ? '1' : '0');
+    setConfigValue(db, 'kk_beleg_erinnerung_tage', String(kkBelegErinnerungTageNum));
+    setConfigValue(db, 'cron_kk_beleg_erinnerungen_stunde', String(kkBelegErinnerungenStundeNum));
+    setConfigValue(db, 'cron_kk_beleg_erinnerungen_minute', String(kkBelegErinnerungenMinuteNum));
     res.redirect('/admin/geplante-jobs?gespeichert=1');
   });
 
@@ -166,6 +188,15 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     try {
       await runFreigabe2ErinnerungenJob(db, config, mailer);
       res.redirect('/admin/geplante-jobs?getriggert=freigabe2-erinnerungen');
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/kk-beleg-erinnerungen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+    try {
+      await runKkBelegErinnerungenJob(db, config, mailer);
+      res.redirect('/admin/geplante-jobs?getriggert=kk-beleg-erinnerungen');
     } catch (err) {
       next(err);
     }

@@ -51,6 +51,7 @@ const VALID_BODY = {
   freigabe2ReminderBetreff: 'B9', freigabe2ReminderText: 'T9',
   freigabe2EskalationBetreff: 'B10', freigabe2EskalationText: 'T10',
   kkAbrechnungZugewiesenBetreff: 'B11', kkAbrechnungZugewiesenText: 'T11',
+  kkBelegErinnerungBetreff: 'B12', kkBelegErinnerungText: 'T12',
   batchingAktiv: '1',
   batchingStunde: '6',
   batchingMinute: '30',
@@ -117,6 +118,8 @@ test('POST /admin/mail-einstellungen persists the freigabe2 template fields', as
   assert.equal(getConfigValue(db, 'mail_vorlage_freigabe2_reminder_text'), 'T9');
   assert.equal(getConfigValue(db, 'mail_vorlage_freigabe2_eskalation_betreff'), 'B10');
   assert.equal(getConfigValue(db, 'mail_vorlage_freigabe2_eskalation_text'), 'T10');
+  assert.equal(getConfigValue(db, 'mail_vorlage_kk_beleg_erinnerung_betreff'), 'B12');
+  assert.equal(getConfigValue(db, 'mail_vorlage_kk_beleg_erinnerung_text'), 'T12');
   db.close();
 });
 

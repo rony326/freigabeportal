@@ -21,11 +21,14 @@ import {
   markFreigabe2EskalationGesendet,
   forceEskalierenFreigabe2AnAdmin,
   getEffectiveFreigeber2Id,
+  listKkAbrechnungenFuerErinnerung,
+  markKkAbrechnungErinnert,
 } from '../db/jobsRepo.js';
+import { listKkBelegeFuerErinnerung, markKkBelegErinnert } from '../db/kkBelegeRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { pruneMailLogOlderThan, listGeplantMailsGruppiertNachEmpfaenger } from '../db/mailLogRepo.js';
-import { sendNotification, resolveEmpfaenger } from './notify.js';
+import { sendNotification, resolveEmpfaenger, sendNotificationMitVertretung } from './notify.js';
 import { getVorlage, renderTemplate } from './mailTemplates.js';
 import { logCronLauf, startCronLauf, finishCronLauf, hasRecentRunningCronLauf } from '../db/cronLogRepo.js';
 import { setZeitstempel } from './zeitstempel.js';
@@ -511,6 +514,74 @@ export async function runMailDigestJob(db, config, mailer) {
     return ergebnis;
   } catch (err) {
     finishCronLauf(db, laufId, { beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
+    return { status: 'fehler', error: err.message };
+  }
+}
+
+// Erinnert an zwei getrennten Fronten (siehe Task-Brief): (1) Kreditkartenbelege, die seit
+// kk_beleg_erinnerung_tage Tagen offen sind (noch keinem Job zugeordnet) -- eine Mail pro
+// betroffener Person (Hochlader, Käufer, Kartenverantwortlicher), auch wenn mehrere ihrer Belege
+// gleichzeitig fällig sind; und (2) markierte Kreditkartenabrechnungen, die seit ebenso langer
+// Zeit auf den Abgleich (kkAbgleich.js) warten. Jede Erinnerung wird pro Beleg/Abrechnung nur
+// einmal pro Intervall verschickt (letzte_erinnerung_am / kk_erinnert_am).
+export async function runKkBelegErinnerungenJob(db, config, mailer) {
+  if (getConfigValue(db, 'modul_kreditkarten_aktiv') !== '1' || getConfigValue(db, 'kk_beleg_erinnerungen_aktiv') !== '1') {
+    return { status: 'uebersprungen' };
+  }
+  const gestartetAm = new Date().toISOString();
+  try {
+    const tage = Number(getConfigValue(db, 'kk_beleg_erinnerung_tage')) || 45;
+    const schwelleIso = new Date(Date.now() - tage * 86400000).toISOString();
+    const link = `${config.publicBaseUrl}/kreditkarte`;
+
+    // Pro Empfänger eine Mail mit allen Belegen, für die er zuständig ist (hochgeladen, gekauft
+    // oder verantwortlich) -- sonst bekäme die verantwortliche Person pro Beleg eine eigene Mail.
+    const belege = listKkBelegeFuerErinnerung(db, schwelleIso);
+    const proPerson = new Map();
+    for (const b of belege) {
+      const zeile = `- ${b.kaufdatum || b.hochgeladen_am.slice(0, 10)} ${b.betrag ?? '?'} ${b.beschreibung || '(noch zu ergänzen)'}${b.karte_bezeichnung ? ` (${b.karte_bezeichnung})` : ''}`;
+      for (const personId of new Set([b.hochgeladen_von, b.gekauft_von, b.verantwortlich_id].filter(Boolean))) {
+        if (!proPerson.has(personId)) proPerson.set(personId, []);
+        proPerson.get(personId).push(zeile);
+      }
+    }
+    for (const [personId, eintraege] of proPerson) {
+      const person = getPersonById(db, personId);
+      if (!person || !person.aktiv) continue;
+      await sendNotification(db, mailer, {
+        to: person.email,
+        typ: 'kk-beleg-erinnerung',
+        jobId: null,
+        variablen: { empfaengerName: `${person.vorname} ${person.nachname}`, eintraege: eintraege.join('\n'), anzahl: eintraege.length, tage, link },
+      });
+    }
+    for (const b of belege) markKkBelegErinnert(db, b.id);
+
+    const abrechnungen = listKkAbrechnungenFuerErinnerung(db, schwelleIso);
+    for (const job of abrechnungen) {
+      const person = getPersonById(db, job.zugewiesen_an);
+      if (person && person.aktiv) {
+        await sendNotificationMitVertretung(db, mailer, {
+          person,
+          typ: 'kk-beleg-erinnerung',
+          jobId: job.id,
+          variablen: {
+            eintraege: `- Abrechnung "${job.dateiname}" (${job.karte_bezeichnung}) wartet auf den Abgleich: ${config.publicBaseUrl}/kontierung/${job.id}/kk-abgleich`,
+            anzahl: 1,
+            tage,
+            link: `${config.publicBaseUrl}/kontierung/${job.id}/kk-abgleich`,
+            grund: 'Kreditkartenabrechnung wartet auf den Abgleich',
+          },
+        });
+      }
+      markKkAbrechnungErinnert(db, job.id);
+    }
+
+    const ergebnis = { status: 'erfolg', belege: belege.length, abrechnungen: abrechnungen.length };
+    logCronLauf(db, { job: 'kk-beleg-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: 'erfolg', details: `Belege: ${ergebnis.belege}, Abrechnungen: ${ergebnis.abrechnungen}` });
+    return ergebnis;
+  } catch (err) {
+    logCronLauf(db, { job: 'kk-beleg-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
     return { status: 'fehler', error: err.message };
   }
 }

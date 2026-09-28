@@ -61,6 +61,12 @@ const DEFAULTS = {
   mail_batching_minute: '0',
   mail_vorlage_kk_abrechnung_zugewiesen_betreff: 'Freigabeportal: Kreditkartenabrechnung zum Abgleich',
   mail_vorlage_kk_abrechnung_zugewiesen_text: 'Hallo %empfaengerName%,\n\neine Abrechnung der Karte "%karte%" wartet auf deinen Abgleich (%jobDateiname%). Zu dieser Karte sind aktuell %anzahlBelege% offene Belege erfasst.\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
+  kk_beleg_erinnerungen_aktiv: '1',
+  kk_beleg_erinnerung_tage: '45',
+  cron_kk_beleg_erinnerungen_stunde: '8',
+  cron_kk_beleg_erinnerungen_minute: '0',
+  mail_vorlage_kk_beleg_erinnerung_betreff: 'Freigabeportal: Offene Kreditkartenbelege',
+  mail_vorlage_kk_beleg_erinnerung_text: 'Hallo %empfaengerName%,\n\nfolgende Kreditkartenbelege bzw. -abrechnungen sind seit mehr als %tage% Tagen offen (%anzahl%):\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
 };
 
 export function seedDefaults(db) {

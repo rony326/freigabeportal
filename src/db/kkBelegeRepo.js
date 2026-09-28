@@ -80,3 +80,24 @@ export function logKkBelegEreignis(db, { belegId, personId, aktion, kommentar })
     belegId, personId ?? null, aktion, new Date().toISOString(), kommentar ?? null
   );
 }
+
+// Arbeitsliste für den kk-beleg-erinnerungen Cron-Job (cronJobs.js): ein Beleg gilt als "seit
+// langem offen", wenn sein Kaufdatum (status 'offen') bzw. sein Hochladezeitpunkt (status
+// 'entwurf', noch kein Kaufdatum bekannt -- Mail-Eingang) die Schwelle unterschreitet, UND seit
+// der letzten Erinnerung (falls je eine verschickt wurde) mindestens ein weiteres Intervall
+// vergangen ist -- sonst würde jeder tägliche Lauf denselben Beleg erneut anmahnen.
+export function listKkBelegeFuerErinnerung(db, schwelleIso) {
+  return db
+    .prepare(
+      `SELECT b.*, k.bezeichnung AS karte_bezeichnung, k.verantwortlich_id AS verantwortlich_id
+       FROM kk_belege b LEFT JOIN kreditkarten k ON k.id = b.kreditkarte_id
+       WHERE ((b.status = 'offen' AND b.kaufdatum <= ?) OR (b.status = 'entwurf' AND b.hochgeladen_am <= ?))
+         AND (b.letzte_erinnerung_am IS NULL OR b.letzte_erinnerung_am <= ?)
+       ORDER BY b.kaufdatum, b.id`
+    )
+    .all(schwelleIso.slice(0, 10), schwelleIso, schwelleIso);
+}
+
+export function markKkBelegErinnert(db, id) {
+  db.prepare('UPDATE kk_belege SET letzte_erinnerung_am = ? WHERE id = ?').run(new Date().toISOString(), id);
+}

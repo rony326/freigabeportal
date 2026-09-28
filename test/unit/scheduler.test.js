@@ -36,6 +36,7 @@ function fakeJobs(overrides = {}) {
     runSplitGruppenNachholenJob: async () => ({ status: 'erfolg' }),
     runMailDigestJob: async () => ({ status: 'erfolg' }),
     runFreigabe2ErinnerungenJob: async () => ({ status: 'erfolg' }),
+    runKkBelegErinnerungenJob: async () => ({ status: 'erfolg' }),
     ...overrides,
   };
 }
@@ -290,5 +291,52 @@ test('startScheduler runs the daily mail-digest job at the configured time (defa
   t.mock.timers.tick(6 * 60 * 60 * 1000);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(calls, 1);
+  db.close();
+});
+
+test('startScheduler runs the daily kk-beleg-erinnerungen job at the configured time (default 08:00)', async (t) => {
+  // 2026-01-15T00:00:00Z is 01:00 in Zurich (CET, UTC+1) -- 08:00 is 7 hours away.
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: new Date('2026-01-15T00:00:00.000Z') });
+  const db = seededDb();
+  let calls = 0;
+  startScheduler({
+    db,
+    config: {},
+    mailer: {},
+    jobs: fakeJobs({ runKkBelegErinnerungenJob: async () => { calls += 1; return { status: 'erfolg' }; } }),
+  });
+
+  t.mock.timers.tick(7 * 60 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+
+  t.mock.timers.tick(24 * 60 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 2);
+  db.close();
+});
+
+test('startScheduler runs kk-beleg-erinnerungen at a saved custom time instead of the default', async (t) => {
+  // 2026-01-15T00:00:00Z is 01:00 in Zurich (CET).
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: new Date('2026-01-15T00:00:00.000Z') });
+  const db = seededDb();
+  setConfigValue(db, 'cron_kk_beleg_erinnerungen_stunde', '9');
+  setConfigValue(db, 'cron_kk_beleg_erinnerungen_minute', '30');
+  let calls = 0;
+  startScheduler({
+    db,
+    config: {},
+    mailer: {},
+    jobs: fakeJobs({ runKkBelegErinnerungenJob: async () => { calls += 1; return { status: 'erfolg' }; } }),
+  });
+
+  // Default 08:00 would have fired by now -- the custom 09:30 must not have yet.
+  t.mock.timers.tick(7 * 60 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 0, 'must not fire at the old default of 08:00');
+
+  t.mock.timers.tick(90 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1, 'must fire at the configured 09:30');
   db.close();
 });

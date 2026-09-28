@@ -62,6 +62,10 @@ const VALID_BODY = {
   zeitstempelNachholenIntervallMinuten: '10',
   splitGruppenNachholenIntervallMinuten: '20',
   freigabe2ErinnerungenIntervallMinuten: '15',
+  kkBelegErinnerungenAktiv: '1',
+  kkBelegErinnerungTage: '45',
+  kkBelegErinnerungenStunde: '8',
+  kkBelegErinnerungenMinute: '0',
 };
 
 const GEPLANTE_JOBS_ROUTES = [
@@ -73,6 +77,7 @@ const GEPLANTE_JOBS_ROUTES = [
   { method: 'post', path: '/admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren' },
   { method: 'post', path: '/admin/geplante-jobs/split-gruppen-nachholen/jetzt-ausfuehren' },
   { method: 'post', path: '/admin/geplante-jobs/freigabe2-erinnerungen/jetzt-ausfuehren' },
+  { method: 'post', path: '/admin/geplante-jobs/kk-beleg-erinnerungen/jetzt-ausfuehren' },
 ];
 
 test('every Geplante-Jobs route returns 401 without any session, and config is untouched', async () => {
@@ -128,6 +133,10 @@ test('POST /admin/geplante-jobs persists a valid schedule', async () => {
   assert.equal(getConfigValue(db, 'cron_pdf_bereinigung_minute'), '45');
   assert.equal(getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'), '10');
   assert.equal(getConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten'), '20');
+  assert.equal(getConfigValue(db, 'kk_beleg_erinnerungen_aktiv'), '1');
+  assert.equal(getConfigValue(db, 'kk_beleg_erinnerung_tage'), '45');
+  assert.equal(getConfigValue(db, 'cron_kk_beleg_erinnerungen_stunde'), '8');
+  assert.equal(getConfigValue(db, 'cron_kk_beleg_erinnerungen_minute'), '0');
   db.close();
 });
 
@@ -228,6 +237,33 @@ test('POST /admin/geplante-jobs/freigabe2-erinnerungen/jetzt-ausfuehren triggers
   const res = await request(app).post('/admin/geplante-jobs/freigabe2-erinnerungen/jetzt-ausfuehren').set('x-test-person-id', '99');
   assert.equal(res.status, 302);
   assert.equal(res.headers.location, '/admin/geplante-jobs?getriggert=freigabe2-erinnerungen');
+  db.close();
+});
+
+test('POST /admin/geplante-jobs with an invalid kkBelegErinnerungTage value is rejected, config untouched', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post('/admin/geplante-jobs')
+    .set('x-test-person-id', '99')
+    .type('form')
+    .send({ ...VALID_BODY, kkBelegErinnerungTage: '0' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Kreditkartenbelege: Tage/);
+  assert.equal(getConfigValue(db, 'kk_beleg_erinnerung_tage'), '45');
+  db.close();
+});
+
+test('POST /admin/geplante-jobs/kk-beleg-erinnerungen/jetzt-ausfuehren triggers the job and redirects with getriggert marker', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app).post('/admin/geplante-jobs/kk-beleg-erinnerungen/jetzt-ausfuehren').set('x-test-person-id', '99');
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/admin/geplante-jobs?getriggert=kk-beleg-erinnerungen');
   db.close();
 });
 

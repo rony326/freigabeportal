@@ -975,3 +975,22 @@ export function hatZugewieseneKkAbrechnungFuer(db, kreditkarteId, personId) {
     db.prepare("SELECT 1 FROM jobs WHERE kreditkarte_id = ? AND status = 'zugewiesen' AND zugewiesen_an = ? LIMIT 1").get(kreditkarteId, personId)
   );
 }
+
+// Arbeitsliste für den kk-beleg-erinnerungen Cron-Job (cronJobs.js): eine markierte
+// Kreditkartenabrechnung, die seit der Markierung (kk_markiert_am) die Schwelle überschritten hat
+// und noch nicht abgeglichen wurde (Status bleibt 'zugewiesen', bis der Abgleich sie abschliesst),
+// UND seit der letzten Erinnerung (falls je eine verschickt wurde) mindestens ein weiteres
+// Intervall vergangen ist -- mirrors listKkBelegeFuerErinnerung's gleiches Muster.
+export function listKkAbrechnungenFuerErinnerung(db, schwelleIso) {
+  return db
+    .prepare(
+      `SELECT j.*, k.bezeichnung AS karte_bezeichnung FROM jobs j JOIN kreditkarten k ON k.id = j.kreditkarte_id
+       WHERE j.status = 'zugewiesen' AND j.kk_markiert_am <= ? AND (j.kk_erinnert_am IS NULL OR j.kk_erinnert_am <= ?)
+       ORDER BY j.kk_markiert_am`
+    )
+    .all(schwelleIso, schwelleIso);
+}
+
+export function markKkAbrechnungErinnert(db, jobId) {
+  db.prepare('UPDATE jobs SET kk_erinnert_am = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+}

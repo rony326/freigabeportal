@@ -50,6 +50,8 @@ stateDiagram-v2
     zugewiesen --> zugewiesen: Kontierung mit Interessenskonflikt\n(an Stellvertreter1 / Admin übergeben)
     zugewiesen --> abgelehnt: bei Kontierung ablehnen
     zugewiesen --> aufgesplittet: aufsplitten (erzeugt N Teil-Jobs)
+    zugewiesen --> zugewiesen: als Kreditkartenabrechnung markiert
+    unzugewiesen --> zugewiesen: als Kreditkartenabrechnung markiert
 
     freigabe2 --> freigabe2: Interessenskonflikt bei Freigabe 2\n(an Stellvertreter2 / Admin übergeben)
     freigabe2 --> abgeschlossen: Freigabe 2 erteilt (PDF gestempelt)
@@ -218,6 +220,15 @@ oben). Details:
   geschrieben (siehe [datenmodell.md](datenmodell.md)).
 
 ## 5. Aufsplitten (Status `zugewiesen` → `aufgesplittet`)
+
+> Die Splitting-Logik selbst (Schritte 2–3 unten) lebt seit der
+> Kreditkarten-Belege-Erweiterung in einem gemeinsamen Service
+> `src/services/aufsplitten.js` (`erzeugeTeilJobs`), den sowohl
+> `POST /kontierung/:id/aufsplitten` als auch der Kreditkarten-Abgleich
+> nutzen — ein als Kreditkartenabrechnung markierter Job durchläuft nicht
+> dieses Aufsplitten-Formular, sondern eine eigene Abgleich-Seite mit
+> leicht abweichendem Verhalten bei fremden Konten. Details:
+> [kreditkarten-belege.md](kreditkarten-belege.md).
 
 Für Sammelrechnungen/Kreditkartenabrechnungen, die auf mehrere Konten
 verteilt werden müssen (`GET/POST /kontierung/:id/aufsplitten`):

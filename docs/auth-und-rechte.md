@@ -93,7 +93,7 @@ jeder Anfrage live gegen ChurchTools geprüft.
 
 ## Additive Einzelrechte (`person_berechtigungen`)
 
-Zusätzlich zum Gruppenmodell gibt es acht einzeln vergebbare,
+Zusätzlich zum Gruppenmodell gibt es neun einzeln vergebbare,
 additive Rechte, unabhängig von ChurchTools-Gruppen
 (`src/middleware/permissions.js`, `src/db/personBerechtigungenRepo.js`):
 
@@ -105,6 +105,7 @@ additive Rechte, unabhängig von ChurchTools-Gruppen
 - `sync_einsehen`
 - `audit_log_einsehen`
 - `pool_zuweisen`: Pool-Belege an Personen zuweisen — erlaubt `POST /pool/:id/zuweisen`
+- `kreditkarten_verwalten`: Kreditkarten anlegen/bearbeiten/(de)aktivieren und Erfasser pflegen — erlaubt `/admin/kreditkarten/*`, siehe [kreditkarten-belege.md](kreditkarten-belege.md#rechte)
 
 `superadmin` und `manager` erhalten jedes dieser Rechte automatisch über
 ihr Rollen-Bundle. Für alle anderen Personen sind sie rein additiv: ein
@@ -115,7 +116,7 @@ ausschliesslich von einem `superadmin` unter **Admin → Personen**
 Drei Admin-Bereiche sind bewusst **nicht** vergebbar und bleiben
 `superadmin`-exklusiv: Eskalationszeiten, Erscheinungsbild, Zeitstempel —
 strukturell abgesichert (die Datenbank-Tabelle akzeptiert per `CHECK`-
-Constraint nur die acht oben genannten Werte; für diese drei Bereiche
+Constraint nur die neun oben genannten Werte; für diese drei Bereiche
 lässt sich gar kein Wert einfügen).
 
 Details zur Rechte-Matrix pro Admin-Seite: [admin-bereich.md](admin-bereich.md).
@@ -156,6 +157,23 @@ zusätzlich, ob dieselbe Person bereits Freigabe 1 für genau diesen Job
 erteilt hat — unabhängig davon, was zum Zeitpunkt der Konto-Zuweisung
 galt (Konto-Rollen können sich zwischendurch geändert haben, oder eine
 Person hat sowohl Buchhaltungs- als auch Superadmin-Rolle).
+
+## Kreditkarten-Belege — eigene Rechte
+
+Eine dritte, von der Job-Autorisierung oben unabhängige Rechte-Ebene:
+Vorab-Belege sind vor dem Abgleich keine `jobs`-Zeilen, brauchen also eine
+eigene Prüfung (`src/services/kkRechte.js`).
+
+| Aktion | Berechtigt |
+|---|---|
+| Karten verwalten, Erfasser pflegen | `superadmin`, Einzelrecht `kreditkarten_verwalten` |
+| Beleg hochladen | Modus A: alle angemeldeten Personen · Modus B: `kreditkarte_erfasser` + verantwortliche Person der Karte |
+| Beleg bearbeiten/verwerfen | `hochgeladen_von`, `gekauft_von`, verantwortliche Person der Karte — nur solange `offen`/`entwurf` |
+| Abrechnung markieren | wer den Job heute beanspruchen bzw. kontieren dürfte |
+| Markierung aufheben, Abgleich | `zugewiesen_an` des Abrechnungs-Jobs (inkl. Ferienmodus-Vertretung, Admin-Eskalations-Sonderfall) |
+| Freigabe der Teil-Jobs | unverändert Freigeber 1/2 des jeweiligen Kontos (Vier-Augen-Prinzip) |
+
+Details: [kreditkarten-belege.md](kreditkarten-belege.md#rechte).
 
 ## Ferienmodus — additive Abwesenheits-Stellvertretung
 

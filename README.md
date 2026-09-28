@@ -153,6 +153,7 @@ in [`docs/`](docs/README.md):
 - [Datenmodell](docs/datenmodell.md) — ER-Diagramm und Tabellenbeschreibung
 - [Rechnungs-Workflow](docs/rechnungs-workflow.md) — Status-Modell, Kontierung, Gutschriften, Freigabe 1/2, Ablehnung, Aufsplitten, Splitgruppen-Export, Löschung
 - [Spesen-Einreichung](docs/spesen-einreichung.md) — Auslagen-Erstattung durch die Person selbst, eigene Freigabe-1-Seite
+- [Kreditkarten-Belege](docs/kreditkarten-belege.md) — Vorab-Erfassung von Kreditkartenbelegen, Abgleich gegen die Monatsabrechnung
 - [n8n-Schnittstelle](docs/n8n-schnittstelle.md) — API-Vertrag Eingang/Abholung
 - [QR-Bill und Betrugserkennung](docs/qr-bill-und-betrugserkennung.md)
 - [Zeitstempel und Prüfbescheinigung](docs/zeitstempel-und-pruefbescheinigung.md)

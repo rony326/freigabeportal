@@ -25,6 +25,12 @@ erDiagram
     personen ||--o{ spesenabrechnungen : "eingereicht_von"
     spesenabrechnungen ||--o{ jobs : "spesenabrechnung_id (Sammelabrechnung → Positionen)"
     personen ||--o{ jobs : "eingereicht_von (Spesen)"
+    personen ||--o{ kreditkarten : "verantwortlich_id"
+    kreditkarten ||--o{ kreditkarte_erfasser : "Modus B"
+    kreditkarten ||--o{ kk_belege : "kreditkarte_id"
+    kreditkarten ||--o{ jobs : "kreditkarte_id (Abrechnungs-Job)"
+    kk_belege ||--o{ kk_beleg_ereignisse : "beleg_id"
+    jobs ||--o| kk_belege : "zugeordnet_job_id (Teil-Job ← Beleg)"
 
     personen {
         text churchtools_person_id PK
@@ -42,7 +48,7 @@ erDiagram
     }
     person_berechtigungen {
         text person_id PK,FK
-        text berechtigung PK "CHECK: 7 feste Werte"
+        text berechtigung PK "CHECK: 9 feste Werte"
     }
     konten {
         int id PK
@@ -113,12 +119,62 @@ erDiagram
         text beschreibung "nur bei quelle=spesen"
         int spesenabrechnung_id FK
         text rechnungsdatum "nur bei quelle=spesen befüllt"
+        int kreditkarte_id FK "gesetzt auf dem Abrechnungs-Job"
+        text kk_eigenbeleg_grund "Teil-Job ohne Beleg: Begründung / 'Gebühr/Zins'"
+        text kk_markiert_am
+        text kk_erinnert_am "Etappe 2"
+        text kk_text_betraege "JSON-Cache, Etappe 2"
+    }
+    kreditkarten {
+        int id PK
+        text bezeichnung
+        text karte_endziffern "genau 4 Ziffern oder NULL"
+        text karteninhaber_name
+        text verantwortlich_id FK
+        int erfassung_offen "1 = Modus A, 0 = Modus B"
+        text absender_muster "reserviert, Etappe 2"
+        int aktiv
+        text erstellt_am
+    }
+    kreditkarte_erfasser {
+        int kreditkarte_id PK,FK
+        text person_id PK,FK
+    }
+    kk_belege {
+        int id PK
+        int kreditkarte_id FK "NULL nur bei status=entwurf"
+        text hochgeladen_von FK
+        text gekauft_von FK
+        text quelle "web | mail | abgleich"
+        text pdf_pfad
+        text thumbnail_pfad
+        text betrag "negativ erlaubt (Rückerstattung)"
+        text waehrung
+        text kaufdatum
+        text beschreibung
+        int konto_id FK
+        text status "entwurf | offen | zugeordnet | verworfen"
+        int zugeordnet_job_id FK
+        text zugeordnet_am
+        text verworfen_grund
+        text verworfen_von FK
+        text verworfen_am
+        text letzte_erinnerung_am "Etappe 2"
+        text datei_geloescht_am "Etappe 2"
+    }
+    kk_beleg_ereignisse {
+        int id PK
+        int beleg_id FK
+        text person_id FK "NULL = System"
+        text aktion "6 mögliche Werte"
+        text zeitpunkt
+        text kommentar
     }
     freigaben {
         int id PK
         int job_id FK "kein enforced FK, siehe unten"
         text person_id FK
-        text rolle "6 mögliche Werte"
+        text rolle "13 mögliche Werte"
         text zeitpunkt
         text ip
         int interessenskonflikt
@@ -128,7 +184,7 @@ erDiagram
     }
     mail_log {
         int id PK
-        text typ "9 mögliche Werte"
+        text typ "12 mögliche Werte"
         int job_id FK
         text empfaenger
         text status "versendet | fehlgeschlagen"
@@ -200,6 +256,17 @@ einreichenden Person ihre zusammengehörigen Positionen wieder anzuzeigen
 (`titel` optional, freier Text). Details:
 [spesen-einreichung.md](spesen-einreichung.md).
 
+### `kreditkarten`, `kreditkarte_erfasser`, `kk_belege`, `kk_beleg_ereignisse`
+Dritte Domäne neben Rechnungen und Spesen: Kreditkartenbelege lassen sich
+vorab hochladen (`kk_belege`, bewusst **keine** `jobs`-Zeilen) und werden
+erst beim Abgleich der Monatsabrechnung zu Teil-Jobs
+(`kk_belege.zugeordnet_job_id`). `kreditkarte_erfasser` schränkt das
+Erfassen optional auf eine gepflegte Liste ein (Modus B, nur ausgewertet
+bei `kreditkarten.erfassung_offen = 0`). `kk_beleg_ereignisse` ist ein
+eigenes Audit-Log für Belege, solange sie noch keine `jobs`-Zeile haben
+(`person_id = NULL` heisst System). Details:
+[kreditkarten-belege.md](kreditkarten-belege.md).
+
 ### `debitor_ibans`
 Ein Debitor kann mehrere bekannte IBANs haben (`quelle`: manuell vom Admin
 erfasst, oder `bestaetigt` — automatisch übernommen, wenn eine Person bei
@@ -238,6 +305,15 @@ befüllt, siehe [spesen-einreichung.md](spesen-einreichung.md). Alle
 rechnungsspezifischen Spalten (`absender`, `lieferant`, `rechnungsnummer`,
 `debitor_id`, `zahlungsziel`, `aufgesplittet_von`, `typ`) bleiben bei
 einer Spesen-Position `NULL`.
+
+**Kreditkarten-Spalten** (`kreditkarte_id`, `kk_eigenbeleg_grund`,
+`kk_markiert_am`, `kk_erinnert_am`, `kk_text_betraege`): `kreditkarte_id`
+steht auf dem Abrechnungs-Job (Elternjob), sobald er einer Karte markiert
+wurde; `kk_eigenbeleg_grund` auf einem beim Abgleich entstandenen Teil-Job
+ohne Beleg. `kk_erinnert_am` und `kk_text_betraege` sind bereits angelegt,
+werden aber erst von der Etappe-2-Erweiterung (Erinnerungen,
+Zuordnungs-Vorschläge) befüllt. Details:
+[kreditkarten-belege.md](kreditkarten-belege.md).
 
 ### `freigaben`
 Append-only-Protokoll jeder Freigabe-relevanten Aktion (Freigabe 1/2,

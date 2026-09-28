@@ -30,6 +30,7 @@ feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 | Geplante Jobs | `/admin/geplante-jobs` | Einzelrecht `geplante_jobs_verwalten` |
 | Audit-Log | `/admin/audit-log` | Einzelrecht `audit_log_einsehen` |
 | Datenbank-Backup | `/admin/backup` | **nur** `superadmin` |
+| Kreditkarten | `/admin/kreditkarten` | Einzelrecht `kreditkarten_verwalten` |
 | Module | `/admin/module` | **nur** `superadmin` |
 | Mail-Einstellungen | `/admin/mail-einstellungen` | **nur** `superadmin` |
 
@@ -46,6 +47,14 @@ unterschiedliche, aktive Personen; eine bereits zugewiesene, in
 ChurchTools nicht mehr auflösbare Person bleibt erhalten, kann aber nicht
 neu zugewiesen werden. Konten lassen sich deaktivieren statt löschen
 (historische Rechnungen bleiben referenzierbar).
+
+## Kreditkarten (`/admin/kreditkarten`)
+
+Liste, Neu, Bearbeiten, Deaktivieren/Reaktivieren der Kreditkarten für die
+Vorab-Erfassung von Belegen (Bezeichnung, Endziffern, verantwortliche
+Person, Erfass-Modus, optionale Erfasser-Liste). Einzelrecht
+`kreditkarten_verwalten`. Details:
+[kreditkarten-belege.md](kreditkarten-belege.md#2-verwaltung-adminkreditkarten).
 
 ## Debitoren (`/admin/debitoren`)
 
@@ -102,19 +111,23 @@ RFC3161-TSA-Passwort im Klartext enthält. Details:
 ## Module (`/admin/module`)
 
 Ein/Aus-Schalter für optionale Portal-Bereiche, gespeichert im
-`admin_config`-Key/Value-Store wie jeder andere Schalter (Default:
-alle Module aktiv). Aktuell zwei Einträge:
+`admin_config`-Key/Value-Store wie jeder andere Schalter. Aktuell drei
+Modul-Einträge (Default: **Spesenmodul aktiv**, **Kreditkartenmodul
+deaktiviert**):
 
 - **Spesenmodul** (`modul_spesen_aktiv`) — deaktiviert blendet "Spesen einreichen" aus dem Hauptmenü aus und lässt `GET /spesen/neu`/`POST /spesen` mit `403` abweisen; bereits eingereichte Spesen-Positionen laufen unverändert durch Freigabe 1/2 (siehe [spesen-einreichung.md](spesen-einreichung.md)).
+- **Kreditkartenmodul** (`modul_kreditkarten_aktiv`, Default aus) — deaktiviert blendet "Meine Kreditkartenbelege" aus dem Hauptmenü aus, blockiert neue Uploads (`GET /kreditkarte`/`POST /kreditkarte/belege` → `403`) und neue Markierungen als Kreditkartenabrechnung; bereits markierte Abrechnungen lassen sich weiter abgleichen, bestehende Teil-Jobs laufen unverändert weiter (siehe [kreditkarten-belege.md](kreditkarten-belege.md#modul-schalter-adminmodule)).
 - **Strikte Freigeber1-Prüfung** (`kontierung_strikte_freigeber1_pruefung`, Default aus) — siehe [rechnungs-workflow.md](rechnungs-workflow.md#2-kontierung-status-zugewiesen).
 
 Gedacht als Sammelstelle für künftige, ebenfalls unabhängig einführbare Module.
 
 ## Mail-Einstellungen (`/admin/mail-einstellungen`)
 
-Editierbare Betreff-/Text-Vorlagen (`%variable%`-Platzhalter) für alle 9
+Editierbare Betreff-/Text-Vorlagen (`%variable%`-Platzhalter) für alle 10
 Mail-Typen (inkl. `freigabe2-reminder`/`freigabe2-eskalation`, siehe
-[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#freigabe2-erinnerungen))
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#freigabe2-erinnerungen),
+sowie `kk-abrechnung-zugewiesen`, siehe
+[kreditkarten-belege.md](kreditkarten-belege.md#3-abrechnung-markieren-und-übergeben))
 plus die Digest-Vorlage, sowie der globale Batching-Schalter
 (sofort vs. täglich gesammelt) mit Versandzeit und manuellem "Jetzt
 ausführen" für den `mail-digest`-Job. **Nur `superadmin`**, wie

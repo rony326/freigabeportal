@@ -82,6 +82,8 @@ sequenceDiagram
   NULL`) — siehe
   [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md).
   Dieselbe Bedingung gilt für `abholung-bestaetigen`.
+- Alle Felder stammen aus dem Freigabe-Snapshot bzw. einer Altfall-Entscheidung, nie aus der
+  aktuellen Jobzeile oder Stammdaten (siehe [export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md)).
 - Antwort-Felder je Job:
 
   | Feld | Beschreibung |
@@ -96,9 +98,11 @@ sequenceDiagram
   | `auslage_datum` | Datum der Auslage (von der einreichenden Person erfasst), nur bei `quelle: "spesen"` gesetzt, sonst `null` |
   | `beschreibung` | Verwendungszweck der Spesen-Position, nur bei `quelle: "spesen"` gesetzt, sonst `null` |
   | `rechnungsdatum` | Gespeichertes Rechnungsdatum, sonst `null`; das Zahlungsziel wird nicht als Rechnungsdatum ausgegeben |
-  | `iban`, `kontoinhaber` | Bei Freigabe 2 gespeicherte Zahlungsdaten, nur bei `quelle: "spesen"`; fehlende Daten bleiben `null`, kein Live-Abruf beim Export |
-  | `nachweis_status` | Einzeljobs: `snapshot` oder `historisch_unvollstaendig`; bei historischen Jobs fehlen eingefrorene Konto-/Zahlungsdaten |
-  | `qr_iban`, `qr_referenz`, `qr_betrag`, `qr_waehrung`, `qr_creditor_name` | aus einer erkannten Swiss-QR-Bill übernommen, sonst `null` |
+  | `iban`, `kontoinhaber` | Bei Freigabe 2 bestätigte Zahlungsdaten, nur bei `quelle: "spesen"` mit `zahlung.freigegeben`; sonst `null`, kein Live-Abruf beim Export |
+  | `nachweis_status` | `snapshot`, `altfall_nachbestaetigt` oder `altfall_nur_archiv`; Belege ohne ausreichenden Nachweis erscheinen gar nicht (Admin → Altfälle) |
+  | `zahlung` | Bestätigte Zahlung: `{art, freigegeben, herkunft, iban, kontoinhaber, referenz, betrag, waehrung, iban_abgleich, hinweise, bestaetigt_von, bestaetigt_am}` — **nur bei `freigegeben: true` darf n8n zahlen**, siehe [export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md#exportvertrag) |
+  | `altfall` | nur bei Altfall-Entscheidung: Person, Begründung, Zeitpunkt und Herkunft der Werte |
+  | `qr_iban`, `qr_referenz`, `qr_betrag`, `qr_waehrung`, `qr_creditor_name` | beim Eingang gescannte QR-Bill-Werte, wie bei Freigabe 2 eingefroren, sonst `null` — kein Zahlungsauftrag |
   | `qr_erkannt_am` | Zeitpunkt der QR-Erkennung, `null` falls keine QR-Bill erkannt wurde |
   | `download_url` | signierte, 15 Minuten gültige Download-URL |
   | `export_nachweis_url` | relativer API-Pfad fuer das unveraenderliche Exportmanifest; neuer Archivablauf verwendet dessen `download_pfad` |
@@ -125,9 +129,10 @@ zusätzliche Feld `positionen`, das ein Einzeljob-Eintrag nie hat:
 | Feld | Beschreibung |
 |---|---|
 | `id` | ID des **Elternjobs** (Status `aufgesplittet`) |
-| `eingang_am`, `quelle`, `absender`, `lieferant`, `rechnungsnummer`, `betrag`, `zahlungsziel`, `dateiname` | vom Elternjob übernommen (Eingangsdaten der ursprünglichen Rechnung) |
-| `qr_iban`, `qr_referenz`, `qr_betrag`, `qr_waehrung`, `qr_creditor_name`, `qr_erkannt_am` | vom Elternjob übernommen (Aufsplitten fasst die QR-Daten nicht an) |
-| `positionen` | Array, ein Eintrag je nicht-gelöschtem Teil-Job: `{konto_id, konto_kontonummer, konto_bezeichnung, betrag, typ, betrag_signiert, position}` (`position` = die bei Aufsplitten erfasste Freitext-"Position auf der Rechnung"; `typ`/`betrag_signiert` wie beim Einzeljob) |
+| `eingang_am`, `quelle`, `absender`, `lieferant`, `rechnungsnummer`, `betrag`, `zahlungsziel`, `rechnungsdatum`, `dateiname` | Kopf des Elternjobs, wie im Gruppen-Freigabe-Snapshot eingefroren |
+| `qr_iban`, `qr_referenz`, `qr_betrag`, `qr_waehrung`, `qr_creditor_name`, `qr_erkannt_am` | QR-Daten des Elternjobs aus dem Gruppen-Snapshot (Aufsplitten fasst die QR-Daten nicht an) |
+| `nachweis_status`, `zahlung`, `altfall` | wie beim Einzeljob; `zahlung` ist die **eine** Zahlung der Gesamtrechnung, von jedem Teilbeleg bestätigt |
+| `positionen` | Array, ein Eintrag je nicht-gelöschtem Teil-Job aus dessen Freigabe-Snapshot: `{job_id, konto_id, konto_kontonummer, konto_bezeichnung, betrag, typ, betrag_signiert, position}` (`position` = die bei Aufsplitten erfasste Freitext-"Position auf der Rechnung"; `typ`/`betrag_signiert` wie beim Einzeljob) |
 | `download_url` | signierte URL auf das **kombinierte** Gruppen-PDF (nicht auf einen einzelnen Teil) |
 
 **Gutschriften/Rückerstattungen**: `betrag` ist im Portal immer positiv,
@@ -142,7 +147,7 @@ Die Felder sind additiv; alle bisherigen Felder bleiben unverändert.
 
 Ein Gruppen-Eintrag hat kein eigenes `konto_id`/`iban`/`kontoinhaber`-Feld
 auf oberster Ebene (unterschiedliche Konten je Position) und keine
-Spesen-Felder. `abholung-bestaetigen` erkennt an der ID automatisch, ob es
+Spesen-Felder; die Zahlungsdaten stehen in `zahlung`. `abholung-bestaetigen` erkennt an der ID automatisch, ob es
 sich um einen Gruppen- oder Einzeljob-Elternjob handelt
 (`istGruppenElternjob`). Die alte Bestaetigung markiert nur den Transport;
 Gruppen-PDF und Teil-PDFs bleiben erhalten. Eine Archivquittung wird auf

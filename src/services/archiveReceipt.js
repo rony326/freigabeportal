@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { getJobById, listSplitKinder, confirmAbholung, confirmGruppenAbholung } from '../db/jobsRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { jobDocument } from './jobDocument.js';
+import { exportNachweis } from './exportSnapshot.js';
 
 export const ARCHIVE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -40,22 +41,26 @@ function documentHash(job) {
   return hash;
 }
 
-function metadata(job) {
-  const snapshot = job.freigabe_snapshot ? JSON.parse(job.freigabe_snapshot) : null;
-  const approved = snapshot?.job || job;
+// Manifest-Metadaten stammen ausschliesslich aus dem Export-/Zahlungsnachweis (Snapshot oder
+// Altfall-Entscheidung). Unbelegte Werte eines bereits uebergebenen Altfalls stehen getrennt
+// unter unbelegte_jobdaten und sind nie Teil der freigabegebundenen Metadaten.
+function manifestInhalt(db, job, children, group) {
+  const nachweis = exportNachweis(db, job);
+  if (!nachweis.exportierbar) throw new ArchiveError(409, `Nachpruefung erforderlich: ${nachweis.grund}`);
+  const positionen = group
+    ? (nachweis.positionen || []).map(({ freigeber1, freigeber2, verlauf, kkHinweis, ...position }) => {
+      const child = children.find((c) => c.id === position.job_id);
+      return { ...position, datei_sha256: position.datei_sha256 ?? (child ? child.zeitstempel_datei_hash || child.final_datei_hash || null : null) };
+    })
+    : [];
   return {
-    job_id: job.id, nachweis_status: snapshot ? 'snapshot' : 'historisch_unvollstaendig',
-    datei_sha256: job.zeitstempel_datei_hash || job.final_datei_hash || null,
-    quelle: approved.quelle, eingang_am: approved.eingang_am, absender: approved.absender,
-    dateiname: approved.dateiname, lieferant: approved.lieferant, rechnungsnummer: approved.rechnungsnummer,
-    betrag: approved.betrag, zahlungsziel: approved.zahlungsziel, rechnungsdatum: approved.rechnungsdatum || null,
-    konto_id: approved.konto_id, position: approved.rechnungsposition,
-    eingereicht_von: approved.eingereicht_von, auslage_datum: approved.auslage_datum, beschreibung: approved.beschreibung,
-    qr_iban: approved.qr_iban, qr_referenz: approved.qr_referenz, qr_betrag: approved.qr_betrag,
-    qr_waehrung: approved.qr_waehrung, qr_creditor_name: approved.qr_creditor_name,
-    konto_kontonummer: snapshot?.konto?.kontonummer ?? null,
-    konto_bezeichnung: snapshot?.konto?.bezeichnung ?? null,
-    iban: snapshot?.zahlungsdaten?.iban ?? null, kontoinhaber: snapshot?.zahlungsdaten?.kontoinhaber ?? null,
+    nachweis_status: nachweis.status,
+    ...(nachweis.archiv_ohne_zahlung ? { archiv_ohne_zahlung: true } : {}),
+    metadaten: { job_id: job.id, nachweis_status: nachweis.status, ...(nachweis.metadaten || {}) },
+    ...(nachweis.unbelegte_jobdaten ? { unbelegte_jobdaten: nachweis.unbelegte_jobdaten } : {}),
+    zahlung: nachweis.zahlung,
+    ...(nachweis.altfall ? { altfall: nachweis.altfall } : {}),
+    positionen,
   };
 }
 
@@ -77,9 +82,9 @@ export function createExportEvidence(db, id) {
       return JSON.parse(existing.manifest);
     }
     const manifest = {
-      version: 1, export_id: randomUUID(), job_id: id, sha256: hash,
+      version: 2, export_id: randomUUID(), job_id: id, sha256: hash,
       erstellt_am: new Date().toISOString(), archiv: 'paperless-ngx',
-      metadaten: metadata(job), positionen: group ? children.map(metadata) : [],
+      ...manifestInhalt(db, job, children, group),
     };
     manifest.download_pfad = `/api/n8n/jobs/${id}/exportdatei/${manifest.export_id}`;
     manifest.metadaten.datei_sha256 = hash;

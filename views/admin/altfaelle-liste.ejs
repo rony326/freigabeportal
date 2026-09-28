@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Altfälle — <%= branding.seitenTitel %> Admin</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <h1>Altfälle ohne Freigabe-/Zahlungsnachweis</h1>
+    <p class="text-muted">Diese Belege sind abgeschlossen, aber ohne belastbaren Freigabe-Snapshot oder ohne ausdrücklich bestätigte Zahlungsdaten. Sie werden nicht an n8n übergeben, bis hier entschieden wurde.</p>
+    <% if (gespeichert) { %>
+      <div class="alert alert-success" role="alert">Entscheidung gespeichert.</div>
+    <% } %>
+    <% if (altfaelle.length === 0) { %>
+      <p>Keine offenen Altfälle.</p>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Job</th><th>Art</th><th>Dateiname</th><th>Grund</th><th></th></tr></thead>
+          <tbody>
+            <% altfaelle.forEach((fall) => { %>
+              <tr>
+                <td><%= fall.job.id %></td>
+                <td><%= fall.gruppe ? 'Splitgruppe' : fall.job.quelle === 'spesen' ? 'Spesen' : 'Rechnung' %></td>
+                <td><%= fall.job.dateiname %></td>
+                <td><%= fall.grund %></td>
+                <td><a href="/admin/altfaelle/<%= fall.job.id %>" class="btn btn-outline-primary btn-sm">Prüfen</a></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

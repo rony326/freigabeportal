@@ -25,6 +25,7 @@ import { fetchCsrfToken } from '../helpers/csrf.js';
 import { stampAndFinalize } from '../../src/services/pdfStamp.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../src/services/splitGruppenExport.js';
 import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
+import { freigabeSnapshotsFuerTest } from '../helpers/freigabeSnapshot.js';
 
 function extrahierterSeitenText(pdfBytes, pageIndex) {
   const doc = mupdf.Document.openDocument(pdfBytes, 'application/pdf');
@@ -956,6 +957,7 @@ test('POST /kontierung/:id on a Split-Kind with a newly attached Beleg accumulat
   });
   writeFileSync(kindPdfPfad, gestempelt);
   db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(kindId);
+  await freigabeSnapshotsFuerTest(db);
 
   const ergebnis = await pruefeUndFinalisiereSplitGruppe(db, parentId);
   assert.equal(ergebnis.status, 'exportiert');

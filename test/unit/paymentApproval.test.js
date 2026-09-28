@@ -25,3 +25,25 @@ test('payment review is bound to job, account, payment and approving person', ()
     assert.notEqual(paymentReviewFingerprint(...changed), original);
   }
 });
+
+import { validateQrPayment, bestimmeZahlungsart, zahlungBestaetigungspflichtig } from '../../src/services/paymentApproval.js';
+
+test('QR payment data needs a checksum-valid Swiss IBAN and a clean recipient; nothing else is guessed', () => {
+  const basis = { qr_iban: 'ch93 0076 2011 6238 5295 7', qr_creditor_name: ' Muster AG ', qr_referenz: ' 210000000003139471430009017 ', qr_betrag: '12.00', qr_waehrung: 'CHF' };
+  assert.deepEqual(validateQrPayment(basis), { iban: 'CH9300762011623852957', empfaenger: 'Muster AG', referenz: '210000000003139471430009017', betrag: '12.00', waehrung: 'CHF' });
+  for (const kaputt of [{ qr_iban: 'CH9400762011623852957' }, { qr_iban: null }, { qr_creditor_name: '' }, { qr_creditor_name: 'A\nB' }, { qr_referenz: 'x'.repeat(36) }]) {
+    assert.equal(validateQrPayment({ ...basis, ...kaputt }), null);
+  }
+});
+
+test('payment kind follows the receipt type; split children inherit the whole invoice', () => {
+  assert.equal(bestimmeZahlungsart({ quelle: 'spesen', qr_iban: 'x' }), 'spesen');
+  assert.equal(bestimmeZahlungsart({ quelle: 'lieferant', typ: 'gutschrift', qr_iban: 'x' }), 'keine_zahlung');
+  assert.equal(bestimmeZahlungsart({ quelle: 'scanner', qr_iban: 'x' }), 'qr_rechnung');
+  assert.equal(bestimmeZahlungsart({ quelle: 'scanner', qr_iban: null }), 'ohne_zahlungsdaten');
+  // A refund line inside an invoice still belongs to the invoice's single payment.
+  assert.equal(bestimmeZahlungsart({ quelle: 'lieferant', typ: 'gutschrift', qr_iban: 'x' }, { typ: null, qr_iban: 'x' }), 'qr_rechnung');
+  assert.equal(zahlungBestaetigungspflichtig({ art: 'ohne_zahlungsdaten', hinweise: [] }), false);
+  assert.equal(zahlungBestaetigungspflichtig({ art: 'ohne_zahlungsdaten', hinweise: ['qr_ungueltig'] }), true);
+  assert.equal(zahlungBestaetigungspflichtig({ art: 'keine_zahlung', hinweise: [] }), false);
+});

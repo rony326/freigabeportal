@@ -23,6 +23,7 @@ import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import { createN8nJobsRouter } from '../../src/routes/n8n/jobs.js';
 import * as mupdf from 'mupdf';
 import { readFileSync } from 'node:fs';
+import { freigabeSnapshotsFuerTest } from '../helpers/freigabeSnapshot.js';
 
 async function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'kk-abgleich-'));
@@ -221,6 +222,7 @@ test('after all children are approved, the Splitgruppe exports one merged docume
   const [kind] = listSplitKinder(t.db, t.jobId);
   createFreigabe(t.db, { jobId: kind.id, personId: '3', rolle: 'freigeber2', zeitpunkt: new Date().toISOString(), ip: '::1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
   abschliessenFreigabe2(t.db, kind.id);
+  await freigabeSnapshotsFuerTest(t.db);
   const ergebnis = await pruefeUndFinalisiereSplitGruppe(t.db, t.jobId);
   assert.equal(ergebnis.status, 'exportiert');
   assert.ok(existsSync(ergebnis.pdfPfad));
@@ -319,6 +321,7 @@ test('a refund line keeps its sign on export: betrag_signiert of the group posit
   });
   assert.equal(res.status, 302, res.text);
   schliesseKinderAb(t);
+  await freigabeSnapshotsFuerTest(t.db);
   const exportiert = await pruefeUndFinalisiereSplitGruppe(t.db, t.jobId);
   assert.equal(exportiert.status, 'exportiert');
   const gruppenPdf = mupdf.Document.openDocument(readFileSync(exportiert.pdfPfad), 'application/pdf');

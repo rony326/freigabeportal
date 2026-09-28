@@ -154,8 +154,10 @@ Zahlungsdaten oder ein geaenderter Vorgangs-/Kontostand verlangen eine neue
 Bestaetigung. Identitaet, Zeitpunkt und bestaetigter Stand werden im unveraenderlichen
 Freigabe-Snapshot gespeichert. Ablehnen und Eskalieren bleiben ohne Zahlungsdaten moeglich.
 Die Pruefsumme bestaetigt weder Kontoinhaberschaft noch die Existenz des Bankkontos.
-Altfaelle werden nicht nachtraeglich bestaetigt; Faelle ohne Snapshot sind als
-`historisch_unvollstaendig` markiert und von n8n vor einer Zahlung gesondert zu behandeln.
+Altfaelle ohne bestaetigte Zahlungsdaten werden nicht exportiert, bis unter Admin → Altfaelle
+entschieden wurde. Eine Nachbestaetigung zeigt die aktuelle ChurchTools-IBAN ausdruecklich als
+aktuellen, nicht historischen Stand; die einreichende Person kann nicht selbst entscheiden.
+Siehe [export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md#altfälle).
 Die gespeicherten Finanzdaten sind bei Zugriffsschutz und Aufbewahrung zu beruecksichtigen.
 
 ## Bewusst nicht gebaut (YAGNI)

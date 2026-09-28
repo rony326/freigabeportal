@@ -18,6 +18,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [spesen-einreichung.md](spesen-einreichung.md) | Zweite Domäne neben Lieferantenrechnungen: Spesen/Auslagen-Einreichung durch die Person selbst, eigene Freigabe-1-Seite |
 | [kreditkarten-belege.md](kreditkarten-belege.md) | Dritte Domäne: Vorab-Erfassung von Kreditkartenbelegen, Abgleich gegen die Monatsabrechnung als erweitertes Aufsplitten |
 | [n8n-schnittstelle.md](n8n-schnittstelle.md) | API-Vertrag für Rechnungseingang und -abholung durch n8n |
+| [export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md) | Snapshot-gebundener Export, Zahlungsbestätigung je Belegart, Altfälle ohne Freigabenachweis |
 | [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md) | Swiss-QR-Bill-Erkennung und IBAN-Abgleich gegen hinterlegte Lieferanten-IBANs |
 | [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md) | RFC3161-Zeitstempel, Nachhol-Mechanismus, Verifikations- und Zertifikatsseite |
 | [admin-bereich.md](admin-bereich.md) | Alle Admin-Seiten mit den jeweils benötigten Rechten |

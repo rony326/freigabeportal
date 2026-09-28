@@ -10,7 +10,7 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampAndFinalize } from '../services/pdfStamp.js';
 import { setZeitstempel } from '../services/zeitstempel.js';
 import { fetchPersonById, extractCustomFieldValue } from '../services/churchtools.js';
-import { validateSpesenPayment, paymentReviewFingerprint } from '../services/paymentApproval.js';
+import { validateSpesenPayment, paymentReviewFingerprint, ermittleRechnungsZahlung, zahlungBestaetigungspflichtig, ZAHLUNGSHINWEIS_TEXT } from '../services/paymentApproval.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger } from '../services/notify.js';
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
@@ -25,6 +25,18 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
 
   function isSuperadmin(person) {
     return Boolean(person && person.gruppen.includes(String(config.churchtools.groupIdAdmin)));
+  }
+
+  // Payment data for everything except Spesen comes from the locally stored intake scan (QR bill)
+  // of the invoice -- for a split child that is the whole invoice, identical in every child.
+  function rechnungsZahlung(job) {
+    const parent = job.aufgesplittet_von ? getJobById(db, job.aufgesplittet_von) : null;
+    return ermittleRechnungsZahlung(db, job, parent);
+  }
+
+  function zahlungsReview(job, konto, zahlung, personId) {
+    const payment = { art: zahlung.art, daten: zahlung.daten, abgleich: zahlung.abgleich, hinweise: zahlung.hinweise };
+    return { ...payment, fingerprint: paymentReviewFingerprint(job, konto, payment, personId), hinweisTexte: zahlung.hinweise.map((h) => ZAHLUNGSHINWEIS_TEXT[h]) };
   }
 
   function loadAuthorized(req, res) {
@@ -81,7 +93,17 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     const freigeber1Person = getPersonById(db, freigabe1.person_id);
     const spesenEinreicher = job.quelle === 'spesen' ? getPersonById(db, job.eingereicht_von) : null;
     const spesenabrechnungTitel = job.quelle === 'spesen' ? getSpesenabrechnungById(db, job.spesenabrechnung_id)?.titel || null : null;
+    // Invoice payment data is local, so its review is shown right away; Spesen need the live
+    // ChurchTools lookup that only the first POST performs.
+    let zahlungsart = job.quelle === 'spesen' ? 'spesen' : null;
+    if (job.quelle !== 'spesen') {
+      const zahlung = rechnungsZahlung(job);
+      zahlungsart = zahlung.art || null;
+      if (zahlung.fehler) errors = [...errors, zahlung.fehler];
+      else if (!paymentReview && zahlungBestaetigungspflichtig(zahlung)) paymentReview = zahlungsReview(job, konto, zahlung, req.currentPerson.churchtools_person_id);
+    }
     res.status(status).render('freigabe2', {
+      zahlungsart,
       job,
       konto,
       freigabe1,
@@ -265,27 +287,44 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const verwendungszweck = job.quelle === 'spesen' ? job.beschreibung || null : null;
 
       let zahlungsdaten = null;
-      if (job.quelle === 'spesen' && job.eingereicht_von) {
-        try {
-          const einreicher = await fetchPersonById(config.churchtools, config.churchtools.syncServiceToken, job.eingereicht_von);
-          const ibanRoh = extractCustomFieldValue(einreicher, config.churchtools.customFieldIban);
-          zahlungsdaten = validateSpesenPayment(ibanRoh, extractCustomFieldValue(einreicher, config.churchtools.customFieldKontoinhaber));
-        } catch (err) {
-          console.error(`Zahlungsdaten-Abruf fuer Job ${job.id} fehlgeschlagen; Freigabe gesperrt.`);
-        }
-      }
+      let zahlung;
       if (job.quelle === 'spesen') {
+        if (job.eingereicht_von) {
+          try {
+            const einreicher = await fetchPersonById(config.churchtools, config.churchtools.syncServiceToken, job.eingereicht_von);
+            const ibanRoh = extractCustomFieldValue(einreicher, config.churchtools.customFieldIban);
+            zahlungsdaten = validateSpesenPayment(ibanRoh, extractCustomFieldValue(einreicher, config.churchtools.customFieldKontoinhaber));
+          } catch (err) {
+            console.error(`Zahlungsdaten-Abruf fuer Job ${job.id} fehlgeschlagen; Freigabe gesperrt.`);
+          }
+        }
         if (!zahlungsdaten) {
           return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Freigabe gesperrt: Eine gueltige Schweizer IBAN und der Kontoinhaber muessen in ChurchTools hinterlegt und abrufbar sein.']);
         }
-        const fingerprint = paymentReviewFingerprint(job, konto, zahlungsdaten, req.currentPerson.churchtools_person_id);
-        if (req.body.zahlungsdaten_bestaetigt !== 'ja' || req.body.zahlungsdaten_stand !== fingerprint) {
+        zahlung = { art: 'spesen', daten: zahlungsdaten, abgleich: null, hinweise: [] };
+      } else {
+        zahlung = rechnungsZahlung(job);
+        if (zahlung.fehler) return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, []);
+      }
+      const zahlungPflichtig = zahlungBestaetigungspflichtig(zahlung);
+      let zahlungsStand = null;
+      if (zahlungPflichtig) {
+        const review = zahlungsReview(job, konto, zahlung, req.currentPerson.churchtools_person_id);
+        const bestaetigt = req.body.zahlungsdaten_bestaetigt === 'ja' && req.body.zahlungsdaten_stand === review.fingerprint &&
+          (zahlung.hinweise.length === 0 || req.body.zahlungshinweise_bestaetigt === 'ja');
+        if (!bestaetigt) {
           const changed = Boolean(req.body.zahlungsdaten_stand);
           return renderForm(req, res, changed ? 409 : 400, result, { interessenskonflikt, begruendung },
-            [changed ? 'Der Zahlungs- oder Vorgangsstand wurde geaendert. Bitte erneut pruefen und bestaetigen.' : 'Bitte die Zahlungsdaten pruefen und bestaetigen.'],
-            { ...zahlungsdaten, fingerprint });
+            [changed && req.body.zahlungsdaten_stand !== review.fingerprint ? 'Der Zahlungs- oder Vorgangsstand wurde geaendert. Bitte erneut pruefen und bestaetigen.' : 'Bitte die Zahlungsdaten pruefen und bestaetigen.'],
+            review);
         }
+        zahlungsStand = review.fingerprint;
       }
+      // Printed on the archived stamp page: Spesen keep their established shape, a QR invoice shows
+      // the confirmed recipient, IBAN and reference.
+      const stampZahlungsdaten = zahlung.art === 'spesen'
+        ? zahlungsdaten
+        : zahlung.daten ? { empfaenger: zahlung.daten.empfaenger, iban: zahlung.daten.iban, referenz: zahlung.daten.referenz } : null;
 
       const freigeber2Eintrag = {
         name: `${req.currentPerson.vorname} ${req.currentPerson.nachname}`,
@@ -300,7 +339,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         konto: { nummer: konto.kontonummer, bezeichnung: konto.bezeichnung },
         titel,
         verwendungszweck,
-        zahlungsdaten,
+        zahlungsdaten: stampZahlungsdaten,
         kkHinweis: kkHinweisFuerJob(db, job),
         freigeber1: {
           name: `${freigeber1Person.vorname} ${freigeber1Person.nachname}`,
@@ -380,6 +419,11 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           unlinkSync(tmpPfad);
           return;
         }
+        if (job.quelle !== 'spesen' && JSON.stringify(rechnungsZahlung(currentJob)) !== JSON.stringify(zahlung)) {
+          db.exec('ROLLBACK');
+          unlinkSync(tmpPfad);
+          return res.status(409).render('error', { message: 'Die Zahlungsdaten oder deren Pruefung haben sich inzwischen geaendert. Bitte erneut pruefen.' });
+        }
         createFreigabe(db, {
           jobId: job.id,
           personId: req.currentPerson.churchtools_person_id,
@@ -404,8 +448,9 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         }
         if (zeitstempelGesetztAm) markZeitstempelGesetzt(db, job.id, zeitstempelGesetztAm, zeitstempelDateiHash);
         db.prepare(`UPDATE jobs SET pdf_pfad = ?, freigabe_snapshot = ?, final_datei_hash = ?, zeitstempel_erforderlich = ? WHERE id = ?`).run(
-          tmpPfad, JSON.stringify({ version: 1, job, konto, zahlungsdaten, stampData,
-            zahlungsdaten_bestaetigung: job.quelle === 'spesen' ? { personId: req.currentPerson.churchtools_person_id, zeitpunkt, stand: req.body.zahlungsdaten_stand } : null }),
+          tmpPfad, JSON.stringify({ version: 2, job, konto, zahlungsdaten, stampData,
+            zahlungsdaten_bestaetigung: job.quelle === 'spesen' ? { personId: req.currentPerson.churchtools_person_id, zeitpunkt, stand: zahlungsStand } : null,
+            zahlung: { ...zahlung, bestaetigung: zahlungPflichtig ? { person_id: req.currentPerson.churchtools_person_id, zeitpunkt, stand: zahlungsStand } : null } }),
           createHash('sha256').update(stamped).digest('hex'), tsaUrl ? 1 : 0, job.id);
         db.exec('COMMIT');
       } catch (err) {

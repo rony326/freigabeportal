@@ -148,6 +148,16 @@
         </a>
       </div>
       <% } %>
+      <% if (adminNav.altfaelle) { %>
+      <div class="col">
+        <a href="/admin/altfaelle" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Altfälle</h2>
+            <p class="card-text text-body-secondary">Belege ohne Freigabe- oder Zahlungsnachweis prüfen und für die Übergabe entscheiden.</p>
+          </div>
+        </a>
+      </div>
+      <% } %>
       <% if (adminNav.auditLog) { %>
       <div class="col">
         <a href="/admin/audit-log" class="card text-decoration-none h-100">

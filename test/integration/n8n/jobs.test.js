@@ -17,6 +17,7 @@ import { createSpesenabrechnung } from '../../../src/db/spesenabrechnungenRepo.j
 import { setupMockChurchTools } from '../../helpers/mockChurchTools.js';
 import { createKreditkarte } from '../../../src/db/kreditkartenRepo.js';
 import { listFreigabenByJob } from '../../../src/db/freigabenRepo.js';
+import { freigabeSnapshotsFuerTest, setzeFreigabeSnapshot } from '../../helpers/freigabeSnapshot.js';
 
 const PDF_BYTES = Buffer.from('%PDF-1.4\n%test-fixture-not-a-real-pdf-body\n');
 
@@ -388,6 +389,7 @@ test('GET /api/n8n/jobs/abholbereit returns an abgeschlossen job with a signed d
 
   const { id } = seedAbgeschlossenJobWithFile(db, jobsDir);
 
+  await freigabeSnapshotsFuerTest(db);
   const firstRes = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   assert.equal(firstRes.status, 200);
   assert.equal(firstRes.body.length, 1);
@@ -432,6 +434,7 @@ test('GET /api/n8n/jobs/abholbereit lists an abgeschlossen job once it has a Zei
   const { id } = seedAbgeschlossenJobWithFile(db, jobsDir);
   db.prepare('UPDATE jobs SET zeitstempel_gesetzt_am = ? WHERE id = ?').run('2026-08-21T09:00:00.000Z', id);
 
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   assert.equal(res.status, 200);
   assert.equal(res.body.length, 1);
@@ -458,6 +461,7 @@ test('GET /api/n8n/jobs/abholbereit includes lieferant, rechnungsnummer, betrag 
     zahlungsziel: '2026-09-01',
   });
 
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   assert.equal(res.status, 200);
   assert.equal(res.body[0].lieferant, 'Muster AG');
@@ -486,11 +490,19 @@ test('GET /api/n8n/jobs/abholbereit includes Konto-Details and QR-Bill-Felder fo
   updateKontierungMetadaten(db, id, { absender: null, lieferant: 'Muster AG', rechnungsnummer: 'RE-2026-042', betrag: '123.45', zahlungsziel: '2026-09-01' });
   db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, id);
   setQrDaten(db, id, { qrIban: 'CH9300762011623852957', qrReferenz: '210000000003139471430009017', qrBetrag: '123.45', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
-  db.prepare('UPDATE jobs SET freigabe_snapshot = ? WHERE id = ?').run(JSON.stringify({ konto: { kontonummer: '3000', bezeichnung: 'Unterhalt' } }), id);
+  setzeFreigabeSnapshot(db, id);
+  // Changes after Freigabe 2 must not reach the export: neither master data nor the live job row.
   db.prepare("UPDATE konten SET kontonummer = '9999' WHERE id = ?").run(kontoId);
+  db.prepare("UPDATE jobs SET lieferant = 'Andere AG', betrag = '999.00', qr_iban = 'CH5604835012345678009' WHERE id = ?").run(id);
 
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   assert.equal(res.status, 200);
+  assert.equal(res.body[0].lieferant, 'Muster AG');
+  assert.equal(res.body[0].betrag, '123.45');
+  assert.equal(res.body[0].zahlung.art, 'qr_rechnung');
+  assert.equal(res.body[0].zahlung.freigegeben, true);
+  assert.equal(res.body[0].zahlung.iban, 'CH9300762011623852957');
+  assert.equal(res.body[0].zahlung.kontoinhaber, 'Muster AG');
   assert.equal(res.body[0].konto_kontonummer, '3000');
   assert.equal(res.body[0].konto_bezeichnung, 'Unterhalt');
   assert.equal(res.body[0].qr_iban, 'CH9300762011623852957');
@@ -514,6 +526,7 @@ test('GET /api/n8n/jobs/abholbereit returns null Konto-Details and QR-Felder whe
 
   seedAbgeschlossenJobWithFile(db, jobsDir);
 
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   assert.equal(res.status, 200);
   assert.equal(res.body[0].konto_kontonummer, null);
@@ -536,6 +549,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen confirms transport without del
   const { id, pdfPfad } = seedAbgeschlossenJobWithFile(db, jobsDir);
   assert.ok(existsSync(pdfPfad));
 
+  await freigabeSnapshotsFuerTest(db);
   const firstRes = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
   assert.equal(firstRes.status, 200);
   assert.equal(firstRes.body.status, 'abgeholt');
@@ -578,6 +592,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen still confirms pickup normally
 
   const { id, pdfPfad } = seedAbgeschlossenJobWithFile(db, jobsDir);
 
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
   assert.equal(res.status, 200);
   assert.equal(getJobById(db, id).status, 'abgeholt');
@@ -601,6 +616,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen retains PDF and thumbnail pend
   setThumbnailPfad(db, id, thumbnailPfad);
   assert.ok(existsSync(thumbnailPfad));
 
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
   assert.equal(res.status, 200);
   assert.equal(existsSync(pdfPfad), true);
@@ -748,6 +764,7 @@ test('legacy transport ACK does not inspect or delete an invalid PDF path', asyn
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
   db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
 
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).post(`/api/n8n/jobs/${jobId}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
 
   assert.equal(res.status, 200);
@@ -848,6 +865,7 @@ test('GET /api/n8n/jobs/abholbereit includes a group entry with a positionen arr
 
   const config = testConfig(dir);
   const app = buildTestApp(db, config, createStubMailer());
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', config.n8nApiKey);
 
   assert.equal(res.status, 200);
@@ -872,6 +890,7 @@ test('GET /api/n8n/jobs/abholbereit leaves a normal (non-split) job entry exactl
 
   const config = testConfig(dir);
   const app = buildTestApp(db, config, createStubMailer());
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', config.n8nApiKey);
   const eintrag = res.body.find((e) => e.id === jobId);
   assert.ok(eintrag);
@@ -905,6 +924,7 @@ test('POST /api/n8n/jobs/:id/abholung-bestaetigen on a group retains every file 
 
   const config = testConfig(dir);
   const app = buildTestApp(db, config, createStubMailer());
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).post(`/api/n8n/jobs/${parentId}/abholung-bestaetigen`).set('X-API-Key', config.n8nApiKey);
 
   assert.equal(res.status, 200);
@@ -939,6 +959,7 @@ test('a Splitgruppe is never re-offered after a successful Abholung: it drops ou
   const config = testConfig(dir);
   const app = buildTestApp(db, config, createStubMailer());
 
+  await freigabeSnapshotsFuerTest(db);
   const ersteListe = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', config.n8nApiKey);
   assert.ok(ersteListe.body.some((e) => e.id === parentId), 'Vorbedingung: die fertige Gruppe wird angeboten');
 
@@ -967,6 +988,7 @@ test('GET /api/n8n/jobs/abholbereit includes quelle, eingereicht_von, auslage_da
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
 
   const { id: jobId } = seedAbgeschlossenSpesenJob(db, jobsDir);
+  setzeFreigabeSnapshot(db, jobId, { zahlungsdaten: { iban: 'CH9300762011623852957', kontoinhaber: 'Ein Reicher' } });
 
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   const entry = res.body.find((j) => j.id === jobId);
@@ -997,13 +1019,13 @@ test('GET /api/n8n/jobs/abholbereit uses approved payment data without a live Ch
   const app = buildTestApp(db, config, createStubMailer());
 
   const { id: jobId } = seedAbgeschlossenSpesenJob(db, jobsDir);
-  db.prepare('UPDATE jobs SET freigabe_snapshot = ? WHERE id = ?').run(JSON.stringify({ zahlungsdaten: { iban: 'CH9300762011623852957', kontoinhaber: 'Max Muster' } }), jobId);
+  setzeFreigabeSnapshot(db, jobId, { zahlungsdaten: { iban: 'CH9300762011623852957', kontoinhaber: 'Max Muster' } });
 
   // ChurchTools has no separate customFields array — custom fields are flat properties directly
   // on the person object (confirmed against a live instance).
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/api/persons/60', method: 'GET' }).reply(200, {
-    data: { id: 60, iban_1: 'CH93 0076 2011 6238 5295 7', kontoinhaber: 'Max Muster' },
+    data: { id: 60, iban_1: 'CH56 0483 5012 3456 7800 9', kontoinhaber: 'Neuer Inhaber' },
   });
 
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
@@ -1011,40 +1033,41 @@ test('GET /api/n8n/jobs/abholbereit uses approved payment data without a live Ch
   assert.ok(entry);
   assert.equal(entry.iban, 'CH9300762011623852957');
   assert.equal(entry.kontoinhaber, 'Max Muster');
+  assert.equal(entry.zahlung.art, 'spesen');
+  assert.equal(entry.zahlung.freigegeben, true);
+  assert.equal(entry.zahlung.bestaetigt_von, '3');
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('GET /api/n8n/jobs/abholbereit returns iban: null for a Spesen position when the ChurchTools lookup fails, without failing the whole request', async () => {
-  const db = openDatabase(':memory:');
-  seedDefaults(db);
-  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
-  const config = {
-    ...testConfig(jobsDir),
-    churchtools: {
-      baseUrl: 'https://ct.example.org',
-      syncServiceToken: 'sync-token',
-      customFieldIban: 'iban_1',
-      customFieldKontoinhaber: 'kontoinhaber',
-    },
-  };
-  const app = buildTestApp(db, config, createStubMailer());
+for (const [fall, snapshot] of [
+  ['without any snapshot', null],
+  ['with a version-1 snapshot lacking the explicit confirmation', (job) => ({ version: 1, job, konto: null, zahlungsdaten: { iban: 'CH9300762011623852957', kontoinhaber: 'Ein Reicher' }, zahlungsdaten_bestaetigung: null })],
+  ['with a snapshot without payment data', (job) => ({ version: 1, job, konto: null, zahlungsdaten: null, zahlungsdaten_bestaetigung: null })],
+]) {
+  test(`GET /api/n8n/jobs/abholbereit blocks a Spesen position ${fall} and never looks up ChurchTools`, async () => {
+    const db = openDatabase(':memory:');
+    seedDefaults(db);
+    const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+    const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+    const { id: jobId } = seedAbgeschlossenSpesenJob(db, jobsDir);
+    if (snapshot) db.prepare('UPDATE jobs SET freigabe_snapshot = ? WHERE id = ?').run(JSON.stringify(snapshot(getJobById(db, jobId))), jobId);
 
-  const { id: jobId } = seedAbgeschlossenSpesenJob(db, jobsDir);
+    const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.some((j) => j.id === jobId), false);
+    assert.equal(getJobById(db, jobId).fetched_by_n8n_at, null, 'a blocked job is not marked as offered');
+    const ack = await request(app).post(`/api/n8n/jobs/${jobId}/abholung-bestaetigen`).set('X-API-Key', 'n8n-key');
+    assert.equal(ack.status, 409);
+    assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
+    const manifest = await request(app).get(`/api/n8n/jobs/${jobId}/exportnachweis`).set('X-API-Key', 'n8n-key');
+    assert.equal(manifest.status, 409);
 
-  const client = setupMockChurchTools(config.churchtools.baseUrl);
-  client.intercept({ path: '/api/persons/60', method: 'GET' }).reply(500, {});
-
-  const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
-  assert.equal(res.status, 200);
-  const entry = res.body.find((j) => j.id === jobId);
-  assert.ok(entry);
-  assert.equal(entry.iban, null);
-
-  db.close();
-  rmSync(jobsDir, { recursive: true, force: true });
-});
+    db.close();
+    rmSync(jobsDir, { recursive: true, force: true });
+  });
+}
 
 test('GET /api/n8n/jobs/abholbereit omits quelle/eingereicht_von-style Spesen fields as null for a Lieferant job', async () => {
   const db = openDatabase(':memory:');
@@ -1054,6 +1077,7 @@ test('GET /api/n8n/jobs/abholbereit omits quelle/eingereicht_von-style Spesen fi
 
   seedAbgeschlossenJobWithFile(db, jobsDir);
 
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   const entry = res.body.find((j) => j.quelle === 'lieferant');
   assert.ok(entry);
@@ -1074,6 +1098,7 @@ test('GET /api/n8n/jobs/abholbereit never substitutes a due date for an unknown 
   const { id } = seedAbgeschlossenJobWithFile(db, jobsDir);
   db.prepare("UPDATE jobs SET zahlungsziel = '2026-09-15' WHERE id = ?").run(id);
 
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
   const entry = res.body.find((j) => j.id === id);
   assert.ok(entry);
@@ -1114,10 +1139,14 @@ test('GET /api/n8n/jobs/abholbereit carries the parent job\'s QR-Bill data on a 
 
   const config = testConfig(dir);
   const app = buildTestApp(db, config, createStubMailer());
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', config.n8nApiKey);
 
   const gruppenEintrag = res.body.find((e) => e.id === parentId);
   assert.ok(gruppenEintrag);
+  assert.equal(gruppenEintrag.zahlung.art, 'qr_rechnung');
+  assert.equal(gruppenEintrag.zahlung.freigegeben, true);
+  assert.equal(gruppenEintrag.zahlung.iban, 'CH9300762011623852957');
   assert.equal(gruppenEintrag.qr_iban, 'CH9300762011623852957');
   assert.equal(gruppenEintrag.qr_referenz, '210000000003139471430009017');
   assert.equal(gruppenEintrag.qr_betrag, '30.00');
@@ -1194,6 +1223,7 @@ test('GET /api/n8n/jobs/abholbereit adds typ and betrag_signiert to single jobs 
 
   const config = testConfig(dir);
   const app = buildTestApp(db, config, createStubMailer());
+  await freigabeSnapshotsFuerTest(db);
   const res = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', config.n8nApiKey);
   assert.equal(res.status, 200);
 

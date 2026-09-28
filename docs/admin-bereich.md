@@ -27,6 +27,7 @@ feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 | E-Mail-Protokoll | `/admin/mails` | Einzelrecht `mails_einsehen` |
 | Personen-Sync | `/admin/sync` | Einzelrecht `sync_einsehen` |
 | Abgelehnte Rechnungen | `/admin/abgelehnt` | Einzelrecht `abgelehnt_verwalten` |
+| Altfälle | `/admin/altfaelle` | Einzelrecht `workflow_eingreifen` (nicht im Manager-Bündel) |
 | Geplante Jobs | `/admin/geplante-jobs` | Einzelrecht `geplante_jobs_verwalten` |
 | Audit-Log | `/admin/audit-log` | Einzelrecht `audit_log_einsehen` |
 | Datenbank-Backup | `/admin/backup` | **nur** `superadmin` |
@@ -168,6 +169,16 @@ Sicherheitsschwellen (SYNC-1) und listet **blockierte Rechnungen**
 endgültig zu löschen (Soft-Delete + Protokoll) — mit eingebautem
 Selbstschutz gegen Löschung durch den eigenen Ablehner. Siehe
 [rechnungs-workflow.md](rechnungs-workflow.md#4-ablehnung-überarbeitung-löschung).
+
+## Altfälle (`/admin/altfaelle`)
+
+Abgeschlossene, noch nicht an n8n übergebene Belege und Splitgruppen ohne
+belastbaren Freigabe- oder Zahlungsnachweis. Sie bleiben für den Export
+gesperrt, bis hier mit Pflichtbegründung entschieden wird: *nachbestätigen*
+(angezeigter Stand wird Übergabestand) oder *nur archivieren* (keine
+Zahlung). Jeder Wert zeigt seine Herkunft; Entscheidungen sind
+unveränderlich. Siehe
+[export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md#altfälle).
 
 ## Geplante Jobs (`/admin/geplante-jobs`)
 

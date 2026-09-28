@@ -88,6 +88,10 @@ const ADMIN_ROUTES = [
   { method: 'get', path: '/admin/abgelehnt' },
   { method: 'get', path: '/admin/abgelehnt/1' },
   { method: 'post', path: '/admin/abgelehnt/1/loeschen' },
+  // altfaelle (3)
+  { method: 'get', path: '/admin/altfaelle' },
+  { method: 'get', path: '/admin/altfaelle/1' },
+  { method: 'post', path: '/admin/altfaelle/1' },
   // audit-log (1)
   { method: 'get', path: '/admin/audit-log' },
   // geplante-jobs (5)
@@ -98,8 +102,8 @@ const ADMIN_ROUTES = [
   { method: 'post', path: '/admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren' },
 ];
 
-test('the real createApp wiring returns 401 on all 39 admin route/method combinations with no session present', async () => {
-  assert.equal(ADMIN_ROUTES.length, 39, 'sanity check: this sweep should cover exactly 39 route/method combinations');
+test('the real createApp wiring returns 401 on all 42 admin route/method combinations with no session present', async () => {
+  assert.equal(ADMIN_ROUTES.length, 42, 'sanity check: this sweep should cover exactly 42 route/method combinations');
 
   const db = openDatabase(':memory:');
   const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
@@ -148,6 +152,8 @@ test('the real createApp wiring enforces the superadmin-only hard lock and the m
     { method: 'get', path: '/admin/eskalation' },
     { method: 'get', path: '/admin/erscheinungsbild' },
     { method: 'get', path: '/admin/zeitstempel' },
+    // workflow_eingreifen is deliberately not part of the manager bundle.
+    { method: 'get', path: '/admin/altfaelle' },
   ];
   for (const { method, path } of HART_GESPERRT) {
     const res = await managerAgent[method](path);

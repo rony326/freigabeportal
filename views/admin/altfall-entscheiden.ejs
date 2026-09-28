@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Altfall prüfen — <%= branding.seitenTitel %> Admin</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <% const m = anzeige.daten.metadaten; const z = anzeige.daten.zahlung; const h = anzeige.daten.herkunft; %>
+    <% const herkunftText = { freigabe_snapshot: 'eingefrorener Freigabe-Snapshot', freigabe_snapshot_unbestaetigt: 'Freigabe-Snapshot, damals nicht bestätigt', jobdatensatz: 'aktueller Jobdatensatz (nicht freigabegebunden)', kontenstamm_aktuell: 'aktueller Kontenstamm (nicht freigabegebunden)', qr_scan_eingang: 'QR-Scan beim Eingang', churchtools_aktuell: 'AKTUELLER ChurchTools-Stand, nicht der historische Freigabestand', nicht_verfuegbar: 'nicht verfügbar', jobdatensatz_und_aktueller_stamm: 'Jobdatensatz und aktueller Stamm', lieferanten_iban_aktuell: 'aktuell hinterlegte Lieferanten-IBANs' }; %>
+    <h1>Altfall <%= anzeige.job.id %>: <%= anzeige.job.dateiname %></h1>
+    <div class="alert alert-warning"><%= anzeige.grund %></div>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger"><ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul></div>
+    <% } %>
+    <% if (anzeige.fehler) { %><div class="alert alert-danger"><%= anzeige.fehler %></div><% } %>
+
+    <h2 class="h5">Belegdaten <small class="text-muted">(Herkunft: <%= herkunftText[h.metadaten] || h.metadaten %><% if (h.konto) { %>; Konto: <%= herkunftText[h.konto] || h.konto %><% } %>)</small></h2>
+    <dl class="row">
+      <% if (m.lieferant) { %><dt class="col-sm-3">Lieferant</dt><dd class="col-sm-9"><%= m.lieferant %></dd><% } %>
+      <% if (m.rechnungsnummer) { %><dt class="col-sm-3">Rechnungsnummer</dt><dd class="col-sm-9"><%= m.rechnungsnummer %></dd><% } %>
+      <dt class="col-sm-3">Betrag</dt><dd class="col-sm-9"><%= m.betrag || '—' %><%= m.typ === 'gutschrift' ? ' (Gutschrift)' : '' %></dd>
+      <% if (m.zahlungsziel) { %><dt class="col-sm-3">Zahlungsziel</dt><dd class="col-sm-9"><%= m.zahlungsziel %></dd><% } %>
+      <% if (m.konto_kontonummer) { %><dt class="col-sm-3">Konto</dt><dd class="col-sm-9"><%= m.konto_kontonummer %> — <%= m.konto_bezeichnung %></dd><% } %>
+      <% if (m.beschreibung) { %><dt class="col-sm-3">Beschreibung</dt><dd class="col-sm-9"><%= m.beschreibung %></dd><% } %>
+    </dl>
+    <% if (anzeige.gruppe) { %>
+      <h2 class="h5">Positionen</h2>
+      <ul>
+        <% anzeige.daten.positionen.forEach((p, i) => { %>
+          <li>Job <%= p.job_id %>: Konto <%= p.konto_kontonummer %> — <%= p.betrag %><%= p.typ === 'gutschrift' ? ' (Gutschrift)' : '' %> <small class="text-muted">(<%= herkunftText[h.positionen[i]] || h.positionen[i] %>)</small></li>
+        <% }) %>
+      </ul>
+    <% } %>
+
+    <h2 class="h5">Zahlung <% if (h.zahlung) { %><small class="text-muted">(Herkunft: <%= herkunftText[h.zahlung] || h.zahlung %>)</small><% } %></h2>
+    <% if (!z) { %>
+      <p>Keine verwendbaren Zahlungsdaten.</p>
+    <% } else if (z.art === 'keine_zahlung') { %>
+      <p>Keine Zahlung (Gutschrift).</p>
+    <% } else if (z.art === 'ohne_zahlungsdaten') { %>
+      <p>Keine maschinenlesbaren Zahlungsdaten — die Zahlung wird manuell erfasst.</p>
+    <% } else if (z.daten) { %>
+      <dl class="row">
+        <dt class="col-sm-3"><%= z.art === 'spesen' ? 'Kontoinhaber' : 'Zahlungsempfänger' %></dt><dd class="col-sm-9"><%= z.daten.kontoinhaber || z.daten.empfaenger %></dd>
+        <dt class="col-sm-3">IBAN</dt><dd class="col-sm-9 text-break"><%= z.daten.iban %></dd>
+        <% if (z.daten.referenz) { %><dt class="col-sm-3">Referenz</dt><dd class="col-sm-9 text-break"><%= z.daten.referenz %></dd><% } %>
+        <% if (z.abgleich) { %><dt class="col-sm-3">IBAN-Abgleich</dt><dd class="col-sm-9"><%= z.abgleich %></dd><% } %>
+      </dl>
+    <% } %>
+    <% (z && z.hinweise || []).forEach((hinweis) => { %><div class="alert alert-warning py-2"><%= hinweis %></div><% }) %>
+
+    <form method="post" action="/admin/altfaelle/<%= anzeige.job.id %>" class="col-12 col-md-10 col-lg-8">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <input type="hidden" name="stand" value="<%= stand %>">
+      <div class="mb-3">
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="entscheidung" id="nachbestaetigt" value="nachbestaetigt" <%= values.entscheidung === 'nachbestaetigt' ? 'checked' : '' %> <%= anzeige.nachbestaetigbar ? '' : 'disabled' %>>
+          <label class="form-check-label" for="nachbestaetigt">Angezeigte Daten nachträglich bestätigen und zur Übergabe freigeben</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="entscheidung" id="nurArchiv" value="nur_archiv" <%= values.entscheidung === 'nur_archiv' ? 'checked' : '' %>>
+          <label class="form-check-label" for="nurArchiv">Nur archivieren, keine Zahlung auslösen</label>
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="begruendung">Begründung (Pflicht)</label>
+        <textarea class="form-control" id="begruendung" name="begruendung" maxlength="2000" required><%= values.begruendung || '' %></textarea>
+      </div>
+      <div class="mb-3 form-check">
+        <input class="form-check-input" type="checkbox" id="bestaetigung" name="bestaetigung" value="ja" required>
+        <label class="form-check-label" for="bestaetigung">Ich habe die angezeigten Daten und ihre Herkunft geprüft. Die Entscheidung ist unveränderlich.</label>
+      </div>
+      <button type="submit" class="btn btn-primary">Entscheidung speichern</button>
+      <a href="/admin/altfaelle" class="btn btn-outline-secondary">Abbrechen</a>
+    </form>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

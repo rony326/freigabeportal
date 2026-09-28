@@ -8,29 +8,9 @@ import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampGruppenDokument } from './pdfStamp.js';
 import { setZeitstempel } from './zeitstempel.js';
-import { kkHinweisFuerJob } from './kkStempel.js';
 import { writeFinalDocument } from './finalDocument.js';
 import { tsaTrustOptions } from './tsaTrust.js';
-
-const EREIGNIS_LABEL = {
-  freigeber1: 'Freigabe 1',
-  freigeber2: 'Freigabe 2',
-  ablehnung: 'Ablehnung',
-  freigabe1_eskalation: 'Eskalation Freigabe 1',
-  freigabe2_eskalation: 'Eskalation Freigabe 2',
-  iban_abweichung: 'IBAN-Abweichung',
-};
-
-function buildFreigabeEintrag(person, freigabe) {
-  return {
-    name: `${person.vorname} ${person.nachname}`,
-    identitaet: person.churchtools_person_id,
-    zeitpunkt: freigabe.zeitpunkt,
-    ip: freigabe.ip,
-    interessenskonflikt: Boolean(freigabe.interessenskonflikt),
-    kommentar: freigabe.kommentar,
-  };
-}
+import { bereiteGruppenSnapshotVor, getAltfallEntscheidung } from './exportSnapshot.js';
 
 // mergeBelegFuerJob (Aufsplitten time, kontierung.js) always inserts Beleg pages directly
 // after the invoice pages, before any later stamping -- so with a known Beleg page count
@@ -62,6 +42,7 @@ function groupState(db, parentJobId) {
       konto: getKontoById(db, kind.konto_id),
       freigaben: listFreigabenByJob(db, kind.id).map((freigabe) => ({ ...freigabe, person: getPersonById(db, freigabe.person_id) })),
     })),
+    altfallEntscheidung: getAltfallEntscheidung(db, parentJobId)?.id ?? null,
   };
 }
 
@@ -94,6 +75,11 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
     if (!vollstaendig) return { status: 'unvollstaendig' };
     if (parent.zeitstempel_erforderlich && !tsaUrl) throw new Error('Zeitstempel ist verpflichtend; TSA muss wieder konfiguriert werden.');
     const state = groupState(db, parentJobId);
+    const vorbereitung = bereiteGruppenSnapshotVor(db, parent, kinder);
+    // Ohne vollstaendig bestaetigte Zahlungs-/Freigabedaten entsteht kein Archivdokument; die
+    // Gruppe erscheint unter Admin -> Altfaelle zur ausdruecklichen Entscheidung.
+    if (vorbereitung.nachpruefung) return { status: 'nachpruefung', grund: vorbereitung.nachpruefung };
+    const gruppenSnapshot = vorbereitung.snapshot;
     const basisBuffer = readFileSync(parent.pdf_pfad);
     const kindBuffers = kinder.map((kind) => {
       const bytes = readFileSync(kind.pdf_pfad);
@@ -109,40 +95,29 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
 
     const positionen = [];
     const verlauf = [];
-    for (const [index, kind] of kinder.entries()) {
-      const snapshot = kind.freigabe_snapshot ? JSON.parse(kind.freigabe_snapshot) : null;
-      const konto = snapshot?.konto || state.details[index].konto;
-      const freigaben = state.details[index].freigaben;
-      const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
-      const freigabe2 = freigaben.findLast((f) => f.rolle === 'freigeber2');
-
+    // Stempelseite und Export entstehen aus demselben eingefrorenen Gruppen-Snapshot: Konto, Betrag,
+    // Typ, Freigaben und Verlauf je Position stammen aus dem Freigabe-Snapshot des Teilbelegs.
+    const positionsIds = gruppenSnapshot.positionen.map((position) => position.job_id);
+    if (positionsIds.length !== kinder.length || kinder.some((kind) => !positionsIds.includes(kind.id))) {
+      throw new Error('Der Gruppen-Snapshot deckt nicht genau die aktuellen Teilbelege ab.');
+    }
+    for (const position of gruppenSnapshot.positionen) {
+      const index = kinder.findIndex((kind) => kind.id === position.job_id);
       positionen.push({
-        kontoNummer: konto.kontonummer,
-        kontoBezeichnung: konto.bezeichnung,
-        betrag: kind.betrag,
-        typ: kind.typ,
-        position: kind.rechnungsposition,
-        // Wie freigeber1/2: der bei Freigabe 2 eingefrorene Hinweis hat Vorrang vor dem Live-Wert.
-        kkHinweis: snapshot?.stampData && 'kkHinweis' in snapshot.stampData ? snapshot.stampData.kkHinweis : kkHinweisFuerJob(db, kind),
-        freigeber1: snapshot?.stampData.freigeber1 || buildFreigabeEintrag(freigabe1.person, freigabe1),
-        freigeber2: snapshot?.stampData.freigeber2 || buildFreigabeEintrag(freigabe2.person, freigabe2),
+        kontoNummer: position.konto_kontonummer,
+        kontoBezeichnung: position.konto_bezeichnung,
+        betrag: position.betrag,
+        typ: position.typ,
+        position: position.position,
+        kkHinweis: position.kkHinweis,
+        freigeber1: position.freigeber1,
+        freigeber2: position.freigeber2,
       });
-
-      const praefix = `Konto ${konto.kontonummer}${kind.rechnungsposition ? ` (Pos. ${kind.rechnungsposition})` : ''}`;
-      for (const f of freigaben) {
-        const person = f.person;
-        verlauf.push({
-          rolleLabel: `${praefix} — ${EREIGNIS_LABEL[f.rolle] || f.rolle}`,
-          name: `${person.vorname} ${person.nachname}`,
-          identitaet: f.person_id,
-          zeitpunkt: f.zeitpunkt,
-          ip: f.ip,
-          interessenskonflikt: Boolean(f.interessenskonflikt),
-          kommentar: f.kommentar,
-        });
+      const praefix = `Konto ${position.konto_kontonummer}${position.position ? ` (Pos. ${position.position})` : ''}`;
+      for (const eintrag of position.verlauf) {
+        verlauf.push({ ...eintrag, rolleLabel: `${praefix} — ${eintrag.rolleLabel}` });
       }
-
-      await haengeBelegSeitenAn(gruppenDoc, kindBuffers[index], basisSeitenzahl, kind.beleg_seitenzahl);
+      await haengeBelegSeitenAn(gruppenDoc, kindBuffers[index], basisSeitenzahl, kinder[index].beleg_seitenzahl);
     }
     verlauf.sort((a, b) => (a.zeitpunkt < b.zeitpunkt ? -1 : a.zeitpunkt > b.zeitpunkt ? 1 : 0));
 
@@ -181,6 +156,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
       const geschrieben = markGruppeExportiert(db, parent.id, {
         pdfPfad: zielPfad, zeitstempelGesetztAm, zeitstempelDateiHash,
         finalDateiHash: createHash('sha256').update(gestempelt).digest('hex'),
+        gruppeFreigabeSnapshot: JSON.stringify(gruppenSnapshot),
       });
       if (!geschrieben) throw new Error('Gruppe wurde inzwischen finalisiert.');
       db.exec('COMMIT');

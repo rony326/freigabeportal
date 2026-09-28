@@ -18,6 +18,7 @@ import { stampAndFinalize } from '../../src/services/pdfStamp.js';
 import { pruefeUndFinalisiereSplitGruppe as finalizeGroup } from '../../src/services/splitGruppenExport.js';
 import { PDFDocument } from 'pdf-lib';
 import { createExportEvidence } from '../../src/services/archiveReceipt.js';
+import { setzeFreigabeSnapshot } from '../helpers/freigabeSnapshot.js';
 
 // Isolate group consistency from the independently tested deployment trust bundle.
 const pruefeUndFinalisiereSplitGruppe = (db, id) => finalizeGroup(db, id, { tsaTrustRequired: false });
@@ -96,6 +97,7 @@ async function seedGruppe(db, dir, { anzahlKinder = 2, mitBeleg = false, gestemp
     createFreigabe(db, { jobId: kindId, personId: '2', rolle: 'freigeber2', zeitpunkt: '2026-08-01T09:00:00.000Z', ip: '5.6.7.8', interessenskonflikt: 0 });
     if (gestempelt) await stempleKindWieFreigabe2(db, kindId);
     db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(kindId);
+    setzeFreigabeSnapshot(db, kindId);
     kindIds.push(kindId);
   }
 

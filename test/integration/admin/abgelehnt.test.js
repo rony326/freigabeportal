@@ -17,6 +17,7 @@ import { requirePermission } from '../../../src/middleware/permissions.js';
 import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { createAdminAbgelehntRouter } from '../../../src/routes/admin/abgelehnt.js';
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
+import { freigabeSnapshotsFuerTest } from '../../helpers/freigabeSnapshot.js';
 
 function buildTestApp(db) {
   const app = express();
@@ -297,6 +298,7 @@ test('deleting the last blocking abgelehnt sibling of an otherwise complete Spli
   ablehnenJob(db, kindBId, { abgelehntVon: '3', grund: 'Falsches Konto' });
   createFreigabe(db, { jobId: kindBId, personId: '3', rolle: 'ablehnung', zeitpunkt: '2026-08-15T10:30:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: 'Falsches Konto', eskaliertVon: null });
 
+  await freigabeSnapshotsFuerTest(db);
   const app = buildTestApp(db);
   const agent = request.agent(app);
   const res = await agent

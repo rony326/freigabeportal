@@ -183,7 +183,9 @@ export function assignJobToPerson(db, jobId, personId) {
 // without a timestamp must not reach n8n yet — it stays invisible to /abholbereit until the
 // timestamp is set (by Freigabe-2 completion or the zeitstempel-nachholen cron job). When the
 // feature is off (no TSA configured), the caller passes false so nothing changes.
-export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false) {
+// istExportierbar: optionaler Filter (Export-/Zahlungsnachweis, siehe services/exportSnapshot.js);
+// ein gesperrter Beleg wird weder angeboten noch als abgeholt vorgemerkt.
+export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false, istExportierbar = () => true) {
   const staleThreshold = new Date(Date.now() - staleAfterMs).toISOString();
   const zeitstempelBedingung = nurMitZeitstempel ? ' AND zeitstempel_gesetzt_am IS NOT NULL' : ' AND (zeitstempel_erforderlich = 0 OR zeitstempel_gesetzt_am IS NOT NULL)';
   const rows = db
@@ -191,7 +193,8 @@ export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZei
       `SELECT * FROM jobs WHERE status = 'abgeschlossen' AND aufgesplittet_von IS NULL
        AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)${zeitstempelBedingung}`
     )
-    .all(staleThreshold);
+    .all(staleThreshold)
+    .filter((row) => istExportierbar(row));
 
   const now = new Date().toISOString();
   for (const row of rows) {
@@ -853,12 +856,12 @@ export function pruefeSplitGruppenVollstaendigkeit(db, parentJobId) {
 // awaits before this UPDATE, so two concurrent trigger points (e.g. the nachhol-Cron-Job and a
 // Freigabe-2-Abschluss) can both get past it. The loser of that race must not overwrite the
 // winner's merged document. The caller also validates the source state inside its transaction.
-export function markGruppeExportiert(db, parentJobId, { pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash, finalDateiHash = null }) {
+export function markGruppeExportiert(db, parentJobId, { pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash, finalDateiHash = null, gruppeFreigabeSnapshot = null }) {
   const result = db
     .prepare(
-      'UPDATE jobs SET gruppe_pdf_pfad = ?, gruppe_zeitstempel_gesetzt_am = ?, gruppe_zeitstempel_datei_hash = ?, gruppe_final_datei_hash = ? WHERE id = ? AND gruppe_pdf_pfad IS NULL'
+      'UPDATE jobs SET gruppe_pdf_pfad = ?, gruppe_zeitstempel_gesetzt_am = ?, gruppe_zeitstempel_datei_hash = ?, gruppe_final_datei_hash = ?, gruppe_freigabe_snapshot = ? WHERE id = ? AND gruppe_pdf_pfad IS NULL'
     )
-    .run(pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash, finalDateiHash, parentJobId);
+    .run(pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash, finalDateiHash, gruppeFreigabeSnapshot, parentJobId);
   return result.changes > 0;
 }
 
@@ -872,7 +875,7 @@ export function markGruppeExportiert(db, parentJobId, { pdfPfad, zeitstempelGese
 // aufgesplittet_von IS NULL mirrors listAbholbereitJobs's identical guard: a Splitkind that was
 // itself split further is part of an outer group's document and must never be offered to n8n as
 // a standalone top-level group.
-export function listAbholbereitGruppen(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false) {
+export function listAbholbereitGruppen(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false, istExportierbar = () => true) {
   const staleThreshold = new Date(Date.now() - staleAfterMs).toISOString();
   const zeitstempelBedingung = nurMitZeitstempel ? ' AND gruppe_zeitstempel_gesetzt_am IS NOT NULL' : ` AND (gruppe_zeitstempel_gesetzt_am IS NOT NULL OR (zeitstempel_erforderlich = 0 AND NOT EXISTS (
     SELECT 1 FROM jobs child WHERE child.aufgesplittet_von = jobs.id AND child.status != 'geloescht' AND child.zeitstempel_erforderlich = 1)))`;
@@ -882,7 +885,8 @@ export function listAbholbereitGruppen(db, staleAfterMs = 15 * 60 * 1000, nurMit
        AND gruppe_abgeholt_am IS NULL AND aufgesplittet_von IS NULL
        AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)${zeitstempelBedingung}`
     )
-    .all(staleThreshold);
+    .all(staleThreshold)
+    .filter((row) => istExportierbar(row));
 
   const now = new Date().toISOString();
   for (const row of rows) {

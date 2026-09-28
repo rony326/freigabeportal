@@ -18,6 +18,7 @@ import { buildEncryptedBackup } from '../../src/services/backupEnvelope.js';
 import { createBackupKeyring } from '../helpers/backupKeyring.js';
 import { restoreOffline, rollbackOffline, offlineRestoreStatus } from '../../src/services/offlineRestore.js';
 import { acquireStorageLock, resolveStorageConfig, storagePaths } from '../../src/services/storageState.js';
+import { setzeFreigabeSnapshot } from '../helpers/freigabeSnapshot.js';
 
 const restoreModule = new URL('../../src/services/offlineRestore.js', import.meta.url).href;
 const cli = fileURLToPath(new URL('../../src/cli/backupRestore.js', import.meta.url));
@@ -42,6 +43,7 @@ function setup(t) {
   const sourceDb = openDatabase(source.dbPath);
   const jobId = createJob(sourceDb, { eingangAm: '2026-09-27T00:00:00Z', quelle: 'scanner', dateiname: 'invoice.pdf', pdfPfad: join(source.jobsDir, 'invoice.pdf') });
   sourceDb.prepare("UPDATE jobs SET status = 'abgeschlossen', final_datei_hash = ? WHERE id = ?").run(hash(pdf), jobId);
+  setzeFreigabeSnapshot(sourceDb, jobId);
   setConfigValue(sourceDb, 'branding_logo_pfad', join(source.brandingDir, 'logo.png'));
   upsertPerson(sourceDb, { id: '1', vorname: 'K', nachname: 'K', email: 'k@example.org', gruppen: [] });
   mkdirSync(join(source.jobsDir, 'kk'));

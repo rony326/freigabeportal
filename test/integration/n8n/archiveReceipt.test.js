@@ -13,6 +13,7 @@ import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
 import { runPdfBereinigungJob } from '../../../src/services/cronJobs.js';
 import { ARCHIVE_RETENTION_MS } from '../../../src/services/archiveReceipt.js';
+import { setzeFreigabeSnapshot, freigabeSnapshotsFuerTest } from '../../helpers/freigabeSnapshot.js';
 
 function setup(t) {
   const dir = mkdtempSync(join(tmpdir(), 'archive-receipt-'));
@@ -29,9 +30,14 @@ function setup(t) {
     const id = createJob(db, { eingangAm: '2026-09-27T00:00:00Z', quelle: 'scanner', dateiname: `${name}.pdf`, pdfPfad: path });
     const hash = createHash('sha256').update(bytes).digest('hex');
     db.prepare("UPDATE jobs SET status = 'abgeschlossen', final_datei_hash = ?, aufgesplittet_von = ? WHERE id = ?").run(hash, groupParent, id);
+    setzeFreigabeSnapshot(db, id);
     return { id, path, hash };
   }
-  const get = (id) => request(app).get(`/api/n8n/jobs/${id}/exportnachweis`).set('X-API-Key', 'workflow-key');
+  // A group finalized directly in a test gets the snapshot the real finalization would store.
+  const get = async (id) => {
+    await freigabeSnapshotsFuerTest(db);
+    return request(app).get(`/api/n8n/jobs/${id}/exportnachweis`).set('X-API-Key', 'workflow-key');
+  };
   const post = (id, body) => request(app).post(`/api/n8n/jobs/${id}/archivierung-bestaetigen`).set('X-API-Key', 'workflow-key').send(body);
   const receipt = (manifest, dokument_id = 42) => ({ export_id: manifest.export_id, sha256: manifest.sha256, dokument_id, task_id: 'b2ba769c-455f-4d97-9fb6-986eac19a334' });
   return { db, dir, config, app, job, get, post, receipt };
@@ -44,12 +50,14 @@ test('manifest requires authentication, freezes the export hash and records n8n 
   const first = await s.get(j.id);
   assert.equal(first.status, 200);
   assert.equal(first.body.sha256, j.hash);
-  assert.equal(first.body.version, 1);
+  assert.equal(first.body.version, 2);
   const download = await request(s.app).get(first.body.download_pfad).set('X-API-Key', 'workflow-key');
   assert.equal(download.status, 200);
   assert.equal(createHash('sha256').update(download.body).digest('hex'), j.hash);
   assert.equal((await request(s.app).get(first.body.download_pfad)).status, 401);
-  assert.equal(first.body.metadaten.nachweis_status, 'historisch_unvollstaendig');
+  assert.equal(first.body.metadaten.nachweis_status, 'snapshot');
+  assert.equal(first.body.zahlung.art, 'ohne_zahlungsdaten');
+  assert.equal(first.body.zahlung.freigegeben, false);
   assert.deepEqual((await s.get(j.id)).body, first.body);
   const event = s.db.prepare("SELECT * FROM audit_ereignisse WHERE objekt = 'export_nachweise'").get();
   assert.equal(event.person_id, 'service:n8n');
@@ -241,13 +249,13 @@ test('unknown-hash legacy child files are retained even after a mature group rec
 test('manifest uses approved metadata and remains unchanged after live data changes', async (t) => {
   const s = setup(t);
   const j = s.job();
-  const snapshot = { job: { ...getJobById(s.db, j.id), betrag: '100.00', qr_iban: 'approved-iban' }, konto: { kontonummer: '3000' } };
-  s.db.prepare('UPDATE jobs SET freigabe_snapshot = ?, betrag = ?, qr_iban = ? WHERE id = ?')
-    .run(JSON.stringify(snapshot), '999.00', 'changed-iban', j.id);
+  s.db.prepare('UPDATE jobs SET betrag = ?, qr_iban = ?, lieferant = ? WHERE id = ?').run('999.00', 'CH9300762011623852957', 'Spaeter AG', j.id);
   const manifest = (await s.get(j.id)).body;
-  assert.equal(manifest.metadaten.betrag, '100.00');
-  assert.equal(manifest.metadaten.qr_iban, 'approved-iban');
-  assert.equal(manifest.metadaten.konto_kontonummer, '3000');
+  assert.equal(manifest.metadaten.betrag, null);
+  assert.equal(manifest.metadaten.qr_iban, null);
+  assert.equal(manifest.metadaten.lieferant, null);
+  assert.equal(manifest.zahlung.art, 'ohne_zahlungsdaten');
+  assert.equal(manifest.zahlung.freigegeben, false);
   s.db.prepare('UPDATE jobs SET betrag = ? WHERE id = ?').run('2000.00', j.id);
   assert.deepEqual((await s.get(j.id)).body, manifest);
 });

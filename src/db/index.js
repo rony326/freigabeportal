@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { currentAuditActor } from '../services/auditContext.js';
 import { migrateSecuritySchema } from './securitySchema.js';
+import { migrateExportIntegritaetSchema } from './exportIntegritaetSchema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -725,6 +726,7 @@ export function openDatabase(dbPath) {
   // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)
   // verwerfen die Trigger der alten Tabelle, und migrateSecuritySchema legt die Audit-Trigger mit
   // der aktuellen Spaltenliste neu an. person_berechtigungen gehört allein migrateSecuritySchema.
+  migrateExportIntegritaetSchema(db);
   migrateSecuritySchema(db);
   return db;
 }

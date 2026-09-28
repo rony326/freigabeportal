@@ -23,9 +23,13 @@ Alle folgenden Requests brauchen `X-API-Key: <N8N_API_KEY>`, ueber HTTPS.
 1. `GET /api/n8n/jobs/abholbereit` liefert wie bisher fertige Jobs und neu
    `export_nachweis_url`. Der neue Ablauf braucht keinen Legacy-Abhol-ACK.
 2. `GET /api/n8n/jobs/{id}/exportnachweis` schreibt einmalig einen Exportnachweis
-   fest und liefert ihn bei Wiederholung unveraendert. Felder: `version: 1`,
+   fest und liefert ihn bei Wiederholung unveraendert. Felder: `version: 2`,
    `export_id` (UUID), `job_id`, `sha256` (64 kleine Hexzeichen), `erstellt_am`,
-   `archiv: paperless-ngx`, `metadaten`, `positionen` und `download_pfad`.
+   `archiv: paperless-ngx`, `nachweis_status`, `metadaten`, `zahlung`, `positionen` und `download_pfad`,
+   bei Altfaellen zusaetzlich `altfall`, `archiv_ohne_zahlung` und `unbelegte_jobdaten`.
+   Bereits festgeschriebene Manifeste der Version 1 bleiben unveraendert.
+   Belege ohne ausreichenden Freigabe-/Zahlungsnachweis liefern 409, solange sie
+   nicht uebergeben und nicht unter Admin → Altfaelle entschieden sind.
    Die Version bezeichnet das Manifestformat. Derzeit gibt es genau einen Export je Job;
    nachtraeglich andere Bytes werden nicht still als neue Version akzeptiert.
 3. `GET {download_pfad}` liefert genau die zum Nachweis gehoerenden PDF-Bytes.
@@ -75,11 +79,13 @@ Quittung werden in derselben DB-Transaktion gespeichert. Die Requests loeschen k
 6. Bei einem bereits vorhandenen Paperless-Dokument nicht allein auf eine
    Duplikatmeldung vertrauen: Zuordnung und Originalbytes separat pruefen.
 
-Fuer das neue Manifest werden Konto-/Zahlungsdaten aus dem Freigabe-Snapshot
-uebernommen. Fehlende Snapshots sind als `historisch_unvollstaendig` markiert;
-die Archivquittung macht daraus keinen vollstaendigen Freigabenachweis.
+Alle Manifest-Metadaten stammen aus dem Freigabe- bzw. Gruppen-Snapshot oder einer
+Altfall-Entscheidung ([Details](export-und-zahlungsintegritaet.md)). Ein bereits
+uebergebener Beleg ohne Snapshot wird als `historisch_unvollstaendig` mit
+`archiv_ohne_zahlung: true` archiviert; seine aktuellen Werte stehen nur getrennt unter
+`unbelegte_jobdaten`. Die Archivquittung macht daraus keinen vollstaendigen Freigabenachweis.
 Bei Gruppen beschreibt der Hash die kombinierte PDF; `positionen` enthaelt
-die getrennten Freigabemetadaten der nicht geloeschten Teiljobs.
+die eingefrorenen Freigabemetadaten der nicht geloeschten Teiljobs mit deren Dateihash.
 
 ## Aufbewahrung und Altfaelle
 

@@ -17,6 +17,7 @@ import { logMailAttempt, listMailLog } from '../../src/db/mailLogRepo.js';
 import { setupMockTsa, signedTsaResponse } from '../helpers/mockTsa.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { BACKUP_DATEINAME_PATTERN } from '../../src/services/backup.js';
+import { freigabeSnapshotsFuerTest } from '../helpers/freigabeSnapshot.js';
 
 const runZeitstempelNachholenJob = (db, config) => retryTimestamp(db, { tsaTrustRequired: false, ...config });
 
@@ -308,6 +309,7 @@ test('runSplitGruppenNachholenJob merges a pending complete group and logs the r
   const db = openDatabase(':memory:');
   const dir = mkdtempSync(join(tmpdir(), 'split-nachholen-test-'));
   const { parentId } = await seedUnvollstaendigeGruppe(db, dir);
+  await freigabeSnapshotsFuerTest(db);
 
   const result = await runSplitGruppenNachholenJob(db, {});
   assert.equal(result.status, 'erfolg');

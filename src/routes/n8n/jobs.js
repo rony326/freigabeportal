@@ -16,21 +16,13 @@ import { erkenneKarte, hatErkennbareKarten } from '../../services/kkErkennung.js
 import { markiereAlsKkAbrechnung } from '../../services/kkMarkierung.js';
 import { createExportEvidence, readExportDocument, confirmArchiveReceipt, ArchiveError } from '../../services/archiveReceipt.js';
 import { machineAuditContext, mitAuditKontext } from '../../services/auditContext.js';
+import { exportNachweis } from '../../services/exportSnapshot.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
 const ABHOLEN_TTL_SECONDS = 15 * 60;
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_PDF_SIZE } });
-
-// Eine Gutschrift trägt im Portal immer einen positiven Betrag, die Bedeutung liegt in `typ`.
-// Für n8n kommt beides zusätzlich als signierter Wert, damit Rückerstattungen korrekt gebucht werden.
-function typUndSigniert(job) {
-  const typ = job.typ || 'rechnung';
-  const betrag = Number(job.betrag);
-  const betragSigniert = job.betrag == null || Number.isNaN(betrag) ? null : (typ === 'gutschrift' ? -betrag : betrag).toFixed(2);
-  return { typ, betrag_signiert: betragSigniert };
-}
 
 function isPdf(buffer) {
   return buffer.length >= 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
@@ -164,95 +156,91 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     });
   });
 
-  router.get('/abholbereit', async (req, res, next) => {
+  // Every business and payment field comes from the frozen export evidence (services/exportSnapshot.js),
+  // never from the live job row. Legacy cases without sufficient evidence stay blocked here until an
+  // Altfall decision exists; n8n may trigger a payment only when zahlung.freigegeben is true.
+  router.get('/abholbereit', (req, res, next) => {
     try {
-    const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
-    const jobs = listAbholbereitJobs(db, undefined, nurMitZeitstempel);
-    const einzelPayload = await Promise.all(
-      jobs.map(async (job) => {
-        const snapshot = job.freigabe_snapshot ? JSON.parse(job.freigabe_snapshot) : null;
-        const konto = snapshot?.konto || null;
-        const iban = snapshot?.zahlungsdaten?.iban ?? null;
-        const kontoinhaber = snapshot?.zahlungsdaten?.kontoinhaber ?? null;
+      const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
+      const exportierbar = (job) => exportNachweis(db, job).exportierbar;
+      const einzelPayload = listAbholbereitJobs(db, undefined, nurMitZeitstempel, exportierbar).map((job) => {
+        const nachweis = exportNachweis(db, job);
+        const m = nachweis.metadaten;
+        const spesenZahlung = nachweis.zahlung.art === 'spesen' && nachweis.zahlung.freigegeben;
         return {
-          nachweis_status: snapshot ? 'snapshot' : 'historisch_unvollstaendig',
+          nachweis_status: nachweis.status,
           export_nachweis_url: `/api/n8n/jobs/${job.id}/exportnachweis`,
           id: job.id,
-          eingang_am: job.eingang_am,
-          quelle: job.quelle,
-          absender: job.absender,
-          lieferant: job.lieferant,
-          rechnungsnummer: job.rechnungsnummer,
-          betrag: job.betrag,
-          ...typUndSigniert(job),
-          zahlungsziel: job.zahlungsziel,
-          dateiname: job.dateiname,
-          konto_id: job.konto_id,
-          konto_kontonummer: konto?.kontonummer ?? null,
-          konto_bezeichnung: konto?.bezeichnung ?? null,
-          eingereicht_von: job.eingereicht_von,
-          auslage_datum: job.auslage_datum,
-          beschreibung: job.beschreibung,
-          // An unknown invoice date must not be substituted with the payment deadline.
-          rechnungsdatum: job.rechnungsdatum || null,
-          iban,
-          kontoinhaber,
-          qr_iban: job.qr_iban,
-          qr_referenz: job.qr_referenz,
-          qr_betrag: job.qr_betrag,
-          qr_waehrung: job.qr_waehrung,
-          qr_creditor_name: job.qr_creditor_name,
-          qr_erkannt_am: job.qr_erkannt_am,
+          eingang_am: m.eingang_am,
+          quelle: m.quelle,
+          absender: m.absender,
+          lieferant: m.lieferant,
+          rechnungsnummer: m.rechnungsnummer,
+          betrag: m.betrag,
+          typ: m.typ,
+          betrag_signiert: m.betrag_signiert,
+          zahlungsziel: m.zahlungsziel,
+          dateiname: m.dateiname,
+          konto_id: m.konto_id,
+          konto_kontonummer: m.konto_kontonummer,
+          konto_bezeichnung: m.konto_bezeichnung,
+          eingereicht_von: m.eingereicht_von,
+          auslage_datum: m.auslage_datum,
+          beschreibung: m.beschreibung,
+          rechnungsdatum: m.rechnungsdatum,
+          iban: spesenZahlung ? nachweis.zahlung.iban : null,
+          kontoinhaber: spesenZahlung ? nachweis.zahlung.kontoinhaber : null,
+          qr_iban: m.qr_iban,
+          qr_referenz: m.qr_referenz,
+          qr_betrag: m.qr_betrag,
+          qr_waehrung: m.qr_waehrung,
+          qr_creditor_name: m.qr_creditor_name,
+          qr_erkannt_am: m.qr_erkannt_am,
+          zahlung: nachweis.zahlung,
+          ...(nachweis.altfall ? { altfall: nachweis.altfall } : {}),
           download_url: buildSignedDownloadUrl(config, job.id, ABHOLEN_TTL_SECONDS),
         };
-      })
-    );
+      });
 
-    const gruppen = listAbholbereitGruppen(db, undefined, nurMitZeitstempel);
-    const gruppenPayload = gruppen.map((parent) => {
-      // gruppe_pdf_pfad is only ever set once pruefeSplitGruppenVollstaendigkeit reported the
-      // group complete, which already guarantees every non-geloescht sibling reached
-      // 'abgeschlossen' (and therefore has a real konto_id, not just a hinweis_konto_id) -- so a
-      // plain geloescht-filter is enough here, no separate konto_id check needed.
-      const kinder = listSplitKinder(db, parent.id).filter((k) => k.status !== 'geloescht');
-      const positionen = kinder.map((kind) => {
-        const snapshot = kind.freigabe_snapshot ? JSON.parse(kind.freigabe_snapshot) : null;
-        const konto = snapshot?.konto;
+      const gruppenPayload = listAbholbereitGruppen(db, undefined, nurMitZeitstempel, exportierbar).map((parent) => {
+        const nachweis = exportNachweis(db, parent);
+        const m = nachweis.metadaten;
         return {
-          konto_id: kind.konto_id,
-          konto_kontonummer: konto?.kontonummer ?? null,
-          konto_bezeichnung: konto?.bezeichnung ?? null,
-          betrag: kind.betrag,
-          ...typUndSigniert(kind),
-          position: kind.rechnungsposition,
+          id: parent.id,
+          nachweis_status: nachweis.status,
+          export_nachweis_url: `/api/n8n/jobs/${parent.id}/exportnachweis`,
+          eingang_am: m.eingang_am,
+          quelle: m.quelle,
+          absender: m.absender,
+          lieferant: m.lieferant,
+          rechnungsnummer: m.rechnungsnummer,
+          betrag: m.betrag,
+          zahlungsziel: m.zahlungsziel,
+          rechnungsdatum: m.rechnungsdatum,
+          dateiname: m.dateiname,
+          qr_iban: m.qr_iban,
+          qr_referenz: m.qr_referenz,
+          qr_betrag: m.qr_betrag,
+          qr_waehrung: m.qr_waehrung,
+          qr_creditor_name: m.qr_creditor_name,
+          qr_erkannt_am: m.qr_erkannt_am,
+          zahlung: nachweis.zahlung,
+          ...(nachweis.altfall ? { altfall: nachweis.altfall } : {}),
+          positionen: nachweis.positionen.map((position) => ({
+            job_id: position.job_id,
+            konto_id: position.konto_id,
+            konto_kontonummer: position.konto_kontonummer,
+            konto_bezeichnung: position.konto_bezeichnung,
+            betrag: position.betrag,
+            typ: position.typ,
+            betrag_signiert: position.betrag_signiert,
+            position: position.position,
+          })),
+          download_url: buildSignedDownloadUrl(config, parent.id, ABHOLEN_TTL_SECONDS),
         };
       });
-      return {
-        id: parent.id,
-        export_nachweis_url: `/api/n8n/jobs/${parent.id}/exportnachweis`,
-        eingang_am: parent.eingang_am,
-        quelle: parent.quelle,
-        absender: parent.absender,
-        lieferant: parent.lieferant,
-        rechnungsnummer: parent.rechnungsnummer,
-        betrag: parent.betrag,
-        zahlungsziel: parent.zahlungsziel,
-        dateiname: parent.dateiname,
-        // QR-Bill-Daten stammen aus dem Intake und stehen unverändert auf dem Elternjob (das
-        // Aufsplitten fasst sie nicht an) -- gleiche Feldnamen wie beim Einzeljob-Eintrag oben,
-        // damit n8n für eine Splitgruppe genau dieselben Zahlungsdaten bekommt wie sonst auch.
-        qr_iban: parent.qr_iban,
-        qr_referenz: parent.qr_referenz,
-        qr_betrag: parent.qr_betrag,
-        qr_waehrung: parent.qr_waehrung,
-        qr_creditor_name: parent.qr_creditor_name,
-        qr_erkannt_am: parent.qr_erkannt_am,
-        positionen,
-        download_url: buildSignedDownloadUrl(config, parent.id, ABHOLEN_TTL_SECONDS),
-      };
-    });
 
-    res.json([...einzelPayload, ...gruppenPayload]);
+      res.json([...einzelPayload, ...gruppenPayload]);
     } catch (err) {
       next(err);
     }
@@ -306,6 +294,11 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     const id = Number(req.params.id);
     db.exec('BEGIN IMMEDIATE');
     try {
+      const vorher = getJobById(db, id);
+      if (vorher && !vorher.aufgesplittet_von && (vorher.status === 'abgeschlossen' || vorher.gruppe_pdf_pfad) && !exportNachweis(db, vorher).exportierbar) {
+        db.exec('ROLLBACK');
+        return res.status(409).json({ error: 'Beleg ist wegen fehlendem Freigabe-/Zahlungsnachweis zur Nachpruefung gesperrt.' });
+      }
       if (istGruppenElternjob(db, id)) {
         const ergebnis = confirmGruppenAbholung(db, id, nurMitZeitstempel);
         if (!ergebnis) {

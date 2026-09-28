@@ -192,6 +192,15 @@ flowchart TD
 Details zur PDF-Stempelung und zum Zeitstempel:
 [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md).
 
+**Zahlungsdaten:** Bei einer Rechnung mit Swiss-QR-Bill zeigt Freigabe 2
+Empfänger, IBAN, Referenz, QR-Betrag und den Abgleich mit den hinterlegten
+Lieferanten-IBANs. Die Freigabe verlangt eine ausdrückliche Bestätigung,
+bei Abweichungen eine zweite. Bei Spesen gilt dasselbe für IBAN und
+Kontoinhaber aus ChurchTools. Gutschriften und Rechnungen ohne QR-Bill
+lösen keine Zahlung aus. Der bestätigte Stand wird im Freigabe-Snapshot
+eingefroren und auf die Stempelseite gedruckt; siehe
+[export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md).
+
 Ein Job bleibt hier nicht mehr unbegrenzt liegen: der
 `freigabe2-erinnerungen`-Job schickt nach einer konfigurierbaren Frist
 einen Reminder an den effektiven Freigeber 2 und übergibt den Job nach
@@ -277,6 +286,12 @@ offen noch abgelehnt/gelöscht):
   Elternjob** abgelegt — der Elternjob (Status bleibt `aufgesplittet`)
   wird dadurch selbst zum Abholobjekt für n8n, nicht mehr seine Kinder
   einzeln (siehe [n8n-schnittstelle.md](n8n-schnittstelle.md)).
+- Positionen, Freigaben und die gemeinsame Zahlung stammen aus den
+  Freigabe-Snapshots der Teile und werden als unveränderlicher
+  Gruppen-Snapshot (`gruppe_freigabe_snapshot`) zusammen mit dem Dokument
+  gespeichert. Fehlt ein Snapshot oder haben die Teile unterschiedliche bzw.
+  unbestätigte Zahlungsdaten, entsteht kein Dokument; die Gruppe erscheint
+  unter Admin → Altfälle.
 - Ausgelöst wird der Merge-Versuch direkt nach Abschluss des jeweils
   letzten offenen Geschwister-Teils und nach Auflösung einer blockierenden
   Ablehnung; der Hintergrund-Job `split-gruppen-nachholen` holt einen

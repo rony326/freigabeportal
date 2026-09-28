@@ -49,13 +49,39 @@
 
             <form method="post" action="/freigabe2/<%= job.id %>">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+              <% if (typeof zahlungsart !== 'undefined' && zahlungsart === 'keine_zahlung') { %>
+                <p class="text-muted">Zahlung: keine (Gutschrift) — es werden keine Zahlungsdaten exportiert.</p>
+              <% } else if (typeof zahlungsart !== 'undefined' && zahlungsart === 'ohne_zahlungsdaten' && !paymentReview) { %>
+                <p class="text-muted">Zahlung: keine maschinenlesbaren Zahlungsdaten — die Zahlung wird manuell erfasst.</p>
+              <% } %>
               <% if (paymentReview) { %>
-                <p><strong>IBAN:</strong> <span class="text-break"><%= paymentReview.iban %></span></p>
-                <p><strong>Kontoinhaber:</strong> <span class="text-break"><%= paymentReview.kontoinhaber %></span></p>
-                <input type="hidden" name="zahlungsdaten_stand" value="<%= paymentReview.fingerprint %>">
-                <div class="form-check mb-3">
-                  <input class="form-check-input" type="checkbox" name="zahlungsdaten_bestaetigt" id="zahlungsdatenBestaetigt" value="ja">
-                  <label class="form-check-label" for="zahlungsdatenBestaetigt">IBAN, Kontoinhaber, Betrag und Konto geprueft</label>
+                <div class="border rounded p-2 mb-3" id="zahlungsdatenPruefung">
+                  <h2 class="h6">Zahlungsdaten</h2>
+                  <% const daten = paymentReview.daten || {}; %>
+                  <% if (paymentReview.art === 'spesen') { %>
+                    <p class="mb-1"><strong>IBAN:</strong> <span class="text-break"><%= daten.iban %></span></p>
+                    <p class="mb-1"><strong>Kontoinhaber:</strong> <span class="text-break"><%= daten.kontoinhaber %></span></p>
+                  <% } else if (paymentReview.art === 'qr_rechnung') { %>
+                    <p class="mb-1"><strong>Zahlungsempfaenger:</strong> <span class="text-break"><%= daten.empfaenger %></span></p>
+                    <p class="mb-1"><strong>IBAN:</strong> <span class="text-break"><%= daten.iban %></span></p>
+                    <% if (daten.referenz) { %><p class="mb-1"><strong>Referenz:</strong> <span class="text-break"><%= daten.referenz %></span></p><% } %>
+                    <% if (daten.betrag) { %><p class="mb-1"><strong>QR-Betrag:</strong> <%= daten.betrag %> <%= daten.waehrung || '' %></p><% } %>
+                    <p class="mb-1"><strong>IBAN-Abgleich:</strong> <%= { uebereinstimmung: 'bei diesem Lieferanten hinterlegt', abweichung: 'NICHT bei diesem Lieferanten hinterlegt', keine_iban_hinterlegt: 'keine IBAN beim Lieferanten hinterlegt', kein_lieferant: 'kein Lieferant zugeordnet' }[paymentReview.abgleich] || paymentReview.abgleich %></p>
+                  <% } %>
+                  <% (paymentReview.hinweisTexte || []).forEach((text) => { %>
+                    <div class="alert alert-warning py-2 my-2"><%= text %></div>
+                  <% }) %>
+                  <input type="hidden" name="zahlungsdaten_stand" value="<%= paymentReview.fingerprint %>">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="zahlungsdaten_bestaetigt" id="zahlungsdatenBestaetigt" value="ja">
+                    <label class="form-check-label" for="zahlungsdatenBestaetigt"><%= paymentReview.art === 'spesen' ? 'IBAN, Kontoinhaber, Betrag und Konto geprueft' : paymentReview.art === 'qr_rechnung' ? 'Zahlungsempfaenger, IBAN, Referenz, Betrag und Konto geprueft' : 'Zahlung wird manuell erfasst; Konto und Betrag geprueft' %></label>
+                  </div>
+                  <% if ((paymentReview.hinweise || []).length > 0) { %>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="zahlungshinweise_bestaetigt" id="zahlungshinweiseBestaetigt" value="ja">
+                      <label class="form-check-label" for="zahlungshinweiseBestaetigt">Die oben genannten Abweichungen wurden geklaert</label>
+                    </div>
+                  <% } %>
                 </div>
               <% } %>
               <div class="mb-3">

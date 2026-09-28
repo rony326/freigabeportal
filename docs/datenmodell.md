@@ -319,6 +319,23 @@ automatischen n8n-Eingang oder beim ersten Aufruf der Abgleich-Seite,
 danach aus der Spalte gelesen statt die Abrechnung erneut zu parsen.
 Details: [kreditkarten-belege.md](kreditkarten-belege.md).
 
+**Nachweis-Spalten** (`freigabe_snapshot`, `gruppe_freigabe_snapshot`):
+`freigabe_snapshot` friert bei Freigabe 2 Jobzeile, Konto, Stempeldaten und
+die bestätigte Zahlung (`zahlung`, Version 2) ein; `gruppe_freigabe_snapshot`
+auf dem Elternjob friert Kopf, Positionen und die gemeinsame Zahlung einer
+Splitgruppe bei deren Finalisierung ein. Beide sind per Trigger
+unveränderlich, sobald gesetzt (auch kein Zurücksetzen auf `NULL`), und die
+einzige Quelle für exportierte Metadaten — siehe
+[export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md).
+
+### `altfall_entscheidungen`
+Append-only (Trigger gegen `UPDATE`/`DELETE`), höchstens eine Zeile je Job
+(`UNIQUE job_id`, bei Splitgruppen der Elternjob). Hält die unter
+Admin → Altfälle getroffene Entscheidung (`nachbestaetigt`/`nur_archiv`),
+den angezeigten Stand mit Herkunft je Wert (`angezeigte_daten`, JSON), den
+Fingerprint (`stand`), Person, Namen zum Zeitpunkt, Pflichtbegründung und
+Zeitpunkt.
+
 ### `freigaben`
 Append-only-Protokoll jeder Freigabe-relevanten Aktion (Freigabe 1/2,
 Ablehnung, Eskalation, IBAN-Abweichung) — Grundlage sowohl für die

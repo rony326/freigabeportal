@@ -4,8 +4,8 @@ Dritte Domäne neben Lieferantenrechnungen und Spesen: Belege zu
 Kreditkartenkäufen lassen sich **vorab**, unabhängig von der monatlichen
 Abrechnung, ins Portal hochladen — ohne dass das schon eine Freigabe oder
 einen Export auslöst. Trifft später die Abrechnung ein (heute über n8n,
-manuell markiert), gleicht die für die Karte verantwortliche Person sie
-gegen die offenen Belege ab. Aus dem Abgleich entstehen pro Position
+manuell oder automatisch einer Karte zugeordnet), gleicht die für die
+Karte verantwortliche Person sie gegen die offenen Belege ab. Aus dem Abgleich entstehen pro Position
 Teil-Jobs, die die normale Freigabe (Freigeber 1/2) durchlaufen und am
 Ende als **eine** Splitgruppe gebündelt nach Bexio exportiert werden
 (gleicher Export-Mechanismus wie beim Aufsplitten).
@@ -17,11 +17,13 @@ Freigabe-Maschinerie auf.
 Design-Spec (Quelle der ursprünglichen Entscheidungen; Details zur
 tatsächlichen Umsetzung stehen hier und im Code):
 [2026-09-27-kreditkarten-belege-design.md](superpowers/specs/2026-09-27-kreditkarten-belege-design.md).
-Diese Etappe 1 deckt die Abschnitte 1–5, 7 und 8 der Spec ab (Kern:
-Verwaltung, Erfassung, Markierung, Abgleich, Rechte, Mail-Vorlage) — die
-Erweiterungen aus Abschnitt 6 (Erinnerungen, automatische Kartenerkennung,
-Zuordnungs-Vorschläge, Mail-Eingang, Fristlöschung) sind **nicht**
-Bestandteil dieser Etappe.
+Etappe 1 deckte die Abschnitte 1–5, 7 und 8 der Spec ab (Kern: Verwaltung,
+Erfassung, Markierung, Abgleich, Rechte, Mail-Vorlage). Etappe 2 fügt die
+Erweiterungen aus Abschnitt 6 hinzu: Erinnerungen für seit langem offene
+Belege/Abrechnungen (6a), automatische Kartenerkennung beim n8n-Eingang
+(6b), Zuordnungs-Vorschläge und Abrechnungstotal-Vorbelegung auf der
+Abgleich-Seite (6c), Mail-Eingang als Entwurf (6d–6e) und Fristlöschung
+verworfener Belegdateien (6f) — siehe unten.
 
 ## Datenmodell
 
@@ -34,7 +36,7 @@ Bestandteil dieser Etappe.
 | `karteninhaber_name` | Freitext, reine Anzeige, keine Rechte |
 | `verantwortlich_id` | Person, die die Karte abgleicht und alle offenen Belege der Karte sieht/verwaltet |
 | `erfassung_offen` | 1 = alle dürfen Belege erfassen (Modus A), 0 = nur `kreditkarte_erfasser` + verantwortliche Person (Modus B) |
-| `absender_muster` | reserviert für die automatische Kartenerkennung (Etappe 2), in dieser Etappe ungenutzt |
+| `absender_muster` | optional, z. B. `viseca.ch` oder `abrechnung@bank.ch` — Basis der automatischen Kartenerkennung, siehe [6b](#6b-automatische-kartenerkennung) |
 | `aktiv` | Deaktivieren/Reaktivieren wie bei Konten, kein Löschen |
 
 ### `kreditkarte_erfasser`
@@ -48,9 +50,9 @@ für neue Uploads.
 
 | Spalte | Bedeutung |
 |---|---|
-| `kreditkarte_id` | Karte; in dieser Etappe immer gesetzt (der Status `entwurf` mit NULL-Karte ist für den Mail-Eingang in Etappe 2 reserviert) |
+| `kreditkarte_id` | Karte; bei per Mail eingegangenen Entwürfen (Status `entwurf`) oft noch NULL, siehe [6d](#6d-mail-eingang) |
 | `hochgeladen_von` / `gekauft_von` | wer den Beleg erfasst hat / für wen der Kauf war (Default: dieselbe Person) |
-| `quelle` | `web` (Upload auf `/kreditkarte`) / `mail` (Etappe 2) / `abgleich` (beim Abgleich direkt nachgereicht) |
+| `quelle` | `web` (Upload auf `/kreditkarte`) / `mail` (Mail-Eingang, siehe [6d](#6d-mail-eingang)) / `abgleich` (beim Abgleich direkt nachgereicht) |
 | `pdf_pfad` / `thumbnail_pfad` | Bilder werden serverseitig in eine PDF-Seite umgewandelt, Thumbnail best effort |
 | `betrag` | negativ erlaubt (Rückerstattung); NULL nur bei `entwurf` |
 | `waehrung` | reine Info, Default `CHF` — beim Abgleich zählt immer der CHF-Betrag der Zeile |
@@ -61,18 +63,23 @@ für neue Uploads.
 | `verworfen_grund`, `verworfen_von`, `verworfen_am` | Pflichtfelder beim Verwerfen |
 
 `zugeordnet` und `verworfen` sind Endzustände. Zugeordnete Belege bleiben
-dauerhaft erhalten (sie sind Teil des gestempelten Buchungsdokuments); die
-Fristlöschung verworfener Belege (`datei_geloescht_am`, `letzte_erinnerung_am`)
-ist als Spalte bereits angelegt, ihre Cron-Logik folgt erst in Etappe 2.
+dauerhaft erhalten (sie sind Teil des gestempelten Buchungsdokuments) —
+die Fristlöschung (`datei_geloescht_am`) betrifft ausschliesslich
+`verworfen`e Belege, siehe [6f](#6f-fristlöschung-verworfener-belege).
+`letzte_erinnerung_am` ist die Basis der Erinnerung für seit langem
+offene Belege, siehe [6a](#6a-erinnerungen).
 
 ### `kk_beleg_ereignisse`
 
 Eigenes Audit-Log für Belege, solange sie noch keine `jobs`-Zeile haben
 und deshalb nicht über `freigaben` protokollierbar sind: `kk_beleg_erfasst`,
-`kk_beleg_geaendert`, `kk_beleg_verworfen`, `kk_beleg_zugeordnet` (plus
-`kk_beleg_ergaenzt`/`kk_beleg_datei_geloescht`, reserviert für Etappe 2).
-`person_id = NULL` bedeutet System. Erscheint zusammen mit `freigaben` im
-globalen Audit-Log, siehe unten.
+`kk_beleg_geaendert`, `kk_beleg_verworfen`, `kk_beleg_zugeordnet`,
+`kk_beleg_ergaenzt` (ein per Mail eingegangener Entwurf wird vervollständigt,
+siehe [6d](#6d-mail-eingang)) und `kk_beleg_datei_geloescht` (Fristlöschung,
+siehe [6f](#6f-fristlöschung-verworfener-belege)). `person_id = NULL`
+bedeutet System — bei `kk_beleg_erfasst` per Mail-Eingang und bei jedem
+`kk_beleg_datei_geloescht` ist das immer der Fall. Erscheint zusammen mit
+`freigaben` im globalen Audit-Log, siehe unten.
 
 ### Neue `jobs`-Spalten
 
@@ -80,14 +87,14 @@ globalen Audit-Log, siehe unten.
 |---|---|
 | `kreditkarte_id` | gesetzt auf dem Abrechnungs-Job (Elternjob), sobald er einer Karte zugeordnet ist |
 | `kk_eigenbeleg_grund` | auf einem Teil-Job ohne Beleg: Begründung bei Eigenbeleg, fester Text „Gebühr/Zins“ bei Gebühren |
-| `kk_markiert_am` | Zeitpunkt der Markierung (Basis für die Abgleich-Erinnerung, Etappe 2) |
-| `kk_erinnert_am` | reserviert für die Abgleich-Erinnerung (Etappe 2), in dieser Etappe immer NULL |
-| `kk_text_betraege` | reserviert für die PDF-Text-Vorschläge (Etappe 2), in dieser Etappe ungenutzt |
+| `kk_markiert_am` | Zeitpunkt der Markierung — Basis der Abrechnungs-Erinnerung, siehe [6a](#6a-erinnerungen) |
+| `kk_erinnert_am` | Zeitpunkt der letzten Abrechnungs-Erinnerung, siehe [6a](#6a-erinnerungen) |
+| `kk_text_betraege` | JSON-Cache der PDF-Text-Analyse der Abrechnung (`{ betraege, daten, total }`), siehe [6c](#6c-zuordnungs-vorschläge-und-abrechnungstotal) |
 
 Neue `freigaben.rolle`-Werte: `kk_abrechnung_markiert`, `kk_markierung_aufgehoben`,
-`kk_abgleich`. Neuer `mail_log.typ`-Wert (in dieser Etappe tatsächlich
-versendet): `kk-abrechnung-zugewiesen`; das CHECK-Constraint reserviert
-zusätzlich `kk-beleg-erinnerung` und `kk-beleg-eingegangen` für Etappe 2.
+`kk_abgleich`. Neue `mail_log.typ`-Werte: `kk-abrechnung-zugewiesen`
+(Etappe 1), `kk-beleg-erinnerung` und `kk-beleg-eingegangen` (Etappe 2,
+siehe [6a](#6a-erinnerungen) bzw. [6d](#6d-mail-eingang)).
 Neues additives Recht `kreditkarten_verwalten` in `person_berechtigungen`.
 Details zu allen Tabellen: [datenmodell.md](datenmodell.md).
 
@@ -96,8 +103,10 @@ Details zu allen Tabellen: [datenmodell.md](datenmodell.md).
 | Aktion | Berechtigt |
 |---|---|
 | Karten verwalten, Erfasser pflegen | `superadmin`, Einzelrecht `kreditkarten_verwalten` |
-| Beleg hochladen | Modus A: alle angemeldeten Personen · Modus B: `kreditkarte_erfasser` + verantwortliche Person der Karte |
+| Beleg hochladen (Web) | Modus A: alle angemeldeten Personen · Modus B: `kreditkarte_erfasser` + verantwortliche Person der Karte |
+| Beleg per Mail einreichen | jede aktive Person mit bekannter E-Mail-Adresse — das Erfass-Recht selbst wird erst beim Vervollständigen des Entwurfs geprüft, siehe [6d](#6d-mail-eingang) |
 | Beleg bearbeiten/verwerfen | `hochgeladen_von`, `gekauft_von`, verantwortliche Person der Karte — nur solange `offen`/`entwurf` |
+| Entwurf (Mail-Eingang) vervollständigen | ausschliesslich `hochgeladen_von`/`gekauft_von` (die identifizierte Person selbst) — die Karte ist bei einem Entwurf meist noch nicht gesetzt, siehe [6d](#6d-mail-eingang) |
 | Abrechnung markieren | wer den Job heute beanspruchen bzw. kontieren dürfte (gleiche Autorisierung wie Pool-Beanspruchen/Kontierung) |
 | Markierung aufheben, Abgleich | `zugewiesen_an` des Abrechnungs-Jobs (inkl. Ferienmodus-Vertretung, Admin-Eskalations-Sonderfall) |
 | Freigabe der Teil-Jobs | unverändert Freigeber 1/2 des jeweiligen Kontos (Vier-Augen-Prinzip) |
@@ -333,10 +342,193 @@ unverändert durch Freigabe 1/2 und Export. Details:
 `job_loeschungen` in der einen durchsuchbaren Zeitleiste unter
 **Admin → Audit-Log** (`src/services/globalAuditLog.js`, dritte Quelle in
 der `UNION ALL`-Abfrage) — filterbar wie die übrigen Ereignisse. Ein
-Eintrag ohne `person_id` (aktuell nur bei künftiger automatischer
-Markierung, Etappe 2) wird dort als Person „System“ angezeigt.
+Eintrag ohne `person_id` (automatische Kartenerkennung, Fristlöschung —
+siehe unten) wird dort als Person „System“ angezeigt.
 
-## Bekannte Grenzen dieser Etappe
+## Etappe 2: Erweiterungen (Spec-Abschnitt 6)
+
+### 6a. Erinnerungen
+
+Neuer Cron-Job `kk-beleg-erinnerungen` (`runKkBelegErinnerungenJob`,
+`src/services/cronJobs.js`), Standard-Zeitplan täglich 08:00
+(Europe/Zürich, Config-Keys `cron_kk_beleg_erinnerungen_stunde`/`_minute`),
+zusätzlich über `POST /internal/cron/kk-beleg-erinnerungen` und den
+"Jetzt ausführen"-Button unter **Admin → Geplante Jobs** auslösbar. Läuft
+nur, wenn sowohl das Kreditkartenmodul (`modul_kreditkarten_aktiv`) als
+auch der eigene Schalter `kk_beleg_erinnerungen_aktiv` (Default an)
+aktiviert sind. Details zum Zeitplan und zu den Mail-Vorlagen:
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md).
+
+Zwei unabhängige Arbeitslisten, beide mit derselben Schwelle
+`kk_beleg_erinnerung_tage` (Default 45 Tage):
+
+- **Offene Belege/Entwürfe** (`listKkBelegeFuerErinnerung`): ein Beleg
+  gilt als seit langem offen, wenn sein Kaufdatum (Status `offen`) bzw.
+  sein Hochladezeitpunkt (Status `entwurf`, noch kein Kaufdatum bekannt —
+  Mail-Eingang) die Schwelle unterschreitet. **Eine Mail pro Empfänger**
+  bündelt alle seine Belege (hochgeladen von ihm, für ihn gekauft, oder
+  auf einer Karte, für die er verantwortlich ist) statt einer Mail pro
+  Beleg.
+- **Markierte, noch nicht abgeglichene Abrechnungen**
+  (`listKkAbrechnungenFuerErinnerung`): ein Job mit gesetzter
+  `kreditkarte_id`, Status weiterhin `zugewiesen` (der Abgleich hat ihn
+  noch nicht abgeschlossen), dessen `kk_markiert_am` die Schwelle
+  überschreitet — geht an die zugewiesene Person (`kk_erinnert_am` als
+  Wiederholungs-Sperre, inkl. Ferienmodus-Vertretung).
+
+Wie bei der Pool-Erinnerung wird eine Erinnerung erst nach mindestens
+einem weiteren Intervall wiederholt (`letzte_erinnerung_am` bzw.
+`kk_erinnert_am`), damit nicht jeder tägliche Lauf denselben Beleg erneut
+anmahnt. Beide Zweige nutzen dieselbe Mail-Vorlage `kk-beleg-erinnerung`.
+
+### 6b. Automatische Kartenerkennung
+
+Beim n8n-Eingang einer neuen Abrechnung (`POST /api/n8n/jobs`) prüft
+`erkenneKarte` (`src/services/kkErkennung.js`), ob **genau eine** aktive
+Karte per Absender-Muster (`kreditkarten.absender_muster`, „exakt“ oder
+„Domain“, gleiche Logik wie bei den Zuweisungsregeln) oder per im
+PDF-Text gefundenen Kartenendziffern zutrifft. Bei keinem oder mehr als
+einem Treffer passiert nichts (`null`) — die Erkennung erzwingt nie eine
+fachliche Entscheidung, der Job landet wie gewohnt im Pool oder wird über
+eine Zuweisungsregel verteilt.
+
+Trifft genau eine Karte zu, ruft der Eingang denselben Service auf wie
+die manuelle Markierung (`markiereAlsKkAbrechnung`, `markiertVon: null` =
+System) — inklusive Mail an die verantwortliche Person und Eintrag
+`kk_abrechnung_markiert` (Kommentar „automatisch erkannt“, plus
+Erkennungsgrund „Absender“/„Endziffern“/„Absender + Endziffern“).
+
+**Vorrang vor Zuweisungsregeln:** die Kartenerkennung läuft *nach* einer
+eventuell bereits gegriffenen Zuweisungsregel und überschreibt deren
+Ergebnis — `markiereJobAlsKkAbrechnung` akzeptiert sowohl `unzugewiesen`
+als auch `zugewiesen` als Ausgangsstatus. Eine Abrechnungs-Mail landet
+also nie beim durch die Zuweisungsregel bestimmten Freigeber 1, sondern
+immer bei der verantwortlichen Person der erkannten Karte.
+
+**Nie auf Teil-Jobs.** `markiereJobAlsKkAbrechnung`s `WHERE`-Klausel
+verlangt weiterhin `aufgesplittet_von IS NULL` — ein neu eingegangener
+Job ist zwar nie ein Splitkind, aber derselbe gemeinsame Service wird
+auch hier verwendet, sodass diese Schranke automatisch mitgilt.
+
+Der beim Eingang bereits extrahierte PDF-Text wird zugleich analysiert
+und in `jobs.kk_text_betraege` gecacht (`setKkTextAnalyse`) — der
+Abgleich muss die Abrechnung dann nicht noch einmal selbst lesen, siehe
+6c.
+
+### 6c. Zuordnungs-Vorschläge und Abrechnungstotal
+
+`src/services/kkTextAnalyse.js` liest aus dem PDF-Text der Abrechnung
+Beträge, Daten und ein Total heraus — reine Heuristiken, die nie eine
+fachliche Entscheidung erzwingen, sondern nur vorbelegen bzw. vorauswählen.
+Der analysierte Text wird dafür auf **200 000 Zeichen** gekappt und die
+Betrags-/Endziffern-Regex ist bewusst mit begrenzten Wiederholungen
+formuliert (kein unbegrenztes Backtracking) — beides verhindert, dass ein
+absichtlich präpariertes PDF die Analyse zum Hängen bringt (ReDoS).
+
+- **Beträge/Daten** (`findeBetraege`/`findeDaten`): pro Textzeile, mit
+  Schutz gegen Fehltreffer in Datums- oder Kartennummer-Kontexten.
+- **Kartenendziffern** (`findeEndziffern`): Basis von 6b.
+- **Abrechnungstotal** (`schlageTotalVor`): erste Zeile mit
+  „Total“/„Saldo“/„zu bezahlen“/„Rechnungsbetrag“ — **steht auf dieser
+  Zeile ein `CHF`-Token, wird bevorzugt der Betrag direkt danach genommen**
+  (schliesst eine vorangehende Fremdwährungsspalte aus); sonst der letzte
+  Betrag der Zeile.
+- **Beleg-Vorschläge** (`berechneVorschlaege`): ein offener Beleg wird
+  vorgeschlagen, wenn sein Betrag (Absolutwert) irgendwo in der
+  Abrechnung vorkommt; bei zusätzlich passendem Datum (±3 Tage, gleiche
+  Textzeile) wird er bevorzugt einer Betrags-Fundstelle auf genau dieser
+  Zeile zugeordnet. Jede Fundstelle deckt höchstens einen Beleg ab.
+
+Auf der Abgleich-Seite (`/kontierung/:id/kk-abgleich`) erscheint ein
+Vorschlag als Info-Badge „Vorschlag: Betrag + Datum“ bzw. „Vorschlag:
+Betrag gefunden“, und eine vorgeschlagene Zeile ist beim Laden der Seite
+bereits angehakt (nur wenn noch keine Formularfehler vorliegen). Das
+`gesamtbetrag`-Feld wird mit `job.betrag` (falls vorhanden) oder sonst
+`job.qr_betrag` oder sonst dem erkannten Total vorbelegt — alles nur eine
+Vorbelegung, änderbar und nicht Teil der serverseitigen Prüfung.
+
+Die Analyse wird **einmal pro Abrechnung** berechnet und in
+`jobs.kk_text_betraege` gecacht (JSON `{ betraege, daten, total }`) —
+sowohl beim automatischen Eingang (6b) als auch beim ersten Aufruf der
+Abgleich-Seite, falls sie noch nicht vorliegt. Scheitert die Extraktion,
+wird eine leere Analyse (`LEERE_ANALYSE`) gecacht, damit nicht jeder
+Seitenaufruf einen neuen, aussichtslosen Versuch startet.
+
+### 6d. Mail-Eingang
+
+Neue Route `POST /api/n8n/kk-belege` (`src/routes/n8n/kkBelege.js`,
+API-Key-authentifiziert wie die übrigen n8n-Routen) — n8n überwacht ein
+Beleg-Postfach, spaltet Mail-Anhänge auf und ruft diese Route je Anhang
+einmal mit `absender` und dem PDF/Bild als `pdf`-Feld auf. Die fachliche
+Logik steckt in `nimmKkBelegEntgegen`
+(`src/services/kkBelegEingang.js`), damit sie später auch von einem
+nativen Mail-Modul wiederverwendet werden kann.
+
+Ablauf:
+
+1. Modul muss aktiv sein, sonst `409`.
+2. Der Absender muss auf eine **aktive** Person passen
+   (`findActivePersonByEmail`), sonst `422` — kein Beleg für einen
+   unbekannten Absender.
+3. Die Datei muss ein gültiges PDF/PNG/JPEG sein (Magic-Byte-Check),
+   sonst `400`.
+4. Bei einem PDF: Swiss-QR-Bill-Scan für den Betrag (bevorzugt), sonst
+   `schlageTotalVor` auf dem extrahierten Text; Kaufdatum aus dem ersten
+   nicht in der Zukunft liegenden gefundenen Datum. Beides best effort —
+   ein Scheitern wird nur geloggt, nicht dem Absender gemeldet.
+5. **Immer ein Entwurf** (`status = 'entwurf'`, `quelle = 'mail'`,
+   `hochgeladen_von = gekauft_von` = identifizierte Person): die Karte
+   wird nur automatisch gesetzt, wenn die Person **genau eine**
+   erfassbare Karte hat (`listErfassbareKarten`) — sonst bleibt
+   `kreditkarte_id` NULL und auch Beschreibung/Konto sind noch leer.
+6. Audit-Eintrag `kk_beleg_erfasst` (`person_id` = die identifizierte
+   Person, Kommentar „per Mail eingegangen“) und eine **immer sofortige**
+   Mail `kk-beleg-eingegangen` mit einem Link direkt auf
+   `/kreditkarte/belege/:id/bearbeiten` — dieser Typ ignoriert den
+   globalen Batching-Schalter, damit die Person den Ergänzen-Link nicht
+   erst auf den nächsten Digest-Lauf warten muss.
+
+**Nur die Person selbst kann den Entwurf vervollständigen**:
+`darfBelegBearbeiten` lässt `hochgeladen_von`/`gekauft_von` sowie die
+verantwortliche Person einer bereits gesetzten Karte zu — bei einem
+frischen Mail-Entwurf ist aber in aller Regel keine Karte gesetzt, sodass
+faktisch nur die identifizierte Person selbst den Entwurf öffnen und
+bearbeiten kann. Beim Abspeichern der fehlenden Angaben (Karte, Betrag,
+Kaufdatum, Beschreibung, ggf. Konto) über `POST /kreditkarte/belege/:id`
+wechselt der Beleg von `entwurf` zu `offen`
+(`aktiviereKkBelegEntwurf`), inkl. Audit-Eintrag `kk_beleg_ergaenzt` —
+ab hier läuft er wie jeder andere Beleg weiter (erfasst am
+Abgleich sichtbar, editierbar/verwerfbar bis er zugeordnet wird).
+
+### 6e. Erinnerung für Entwürfe
+
+Ein per Mail eingegangener, noch nicht vervollständigter Entwurf zählt in
+6a's erster Arbeitsliste mit (Schwelle: Hochladezeitpunkt statt
+Kaufdatum, da bei `entwurf` noch kein Kaufdatum feststeht) — dieselbe
+Mail-Vorlage `kk-beleg-erinnerung` erinnert die Person also auch an einen
+liegengebliebenen Entwurf, nicht nur an offene Belege.
+
+### 6f. Fristlöschung verworfener Belege
+
+Neuer Teilschritt des bestehenden `pdf-bereinigung`-Cron-Jobs (kein
+eigener Job): für jeden `verworfen`en Beleg, dessen `verworfen_am` die
+konfigurierte Frist `kk_beleg_verworfen_loeschen_tage` (Default 90 Tage,
+einstellbar unter **Admin → Geplante Jobs**) überschreitet, werden
+`pdf_pfad`/`thumbnail_pfad` gelöscht und `datei_geloescht_am` gesetzt
+(`markKkBelegDateiGeloescht`), plus Audit-Eintrag
+`kk_beleg_datei_geloescht` (`person_id = NULL` = System).
+
+**Nur die Dateien verschwinden, nie die Zeile** — sie bleibt als
+Nachweis erhalten (wer/wann/warum verworfen). **Zugeordnete Belege
+(`zugeordnet`) werden von dieser Löschung nie erfasst** — sie sind Teil
+eines bereits gestempelten Buchungsdokuments und müssen dauerhaft
+erhalten bleiben; die Arbeitsliste (`listVerworfeneKkBelegeZurLoeschung`)
+selektiert von vornherein nur `status = 'verworfen'`. Wie bei den beiden
+anderen Schritten von `pdf-bereinigung` stoppt ein einzelner
+Lösch-Fehler (z. B. Datei bereits weg oder Berechtigungsproblem) nicht
+die übrigen Belege im selben Lauf.
+
+## Bekannte Grenzen
 
 - **Kein Rechnungsnummer-Duplikat-Check pro Zeile.** Der Abgleich führt —
   wie das bestehende Aufsplitten — nur den **IBAN-Abgleich auf
@@ -346,12 +538,6 @@ Markierung, Etappe 2) wird dort als Person „System“ angezeigt.
   in Abschnitt 5 nahelegt — existiert weder beim Aufsplitten noch beim
   Kreditkarten-Abgleich; diese Doku beschreibt bewusst den tatsächlichen
   Code-Stand.
-- **Keine Erinnerungen, keine automatische Kartenerkennung, keine
-  Zuordnungs-Vorschläge, kein Mail-Eingang, keine Fristlöschung** — alles
-  Bestandteil von Etappe 2 (Spec-Abschnitt 6). Die dafür nötigen Spalten
-  (`kk_erinnert_am`, `kk_text_betraege`, `letzte_erinnerung_am`,
-  `datei_geloescht_am`, Status `entwurf`) sind bereits angelegt, damit
-  Etappe 2 keine weitere Migration braucht.
 - **Kein Gutschriften-Typ-Übertrag von aussen** — anders als beim
   bekannten Aufsplitten-Verhalten entsteht `typ = 'gutschrift'` beim
   Abgleich direkt aus dem Vorzeichen der eingegebenen Zeile, nicht aus

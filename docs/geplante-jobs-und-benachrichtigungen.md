@@ -31,18 +31,19 @@ flowchart LR
     Fn --> Log[("sync_log / cron_log")]
 ```
 
-## Die acht Jobs
+## Die neun Jobs
 
 | Job | Standard-Zeitplan | Zweck |
 |---|---|---|
 | `sync-personen` | täglich 02:00 (Europe/Zürich) | ChurchTools-Personen-/Gruppen-Sync — siehe [personen-sync.md](personen-sync.md) |
 | `pool-erinnerungen` | alle 60 Minuten | Reminder- und Eskalations-Mails für unbeanspruchte Pool-Rechnungen |
 | `freigabe2-erinnerungen` | alle 60 Minuten | Reminder an den effektiven Freigeber 2 und Übergabe an die Admin-Gruppe für seit langem unbeantwortete `freigabe2`-Jobs |
-| `pdf-bereinigung` | täglich 02:30 | archiviert abgeholte Jobs, räumt verwaiste `.tmp`-Stempeldateien und alte `mail_log`-Einträge auf |
+| `pdf-bereinigung` | täglich 02:30 | archiviert abgeholte Jobs, räumt verwaiste `.tmp`-Stempeldateien, alte `mail_log`-Einträge und Dateien verworfener Kreditkartenbelege über der Aufbewahrungsfrist auf |
 | `zeitstempel-nachholen` | alle 5 Minuten | wiederholt fehlgeschlagene RFC3161-Stempelversuche |
 | `split-gruppen-nachholen` | alle 15 Minuten | holt eine noch nicht zusammengeführte Splitgruppe nach (unvollständig oder am TSA gescheitert) |
 | `datenbank-sicherung` | täglich 03:00 | DB + `JOBS_DIR` + `BRANDING_DIR` als ZIP nach `BACKUP_DIR` sichern, alte Backups über die konfigurierte Aufbewahrung hinaus löschen |
 | `mail-digest` | täglich 07:00 (Europe/Zürich) | fasst alle wegen aktivem Batching nur protokollierten (`mail_log.status = 'geplant'`) Mails pro Empfänger zu einer täglichen Zusammenfassung zusammen |
+| `kk-beleg-erinnerungen` | täglich 08:00 (Europe/Zürich) | Erinnerungs-Mails für seit langem offene Kreditkartenbelege/-entwürfe und noch nicht abgeglichene Kreditkartenabrechnungen |
 
 ### `pool-erinnerungen`
 
@@ -119,7 +120,7 @@ allen anderen Jobs dieser Liste — unter **Admin → Geplante Jobs**.
 
 ### `pdf-bereinigung`
 
-Drei unabhängige Aufräum-Schritte in einem Lauf, jeder mit eigenem
+Vier unabhängige Aufräum-Schritte in einem Lauf, jeder mit eigenem
 Fehler-Fangnetz (ein fehlgeschlagener Schritt stoppt die anderen nicht):
 
 1. Für jeden Job im Status `abgeholt`: PDF/Thumbnail-Datei (sollten durch
@@ -129,6 +130,12 @@ Fehler-Fangnetz (ein fehlgeschlagener Schritt stoppt die anderen nicht):
    Stunde sind (Reste eines abgebrochenen Stempel-Schreibvorgangs).
 3. `mail_log`-Einträge löschen, die älter als die konfigurierte
    Aufbewahrungsfrist (`mail_log_aufbewahrung_tage`) sind.
+4. Von jedem **verworfenen** Kreditkartenbeleg, dessen Verwerfen-Zeitpunkt
+   die konfigurierte Frist (`kk_beleg_verworfen_loeschen_tage`, Default 90
+   Tage) überschreitet, `pdf_pfad`/`thumbnail_pfad` löschen und
+   `datei_geloescht_am` setzen — die Beleg-Zeile selbst und ein
+   `zugeordnet`er Beleg bleiben davon unangetastet. Details:
+   [kreditkarten-belege.md](kreditkarten-belege.md#6f-fristlöschung-verworfener-belege).
 
 ### `zeitstempel-nachholen`
 
@@ -182,6 +189,30 @@ sofort — siehe unten. Läuft mit demselben Überlappungsschutz wie
 **Admin → Geplante Jobs**, sondern auf der eigenen Seite **Admin →
 Mail-Einstellungen**.
 
+### `kk-beleg-erinnerungen`
+
+Läuft nur, wenn sowohl das Kreditkartenmodul (`modul_kreditkarten_aktiv`)
+als auch der eigene Schalter `kk_beleg_erinnerungen_aktiv` (Default an)
+aktiv sind. Zwei unabhängige Arbeitslisten mit derselben Schwelle
+`kk_beleg_erinnerung_tage` (Default 45 Tage):
+
+- **Offene Belege/Entwürfe**: seit langem offene Kreditkartenbelege
+  (Kaufdatum bzw., bei per Mail eingegangenen Entwürfen ohne Kaufdatum,
+  Hochladezeitpunkt über der Schwelle) — **eine Mail pro Empfänger**
+  bündelt alle seine Belege (hochgeladen von ihm, für ihn gekauft, oder
+  auf einer Karte, für die er verantwortlich ist).
+- **Markierte, noch nicht abgeglichene Abrechnungen**: ein als
+  Kreditkartenabrechnung markierter Job, dessen Markierung
+  (`kk_markiert_am`) über der Schwelle liegt und der weiterhin auf den
+  Abgleich wartet — geht an die zugewiesene Person, inkl.
+  Ferienmodus-Vertretung.
+
+Wie bei `pool-erinnerungen` wird eine Erinnerung erst nach mindestens
+einem weiteren Intervall wiederholt, kein zweiter Sonder-Zeitplan wie bei
+`datenbank-sicherung`/`mail-digest`: Zeitplan (Default täglich 08:00,
+Europe/Zürich) und Schwelle leben unter **Admin → Geplante Jobs**.
+Details: [kreditkarten-belege.md](kreditkarten-belege.md#6a-erinnerungen).
+
 ### `sync-personen`
 
 Siehe [personen-sync.md](personen-sync.md).
@@ -209,12 +240,18 @@ codierten Strings.
 | `sync-fehler` | ChurchTools-Sync fehlgeschlagen oder abgebrochen — **immer sofort**, unabhängig vom Batching-Schalter |
 | `iban-warnung` | QR-Code-IBAN weicht von der hinterlegten Lieferanten-IBAN ab — **immer sofort**, unabhängig vom Batching-Schalter |
 | `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Debitor erfasst |
+| `kk-abrechnung-zugewiesen` | Kreditkartenabrechnung (manuell oder automatisch erkannt) einer Karte zugeordnet — geht an die verantwortliche Person |
+| `kk-beleg-erinnerung` | seit langem offener Kreditkartenbeleg/-entwurf bzw. noch nicht abgeglichene Kreditkartenabrechnung (Job `kk-beleg-erinnerungen`, siehe oben) |
+| `kk-beleg-eingegangen` | per Mail eingereichter Kreditkartenbeleg als Entwurf angelegt — **immer sofort**, unabhängig vom Batching-Schalter (Link zum Vervollständigen soll nicht bis zum nächsten Digest warten) |
 
 **Batching:** Ist unter **Admin → Mail-Einstellungen** aktiviert, werden
-alle Typen ausser `sync-fehler`/`iban-warnung` nicht sofort verschickt,
-sondern als `status = 'geplant'` protokolliert und vom `mail-digest`-Job
-(siehe oben) einmal täglich pro Empfänger zu einer Sammel-Mail
-zusammengefasst.
+alle Typen ausser `sync-fehler`/`iban-warnung`/`kk-beleg-eingegangen`
+nicht sofort verschickt, sondern als `status = 'geplant'` protokolliert
+und vom `mail-digest`-Job (siehe oben) einmal täglich pro Empfänger zu
+einer Sammel-Mail zusammengefasst — `kk-abrechnung-zugewiesen` und
+`kk-beleg-erinnerung` folgen also dem globalen Schalter wie jeder andere
+reguläre Typ, nur `kk-beleg-eingegangen` ist wie `sync-fehler`/
+`iban-warnung` von der Bündelung ausgenommen.
 
 Wird eine `geplant`e Zeile so als Teil einer Digest-Mail verschickt, wird
 ihr `mail_log`-Eintrag trotzdem auf `versendet` gesetzt, obwohl der darin

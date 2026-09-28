@@ -122,8 +122,8 @@ erDiagram
         int kreditkarte_id FK "gesetzt auf dem Abrechnungs-Job"
         text kk_eigenbeleg_grund "Teil-Job ohne Beleg: Begründung / 'Gebühr/Zins'"
         text kk_markiert_am
-        text kk_erinnert_am "Etappe 2"
-        text kk_text_betraege "JSON-Cache, Etappe 2"
+        text kk_erinnert_am "letzte Abrechnungs-Erinnerung"
+        text kk_text_betraege "JSON-Cache der PDF-Textanalyse"
     }
     kreditkarten {
         int id PK
@@ -132,7 +132,7 @@ erDiagram
         text karteninhaber_name
         text verantwortlich_id FK
         int erfassung_offen "1 = Modus A, 0 = Modus B"
-        text absender_muster "reserviert, Etappe 2"
+        text absender_muster "optional, automatische Kartenerkennung"
         int aktiv
         text erstellt_am
     }
@@ -159,8 +159,8 @@ erDiagram
         text verworfen_grund
         text verworfen_von FK
         text verworfen_am
-        text letzte_erinnerung_am "Etappe 2"
-        text datei_geloescht_am "Etappe 2"
+        text letzte_erinnerung_am "letzte Beleg-Erinnerung"
+        text datei_geloescht_am "Fristlöschung nach dem Verwerfen"
     }
     kk_beleg_ereignisse {
         int id PK
@@ -310,10 +310,14 @@ einer Spesen-Position `NULL`.
 `kk_markiert_am`, `kk_erinnert_am`, `kk_text_betraege`): `kreditkarte_id`
 steht auf dem Abrechnungs-Job (Elternjob), sobald er einer Karte markiert
 wurde; `kk_eigenbeleg_grund` auf einem beim Abgleich entstandenen Teil-Job
-ohne Beleg. `kk_erinnert_am` und `kk_text_betraege` sind bereits angelegt,
-werden aber erst von der Etappe-2-Erweiterung (Erinnerungen,
-Zuordnungs-Vorschläge) befüllt. Details:
-[kreditkarten-belege.md](kreditkarten-belege.md).
+ohne Beleg. `kk_erinnert_am` ist der Zeitpunkt der letzten
+Abgleich-Erinnerung (`kk-beleg-erinnerungen`-Job). `kk_text_betraege`
+cacht das Ergebnis der PDF-Textanalyse der Abrechnung als JSON
+`{ betraege, daten, total }` (Fundstellen für Beträge/Daten je Textzeile
+plus vorgeschlagenes Abrechnungstotal) — einmal berechnet beim
+automatischen n8n-Eingang oder beim ersten Aufruf der Abgleich-Seite,
+danach aus der Spalte gelesen statt die Abrechnung erneut zu parsen.
+Details: [kreditkarten-belege.md](kreditkarten-belege.md).
 
 ### `freigaben`
 Append-only-Protokoll jeder Freigabe-relevanten Aktion (Freigabe 1/2,

@@ -191,8 +191,14 @@ test('n8n and cron machine routes stay exempt from CSRF — no token needed, onl
   const jobsRes = await request(app).post('/api/n8n/jobs').set('X-API-Key', 'n8n-key');
   assert.notEqual(jobsRes.status, 403, 'n8n route must not be blocked by CSRF');
 
+  const kkBelegeRes = await request(app).post('/api/n8n/kk-belege').set('X-API-Key', 'n8n-key');
+  assert.notEqual(kkBelegeRes.status, 403, 'n8n route must not be blocked by CSRF');
+
   const cronRes = await request(app).post('/internal/cron/sync-personen').set('X-Cron-Secret', 'cron-secret');
   assert.notEqual(cronRes.status, 403, 'cron route must not be blocked by CSRF');
+
+  const kkErinnerungenRes = await request(app).post('/internal/cron/kk-beleg-erinnerungen').set('X-Cron-Secret', 'cron-secret');
+  assert.notEqual(kkErinnerungenRes.status, 403, 'cron route must not be blocked by CSRF');
 
   db.close();
   rmSync(dir, { recursive: true, force: true });

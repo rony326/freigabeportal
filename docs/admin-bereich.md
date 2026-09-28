@@ -52,9 +52,12 @@ neu zugewiesen werden. Konten lassen sich deaktivieren statt löschen
 
 Liste, Neu, Bearbeiten, Deaktivieren/Reaktivieren der Kreditkarten für die
 Vorab-Erfassung von Belegen (Bezeichnung, Endziffern, verantwortliche
-Person, Erfass-Modus, optionale Erfasser-Liste). Einzelrecht
-`kreditkarten_verwalten`. Details:
-[kreditkarten-belege.md](kreditkarten-belege.md#2-verwaltung-adminkreditkarten).
+Person, Erfass-Modus, optionale Erfasser-Liste, sowie optional
+**Absender der Abrechnungs-Mail** — z. B. `viseca.ch` oder
+`abrechnung@bank.ch`, Basis der automatischen Kartenerkennung beim
+n8n-Eingang). Einzelrecht `kreditkarten_verwalten`. Details:
+[kreditkarten-belege.md](kreditkarten-belege.md#2-verwaltung-adminkreditkarten)
+und [kreditkarten-belege.md](kreditkarten-belege.md#6b-automatische-kartenerkennung).
 
 ## Debitoren (`/admin/debitoren`)
 
@@ -123,11 +126,13 @@ Gedacht als Sammelstelle für künftige, ebenfalls unabhängig einführbare Modu
 
 ## Mail-Einstellungen (`/admin/mail-einstellungen`)
 
-Editierbare Betreff-/Text-Vorlagen (`%variable%`-Platzhalter) für alle 10
+Editierbare Betreff-/Text-Vorlagen (`%variable%`-Platzhalter) für alle
 Mail-Typen (inkl. `freigabe2-reminder`/`freigabe2-eskalation`, siehe
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#freigabe2-erinnerungen),
-sowie `kk-abrechnung-zugewiesen`, siehe
-[kreditkarten-belege.md](kreditkarten-belege.md#3-abrechnung-markieren-und-übergeben))
+sowie die drei Kreditkarten-Typen `kk-abrechnung-zugewiesen`,
+`kk-beleg-erinnerung` und `kk-beleg-eingegangen`, siehe
+[kreditkarten-belege.md](kreditkarten-belege.md#3-abrechnung-markieren-und-übergeben)
+und [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail))
 plus die Digest-Vorlage, sowie der globale Batching-Schalter
 (sofort vs. täglich gesammelt) mit Versandzeit und manuellem "Jetzt
 ausführen" für den `mail-digest`-Job. **Nur `superadmin`**, wie
@@ -166,9 +171,14 @@ Selbstschutz gegen Löschung durch den eigenen Ablehner. Siehe
 
 ## Geplante Jobs (`/admin/geplante-jobs`)
 
-Zeitplan-Konfiguration und manuelles Sofort-Auslösen von sechs der acht
+Zeitplan-Konfiguration und manuelles Sofort-Auslösen von sieben der neun
 Hintergrund-Jobs (`datenbank-sicherung` und `mail-digest` haben eigene
-Konfigurationsseiten, siehe oben), inklusive ihrer Lauf-Historie. Details:
+Konfigurationsseiten, siehe oben), inklusive ihrer Lauf-Historie. Dazu
+gehören auch der eigene An/Aus-Schalter und die Tage-Schwelle für
+`kk-beleg-erinnerungen`, sowie — als Teil der Konfiguration von
+`pdf-bereinigung` — die Aufbewahrungsfrist, nach der Dateien verworfener
+Kreditkartenbelege gelöscht werden (`kk_beleg_verworfen_loeschen_tage`,
+Default 90 Tage). Details:
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md).
 
 ## Audit-Log (`/admin/audit-log`)

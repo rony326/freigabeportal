@@ -31,6 +31,7 @@ feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 | Geplante Jobs | `/admin/geplante-jobs` | Einzelrecht `geplante_jobs_verwalten` |
 | Audit-Log | `/admin/audit-log` | Einzelrecht `audit_log_einsehen` |
 | Datenbank-Backup | `/admin/backup` | **nur** `superadmin` |
+| Datei-Quarantäne | `/admin/dateiquarantaene` | **nur** `superadmin` (verwaiste finale Dokumente zurückholen/löschen, Begründung Pflicht) |
 | Kreditkarten | `/admin/kreditkarten` | Einzelrecht `kreditkarten_verwalten` |
 | Module | `/admin/module` | **nur** `superadmin` |
 | Mail-Einstellungen | `/admin/mail-einstellungen` | **nur** `superadmin` |

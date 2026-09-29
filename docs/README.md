@@ -24,6 +24,9 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [admin-bereich.md](admin-bereich.md) | Alle Admin-Seiten mit den jeweils benötigten Rechten |
 | [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md) | Die sechs automatischen Hintergrund-Jobs, E-Mail-Versand, Eskalationslogik |
 | [personen-sync.md](personen-sync.md) | Nächtlicher ChurchTools-Personen-/Gruppen-Sync, Schutzmechanismen, "stalled jobs" |
+| [kreditoren-statt-debitoren.md](kreditoren-statt-debitoren.md) | Fachliche Korrektur der Bezeichnung, Migration, Kompatibilität, Deployment-Schritte |
+| [audit-paket-haertung-2026-09-29.md](audit-paket-haertung-2026-09-29.md) | Zugriffsverweigerungen, Datei-Quarantäne, Sicherheitsalarme, TSA-Evidenz |
+| [audit-externe-nachweise.md](audit-externe-nachweise.md) | Bedrohungsmodell und lokale Grundlage für externe Audit-Nachweise |
 
 Phasenpläne und historische Design-Dokumente der einzelnen Ausbaustufen
 liegen weiterhin in [`superpowers/specs/`](superpowers/specs/) und

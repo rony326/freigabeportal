@@ -138,6 +138,20 @@ Fehler-Fangnetz (ein fehlgeschlagener Schritt stoppt die anderen nicht):
    `zugeordnet`er Beleg bleiben davon unangetastet. Details:
    [kreditkarten-belege.md](kreditkarten-belege.md#6f-fristlöschung-verworfener-belege).
 
+Seit 2026-09-29 verschiebt dieser Lauf ausserdem verwaiste finale Dokumente
+(`final-<uuid>.pdf` ohne DB-Referenz, aelter als `verwaiste_dateien_mindestalter_stunden`)
+in die Datei-Quarantaene statt sie zu loeschen, und archivierte Dateien werden mit
+Absichts-/Ergebnisprotokoll entfernt. Details: [Code-Haertung](audit-paket-haertung-2026-09-29.md).
+
+### `sicherheitsalarme`
+
+Nur im In-Prozess-Scheduler (kein Cron-Endpunkt, kein `cron_log`-Eintrag), Intervall
+`cron_sicherheitsalarme_intervall_minuten` (Standard 30). Meldet ungeklaerte
+Backup-Loeschabsichten per Mail an `sicherheitsalarm_empfaenger` (Standard `gruppe:admin`),
+dedupliziert je Absicht, mit Wiederholung bei Versandfehlern und Erinnerung nach
+`sicherheitsalarm_wiederholung_stunden`. Ein Alarm klaert nie die Absicht selbst.
+Laeufe erscheinen als `hintergrundlauf` im Audit-Log.
+
 ### `zeitstempel-nachholen`
 
 Holt für jeden `abgeschlossen`-Job ohne gesetzten Zeitstempel die

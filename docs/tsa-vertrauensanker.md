@@ -77,8 +77,22 @@ ein interner Opt-out wird ausschliesslich zur Isolation anderer Tests verwendet.
 Die Sperrpruefung gilt nur fuer neue Zeitstempel anhand lokal vorhandener, aktuell
 gueltiger CRLs. Sie beweist weder eine Live-Abfrage noch, dass zwischenzeitlich
 keine neuere Liste veroeffentlicht wurde. OCSP, Delta-/indirekte CRLs,
-historische Langzeitvalidierung, persistierte Evidenz je Zeitstempel und weitere
-ESS-Kettenbeschraenkungen bleiben offen. Die konkrete DigiCert-Kompatibilitaet
+historische Langzeitvalidierung und weitere ESS-Kettenbeschraenkungen bleiben offen.
+
+Seit 2026-09-29 wird je neuem Zeitstempel die bei der Pruefung verwendete Evidenz
+gespeichert (`tsa_pruefnachweise`, `tsa_evidenz_objekte`, `src/services/tsaNachweis.js`):
+Token-Hash, Zertifikatskette vom Signer bis zum lokalen Vertrauensanker, die tatsaechlich
+verwendeten CRLs byte-genau samt `thisUpdate`/`nextUpdate`, lokaler Pruefzeitpunkt,
+Truststore-SHA-256 und Zuordnung zu Job, Dokumentart und SHA-256 der gestempelten Datei.
+Einzelfreigabe, Nachholjob und Gruppenfinalisierung speichern den Nachweis in derselben
+Transaktion wie den Zeitstempel-Hash; scheitert das Speichern, wird der Zeitstempel nicht
+festgeschrieben und die Exportsperre bleibt bestehen. Ohne konfigurierte Anker vermerkt der
+Nachweis ausdruecklich `kettenpruefung: nicht_konfiguriert`. Der Nachweis belegt den Stand zum
+lokalen Pruefzeitpunkt; er ist keine Langzeitvalidierung (kein LTV/DSS in der PDF, keine
+OCSP-Antworten, keine Erneuerung per Archivzeitstempel) und lokal gegen DB-Administratoren nicht
+geschuetzt. Zusaetzliche OCSP-/CRL-Profile wurden nicht umgesetzt, da ohne konkrete
+DigiCert-Profilanalyse kein nachgewiesener Bedarf besteht. Die Anzeige des Nachweises in der
+Pruefbescheinigung steht noch aus. Die konkrete DigiCert-Kompatibilitaet
 und der externe Aktualisierungsprozess sind noch nicht betrieblich abgenommen.
 Es gibt bewusst keine Netzwerkabrufe von URLs aus ungesicherten
 Zertifikaten. Die vorhandene Upload-Pruefansicht behauptet weiterhin kein

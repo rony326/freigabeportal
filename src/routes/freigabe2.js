@@ -8,7 +8,8 @@ import { createFreigabe, listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampAndFinalize } from '../services/pdfStamp.js';
-import { setZeitstempel } from '../services/zeitstempel.js';
+import { setZeitstempelMitNachweis } from '../services/zeitstempel.js';
+import { speichereTsaNachweis } from '../services/tsaNachweis.js';
 import { fetchPersonById, extractCustomFieldValue } from '../services/churchtools.js';
 import { validateSpesenPayment, paymentReviewFingerprint, ermittleRechnungsZahlung, zahlungBestaetigungspflichtig, ZAHLUNGSHINWEIS_TEXT } from '../services/paymentApproval.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
@@ -384,14 +385,15 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const tsaUrl = getConfigValue(db, 'zeitstempel_tsa_url');
       let zeitstempelGesetztAm = null;
       let zeitstempelDateiHash = null;
+      let tsaNachweis = null;
       if (tsaUrl) {
         try {
-          stamped = await setZeitstempel(stamped, {
+          ({ stamped, nachweis: tsaNachweis } = await setZeitstempelMitNachweis(stamped, {
             ...tsaTrustOptions(config),
             url: tsaUrl,
             user: getConfigValue(db, 'zeitstempel_tsa_user') || undefined,
             passwort: getConfigValue(db, 'zeitstempel_tsa_passwort') || undefined,
-          });
+          }));
           zeitstempelGesetztAm = new Date().toISOString();
           zeitstempelDateiHash = createHash('sha256').update(stamped).digest('hex');
         } catch (err) {
@@ -446,7 +448,10 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
             'Diese Freigabe wurde inzwischen bereits von einem anderen Vorgang abgeschlossen.',
           ]);
         }
-        if (zeitstempelGesetztAm) markZeitstempelGesetzt(db, job.id, zeitstempelGesetztAm, zeitstempelDateiHash);
+        if (zeitstempelGesetztAm) {
+          markZeitstempelGesetzt(db, job.id, zeitstempelGesetztAm, zeitstempelDateiHash);
+          speichereTsaNachweis(db, { jobId: job.id, bezug: 'einzel', dokumentSha256: zeitstempelDateiHash, nachweis: tsaNachweis });
+        }
         db.prepare(`UPDATE jobs SET pdf_pfad = ?, freigabe_snapshot = ?, final_datei_hash = ?, zeitstempel_erforderlich = ? WHERE id = ?`).run(
           tmpPfad, JSON.stringify({ version: 2, job, konto, zahlungsdaten, stampData,
             zahlungsdaten_bestaetigung: job.quelle === 'spesen' ? { personId: req.currentPerson.churchtools_person_id, zeitpunkt, stand: zahlungsStand } : null,

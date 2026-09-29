@@ -45,7 +45,8 @@ import { pruneMailLogOlderThan, listGeplantMailsGruppiertNachEmpfaenger } from '
 import { sendNotification, resolveEmpfaenger, sendNotificationMitVertretung } from './notify.js';
 import { getVorlage, renderTemplate } from './mailTemplates.js';
 import { logCronLauf, startCronLauf, finishCronLauf, hasRecentRunningCronLauf } from '../db/cronLogRepo.js';
-import { setZeitstempel } from './zeitstempel.js';
+import { setZeitstempelMitNachweis } from './zeitstempel.js';
+import { speichereTsaNachweis } from './tsaNachweis.js';
 import { pruefeUndFinalisiereSplitGruppe } from './splitGruppenExport.js';
 
 const TMP_MAX_ALTER_MS = 60 * 60 * 1000; // 1 Stunde
@@ -395,7 +396,7 @@ async function runZeitstempelNachholenJobInternal(db, config) {
       let finalPath;
       try {
         const pdfBuffer = readFileSync(job.pdf_pfad);
-        const stamped = await setZeitstempel(pdfBuffer, tsaConfig);
+        const { stamped, nachweis } = await setZeitstempelMitNachweis(pdfBuffer, tsaConfig);
         finalPath = writeFinalDocument(job.pdf_pfad, stamped);
         db.exec('BEGIN IMMEDIATE');
         try {
@@ -410,6 +411,7 @@ async function runZeitstempelNachholenJobInternal(db, config) {
           }
           const hash = createHash('sha256').update(stamped).digest('hex');
           markZeitstempelGesetzt(db, job.id, new Date().toISOString(), hash);
+          speichereTsaNachweis(db, { jobId: job.id, bezug: 'einzel', dokumentSha256: hash, nachweis });
           db.prepare('UPDATE jobs SET pdf_pfad = ?, final_datei_hash = ? WHERE id = ?').run(finalPath, hash, job.id);
           db.exec('COMMIT');
         } catch (err) {

@@ -2,6 +2,13 @@ import { openSync, closeSync, fstatSync, readFileSync, constants } from 'node:fs
 import * as asn1js from 'asn1js';
 import { CertificateRevocationList } from 'pkijs';
 
+// Original-DER jeder geladenen Sperrliste, damit die tatsaechlich verwendete Evidenz byte-genau
+// aufbewahrt werden kann (services/tsaNachweis.js), ohne die Rueckgabeform von loadTsaCrls zu aendern.
+const CRL_DER = new WeakMap();
+export function crlDer(crl) {
+  return CRL_DER.get(crl) || Buffer.from(crl.toSchema().toBER(false));
+}
+
 const signatureAlgorithms = new Set([
   '1.2.840.113549.1.1.11', '1.2.840.113549.1.1.12', '1.2.840.113549.1.1.13',
   '1.2.840.10045.4.3.2', '1.2.840.10045.4.3.3', '1.2.840.10045.4.3.4',
@@ -26,7 +33,9 @@ export function loadTsaCrls(path) {
     const der = Buffer.from(block[1], 'base64');
     const parsed = asn1js.fromBER(Uint8Array.from(der).buffer);
     if (parsed.offset !== der.length) throw new Error('Ungueltige TSA-Sperrliste.');
-    return new CertificateRevocationList({ schema: parsed.result });
+    const crl = new CertificateRevocationList({ schema: parsed.result });
+    CRL_DER.set(crl, der);
+    return crl;
   });
 }
 
@@ -47,6 +56,7 @@ export async function verifyTsaRevocation(chain, crls, now = new Date()) {
   if (chain.length < 2 || !crls.length || crls.length > 16 || !Number.isFinite(now.getTime())) {
     throw new Error('TSA-Sperrlisten fuer die Zertifikatskette fehlen.');
   }
+  const verwendet = [];
   for (let i = 0; i < chain.length - 1; i++) {
     const certificate = chain[i];
     const issuer = chain[i + 1];
@@ -70,7 +80,8 @@ export async function verifyTsaRevocation(chain, crls, now = new Date()) {
       }
       if (!await crl.verify({ issuerCertificate: issuer })) throw new Error('TSA-Sperrlisten-Signatur ist ungueltig.');
       if (crl.isCertificateRevoked(certificate)) throw new Error('TSA-Zertifikat ist gesperrt.');
+      if (!verwendet.includes(crl)) verwendet.push(crl);
     }
   }
-  return { sperrstatus: 'crl_geprueft' };
+  return { sperrstatus: 'crl_geprueft', sperrlisten: verwendet };
 }

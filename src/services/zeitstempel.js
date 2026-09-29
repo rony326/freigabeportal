@@ -3,6 +3,7 @@ import { TimestampSession, MAX_PDF_SIZE, sendTimestampRequest, parseTimestampRes
 import { freshTimestampRequest, validateTimestampBinding } from './tsaResponse.js';
 import { loadTsaTrustAnchors, verifyTsaChain } from './tsaTrust.js';
 import { loadTsaCrls } from './tsaRevocation.js';
+import { baueTsaNachweis } from './tsaNachweis.js';
 
 // Bounded well below the library's own defaults (timeout 30000ms, retry 3, retryDelay 1000ms —
 // worst case over 90s) because setZeitstempel runs synchronously inside the Freigabe-2 POST
@@ -27,6 +28,13 @@ function buildTsaHeaders(tsaConfig) {
 // already expect a catchable, user-facing German message rather than the library's raw error.
 // omitModificationTime is required, not optional — see this task's notes above.
 export async function setZeitstempel(pdfBuffer, tsaConfig) {
+  return (await setZeitstempelMitNachweis(pdfBuffer, tsaConfig)).stamped;
+}
+
+// Wie setZeitstempel, liefert zusaetzlich den Nachweis der verwendeten Zertifikats-/Sperrevidenz
+// (services/tsaNachweis.js). Aufrufer, die einen Zeitstempel festschreiben, speichern diesen
+// Nachweis in derselben Transaktion wie den Zeitstempel-Hash.
+export async function setZeitstempelMitNachweis(pdfBuffer, tsaConfig) {
   let session;
   try {
     const anchors = tsaConfig.trustAnchorsFile || tsaConfig.requireTrustedChain !== false
@@ -44,8 +52,9 @@ export async function setZeitstempel(pdfBuffer, tsaConfig) {
     const stamped = Buffer.from(await session.embedTimestampToken(response.token));
     const verification = await verifyZeitstempel(stamped);
     if (!verification.gueltig) throw new Error('TSA-Signatur oder Dokumentbindung ist ungueltig.');
-    if (anchors) await verifyTsaChain(binding, anchors, crls);
-    return stamped;
+    const kette = anchors ? await verifyTsaChain(binding, anchors, crls) : null;
+    const nachweis = baueTsaNachweis({ binding, token: response.token, kette, trustAnchorsSha256: tsaConfig.trustAnchorsSha256 || null });
+    return { stamped, nachweis };
   } catch (err) {
     throw new Error(`Zeitstempel konnte nicht gesetzt werden: ${err.message}`);
   } finally {

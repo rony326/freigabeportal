@@ -49,6 +49,7 @@ export async function verifyTsaChain({ signed, info, signer }, anchors, crls = [
   const ordered = [...certificates.filter((cert) => fingerprint(cert) !== signerHash), signer];
   const roots = new Set(anchors.map(fingerprint));
   const now = new Date();
+  let evidenz;
   for (const checkDate of [info.genTime, now]) {
     const engine = new CertificateChainValidationEngine({ trustedCerts: anchors, certs: ordered, checkDate });
     const result = await engine.verify({ passedWhenNotRevValues: true });
@@ -56,7 +57,9 @@ export async function verifyTsaChain({ signed, info, signer }, anchors, crls = [
     if (!result.result || !chain.length || fingerprint(chain[0]) !== signerHash || !roots.has(fingerprint(chain.at(-1)))) {
       throw new Error('TSA-Signierzertifikat hat keine gueltige Kette zu den konfigurierten Vertrauensankern.');
     }
-    await verifyTsaRevocation(chain, crls, now);
+    const sperre = await verifyTsaRevocation(chain, crls, now);
+    evidenz = { kettenzertifikate: chain, sperrlisten: sperre.sperrlisten };
   }
-  return { kette: 'geprueft', sperrstatus: 'crl_geprueft', signerSha256: signerHash };
+  // Die Evidenz belegt den Sperrstatus zum lokalen Pruefzeitpunkt, keine historische Validierung.
+  return { kette: 'geprueft', sperrstatus: 'crl_geprueft', signerSha256: signerHash, pruefzeitpunkt: now, ...evidenz };
 }

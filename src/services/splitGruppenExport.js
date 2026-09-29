@@ -7,7 +7,8 @@ import { getPersonById } from '../db/personenRepo.js';
 import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampGruppenDokument } from './pdfStamp.js';
-import { setZeitstempel } from './zeitstempel.js';
+import { setZeitstempelMitNachweis } from './zeitstempel.js';
+import { speichereTsaNachweis } from './tsaNachweis.js';
 import { writeFinalDocument } from './finalDocument.js';
 import { tsaTrustOptions } from './tsaTrust.js';
 import { bereiteGruppenSnapshotVor, getAltfallEntscheidung } from './exportSnapshot.js';
@@ -126,13 +127,14 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
 
     let zeitstempelGesetztAm = null;
     let zeitstempelDateiHash = null;
+    let tsaNachweis = null;
     if (tsaUrl) {
-      gestempelt = await setZeitstempel(gestempelt, {
+      ({ stamped: gestempelt, nachweis: tsaNachweis } = await setZeitstempelMitNachweis(gestempelt, {
         ...tsaTrustOptions(config),
         url: tsaUrl,
         user: getConfigValue(db, 'zeitstempel_tsa_user') || undefined,
         passwort: getConfigValue(db, 'zeitstempel_tsa_passwort') || undefined,
-      });
+      }));
       zeitstempelGesetztAm = new Date().toISOString();
       zeitstempelDateiHash = createHash('sha256').update(gestempelt).digest('hex');
     }
@@ -159,6 +161,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
         gruppeFreigabeSnapshot: JSON.stringify(gruppenSnapshot),
       });
       if (!geschrieben) throw new Error('Gruppe wurde inzwischen finalisiert.');
+      if (zeitstempelDateiHash) speichereTsaNachweis(db, { jobId: parent.id, bezug: 'gruppe', dokumentSha256: zeitstempelDateiHash, nachweis: tsaNachweis });
       db.exec('COMMIT');
     } catch (err) {
       if (db.isTransaction) db.exec('ROLLBACK');

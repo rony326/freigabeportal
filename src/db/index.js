@@ -10,6 +10,7 @@ import { migrateZugriffsAuditSchema } from './zugriffsAuditSchema.js';
 import { migrateDateiQuarantaeneSchema } from './dateiQuarantaeneSchema.js';
 import { migrateSicherheitsalarmSchema } from './sicherheitsalarmSchema.js';
 import { migrateTsaNachweisSchema } from './tsaNachweisSchema.js';
+import { migrateAuditExportSchema } from './auditExportSchema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -763,5 +764,6 @@ export function openDatabase(dbPath) {
   migrateDateiQuarantaeneSchema(db);
   migrateSicherheitsalarmSchema(db);
   migrateTsaNachweisSchema(db);
+  migrateAuditExportSchema(db);
   return db;
 }

@@ -13,6 +13,8 @@
     "backup:restore": "node --env-file-if-exists=.env src/cli/backupRestore.js restore",
     "backup:rollback": "node --env-file-if-exists=.env src/cli/backupRestore.js rollback",
     "backup:status": "node --env-file-if-exists=.env src/cli/backupRestore.js status",
+    "audit:export": "node --env-file-if-exists=.env src/cli/auditExport.js export",
+    "audit:verify": "node --env-file-if-exists=.env src/cli/auditExport.js verify",
     "test": "node --test 'test/**/*.test.js'"
   },
   "dependencies": {

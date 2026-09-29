@@ -7,6 +7,7 @@ import { migrateAuditRequestSchema } from './auditRequestSchema.js';
 import { migrateSecuritySchema } from './securitySchema.js';
 import { migrateExportIntegritaetSchema } from './exportIntegritaetSchema.js';
 import { migrateZugriffsAuditSchema } from './zugriffsAuditSchema.js';
+import { migrateDateiQuarantaeneSchema } from './dateiQuarantaeneSchema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -735,5 +736,6 @@ export function openDatabase(dbPath) {
   migrateSecuritySchema(db);
   migrateAuditRequestSchema(db);
   migrateZugriffsAuditSchema(db);
+  migrateDateiQuarantaeneSchema(db);
   return db;
 }

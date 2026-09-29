@@ -8,6 +8,7 @@ import { backupDateiname, ENCRYPTED_BACKUP_DATEINAME_PATTERN } from './backup.js
 import { buildEncryptedBackup, publishEncryptedBackup } from './backupEnvelope.js';
 import { deleteBackupWithAudit } from './backupAudit.js';
 import { loescheDateiMitAudit } from './dateiAudit.js';
+import { pruefeVerwaisteFinaleDateien } from './verwaisteDateien.js';
 import { auditedJob } from './auditOperation.js';
 import { runPersonenSync } from './sync.js';
 import { hasRecentRunningSync } from '../db/syncLogRepo.js';
@@ -323,13 +324,23 @@ function runPdfBereinigungJobInternal(db, config) {
     console.error('Fristlöschung verworfener Kreditkartenbelege fehlgeschlagen:', err.message);
   }
 
-  const ergebnis = { status: 'erfolg', archiviert, tmpGeloescht, mailLogGeloescht, kkBelegeGeloescht };
+  // Verwaiste finale Dokumente werden nur in Quarantaene verschoben, nie geloescht (siehe
+  // services/verwaisteDateien.js). Eigener try/catch: ein Fehler hier darf die uebrigen Schritte
+  // nicht als fehlgeschlagen melden.
+  let quarantaene = 0;
+  try {
+    quarantaene = pruefeVerwaisteFinaleDateien(db, config).verschoben;
+  } catch (err) {
+    console.error('Pruefung verwaister finaler Dateien fehlgeschlagen:', err.message);
+  }
+
+  const ergebnis = { status: 'erfolg', archiviert, tmpGeloescht, mailLogGeloescht, kkBelegeGeloescht, quarantaene };
   logCronLauf(db, {
     job: 'pdf-bereinigung',
     gestartetAm,
     beendetAm: new Date().toISOString(),
     status: 'erfolg',
-    details: `Archiviert: ${archiviert}, Tmp gelöscht: ${tmpGeloescht}, Mail-Log bereinigt: ${mailLogGeloescht}, KK-Belege gelöscht: ${kkBelegeGeloescht}`,
+    details: `Archiviert: ${archiviert}, Tmp gelöscht: ${tmpGeloescht}, Mail-Log bereinigt: ${mailLogGeloescht}, KK-Belege gelöscht: ${kkBelegeGeloescht}, In Quarantäne: ${quarantaene}`,
   });
   return ergebnis;
 }

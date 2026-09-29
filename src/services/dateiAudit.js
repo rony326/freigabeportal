@@ -3,7 +3,7 @@ import { basename } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { currentAuditActor } from './auditContext.js';
 
-const DATEIARTEN = new Set(['beleg_pdf', 'thumbnail', 'gruppen_pdf', 'tmp_datei']);
+const DATEIARTEN = new Set(['beleg_pdf', 'thumbnail', 'gruppen_pdf', 'tmp_datei', 'quarantaene_datei']);
 const FEHLERCODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'EISDIR', 'EBUSY', 'NOT_A_FILE']);
 
 // Sicherheitsrelevante Datei-Loeschung mit Audit-Klammer, analog zu deleteBackupWithAudit:

@@ -106,6 +106,9 @@ const SESSION_POST_ROUTES = [
   '/admin/backup',
   '/admin/backup/jetzt-ausfuehren',
   '/admin/backup/dateien/x.zip/loeschen',
+  '/admin/dateiquarantaene/pruefen',
+  '/admin/dateiquarantaene/1/wiederherstellen',
+  '/admin/dateiquarantaene/1/loeschen',
   '/admin/kreditkarten',
   '/admin/kreditkarten/1',
   '/admin/kreditkarten/1/deaktivieren',
@@ -120,8 +123,9 @@ const SESSION_POST_ROUTES = [
 ];
 
 test('the real createApp wiring rejects every session-authenticated POST route with no CSRF token, via the dedicated CSRF error page', async () => {
-  // 47 base routes (the disabled restore has no state-changing handler) + 12 credit-card routes.
-  assert.equal(SESSION_POST_ROUTES.length, 59, 'sanity check: this sweep should cover exactly 59 routes');
+  // 47 base routes (the disabled restore has no state-changing handler) + 12 credit-card routes
+  // + 3 file-quarantine routes.
+  assert.equal(SESSION_POST_ROUTES.length, 62, 'sanity check: this sweep should cover exactly 62 routes');
 
   const db = openDatabase(':memory:');
   const dir = mkdtempSync(join(tmpdir(), 'csrf-sweep-test-'));

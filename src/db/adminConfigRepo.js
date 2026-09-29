@@ -70,6 +70,7 @@ const DEFAULTS = {
   mail_vorlage_kk_beleg_eingegangen_betreff: 'Freigabeportal: Kreditkartenbeleg eingegangen – bitte ergänzen',
   mail_vorlage_kk_beleg_eingegangen_text: 'Hallo %empfaengerName%,\n\ndein per Mail eingereichter Kreditkartenbeleg ist im Portal eingegangen. Bitte ergänze Karte, Betrag, Kaufdatum und Beschreibung: %link%\n\nFreundliche Grüsse\n%portalName%',
   kk_beleg_verworfen_loeschen_tage: '90',
+  verwaiste_dateien_mindestalter_stunden: '24',
 };
 
 export function seedDefaults(db) {

@@ -8,6 +8,7 @@ import { migrateSecuritySchema } from './securitySchema.js';
 import { migrateExportIntegritaetSchema } from './exportIntegritaetSchema.js';
 import { migrateZugriffsAuditSchema } from './zugriffsAuditSchema.js';
 import { migrateDateiQuarantaeneSchema } from './dateiQuarantaeneSchema.js';
+import { migrateSicherheitsalarmSchema } from './sicherheitsalarmSchema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -703,6 +704,27 @@ function migrateKreditkartenChecks(db) {
   });
 }
 
+// Sicherheitsalarme (services/sicherheitsalarme.js) protokollieren ihren Versand im bestehenden
+// mail_log; dafuer wird der typ-CHECK um 'sicherheitsalarm' erweitert (gleiches Rebuild-Muster).
+function migrateMailLogSicherheitsalarm(db) {
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'mail_log',
+    marker: 'sicherheitsalarm',
+    createSql: `CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL
+    )`,
+    spalten: ['id', 'typ', 'job_id', 'empfaenger', 'betreff', 'text', 'status', 'fehler_details', 'versucht_am'],
+  });
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -729,6 +751,7 @@ export function openDatabase(dbPath) {
   migratePersonenTable(db);
   migrateFreigabenTableVertretung(db);
   migrateKreditkartenChecks(db);
+  migrateMailLogSicherheitsalarm(db);
   // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)
   // verwerfen die Trigger der alten Tabelle, und migrateSecuritySchema legt die Audit-Trigger mit
   // der aktuellen Spaltenliste neu an. person_berechtigungen gehört allein migrateSecuritySchema.
@@ -737,5 +760,6 @@ export function openDatabase(dbPath) {
   migrateAuditRequestSchema(db);
   migrateZugriffsAuditSchema(db);
   migrateDateiQuarantaeneSchema(db);
+  migrateSicherheitsalarmSchema(db);
   return db;
 }

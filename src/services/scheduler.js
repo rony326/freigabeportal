@@ -1,5 +1,6 @@
 import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob } from './cronJobs.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
+import { runSicherheitsalarmeJob } from './sicherheitsalarme.js';
 
 const ZEITZONE = 'Europe/Zurich';
 const MINUTE_MS = 60 * 1000;
@@ -100,6 +101,8 @@ export function startScheduler({
     runMailDigestJob: mailDigestJob,
     runFreigabe2ErinnerungenJob: freigabe2ErinnerungenJob,
     runKkBelegErinnerungenJob: kkBelegErinnerungenJob,
+    // Aeltere Test-Fakes ohne diesen Eintrag bekommen einen wirkungslosen Platzhalter.
+    runSicherheitsalarmeJob: sicherheitsalarmeJob = async () => ({ status: 'uebersprungen' }),
   } = {
     runSyncPersonenJob,
     runPoolErinnerungenJob,
@@ -110,6 +113,7 @@ export function startScheduler({
     runMailDigestJob,
     runFreigabe2ErinnerungenJob,
     runKkBelegErinnerungenJob,
+    runSicherheitsalarmeJob,
   },
 }) {
   scheduleDaily(
@@ -186,6 +190,16 @@ export function startScheduler({
     async () => {
       const result = await kkBelegErinnerungenJob(db, config, mailer);
       if (result.status === 'fehler') console.error('Geplanter kk-beleg-erinnerungen-Lauf fehlgeschlagen:', result.error);
+    }
+  );
+
+  // Alarmierung offener Backup-Loeschabsichten (services/sicherheitsalarme.js). Fehlschlaege werden
+  // dort persistiert und mit wachsendem Abstand wiederholt.
+  scheduleInterval(
+    () => zahlOderStandard(getConfigValue(db, 'cron_sicherheitsalarme_intervall_minuten'), 30) * MINUTE_MS,
+    async () => {
+      const result = await sicherheitsalarmeJob(db, config, mailer);
+      if (result.status === 'fehler') console.error('Geplanter sicherheitsalarme-Lauf fehlgeschlagen:', result.error || result.fehler);
     }
   );
 }

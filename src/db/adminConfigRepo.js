@@ -71,6 +71,9 @@ const DEFAULTS = {
   mail_vorlage_kk_beleg_eingegangen_text: 'Hallo %empfaengerName%,\n\ndein per Mail eingereichter Kreditkartenbeleg ist im Portal eingegangen. Bitte ergänze Karte, Betrag, Kaufdatum und Beschreibung: %link%\n\nFreundliche Grüsse\n%portalName%',
   kk_beleg_verworfen_loeschen_tage: '90',
   verwaiste_dateien_mindestalter_stunden: '24',
+  sicherheitsalarm_empfaenger: 'gruppe:admin',
+  sicherheitsalarm_wiederholung_stunden: '24',
+  cron_sicherheitsalarme_intervall_minuten: '30',
 };
 
 export function seedDefaults(db) {

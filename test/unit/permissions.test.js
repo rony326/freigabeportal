@@ -13,7 +13,7 @@ const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', gr
 test('GRANTABLE_BERECHTIGUNGEN lists exactly the eleven catalog permissions, separating sync reading and writing', () => {
   assert.deepEqual(
     [...GRANTABLE_BERECHTIGUNGEN].sort(),
-    ['abgelehnt_verwalten', 'audit_log_einsehen', 'debitoren_verwalten', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'workflow_eingreifen']
+    ['abgelehnt_verwalten', 'audit_log_einsehen', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'kreditoren_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'workflow_eingreifen']
   );
 });
 
@@ -44,9 +44,9 @@ test('personHasPermission: manager must receive explicit grants for sensitive sy
 test('personHasPermission: a plain person only has an individually granted permission', () => {
   const db = openDatabase(':memory:');
   upsertPerson(db, { id: '1', vorname: 'A', nachname: 'B', email: 'a@b.ch', gruppen: [], loggedInNow: false });
-  setBerechtigungenForPerson(db, '1', ['debitoren_verwalten']);
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
   const person = { churchtools_person_id: '1', gruppen: [] };
-  assert.equal(personHasPermission(db, CONFIG, person, 'debitoren_verwalten'), true);
+  assert.equal(personHasPermission(db, CONFIG, person, 'kreditoren_verwalten'), true);
   assert.equal(personHasPermission(db, CONFIG, person, 'konten_verwalten'), false);
   db.close();
 });

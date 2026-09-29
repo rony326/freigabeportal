@@ -13,10 +13,10 @@ erDiagram
     personen ||--o{ person_berechtigungen : "hat"
     personen ||--o{ freigaben : "handelt"
     konten ||--o{ jobs : "konto_id"
-    konten ||--o{ debitoren : "default-Konto"
-    debitoren ||--o{ jobs : "debitor_id"
-    debitoren ||--o{ debitor_ibans : "hat"
-    debitoren ||--o{ zuweisungsregeln : "Ziel"
+    konten ||--o{ kreditoren : "default-Konto"
+    kreditoren ||--o{ jobs : "kreditor_id"
+    kreditoren ||--o{ kreditor_ibans : "hat"
+    kreditoren ||--o{ zuweisungsregeln : "Ziel"
     jobs ||--o{ freigaben : "Verlauf"
     jobs ||--o{ mail_log : "ausgelöste Mails"
     jobs ||--o{ jobs : "aufgesplittet_von (Parent → Teile)"
@@ -60,15 +60,15 @@ erDiagram
         text stellvertreter2_id FK
         int aktiv
     }
-    debitoren {
+    kreditoren {
         int id PK
         text name
         int konto_id FK "optionales Default-Konto"
         int aktiv
     }
-    debitor_ibans {
+    kreditor_ibans {
         int id PK
-        int debitor_id FK
+        int kreditor_id FK
         text iban UK
         text quelle "manuell | bestaetigt"
         text erstellt_am
@@ -76,7 +76,7 @@ erDiagram
     zuweisungsregeln {
         int id PK
         text absender_muster UK
-        int debitor_id FK
+        int kreditor_id FK
     }
     spesenabrechnungen {
         int id PK
@@ -94,7 +94,7 @@ erDiagram
         text status "11 mögliche Werte"
         int konto_id FK
         text zugewiesen_an FK
-        int debitor_id FK
+        int kreditor_id FK
         int aufgesplittet_von FK "Parent-Job"
         text datei_hash "SHA-256, für n8n-Idempotenz"
         text betrag
@@ -241,11 +241,16 @@ müssen unterschiedliche, aktive Personen sein
 (`validateKontoRoles`). Freigeber 1 kontiert/erstfreigibt, Freigeber 2
 erteilt die zweite, unabhängige Freigabe (Vier-Augen-Prinzip).
 
-### `debitoren` und `zuweisungsregeln`
-Ein Debitor (Lieferant) kann ein Default-Konto haben. `zuweisungsregeln`
+### `kreditoren` und `zuweisungsregeln`
+Bis 2026-09-29 hiessen Tabellen und Spalten fachlich falsch `debitoren`,
+`debitor_ibans` und `debitor_id`; die Migration und die Leseadapter fuer
+historische Snapshots beschreibt [Kreditoren statt Debitoren](kreditoren-statt-debitoren.md).
+`kreditoren.id` ist eine interne ID, keine Kreditorennummer der Buchhaltung;
+`konto_id` verweist auf das Standard-Konto (`konten`) und wurde nicht veraendert.
+Ein Kreditor (Lieferant) kann ein Default-Konto haben. `zuweisungsregeln`
 bildet Absender-Muster (exakte E-Mail-Adresse oder Domain) auf einen
-Debitor ab — trifft eine Regel beim Rechnungseingang, wird der Job direkt
-diesem Debitor/Konto zugewiesen statt in den Pool zu fallen (siehe
+Kreditor ab — trifft eine Regel beim Rechnungseingang, wird der Job direkt
+diesem Kreditor/Konto zugewiesen statt in den Pool zu fallen (siehe
 [rechnungs-workflow.md](rechnungs-workflow.md)).
 
 ### `spesenabrechnungen`
@@ -267,8 +272,8 @@ eigenes Audit-Log für Belege, solange sie noch keine `jobs`-Zeile haben
 (`person_id = NULL` heisst System). Details:
 [kreditkarten-belege.md](kreditkarten-belege.md).
 
-### `debitor_ibans`
-Ein Debitor kann mehrere bekannte IBANs haben (`quelle`: manuell vom Admin
+### `kreditor_ibans`
+Ein Kreditor kann mehrere bekannte IBANs haben (`quelle`: manuell vom Admin
 erfasst, oder `bestaetigt` — automatisch übernommen, wenn eine Person bei
 der Kontierung einen unbekannten QR-Code-IBAN explizit bestätigt). Basis
 für den Betrugserkennungs-Abgleich, siehe
@@ -303,7 +308,7 @@ kopieren.
 `spesenabrechnung_id`, `rechnungsdatum`): nur bei `quelle = 'spesen'`
 befüllt, siehe [spesen-einreichung.md](spesen-einreichung.md). Alle
 rechnungsspezifischen Spalten (`absender`, `lieferant`, `rechnungsnummer`,
-`debitor_id`, `zahlungsziel`, `aufgesplittet_von`, `typ`) bleiben bei
+`kreditor_id`, `zahlungsziel`, `aufgesplittet_von`, `typ`) bleiben bei
 einer Spesen-Position `NULL`.
 
 **Kreditkarten-Spalten** (`kreditkarte_id`, `kk_eigenbeleg_grund`,

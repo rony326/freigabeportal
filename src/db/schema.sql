@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS personen (
 CREATE TABLE IF NOT EXISTS person_berechtigungen (
   person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
   berechtigung TEXT NOT NULL CHECK (berechtigung IN (
-    'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
+    'konten_verwalten', 'kreditoren_verwalten', 'geplante_jobs_verwalten',
     'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen', 'pool_zuweisen',
     'sync_verwalten', 'workflow_eingreifen', 'kreditkarten_verwalten'
   )),
@@ -75,16 +75,16 @@ CREATE TABLE IF NOT EXISTS konten (
   aktiv INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS debitoren (
+CREATE TABLE IF NOT EXISTS kreditoren (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   konto_id INTEGER REFERENCES konten(id),
   aktiv INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS debitor_ibans (
+CREATE TABLE IF NOT EXISTS kreditor_ibans (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  debitor_id INTEGER NOT NULL REFERENCES debitoren(id),
+  kreditor_id INTEGER NOT NULL REFERENCES kreditoren(id),
   iban TEXT NOT NULL UNIQUE,
   quelle TEXT NOT NULL CHECK (quelle IN ('manuell', 'bestaetigt')) DEFAULT 'manuell',
   erstellt_am TEXT NOT NULL
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS debitor_ibans (
 CREATE TABLE IF NOT EXISTS zuweisungsregeln (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   absender_muster TEXT NOT NULL UNIQUE,
-  debitor_id INTEGER NOT NULL REFERENCES debitoren(id)
+  kreditor_id INTEGER NOT NULL REFERENCES kreditoren(id)
 );
 
 CREATE TABLE IF NOT EXISTS spesenabrechnungen (
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   zahlungsziel TEXT,
   rechnungsnummer TEXT,
   lieferant TEXT,
-  debitor_id INTEGER REFERENCES debitoren(id),
+  kreditor_id INTEGER REFERENCES kreditoren(id),
   aufgesplittet_von INTEGER REFERENCES jobs(id),
   datei_hash TEXT,
   hinweis_konto_id INTEGER REFERENCES konten(id),

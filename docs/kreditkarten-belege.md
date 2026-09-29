@@ -559,8 +559,8 @@ die übrigen Belege im selben Lauf.
 - **Kein Rechnungsnummer-Duplikat-Check pro Zeile.** Der Abgleich führt —
   wie das bestehende Aufsplitten — nur den **IBAN-Abgleich auf
   Elternjob-Ebene** aus (`pruefeIbanNachAufsplitten`, gegen `job.qr_iban`/
-  `job.debitor_id` der Abrechnung selbst). Ein Duplikat-Check auf
-  Debitor + Rechnungsnummer je Teil-Zeile — wie ihn die Spec-Formulierung
+  `job.kreditor_id` der Abrechnung selbst). Ein Duplikat-Check auf
+  Kreditor + Rechnungsnummer je Teil-Zeile — wie ihn die Spec-Formulierung
   in Abschnitt 5 nahelegt — existiert weder beim Aufsplitten noch beim
   Kreditkarten-Abgleich; diese Doku beschreibt bewusst den tatsächlichen
   Code-Stand.

@@ -129,7 +129,7 @@ test('sendNotification ignores the batching switch for iban-warnung and always s
     to: 'a@example.org',
     typ: 'iban-warnung',
     jobId: null,
-    variablen: { jobDateiname: 'a.pdf', debitorName: 'ACME', tatsaechlicheIban: 'CH00', link: 'L' },
+    variablen: { jobDateiname: 'a.pdf', kreditorName: 'ACME', tatsaechlicheIban: 'CH00', link: 'L' },
   });
   assert.equal(mailer.sent.length, 1);
   assert.equal(listMailLog(db)[0].status, 'versendet');

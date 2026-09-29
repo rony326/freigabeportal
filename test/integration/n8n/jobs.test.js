@@ -284,7 +284,7 @@ test('POST /api/n8n/jobs applies Zuweisungsregel matching and reports the result
   const { join } = await import('node:path');
   const { upsertPerson } = await import('../../../src/db/personenRepo.js');
   const { createKonto } = await import('../../../src/db/kontenRepo.js');
-  const { createDebitor } = await import('../../../src/db/debitorenRepo.js');
+  const { createKreditor } = await import('../../../src/db/kreditorenRepo.js');
   const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
 
   const db = openDatabase(':memory:');
@@ -293,8 +293,8 @@ test('POST /api/n8n/jobs applies Zuweisungsregel matching and reports the result
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
 
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
@@ -683,7 +683,7 @@ test('POST /api/n8n/jobs with a matching Zuweisungsregel sends a Zuweisungs-Mail
   const { join } = await import('node:path');
   const { upsertPerson } = await import('../../../src/db/personenRepo.js');
   const { createKonto } = await import('../../../src/db/kontenRepo.js');
-  const { createDebitor } = await import('../../../src/db/debitorenRepo.js');
+  const { createKreditor } = await import('../../../src/db/kreditorenRepo.js');
   const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
   const { listMailLog } = await import('../../../src/db/mailLogRepo.js');
 
@@ -694,8 +694,8 @@ test('POST /api/n8n/jobs with a matching Zuweisungsregel sends a Zuweisungs-Mail
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
 
   const config = { ...testConfig(jobsDir), publicBaseUrl: 'https://portal.example.org' };
   const mailer = createStubMailer();
@@ -1164,7 +1164,7 @@ test('the automatic Zuweisungsregel-assignment mail also reaches the Freigeber1\
   const { join } = await import('node:path');
   const { upsertPerson, setFerienmodus } = await import('../../../src/db/personenRepo.js');
   const { createKonto } = await import('../../../src/db/kontenRepo.js');
-  const { createDebitor } = await import('../../../src/db/debitorenRepo.js');
+  const { createKreditor } = await import('../../../src/db/kreditorenRepo.js');
   const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
 
   const db = openDatabase(':memory:');
@@ -1173,8 +1173,8 @@ test('the automatic Zuweisungsregel-assignment mail also reaches the Freigeber1\
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
   setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
 
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));

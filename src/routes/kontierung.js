@@ -15,13 +15,14 @@ import {
   markJobAufgesplittet,
   setJobBetrag,
   addBelegSeiten,
-  findJobsByDebitorUndRechnungsnummer,
+  findJobsByKreditorUndRechnungsnummer,
   sendJobBackToGroup,
   hebeKkMarkierungAuf,
 } from '../db/jobsRepo.js';
 import { getKontoById, listKonten } from '../db/kontenRepo.js';
-import { listDebitoren, getDebitorById, createDebitor } from '../db/debitorenRepo.js';
-import { findDebitorIbanByIban, createDebitorIban } from '../db/debitorIbanRepo.js';
+import { listKreditoren, getKreditorById, createKreditor } from '../db/kreditorenRepo.js';
+import { findKreditorIbanByIban, createKreditorIban } from '../db/kreditorIbanRepo.js';
+import { kreditorIdAusEingabe, kreditorNameVariablen, KreditorFeldKonflikt } from '../services/kreditorFelder.js';
 import { getKreditkarteById, listKreditkarten } from '../db/kreditkartenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
@@ -59,24 +60,24 @@ const uploadBeleg = multer({
 
 function buildQrInfo(db, job) {
   if (!job.qr_erkannt_am) return null;
-  const ibanMapping = job.qr_iban ? findDebitorIbanByIban(db, job.qr_iban) : null;
-  const vorschlagDebitor = ibanMapping ? getDebitorById(db, ibanMapping.debitor_id) : null;
-  const debitorFuerAbgleich = job.debitor_id ? getDebitorById(db, job.debitor_id) : vorschlagDebitor;
-  const abgleich = job.qr_iban && debitorFuerAbgleich ? pruefeIbanAbgleich(db, debitorFuerAbgleich.id, job.qr_iban) : null;
-  const konfliktMitZugewiesenemDebitor = Boolean(vorschlagDebitor) && Boolean(job.debitor_id) && vorschlagDebitor.id !== job.debitor_id;
+  const ibanMapping = job.qr_iban ? findKreditorIbanByIban(db, job.qr_iban) : null;
+  const vorschlagKreditor = ibanMapping ? getKreditorById(db, ibanMapping.kreditor_id) : null;
+  const kreditorFuerAbgleich = job.kreditor_id ? getKreditorById(db, job.kreditor_id) : vorschlagKreditor;
+  const abgleich = job.qr_iban && kreditorFuerAbgleich ? pruefeIbanAbgleich(db, kreditorFuerAbgleich.id, job.qr_iban) : null;
+  const konfliktMitZugewiesenemKreditor = Boolean(vorschlagKreditor) && Boolean(job.kreditor_id) && vorschlagKreditor.id !== job.kreditor_id;
   return {
     iban: job.qr_iban,
     referenz: job.qr_referenz,
     betrag: job.qr_betrag,
     waehrung: job.qr_waehrung,
     creditorName: job.qr_creditor_name,
-    vorschlagDebitor,
-    // Only meaningful (and only resolved) when there's actually a conflict to name — debitorFuerAbgleich
-    // already IS the currently-assigned debitor in that case, since job.debitor_id is truthy whenever
-    // konfliktMitZugewiesenemDebitor is true.
-    zugewiesenerDebitor: konfliktMitZugewiesenemDebitor ? debitorFuerAbgleich : null,
-    debitorFuerAbgleich,
-    konfliktMitZugewiesenemDebitor,
+    vorschlagKreditor,
+    // Only meaningful (and only resolved) when there's actually a conflict to name — kreditorFuerAbgleich
+    // already IS the currently-assigned kreditor in that case, since job.kreditor_id is truthy whenever
+    // konfliktMitZugewiesenemKreditor is true.
+    zugewiesenerKreditor: konfliktMitZugewiesenemKreditor ? kreditorFuerAbgleich : null,
+    kreditorFuerAbgleich,
+    konfliktMitZugewiesenemKreditor,
     abgleich,
   };
 }
@@ -103,7 +104,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       job,
       konten,
       alleKonten: listKonten(db),
-      debitoren: listDebitoren(db),
+      kreditoren: listKreditoren(db),
       kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       kkHinweis: kkHinweisFuerJob(db, job),
@@ -116,7 +117,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         betrag: job.betrag || (qrInfo ? qrInfo.betrag || '' : ''),
         zahlungsziel: job.zahlungsziel || '',
         rechnungsnummer: job.rechnungsnummer || '',
-        debitorId: job.debitor_id ? String(job.debitor_id) : (qrInfo && qrInfo.vorschlagDebitor ? String(qrInfo.vorschlagDebitor.id) : ''),
+        kreditorId: job.kreditor_id ? String(job.kreditor_id) : (qrInfo && qrInfo.vorschlagKreditor ? String(qrInfo.vorschlagKreditor.id) : ''),
       },
       qrInfo,
       errors: [],
@@ -128,14 +129,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   // /kontierung/lieferanten would first match /:id (with id="lieferanten", a NaN Number()) and
   // 404/403 before ever reaching this handler. Open to any logged-in Kontierung user (not just
   // Portal-Admins), since Kontierung itself is usually done by Buchhaltung, not admins — mirrors
-  // the validation in POST /admin/debitoren, minus the admin-only gate.
+  // the validation in POST /admin/kreditoren, minus the admin-only gate.
   router.post('/lieferanten', csrfProtection, (req, res) => {
     const { name, kontoId } = req.body;
     const trimmedName = (name || '').trim();
     if (!trimmedName) {
       return res.status(400).json({ error: 'Name ist ein Pflichtfeld.' });
     }
-    const id = createDebitor(db, { name: trimmedName, kontoId: kontoId ? Number(kontoId) : null });
+    const id = createKreditor(db, { name: trimmedName, kontoId: kontoId ? Number(kontoId) : null });
     res.status(201).json({ id, name: trimmedName });
   });
 
@@ -150,18 +151,26 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       if (!job) return;
       if (sperreKkAbrechnung(job, res)) return;
       const konten = ladeKontenFuerJob(req, job);
-      const debitoren = listDebitoren(db);
+      const kreditoren = listKreditoren(db);
       const qrInfo = buildQrInfo(db, job);
-      const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId, aktion, typ } = req.body;
+      let kreditorId;
+      try {
+        // Uebergangsweise auch das alte Feld debitorId aus vor dem Deployment geladenen Formularen.
+        kreditorId = kreditorIdAusEingabe(req.body) ?? undefined;
+      } catch (err) {
+        if (err instanceof KreditorFeldKonflikt) return res.status(400).render('error', { message: err.message });
+        throw err;
+      }
+      const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, aktion, typ } = req.body;
       const jobTyp = typ === 'gutschrift' ? 'gutschrift' : 'rechnung';
-      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, debitorId, typ: jobTyp };
+      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, kreditorId, typ: jobTyp };
 
       const renderFehler = (messages, status = 400) =>
         res.status(status).render('kontierung', {
           job,
           konten,
           alleKonten: listKonten(db),
-          debitoren,
+          kreditoren,
           previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
           kkHinweis: kkHinweisFuerJob(db, job),
           values,
@@ -263,8 +272,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       if (!absender) {
         errors.push('Bitte einen Absender angeben.');
       }
-      const debitor = debitorId ? getDebitorById(db, debitorId) : null;
-      if (!debitor) {
+      const kreditor = kreditorId ? getKreditorById(db, kreditorId) : null;
+      if (!kreditor) {
         errors.push('Bitte einen gültigen Lieferanten aus der Liste auswählen.');
       }
       if (!rechnungsnummer) {
@@ -315,8 +324,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           betrag: betrag ? betrag.replace(',', '.') : null,
           zahlungsziel,
           rechnungsnummer,
-          lieferant: debitor ? debitor.name : null,
-          debitorId: debitor ? debitor.id : null,
+          lieferant: kreditor ? kreditor.name : null,
+          kreditorId: kreditor ? kreditor.id : null,
           typ: jobTyp,
         });
         if (eskaliertAnAdmin) {
@@ -376,8 +385,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
       }
 
-      if (job.qr_iban && debitor) {
-        const { status } = pruefeIbanAbgleich(db, debitor.id, job.qr_iban);
+      if (job.qr_iban && kreditor) {
+        const { status } = pruefeIbanAbgleich(db, kreditor.id, job.qr_iban);
         if (status === 'mismatch') {
           createFreigabe(db, {
             jobId: job.id,
@@ -386,7 +395,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             zeitpunkt: new Date().toISOString(),
             ip: req.ip,
             interessenskonflikt: false,
-            kommentar: `QR-IBAN ${job.qr_iban} weicht von der/den für ${debitor.name} hinterlegten IBAN(s) ab.`,
+            kommentar: `QR-IBAN ${job.qr_iban} weicht von der/den für ${kreditor.name} hinterlegten IBAN(s) ab.`,
             eskaliertVon: null,
           });
           const zusatzEmpfaenger = new Set(resolveEmpfaenger(db, config, getConfigValue(db, 'iban_abweichung_empfaenger')));
@@ -402,7 +411,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
               jobId: job.id,
               variablen: {
                 jobDateiname: job.dateiname,
-                debitorName: debitor.name,
+                ...kreditorNameVariablen(kreditor.name),
                 tatsaechlicheIban: job.qr_iban,
                 link: `${config.publicBaseUrl}/kontierung/${job.id}`,
               },
@@ -412,14 +421,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           status === 'kein_abgleich' &&
           req.body.ibanMerken === 'on' &&
           isValidIban(job.qr_iban) &&
-          !findDebitorIbanByIban(db, job.qr_iban)
+          !findKreditorIbanByIban(db, job.qr_iban)
         ) {
-          createDebitorIban(db, { debitorId: debitor.id, iban: job.qr_iban, quelle: 'bestaetigt' });
+          createKreditorIban(db, { kreditorId: kreditor.id, iban: job.qr_iban, quelle: 'bestaetigt' });
         }
       }
 
-      if (debitor) {
-        const duplikate = findJobsByDebitorUndRechnungsnummer(db, debitor.id, rechnungsnummer, job.id);
+      if (kreditor) {
+        const duplikate = findJobsByKreditorUndRechnungsnummer(db, kreditor.id, rechnungsnummer, job.id);
         if (duplikate.length > 0) {
           createFreigabe(db, {
             jobId: job.id,
@@ -428,7 +437,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             zeitpunkt: new Date().toISOString(),
             ip: req.ip,
             interessenskonflikt: false,
-            kommentar: `Rechnungsnummer "${rechnungsnummer}" ist bei ${debitor.name} bereits erfasst: Job ${duplikate.map((d) => `#${d.id}`).join(', ')}.`,
+            kommentar: `Rechnungsnummer "${rechnungsnummer}" ist bei ${kreditor.name} bereits erfasst: Job ${duplikate.map((d) => `#${d.id}`).join(', ')}.`,
             eskaliertVon: null,
           });
           const zusatzEmpfaenger = new Set([req.currentPerson.email]);
@@ -443,7 +452,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
               jobId: job.id,
               variablen: {
                 jobDateiname: job.dateiname,
-                debitorName: debitor.name,
+                ...kreditorNameVariablen(kreditor.name),
                 rechnungsnummer,
                 dupJobIds: duplikate.map((d) => `#${d.id}`).join(', '),
                 link: `${config.publicBaseUrl}/kontierung/${job.id}`,

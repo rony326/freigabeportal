@@ -7,6 +7,7 @@ import { migrateAuditRequestSchema } from './auditRequestSchema.js';
 import { migrateSecuritySchema } from './securitySchema.js';
 import { migrateExportIntegritaetSchema } from './exportIntegritaetSchema.js';
 import { migrateZugriffsAuditSchema } from './zugriffsAuditSchema.js';
+import { migrateKreditorenBezeichnung } from './kreditorenMigration.js';
 import { migrateDateiQuarantaeneSchema } from './dateiQuarantaeneSchema.js';
 import { migrateSicherheitsalarmSchema } from './sicherheitsalarmSchema.js';
 import { migrateTsaNachweisSchema } from './tsaNachweisSchema.js';
@@ -25,7 +26,7 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'zahlungsziel', ddl: 'ALTER TABLE jobs ADD COLUMN zahlungsziel TEXT' },
   { column: 'rechnungsnummer', ddl: 'ALTER TABLE jobs ADD COLUMN rechnungsnummer TEXT' },
   { column: 'lieferant', ddl: 'ALTER TABLE jobs ADD COLUMN lieferant TEXT' },
-  { column: 'debitor_id', ddl: 'ALTER TABLE jobs ADD COLUMN debitor_id INTEGER REFERENCES debitoren(id)' },
+  { column: 'kreditor_id', ddl: 'ALTER TABLE jobs ADD COLUMN kreditor_id INTEGER REFERENCES kreditoren(id)' },
   { column: 'aufgesplittet_von', ddl: 'ALTER TABLE jobs ADD COLUMN aufgesplittet_von INTEGER REFERENCES jobs(id)' },
   { column: 'datei_hash', ddl: 'ALTER TABLE jobs ADD COLUMN datei_hash TEXT' },
   { column: 'hinweis_konto_id', ddl: 'ALTER TABLE jobs ADD COLUMN hinweis_konto_id INTEGER REFERENCES konten(id)' },
@@ -153,7 +154,7 @@ function migrateJobsTableQuelleCheck(db) {
         zahlungsziel TEXT,
         rechnungsnummer TEXT,
         lieferant TEXT,
-        debitor_id INTEGER REFERENCES debitoren(id),
+        kreditor_id INTEGER REFERENCES kreditoren(id),
         aufgesplittet_von INTEGER REFERENCES jobs(id),
         datei_hash TEXT,
         hinweis_konto_id INTEGER REFERENCES konten(id),
@@ -181,7 +182,7 @@ function migrateJobsTableQuelleCheck(db) {
         abgelehnt_von, ablehnungsgrund, fetched_by_n8n_at, thumbnail_pfad, freigabe1_eskaliert_von,
         freigabe1_eskalationsgrund, freigabe2_eskaliert_von, freigabe2_eskalationsgrund,
         reminder_gesendet_at, eskalation_gesendet_at, archiviert_am, freigabe1_eskaliert_an_admin,
-        freigabe2_eskaliert_an_admin, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id,
+        freigabe2_eskaliert_an_admin, betrag, zahlungsziel, rechnungsnummer, lieferant, kreditor_id,
         aufgesplittet_von, datei_hash, hinweis_konto_id, zeitstempel_gesetzt_am,
         zeitstempel_datei_hash, abgeschlossen_am, qr_iban, qr_referenz, qr_betrag, qr_waehrung,
         qr_creditor_name, qr_erkannt_am, typ, rechnungsposition, gruppe_pdf_pfad,
@@ -192,7 +193,7 @@ function migrateJobsTableQuelleCheck(db) {
         abgelehnt_von, ablehnungsgrund, fetched_by_n8n_at, thumbnail_pfad, freigabe1_eskaliert_von,
         freigabe1_eskalationsgrund, freigabe2_eskaliert_von, freigabe2_eskalationsgrund,
         reminder_gesendet_at, eskalation_gesendet_at, archiviert_am, freigabe1_eskaliert_an_admin,
-        freigabe2_eskaliert_an_admin, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id,
+        freigabe2_eskaliert_an_admin, betrag, zahlungsziel, rechnungsnummer, lieferant, kreditor_id,
         aufgesplittet_von, datei_hash, hinweis_konto_id, zeitstempel_gesetzt_am,
         zeitstempel_datei_hash, abgeschlossen_am, qr_iban, qr_referenz, qr_betrag, qr_waehrung,
         qr_creditor_name, qr_erkannt_am, typ, rechnungsposition, gruppe_pdf_pfad,
@@ -440,6 +441,8 @@ function migratePersonBerechtigungenTable(db) {
     db.exec(`
       CREATE TABLE person_berechtigungen (
         person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+        -- Historischer Zwischenstand: 'debitoren_verwalten' wird erst in migrateSecuritySchema
+        -- auf 'kreditoren_verwalten' abgebildet.
         berechtigung TEXT NOT NULL CHECK (berechtigung IN (
           'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
           'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen', 'pool_zuweisen'
@@ -737,6 +740,8 @@ export function openDatabase(dbPath) {
   db.function('audit_request_id', currentAuditRequestId);
   db.function('audit_operation_id', () => currentAuditOperation()?.id || null);
   db.function('audit_operation_kind', () => currentAuditOperation()?.kind || null);
+  // Vor schema.sql: benennt debitoren/debitor_* in bestehenden Datenbanken um (siehe Datei).
+  migrateKreditorenBezeichnung(db);
   const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
   migrateJobsTableQuelleCheck(db);

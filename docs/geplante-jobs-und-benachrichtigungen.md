@@ -241,7 +241,7 @@ codierten Strings.
 | `ablehnung` | Rechnung bei Kontierung oder Freigabe 2 abgelehnt |
 | `sync-fehler` | ChurchTools-Sync fehlgeschlagen oder abgebrochen — **immer sofort**, unabhängig vom Batching-Schalter |
 | `iban-warnung` | QR-Code-IBAN weicht von der hinterlegten Lieferanten-IBAN ab — **immer sofort**, unabhängig vom Batching-Schalter |
-| `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Debitor erfasst |
+| `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Kreditor erfasst |
 | `kk-abrechnung-zugewiesen` | Kreditkartenabrechnung (manuell oder automatisch erkannt) einer Karte zugeordnet — geht an die verantwortliche Person |
 | `kk-beleg-erinnerung` | seit langem offener Kreditkartenbeleg/-entwurf bzw. noch nicht abgeglichene Kreditkartenabrechnung (Job `kk-beleg-erinnerungen`, siehe oben) |
 | `kk-beleg-eingegangen` | per Mail eingereichter Kreditkartenbeleg als Entwurf angelegt — **immer sofort**, unabhängig vom Batching-Schalter (Link zum Vervollständigen soll nicht bis zum nächsten Digest warten) |

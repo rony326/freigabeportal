@@ -8,7 +8,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createDebitor } from '../../src/db/debitorenRepo.js';
+import { createKreditor } from '../../src/db/kreditorenRepo.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
@@ -66,7 +66,7 @@ test('Kontierung → Freigabe 2 Ablehnen → Meine abgelehnten Jobs → Überarb
   upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
 
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
   const createRes = await request(app)
@@ -81,7 +81,7 @@ test('Kontierung → Freigabe 2 Ablehnen → Meine abgelehnten Jobs → Überarb
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
   const freigeber1Token = await fetchCsrfToken(freigeber1Agent, '/pool');
   await freigeber1Agent.post(`/api/pool/${jobId}/beanspruchen`).type('form').send({ _csrf: freigeber1Token });
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
 
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'] });
   const freigeber2Token = await fetchCsrfToken(freigeber2Agent, '/pool');
@@ -98,7 +98,7 @@ test('Kontierung → Freigabe 2 Ablehnen → Meine abgelehnten Jobs → Überarb
   assert.equal(ueberarbeitenRes.status, 302);
   assert.equal(ueberarbeitenRes.headers.location, `/kontierung/${jobId}`);
 
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
   const freigebenRes = await freigeber2Agent
     .post(`/freigabe2/${jobId}`)
     .type('form')
@@ -137,7 +137,7 @@ test('a job rejected twice before final approval carries both rejections in the 
   upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
 
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
   const createRes = await request(app)
@@ -155,11 +155,11 @@ test('a job rejected twice before final approval carries both rejections in the 
 
   await freigeber1Agent.post(`/api/pool/${jobId}/beanspruchen`).type('form').send({ _csrf: freigeber1Token });
   for (const grund of ['Erster Ablehnungsgrund', 'Zweiter Ablehnungsgrund']) {
-    await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
+    await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
     await freigeber2Agent.post(`/freigabe2/${jobId}`).type('form').send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: grund, _csrf: freigeber2Token });
     await freigeber1Agent.post(`/abgelehnt/${jobId}/ueberarbeiten`).type('form').send({ _csrf: freigeber1Token });
   }
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
   await freigeber2Agent.post(`/freigabe2/${jobId}`).type('form').send({ aktion: 'freigeben', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber2Token });
 
   const abholbereitRes = await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');

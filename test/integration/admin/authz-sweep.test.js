@@ -10,7 +10,7 @@
 // (requirePermission for the grantable areas, requireRole('superadmin')
 // for the three hard-locked ones). This test sweeps every known
 // route/method combination across the ten admin router families below
-// (konten, debitoren, kreditkarten, eskalation, erscheinungsbild, personen,
+// (konten, kreditoren, kreditkarten, eskalation, erscheinungsbild, personen,
 // mails, abgelehnt, audit-log, geplante-jobs — zeitstempel and sync are
 // exercised by the second test below instead) against the real app and
 // confirms each returns 401 when no session/cookie is present at all.
@@ -54,16 +54,16 @@ const ADMIN_ROUTES = [
   { method: 'get', path: '/admin/konten/1/bearbeiten' },
   { method: 'post', path: '/admin/konten/1' },
   { method: 'post', path: '/admin/konten/1/deaktivieren' },
-  // debitoren (9)
-  { method: 'get', path: '/admin/debitoren' },
-  { method: 'post', path: '/admin/debitoren' },
-  { method: 'get', path: '/admin/debitoren/1/bearbeiten' },
-  { method: 'post', path: '/admin/debitoren/1' },
-  { method: 'post', path: '/admin/debitoren/1/deaktivieren' },
-  { method: 'post', path: '/admin/debitoren/regeln' },
-  { method: 'get', path: '/admin/debitoren/regeln/1/bearbeiten' },
-  { method: 'post', path: '/admin/debitoren/regeln/1' },
-  { method: 'post', path: '/admin/debitoren/regeln/1/loeschen' },
+  // kreditoren (9)
+  { method: 'get', path: '/admin/kreditoren' },
+  { method: 'post', path: '/admin/kreditoren' },
+  { method: 'get', path: '/admin/kreditoren/1/bearbeiten' },
+  { method: 'post', path: '/admin/kreditoren/1' },
+  { method: 'post', path: '/admin/kreditoren/1/deaktivieren' },
+  { method: 'post', path: '/admin/kreditoren/regeln' },
+  { method: 'get', path: '/admin/kreditoren/regeln/1/bearbeiten' },
+  { method: 'post', path: '/admin/kreditoren/regeln/1' },
+  { method: 'post', path: '/admin/kreditoren/regeln/1/loeschen' },
   // kreditkarten (7)
   { method: 'get', path: '/admin/kreditkarten' },
   { method: 'get', path: '/admin/kreditkarten/neu' },
@@ -162,7 +162,7 @@ test('the real createApp wiring enforces the superadmin-only hard lock and the m
 
   const VERGEBBAR = [
     { method: 'get', path: '/admin/konten' },
-    { method: 'get', path: '/admin/debitoren' },
+    { method: 'get', path: '/admin/kreditoren' },
     { method: 'get', path: '/admin/kreditkarten' },
     { method: 'get', path: '/admin/mails' },
     { method: 'get', path: '/admin/sync' },

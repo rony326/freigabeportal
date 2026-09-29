@@ -18,7 +18,7 @@ import { loadNavFlags } from './middleware/nav.js';
 import { loadBranding } from './middleware/branding.js';
 import { createBrandingRouter } from './routes/branding.js';
 import { createKontenRouter } from './routes/admin/konten.js';
-import { createDebitorenRouter } from './routes/admin/debitoren.js';
+import { createKreditorenRouter } from './routes/admin/kreditoren.js';
 import { createKreditkartenAdminRouter } from './routes/admin/kreditkarten.js';
 import { createEskalationRouter } from './routes/admin/eskalation.js';
 import { createErscheinungsbildRouter } from './routes/admin/erscheinungsbild.js';
@@ -153,7 +153,10 @@ export function createApp({ db, config }) {
     });
   });
   app.use('/admin/konten', requirePermission(db, config, 'konten_verwalten'), createKontenRouter({ db, csrfProtection }));
-  app.use('/admin/debitoren', requirePermission(db, config, 'debitoren_verwalten'), createDebitorenRouter({ db, csrfProtection }));
+  app.use('/admin/kreditoren', requirePermission(db, config, 'kreditoren_verwalten'), createKreditorenRouter({ db, csrfProtection }));
+  // Frueherer Pfad (fachlich falsch 'Debitoren'): Lesezeichen und vor dem Deployment geladene
+  // Formulare werden weitergeleitet; 308 erhaelt Methode und Body, die Pruefungen gelten am Ziel.
+  app.use('/admin/debitoren', (req, res) => res.redirect(req.method === 'GET' || req.method === 'HEAD' ? 301 : 308, `/admin/kreditoren${req.url.replace(/^\/(?=\?|$)/, '')}`));
   app.use('/admin/kreditkarten', requirePermission(db, config, 'kreditkarten_verwalten'), createKreditkartenAdminRouter({ db, csrfProtection }));
   app.use('/admin/eskalation', requireRole(config, 'superadmin'), createEskalationRouter({ db, csrfProtection }));
   app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config, csrfProtection }));

@@ -98,7 +98,7 @@ additive Rechte, unabhängig von ChurchTools-Gruppen
 (`src/middleware/permissions.js`, `src/db/personBerechtigungenRepo.js`):
 
 - `konten_verwalten`
-- `debitoren_verwalten`
+- `kreditoren_verwalten`
 - `geplante_jobs_verwalten`
 - `abgelehnt_verwalten`
 - `mails_einsehen`

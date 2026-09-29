@@ -405,10 +405,10 @@ test('openDatabase adds the qr_* columns via ALTER TABLE to an existing on-disk 
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('debitor_ibans table exists with a UNIQUE constraint on iban', () => {
+test('kreditor_ibans table exists with a UNIQUE constraint on iban', () => {
   const db = openDatabase(':memory:');
   const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
-  assert.ok(names.includes('debitor_ibans'));
+  assert.ok(names.includes('kreditor_ibans'));
   db.close();
 });
 

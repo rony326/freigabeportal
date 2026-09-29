@@ -77,9 +77,9 @@ hinterlegten Zuweisungsregel passt:
 
 ```mermaid
 flowchart TD
-    A["Neue Rechnung (n8n)"] --> B{"Absender per Regel<br/>(exakte Adresse oder Domain)<br/>einem Debitor zugeordnet?"}
+    A["Neue Rechnung (n8n)"] --> B{"Absender per Regel<br/>(exakte Adresse oder Domain)<br/>einem Kreditor zugeordnet?"}
     B -- nein --> P["Status: unzugewiesen<br/>(landet im Pool)"]
-    B -- ja --> C{"Debitor hat<br/>ein Default-Konto?"}
+    B -- ja --> C{"Kreditor hat<br/>ein Default-Konto?"}
     C -- nein --> P
     C -- ja --> D["Status: zugewiesen<br/>zugewiesen_an = Freigeber 1 des Kontos<br/>+ Zuweisungs-Mail an Freigeber 1"]
 ```
@@ -146,13 +146,13 @@ Zusätzlich, unabhängig vom Ausgang: ein optional mit hochgeladener
 `mergeBelegInPdf` (`src/services/belegAnhaengen.js`) als zusätzliche
 Seite(n) in die bestehende Rechnungs-PDF eingefügt — als PDF durch
 Seiten-Kopie, als Bild durch eine neue, bildgrosse Seite. Beim Kontieren
-mit hinterlegtem Debitor laufen ausserdem zwei unabhängige,
+mit hinterlegtem Kreditor laufen ausserdem zwei unabhängige,
 nicht-blockierende Prüfungen: der IBAN-Abgleich gegen den gescannten
 QR-Code (siehe
 [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)) sowie
-ein Duplikat-Check auf **Debitor + Rechnungsnummer** — stimmt die
+ein Duplikat-Check auf **Kreditor + Rechnungsnummer** — stimmt die
 eingegebene Rechnungsnummer mit einem bereits vorhandenen Job desselben
-Debitors überein (auch ein `abgelehnter`, aber kein `geloescht`-Job zählt
+Kreditors überein (auch ein `abgelehnter`, aber kein `geloescht`-Job zählt
 mit), wird ein `freigaben`-Eintrag `rechnungsnummer_duplikat` geschrieben
 und Freigeber 1+2 des gewählten Kontos sowie die kontierende Person per
 Mail informiert (`typ: 'rechnungsnummer-warnung'`, siehe

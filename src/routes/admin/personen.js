@@ -34,8 +34,10 @@ export function createPersonenRouter({ db, config, csrfProtection = (req, res, n
     if (!getPersonById(db, req.params.id)) {
       return res.status(404).render('error', { message: 'Person nicht gefunden.' });
     }
-    const angefordert = [].concat(req.body.berechtigungen || []);
-    const gueltig = angefordert.filter((b) => GRANTABLE_BERECHTIGUNGEN.includes(b));
+    // Ein vor der Umbenennung geladenes Formular sendet noch 'debitoren_verwalten'; ohne Abbildung
+    // wuerde das Recht beim Speichern still entzogen (docs/kreditoren-statt-debitoren.md).
+    const angefordert = [].concat(req.body.berechtigungen || []).map((b) => (b === 'debitoren_verwalten' ? 'kreditoren_verwalten' : b));
+    const gueltig = [...new Set(angefordert.filter((b) => GRANTABLE_BERECHTIGUNGEN.includes(b)))];
     setBerechtigungenForPerson(db, req.params.id, gueltig);
     res.redirect('/admin/personen');
   });

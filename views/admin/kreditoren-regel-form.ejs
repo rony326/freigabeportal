@@ -16,23 +16,23 @@
         <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
       </div>
     <% } %>
-    <form method="post" action="/admin/debitoren/regeln/<%= regel.id %>" class="col-12 col-md-8 col-lg-6">
+    <form method="post" action="/admin/kreditoren/regeln/<%= regel.id %>" class="col-12 col-md-8 col-lg-6">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="mb-3">
         <label class="form-label" for="absenderMuster">Absender-Muster (volle E-Mail-Adresse oder Domain)</label>
         <input type="text" class="form-control" id="absenderMuster" name="absenderMuster" value="<%= values.absenderMuster || '' %>" required>
       </div>
       <div class="mb-3">
-        <label class="form-label" for="debitorId">Debitor</label>
-        <select class="form-select" id="debitorId" name="debitorId" required>
+        <label class="form-label" for="kreditorId">Kreditor</label>
+        <select class="form-select" id="kreditorId" name="kreditorId" required>
           <option value="">— wählen —</option>
-          <% debitoren.forEach((d) => { %>
-            <option value="<%= d.id %>" <%= String(values.debitorId) === String(d.id) ? 'selected' : '' %>><%= d.name %></option>
+          <% kreditoren.forEach((d) => { %>
+            <option value="<%= d.id %>" <%= String(values.kreditorId) === String(d.id) ? 'selected' : '' %>><%= d.name %></option>
           <% }) %>
         </select>
       </div>
       <button type="submit" class="btn btn-primary">Speichern</button>
-      <a href="/admin/debitoren" class="btn btn-outline-secondary">Abbrechen</a>
+      <a href="/admin/kreditoren" class="btn btn-outline-secondary">Abbrechen</a>
     </form>
   </main>
   <%- include('../_footer') %>

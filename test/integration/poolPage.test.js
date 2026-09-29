@@ -125,19 +125,19 @@ test('GET /pool shows the quelle and absender that n8n submitted with the job', 
   db.close();
 });
 
-test('GET /pool shows the Debitor (Lieferant) name in its own column, and an em dash when unset', async () => {
+test('GET /pool shows the Kreditor (Lieferant) name in its own column, and an em dash when unset', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedBuchhaltungPerson(db);
-  const zugewiesenId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'mit-debitor.pdf', pdfPfad: '/tmp/a.pdf' });
+  const zugewiesenId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'mit-kreditor.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '50' WHERE id = ?").run(zugewiesenId);
-  updateKontierungMetadaten(db, zugewiesenId, { absender: null, betrag: null, zahlungsziel: null, rechnungsnummer: null, lieferant: 'ACME Grosshandel', debitorId: null });
-  createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'ohne-debitor.pdf', pdfPfad: '/tmp/b.pdf' });
+  updateKontierungMetadaten(db, zugewiesenId, { absender: null, betrag: null, zahlungsziel: null, rechnungsnummer: null, lieferant: 'ACME Grosshandel', kreditorId: null });
+  createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'ohne-kreditor.pdf', pdfPfad: '/tmp/b.pdf' });
   const app = buildTestApp(db);
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<th>Debitor<\/th>/);
+  assert.match(res.text, /<th>Kreditor<\/th>/);
   assert.match(res.text, /ACME Grosshandel/);
   db.close();
 });

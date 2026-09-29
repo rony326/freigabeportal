@@ -10,8 +10,8 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, setKontierung, getJobById, setQrDaten, updateKontierungMetadaten, createSplitJob, listSplitKinder } from '../../src/db/jobsRepo.js';
-import { createDebitor } from '../../src/db/debitorenRepo.js';
-import { createDebitorIban } from '../../src/db/debitorIbanRepo.js';
+import { createKreditor } from '../../src/db/kreditorenRepo.js';
+import { createKreditorIban } from '../../src/db/kreditorIbanRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import { seedDefaults, setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { createSpesenPosition } from '../../src/db/jobsRepo.js';
@@ -76,22 +76,22 @@ async function setup(t) {
   app.use('/freigabe2', requireLogin(), createFreigabe2Router({ db, config }));
   app.use('/admin/altfaelle', requireLogin(), createAltfaelleRouter({ db, config }));
 
-  async function rechnung({ qr = true, typ = 'rechnung', debitorIbans = null, betrag = '120.50', qrBetrag = '120.50', qrIban = QR_IBAN } = {}) {
+  async function rechnung({ qr = true, typ = 'rechnung', kreditorIbans = null, betrag = '120.50', qrBetrag = '120.50', qrIban = QR_IBAN } = {}) {
     const pdfPfad = join(dir, `rechnung-${Math.random().toString(36).slice(2)}.pdf`);
     const original = await buildPdfFixture(['Rechnung Seite 1']);
     writeFileSync(pdfPfad, original);
     const id = createJob(db, { eingangAm: '2026-09-01T08:00:00.000Z', quelle: 'lieferant', absender: 'lieferant@example.org', dateiname: 'rechnung.pdf', pdfPfad });
-    let debitorId = null;
-    if (debitorIbans) {
-      debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
-      for (const iban of debitorIbans) createDebitorIban(db, { debitorId, iban });
+    let kreditorId = null;
+    if (kreditorIbans) {
+      kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+      for (const iban of kreditorIbans) createKreditorIban(db, { kreditorId, iban });
     }
-    updateKontierungMetadaten(db, id, { absender: 'lieferant@example.org', betrag, zahlungsziel: '2026-10-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', debitorId, typ });
+    updateKontierungMetadaten(db, id, { absender: 'lieferant@example.org', betrag, zahlungsziel: '2026-10-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId, typ });
     if (qr) setQrDaten(db, id, { qrIban, qrReferenz: '210000000003139471430009017', qrBetrag, qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
     setKontierung(db, id, kontoId);
     createFreigabe(db, { jobId: id, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-09-01T09:00:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
     db.prepare("UPDATE jobs SET status = 'freigabe2', zugewiesen_an = '1' WHERE id = ?").run(id);
-    return { id, pdfPfad, original, debitorId };
+    return { id, pdfPfad, original, kreditorId };
   }
 
   const f2 = (id, body = {}) => request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '', ...body });
@@ -139,7 +139,7 @@ test('a QR invoice shows its payment data at Freigabe 2 and cannot be approved w
 
 test('a confirmed QR invoice freezes payment data, prints it on the stamp page and exports it unchanged after later edits', async (t) => {
   const s = await setup(t);
-  const { id } = await s.rechnung({ debitorIbans: [QR_IBAN] });
+  const { id } = await s.rechnung({ kreditorIbans: [QR_IBAN] });
   const { stand } = await s.review(id);
   const res = await s.f2(id, { zahlungsdaten_stand: stand, zahlungsdaten_bestaetigt: 'ja' });
   assert.equal(res.status, 302);
@@ -158,7 +158,7 @@ test('a confirmed QR invoice freezes payment data, prints it on the stamp page a
   // Everything below happens after Freigabe 2 and must not reach the export.
   s.db.prepare("UPDATE jobs SET qr_iban = ?, qr_creditor_name = 'Betrueger GmbH', betrag = '999.00', lieferant = 'Andere AG', typ = 'gutschrift' WHERE id = ?").run(ANDERE_IBAN, id);
   s.db.prepare("UPDATE konten SET kontonummer = '9999', bezeichnung = 'Umbenannt' WHERE id = ?").run(s.kontoId);
-  s.db.prepare('DELETE FROM debitor_ibans').run();
+  s.db.prepare('DELETE FROM kreditor_ibans').run();
 
   const [eintrag] = await s.abholbereit();
   assert.equal(eintrag.id, id);
@@ -182,7 +182,7 @@ test('a confirmed QR invoice freezes payment data, prints it on the stamp page a
 
 test('an IBAN not stored for the supplier needs a second, explicit acknowledgement', async (t) => {
   const s = await setup(t);
-  const { id } = await s.rechnung({ debitorIbans: [ANDERE_IBAN] });
+  const { id } = await s.rechnung({ kreditorIbans: [ANDERE_IBAN] });
   const { res, stand } = await s.review(id);
   assert.match(res.text, /fuer diesen Lieferanten nicht hinterlegt/);
   assert.match(res.text, /name="zahlungshinweise_bestaetigt"/);
@@ -199,10 +199,10 @@ test('an IBAN not stored for the supplier needs a second, explicit acknowledgeme
 
 test('a supplier IBAN change between review and submission invalidates the confirmation', async (t) => {
   const s = await setup(t);
-  const { id, debitorId } = await s.rechnung({ debitorIbans: [QR_IBAN] });
+  const { id, kreditorId } = await s.rechnung({ kreditorIbans: [QR_IBAN] });
   const { stand } = await s.review(id);
-  s.db.prepare('DELETE FROM debitor_ibans WHERE debitor_id = ?').run(debitorId);
-  createDebitorIban(s.db, { debitorId, iban: ANDERE_IBAN });
+  s.db.prepare('DELETE FROM kreditor_ibans WHERE kreditor_id = ?').run(kreditorId);
+  createKreditorIban(s.db, { kreditorId, iban: ANDERE_IBAN });
   const res = await s.f2(id, { zahlungsdaten_stand: stand, zahlungsdaten_bestaetigt: 'ja' });
   assert.equal(res.status, 409);
   assert.match(res.text, /geaendert/);
@@ -254,13 +254,13 @@ for (const [fall, optionen, art] of [
 
 test('a supplier IBAN change during the TSA request rolls the approval back instead of freezing a stale check', async (t) => {
   const s = await setup(t);
-  const { id, debitorId, pdfPfad, original } = await s.rechnung({ debitorIbans: [QR_IBAN] });
+  const { id, kreditorId, pdfPfad, original } = await s.rechnung({ kreditorIbans: [QR_IBAN] });
   const { stand } = await s.review(id);
   setConfigValue(s.db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
   const client = setupMockTsa('https://tsa.example.org/tsr');
   client.intercept({ path: '/tsr', method: 'POST' }).reply((options) => {
-    s.db.prepare('DELETE FROM debitor_ibans WHERE debitor_id = ?').run(debitorId);
-    createDebitorIban(s.db, { debitorId, iban: ANDERE_IBAN });
+    s.db.prepare('DELETE FROM kreditor_ibans WHERE kreditor_id = ?').run(kreditorId);
+    createKreditorIban(s.db, { kreditorId, iban: ANDERE_IBAN });
     return { statusCode: 200, data: signedTsaResponse(options), responseOptions: { headers: { 'content-type': 'application/timestamp-reply' } } };
   });
   const res = await s.f2(id, { zahlungsdaten_stand: stand, zahlungsdaten_bestaetigt: 'ja' });
@@ -290,7 +290,7 @@ async function gruppe(s, { qr = true, kinder = 2 } = {}) {
   const parentPfad = join(s.dir, `parent-${Math.random().toString(36).slice(2)}.pdf`);
   writeFileSync(parentPfad, await buildPdfFixture(['Rechnung Seite 1']));
   const parentId = createJob(s.db, { eingangAm: '2026-09-01T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'gruppe.pdf', pdfPfad: parentPfad });
-  updateKontierungMetadaten(s.db, parentId, { absender: null, betrag: '30.00', zahlungsziel: '2026-10-01', rechnungsnummer: 'RE-G', lieferant: 'Gruppen AG', debitorId: null, typ: 'rechnung' });
+  updateKontierungMetadaten(s.db, parentId, { absender: null, betrag: '30.00', zahlungsziel: '2026-10-01', rechnungsnummer: 'RE-G', lieferant: 'Gruppen AG', kreditorId: null, typ: 'rechnung' });
   if (qr) setQrDaten(s.db, parentId, { qrIban: QR_IBAN, qrReferenz: '210000000003139471430009017', qrBetrag: '30.00', qrWaehrung: 'CHF', qrCreditorName: 'Gruppen AG' });
   s.db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parentId);
   const ids = [];

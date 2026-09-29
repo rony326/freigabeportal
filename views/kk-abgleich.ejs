@@ -30,10 +30,10 @@
               <input class="form-control" id="gesamtbetrag" name="gesamtbetrag" inputmode="decimal" value="<%= werte.gesamtbetrag %>" required>
             </div>
             <div class="col-md-3">
-              <label class="form-label" for="debitorId">Kartenherausgeber</label>
-              <select class="form-select" id="debitorId" name="debitorId">
+              <label class="form-label" for="kreditorId">Kartenherausgeber</label>
+              <select class="form-select" id="kreditorId" name="kreditorId">
                 <option value="">— optional —</option>
-                <% debitoren.forEach((d) => { %><option value="<%= d.id %>" <%= String(d.id) === werte.debitorId ? 'selected' : '' %>><%= d.name %></option><% }) %>
+                <% kreditoren.forEach((d) => { %><option value="<%= d.id %>" <%= String(d.id) === werte.kreditorId ? 'selected' : '' %>><%= d.name %></option><% }) %>
               </select>
             </div>
             <div class="col-md-3">

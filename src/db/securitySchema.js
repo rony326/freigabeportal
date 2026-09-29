@@ -1,5 +1,5 @@
 const RIGHTS = [
-  'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
+  'konten_verwalten', 'kreditoren_verwalten', 'geplante_jobs_verwalten',
   'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen',
   'pool_zuweisen', 'sync_verwalten', 'workflow_eingreifen', 'kreditkarten_verwalten',
 ];
@@ -30,10 +30,14 @@ export function migrateSecuritySchema(db) {
   // aus RIGHTS kennt (inkl. des neuesten, 'kreditkarten_verwalten'): so wird auch eine DB neu
   // aufgebaut, die schon 'workflow_eingreifen', aber noch nicht 'kreditkarten_verwalten' kennt.
   const sql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'person_berechtigungen'").get().sql;
+  let umbenannteRechte = [];
   if (!RIGHTS.every((right) => sql.includes(`'${right}'`))) {
     // Gleiches Muster wie die Tabellen-Neuaufbauten in db/index.js: foreign_keys muss ausserhalb
     // der Transaktion abgeschaltet werden (innerhalb ist das Pragma wirkungslos), sonst bricht eine
     // einzige Zeile einer nicht mehr existierenden Person den Kopiervorgang und damit den Start ab.
+    // Fachliche Korrektur: das Recht heisst jetzt kreditoren_verwalten. Bestehende Zuweisungen
+    // werden beim Neuaufbau abgebildet (nicht verworfen) und unten einmalig protokolliert.
+    umbenannteRechte = db.prepare("SELECT person_id FROM person_berechtigungen WHERE berechtigung = 'debitoren_verwalten' ORDER BY person_id").all().map((row) => row.person_id);
     db.exec('PRAGMA foreign_keys = OFF');
     db.exec('BEGIN');
     try {
@@ -42,7 +46,8 @@ export function migrateSecuritySchema(db) {
           berechtigung TEXT NOT NULL CHECK (berechtigung IN (${RIGHTS.map((r) => `'${r}'`).join(',')})),
           PRIMARY KEY (person_id, berechtigung)
         );
-        INSERT INTO person_berechtigungen_security SELECT * FROM person_berechtigungen;
+        INSERT INTO person_berechtigungen_security (person_id, berechtigung)
+          SELECT person_id, CASE berechtigung WHEN 'debitoren_verwalten' THEN 'kreditoren_verwalten' ELSE berechtigung END FROM person_berechtigungen;
         DROP TABLE person_berechtigungen;
         ALTER TABLE person_berechtigungen_security RENAME TO person_berechtigungen;`);
       db.exec('COMMIT');
@@ -69,6 +74,11 @@ export function migrateSecuritySchema(db) {
   BEGIN SELECT RAISE(ABORT, 'Audit-Ereignisse sind unveraenderlich'); END;
   CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit_ereignisse
   BEGIN SELECT RAISE(ABORT, 'Audit-Ereignisse sind unveraenderlich'); END;`);
+  if (umbenannteRechte.length) {
+    db.prepare(`INSERT INTO audit_ereignisse (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher, begruendung)
+      VALUES (strftime('%Y-%m-%dT%H:%M:%fZ','now'), audit_actor_id(), audit_actor_name(), 'person_berechtigungen', 'debitoren_verwalten', 'recht_umbenannt', ?, ?)`)
+      .run(JSON.stringify({ von: 'debitoren_verwalten', nach: 'kreditoren_verwalten', personen: umbenannteRechte }), 'Fachliche Korrektur: Kreditoren statt Debitoren.');
+  }
 
   db.exec(`CREATE TABLE IF NOT EXISTS export_nachweise (
     id TEXT PRIMARY KEY,
@@ -92,8 +102,8 @@ export function migrateSecuritySchema(db) {
   }
 
   const tables = {
-    person_berechtigungen: 'person_id', konten: 'id', debitoren: 'id',
-    debitor_ibans: 'id', zuweisungsregeln: 'id', admin_config: 'key',
+    person_berechtigungen: 'person_id', konten: 'id', kreditoren: 'id',
+    kreditor_ibans: 'id', zuweisungsregeln: 'id', admin_config: 'key',
     personen: 'churchtools_person_id', jobs: 'id', freigaben: 'id',
     export_nachweise: 'id', archiv_quittungen: 'export_id',
     kreditkarten: 'id', kreditkarte_erfasser: 'kreditkarte_id', kk_belege: 'id',

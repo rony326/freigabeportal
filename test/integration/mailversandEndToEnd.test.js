@@ -8,7 +8,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
-import { createDebitor } from '../../src/db/debitorenRepo.js';
+import { createKreditor } from '../../src/db/kreditorenRepo.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { listMailLog } from '../../src/db/mailLogRepo.js';
 import { createApp } from '../../src/app.js';
@@ -82,8 +82,8 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
 
   // 1. Job creation with a matching Zuweisungsregel -> auto-assignment mail to freigeber1.
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
@@ -100,12 +100,12 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
   // 2. Freigeber 1 declares a conflict -> escalation mail to stellvertreter1.
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
   const freigeber1Token = await fetchCsrfToken(freigeber1Agent, '/pool');
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen', _csrf: freigeber1Token });
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen', _csrf: freigeber1Token });
 
   // 3. Stellvertreter 1 completes Kontierung + Freigabe 1 -> handoff mail to freigeber2.
   const stellvertreter1Agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
   const stellvertreter1Token = await fetchCsrfToken(stellvertreter1Agent, '/pool');
-  await stellvertreter1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: stellvertreter1Token });
+  await stellvertreter1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: stellvertreter1Token });
 
   // 4. Freigeber 2 declares a conflict -> escalation mail to stellvertreter2.
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'] });

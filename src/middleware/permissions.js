@@ -3,7 +3,7 @@ import { listBerechtigungenForPerson, personHasBerechtigung } from '../db/person
 
 export const GRANTABLE_BERECHTIGUNGEN = [
   'konten_verwalten',
-  'debitoren_verwalten',
+  'kreditoren_verwalten',
   'geplante_jobs_verwalten',
   'abgelehnt_verwalten',
   'mails_einsehen',
@@ -17,7 +17,7 @@ export const GRANTABLE_BERECHTIGUNGEN = [
 
 export const BERECHTIGUNG_LABELS = {
   konten_verwalten: 'Konten verwalten',
-  debitoren_verwalten: 'Debitoren verwalten',
+  kreditoren_verwalten: 'Kreditoren verwalten',
   geplante_jobs_verwalten: 'Geplante Jobs verwalten',
   abgelehnt_verwalten: 'Abgelehnte Rechnungen verwalten',
   mails_einsehen: 'Mail-Protokoll einsehen',

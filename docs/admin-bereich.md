@@ -19,7 +19,7 @@ feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 |---|---|---|
 | Dashboard | `/admin` | jedes Einzelrecht, `superadmin` oder `manager` |
 | Konten | `/admin/konten` | Einzelrecht `konten_verwalten` |
-| Debitoren | `/admin/debitoren` | Einzelrecht `debitoren_verwalten` |
+| Kreditoren | `/admin/kreditoren` | Einzelrecht `kreditoren_verwalten` |
 | Eskalationszeiten | `/admin/eskalation` | **nur** `superadmin` |
 | Erscheinungsbild | `/admin/erscheinungsbild` | **nur** `superadmin` |
 | Zeitstempel | `/admin/zeitstempel` | **nur** `superadmin` |
@@ -60,15 +60,15 @@ n8n-Eingang). Einzelrecht `kreditkarten_verwalten`. Details:
 [kreditkarten-belege.md](kreditkarten-belege.md#2-verwaltung-adminkreditkarten)
 und [kreditkarten-belege.md](kreditkarten-belege.md#6b-automatische-kartenerkennung).
 
-## Debitoren (`/admin/debitoren`)
+## Kreditoren (`/admin/kreditoren`)
 
-Drei zusammengehörige Tabellen auf einer Seite: **Debitoren**
+Drei zusammengehörige Tabellen auf einer Seite: **Kreditoren**
 (Lieferanten, optional mit Default-Konto), **Zuweisungsregeln**
-(Absender-Adresse/-Domain → Debitor, steuert die Auto-Zuweisung beim
-Rechnungseingang) und **hinterlegte IBANs** je Debitor (Basis des
+(Absender-Adresse/-Domain → Kreditor, steuert die Auto-Zuweisung beim
+Rechnungseingang) und **hinterlegte IBANs** je Kreditor (Basis des
 Betrugserkennungs-Abgleichs, siehe
 [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)). Ein
-Debitor lässt sich auch direkt aus der Kontierungs-Seite heraus neu
+Kreditor lässt sich auch direkt aus der Kontierungs-Seite heraus neu
 anlegen (`POST /kontierung/lieferanten`).
 
 ## Eskalationszeiten (`/admin/eskalation`)

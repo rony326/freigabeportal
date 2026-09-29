@@ -7,8 +7,9 @@ import {
 } from '../db/jobsRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
-import { getDebitorById } from '../db/debitorenRepo.js';
-import { listDebitorIbansByDebitor } from '../db/debitorIbanRepo.js';
+import { getKreditorById } from '../db/kreditorenRepo.js';
+import { listKreditorIbansByKreditor } from '../db/kreditorIbanRepo.js';
+import { kreditorNameVariablen } from './kreditorFelder.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger } from './notify.js';
 
@@ -46,8 +47,8 @@ export async function mergeBelegFuerJob(pdfPfad, { buffer }, mimetype) {
   writeFileSync(pdfPfad, merged);
 }
 
-export function pruefeIbanAbgleich(db, debitorId, qrIban) {
-  const hinterlegte = listDebitorIbansByDebitor(db, debitorId);
+export function pruefeIbanAbgleich(db, kreditorId, qrIban) {
+  const hinterlegte = listKreditorIbansByKreditor(db, kreditorId);
   if (hinterlegte.length === 0) return { status: 'kein_abgleich' };
   return { status: hinterlegte.some((row) => row.iban === qrIban) ? 'match' : 'mismatch' };
 }
@@ -245,14 +246,14 @@ export async function benachrichtigeNachAufsplitten(db, mailer, config, { job, e
 
 export async function pruefeIbanNachAufsplitten(db, mailer, config, { job, teile, konten, person, ip }) {
   // The main Kontierung submission runs this same check inline (see kontierung.js) — Aufsplitten
-  // used to bypass it entirely, since splitting never used to touch job.debitor_id/qr_iban
+  // used to bypass it entirely, since splitting never used to touch job.kreditor_id/qr_iban
   // at all. Run it once against the parent (which stays in the DB as a historical reference,
   // see markJobAufgesplittet), not per split child: the mismatch is a property of the
   // original invoice's IBAN vs. its Lieferant, not of any one Teil-Konto.
-  if (job.qr_iban && job.debitor_id) {
-    const debitor = getDebitorById(db, job.debitor_id);
-    if (debitor) {
-      const { status } = pruefeIbanAbgleich(db, debitor.id, job.qr_iban);
+  if (job.qr_iban && job.kreditor_id) {
+    const kreditor = getKreditorById(db, job.kreditor_id);
+    if (kreditor) {
+      const { status } = pruefeIbanAbgleich(db, kreditor.id, job.qr_iban);
       if (status === 'mismatch') {
         createFreigabe(db, {
           jobId: job.id,
@@ -261,7 +262,7 @@ export async function pruefeIbanNachAufsplitten(db, mailer, config, { job, teile
           zeitpunkt: new Date().toISOString(),
           ip,
           interessenskonflikt: false,
-          kommentar: `QR-IBAN ${job.qr_iban} weicht von der/den für ${debitor.name} hinterlegten IBAN(s) ab.`,
+          kommentar: `QR-IBAN ${job.qr_iban} weicht von der/den für ${kreditor.name} hinterlegten IBAN(s) ab.`,
           eskaliertVon: null,
         });
         const zusatzEmpfaenger = new Set(resolveEmpfaenger(db, config, getConfigValue(db, 'iban_abweichung_empfaenger')));
@@ -280,7 +281,7 @@ export async function pruefeIbanNachAufsplitten(db, mailer, config, { job, teile
             jobId: job.id,
             variablen: {
               jobDateiname: job.dateiname,
-              debitorName: debitor.name,
+              ...kreditorNameVariablen(kreditor.name),
               tatsaechlicheIban: job.qr_iban,
               link: `${config.publicBaseUrl}/kontierung/${job.id}`,
             },

@@ -57,22 +57,22 @@ zusätzlich informiert und können gezielt nachfragen.
 `pruefeIbanAbgleich` läuft identisch auch in der Aufsplitten-Route
 (`POST /kontierung/:id/aufsplitten`, siehe
 [rechnungs-workflow.md](rechnungs-workflow.md#5-aufsplitten-status-zugewiesen--aufgesplittet))
-für jeden gewählten Debitor — eine über Aufsplitten kontierte Teilrechnung
+für jeden gewählten Kreditor — eine über Aufsplitten kontierte Teilrechnung
 durchläuft denselben Abgleich gegen die hinterlegte Lieferanten-IBAN wie
 die normale Kontierung, inklusive derselben Warn-Mail bei Mismatch.
 
 ## Verwandter, unabhängiger Mechanismus: Rechnungsnummer-Duplikat-Check
 
 Beim Kontieren (normal wie via Aufsplitten) läuft zusätzlich ein zweiter,
-ebenfalls nicht-blockierender Check auf **Debitor + Rechnungsnummer** —
+ebenfalls nicht-blockierender Check auf **Kreditor + Rechnungsnummer** —
 unabhängig vom QR-Bill/IBAN-Mechanismus dieser Seite, aber nach demselben
 Muster (Warn-Mail + Audit-Log-Eintrag, blockiert nicht). Details:
 [rechnungs-workflow.md](rechnungs-workflow.md#2-kontierung-status-zugewiesen).
 
 ## Verwaltung der hinterlegten IBANs
 
-**Admin → Debitoren** (Recht `debitoren_verwalten`) verwaltet pro
-Lieferant beliebig viele IBANs (`debitor_ibans`, eindeutig über die
+**Admin → Kreditoren** (Recht `kreditoren_verwalten`) verwaltet pro
+Lieferant beliebig viele IBANs (`kreditor_ibans`, eindeutig über die
 gesamte Tabelle — eine IBAN kann nur einem Lieferanten zugeordnet sein).
 Validierung einer Schweizer IBAN: `^CH\d{2}[0-9A-Z]{17}$`
 (`src/services/ibanUtils.js`) — dieselbe Prüfung wird an allen drei

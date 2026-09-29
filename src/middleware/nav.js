@@ -12,7 +12,7 @@ export function loadNavFlags(db, config) {
     const hasPermission = (permission) => personHasPermission(db, config, person, permission);
     res.locals.adminNav = {
       konten: hasPermission('konten_verwalten'),
-      debitoren: hasPermission('debitoren_verwalten'),
+      kreditoren: hasPermission('kreditoren_verwalten'),
       eskalation: res.locals.isSuperadmin,
       mailEinstellungen: res.locals.isSuperadmin,
       erscheinungsbild: res.locals.isSuperadmin,

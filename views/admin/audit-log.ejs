@@ -21,6 +21,8 @@
             <tr><td><%= e.zeitpunkt %></td><td><%= e.person_name %> (<%= e.person_id %>)</td>
               <td><%= e.objekt %> #<%= e.objekt_id %></td><td><%= e.aktion %></td>
               <td><details><summary>Details</summary><p><%= e.begruendung || '' %></p>
+                <% if (e.request_id) { %><p>Request-ID: <code><%= e.request_id %></code></p><% } %>
+                <% if (e.lauf_id) { %><p>Lauf: <%= e.lauf_typ %> <code><%= e.lauf_id %></code></p><% } %>
                 <pre style="white-space:pre-wrap;overflow-wrap:anywhere"><%= e.vorher || '' %></pre>
                 <pre style="white-space:pre-wrap;overflow-wrap:anywhere"><%= e.nachher || '' %></pre>
               </details></td></tr>

@@ -13,8 +13,9 @@ import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { requireRole } from '../../../src/middleware/roles.js';
 import { createBackupRouter } from '../../../src/routes/admin/backup.js';
 import { createBackupKeyring } from '../../helpers/backupKeyring.js';
+import { auditContext, auditRequestContext } from '../../../src/services/auditContext.js';
 
-function buildTestApp(db, config) {
+function buildTestApp(db, config, { csrfProtection } = {}) {
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../../views', import.meta.url).pathname);
@@ -23,13 +24,15 @@ function buildTestApp(db, config) {
     next();
   });
   app.use(express.urlencoded({ extended: false }));
+  app.use(auditRequestContext);
   app.use((req, res, next) => {
     req.session = { personId: req.headers['x-test-person-id'] };
     next();
   });
   app.use(loadCurrentPerson(db));
+  app.use(auditContext);
   app.use(loadNavFlags(db, config));
-  app.use('/admin/backup', requireRole(config, 'superadmin'), createBackupRouter({ db, config }));
+  app.use('/admin/backup', requireRole(config, 'superadmin'), createBackupRouter({ db, config, csrfProtection }));
   return app;
 }
 
@@ -46,6 +49,65 @@ function testConfig(dir) {
     brandingDir: join(dir, 'branding'),
   };
 }
+
+test('backup page shows unresolved deletions with bounded pagination and escaped content', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'backup-unresolved-page-'));
+  const db = openDatabase(':memory:');
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  seedDefaults(db);
+  seedSuperadmin(db);
+  const ids = [];
+  for (let i = 0; i < 52; i++) {
+    ids.push(Number(db.prepare(`INSERT INTO audit_ereignisse
+      (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher)
+      VALUES ('2026-09-28', 'system', 'System', 'backup', ?, 'backup_loeschung_beabsichtigt', ?)`)
+      .run(i === 51 ? '<script>unsafe</script>' : `backup-${i}`, JSON.stringify({ operationId: `operation-${i}` })).lastInsertRowid));
+  }
+  const app = buildTestApp(db, testConfig(dir));
+  const first = await request(app).get('/admin/backup').set('x-test-person-id', '99');
+  assert.equal(first.status, 200);
+  assert.match(first.text, /Ungeklärte Backup-Löschungen/);
+  assert.match(first.text, /operation-51/);
+  assert.ok(!first.text.includes('operation-0</code>'));
+  assert.ok(!first.text.includes('<script>unsafe</script>'));
+  assert.ok(first.text.includes('&lt;script&gt;'));
+  assert.ok(first.text.includes(`?loeschungenVor=${ids[2]}`));
+  const next = await request(app).get(`/admin/backup?loeschungenVor=${ids[2]}`).set('x-test-person-id', '99');
+  assert.equal(next.status, 200);
+  assert.match(next.text, /operation-0/);
+  assert.ok(!next.text.includes('operation-51'));
+  const invalid = await request(app).get('/admin/backup?loeschungenVor=-1').set('x-test-person-id', '99');
+  assert.equal(invalid.status, 400);
+});
+
+test('manual review requires admin, CSRF and valid evidence and records actor plus request ID', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'backup-review-route-'));
+  const db = openDatabase(':memory:');
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  seedDefaults(db);
+  seedSuperadmin(db);
+  upsertPerson(db, { id: '55', vorname: 'Manager', nachname: 'Test', email: 'm@example.org', gruppen: ['30'], loggedInNow: true });
+  const id = Number(db.prepare(`INSERT INTO audit_ereignisse
+    (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher)
+    VALUES ('2026-09-29', 'system', 'System', 'backup', 'test.fpbak', 'backup_loeschung_beabsichtigt', '{}')`).run().lastInsertRowid);
+  const app = buildTestApp(db, testConfig(dir), {
+    csrfProtection(req, res, next) { return req.body._csrf === 'test-csrf' ? next() : res.sendStatus(403); },
+  });
+  const url = `/admin/backup/loeschungen/${id}/pruefen`;
+  const data = { _csrf: 'test-csrf', beobachtung: 'datei_nicht_vorhanden', begruendung: 'Dateibestand im Wartungsfenster kontrolliert.' };
+  assert.equal((await request(app).post(url).type('form').send(data)).status, 401);
+  assert.equal((await request(app).post(url).set('x-test-person-id', '55').type('form').send(data)).status, 403);
+  assert.equal((await request(app).post(url).set('x-test-person-id', '99').type('form').send({ ...data, _csrf: '' })).status, 403);
+  assert.equal((await request(app).post(url).set('x-test-person-id', '99').type('form').send({ ...data, begruendung: '' })).status, 400);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM audit_ereignisse WHERE aktion = 'backup_loeschung_geprueft'").get().n, 0);
+  const response = await request(app).post(url).set('x-test-person-id', '99').type('form').send(data);
+  assert.equal(response.status, 302);
+  const row = db.prepare(`SELECT e.person_id, r.request_id FROM audit_ereignisse e
+    JOIN audit_request_zuordnung r ON r.ereignis_id = e.id WHERE e.aktion = 'backup_loeschung_geprueft'`).get();
+  assert.equal(row.person_id, '99');
+  assert.equal(row.request_id, response.headers['x-request-id']);
+  assert.equal((await request(app).post(url).set('x-test-person-id', '99').type('form').send(data)).status, 409);
+});
 
 test('GET /admin/backup returns 401 without a session', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'backup-route-test-'));

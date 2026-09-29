@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readdirSync, statSync, unlinkSync, existsSync } from 'node:fs';
+import { readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
@@ -8,6 +8,7 @@ import { getPersonById } from '../../db/personenRepo.js';
 import { runDatenbankSicherungJob } from '../../services/cronJobs.js';
 import { BACKUP_DATEINAME_PATTERN } from '../../services/backup.js';
 import { openBackupDownload } from '../../services/backupDownload.js';
+import { deleteBackupWithAudit, listUnresolvedBackupDeletions, reviewBackupDeletion, BackupReviewError } from '../../services/backupAudit.js';
 
 const SICHERUNG_LOG_LIMIT = 10;
 
@@ -32,7 +33,8 @@ export function createBackupRouter({ db, config, csrfProtection = (req, res, nex
     });
   }
 
-  function ladeState({ getriggert = null, wiederhergestellt = false } = {}) {
+  function ladeState({ getriggert = null, wiederhergestellt = false, loeschungenVor = Number.MAX_SAFE_INTEGER } = {}) {
+    const offeneLoeschungen = listUnresolvedBackupDeletions(db, { before: loeschungenVor, limit: 51 });
     return {
       cronStunde: getConfigValue(db, 'backup_cron_stunde'),
       cronMinute: getConfigValue(db, 'backup_cron_minute'),
@@ -40,14 +42,18 @@ export function createBackupRouter({ db, config, csrfProtection = (req, res, nex
       backups: listeLokalerBackups(),
       sicherungLog: listRecentCronLog(db, 'datenbank-sicherung', SICHERUNG_LOG_LIMIT),
       wiederherstellungen: listeWiederherstellungen(),
+      offeneLoeschungen: offeneLoeschungen.slice(0, 50),
+      weitereOffeneLoeschungen: offeneLoeschungen.length > 50,
       getriggert,
       wiederhergestellt,
     };
   }
 
   router.get('/', (req, res) => {
+    const loeschungenVor = req.query.loeschungenVor === undefined ? Number.MAX_SAFE_INTEGER : Number(req.query.loeschungenVor);
+    if (!Number.isSafeInteger(loeschungenVor) || loeschungenVor < 1) return res.status(400).render('error', { message: 'Ungueltige Seitengrenze.' });
     res.render('admin/backup', {
-      ...ladeState({ getriggert: req.query.getriggert || null }),
+      ...ladeState({ getriggert: req.query.getriggert || null, loeschungenVor }),
       errors: [],
       restoreErrors: [],
       gespeichert: req.query.gespeichert === '1',
@@ -126,8 +132,18 @@ export function createBackupRouter({ db, config, csrfProtection = (req, res, nex
       return res.status(404).render('error', { message: 'Backup nicht gefunden.' });
     }
     const pfad = join(config.backupDir, name);
-    if (existsSync(pfad)) unlinkSync(pfad);
+    if (existsSync(pfad)) deleteBackupWithAudit(db, pfad, 'Manuelle Backup-Loeschung durch Administrator');
     res.redirect('/admin/backup');
+  });
+
+  router.post('/loeschungen/:id/pruefen', csrfProtection, (req, res, next) => {
+    try {
+      reviewBackupDeletion(db, Number(req.params.id), req.body?.beobachtung, req.body?.begruendung);
+      res.redirect('/admin/backup');
+    } catch (err) {
+      if (err instanceof BackupReviewError) return res.status(err.status).render('error', { message: err.message });
+      next(err);
+    }
   });
 
   router.post('/wiederherstellen', (req, res) => {

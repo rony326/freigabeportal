@@ -101,6 +101,10 @@ test('offline restore activates only a complete generation and keeps original fi
     assert.equal(audit.person_name, s.options.operator);
     assert.equal(audit.begruendung, s.options.reason);
     assert.equal(audit.objekt_id, s.options.expectedSha256);
+    const operation = db.prepare('SELECT * FROM audit_lauf_zuordnung WHERE ereignis_id = ?').get(audit.id);
+    assert.equal(operation.lauf_typ, 'backup-restore');
+    const journal = readFileSync(`${s.target.dbPath}.maintenance.jsonl`, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.ok(journal.filter((entry) => entry.aktion.startsWith('restore_')).every((entry) => entry.laufId === operation.lauf_id));
     assert.doesNotThrow(() => buildBackupArchive(db, { ...s.target, ...restored.current }));
   } finally { db.close(); }
 });

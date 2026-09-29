@@ -7,7 +7,7 @@ import { buildBackupArchive } from './backup.js';
 import { validateEncryptedBackup } from './backupEnvelope.js';
 import { openDatabase } from '../db/index.js';
 import { logBackupWiederherstellung } from '../db/backupWiederherstellungenRepo.js';
-import { withAuditActor } from './auditContext.js';
+import { withAuditActor, withAuditOperation, currentAuditOperation } from './auditContext.js';
 import { acquireStorageLock, storagePaths, readStoragePointer, absoluteStorageConfig, atomicJson, syncDirectory } from './storageState.js';
 
 function maintenanceIdentity(options) {
@@ -19,7 +19,7 @@ function maintenanceIdentity(options) {
 
 function journal(paths, event) {
   const fd = openSync(`${paths.baseDbPath}.maintenance.jsonl`, 'a', 0o600);
-  try { writeFileSync(fd, `${JSON.stringify({ ...event, zeitpunkt: new Date().toISOString() })}\n`); fsyncSync(fd); }
+  try { writeFileSync(fd, `${JSON.stringify({ ...event, laufId: currentAuditOperation()?.id || null, zeitpunkt: new Date().toISOString() })}\n`); fsyncSync(fd); }
   finally { closeSync(fd); }
   syncDirectory(dirname(paths.baseDbPath));
 }
@@ -47,7 +47,10 @@ function isWithin(path, root) {
   return !suffix || suffix !== '..' && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix);
 }
 
-export function restoreOffline(buffer, config, options = {}) {
+export const restoreOffline = (buffer, config, options = {}) =>
+  withAuditOperation('backup-restore', () => restoreOfflineInternal(buffer, config, options));
+
+function restoreOfflineInternal(buffer, config, options) {
   const identity = maintenanceIdentity(options);
   const digest = createHash('sha256').update(buffer).digest('hex');
   if (typeof options.expectedSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(options.expectedSha256) || digest !== options.expectedSha256) {
@@ -142,7 +145,10 @@ export function restoreOffline(buffer, config, options = {}) {
   } finally { lock.release(); }
 }
 
-export function rollbackOffline(config, options = {}) {
+export const rollbackOffline = (config, options = {}) =>
+  withAuditOperation('backup-rollback', () => rollbackOfflineInternal(config, options));
+
+function rollbackOfflineInternal(config, options) {
   const identity = maintenanceIdentity(options);
   const lock = acquireStorageLock(config, 'rollback');
   try {

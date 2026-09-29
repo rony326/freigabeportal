@@ -6,6 +6,8 @@ import { tsaTrustOptions } from './tsaTrust.js';
 import { hasMatureArchiveReceipt, archivedBytesMatch } from './archiveReceipt.js';
 import { backupDateiname, ENCRYPTED_BACKUP_DATEINAME_PATTERN } from './backup.js';
 import { buildEncryptedBackup, publishEncryptedBackup } from './backupEnvelope.js';
+import { deleteBackupWithAudit } from './backupAudit.js';
+import { auditedJob } from './auditOperation.js';
 import { runPersonenSync } from './sync.js';
 import { hasRecentRunningSync } from '../db/syncLogRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -75,7 +77,9 @@ async function benachrichtigeSyncFehler(db, config, mailer, meldung) {
   }
 }
 
-export async function runSyncPersonenJob(db, config, mailer) {
+export const runSyncPersonenJob = auditedJob('sync-personen', runSyncPersonenJobInternal);
+
+async function runSyncPersonenJobInternal(db, config, mailer) {
   if (hasRecentRunningSync(db)) {
     return { status: 'uebersprungen', meldung: 'Ein Sync-Lauf ist bereits aktiv' };
   }
@@ -92,7 +96,9 @@ export async function runSyncPersonenJob(db, config, mailer) {
   }
 }
 
-export async function runPoolErinnerungenJob(db, config, mailer) {
+export const runPoolErinnerungenJob = auditedJob('pool-erinnerungen', runPoolErinnerungenJobInternal);
+
+async function runPoolErinnerungenJobInternal(db, config, mailer) {
   const gestartetAm = new Date().toISOString();
   try {
     const reminderStunden = Number(getConfigValue(db, 'reminder_stunden'));
@@ -153,7 +159,9 @@ export async function runPoolErinnerungenJob(db, config, mailer) {
   }
 }
 
-export async function runFreigabe2ErinnerungenJob(db, config, mailer) {
+export const runFreigabe2ErinnerungenJob = auditedJob('freigabe2-erinnerungen', runFreigabe2ErinnerungenJobInternal);
+
+async function runFreigabe2ErinnerungenJobInternal(db, config, mailer) {
   const gestartetAm = new Date().toISOString();
   try {
     const reminderStunden = Number(getConfigValue(db, 'freigabe2_reminder_stunden'));
@@ -222,7 +230,9 @@ export async function runFreigabe2ErinnerungenJob(db, config, mailer) {
   }
 }
 
-export function runPdfBereinigungJob(db, config) {
+export const runPdfBereinigungJob = auditedJob('pdf-bereinigung', runPdfBereinigungJobInternal);
+
+function runPdfBereinigungJobInternal(db, config) {
   const gestartetAm = new Date().toISOString();
   let archiviert = 0;
   try {
@@ -343,7 +353,9 @@ export function runPdfBereinigungJob(db, config) {
 // scheduled run is still mid-batch. Same start/finish/hasRecentRunning pattern as
 // runSyncPersonenJob's hasRecentRunningSync guard, just scoped to cron_log via
 // startCronLauf/finishCronLauf/hasRecentRunningCronLauf instead of sync_log.
-export async function runZeitstempelNachholenJob(db, config) {
+export const runZeitstempelNachholenJob = auditedJob('zeitstempel-nachholen', runZeitstempelNachholenJobInternal);
+
+async function runZeitstempelNachholenJobInternal(db, config) {
   const tsaUrl = getConfigValue(db, 'zeitstempel_tsa_url');
   if (!tsaUrl) {
     return { status: 'uebersprungen', nachgeholt: 0 };
@@ -426,7 +438,9 @@ export async function runZeitstempelNachholenJob(db, config) {
 // Läuft wie zeitstempel-nachholen mit Zwei-Phasen-Logging (Overlap-Guard) statt des
 // Einzelschuss-logCronLauf der schnellen Jobs -- das Zippen von JOBS_DIR/BRANDING_DIR kann bei
 // vielen Dateien länger dauern als pool-erinnerungen/pdf-bereinigung.
-export function runDatenbankSicherungJob(db, config) {
+export const runDatenbankSicherungJob = auditedJob('datenbank-sicherung', runDatenbankSicherungJobInternal);
+
+function runDatenbankSicherungJobInternal(db, config) {
   if (hasRecentRunningCronLauf(db, 'datenbank-sicherung')) {
     return { status: 'uebersprungen', meldung: 'Ein Backup-Lauf ist bereits aktiv' };
   }
@@ -451,7 +465,7 @@ export function runDatenbankSicherungJob(db, config) {
         .sort();
       const zuLoeschendeAnzahl = vorhandene.length - aufbewahrungAnzahl;
       for (let i = 0; i < zuLoeschendeAnzahl; i += 1) {
-        unlinkSync(join(config.backupDir, vorhandene[i]));
+        deleteBackupWithAudit(db, join(config.backupDir, vorhandene[i]), 'Automatische Backup-Retention');
         bereinigt += 1;
       }
     } catch (err) {
@@ -476,7 +490,9 @@ export function runDatenbankSicherungJob(db, config) {
 // beschädigtes Kind-PDF -- oder die zum Zeitpunkt des letzten Auslösers noch unvollständig war.
 // Jede Gruppe wird unabhängig versucht: ein fehlerhaftes Kind-PDF in einer Gruppe darf die
 // anderen Gruppen im selben Lauf nicht blockieren.
-export async function runSplitGruppenNachholenJob(db, config) {
+export const runSplitGruppenNachholenJob = auditedJob('split-gruppen-nachholen', runSplitGruppenNachholenJobInternal);
+
+async function runSplitGruppenNachholenJobInternal(db, config) {
   if (hasRecentRunningCronLauf(db, 'split-gruppen-nachholen')) {
     return { status: 'uebersprungen', nachgeholt: 0, meldung: 'Ein Splitgruppen-Nachholen-Lauf ist bereits aktiv' };
   }
@@ -510,7 +526,9 @@ export async function runSplitGruppenNachholenJob(db, config) {
 // aber noch nicht versendeten mail_log-Zeilen (status = 'geplant') pro Empfänger und verschickt
 // dafür eine einzige Digest-Mail. Läuft mit Überlappungsschutz wie datenbank-sicherung/
 // zeitstempel-nachholen, da pro Empfänger ein echter SMTP-Roundtrip stattfindet.
-export async function runMailDigestJob(db, config, mailer) {
+export const runMailDigestJob = auditedJob('mail-digest', runMailDigestJobInternal);
+
+async function runMailDigestJobInternal(db, config, mailer) {
   if (hasRecentRunningCronLauf(db, 'mail-digest')) {
     return { status: 'uebersprungen', versendet: 0, empfaenger: 0, meldung: 'Ein Mail-Digest-Lauf ist bereits aktiv' };
   }
@@ -603,7 +621,9 @@ export async function runMailDigestJob(db, config, mailer) {
 // gleichzeitig fällig sind; und (2) markierte Kreditkartenabrechnungen, die seit ebenso langer
 // Zeit auf den Abgleich (kkAbgleich.js) warten. Jede Erinnerung wird pro Beleg/Abrechnung nur
 // einmal pro Intervall verschickt (letzte_erinnerung_am / kk_erinnert_am).
-export async function runKkBelegErinnerungenJob(db, config, mailer) {
+export const runKkBelegErinnerungenJob = auditedJob('kk-beleg-erinnerungen', runKkBelegErinnerungenJobInternal);
+
+async function runKkBelegErinnerungenJobInternal(db, config, mailer) {
   if (getConfigValue(db, 'modul_kreditkarten_aktiv') !== '1' || getConfigValue(db, 'kk_beleg_erinnerungen_aktiv') !== '1') {
     return { status: 'uebersprungen' };
   }

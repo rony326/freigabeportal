@@ -1,6 +1,26 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 
 const context = new AsyncLocalStorage();
+const requestContext = new AsyncLocalStorage();
+const operationContext = new AsyncLocalStorage();
+
+export function currentAuditOperation() { return operationContext.getStore() || null; }
+
+export function withAuditOperation(kind, action) {
+  return operationContext.run({ id: randomUUID(), kind }, action);
+}
+
+export function currentAuditRequestId() {
+  return requestContext.getStore() || null;
+}
+
+export function auditRequestContext(req, res, next) {
+  // Client-supplied identifiers must not merge unrelated requests or inject log content.
+  const requestId = randomUUID();
+  res.setHeader('X-Request-ID', requestId);
+  return requestContext.run(requestId, next);
+}
 
 export function currentAuditActor() {
   return context.getStore() || { id: 'system', name: 'System' };
@@ -28,6 +48,9 @@ export function auditContext(req, res, next) {
 export function mitAuditKontext(middleware) {
   return (req, res, callback) => {
     const store = context.getStore();
-    middleware(req, res, (...args) => (store ? context.run(store, () => callback(...args)) : callback(...args)));
+    const requestId = currentAuditRequestId();
+    const operation = currentAuditOperation();
+    middleware(req, res, (...args) => operationContext.run(operation, () => requestContext.run(requestId, () =>
+      store ? context.run(store, () => callback(...args)) : callback(...args))));
   };
 }

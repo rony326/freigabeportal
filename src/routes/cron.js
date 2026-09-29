@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { machineAuditContext } from '../services/auditContext.js';
 import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob } from '../services/cronJobs.js';
 
 function httpStatusFuer(status) {
@@ -16,6 +17,7 @@ function httpStatusFuer(status) {
 // and as a fallback for anyone who does have a working external scheduler.
 export function createCronRouter({ db, config, mailer }) {
   const router = Router();
+  router.use(machineAuditContext('service:cron', 'Cron API'));
 
   router.post('/sync-personen', async (req, res, next) => {
     try {

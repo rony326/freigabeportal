@@ -12,7 +12,7 @@
     <%- include('./_nav') %>
     <h1>Datenbank-Backup</h1>
     <div class="alert alert-warning">
-      Jedes Backup-Archiv enthält sämtliche Rechnungsdaten und Geheimnisse im Klartext (u. a. das RFC3161-TSA-Passwort) — Downloads entsprechend sicher aufbewahren.
+      Alte ZIP-Backups enthalten Rechnungsdaten und Geheimnisse im Klartext. Neue FPBAK-Backups sind verschlüsselt; Schlüssel getrennt aufbewahren.
     </div>
     <% if (errors.length > 0) { %>
       <div class="alert alert-danger">
@@ -68,6 +68,35 @@
       <% } %>
     <% } %>
 
+    <% if (offeneLoeschungen.length) { %>
+      <section class="mt-4" aria-labelledby="offene-loeschungen">
+        <h2 class="h5" id="offene-loeschungen">Ungeklärte Backup-Löschungen</h2>
+        <div class="table-responsive"><table class="table">
+          <thead><tr><th>Zeitpunkt</th><th>Datei</th><th>Person</th><th>Vorgang</th><th>Prüfung</th></tr></thead>
+          <tbody><% offeneLoeschungen.forEach((eintrag) => { %>
+            <tr><td><%= eintrag.zeitpunkt %></td><td style="overflow-wrap:anywhere"><%= eintrag.dateiname %></td>
+              <td><%= eintrag.person_name %></td><td><code><%= eintrag.operation_id || 'Ohne Vorgangs-ID' %></code></td>
+              <td><details><summary>Prüfung erfassen</summary>
+                <form method="post" action="/admin/backup/loeschungen/<%= eintrag.id %>/pruefen" style="min-width:220px;max-width:360px">
+                  <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                  <label class="form-label mt-2" for="bestand-<%= eintrag.id %>">Festgestellter Dateibestand</label>
+                  <select class="form-select form-select-sm" id="bestand-<%= eintrag.id %>" name="beobachtung" required>
+                    <option value="">Bitte wählen</option>
+                    <option value="datei_vorhanden">Datei vorhanden</option>
+                    <option value="datei_nicht_vorhanden">Datei nicht vorhanden</option>
+                  </select>
+                  <label class="form-label mt-2" for="begruendung-<%= eintrag.id %>">Prüfergebnis und Begründung</label>
+                  <textarea class="form-control form-control-sm" id="begruendung-<%= eintrag.id %>" name="begruendung" minlength="10" maxlength="2000" rows="3" required></textarea>
+                  <button class="btn btn-outline-primary btn-sm mt-2" type="submit">Prüfung abschließen</button>
+                </form>
+              </details></td></tr>
+          <% }) %></tbody>
+        </table></div>
+        <p><a href="/admin/backup">Neueste Vorgänge</a>
+          <% if (weitereOffeneLoeschungen) { %> · <a href="?loeschungenVor=<%= offeneLoeschungen[offeneLoeschungen.length - 1].id %>">Ältere Vorgänge</a><% } %>
+        </p>
+      </section>
+    <% } %>
     <h2 class="h5 mt-4">Lokale Backups</h2>
     <div class="table-responsive">
       <table class="table align-middle">

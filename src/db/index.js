@@ -2,7 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { currentAuditActor } from '../services/auditContext.js';
+import { currentAuditActor, currentAuditRequestId, currentAuditOperation } from '../services/auditContext.js';
+import { migrateAuditRequestSchema } from './auditRequestSchema.js';
 import { migrateSecuritySchema } from './securitySchema.js';
 import { migrateExportIntegritaetSchema } from './exportIntegritaetSchema.js';
 
@@ -707,6 +708,9 @@ export function openDatabase(dbPath) {
   const db = new DatabaseSync(dbPath);
   db.function('audit_actor_id', () => currentAuditActor().id);
   db.function('audit_actor_name', () => currentAuditActor().name);
+  db.function('audit_request_id', currentAuditRequestId);
+  db.function('audit_operation_id', () => currentAuditOperation()?.id || null);
+  db.function('audit_operation_kind', () => currentAuditOperation()?.kind || null);
   const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
   migrateJobsTableQuelleCheck(db);
@@ -728,5 +732,6 @@ export function openDatabase(dbPath) {
   // der aktuellen Spaltenliste neu an. person_berechtigungen gehört allein migrateSecuritySchema.
   migrateExportIntegritaetSchema(db);
   migrateSecuritySchema(db);
+  migrateAuditRequestSchema(db);
   return db;
 }

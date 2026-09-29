@@ -52,7 +52,7 @@ import { createKreditkarteRouter } from './routes/kreditkarte.js';
 import { createMailerOrFallback } from './services/mailer.js';
 import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
 import { getVersionInfo } from './utils/version.js';
-import { auditContext } from './services/auditContext.js';
+import { auditContext, auditRequestContext } from './services/auditContext.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -94,6 +94,7 @@ export function createApp({ db, config }) {
     );
     next();
   });
+  app.use(auditRequestContext);
   app.use(express.static(join(__dirname, '..', 'public')));
   app.use(loadBranding(db));
   app.use(express.json());

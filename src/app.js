@@ -53,6 +53,7 @@ import { createMailerOrFallback } from './services/mailer.js';
 import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
 import { getVersionInfo } from './utils/version.js';
 import { auditContext, auditRequestContext } from './services/auditContext.js';
+import { zugriffsAuditMiddleware, meldeZugriffVerweigert } from './services/zugriffsAudit.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -131,6 +132,7 @@ export function createApp({ db, config }) {
   });
   app.use(loadCurrentPerson(db));
   app.use(auditContext);
+  app.use(zugriffsAuditMiddleware(db));
   app.use(loadNavFlags(db, config));
 
   const mailer = createMailerOrFallback(config.smtp);
@@ -209,6 +211,8 @@ export function createApp({ db, config }) {
     if (err.code === 'EBADCSRFTOKEN') {
       // Most likely a stale/expired form (session changed since it was loaded, e.g. logged out
       // and back in another tab) rather than an actual attack — no need to log.stack this one.
+      // Still recorded (throttled, without the submitted token) as a denied access.
+      meldeZugriffVerweigert(req, { grund: 'csrf', status: 403 });
       return res
         .status(403)
         .render('error', { message: 'Sicherheitsprüfung fehlgeschlagen (ungültiges oder abgelaufenes Formular). Bitte lade die Seite neu und versuche es erneut.' });

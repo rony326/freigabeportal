@@ -7,6 +7,7 @@ import { hasMatureArchiveReceipt, archivedBytesMatch } from './archiveReceipt.js
 import { backupDateiname, ENCRYPTED_BACKUP_DATEINAME_PATTERN } from './backup.js';
 import { buildEncryptedBackup, publishEncryptedBackup } from './backupEnvelope.js';
 import { deleteBackupWithAudit } from './backupAudit.js';
+import { loescheDateiMitAudit } from './dateiAudit.js';
 import { auditedJob } from './auditOperation.js';
 import { runPersonenSync } from './sync.js';
 import { hasRecentRunningSync } from '../db/syncLogRepo.js';
@@ -232,30 +233,25 @@ async function runFreigabe2ErinnerungenJobInternal(db, config, mailer) {
 
 export const runPdfBereinigungJob = auditedJob('pdf-bereinigung', runPdfBereinigungJobInternal);
 
+// Loescht eine archivierte Datei mit Audit-Klammer. Scheitert bereits das Absichtsprotokoll, bleibt
+// die Datei erhalten und der Job wird nicht als archiviert markiert (naechster Lauf versucht erneut).
+function loescheArchivierteDatei(db, pfad, { objektId, dateiart }) {
+  try {
+    return loescheDateiMitAudit(db, pfad, { objekt: 'jobs', objektId, dateiart, anlass: 'PDF-Bereinigung nach bestaetigter Archivquittung' });
+  } catch (err) {
+    console.error(`Protokollierte Loeschung (${dateiart}) fuer Job ${objektId} nicht ausgefuehrt:`, err.code || 'AUDIT_FEHLER');
+    return false;
+  }
+}
+
 function runPdfBereinigungJobInternal(db, config) {
   const gestartetAm = new Date().toISOString();
   let archiviert = 0;
   try {
     for (const job of listAbgeholtJobs(db)) {
       if (!hasMatureArchiveReceipt(db, job) || !archivedBytesMatch(db, job)) continue;
-      let pdfWeg = true;
-      if (job.pdf_pfad) {
-        try {
-          if (existsSync(job.pdf_pfad)) unlinkSync(job.pdf_pfad);
-        } catch (err) {
-          console.error(`Löschen der PDF für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
-          pdfWeg = !existsSync(job.pdf_pfad);
-        }
-      }
-      let thumbnailWeg = true;
-      if (job.thumbnail_pfad) {
-        try {
-          if (existsSync(job.thumbnail_pfad)) unlinkSync(job.thumbnail_pfad);
-        } catch (err) {
-          console.error(`Löschen des Thumbnails für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
-          thumbnailWeg = !existsSync(job.thumbnail_pfad);
-        }
-      }
+      const pdfWeg = !job.pdf_pfad || loescheArchivierteDatei(db, job.pdf_pfad, { objektId: job.id, dateiart: 'beleg_pdf' });
+      const thumbnailWeg = !job.thumbnail_pfad || loescheArchivierteDatei(db, job.thumbnail_pfad, { objektId: job.id, dateiart: 'thumbnail' });
       if (pdfWeg && thumbnailWeg) {
         if (archivierenJob(db, job.id)) archiviert += 1;
       }
@@ -267,10 +263,8 @@ function runPdfBereinigungJobInternal(db, config) {
   // The group receipt protects the merged document as well as its child documents.
   for (const parent of db.prepare("SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_abgeholt_am IS NOT NULL").all()) {
     if (!hasMatureArchiveReceipt(db, parent) || !archivedBytesMatch(db, parent)) continue;
-    try {
-      if (parent.gruppe_pdf_pfad && existsSync(parent.gruppe_pdf_pfad)) unlinkSync(parent.gruppe_pdf_pfad);
-    } catch (err) {
-      console.error(`Loeschen der archivierten Gruppen-PDF ${parent.id} fehlgeschlagen:`, err.message);
+    if (parent.gruppe_pdf_pfad && existsSync(parent.gruppe_pdf_pfad)) {
+      loescheArchivierteDatei(db, parent.gruppe_pdf_pfad, { objektId: parent.id, dateiart: 'gruppen_pdf' });
     }
   }
 

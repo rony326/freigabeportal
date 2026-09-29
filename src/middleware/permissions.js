@@ -1,4 +1,4 @@
-import { personHasRole } from './roles.js';
+import { personHasRole, verweigereNichtAngemeldet, verweigereOhneBerechtigung } from './roles.js';
 import { listBerechtigungenForPerson, personHasBerechtigung } from '../db/personBerechtigungenRepo.js';
 
 export const GRANTABLE_BERECHTIGUNGEN = [
@@ -41,12 +41,8 @@ export function personHasPermission(db, config, person, permission) {
 export function requirePermission(db, config, permission) {
   return (req, res, next) => {
     const person = req.currentPerson;
-    if (!person || !person.aktiv) {
-      return res.status(401).render('error', { message: 'Bitte melde dich an, um fortzufahren.' });
-    }
-    if (!personHasPermission(db, config, person, permission)) {
-      return res.status(403).render('error', { message: 'Du hast keine Berechtigung für diesen Bereich.' });
-    }
+    if (!person || !person.aktiv) return verweigereNichtAngemeldet(req, res);
+    if (!personHasPermission(db, config, person, permission)) return verweigereOhneBerechtigung(req, res, 'fehlendes_recht', permission);
     next();
   };
 }
@@ -54,16 +50,12 @@ export function requirePermission(db, config, permission) {
 export function requireAdminAreaAccess(db, config) {
   return (req, res, next) => {
     const person = req.currentPerson;
-    if (!person || !person.aktiv) {
-      return res.status(401).render('error', { message: 'Bitte melde dich an, um fortzufahren.' });
-    }
+    if (!person || !person.aktiv) return verweigereNichtAngemeldet(req, res);
     const hatZugriff =
       personHasRole(person, config, 'superadmin') ||
       personHasRole(person, config, 'manager') ||
       listBerechtigungenForPerson(db, person.churchtools_person_id).length > 0;
-    if (!hatZugriff) {
-      return res.status(403).render('error', { message: 'Du hast keine Berechtigung für diesen Bereich.' });
-    }
+    if (!hatZugriff) return verweigereOhneBerechtigung(req, res, 'kein_adminbereich');
     next();
   };
 }

@@ -11,8 +11,19 @@ export function withAuditOperation(kind, action) {
   return operationContext.run({ id: randomUUID(), kind }, action);
 }
 
+// Stellt einen zuvor festgehaltenen Laufkontext wieder her (null = keiner).
+export function withAuditOperationContext(operation, action) {
+  return operationContext.run(operation, action);
+}
+
 export function currentAuditRequestId() {
   return requestContext.getStore() || null;
+}
+
+// Stellt eine zuvor festgehaltene Request-ID wieder her, z.B. in 'finish'-Callbacks, die
+// ausserhalb des asynchronen Request-Kontexts laufen.
+export function withAuditRequest(requestId, action) {
+  return requestContext.run(requestId, action);
 }
 
 export function auditRequestContext(req, res, next) {

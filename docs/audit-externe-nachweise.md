@@ -8,7 +8,7 @@ welche Betreiberentscheidungen fehlen.
 
 | Weg | Inhalt | Eignung als externer Audit-Nachweis |
 | --- | --- | --- |
-| Verschluesseltes Backup (`.fpbak`, n8n `GET /api/n8n/backup`) | komplette SQLite-DB inkl. `audit_ereignisse` | Nein. Wer den Backup-Schluessel hat, kann manipulierte Stände verschluesseln; keine Kettenbindung zwischen Sicherungen, kein Empfangsnachweis. |
+| Verschluesseltes Backup (`.fpbak`, n8n `GET /api/n8n/backup/latest`) | komplette SQLite-DB inkl. `audit_ereignisse` | Nein. Wer den Backup-Schluessel hat, kann manipulierte Stände verschluesseln; keine Kettenbindung zwischen Sicherungen, kein Empfangsnachweis. |
 | Admin-Ansicht `/admin/audit-log` | Anzeige, keine Ausleitung | Nein. |
 | Wartungsjournal `*.maintenance.jsonl` | Restore-/Rollback-Ereignisse, lokal | Nein, gleiche Vertrauensgrenze wie die DB. |
 | **Neu:** `npm run audit:export` | fortlaufende, hashverkettete Audit-Pakete | Nur Grundlage. Beweiskraft entsteht erst durch ein externes, vom Portal unabhaengig kontrolliertes Ziel. |

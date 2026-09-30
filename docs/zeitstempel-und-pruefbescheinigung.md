@@ -1,11 +1,12 @@
 # RFC3161-Zeitstempel und Prüfbescheinigung
 
-**Sicherheitsstand 2026-09-28:** Die Upload-Pruefansicht kontrolliert Signatur,
-vollstaendige ByteRange-Abdeckung und optional den gespeicherten Dateihash.
-Eine vertrauenswuerdige TSA-Zertifikatskette und der Sperrstatus werden noch
-nicht geprueft. DigiCert ist als eingesetzter Anbieter bestaetigt, aber noch
-nicht ueber einen geprueften Truststore gebunden. Die Pruefbescheinigung ist
-deshalb kein vollstaendiger Vertrauens- oder Langzeitnachweis.
+**Stand 2026-09-30:** Neue Zeitstempel werden vor der Übernahme gegen
+lokale Vertrauensanker und aktuelle CRLs geprüft; die verwendete Evidenz
+wird gespeichert. Die Upload-Prüfansicht kontrolliert dagegen Signatur,
+vollständige ByteRange-Abdeckung und optional den gespeicherten Dateihash,
+führt aber keine historische Ketten- oder Sperrprüfung durch. Die konkrete
+DigiCert-Konfiguration ist noch nicht betrieblich abgenommen. Die
+Prüfbescheinigung ist kein vollständiger Vertrauens- oder Langzeitnachweis.
 Siehe [offene Abnahmepunkte](audit-umsetzungsstand-2026-09-27.md).
 
 **Ergaenzung 2026-09-28:** Vor dem Speichern neuer Zeitstempel werden der
@@ -113,7 +114,11 @@ und Quelldateien erneut verglichen. Dateizeiger und finaler SHA-256 werden
 gemeinsam gespeichert; `gruppe_final_datei_hash` schuetzt auch Gruppen ohne TSA.
 Die Originaldateien werden dabei nicht ersetzt. Nach SIGKILL vor dem Commit
 kann eine unreferenzierte neue Datei zurueckbleiben; die Gruppe bleibt fuer den
-Nachholjob offen. Solche Dateien werden derzeit nicht automatisch bereinigt.
+Nachholjob offen. `pdf-bereinigung` verschiebt eindeutig verwaiste `final-<uuid>.pdf` nach
+der Wartefrist (Default 24 Stunden) in Quarantäne. Referenzen, bekannte
+Hashes und laufende Nachholjobs verhindern die Verschiebung. Endgültiges
+Löschen oder Zurückholen erfolgt begründet durch einen Superadmin unter
+`/admin/dateiquarantaene`; siehe [Audit-Härtung](audit-paket-haertung-2026-09-29.md).
 
 ## Verifikation (`/zeitstempel-pruefen`)
 

@@ -11,6 +11,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 
 | Dokument | Inhalt |
 |---|---|
+| [feature-abgleich-2026-09-30.md](feature-abgleich-2026-09-30.md) | Abgleich mit dem Code: verfügbare Features, Entwürfe und verbleibende Betriebsabnahmen |
 | [architektur.md](architektur.md) | Systemüberblick, Tech-Stack, Middleware-Pipeline, Router-Übersicht, Sicherheitsmechanismen |
 | [auth-und-rechte.md](auth-und-rechte.md) | ChurchTools-OAuth2-Login, Rollenmodell (Gruppen) und additive Einzelrechte, Job-Autorisierung |
 | [datenmodell.md](datenmodell.md) | Alle Datenbanktabellen, ER-Diagramm, wichtige Constraints |
@@ -18,6 +19,9 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [spesen-einreichung.md](spesen-einreichung.md) | Zweite Domäne neben Lieferantenrechnungen: Spesen/Auslagen-Einreichung durch die Person selbst, eigene Freigabe-1-Seite |
 | [kreditkarten-belege.md](kreditkarten-belege.md) | Dritte Domäne: Vorab-Erfassung von Kreditkartenbelegen, Abgleich gegen die Monatsabrechnung als erweitertes Aufsplitten |
 | [n8n-schnittstelle.md](n8n-schnittstelle.md) | API-Vertrag für Rechnungseingang (inkl. PDF-Eingangsprüfung) und -abholung durch n8n |
+| [n8n-paperless-archivierung.md](n8n-paperless-archivierung.md) | Exportmanifest, hashgebundener Download und Archivquittung |
+| [tsa-vertrauensanker.md](tsa-vertrauensanker.md) | Deployment von Root-CAs und CRLs, Prüfprofil und Grenzen |
+| [audit-paket-request-korrelation.md](audit-paket-request-korrelation.md) | Request-/Lauf-IDs und protokollierte Backup-Löschungen |
 | [export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md) | Snapshot-gebundener Export, Zahlungsbestätigung je Belegart, Altfälle ohne Freigabenachweis |
 | [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md) | Swiss-QR-Bill-Erkennung und IBAN-Abgleich gegen hinterlegte Lieferanten-IBANs |
 | [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md) | RFC3161-Zeitstempel, Nachhol-Mechanismus, Verifikations- und Zertifikatsseite |

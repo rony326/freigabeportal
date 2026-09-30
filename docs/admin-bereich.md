@@ -25,7 +25,7 @@ feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 | Zeitstempel | `/admin/zeitstempel` | **nur** `superadmin` |
 | Personen | `/admin/personen` | `superadmin` oder `manager` |
 | E-Mail-Protokoll | `/admin/mails` | Einzelrecht `mails_einsehen` |
-| Personen-Sync | `/admin/sync` | Einzelrecht `sync_einsehen` |
+| Personen-Sync | `/admin/sync` | `sync_einsehen`; Konfiguration zusätzlich `sync_verwalten`, Force-Aktionen zusätzlich `workflow_eingreifen` |
 | Abgelehnte Rechnungen | `/admin/abgelehnt` | Einzelrecht `abgelehnt_verwalten` |
 | Altfälle | `/admin/altfaelle` | Einzelrecht `workflow_eingreifen` (nicht im Manager-Bündel) |
 | Geplante Jobs | `/admin/geplante-jobs` | Einzelrecht `geplante_jobs_verwalten` |
@@ -221,12 +221,20 @@ Default 90 Tage). Details:
 ## Audit-Log (`/admin/audit-log`)
 
 Durchsuchbare, paginierte Gesamtsicht über alle Rechnungen hinweg — führt
-zwei Quellen in einer gemeinsamen Zeitleiste zusammen: `freigaben` (jedes
+drei Quellen in einer gemeinsamen Zeitleiste zusammen: `freigaben` (jedes
 Freigabe-, Ablehnungs-, Eskalations- und IBAN-Abweichungs-Ereignis über
 alle Jobs) und `job_loeschungen` (das Löschprotokoll endgültig gelöschter
-Rechnungen). Filterbar nach Person, Konto, Zeitraum (Von/Bis) sowie
+Rechnungen) sowie `kk_beleg_ereignisse` (Kreditkartenbelege vor ihrer
+Zuordnung zu einem Job). Filterbar nach Person, Konto, Zeitraum (Von/Bis) sowie
 Ereignis-Typ, zusätzlich eine Freitext-Suche über Kommentar/Begründung
 und Dateiname. Einzelrecht `audit_log_einsehen` — `superadmin` und
 `manager` erhalten es automatisch über ihr Rollen-Bundle, sonst gilt
 dieselbe additive Vergabe wie bei den übrigen vergebbaren Bereichen
 (siehe [auth-und-rechte.md](auth-und-rechte.md)).
+
+Zusätzlich zeigt die ungefilterte Seite die zentralen Änderungen aus
+`audit_ereignisse` mit Vorher-/Nachher-Daten, Akteur sowie Request- und
+Lauf-ID an (50 Einträge je Cursor-Seite). Sobald ein fachlicher Filter
+gesetzt ist, wird dieser separate Änderungsbereich ausgeblendet; die
+Filter der Zeitleiste durchsuchen ihn nicht. Lokale Audit-Exportpakete
+werden über die CLI erzeugt, siehe [externe Audit-Nachweise](audit-externe-nachweise.md).

@@ -1,8 +1,11 @@
 # Datenmodell
 
-SQLite-Datenbank (`schema.sql`), eine Datei unter `DB_PATH`. Kein ORM —
-alle Zugriffe laufen über handgeschriebenes SQL in `src/db/*Repo.js`
-(jeweils ein Repo pro Tabelle bzw. Konzept).
+SQLite-Datenbank aus `schema.sql` und den Migrationen in `src/db/index.js`
+sowie `src/db/*Schema.js`. Der konfigurierte `DB_PATH` kann nach einem
+Offline-Restore über `<DB_PATH>.active.json` auf den aktiven Datenstand
+verweisen. Kein ORM: Repositories und Services verwenden handgeschriebenes SQL.
+Das ER-Diagramm zeigt das fachliche Kernmodell; zusätzliche Nachweis- und
+Betriebstabellen sind darunter beschrieben.
 
 ## ER-Diagramm
 
@@ -50,7 +53,7 @@ erDiagram
     }
     person_berechtigungen {
         text person_id PK,FK
-        text berechtigung PK "CHECK: 9 feste Werte"
+        text berechtigung PK "CHECK: 11 feste Werte"
     }
     konten {
         int id PK
@@ -240,9 +243,8 @@ gespeichert, sondern bei jeder Prüfung aus dem heutigen Datum berechnet
 
 ### `person_berechtigungen`
 Additive Einzelrechte, siehe [auth-und-rechte.md](auth-und-rechte.md). Ein
-`CHECK`-Constraint erlaubt strukturell nur sieben Werte — die drei
-`superadmin`-exklusiven Admin-Bereiche lassen sich gar nicht erst
-eintragen.
+`CHECK`-Constraint erlaubt elf Rechte. Für die sieben
+`superadmin`-exklusiven Admin-Bereiche gibt es keine vergebbaren Werte.
 
 ### `konten`
 Ein "Konto" ist eine Kostenstelle mit genau vier Rollen: Freigeber 1 +
@@ -397,15 +399,10 @@ anders als bei den geplanten Jobs — festgehalten werden muss, *welche
 Person* die Wiederherstellung ausgelöst hat.
 
 `wiederhergestellt_von` ist **absichtlich kein** Foreign Key auf `personen`
-— dieselbe Überlegung wie bei `job_loeschungen.job_id`, nur in die andere
-Richtung: Der Eintrag wird nicht in die laufende, sondern in die *gerade
-wiederhergestellte* Datenbank geschrieben (das offene File-Handle des
-Prozesses hängt nach dem Datei-Swap noch am alten Inode, ein Eintrag über
-die Live-Verbindung wäre beim Neustart weg). Deren `personen`-Tabelle stammt
-aus dem Archiv und muss die auslösende Person gar nicht enthalten — etwa
-beim Restore eines Archivs, das älter ist als deren Konto. Ein erzwungener
-FK würde genau dann den Audit-Eintrag scheitern lassen und einen bereits
-erfolgreichen Restore als Fehler melden.
+— der Nachweis wird beim Offline-Restore in die wiederhergestellte Datenbank
+mit deren historischem Personenbestand geschrieben. Dieser muss die auslösende
+Person nicht enthalten. Der Server bleibt während des Restores gestoppt;
+der aktive Datenstand wird über die Aktivierungsdatei umgeschaltet.
 
 ### `sync_log`, `cron_log`, `admin_config`, `sessions`
 Betriebs-/Konfigurationstabellen: Lauf-Historie des nächtlichen
@@ -414,3 +411,34 @@ ChurchTools-Syncs (`sync_log`) bzw. der übrigen Hintergrund-Jobs
 Key-Value-Store
 für alle Admin-Einstellungen (Eskalationszeiten, Cron-Zeitpläne,
 Branding, TSA-Konfiguration, …), und der Express-Session-Store.
+
+## Zusätzliche Nachweis- und Betriebstabellen
+
+Diese Tabellen entstehen durch die beim Datenbankstart ausgeführten Migrationen
+und gehören zur vollständigen Datenbanksicherung.
+
+| Tabelle | Zweck und wichtigste Bindung |
+|---|---|
+| `audit_ereignisse` | Zentrales Änderungs-/Sicherheitsprotokoll mit Objekt, Aktion, Akteur, Vorher-/Nachher-Werten und Begründung; UPDATE/DELETE gesperrt. |
+| `audit_request_zuordnung` | Eine unveränderliche HTTP-Request-Zuordnung je Audit-Ereignis; historische Ereignisse erhalten keine nachträglich erfundene ID. |
+| `audit_lauf_zuordnung` | Unveränderliche Lauf-ID und Lauftyp je Audit-Ereignis für Hintergrund-/Wartungsaktionen. |
+| `audit_zugriff_drosselung` | Drosselungszustand zur begrenzten Protokollierung wiederholter Zugriffsverweigerungen. |
+| `export_nachweise` | Unveränderliches Exportmanifest mit Export-ID, eindeutigem Jobbezug und SHA-256 der finalen Datei. |
+| `archiv_quittungen` | Unveränderliche Quittung je Export-ID mit eindeutiger Archiv-Dokument-ID, Task-ID und Datei-Hash. |
+| `datei_quarantaene` | Dateiname, Hash, Grösse und Verschiebezeit; genau eine begründete Entscheidung von `quarantaene` zu `wiederhergestellt` oder `geloescht`, keine Zeilenlöschung. |
+| `sicherheitsalarme` | Persistenter Versand-/Wiederholungsstand je Alarmtyp und Schlüssel; eine versendete Warnung klärt keine Löschabsicht. |
+| `tsa_evidenz_objekte` | Per SHA-256 deduplizierte DER-Objekte für Zertifikate, Sperrlisten und Zeitstempel-Token; UPDATE/DELETE gesperrt. |
+| `tsa_pruefnachweise` | Unveränderlicher Prüfnachweis je Job, Dokumentart (`einzel`/`gruppe`) und Dokument-Hash, einschliesslich Prüfzeitpunkt und Evidenzverweisen. |
+| `audit_export_pakete` | Unveränderliches lokales Register hashverketteter Audit-Pakete mit Ereignisbereich, Lücken und Vorgängerhash. |
+
+Die `jobs`-Spalten `final_datei_hash` und `gruppe_final_datei_hash` binden
+finale Dokumente auch ohne TSA. `zeitstempel_erforderlich` hält die gespeicherte Exportpflicht fest, bei
+Splitgruppen auf dem Elternjob; sie darf nach ihrer Aktivierung nicht
+aufgehoben werden.
+
+Details: [Archivübergabe](n8n-paperless-archivierung.md),
+[Request-/Laufzuordnung](audit-paket-request-korrelation.md),
+[Quarantäne, Alarme und TSA-Evidenz](audit-paket-haertung-2026-09-29.md),
+[Audit-Export](audit-externe-nachweise.md).
+Lokale Unveränderlichkeits-Trigger schützen nicht gegen direkte Eingriffe eines
+Datenbankadministrators; sie ersetzen kein extern kontrolliertes Archiv.

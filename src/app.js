@@ -58,7 +58,8 @@ import { zugriffsAuditMiddleware, meldeZugriffVerweigert } from './services/zugr
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export function createApp({ db, config }) {
+// `mailer` is injectable for tests (a stub instead of the SMTP-backed default).
+export function createApp({ db, config, mailer: injectedMailer = null }) {
   const app = express();
   app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
@@ -136,7 +137,7 @@ export function createApp({ db, config }) {
   app.use(zugriffsAuditMiddleware(db));
   app.use(loadNavFlags(db, config));
 
-  const mailer = createMailerOrFallback(config.smtp);
+  const mailer = injectedMailer ?? createMailerOrFallback(config.smtp);
 
   const publicLimiter = createPublicRateLimiter();
   const sessionLimiter = createSessionRateLimiter();

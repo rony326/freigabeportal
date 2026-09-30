@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { machineAuditContext } from '../services/auditContext.js';
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob } from '../services/cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from '../services/cronJobs.js';
 
 function httpStatusFuer(status) {
   if (status === 'uebersprungen') return 409;
@@ -77,6 +77,16 @@ export function createCronRouter({ db, config, mailer }) {
     try {
       const result = await runKkBelegErinnerungenJob(db, config, mailer);
       res.status(httpStatusFuer(result.status)).json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/mail-zustellung', async (req, res, next) => {
+    try {
+      const result = await runMailZustellungJob(db, config, mailer);
+      // "Nichts fällig" ist kein Konflikt: 200 statt 409.
+      res.status(result.status === 'uebersprungen' ? 200 : httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);
     }

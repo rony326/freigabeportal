@@ -38,25 +38,41 @@ test('sendRenderedMail logs a versendet row on success and calls the mailer with
   db.close();
 });
 
-test('sendRenderedMail logs a fehlgeschlagen row on failure and never throws', async () => {
+test('sendRenderedMail keeps a failed send eingereiht for an automatic retry, reports it, and never throws', async () => {
   const db = openDatabase(':memory:');
   const mailer = createStubMailer({ shouldFail: true });
-  await assert.doesNotReject(() =>
-    sendRenderedMail(db, mailer, { to: 'x@example.org', subject: 'B', text: 'T', typ: 'reminder', jobId: null })
-  );
+  const vorher = Date.now();
+  const ergebnis = await sendRenderedMail(db, mailer, { to: 'x@example.org', subject: 'B', text: 'T', typ: 'reminder', jobId: null });
+  assert.equal(ergebnis.status, 'eingereiht');
+  assert.match(ergebnis.fehler, /SMTP-Testfehler/);
   const rows = listMailLog(db);
-  assert.equal(rows[0].status, 'fehlgeschlagen');
-  assert.equal(rows[0].fehler_details, 'SMTP-Testfehler');
+  assert.equal(rows[0].status, 'eingereiht');
+  assert.equal(rows[0].versuche, 1);
+  assert.match(rows[0].fehler_details, /SMTP-Testfehler \(Versuch 1 von 8\)/);
+  assert.ok(Date.parse(rows[0].naechster_versuch_am) >= vorher + 5 * 60 * 1000 - 1000, 'first retry waits the base back-off');
+  assert.equal(rows[0].sperre_token, null);
   db.close();
 });
 
 test('sendRenderedMail degrades gracefully when mailer is undefined', async () => {
   const db = openDatabase(':memory:');
-  await assert.doesNotReject(() =>
-    sendRenderedMail(db, undefined, { to: 'x@example.org', subject: 'B', text: 'T', typ: 'reminder', jobId: null })
-  );
+  const ergebnis = await sendRenderedMail(db, undefined, { to: 'x@example.org', subject: 'B', text: 'T', typ: 'reminder', jobId: null });
+  assert.equal(ergebnis.status, 'eingereiht');
   const rows = listMailLog(db);
-  assert.equal(rows[0].status, 'fehlgeschlagen');
+  assert.equal(rows[0].status, 'eingereiht');
+  db.close();
+});
+
+test('sendRenderedMail gives up as fehlgeschlagen once mail_zustellung_max_versuche is reached', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'mail_zustellung_max_versuche', '1');
+  const ergebnis = await sendRenderedMail(db, createStubMailer({ shouldFail: true }), { to: 'x@example.org', subject: 'B', text: 'T', typ: 'reminder', jobId: null });
+  assert.equal(ergebnis.status, 'fehlgeschlagen');
+  const [row] = listMailLog(db);
+  assert.equal(row.status, 'fehlgeschlagen');
+  assert.equal(row.naechster_versuch_am, null);
+  assert.match(row.fehler_details, /nach 1 Versuchen aufgegeben/);
   db.close();
 });
 

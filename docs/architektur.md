@@ -24,7 +24,7 @@ flowchart LR
 
     subgraph Portal["Freigabeportal (Node.js/Express)"]
         App["Express-App<br/>(Routen, Middleware)"]
-        Scheduler["In-Process-Scheduler<br/>(6 Hintergrund-Jobs)"]
+        Scheduler["In-Process-Scheduler<br/>(11 Hintergrund-Jobs)"]
         DB[("SQLite<br/>DB_PATH")]
         Files[("Dateisystem<br/>JOBS_DIR / BRANDING_DIR")]
     end
@@ -105,7 +105,7 @@ und Zugriffskontrolle — siehe
 | `/abgelehnt` | session | eingeloggt + Job-Autorisierung | Überarbeitung abgelehnter Rechnungen |
 | `/zeitstempel-pruefen` | session | eingeloggt | Zeitstempel-Verifikation + Zertifikat |
 | `/auth` | public | offen | ChurchTools-OAuth2-Login/-Logout |
-| `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen der sechs Hintergrund-Jobs |
+| `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen von acht Hintergrund-Jobs (nicht: `datenbank-sicherung`, `mail-digest`, `sicherheitsalarme`) |
 | `/healthz` | keiner | offen | `{status:"ok"}` |
 | `/` | public | — | leitet auf `/pool` (eingeloggt) oder `/auth/login` (anonym) weiter |
 

@@ -74,6 +74,8 @@ const DEFAULTS = {
   sicherheitsalarm_empfaenger: 'gruppe:admin',
   sicherheitsalarm_wiederholung_stunden: '24',
   cron_sicherheitsalarme_intervall_minuten: '30',
+  cron_mail_zustellung_intervall_minuten: '5',
+  mail_zustellung_max_versuche: '8',
 };
 
 export function seedDefaults(db) {

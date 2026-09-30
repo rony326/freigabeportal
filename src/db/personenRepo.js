@@ -8,6 +8,8 @@ export function upsertPerson(db, person) {
        nachname = excluded.nachname,
        email = excluded.email,
        aktiv = 1,
+       deaktiviert_am = NULL,
+       deaktivierungsgrund = NULL,
        gruppen = excluded.gruppen,
        ct_person_unresolved = 0,
        last_synced_at = excluded.last_synced_at,
@@ -33,6 +35,21 @@ export function getAllActivePersonIds(db) {
   return db.prepare('SELECT churchtools_person_id FROM personen WHERE aktiv = 1').all().map((r) => r.churchtools_person_id);
 }
 
+export function listActivePersonsMitGruppen(db) {
+  return db
+    .prepare('SELECT churchtools_person_id, gruppen FROM personen WHERE aktiv = 1')
+    .all()
+    .map((row) => ({ id: row.churchtools_person_id, gruppen: JSON.parse(row.gruppen) }));
+}
+
+// Nur die Gruppenzugehörigkeit nachführen, ohne Profil -- für Personen, deren ChurchTools-Profil
+// vorübergehend nicht abrufbar war, deren fehlende Mitgliedschaft aber aus den erfolgreich
+// geladenen Gruppenlisten feststeht (services/sync.js). Rollenrechte dürfen nicht an einem
+// Profil-Abruffehler hängen bleiben.
+export function setPersonGruppen(db, id, gruppen) {
+  db.prepare('UPDATE personen SET gruppen = ? WHERE churchtools_person_id = ?').run(JSON.stringify(gruppen), id);
+}
+
 // Findet die aktive Person zu einer E-Mail-Adresse -- Basis für die Absender-Zuordnung eines per
 // Mail eingegangenen Kreditkarten-Belegs (kkBelegEingang.js). Case-insensitiver Vergleich, da
 // Mail-Header und die hier gespeicherte Adresse unterschiedlich geschrieben sein können. Teilen sich
@@ -48,8 +65,9 @@ export function countActivePersonsByEmail(db, email) {
   return db.prepare('SELECT COUNT(*) AS n FROM personen WHERE aktiv = 1 AND LOWER(email) = LOWER(?)').get(email.trim()).n;
 }
 
-export function deactivatePerson(db, id) {
-  db.prepare('UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = ?').run(id);
+// grund: warum der Zugang entzogen wurde (z.B. 'churchtools_geloescht'), für die Personenliste.
+export function deactivatePerson(db, id, grund = null) {
+  db.prepare('UPDATE personen SET aktiv = 0, deaktiviert_am = ?, deaktivierungsgrund = ? WHERE churchtools_person_id = ?').run(new Date().toISOString(), grund, id);
 }
 
 export function markUnresolved(db, id) {

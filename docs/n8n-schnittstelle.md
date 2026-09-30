@@ -19,7 +19,12 @@ sequenceDiagram
     participant P as Freigabeportal
 
     n8n->>P: POST /api/n8n/jobs (X-API-Key, multipart: pdf, quelle, absender, dateiname)
-    P->>P: Magic-Byte-Check (%PDF), SHA-256-Hash berechnen
+    P->>P: Magic-Byte-Check (%PDF)
+    P->>P: Eingangsprüfung: öffnen (mupdf + pdf-lib),<br/>nicht verschlüsselt, ≥ 1 lesbare Seite
+    alt nicht verarbeitbar
+        P-->>n8n: 422 { error, code } — kein Job, keine Datei
+    end
+    P->>P: SHA-256-Hash berechnen
     alt Hash bereits bekannt (Retry/Duplikat)
         P-->>n8n: 200 { id, status, duplikat: true }
     else neue Datei
@@ -38,7 +43,7 @@ sequenceDiagram
 
 | Feld | Pflicht | Beschreibung |
 |---|---|---|
-| `pdf` | ja | die Rechnung, max. 20 MB, muss mit `%PDF` beginnen |
+| `pdf` | ja | die Rechnung, max. 20 MB, ein unverschlüsseltes, verarbeitbares PDF mit mindestens einer lesbaren Seite (ein QR-Code ist nicht nötig) |
 | `quelle` | ja | `"scanner"` oder `"lieferant"` |
 | `dateiname` | ja | Anzeigename |
 | `absender` | nein | `From:`-Header der eingehenden Mail (roh, mit oder ohne Display-Name) — Basis für die automatische Zuweisungsregel |
@@ -48,7 +53,22 @@ Antworten: `201` mit `{id, status}` bei neuer Rechnung, `200` mit
 `{id, status, duplikat: true}` bei bytegleichem Wiederholungs-Upload
 (SHA-256-Hash-Vergleich — macht die Schnittstelle idempotent gegenüber
 n8n-Retries oder mehrfach ausgelösten IMAP-Triggern), `400` bei
-Validierungsfehlern.
+Validierungsfehlern (fehlende Felder, zu gross, keine PDF-Signatur) und
+`422` `{error, code}`, wenn das Dokument zwar mit `%PDF` beginnt, aber nicht
+verarbeitet werden kann:
+
+| `code` | Bedeutung |
+|---|---|
+| `pdf_beschaedigt` | lässt sich nicht öffnen bzw. nicht als PDF verarbeiten |
+| `pdf_verschluesselt` | passwortgeschützt oder verschlüsselt (auch nur mit Besitzerpasswort) — wird nicht unterstützt, da sich das Dokument nicht unverfälscht stempeln lässt |
+| `pdf_keine_seiten` | keine lesbare Seite |
+
+Die Prüfung (`src/services/pdfEingang.js`) läuft vor Duplikatprüfung und
+Jobanlage: bei `422` entsteht weder ein Job noch eine Datei, und ein erneuter
+Versuch mit denselben Bytes ergibt wieder `422`. Der n8n-Workflow soll `422`
+nicht automatisch wiederholen, sondern die Mail zur manuellen Bearbeitung
+weiterleiten (z. B. an die Buchhaltung, mit der Meldung aus `error`).
+Dieselbe Prüfung gilt für PDF-Belege bei der Spesen-Einreichung.
 
 ## Abholung fertiger Rechnungen
 

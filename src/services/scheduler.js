@@ -1,4 +1,4 @@
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob } from './cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from './cronJobs.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { runSicherheitsalarmeJob } from './sicherheitsalarme.js';
 
@@ -103,6 +103,7 @@ export function startScheduler({
     runKkBelegErinnerungenJob: kkBelegErinnerungenJob,
     // Aeltere Test-Fakes ohne diesen Eintrag bekommen einen wirkungslosen Platzhalter.
     runSicherheitsalarmeJob: sicherheitsalarmeJob = async () => ({ status: 'uebersprungen' }),
+    runMailZustellungJob: mailZustellungJob = async () => ({ status: 'uebersprungen' }),
   } = {
     runSyncPersonenJob,
     runPoolErinnerungenJob,
@@ -114,6 +115,7 @@ export function startScheduler({
     runFreigabe2ErinnerungenJob,
     runKkBelegErinnerungenJob,
     runSicherheitsalarmeJob,
+    runMailZustellungJob,
   },
 }) {
   scheduleDaily(
@@ -190,6 +192,16 @@ export function startScheduler({
     async () => {
       const result = await kkBelegErinnerungenJob(db, config, mailer);
       if (result.status === 'fehler') console.error('Geplanter kk-beleg-erinnerungen-Lauf fehlgeschlagen:', result.error);
+    }
+  );
+
+  // Wiederholt eingereihte Mails nach SMTP-Fehlern oder Neustart (services/mailZustellung.js).
+  // Läuft kurz nach dem Start und danach im Intervall -- ohne fällige Mails ohne Protokolleintrag.
+  scheduleInterval(
+    () => zahlOderStandard(getConfigValue(db, 'cron_mail_zustellung_intervall_minuten'), 5) * MINUTE_MS,
+    async () => {
+      const result = await mailZustellungJob(db, config, mailer);
+      if (result.status === 'fehler') console.error('Geplanter mail-zustellung-Lauf mit Zustellfehlern:', result.error);
     }
   );
 

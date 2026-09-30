@@ -68,6 +68,9 @@ const PERSONEN_TABLE_MIGRATIONS = [
   { column: 'ferienmodus_von', ddl: 'ALTER TABLE personen ADD COLUMN ferienmodus_von TEXT' },
   { column: 'ferienmodus_bis', ddl: 'ALTER TABLE personen ADD COLUMN ferienmodus_bis TEXT' },
   { column: 'ferienmodus_stellvertreter_id', ddl: 'ALTER TABLE personen ADD COLUMN ferienmodus_stellvertreter_id TEXT REFERENCES personen(churchtools_person_id)' },
+  // Personen-Sync (services/sync.js): wann und warum der Portalzugang entzogen wurde.
+  { column: 'deaktiviert_am', ddl: 'ALTER TABLE personen ADD COLUMN deaktiviert_am TEXT' },
+  { column: 'deaktivierungsgrund', ddl: 'ALTER TABLE personen ADD COLUMN deaktivierungsgrund TEXT' },
 ];
 
 function migratePersonenTable(db) {
@@ -730,6 +733,49 @@ function migrateMailLogSicherheitsalarm(db) {
   });
 }
 
+// Persistente Mail-Zustellung (services/mailZustellung.js): neuer Status 'eingereiht' plus
+// Zustellspalten (Versuche, nächster Versuch, befristete Sperre). Gleiches Rebuild-Muster; bereits
+// protokollierte Zeilen behalten ihren Status ('versendet'/'fehlgeschlagen'/'geplant'). Der Index
+// entsteht erst hier, weil schema.sql auf einer alten Tabelle ohne diese Spalten laufen kann.
+function migrateMailZustellung(db) {
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'mail_log',
+    marker: 'eingereiht',
+    createSql: `CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('eingereiht', 'versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL,
+      eingereiht_am TEXT,
+      versuche INTEGER NOT NULL DEFAULT 0,
+      naechster_versuch_am TEXT,
+      sperre_token TEXT,
+      sperre_bis TEXT,
+      versendet_am TEXT
+    )`,
+    spalten: ['id', 'typ', 'job_id', 'empfaenger', 'betreff', 'text', 'status', 'fehler_details', 'versucht_am'],
+  });
+  db.exec('CREATE INDEX IF NOT EXISTS mail_log_zustellung_idx ON mail_log(status, naechster_versuch_am)');
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'cron_log',
+    marker: 'mail-zustellung',
+    createSql: `CREATE TABLE cron_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen', 'mail-zustellung')),
+      gestartet_am TEXT NOT NULL,
+      beendet_am TEXT,
+      status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
+      details TEXT
+    )`,
+    spalten: ['id', 'job', 'gestartet_am', 'beendet_am', 'status', 'details'],
+  });
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -759,6 +805,7 @@ export function openDatabase(dbPath) {
   migrateFreigabenTableVertretung(db);
   migrateKreditkartenChecks(db);
   migrateMailLogSicherheitsalarm(db);
+  migrateMailZustellung(db);
   // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)
   // verwerfen die Trigger der alten Tabelle, und migrateSecuritySchema legt die Audit-Trigger mit
   // der aktuellen Spaltenliste neu an. person_berechtigungen gehört allein migrateSecuritySchema.

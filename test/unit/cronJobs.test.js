@@ -356,7 +356,7 @@ test('runMailDigestJob sends one digest mail per recipient, grouping their gepla
   db.close();
 });
 
-test('runMailDigestJob marks every row in a failed group as fehlgeschlagen, without affecting other recipients', async () => {
+test('runMailDigestJob keeps a failed recipient\'s rows geplant for a retry with back-off, without affecting other recipients, and reports the run as fehler', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const failingMailer = {
@@ -370,11 +370,19 @@ test('runMailDigestJob marks every row in a failed group as fehlgeschlagen, with
   logMailAttempt(db, { typ: 'reminder', jobId: null, empfaenger: 'ok@example.org', betreff: 'B', text: 'T', status: 'geplant' });
 
   const config = { publicBaseUrl: 'http://portal.example.org' };
-  await runMailDigestJob(db, config, failingMailer);
+  const result = await runMailDigestJob(db, config, failingMailer);
 
+  assert.equal(result.status, 'fehler');
+  assert.equal(result.wiederholung, 1);
   const rows = listMailLog(db);
-  assert.equal(rows.find((r) => r.empfaenger === 'fail@example.org').status, 'fehlgeschlagen');
+  const fehlgeschlagen = rows.find((r) => r.empfaenger === 'fail@example.org');
+  assert.equal(fehlgeschlagen.status, 'geplant', 'still queued, not silently dropped from the automatic path');
+  assert.equal(fehlgeschlagen.versuche, 1);
+  assert.ok(fehlgeschlagen.naechster_versuch_am);
   assert.equal(rows.find((r) => r.empfaenger === 'ok@example.org').status, 'versendet');
+  const lauf = db.prepare("SELECT * FROM cron_log WHERE job = 'mail-digest' ORDER BY id DESC").get();
+  assert.equal(lauf.status, 'fehler');
+  assert.match(lauf.details, /zur Wiederholung eingereiht: 1/);
   db.close();
 });
 

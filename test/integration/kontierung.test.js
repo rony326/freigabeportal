@@ -8,6 +8,10 @@ import { join } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import * as mupdf from 'mupdf';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
+
+// Ein echtes PDF als Dokument eines regulär eingegangenen Jobs: eine "%PDF"-Attrappe würde der
+// Rechnungseingang (services/pdfEingang.js) inzwischen abweisen.
+const ECHTES_PDF = await buildPdfFixture(['Testrechnung']);
 import { PNG_1X1 } from '../helpers/imageFixture.js';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson, setFerienmodus } from '../../src/db/personenRepo.js';
@@ -1601,16 +1605,15 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
 function seedJobMitDateien(db, jobsDir, { betrag = '200.00' } = {}) {
   const kontoId = seedKontoAndPersonen(db);
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
-  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  writeFileSync(pdfPfad, ECHTES_PDF);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
   claimJob(db, id, '1');
   updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag, zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId: null });
   return { id, kontoId, pdfPfad };
 }
 
-// Same as seedJobMitDateien, but with a real, page-countable PDF fixture rather than the lenient
-// "%PDF-1.4\n%test\n" placeholder — needed for the Beleg-Anhängen tests below, which assert on
-// getPageCount() growing after a merge.
+// Same as seedJobMitDateien, but with a fresh, distinct PDF per call — needed for the
+// Beleg-Anhängen tests below, which assert on getPageCount() growing after a merge.
 async function seedJobMitEchtemPdf(db, jobsDir, { betrag = '200.00' } = {}) {
   const kontoId = seedKontoAndPersonen(db);
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
@@ -2063,7 +2066,7 @@ test('POST /kontierung/:id/aufsplitten succeeds for a job that never had a Betra
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const kontoId = seedKontoAndPersonen(db);
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
-  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  writeFileSync(pdfPfad, ECHTES_PDF);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
   claimJob(db, id, '1');
   assert.equal(getJobById(db, id).betrag, null, 'sanity check: no Betrag has ever been saved for this job');
@@ -2205,7 +2208,7 @@ test('POST /kontierung/:id/aufsplitten escalates to Portal-Admin, not back to th
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2'
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
-  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  writeFileSync(pdfPfad, ECHTES_PDF);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });
   claimJob(db, id, '2'); // person '2' is this Konto's own stellvertreter1
   const mailer = createStubMailer();
@@ -2241,7 +2244,7 @@ test('POST /kontierung/:id/aufsplitten keeps escalating to Portal-Admin on a Zei
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2'
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
-  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  writeFileSync(pdfPfad, ECHTES_PDF);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2', konto_id = ?, betrag = '200.00', freigabe1_eskaliert_an_admin = 1, freigabe1_eskaliert_von = '2' WHERE id = ?").run(kontoId, id);
   const mailer = createStubMailer();
@@ -2349,7 +2352,7 @@ test('POST /kontierung/:id/aufsplitten lets an admin-escalated Portal-Admin stil
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id:'1', stellvertreter1Id:'2', freigeber2Id:'3', stellvertreter2Id:'4'
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
-  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  writeFileSync(pdfPfad, ECHTES_PDF);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2', konto_id = ?, betrag = '200.00', freigabe1_eskaliert_an_admin = 1 WHERE id = ?").run(kontoId, id);
   const mailer = createStubMailer();
@@ -2388,7 +2391,7 @@ test('POST /kontierung/:id/aufsplitten sends an IBAN-Abweichung warning mail and
   const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
   createKreditorIban(db, { kreditorId, iban: 'CH0000000000000000000' }); // hinterlegte IBAN weicht ab
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
-  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  writeFileSync(pdfPfad, ECHTES_PDF);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
   claimJob(db, id, '1');
   updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
@@ -2434,7 +2437,7 @@ test('POST /kontierung/:id/aufsplitten sends no IBAN-Abweichung mail when the QR
   const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
   createKreditorIban(db, { kreditorId, iban: 'CH4431999123000889012' });
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
-  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  writeFileSync(pdfPfad, ECHTES_PDF);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
   claimJob(db, id, '1');
   updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
@@ -2467,7 +2470,7 @@ test("POST /kontierung/:id/aufsplitten copies the parent's QR-decoded data onto 
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const kontoId = seedKontoAndPersonen(db);
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
-  writeFileSync(pdfPfad, '%PDF-1.4\n%test\n');
+  writeFileSync(pdfPfad, ECHTES_PDF);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
   claimJob(db, id, '1');
   updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId: null });

@@ -485,8 +485,9 @@ export function listPoolJobsForReminder(db, stunden) {
     .all(schwelle);
 }
 
+// Nur setzen, wenn noch nicht gesetzt: liefert false, wenn ein paralleler Lauf schneller war.
 export function markReminderGesendet(db, jobId) {
-  db.prepare('UPDATE jobs SET reminder_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+  return db.prepare('UPDATE jobs SET reminder_gesendet_at = ? WHERE id = ? AND reminder_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
 export function listPoolJobsForEskalation(db, stunden) {
@@ -498,8 +499,9 @@ export function listPoolJobsForEskalation(db, stunden) {
     .all(schwelle);
 }
 
+// Nur setzen, wenn noch nicht gesetzt: liefert false, wenn ein paralleler Lauf schneller war.
 export function markEskalationGesendet(db, jobId) {
-  db.prepare('UPDATE jobs SET eskalation_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+  return db.prepare('UPDATE jobs SET eskalation_gesendet_at = ? WHERE id = ? AND eskalation_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
 export function listFreigabe2JobsForReminder(db, stunden) {
@@ -512,8 +514,9 @@ export function listFreigabe2JobsForReminder(db, stunden) {
     .all(schwelle);
 }
 
+// Nur setzen, wenn noch nicht gesetzt: liefert false, wenn ein paralleler Lauf schneller war.
 export function markFreigabe2ReminderGesendet(db, jobId) {
-  db.prepare('UPDATE jobs SET freigabe2_reminder_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+  return db.prepare('UPDATE jobs SET freigabe2_reminder_gesendet_at = ? WHERE id = ? AND freigabe2_reminder_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
 export function listFreigabe2JobsForEskalation(db, stunden) {
@@ -526,8 +529,9 @@ export function listFreigabe2JobsForEskalation(db, stunden) {
     .all(schwelle);
 }
 
+// Nur setzen, wenn noch nicht gesetzt: liefert false, wenn ein paralleler Lauf schneller war.
 export function markFreigabe2EskalationGesendet(db, jobId) {
-  db.prepare('UPDATE jobs SET freigabe2_eskalation_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+  return db.prepare('UPDATE jobs SET freigabe2_eskalation_gesendet_at = ? WHERE id = ? AND freigabe2_eskalation_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
 export function listAbgeholtJobs(db) {

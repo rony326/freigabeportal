@@ -10,6 +10,7 @@ import { createSpesenPosition, getJobById } from '../db/jobsRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { detectBelegMimetype, buildBelegPdf } from '../services/belegAnhaengen.js';
+import { pruefeEingangsPdf, PdfEingangFehler } from '../services/pdfEingang.js';
 import { renderFirstPageThumbnail } from '../services/thumbnail.js';
 import { sendNotification } from '../services/notify.js';
 
@@ -125,8 +126,20 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
               errors.push(`Position ${i + 1}: Beleg muss eine PDF-, PNG- oder JPEG-Datei sein.`);
               return;
             }
-            aufgeloestePositionen.push({ ...pos, konto, betrag: pos.betrag.replace(',', '.'), mimetype });
+            aufgeloestePositionen.push({ ...pos, konto, betrag: pos.betrag.replace(',', '.'), mimetype, nummer: i + 1 });
           });
+
+          // Ein PDF-Beleg wird unverändert zum Jobdokument (buildBelegPdf) -- er muss also genauso
+          // verarbeitbar sein wie ein eingehendes Rechnungs-PDF (services/pdfEingang.js).
+          for (const pos of aufgeloestePositionen) {
+            if (pos.mimetype !== 'application/pdf') continue;
+            try {
+              await pruefeEingangsPdf(pos.beleg.buffer);
+            } catch (err) {
+              if (!(err instanceof PdfEingangFehler)) throw err;
+              errors.push(`Position ${pos.nummer}: ${err.message}`);
+            }
+          }
 
           if (errors.length > 0) {
             return res.status(400).render('spesen-neu', { alleKonten, values: { titel: req.body.titel || '', positionen }, errors });

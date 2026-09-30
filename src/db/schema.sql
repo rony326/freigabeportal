@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS personen (
   last_login_at TEXT,
   ferienmodus_von TEXT,
   ferienmodus_bis TEXT,
-  ferienmodus_stellvertreter_id TEXT REFERENCES personen(churchtools_person_id)
+  ferienmodus_stellvertreter_id TEXT REFERENCES personen(churchtools_person_id),
+  deaktiviert_am TEXT,
+  deaktivierungsgrund TEXT
 );
 
 -- Additive Einzelrechte pro Person, unabhängig von der ChurchTools-Rolle (superadmin/manager).
@@ -57,7 +59,7 @@ CREATE TABLE IF NOT EXISTS admin_config (
 -- both fields in one shot via logCronLauf and never use 'laufend'.
 CREATE TABLE IF NOT EXISTS cron_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen')),
+  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen', 'mail-zustellung')),
   gestartet_am TEXT NOT NULL,
   beendet_am TEXT,
   status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
@@ -232,9 +234,16 @@ CREATE TABLE IF NOT EXISTS mail_log (
   empfaenger TEXT NOT NULL,
   betreff TEXT NOT NULL,
   text TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen', 'geplant')),
+  status TEXT NOT NULL CHECK (status IN ('eingereiht', 'versendet', 'fehlgeschlagen', 'geplant')),
   fehler_details TEXT,
-  versucht_am TEXT NOT NULL
+  versucht_am TEXT NOT NULL,
+  -- Persistente Zustellung (services/mailZustellung.js)
+  eingereiht_am TEXT,
+  versuche INTEGER NOT NULL DEFAULT 0,
+  naechster_versuch_am TEXT,
+  sperre_token TEXT,
+  sperre_bis TEXT,
+  versendet_am TEXT
 );
 
 -- job_id is deliberately NOT a foreign key: the whole point of this table is to keep a record

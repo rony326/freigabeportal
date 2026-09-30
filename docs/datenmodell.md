@@ -45,6 +45,8 @@ erDiagram
         text ferienmodus_von
         text ferienmodus_bis
         text ferienmodus_stellvertreter_id FK
+        text deaktiviert_am
+        text deaktivierungsgrund
     }
     person_berechtigungen {
         text person_id PK,FK
@@ -187,8 +189,12 @@ erDiagram
         text typ "12 mögliche Werte"
         int job_id FK
         text empfaenger
-        text status "versendet | fehlgeschlagen"
+        text status "eingereiht | geplant | versendet | fehlgeschlagen"
         text versucht_am
+        int versuche
+        text naechster_versuch_am
+        text sperre_bis
+        text versendet_am
     }
     job_loeschungen {
         int id PK
@@ -219,8 +225,12 @@ ChurchTools-Gruppen-IDs als JSON-Array (nicht die komplette
 ChurchTools-Gruppenzugehörigkeit). `ct_person_unresolved` markiert eine
 Person, die in ChurchTools nicht mehr auffindbar ist (z. B. nach einem
 Personen-Merge) — sie bleibt als historischer Datensatz erhalten statt
-gelöscht zu werden. `aktiv = 0` heisst deaktiviert (kein aktiver Sync-Treffer
-mehr, siehe [personen-sync.md](personen-sync.md)).
+gelöscht zu werden. `aktiv = 0` heisst deaktiviert: ChurchTools meldet die
+Person als gelöscht oder archiviert (`deaktivierungsgrund`
+`churchtools_geloescht`/`churchtools_archiviert`, Zeitpunkt in
+`deaktiviert_am`). Fehlende Gruppenmitgliedschaft allein deaktiviert nicht,
+sie leert nur `gruppen`; ein erneuter Login reaktiviert und löscht beide
+Felder — siehe [personen-sync.md](personen-sync.md#zugangsmodell).
 
 **Ferienmodus** (`ferienmodus_von`, `ferienmodus_bis`, `ferienmodus_stellvertreter_id`):
 selbstverwalteter, additiver Abwesenheits-Zeitraum mit gewähltem Stellvertreter — siehe
@@ -354,8 +364,18 @@ Foreign Key.
 Ferienmodus-Stellvertreter der eigentlich zuständigen Person war — sonst `NULL`.
 
 ### `mail_log`
-Jeder Zustellversuch (erfolgreich oder fehlgeschlagen), inkl. Volltext —
-Basis für **Admin → E-Mail-Protokoll** und die "erneut senden"-Funktion.
+Persistente Warteschlange und Protokoll jeder Benachrichtigung, inkl.
+Volltext — Basis für **Admin → E-Mail-Protokoll**, die automatische
+Wiederholung (`mail-zustellung`) und die "erneut senden"-Funktion. Eine
+Zeile je Empfänger. `status`: `eingereiht` (wartet auf Zustellung bzw.
+Wiederholung), `geplant` (wartet auf den Digest), `versendet` (vom
+SMTP-Server angenommen, `versendet_am`), `fehlgeschlagen` (endgültig).
+`versuche`, `naechster_versuch_am` und `fehler_details` dokumentieren die
+Wiederholungen; `sperre_token`/`sperre_bis` sind die befristete
+Versandsperre gegen parallele Doppelzustellung, `eingereiht_am` der
+Einreihungszeitpunkt. Die Aufbewahrungsfrist löscht nur `versendet` und
+`fehlgeschlagen`. Details:
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail).
 
 ### `job_loeschungen`
 Protokoll jeder endgültigen Löschung einer abgelehnten Rechnung.
@@ -367,9 +387,11 @@ ist. `dateiname` wird dupliziert, weil sie sonst nach der Löschung nicht
 mehr rekonstruierbar wäre.
 
 ### `backup_wiederherstellungen`
-Audit-Trail jeder Datenbank-Wiederherstellung über **Admin →
-Datenbank-Backup** (Dateiname des eingespielten Archivs, auslösende Person,
-Zeitpunkt) — Grundlage für den Wiederherstellungs-Verlauf auf dieser Seite.
+Audit-Trail jeder Datenbank-Wiederherstellung (Dateiname des eingespielten
+Archivs, auslösende Person, Zeitpunkt). Geschrieben vom Offline-Restore
+(`npm run backup:restore`, siehe [offline-restore.md](offline-restore.md));
+**Admin → Datenbank-Backup** zeigt den Verlauf nur an — eine Wiederherstellung
+im laufenden Betrieb gibt es nicht mehr.
 Eigene schlanke Tabelle statt Zweckentfremdung von `cron_log`, weil hier —
 anders als bei den geplanten Jobs — festgehalten werden muss, *welche
 Person* die Wiederherstellung ausgelöst hat.
@@ -387,6 +409,8 @@ erfolgreichen Restore als Fehler melden.
 
 ### `sync_log`, `cron_log`, `admin_config`, `sessions`
 Betriebs-/Konfigurationstabellen: Lauf-Historie des nächtlichen
-ChurchTools-Syncs bzw. der fünf anderen Hintergrund-Jobs, Key-Value-Store
+ChurchTools-Syncs (`sync_log`) bzw. der übrigen Hintergrund-Jobs
+(`cron_log`; `sicherheitsalarme` protokolliert stattdessen im Audit-Log),
+Key-Value-Store
 für alle Admin-Einstellungen (Eskalationszeiten, Cron-Zeitpläne,
 Branding, TSA-Konfiguration, …), und der Express-Session-Store.

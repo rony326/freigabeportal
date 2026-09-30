@@ -7,9 +7,12 @@ export function buildAuthorizeUrl(config, state) {
   return url.toString();
 }
 
+// `status` is attached so callers can tell "ChurchTools says this does not exist" (404/410) apart
+// from outages, rate limits or permission problems -- the Personen-Sync only treats the former as
+// a withdrawn portal access (services/sync.js).
 async function parseOrThrow(response, label) {
   if (!response.ok) {
-    throw new Error(`ChurchTools ${label} fehlgeschlagen: ${response.status}`);
+    throw Object.assign(new Error(`ChurchTools ${label} fehlgeschlagen: ${response.status}`), { status: response.status });
   }
   return response.json();
 }

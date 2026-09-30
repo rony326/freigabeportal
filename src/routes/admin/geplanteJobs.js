@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentSyncLogs } from '../../db/syncLogRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob } from '../../services/cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from '../../services/cronJobs.js';
 
 const LOG_LIMIT = 10;
 
@@ -31,6 +31,8 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       splitGruppenNachholenLog: listRecentCronLog(db, 'split-gruppen-nachholen', LOG_LIMIT),
       freigabe2ErinnerungenLog: listRecentCronLog(db, 'freigabe2-erinnerungen', LOG_LIMIT),
       kkBelegErinnerungenLog: listRecentCronLog(db, 'kk-beleg-erinnerungen', LOG_LIMIT),
+      cronMailZustellungIntervallMinuten: getConfigValue(db, 'cron_mail_zustellung_intervall_minuten'),
+      mailZustellungLog: listRecentCronLog(db, 'mail-zustellung', LOG_LIMIT),
       getriggert,
     };
   }
@@ -58,6 +60,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       kkBelegErinnerungTage,
       kkBelegErinnerungenStunde,
       kkBelegErinnerungenMinute,
+      mailZustellungIntervallMinuten,
     } = req.body;
     const errors = [];
 
@@ -94,6 +97,9 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     const kkBelegErinnerungenStundeNum = ganzzahlImBereich(kkBelegErinnerungenStunde, 0, 23, 'Kreditkartenbelege-Erinnerungen: Stunde');
     const kkBelegErinnerungenMinuteNum = ganzzahlImBereich(kkBelegErinnerungenMinute, 0, 59, 'Kreditkartenbelege-Erinnerungen: Minute');
     const kkBelegErinnerungenAktivBool = kkBelegErinnerungenAktiv === '1';
+    // Ältere, vor diesem Feld geladene Formulare senden es nicht: dann bleibt der gespeicherte Wert.
+    const mailZustellungIntervallRoh = mailZustellungIntervallMinuten ?? getConfigValue(db, 'cron_mail_zustellung_intervall_minuten') ?? '5';
+    const mailZustellungIntervallNum = ganzzahlImBereich(mailZustellungIntervallRoh, 1, 1440, 'Mail-Zustellung: Intervall (Minuten)');
 
     if (errors.length > 0) {
       return res.status(400).render('admin/geplante-jobs', {
@@ -117,6 +123,8 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
         splitGruppenNachholenLog: listRecentCronLog(db, 'split-gruppen-nachholen', LOG_LIMIT),
         freigabe2ErinnerungenLog: listRecentCronLog(db, 'freigabe2-erinnerungen', LOG_LIMIT),
         kkBelegErinnerungenLog: listRecentCronLog(db, 'kk-beleg-erinnerungen', LOG_LIMIT),
+        cronMailZustellungIntervallMinuten: mailZustellungIntervallRoh,
+        mailZustellungLog: listRecentCronLog(db, 'mail-zustellung', LOG_LIMIT),
         getriggert: null,
         errors,
         gespeichert: false,
@@ -136,6 +144,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     setConfigValue(db, 'kk_beleg_erinnerung_tage', String(kkBelegErinnerungTageNum));
     setConfigValue(db, 'cron_kk_beleg_erinnerungen_stunde', String(kkBelegErinnerungenStundeNum));
     setConfigValue(db, 'cron_kk_beleg_erinnerungen_minute', String(kkBelegErinnerungenMinuteNum));
+    setConfigValue(db, 'cron_mail_zustellung_intervall_minuten', String(mailZustellungIntervallNum));
     res.redirect('/admin/geplante-jobs?gespeichert=1');
   });
 
@@ -202,6 +211,15 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     try {
       await runKkBelegErinnerungenJob(db, config, mailer);
       res.redirect('/admin/geplante-jobs?getriggert=kk-beleg-erinnerungen');
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/mail-zustellung/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+    try {
+      await runMailZustellungJob(db, config, mailer);
+      res.redirect('/admin/geplante-jobs?getriggert=mail-zustellung');
     } catch (err) {
       next(err);
     }

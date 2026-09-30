@@ -102,16 +102,30 @@ Warnschwelle in Stunden) — siehe
 
 ## Datenbank-Backup (`/admin/backup`)
 
-Manuelle und geplante (täglich, Default 03:00) Sicherung von DB +
-`JOBS_DIR` + `BRANDING_DIR` als ein ZIP-Archiv nach `BACKUP_DIR`, mit
-konfigurierbarer Aufbewahrung (Default: die letzten 14). Download/Löschen
-einzelner lokaler Backups, sowie eine Wiederherstellung (Datei-Upload +
-Pflicht-Bestätigungstext "WIEDERHERSTELLEN"), die einen automatischen
-Sicherheits-Snapshot des vorherigen Standes anlegt, bevor sie Live-Dateien
-ersetzt. **Nur `superadmin`** — kein vergebbares Einzelrecht, strenger
-eingestuft als die drei bereits gesperrten Bereiche, weil das Archiv das
-RFC3161-TSA-Passwort im Klartext enthält. Details:
-[2026-08-24-datenbank-backup-design.md](superpowers/specs/2026-08-24-datenbank-backup-design.md).
+Zeitplan (täglich, Default 03:00, Europe/Zürich), Aufbewahrung (Default: die
+letzten 14 `.fpbak`) und manuelles Auslösen der Sicherung von DB +
+`JOBS_DIR` + `BRANDING_DIR`. Sicherungen entstehen ausschließlich als
+authentifiziert verschlüsselte `.fpbak`-Dateien (AES-256-GCM) in
+`BACKUP_DIR`; dafür muss der separat verwahrte Schlüsselbund
+`BACKUP_KEYRING_FILE` bereitstehen, sonst scheitert die Sicherung sichtbar
+im Verlauf. Die Retention entfernt nur `.fpbak`-Dateien (mit
+Lösch-Protokoll); alte Klartext-ZIPs bleiben liegen, bis ein Superadmin sie
+ausdrücklich löscht. Einzelne Sicherungen können heruntergeladen oder
+gelöscht und ungeklärte Löschabsichten begründet geprüft werden.
+
+**Keine Wiederherstellung im laufenden Betrieb:** `POST
+/admin/backup/wiederherstellen` antwortet mit `423`. Restore und Rückwechsel
+laufen nur offline über `npm run backup:verify` / `backup:restore` /
+`backup:rollback` bei gestopptem Server. Verbindliche Anleitungen:
+[backup-verschluesselung.md](backup-verschluesselung.md) (Schlüsselbund,
+Aufbewahrung der Schlüssel, Rotation, n8n-Abholung) und
+[offline-restore.md](offline-restore.md) (Ablauf, Prozesssperre, verwaiste
+Sperren). Ein verpasster Sicherungstermin (Server gestoppt) wird nicht
+nachgeholt — siehe
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#neustart-verpasste-termine-und-verwaiste-sperren).
+**Nur `superadmin`** — kein vergebbares Einzelrecht. Das historische Design
+([2026-08-24-datenbank-backup-design.md](superpowers/specs/2026-08-24-datenbank-backup-design.md))
+beschreibt noch den früheren ZIP-/Live-Restore-Stand.
 
 ## Module (`/admin/module`)
 
@@ -146,16 +160,24 @@ und
 ## Personen (`/admin/personen`)
 
 Read-only-Liste aller aus ChurchTools synchronisierten Personen mit
-abgeleiteter Rolle (Superadmin/Manager/Benutzer). Nur ein `superadmin`
+abgeleiteter Rolle (Superadmin/Manager/Benutzer). Aktive Personen ohne
+Verwaltungsgruppe werden neutral als „Portalzugang über ChurchTools-Login“
+gekennzeichnet (kein Fehlerzustand); bei deaktivierten Personen steht der
+Grund (in ChurchTools gelöscht bzw. archiviert) samt Datum — siehe
+[personen-sync.md](personen-sync.md). Nur ein `superadmin`
 kann hier zusätzlich die additiven Einzelrechte pro Person setzen
 (`POST /admin/personen/:id/berechtigungen`) — siehe
 [auth-und-rechte.md](auth-und-rechte.md).
 
 ## E-Mail-Protokoll (`/admin/mails`)
 
-Vollständiges Protokoll jedes Zustellversuchs (`mail_log`, siehe
-[datenmodell.md](datenmodell.md)), inklusive Volltext und
-Fehlschlags-Details, mit einer "erneut senden"-Funktion pro Eintrag.
+Vollständiges Protokoll aller Benachrichtigungen (`mail_log`, siehe
+[datenmodell.md](datenmodell.md)) mit Volltext, Status (`eingereiht`,
+`geplant`, `versendet`, `fehlgeschlagen`), Anzahl Versuche, nächstem
+Versuch und Fehlerdetails. „Erneut versenden“ für `fehlgeschlagen`e Zeilen
+legt eine neue Zeile an; „Jetzt erneut versuchen“ versucht eine noch
+eingereihte Zeile sofort, ohne Duplikat. Semantik und Wiederholungslogik:
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail).
 
 ## Personen-Sync (`/admin/sync`)
 
@@ -183,9 +205,12 @@ unveränderlich. Siehe
 
 ## Geplante Jobs (`/admin/geplante-jobs`)
 
-Zeitplan-Konfiguration und manuelles Sofort-Auslösen von sieben der neun
+Zeitplan-Konfiguration und manuelles Sofort-Auslösen von acht der elf
 Hintergrund-Jobs (`datenbank-sicherung` und `mail-digest` haben eigene
-Konfigurationsseiten, siehe oben), inklusive ihrer Lauf-Historie. Dazu
+Konfigurationsseiten, siehe oben; `sicherheitsalarme` nur über
+`admin_config`), inklusive ihrer Lauf-Historie — einschließlich des
+Wiederholungslaufs `mail-zustellung`. Läufe mit Zustellfehlern stehen dort
+auf `fehler`. Dazu
 gehören auch der eigene An/Aus-Schalter und die Tage-Schwelle für
 `kk-beleg-erinnerungen`, sowie — als Teil der Konfiguration von
 `pdf-bereinigung` — die Aufbewahrungsfrist, nach der Dateien verworfener

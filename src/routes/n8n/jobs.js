@@ -1,6 +1,6 @@
 import { Router, json } from 'express';
 import multer from 'multer';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import crypto from 'node:crypto';
 import { createJob, getJobById, findJobByDateiHash, listAbholbereitJobs, listAbholbereitGruppen, confirmAbholung, confirmGruppenAbholung, istGruppenElternjob, listSplitKinder, setThumbnailPfad, setQrDaten, setKkTextAnalyse } from '../../db/jobsRepo.js';
@@ -17,6 +17,7 @@ import { markiereAlsKkAbrechnung } from '../../services/kkMarkierung.js';
 import { createExportEvidence, readExportDocument, confirmArchiveReceipt, ArchiveError } from '../../services/archiveReceipt.js';
 import { machineAuditContext, mitAuditKontext } from '../../services/auditContext.js';
 import { exportNachweis } from '../../services/exportSnapshot.js';
+import { pruefeEingangsPdf, PdfEingangFehler } from '../../services/pdfEingang.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
@@ -50,6 +51,19 @@ export function createN8nJobsRouter({ db, config, mailer }) {
         }
         if (!isPdf(req.file.buffer)) {
           return res.status(400).json({ error: 'Datei ist keine gültige PDF-Datei.' });
+        }
+
+        // Vor Duplikatprüfung und Jobanlage: nur ein tatsächlich verarbeitbares Dokument mit
+        // mindestens einer lesbaren Seite wird ein regulärer Rechnungsjob (services/pdfEingang.js).
+        // 422 = dauerhaft abgelehnt, ein erneuter Versuch mit denselben Bytes ist sinnlos; der
+        // n8n-Ablauf leitet solche Eingänge zur manuellen Bearbeitung weiter. Es entsteht weder
+        // ein Job noch eine Datei.
+        try {
+          await pruefeEingangsPdf(req.file.buffer);
+        } catch (err) {
+          if (!(err instanceof PdfEingangFehler)) throw err;
+          console.warn(`PDF-Eingang abgelehnt (${err.code}): ${req.body?.dateiname || '(ohne Dateiname)'}`);
+          return res.status(422).json({ error: err.message, code: err.code });
         }
 
         // Catches the same PDF bytes being submitted twice (an n8n retry, or an IMAP trigger
@@ -90,7 +104,14 @@ export function createN8nJobsRouter({ db, config, mailer }) {
         const pdfPfad = join(config.jobsDir, `job-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
         writeFileSync(pdfPfad, req.file.buffer);
 
-        const id = createJob(db, { eingangAm, quelle, absender: absender || null, dateiname, pdfPfad, dateiHash });
+        let id;
+        try {
+          id = createJob(db, { eingangAm, quelle, absender: absender || null, dateiname, pdfPfad, dateiHash });
+        } catch (err) {
+          // Ohne Jobzeile keine verwaiste Datei zurücklassen.
+          try { unlinkSync(pdfPfad); } catch { /* bereits entfernt */ }
+          throw err;
+        }
         try {
           const thumbnailPng = renderFirstPageThumbnail(req.file.buffer);
           const thumbnailPfad = pdfPfad.replace(/\.pdf$/, '.png');

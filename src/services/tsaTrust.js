@@ -45,8 +45,12 @@ export async function verifyTsaChain({ signed, info, signer }, anchors, crls = [
   const certificates = (signed.certificates || []).filter((cert) => cert instanceof Certificate);
   if (!anchors.length || certificates.length > 12) throw new Error('TSA-Zertifikatskette fehlt oder ist zu gross.');
   const signerHash = fingerprint(signer);
+  // Antwortzertifikate mit Name und Schluessel eines lokalen Ankers (z.B. DigiCerts quersignierte
+  // "Trusted Root G4") ersetzt der Anker selbst; PKI.js wuerde sonst ihnen statt dem Anker folgen.
+  const spki = (cert) => Buffer.from(cert.subjectPublicKeyInfo.toSchema().toBER(false));
+  const isAnchorCopy = (cert) => anchors.some((anchor) => anchor.subject.isEqual(cert.subject) && spki(anchor).equals(spki(cert)));
   // PKI.js takes the last untrusted certificate as the leaf. Bind the result to the actual signer.
-  const ordered = [...certificates.filter((cert) => fingerprint(cert) !== signerHash), signer];
+  const ordered = [...certificates.filter((cert) => fingerprint(cert) !== signerHash && !isAnchorCopy(cert)), signer];
   const roots = new Set(anchors.map(fingerprint));
   const now = new Date();
   let evidenz;

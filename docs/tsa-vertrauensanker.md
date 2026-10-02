@@ -51,12 +51,39 @@ ausgetauschte oder unlesbare Dateien fuehren nicht zu einem ungesicherten Fallba
 Der normale Konfigurationsloader erlaubt kein Abschalten der Kettenpflicht;
 ein interner Opt-out wird ausschliesslich zur Isolation anderer Tests verwendet.
 
+## Beispiel DigiCert (`http://timestamp.digicert.com`)
+
+Stand 2026-10-02 mit einem echten Zeitstempel geprueft (Kette, CRLs, Nachweis).
+Die Kette lautet *DigiCert SHA256 RSA4096 Timestamp Responder 2026 1* →
+*DigiCert Trusted G4 TimeStamping RSA4096 SHA256 2025 CA1* → *DigiCert Trusted Root G4*.
+
+```sh
+curl -o /tmp/root.crt https://cacerts.digicert.com/DigiCertTrustedRootG4.crt
+openssl x509 -inform DER -in /tmp/root.crt -out /etc/freigabeportal/tsa-roots.pem
+openssl x509 -in /etc/freigabeportal/tsa-roots.pem -noout -fingerprint -sha256
+# erwartet: 55:2F:7B:DC:F1:A7:AF:9E:6C:E6:72:01:7F:4F:12:AB:F7:72:40:C7:8E:76:1A:C2:03:D1:D9:D2:0A:C8:99:88
+sha256sum /etc/freigabeportal/tsa-roots.pem   # → TSA_TRUST_ANCHORS_SHA256
+
+# CRLs (Gueltigkeit ca. 3 Wochen, regelmaessig erneuern; Verteilpunkte bei Profilwechsel
+# aus den Zertifikaten der TSA-Antwort neu ermitteln):
+tmp=$(mktemp)
+for n in DigiCertTrustedG4TimeStampingRSA4096SHA2562025CA1 DigiCertTrustedRootG4; do
+  curl -fsS "http://crl3.digicert.com/$n.crl" | openssl crl -inform DER >> "$tmp" || exit 1
+done
+mv "$tmp" /etc/freigabeportal/tsa-crls.pem
+```
+
+Die Fingerprint-Angabe zusaetzlich mit der offiziellen DigiCert-Root-Liste abgleichen.
+Wechselt DigiCert Responder oder Zwischenzertifikat, aendern sich die CRL-URLs.
+
 ## Was geprueft wird
 
 - Nur lokal freigegebene Root-CAs sind vertrauenswuerdig; Zertifikate aus der
   Antwort dienen lediglich als ungesicherte Kettenkandidaten.
 - Der Pfad muss zum tatsaechlichen CMS-Unterzeichner und zu einem konfigurierten
-  Root fuehren. PKI.js validiert ihn zum behaupteten Zeitstempelzeitpunkt und
+  Root fuehren. Mitgelieferte Zertifikate mit Name und Schluessel eines konfigurierten
+  Roots (Querzertifikate, z.B. DigiCerts "Trusted Root G4" signiert von "Assured ID Root
+  CA") werden ignoriert; der Pfad endet immer am lokalen selbstsignierten Anker. PKI.js validiert ihn zum behaupteten Zeitstempelzeitpunkt und
   zum lokalen Empfangszeitpunkt. Fehlende Zwischenzertifikate werden nicht
   automatisch aus URLs nachgeladen.
 - SHA-256/384/512 als Signatur-Digest, ESS-Bindung an das Signierzertifikat,
@@ -67,8 +94,11 @@ ein interner Opt-out wird ausschliesslich zur Isolation anderer Tests verwendet.
   Gesperrte Signier- oder Zwischenzertifikate verhindern die Uebernahme.
 - Unterstuetzt sind vollstaendige direkte CRLs mit RSA-PKCS1- oder ECDSA-Signatur
   und SHA-256/384/512, maximal 16 Listen in einer regulaeren Datei bis 16 MiB.
-  Delta-CRLs, IssuingDistributionPoint, FreshestCRL, indirekte Eintraege,
-  doppelte Erweiterungen und kritische CRL-/Eintragserweiterungen werden abgelehnt.
+  Eine (kritische) IssuingDistributionPoint-Erweiterung wird nur akzeptiert, wenn sie
+  ausschliesslich fullName-URIs enthaelt (keine onlyContains*-, onlySomeReasons- oder
+  indirectCRL-Einschraenkung) und eine davon einem uneingeschraenkten CRL-Verteilpunkt
+  des geprueften Zertifikats entspricht. Delta-CRLs, FreshestCRL, indirekte Eintraege,
+  doppelte Erweiterungen und sonstige kritische CRL-/Eintragserweiterungen werden abgelehnt.
   Das ist ein bewusst begrenztes Profil, keine allgemeine CRL-/OCSP-Implementierung.
   Grundlage: [RFC 5280, Abschnitt 5](https://www.rfc-editor.org/rfc/rfc5280.html#section-5).
 

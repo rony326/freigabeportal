@@ -39,12 +39,37 @@ export function loadTsaCrls(path) {
   });
 }
 
-function checkExtensions(extensions = [], entry = false) {
+const ISSUING_DISTRIBUTION_POINT = '2.5.29.28';
+const uris = (names) => (Array.isArray(names) ? names : []).filter((name) => name.type === 6).map((name) => name.value);
+
+// Einzig unterstuetzte IDP-Form (z.B. DigiCert): nur fullName-URIs, ohne Einschraenkung auf Zertifikatsarten,
+// Gruende oder indirekte Eintraege. Nach RFC 5280 6.3.3 (b)(2)(i) muss eine URI zu einem
+// uneingeschraenkten CRL-Verteilpunkt des geprueften Zertifikats passen; sonst deckt die Liste es nicht ab.
+function checkIssuingDistributionPoint(idp, certificate) {
+  if (!idp || idp.onlyContainsUserCerts || idp.onlyContainsCACerts || idp.onlyContainsAttributeCerts ||
+      idp.indirectCRL || idp.onlySomeReasons !== undefined || !uris(idp.distributionPoint).length) {
+    throw new Error('Nicht unterstuetzte TSA-Sperrlisten-Erweiterung.');
+  }
+  const cdp = certificate.extensions?.find((extension) => extension.extnID === '2.5.29.31')?.parsedValue;
+  const certUris = (cdp?.distributionPoints || [])
+    .filter((point) => point.reasons === undefined && point.cRLIssuer === undefined)
+    .flatMap((point) => uris(point.distributionPoint));
+  if (!uris(idp.distributionPoint).some((uri) => certUris.includes(uri))) {
+    throw new Error('TSA-Sperrliste passt nicht zum Verteilpunkt des Zertifikats.');
+  }
+}
+
+function checkExtensions(extensions = [], entry = false, certificate = null) {
   const seen = new Set();
   for (const extension of extensions) {
+    if (!entry && extension.extnID === ISSUING_DISTRIBUTION_POINT && !seen.has(extension.extnID)) {
+      checkIssuingDistributionPoint(extension.parsedValue, certificate);
+      seen.add(extension.extnID);
+      continue;
+    }
     // Delta, scoped and indirect CRLs need different processing and cannot prove full coverage here.
     if (seen.has(extension.extnID) || extension.critical ||
-        (entry ? extension.extnID === '2.5.29.29' : ['2.5.29.27', '2.5.29.28', '2.5.29.46'].includes(extension.extnID))) {
+        (entry ? extension.extnID === '2.5.29.29' : ['2.5.29.27', '2.5.29.46'].includes(extension.extnID))) {
       throw new Error('Nicht unterstuetzte TSA-Sperrlisten-Erweiterung.');
     }
     seen.add(extension.extnID);
@@ -72,7 +97,7 @@ export async function verifyTsaRevocation(chain, crls, now = new Date()) {
       if (!Number.isFinite(start) || !Number.isFinite(end) || start > now.getTime() || end <= now.getTime() || end <= start) {
         throw new Error('TSA-Sperrliste ist nicht aktuell oder hat kein gueltiges nextUpdate.');
       }
-      checkExtensions(crl.crlExtensions?.extensions);
+      checkExtensions(crl.crlExtensions?.extensions, false, certificate);
       for (const entry of crl.revokedCertificates || []) checkExtensions(entry.crlEntryExtensions?.extensions, true);
       if (!signatureAlgorithms.has(crl.signatureAlgorithm.algorithmId) ||
           !Buffer.from(crl.signature.toSchema().toBER(false)).equals(Buffer.from(crl.signatureAlgorithm.toSchema().toBER(false)))) {

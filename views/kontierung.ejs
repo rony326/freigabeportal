@@ -35,9 +35,9 @@
                 <% } %>
               </div>
             <% } %>
-            <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.konfliktMitZugewiesenemDebitor) { %>
+            <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.konfliktMitZugewiesenemKreditor) { %>
               <div class="alert alert-warning">
-                QR-Code deutet auf Lieferant <strong><%= qrInfo.vorschlagDebitor.name %></strong> hin, aktuell zugewiesen: <strong><%= qrInfo.zugewiesenerDebitor.name %></strong> — bitte prüfen.
+                QR-Code deutet auf Lieferant <strong><%= qrInfo.vorschlagKreditor.name %></strong> hin, aktuell zugewiesen: <strong><%= qrInfo.zugewiesenerKreditor.name %></strong> — bitte prüfen.
               </div>
             <% } %>
             <% if (errors.length > 0) { %>
@@ -64,11 +64,11 @@
                   <input type="text" class="form-control" id="absender" name="absender" value="<%= values.absender || '' %>" required>
                 </div>
                 <div class="col-6">
-                  <label class="form-label" for="debitorId">Lieferant</label>
-                  <select class="form-select" id="debitorId" name="debitorId" required data-searchable>
+                  <label class="form-label" for="kreditorId">Lieferant</label>
+                  <select class="form-select" id="kreditorId" name="kreditorId" required data-searchable>
                     <option value="">— wählen —</option>
-                    <% debitoren.forEach((d) => { %>
-                      <option value="<%= d.id %>" <%= String(d.id) === values.debitorId ? 'selected' : '' %>><%= d.name %></option>
+                    <% kreditoren.forEach((d) => { %>
+                      <option value="<%= d.id %>" <%= String(d.id) === values.kreditorId ? 'selected' : '' %>><%= d.name %></option>
                     <% }) %>
                   </select>
                 </div>
@@ -111,7 +111,7 @@
               <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.iban && (!qrInfo.abgleich || qrInfo.abgleich.status !== 'match')) { %>
                 <div class="form-check mb-3">
                   <input class="form-check-input" type="checkbox" id="ibanMerken" name="ibanMerken" checked>
-                  <label class="form-check-label" for="ibanMerken">IBAN <%= qrInfo.iban %> künftig automatisch <%= qrInfo.debitorFuerAbgleich ? qrInfo.debitorFuerAbgleich.name : 'dem ausgewählten Lieferanten' %> zuordnen</label>
+                  <label class="form-check-label" for="ibanMerken">IBAN <%= qrInfo.iban %> künftig automatisch <%= qrInfo.kreditorFuerAbgleich ? qrInfo.kreditorFuerAbgleich.name : 'dem ausgewählten Lieferanten' %> zuordnen</label>
                 </div>
               <% } %>
 
@@ -294,7 +294,7 @@
     // the browser lets an empty form through; a fresh page load (any validation error re-renders
     // the page) restores the attributes from the template.
     document.getElementById('ablehnen-btn').addEventListener('click', function () {
-      ['kontoId', 'absender', 'debitorId', 'rechnungsnummer', 'betrag', 'zahlungsziel'].forEach(function (id) {
+      ['kontoId', 'absender', 'kreditorId', 'rechnungsnummer', 'betrag', 'zahlungsziel'].forEach(function (id) {
         document.getElementById(id).required = false;
       });
     });
@@ -509,9 +509,9 @@
       Array.prototype.forEach.call(document.querySelectorAll('select[data-searchable]'), enhance);
       window.SearchableSelect = { enhance: enhance, refresh: refresh };
     })();
-    // "+ Neu" next to the Lieferant-Dropdown opens a modal to create a Debitor on the fly, so a
+    // "+ Neu" next to the Lieferant-Dropdown opens a modal to create a Kreditor on the fly, so a
     // person doesn't have to leave the Kontierung page (and lose their in-progress form) to go
-    // through /admin/debitoren just because the invoice's supplier isn't in the list yet. The Name
+    // through /admin/kreditoren just because the invoice's supplier isn't in the list yet. The Name
     // field is pre-filled from the Absender field already on this page, since that's usually
     // already the supplier's address/name lifted straight off the invoice.
     (function () {
@@ -519,7 +519,7 @@
       var nameInput = document.getElementById('neuer-lieferant-name');
       var kontoSelect = document.getElementById('neuer-lieferant-konto');
       var errorBox = document.getElementById('neuer-lieferant-error');
-      var debitorSelect = document.getElementById('debitorId');
+      var kreditorSelect = document.getElementById('kreditorId');
 
       modal.addEventListener('show.bs.modal', function () {
         errorBox.classList.add('d-none');
@@ -549,9 +549,9 @@
             option.value = result.data.id;
             option.textContent = result.data.name;
             option.selected = true;
-            debitorSelect.appendChild(option);
-            debitorSelect.value = String(result.data.id);
-            if (window.SearchableSelect) window.SearchableSelect.refresh(debitorSelect);
+            kreditorSelect.appendChild(option);
+            kreditorSelect.value = String(result.data.id);
+            if (window.SearchableSelect) window.SearchableSelect.refresh(kreditorSelect);
             bootstrap.Modal.getOrCreateInstance(modal).hide();
           })
           .catch(function () {

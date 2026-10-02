@@ -23,6 +23,7 @@ import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { setupMockTsa, signedTsaResponse } from '../helpers/mockTsa.js';
 import { fetchCsrfToken } from '../helpers/csrf.js';
 import { createChainedTsa } from '../helpers/chainedTsa.js';
+import { ladeTsaNachweis } from '../../src/services/tsaNachweis.js';
 
 function createStubMailer() {
   const sent = [];
@@ -555,6 +556,8 @@ test('POST /freigabe2/:id sets zeitstempel_gesetzt_am when a TSA is configured a
   assert.ok(job.zeitstempel_gesetzt_am, 'zeitstempel_gesetzt_am must be set after a successful TSA call');
   assert.match(job.zeitstempel_datei_hash, /^[0-9a-f]{64}$/, 'zeitstempel_datei_hash must be a sha256 hex digest');
   assert.equal(job.zeitstempel_datei_hash, createHash('sha256').update(readFileSync(job.pdf_pfad)).digest('hex'), 'the stored hash must match the final bytes on disk');
+  const nachweis = ladeTsaNachweis(db, { jobId: id, bezug: 'einzel', dokumentSha256: job.zeitstempel_datei_hash });
+  assert.equal(nachweis.integritaet, 'lokal_konsistent', 'timestamp evidence is committed together with the hash');
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

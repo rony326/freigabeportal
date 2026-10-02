@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import { buildAuthorizeUrl, exchangeCodeForToken, fetchPerson, resolveMemberGroupIds } from '../services/churchtools.js';
 import { upsertPerson } from '../db/personenRepo.js';
+import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
 
 export function createAuthRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -16,6 +17,8 @@ export function createAuthRouter({ db, config, csrfProtection = (req, res, next)
     try {
       const { code, state } = req.query;
       if (!state || state !== req.session.oauthState) {
+        // Weder state noch code werden protokolliert.
+        meldeZugriffVerweigert(req, { grund: 'anmeldung_ungueltig', status: 400 });
         return res.status(400).render('error', { message: 'Ungültiger Login-Vorgang. Bitte erneut versuchen.' });
       }
       delete req.session.oauthState;

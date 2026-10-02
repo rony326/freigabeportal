@@ -1,7 +1,7 @@
 import { getKontoById } from './kontenRepo.js';
 import { getPersonById } from './personenRepo.js';
 import { listZuweisungsregeln } from './zuweisungsregelnRepo.js';
-import { getDebitorById } from './debitorenRepo.js';
+import { getKreditorById } from './kreditorenRepo.js';
 
 // Reused by listZugewiesenJobsForPerson/listFreigabe2JobsForPerson/listAbgelehntJobsForPerson
 // below: matches any person whose active Ferienmodus (today falls within
@@ -94,11 +94,11 @@ export function findJobByDateiHash(db, dateiHash) {
 // 'abgelehnt' jobs are deliberately still matched -- a rejected job's Rechnungsnummer resurfacing
 // on a new job is still worth flagging, even though it carries no double-payment risk by itself.
 // Only 'geloescht' (soft-deleted) rows are excluded.
-export function findJobsByDebitorUndRechnungsnummer(db, debitorId, rechnungsnummer, excludeJobId) {
-  if (!debitorId || !rechnungsnummer) return [];
+export function findJobsByKreditorUndRechnungsnummer(db, kreditorId, rechnungsnummer, excludeJobId) {
+  if (!kreditorId || !rechnungsnummer) return [];
   return db
-    .prepare("SELECT * FROM jobs WHERE debitor_id = ? AND rechnungsnummer = ? AND status != 'geloescht' AND id != ? ORDER BY id")
-    .all(debitorId, rechnungsnummer, excludeJobId);
+    .prepare("SELECT * FROM jobs WHERE kreditor_id = ? AND rechnungsnummer = ? AND status != 'geloescht' AND id != ? ORDER BY id")
+    .all(kreditorId, rechnungsnummer, excludeJobId);
 }
 
 export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad, dateiHash }) {
@@ -106,18 +106,18 @@ export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad,
   let kontoId = null;
   let zugewiesenAn = null;
   let status = 'unzugewiesen';
-  let debitorId = null;
+  let kreditorId = null;
   let lieferant = null;
 
   if (regel) {
-    const debitor = getDebitorById(db, regel.debitor_id);
-    if (debitor && debitor.aktiv) {
-      debitorId = debitor.id;
-      lieferant = debitor.name;
-      // A Debitor without its own default Konto still auto-fills Lieferant, but there's no
+    const kreditor = getKreditorById(db, regel.kreditor_id);
+    if (kreditor && kreditor.aktiv) {
+      kreditorId = kreditor.id;
+      lieferant = kreditor.name;
+      // A Kreditor without its own default Konto still auto-fills Lieferant, but there's no
       // Konto to resolve a Freigeber1 from — the job stays unzugewiesen, same as no match at all.
-      if (debitor.konto_id) {
-        const konto = getKontoById(db, debitor.konto_id);
+      if (kreditor.konto_id) {
+        const konto = getKontoById(db, kreditor.konto_id);
         if (konto && konto.aktiv) {
           kontoId = konto.id;
           zugewiesenAn = konto.freigeber1_id;
@@ -129,10 +129,10 @@ export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad,
 
   const result = db
     .prepare(
-      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an, debitor_id, lieferant, datei_hash)
+      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an, kreditor_id, lieferant, datei_hash)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn, debitorId, lieferant, dateiHash ?? null);
+    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn, kreditorId, lieferant, dateiHash ?? null);
 
   return Number(result.lastInsertRowid);
 }
@@ -248,14 +248,14 @@ export function setJobBetrag(db, jobId, betrag) {
   db.prepare('UPDATE jobs SET betrag = ? WHERE id = ?').run(betrag || null, jobId);
 }
 
-export function updateKontierungMetadaten(db, jobId, { absender, betrag, zahlungsziel, rechnungsnummer, lieferant, debitorId, typ }) {
-  db.prepare('UPDATE jobs SET absender = ?, betrag = ?, zahlungsziel = ?, rechnungsnummer = ?, lieferant = ?, debitor_id = ?, typ = ? WHERE id = ?').run(
+export function updateKontierungMetadaten(db, jobId, { absender, betrag, zahlungsziel, rechnungsnummer, lieferant, kreditorId, typ }) {
+  db.prepare('UPDATE jobs SET absender = ?, betrag = ?, zahlungsziel = ?, rechnungsnummer = ?, lieferant = ?, kreditor_id = ?, typ = ? WHERE id = ?').run(
     absender || null,
     betrag || null,
     zahlungsziel || null,
     rechnungsnummer || null,
     lieferant || null,
-    debitorId || null,
+    kreditorId || null,
     typ || 'rechnung',
     jobId
   );
@@ -485,8 +485,9 @@ export function listPoolJobsForReminder(db, stunden) {
     .all(schwelle);
 }
 
+// Nur setzen, wenn noch nicht gesetzt: liefert false, wenn ein paralleler Lauf schneller war.
 export function markReminderGesendet(db, jobId) {
-  db.prepare('UPDATE jobs SET reminder_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+  return db.prepare('UPDATE jobs SET reminder_gesendet_at = ? WHERE id = ? AND reminder_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
 export function listPoolJobsForEskalation(db, stunden) {
@@ -498,8 +499,9 @@ export function listPoolJobsForEskalation(db, stunden) {
     .all(schwelle);
 }
 
+// Nur setzen, wenn noch nicht gesetzt: liefert false, wenn ein paralleler Lauf schneller war.
 export function markEskalationGesendet(db, jobId) {
-  db.prepare('UPDATE jobs SET eskalation_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+  return db.prepare('UPDATE jobs SET eskalation_gesendet_at = ? WHERE id = ? AND eskalation_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
 export function listFreigabe2JobsForReminder(db, stunden) {
@@ -512,8 +514,9 @@ export function listFreigabe2JobsForReminder(db, stunden) {
     .all(schwelle);
 }
 
+// Nur setzen, wenn noch nicht gesetzt: liefert false, wenn ein paralleler Lauf schneller war.
 export function markFreigabe2ReminderGesendet(db, jobId) {
-  db.prepare('UPDATE jobs SET freigabe2_reminder_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+  return db.prepare('UPDATE jobs SET freigabe2_reminder_gesendet_at = ? WHERE id = ? AND freigabe2_reminder_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
 export function listFreigabe2JobsForEskalation(db, stunden) {
@@ -526,8 +529,9 @@ export function listFreigabe2JobsForEskalation(db, stunden) {
     .all(schwelle);
 }
 
+// Nur setzen, wenn noch nicht gesetzt: liefert false, wenn ein paralleler Lauf schneller war.
 export function markFreigabe2EskalationGesendet(db, jobId) {
-  db.prepare('UPDATE jobs SET freigabe2_eskalation_gesendet_at = ? WHERE id = ?').run(new Date().toISOString(), jobId);
+  return db.prepare('UPDATE jobs SET freigabe2_eskalation_gesendet_at = ? WHERE id = ? AND freigabe2_eskalation_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
 export function listAbgeholtJobs(db) {
@@ -721,7 +725,7 @@ export function markJobAufgesplittet(db, jobId) {
 
 // Each split line becomes its own fully independent job — own file, own approval chain, own
 // lifecycle (so deleting/rejecting one split part can never affect another). eingang_am, quelle,
-// absender, dateiname, zahlungsziel, rechnungsnummer, lieferant, debitor_id and the QR-decode
+// absender, dateiname, zahlungsziel, rechnungsnummer, lieferant, kreditor_id and the QR-decode
 // results are carried over from the parent; konto_id, betrag, zugewiesen_an are specific to this
 // one split line.
 // belegSeitenzahl: how many pages the (optional) attached Beleg contributed to pdfPfad, recorded
@@ -734,7 +738,7 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
     .prepare(
       `INSERT INTO jobs (
          eingang_am, quelle, absender, dateiname, pdf_pfad, thumbnail_pfad, status,
-         konto_id, zugewiesen_an, hinweis_konto_id, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id, aufgesplittet_von,
+         konto_id, zugewiesen_an, hinweis_konto_id, betrag, zahlungsziel, rechnungsnummer, lieferant, kreditor_id, aufgesplittet_von,
          qr_iban, qr_referenz, qr_betrag, qr_waehrung, qr_creditor_name, qr_erkannt_am,
          rechnungsposition, beleg_seitenzahl, typ, beschreibung, kk_eigenbeleg_grund
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -754,7 +758,7 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
       parentJob.zahlungsziel,
       parentJob.rechnungsnummer,
       parentJob.lieferant,
-      parentJob.debitor_id,
+      parentJob.kreditor_id,
       parentJob.id,
       parentJob.qr_iban,
       parentJob.qr_referenz,
@@ -974,9 +978,9 @@ export function hebeKkMarkierungAuf(db, jobId) {
 // Kopfdaten der Abrechnung (Kartenherausgeber, Abrechnungsnummer, Zahlungsziel) -- werden vor dem
 // Anlegen der Teil-Jobs auf den Elternjob geschrieben, damit createSplitJob sie wie beim
 // Aufsplitten an jedes Kind vererbt.
-export function setKkAbrechnungKopfdaten(db, jobId, { debitorId, lieferant, rechnungsnummer, zahlungsziel }) {
-  db.prepare('UPDATE jobs SET debitor_id = ?, lieferant = ?, rechnungsnummer = ?, zahlungsziel = ? WHERE id = ?').run(
-    debitorId ?? null, lieferant ?? null, rechnungsnummer ?? null, zahlungsziel ?? null, jobId
+export function setKkAbrechnungKopfdaten(db, jobId, { kreditorId, lieferant, rechnungsnummer, zahlungsziel }) {
+  db.prepare('UPDATE jobs SET kreditor_id = ?, lieferant = ?, rechnungsnummer = ?, zahlungsziel = ? WHERE id = ?').run(
+    kreditorId ?? null, lieferant ?? null, rechnungsnummer ?? null, zahlungsziel ?? null, jobId
   );
 }
 

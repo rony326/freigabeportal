@@ -64,7 +64,8 @@
               </td>
               <td>
                 <% if (p.ct_person_unresolved) { %><span class="text-warning d-block">⚠️ Person in ChurchTools nicht auflösbar (nicht auflösbar)</span><% } %>
-                <% if (p.aktiv && p.gruppen.length === 0) { %><span class="text-warning d-block">⚠️ Nicht mehr in einer ChurchTools-Gruppe, aber weiterhin als Freigeber/Stellvertreter auf einem Konto hinterlegt</span><% } %>
+                <% if (p.aktiv && p.gruppen.length === 0) { %><span class="text-muted small d-block">Keine Verwaltungsgruppe – Portalzugang über ChurchTools-Login (Rechte nur über Konten, Karten, Vertretungen oder Einzelrechte)</span><% } %>
+                <% if (!p.aktiv && p.deaktivierungsgrund) { %><span class="text-muted small d-block">Zugang entzogen<%= p.deaktivierungsgrund === 'churchtools_geloescht' ? ': Person in ChurchTools gelöscht' : p.deaktivierungsgrund === 'churchtools_archiviert' ? ': Person in ChurchTools archiviert' : '' %><%= p.deaktiviert_am ? ` (${p.deaktiviert_am.slice(0, 10)})` : '' %></span><% } %>
               </td>
               <td>
                 <% if (p.ferienmodus_von) { %>

@@ -34,7 +34,8 @@ Restore zugelassen. Vor Umstellung Wiederherstellungsprobe durchfuehren:
 **TSA-Konfiguration:** Neue Zeitstempel verlangen ein geprueftes Root-CA-Buendel
 und dessen SHA-256 in `TSA_TRUST_ANCHORS_FILE`/`TSA_TRUST_ANCHORS_SHA256`.
 Zusaetzlich verlangt `TSA_CRL_FILE` aktuelle signierte Sperrlisten fuer alle
-Aussteller der Kette. Ohne diese Nachweise bleiben TSA-pflichtige Exporte gesperrt. Installation und
+Aussteller der Kette; mit `TSA_CRL_AUTO_UPDATE=true` erneuert das Portal sie taeglich selbst
+(`npm run tsa:crl-update` fuer die Ersteinrichtung). Ohne diese Nachweise bleiben TSA-pflichtige Exporte gesperrt. Installation und
 verbleibende Pruefluecken: [TSA-Vertrauensanker](docs/tsa-vertrauensanker.md).
 
 **Betrieb und Wiederherstellung:** Der aktualisierte Server verwendet eine exklusive
@@ -119,26 +120,48 @@ das erste Konto anzulegen oder später Einzelrechte zuzuweisen.
 ### Zeitgesteuerte Jobs — laufen im Node-Prozess selbst
 
 Kein externer Task Scheduler nötig: Solange der Node-Prozess läuft (Infomaniaks
-Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App die acht
-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
+Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App zwölf
+Hintergrund-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 
 | Job | Zeitplan | Zweck |
 |---|---|---|
 | `sync-personen` | täglich, Default 02:00 (Europe/Zürich) | ChurchTools-Personen-/Gruppen-Sync |
 | `pool-erinnerungen` | Intervall, Default alle 60 Min. | Reminder-/Eskalations-Mails für unbeanspruchte Pool-Rechnungen (Schwellen in Stunden, admin-konfigurierbar, Default 24h/48h — separat unter Eskalationszeiten) |
 | `freigabe2-erinnerungen` | Intervall, Default alle 60 Min. | Reminder an den effektiven Freigeber 2 und Übergabe an die Admin-Gruppe für seit langem unbeantwortete `freigabe2`-Jobs |
-| `pdf-bereinigung` | täglich, Default 02:30 (Europe/Zürich) | Archivierung abgeholter Jobs, Aufräumen alter `.tmp`-Stempeldateien, Mail-Log-Retention |
+| `pdf-bereinigung` | täglich, Default 02:30 (Europe/Zürich) | Archivierung abgeholter Jobs, Aufräumen alter `.tmp`-Stempeldateien, Mail-Log-Retention, Quarantäne verwaister finaler Dateien |
 | `zeitstempel-nachholen` | Intervall, Default alle 5 Min. | wiederholt fehlgeschlagene RFC3161-Zeitstempel-Versuche (nur solange die PDF noch lokal vorliegt) |
 | `split-gruppen-nachholen` | Intervall, Default alle 15 Min. | holt die Zusammenführung einer vollständig freigegebenen Splitgruppe nach, wenn sie noch aussteht oder am Zeitstempel gescheitert ist |
-| `datenbank-sicherung` | täglich, Default 03:00 (Europe/Zürich) | DB + `JOBS_DIR` + `BRANDING_DIR` als authentifiziert verschluesselte `.fpbak` sichern; Retention nur fuer `.fpbak`, alte ZIPs bleiben erhalten |
-| `mail-digest` | täglich, Default 07:00 (Europe/Zürich) | fasst wegen aktivem Batching nur protokollierte Mails pro Empfänger zu einer täglichen Zusammenfassung zusammen |
+| `kk-beleg-erinnerungen` | täglich, Default 08:00 (Europe/Zürich) | Erinnerungen zu offenen Kreditkartenbelegen und nicht abgeglichenen Abrechnungen |
+| `mail-zustellung` | Intervall, Default alle 5 Min. | wiederholt eingereihte, noch nicht zugestellte Mails und gescheiterte Digests mit wachsendem Abstand (nach SMTP-Ausfall oder Neustart) |
+| `datenbank-sicherung` | täglich, Default 03:00 (Europe/Zürich) | DB + `JOBS_DIR` + `BRANDING_DIR` als authentifiziert verschlüsselte `.fpbak` sichern (Schlüsselbund `BACKUP_KEYRING_FILE` Pflicht, sonst scheitert der Lauf); Retention nur für `.fpbak`, alte ZIPs bleiben erhalten |
+| `mail-digest` | täglich, Default 07:00 (Europe/Zürich) | fasst wegen aktivem Batching eingereihte Mails pro Empfänger zu einer täglichen Zusammenfassung zusammen |
+| `sicherheitsalarme` | Intervall, Default alle 30 Min. | Alarm-Mails zu ungeklärten Backup-Löschabsichten |
+| `tsa-crl-aktualisierung` | täglich, Default 04:15 (Europe/Zürich), nur mit `TSA_CRL_AUTO_UPDATE=true` | erneuert die TSA-Sperrlisten (`TSA_CRL_FILE`) aus der validierten TSA-Kette; Alarm-Mail, wenn sie in weniger als 7 Tagen ablaufen |
 
-**Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan aller acht Jobs
+**Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan von acht Jobs
 einstellen (wirkt ab dem nächsten planmässigen Lauf, kein Neustart nötig),
-jeden Job manuell sofort auslösen, und den Verlauf der letzten Läufe
+jeden davon manuell sofort auslösen, und den Verlauf der letzten Läufe
 (Erfolg/Fehler samt Details) einsehen — sowohl geplante als auch manuell
-ausgelöste Läufe landen im selben Verlauf. Details zu allen acht Jobs:
+ausgelöste Läufe landen im selben Verlauf. `datenbank-sicherung` wird unter
+**Admin → Datenbank-Backup**, `mail-digest` unter **Admin →
+Mail-Einstellungen** eingestellt; `sicherheitsalarme` nur über `admin_config`.
+Details zu allen elf Jobs:
 [docs/geplante-jobs-und-benachrichtigungen.md](docs/geplante-jobs-und-benachrichtigungen.md).
+
+**Verpasste Termine werden nicht nachgeholt:** Nach einem Neustart plant der
+Scheduler tägliche Jobs nur für den nächsten zukünftigen Termin. Nach jedem
+Ausfall prüfen, ob Sicherung, Sync oder Bereinigung fehlen, und sie manuell
+auslösen; das Alter der neuesten Sicherung zusätzlich extern überwachen.
+Eingereihte Mails gehen dagegen nicht verloren (`mail-zustellung`). Nach
+SIGKILL/Stromausfall bleibt die Prozesssperre `<DB_PATH>.process-lock`
+bestehen und der Server startet erst nach geprüfter manueller Entfernung —
+siehe [Offline-Wiederherstellung](docs/offline-restore.md#abbruch-und-sperren).
+
+**Mailzustellung:** Mails werden vor dem Versand in `mail_log` eingereiht
+(`eingereiht` → `versendet`, nach ausgeschöpften Wiederholungen
+`fehlgeschlagen`). SMTP-Fehler machen Erinnerungsläufe im Verlauf als
+`fehler` sichtbar. Restrisiko: Absturz zwischen SMTP-Annahme und Speichern
+kann zu einer doppelt zugestellten Mail führen.
 
 Die zugehörigen `POST /internal/cron/*`-Routen (Header `X-Cron-Secret:
 <CRON_SECRET>`) existieren weiterhin — nützlich für die Go-Live-Checkliste
@@ -157,12 +180,16 @@ laut Lastenheft zwingend für das Portal.
    hinzugefügten Person; `/admin` muss erreichbar sein.
 3. Ein erstes Konto unter `/admin/konten` anlegen (Freigeber 1/2 samt
    Stellvertretern).
-4. Jede der vier Task-Scheduler-Routen einmal manuell auslösen (z. B. via
+4. Die Cron-Routen (`sync-personen`, `pool-erinnerungen`,
+   `freigabe2-erinnerungen`, `pdf-bereinigung`, `zeitstempel-nachholen`,
+   `split-gruppen-nachholen`, `kk-beleg-erinnerungen`, `mail-zustellung`)
+   einmal manuell auslösen (z. B. via
    `curl -X POST -H "X-Cron-Secret: <CRON_SECRET>" https://<domain>/internal/cron/sync-personen`)
    und den `200`/`erfolg`-Response prüfen, bevor man sich auf den
-   automatischen Zeitplan verlässt.
-5. Eine Test-Mail-Zustellung prüfen (z. B. über einen Pool-Reminder oder
-   `/admin/mails` nach einem der obigen Cron-Läufe).
+   automatischen Zeitplan verlässt. Unter **Admin → Datenbank-Backup** eine
+   Sicherung auslösen und mit `npm run backup:verify` offline prüfen.
+5. Eine Test-Mail-Zustellung prüfen: unter `/admin/mails` muss die Zeile
+   `versendet` zeigen, nicht `eingereiht`/`fehlgeschlagen`.
 
 ## Weitere Dokumentation
 

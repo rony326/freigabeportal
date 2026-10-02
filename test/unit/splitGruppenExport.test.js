@@ -19,6 +19,7 @@ import { pruefeUndFinalisiereSplitGruppe as finalizeGroup } from '../../src/serv
 import { PDFDocument } from 'pdf-lib';
 import { createExportEvidence } from '../../src/services/archiveReceipt.js';
 import { setzeFreigabeSnapshot } from '../helpers/freigabeSnapshot.js';
+import { ladeTsaNachweis } from '../../src/services/tsaNachweis.js';
 
 // Isolate group consistency from the independently tested deployment trust bundle.
 const pruefeUndFinalisiereSplitGruppe = (db, id) => finalizeGroup(db, id, { tsaTrustRequired: false });
@@ -226,6 +227,7 @@ test('pruefeUndFinalisiereSplitGruppe applies a fresh RFC3161 Zeitstempel to the
   const parent = getJobById(db, parentId);
   assert.ok(parent.gruppe_zeitstempel_gesetzt_am);
   assert.match(parent.gruppe_zeitstempel_datei_hash, /^[0-9a-f]{64}$/);
+  assert.equal(ladeTsaNachweis(db, { jobId: parentId, bezug: 'gruppe', dokumentSha256: parent.gruppe_zeitstempel_datei_hash }).integritaet, 'lokal_konsistent');
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

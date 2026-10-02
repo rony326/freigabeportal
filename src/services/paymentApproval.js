@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { normalizeIban, isValidIban } from './ibanUtils.js';
-import { listDebitorIbansByDebitor } from '../db/debitorIbanRepo.js';
+import { listKreditorIbansByKreditor } from '../db/kreditorIbanRepo.js';
 
 const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
 
@@ -73,8 +73,8 @@ export function ermittleRechnungsZahlung(db, job, parent = null) {
   if (!daten) return { art: 'ohne_zahlungsdaten', daten: null, abgleich: null, hinweise: ['qr_ungueltig'] };
   const hinweise = [];
   let abgleich = 'kein_lieferant';
-  if (job.debitor_id) {
-    const hinterlegte = listDebitorIbansByDebitor(db, job.debitor_id);
+  if (job.kreditor_id) {
+    const hinterlegte = listKreditorIbansByKreditor(db, job.kreditor_id);
     abgleich = hinterlegte.length === 0 ? 'keine_iban_hinterlegt' : hinterlegte.some((row) => row.iban === daten.iban) ? 'uebereinstimmung' : 'abweichung';
   }
   if (abgleich === 'abweichung') hinweise.push('iban_abweichung');

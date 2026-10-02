@@ -245,7 +245,7 @@ test('GET /admin/konten returns 200 for a Manager', async () => {
   const res = await request(app).get('/admin/konten').set('x-test-person-id', '55');
   assert.equal(res.status, 200);
   assert.match(res.text, /href="\/admin\/konten"/);
-  assert.match(res.text, /href="\/admin\/debitoren"/);
+  assert.match(res.text, /href="\/admin\/kreditoren"/);
   assert.doesNotMatch(res.text, /href="\/admin\/eskalation"/);
   assert.doesNotMatch(res.text, /href="\/admin\/erscheinungsbild"/);
   assert.doesNotMatch(res.text, /href="\/admin\/zeitstempel"/);
@@ -254,8 +254,8 @@ test('GET /admin/konten returns 200 for a Manager', async () => {
 
 test('GET /admin/konten returns 200 for a plain person with exactly this individual grant, and 403 for a different one', async () => {
   const db = openDatabase(':memory:');
-  upsertPerson(db, { id: '1', vorname: 'Nur', nachname: 'Debitoren', email: 'nur@example.org', gruppen: [], loggedInNow: true });
-  setBerechtigungenForPerson(db, '1', ['debitoren_verwalten']);
+  upsertPerson(db, { id: '1', vorname: 'Nur', nachname: 'Kreditoren', email: 'nur@example.org', gruppen: [], loggedInNow: true });
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
   const app = buildTestApp(db);
   const res = await request(app).get('/admin/konten').set('x-test-person-id', '1');
   assert.equal(res.status, 403);

@@ -11,19 +11,29 @@ nachvollziehen wollen, ohne den Code zu lesen.
 
 | Dokument | Inhalt |
 |---|---|
+| [feature-abgleich-2026-09-30.md](feature-abgleich-2026-09-30.md) | Abgleich mit dem Code: verfügbare Features, Entwürfe und verbleibende Betriebsabnahmen |
 | [architektur.md](architektur.md) | Systemüberblick, Tech-Stack, Middleware-Pipeline, Router-Übersicht, Sicherheitsmechanismen |
 | [auth-und-rechte.md](auth-und-rechte.md) | ChurchTools-OAuth2-Login, Rollenmodell (Gruppen) und additive Einzelrechte, Job-Autorisierung |
 | [datenmodell.md](datenmodell.md) | Alle Datenbanktabellen, ER-Diagramm, wichtige Constraints |
 | [rechnungs-workflow.md](rechnungs-workflow.md) | Der zentrale Prozess: Status-Modell einer Rechnung, Kontierung, Gutschriften, Freigabe 1/2, Ablehnung, Aufsplitten, Splitgruppen-Export, Löschung |
 | [spesen-einreichung.md](spesen-einreichung.md) | Zweite Domäne neben Lieferantenrechnungen: Spesen/Auslagen-Einreichung durch die Person selbst, eigene Freigabe-1-Seite |
 | [kreditkarten-belege.md](kreditkarten-belege.md) | Dritte Domäne: Vorab-Erfassung von Kreditkartenbelegen, Abgleich gegen die Monatsabrechnung als erweitertes Aufsplitten |
-| [n8n-schnittstelle.md](n8n-schnittstelle.md) | API-Vertrag für Rechnungseingang und -abholung durch n8n |
+| [n8n-schnittstelle.md](n8n-schnittstelle.md) | API-Vertrag für Rechnungseingang (inkl. PDF-Eingangsprüfung) und -abholung durch n8n |
+| [n8n-paperless-archivierung.md](n8n-paperless-archivierung.md) | Exportmanifest, hashgebundener Download und Archivquittung |
+| [tsa-vertrauensanker.md](tsa-vertrauensanker.md) | Deployment von Root-CAs und CRLs, Prüfprofil und Grenzen |
+| [audit-paket-request-korrelation.md](audit-paket-request-korrelation.md) | Request-/Lauf-IDs und protokollierte Backup-Löschungen |
 | [export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md) | Snapshot-gebundener Export, Zahlungsbestätigung je Belegart, Altfälle ohne Freigabenachweis |
 | [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md) | Swiss-QR-Bill-Erkennung und IBAN-Abgleich gegen hinterlegte Lieferanten-IBANs |
 | [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md) | RFC3161-Zeitstempel, Nachhol-Mechanismus, Verifikations- und Zertifikatsseite |
 | [admin-bereich.md](admin-bereich.md) | Alle Admin-Seiten mit den jeweils benötigten Rechten |
-| [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md) | Die sechs automatischen Hintergrund-Jobs, E-Mail-Versand, Eskalationslogik |
-| [personen-sync.md](personen-sync.md) | Nächtlicher ChurchTools-Personen-/Gruppen-Sync, Schutzmechanismen, "stalled jobs" |
+| [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md) | Die elf automatischen Hintergrund-Jobs, persistente Mailzustellung mit Wiederholung, Eskalationslogik, Verhalten nach Neustart |
+| [personen-sync.md](personen-sync.md) | Nächtlicher ChurchTools-Personen-/Gruppen-Sync: Zugangsmodell (Gruppenaustritt vs. entzogener Zugang vs. Ausfall), Schutzmechanismen, "stalled jobs" |
+| [backup-verschluesselung.md](backup-verschluesselung.md) | **Verbindlich:** verschlüsselte `.fpbak`-Sicherungen, Schlüsselbund und Schlüsselaufbewahrung, Rotation, n8n-Abholung, Altsicherungen |
+| [offline-restore.md](offline-restore.md) | **Verbindlich:** Offline-Wiederherstellung und Rückwechsel, Prozesssperre, verwaiste Sperren |
+| [backup-sicherheit.md](backup-sicherheit.md) | Prüfungen und Grenzen des Backup-/Restore-Formats |
+| [kreditoren-statt-debitoren.md](kreditoren-statt-debitoren.md) | Fachliche Korrektur der Bezeichnung, Migration, Kompatibilität, Deployment-Schritte |
+| [audit-paket-haertung-2026-09-29.md](audit-paket-haertung-2026-09-29.md) | Zugriffsverweigerungen, Datei-Quarantäne, Sicherheitsalarme, TSA-Evidenz |
+| [audit-externe-nachweise.md](audit-externe-nachweise.md) | Bedrohungsmodell und lokale Grundlage für externe Audit-Nachweise |
 
 Phasenpläne und historische Design-Dokumente der einzelnen Ausbaustufen
 liegen weiterhin in [`superpowers/specs/`](superpowers/specs/) und

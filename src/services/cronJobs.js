@@ -7,6 +7,8 @@ import { hasMatureArchiveReceipt, archivedBytesMatch } from './archiveReceipt.js
 import { backupDateiname, ENCRYPTED_BACKUP_DATEINAME_PATTERN } from './backup.js';
 import { buildEncryptedBackup, publishEncryptedBackup } from './backupEnvelope.js';
 import { deleteBackupWithAudit } from './backupAudit.js';
+import { loescheDateiMitAudit } from './dateiAudit.js';
+import { pruefeVerwaisteFinaleDateien } from './verwaisteDateien.js';
 import { auditedJob } from './auditOperation.js';
 import { runPersonenSync } from './sync.js';
 import { hasRecentRunningSync } from '../db/syncLogRepo.js';
@@ -40,10 +42,20 @@ import {
 import { getKontoById } from '../db/kontenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { pruneMailLogOlderThan, listGeplantMailsGruppiertNachEmpfaenger } from '../db/mailLogRepo.js';
-import { sendNotification, resolveEmpfaenger, sendNotificationMitVertretung } from './notify.js';
-import { getVorlage, renderTemplate } from './mailTemplates.js';
+import { sendNotification, resolveEmpfaenger, reiheBenachrichtigungEin, reiheBenachrichtigungMitVertretungEin } from './notify.js';
+import {
+  bilanzHatFehler,
+  bilanzText,
+  stelleEintraegeZu,
+  ladeDigestVorlage,
+  markiereDigestZeilenFehlgeschlagen,
+  stelleDigestZu,
+  stelleFaelligeMailsZu,
+  hatFaelligeMails,
+} from './mailZustellung.js';
 import { logCronLauf, startCronLauf, finishCronLauf, hasRecentRunningCronLauf } from '../db/cronLogRepo.js';
-import { setZeitstempel } from './zeitstempel.js';
+import { setZeitstempelMitNachweis } from './zeitstempel.js';
+import { speichereTsaNachweis } from './tsaNachweis.js';
 import { pruefeUndFinalisiereSplitGruppe } from './splitGruppenExport.js';
 
 const TMP_MAX_ALTER_MS = 60 * 60 * 1000; // 1 Stunde
@@ -53,6 +65,34 @@ const TMP_MAX_ALTER_MS = 60 * 60 * 1000; // 1 Stunde
 function tageAusConfig(db, key, standard) {
   const wert = Number(getConfigValue(db, key));
   return Number.isInteger(wert) && wert >= 1 ? wert : standard;
+}
+
+// Planungsphase der Erinnerungsjobs: fällige Einträge auswählen, Mails dauerhaft einreihen und
+// den fachlichen Marker setzen -- synchron in EINER Transaktion. Parallele Auslöser (Scheduler und
+// manueller /internal/cron-Aufruf) können sich dadurch nicht überholen, und ein Marker steht nie
+// ohne eingereihte Mail (oder umgekehrt). Die eigentliche Zustellung folgt danach
+// (stelleEintraegeZu); SMTP-Fehler bleiben 'eingereiht' und werden von mail-zustellung wiederholt.
+function planeInTransaktion(db, plan) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = plan();
+    db.exec('COMMIT');
+    return result;
+  } catch (err) {
+    if (db.isTransaction) db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+// Cron-Ergebnis mit Zustellbilanz: ein Lauf mit Zustellfehlern ist kein 'erfolg', auch wenn die
+// Erinnerungen fachlich eingereiht sind -- sonst bleibt ein SMTP-Ausfall im Verlauf unsichtbar.
+function abschlussMitBilanz(fachlich, bilanz) {
+  const fehler = bilanzHatFehler(bilanz);
+  return {
+    status: fehler ? 'fehler' : 'erfolg',
+    details: `${fachlich}; ${bilanzText(bilanz)}`,
+    ...(fehler ? { error: `Zustellung teilweise fehlgeschlagen: ${bilanzText(bilanz)}` } : {}),
+  };
 }
 
 // The actual job bodies behind /internal/cron/* (routes/cron.js, manual/on-demand triggering)
@@ -104,55 +144,47 @@ async function runPoolErinnerungenJobInternal(db, config, mailer) {
     const reminderStunden = Number(getConfigValue(db, 'reminder_stunden'));
     const eskalationStunden = Number(getConfigValue(db, 'eskalation_stunden'));
 
-    const reminderJobs = listPoolJobsForReminder(db, reminderStunden);
-    for (const job of reminderJobs) {
-      const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'reminder_empfaenger'));
-      for (const email of empfaenger) {
-        await sendNotification(db, mailer, {
-          to: email,
-          typ: 'reminder',
-          jobId: job.id,
-          variablen: {
-            jobDateiname: job.dateiname,
-            stunden: reminderStunden,
-            link: `${config.publicBaseUrl}/pool`,
-          },
-        });
+    const plan = planeInTransaktion(db, () => {
+      const eintraege = [];
+      let reminder = 0;
+      let eskalation = 0;
+      const reminderEmpfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'reminder_empfaenger'));
+      for (const job of listPoolJobsForReminder(db, reminderStunden)) {
+        // Ohne Empfänger wird nichts markiert (nächster Lauf versucht es erneut), der Job zählt
+        // aber als fällig. Ein bereits gesetzter Marker heisst: ein paralleler Lauf war schneller.
+        if (reminderEmpfaenger.length === 0) { reminder += 1; continue; }
+        if (!markReminderGesendet(db, job.id)) continue;
+        for (const email of reminderEmpfaenger) {
+          eintraege.push(reiheBenachrichtigungEin(db, {
+            to: email,
+            typ: 'reminder',
+            jobId: job.id,
+            variablen: { jobDateiname: job.dateiname, stunden: reminderStunden, link: `${config.publicBaseUrl}/pool` },
+          }));
+        }
+        reminder += 1;
       }
-      if (empfaenger.length > 0) {
-        markReminderGesendet(db, job.id);
+      const eskalationEmpfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'eskalation_empfaenger'));
+      for (const job of listPoolJobsForEskalation(db, eskalationStunden)) {
+        if (eskalationEmpfaenger.length === 0) { eskalation += 1; continue; }
+        if (!markEskalationGesendet(db, job.id)) continue;
+        for (const email of eskalationEmpfaenger) {
+          eintraege.push(reiheBenachrichtigungEin(db, {
+            to: email,
+            typ: 'eskalation',
+            jobId: job.id,
+            variablen: { jobDateiname: job.dateiname, stunden: eskalationStunden, link: `${config.publicBaseUrl}/pool` },
+          }));
+        }
+        eskalation += 1;
       }
-    }
-
-    const eskalationJobs = listPoolJobsForEskalation(db, eskalationStunden);
-    for (const job of eskalationJobs) {
-      const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'eskalation_empfaenger'));
-      for (const email of empfaenger) {
-        await sendNotification(db, mailer, {
-          to: email,
-          typ: 'eskalation',
-          jobId: job.id,
-          variablen: {
-            jobDateiname: job.dateiname,
-            stunden: eskalationStunden,
-            link: `${config.publicBaseUrl}/pool`,
-          },
-        });
-      }
-      if (empfaenger.length > 0) {
-        markEskalationGesendet(db, job.id);
-      }
-    }
-
-    const ergebnis = { status: 'erfolg', reminder: reminderJobs.length, eskalation: eskalationJobs.length };
-    logCronLauf(db, {
-      job: 'pool-erinnerungen',
-      gestartetAm,
-      beendetAm: new Date().toISOString(),
-      status: 'erfolg',
-      details: `Reminder: ${ergebnis.reminder}, Eskalation: ${ergebnis.eskalation}`,
+      return { eintraege, reminder, eskalation };
     });
-    return ergebnis;
+
+    const bilanz = await stelleEintraegeZu(db, mailer, plan.eintraege);
+    const abschluss = abschlussMitBilanz(`Reminder: ${plan.reminder}, Eskalation: ${plan.eskalation}`, bilanz);
+    logCronLauf(db, { job: 'pool-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: abschluss.status, details: abschluss.details });
+    return { status: abschluss.status, reminder: plan.reminder, eskalation: plan.eskalation, mails: bilanz, ...(abschluss.error ? { error: abschluss.error } : {}) };
   } catch (err) {
     logCronLauf(db, { job: 'pool-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
     return { status: 'fehler', error: err.message };
@@ -167,63 +199,56 @@ async function runFreigabe2ErinnerungenJobInternal(db, config, mailer) {
     const reminderStunden = Number(getConfigValue(db, 'freigabe2_reminder_stunden'));
     const eskalationStunden = Number(getConfigValue(db, 'freigabe2_eskalation_stunden'));
 
-    let reminderCount = 0;
-    for (const job of listFreigabe2JobsForReminder(db, reminderStunden)) {
-      const konto = getKontoById(db, job.konto_id);
-      if (!konto) continue; // deleted/unresolvable Konto -- listStalledJobs covers this separately
-      const akteurId = getEffectiveFreigeber2Id(job, konto);
-      const akteur = getPersonById(db, akteurId);
-      if (!akteur || !akteur.aktiv || akteur.ct_person_unresolved) continue; // ditto -- inactive/unresolved actor
-
-      await sendNotification(db, mailer, {
-        to: akteur.email,
-        typ: 'freigabe2-reminder',
-        jobId: job.id,
-        variablen: {
-          empfaengerName: `${akteur.vorname} ${akteur.nachname}`,
-          jobDateiname: job.dateiname,
-          stunden: reminderStunden,
-          link: `${config.publicBaseUrl}/freigabe2`,
-        },
-      });
-      markFreigabe2ReminderGesendet(db, job.id);
-      reminderCount += 1;
-    }
-
-    let eskalationCount = 0;
-    // Same recipients apply to every job in this phase of a given run -- hoisted out of the loop
-    // instead of recomputed per job.
-    const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'freigabe2_eskalation_empfaenger'));
-    for (const job of listFreigabe2JobsForEskalation(db, eskalationStunden)) {
-      if (!forceEskalierenFreigabe2AnAdmin(db, job.id)) continue; // race: already handled between the query and here
-
-      for (const email of empfaenger) {
-        await sendNotification(db, mailer, {
-          to: email,
-          typ: 'freigabe2-eskalation',
+    const plan = planeInTransaktion(db, () => {
+      const eintraege = [];
+      let reminder = 0;
+      for (const job of listFreigabe2JobsForReminder(db, reminderStunden)) {
+        const konto = getKontoById(db, job.konto_id);
+        if (!konto) continue; // deleted/unresolvable Konto -- listStalledJobs covers this separately
+        const akteurId = getEffectiveFreigeber2Id(job, konto);
+        const akteur = getPersonById(db, akteurId);
+        if (!akteur || !akteur.aktiv || akteur.ct_person_unresolved) continue; // ditto -- inactive/unresolved actor
+        if (!markFreigabe2ReminderGesendet(db, job.id)) continue;
+        eintraege.push(reiheBenachrichtigungEin(db, {
+          to: akteur.email,
+          typ: 'freigabe2-reminder',
           jobId: job.id,
           variablen: {
+            empfaengerName: `${akteur.vorname} ${akteur.nachname}`,
             jobDateiname: job.dateiname,
-            stunden: eskalationStunden,
-            link: `${config.publicBaseUrl}/freigabe2`,
+            stunden: reminderStunden,
+            // Konkrete Freigabeseite; eine Übersicht /freigabe2 ohne ID gibt es nicht.
+            link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
           },
-        });
+        }));
+        reminder += 1;
       }
-      if (empfaenger.length > 0) {
-        markFreigabe2EskalationGesendet(db, job.id);
-      }
-      eskalationCount += 1;
-    }
 
-    const ergebnis = { status: 'erfolg', reminder: reminderCount, eskalation: eskalationCount };
-    logCronLauf(db, {
-      job: 'freigabe2-erinnerungen',
-      gestartetAm,
-      beendetAm: new Date().toISOString(),
-      status: 'erfolg',
-      details: `Reminder: ${ergebnis.reminder}, Eskalation: ${ergebnis.eskalation}`,
+      let eskalation = 0;
+      // Same recipients apply to every job in this phase of a given run.
+      const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'freigabe2_eskalation_empfaenger'));
+      for (const job of listFreigabe2JobsForEskalation(db, eskalationStunden)) {
+        // Eskalation und Mail in derselben Transaktion: scheitert das Einreihen, bleibt auch die
+        // Eskalation aus und der nächste Lauf versucht beides erneut.
+        if (!forceEskalierenFreigabe2AnAdmin(db, job.id)) continue; // race: already handled
+        for (const email of empfaenger) {
+          eintraege.push(reiheBenachrichtigungEin(db, {
+            to: email,
+            typ: 'freigabe2-eskalation',
+            jobId: job.id,
+            variablen: { jobDateiname: job.dateiname, stunden: eskalationStunden, link: `${config.publicBaseUrl}/freigabe2/${job.id}` },
+          }));
+        }
+        if (empfaenger.length > 0) markFreigabe2EskalationGesendet(db, job.id);
+        eskalation += 1;
+      }
+      return { eintraege, reminder, eskalation };
     });
-    return ergebnis;
+
+    const bilanz = await stelleEintraegeZu(db, mailer, plan.eintraege);
+    const abschluss = abschlussMitBilanz(`Reminder: ${plan.reminder}, Eskalation: ${plan.eskalation}`, bilanz);
+    logCronLauf(db, { job: 'freigabe2-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: abschluss.status, details: abschluss.details });
+    return { status: abschluss.status, reminder: plan.reminder, eskalation: plan.eskalation, mails: bilanz, ...(abschluss.error ? { error: abschluss.error } : {}) };
   } catch (err) {
     logCronLauf(db, { job: 'freigabe2-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
     return { status: 'fehler', error: err.message };
@@ -232,30 +257,25 @@ async function runFreigabe2ErinnerungenJobInternal(db, config, mailer) {
 
 export const runPdfBereinigungJob = auditedJob('pdf-bereinigung', runPdfBereinigungJobInternal);
 
+// Loescht eine archivierte Datei mit Audit-Klammer. Scheitert bereits das Absichtsprotokoll, bleibt
+// die Datei erhalten und der Job wird nicht als archiviert markiert (naechster Lauf versucht erneut).
+function loescheArchivierteDatei(db, pfad, { objektId, dateiart }) {
+  try {
+    return loescheDateiMitAudit(db, pfad, { objekt: 'jobs', objektId, dateiart, anlass: 'PDF-Bereinigung nach bestaetigter Archivquittung' });
+  } catch (err) {
+    console.error(`Protokollierte Loeschung (${dateiart}) fuer Job ${objektId} nicht ausgefuehrt:`, err.code || 'AUDIT_FEHLER');
+    return false;
+  }
+}
+
 function runPdfBereinigungJobInternal(db, config) {
   const gestartetAm = new Date().toISOString();
   let archiviert = 0;
   try {
     for (const job of listAbgeholtJobs(db)) {
       if (!hasMatureArchiveReceipt(db, job) || !archivedBytesMatch(db, job)) continue;
-      let pdfWeg = true;
-      if (job.pdf_pfad) {
-        try {
-          if (existsSync(job.pdf_pfad)) unlinkSync(job.pdf_pfad);
-        } catch (err) {
-          console.error(`Löschen der PDF für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
-          pdfWeg = !existsSync(job.pdf_pfad);
-        }
-      }
-      let thumbnailWeg = true;
-      if (job.thumbnail_pfad) {
-        try {
-          if (existsSync(job.thumbnail_pfad)) unlinkSync(job.thumbnail_pfad);
-        } catch (err) {
-          console.error(`Löschen des Thumbnails für archivierten Job ${job.id} fehlgeschlagen:`, err.message);
-          thumbnailWeg = !existsSync(job.thumbnail_pfad);
-        }
-      }
+      const pdfWeg = !job.pdf_pfad || loescheArchivierteDatei(db, job.pdf_pfad, { objektId: job.id, dateiart: 'beleg_pdf' });
+      const thumbnailWeg = !job.thumbnail_pfad || loescheArchivierteDatei(db, job.thumbnail_pfad, { objektId: job.id, dateiart: 'thumbnail' });
       if (pdfWeg && thumbnailWeg) {
         if (archivierenJob(db, job.id)) archiviert += 1;
       }
@@ -267,10 +287,8 @@ function runPdfBereinigungJobInternal(db, config) {
   // The group receipt protects the merged document as well as its child documents.
   for (const parent of db.prepare("SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_abgeholt_am IS NOT NULL").all()) {
     if (!hasMatureArchiveReceipt(db, parent) || !archivedBytesMatch(db, parent)) continue;
-    try {
-      if (parent.gruppe_pdf_pfad && existsSync(parent.gruppe_pdf_pfad)) unlinkSync(parent.gruppe_pdf_pfad);
-    } catch (err) {
-      console.error(`Loeschen der archivierten Gruppen-PDF ${parent.id} fehlgeschlagen:`, err.message);
+    if (parent.gruppe_pdf_pfad && existsSync(parent.gruppe_pdf_pfad)) {
+      loescheArchivierteDatei(db, parent.gruppe_pdf_pfad, { objektId: parent.id, dateiart: 'gruppen_pdf' });
     }
   }
 
@@ -329,13 +347,23 @@ function runPdfBereinigungJobInternal(db, config) {
     console.error('Fristlöschung verworfener Kreditkartenbelege fehlgeschlagen:', err.message);
   }
 
-  const ergebnis = { status: 'erfolg', archiviert, tmpGeloescht, mailLogGeloescht, kkBelegeGeloescht };
+  // Verwaiste finale Dokumente werden nur in Quarantaene verschoben, nie geloescht (siehe
+  // services/verwaisteDateien.js). Eigener try/catch: ein Fehler hier darf die uebrigen Schritte
+  // nicht als fehlgeschlagen melden.
+  let quarantaene = 0;
+  try {
+    quarantaene = pruefeVerwaisteFinaleDateien(db, config).verschoben;
+  } catch (err) {
+    console.error('Pruefung verwaister finaler Dateien fehlgeschlagen:', err.message);
+  }
+
+  const ergebnis = { status: 'erfolg', archiviert, tmpGeloescht, mailLogGeloescht, kkBelegeGeloescht, quarantaene };
   logCronLauf(db, {
     job: 'pdf-bereinigung',
     gestartetAm,
     beendetAm: new Date().toISOString(),
     status: 'erfolg',
-    details: `Archiviert: ${archiviert}, Tmp gelöscht: ${tmpGeloescht}, Mail-Log bereinigt: ${mailLogGeloescht}, KK-Belege gelöscht: ${kkBelegeGeloescht}`,
+    details: `Archiviert: ${archiviert}, Tmp gelöscht: ${tmpGeloescht}, Mail-Log bereinigt: ${mailLogGeloescht}, KK-Belege gelöscht: ${kkBelegeGeloescht}, In Quarantäne: ${quarantaene}`,
   });
   return ergebnis;
 }
@@ -390,7 +418,7 @@ async function runZeitstempelNachholenJobInternal(db, config) {
       let finalPath;
       try {
         const pdfBuffer = readFileSync(job.pdf_pfad);
-        const stamped = await setZeitstempel(pdfBuffer, tsaConfig);
+        const { stamped, nachweis } = await setZeitstempelMitNachweis(pdfBuffer, tsaConfig);
         finalPath = writeFinalDocument(job.pdf_pfad, stamped);
         db.exec('BEGIN IMMEDIATE');
         try {
@@ -405,6 +433,7 @@ async function runZeitstempelNachholenJobInternal(db, config) {
           }
           const hash = createHash('sha256').update(stamped).digest('hex');
           markZeitstempelGesetzt(db, job.id, new Date().toISOString(), hash);
+          speichereTsaNachweis(db, { jobId: job.id, bezug: 'einzel', dokumentSha256: hash, nachweis });
           db.prepare('UPDATE jobs SET pdf_pfad = ?, final_datei_hash = ? WHERE id = ?').run(finalPath, hash, job.id);
           db.exec('COMMIT');
         } catch (err) {
@@ -522,10 +551,12 @@ async function runSplitGruppenNachholenJobInternal(db, config) {
   }
 }
 
-// Sammelt alle wegen aktivem Batching (admin_config['mail_batching_aktiv']) nur protokollierten,
-// aber noch nicht versendeten mail_log-Zeilen (status = 'geplant') pro Empfänger und verschickt
-// dafür eine einzige Digest-Mail. Läuft mit Überlappungsschutz wie datenbank-sicherung/
-// zeitstempel-nachholen, da pro Empfänger ein echter SMTP-Roundtrip stattfindet.
+// Sammelt alle wegen aktivem Batching (admin_config['mail_batching_aktiv']) eingereihten, aber
+// noch nicht versendeten mail_log-Zeilen (status = 'geplant') pro Empfänger und verschickt dafür
+// eine einzige Digest-Mail. Die Zeilen werden je Empfänger beansprucht (services/mailZustellung.js),
+// damit parallele Läufe nichts doppelt versenden. Scheitert der Versand, bleiben die Zeilen
+// 'geplant' und der Job mail-zustellung wiederholt den Digest mit wachsendem Abstand; erst nach
+// ausgeschöpften Versuchen werden sie 'fehlgeschlagen'.
 export const runMailDigestJob = auditedJob('mail-digest', runMailDigestJobInternal);
 
 async function runMailDigestJobInternal(db, config, mailer) {
@@ -537,80 +568,73 @@ async function runMailDigestJobInternal(db, config, mailer) {
   try {
     const gruppen = listGeplantMailsGruppiertNachEmpfaenger(db);
 
-    // Die Digest-Vorlage wird einmal VOR der Empfänger-Schleife geladen (statt pro Empfänger
-    // erneut) und eigens abgesichert: schlägt das Rendern hier fehl (fehlender/kaputter
-    // admin_config-Key), betrifft das JEDEN Empfänger gleichermassen -- ohne diesen eigenen
-    // try/catch würde die Exception aus der Schleife herausfallen, nur den Cron-Lauf als
-    // 'fehler' markieren und dabei JEDE aktuell 'geplant' stehende Zeile unangetastet lassen.
-    // Der nächste Lauf würde am selben Fehler erneut scheitern -- die Empfänger blieben so
-    // unsichtbar und dauerhaft ohne Digest. Stattdessen: alle aktuell wartenden Zeilen sofort
-    // sichtbar auf 'fehlgeschlagen' setzen, damit sie einzeln über /admin/mails' "erneut
-    // versenden" wiederholt werden können.
+    // Die Digest-Vorlage wird einmal VOR der Empfänger-Schleife geladen und eigens abgesichert:
+    // schlägt das Rendern hier fehl (fehlender/kaputter admin_config-Key), betrifft das JEDEN
+    // Empfänger gleichermassen und würde sich bei jedem Lauf wiederholen. Deshalb alle aktuell
+    // wartenden Zeilen sofort sichtbar auf 'fehlgeschlagen' setzen, damit sie einzeln über
+    // /admin/mails' "erneut versenden" wiederholt werden können.
     let vorlage;
     try {
-      vorlage = getVorlage(db, 'digest');
-      if (!vorlage.betreff || !vorlage.text) {
-        throw new Error('Digest-Vorlage ist unvollständig (Betreff oder Text fehlt)');
-      }
+      vorlage = ladeDigestVorlage(db);
     } catch (err) {
       const jetzt = new Date().toISOString();
-      let betroffen = 0;
-      for (const zeilen of gruppen.values()) {
-        for (const zeile of zeilen) {
-          db.prepare("UPDATE mail_log SET status = 'fehlgeschlagen', fehler_details = ?, versucht_am = ? WHERE id = ?").run(
-            `Digest-Vorlage konnte nicht gerendert werden: ${err.message}`,
-            jetzt,
-            zeile.id
-          );
-          betroffen += 1;
-        }
-      }
+      const zeilen = [...gruppen.values()].flat();
+      markiereDigestZeilenFehlgeschlagen(db, zeilen, `Digest-Vorlage konnte nicht gerendert werden: ${err.message}`);
       finishCronLauf(db, laufId, {
         beendetAm: jetzt,
         status: 'fehler',
-        details: `Digest-Vorlage konnte nicht gerendert werden: ${err.message}. ${betroffen} wartende(s) Mail-Log-Zeile(n) auf fehlgeschlagen gesetzt.`,
+        details: `Digest-Vorlage konnte nicht gerendert werden: ${err.message}. ${zeilen.length} wartende(s) Mail-Log-Zeile(n) auf fehlgeschlagen gesetzt.`,
       });
       return { status: 'fehler', error: err.message };
     }
 
-    const portalName = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
     let versendet = 0;
     let fehlgeschlagen = 0;
-
+    let wiederholung = 0;
     for (const [empfaenger, zeilen] of gruppen) {
-      const variablen = {
-        empfaengerName: empfaenger,
-        anzahl: zeilen.length,
-        eintraege: zeilen.map((z) => (z.job_id != null ? `- ${z.betreff} (Job #${z.job_id})` : `- ${z.betreff}`)).join('\n'),
-        link: `${config.publicBaseUrl}/pool`,
-        portalName,
-      };
-      const subject = renderTemplate(vorlage.betreff, variablen);
-      const text = renderTemplate(vorlage.text, variablen);
-
-      try {
-        await mailer.sendMail({ to: empfaenger, subject, text });
-        for (const zeile of zeilen) {
-          db.prepare("UPDATE mail_log SET status = 'versendet', versucht_am = ? WHERE id = ?").run(new Date().toISOString(), zeile.id);
-        }
-        versendet += 1;
-      } catch (err) {
-        for (const zeile of zeilen) {
-          db.prepare("UPDATE mail_log SET status = 'fehlgeschlagen', fehler_details = ?, versucht_am = ? WHERE id = ?").run(err.message, new Date().toISOString(), zeile.id);
-        }
-        fehlgeschlagen += 1;
-      }
+      const status = await stelleDigestZu(db, config, mailer, { empfaenger, ids: zeilen.map((z) => z.id), vorlage });
+      if (status === 'versendet') versendet += 1;
+      else if (status === 'fehlgeschlagen') fehlgeschlagen += 1;
+      else if (status === 'geplant') wiederholung += 1;
     }
 
-    const ergebnis = { status: 'erfolg', versendet, fehlgeschlagen, empfaenger: gruppen.size };
-    finishCronLauf(db, laufId, {
-      beendetAm: new Date().toISOString(),
-      status: 'erfolg',
-      details: `Digest-Mails versendet: ${versendet}, fehlgeschlagen: ${fehlgeschlagen}, Empfänger insgesamt: ${gruppen.size}`,
-    });
-    return ergebnis;
+    const fehler = fehlgeschlagen + wiederholung > 0;
+    const details = `Digest-Mails versendet: ${versendet}, zur Wiederholung eingereiht: ${wiederholung}, endgültig fehlgeschlagen: ${fehlgeschlagen}, Empfänger insgesamt: ${gruppen.size}`;
+    finishCronLauf(db, laufId, { beendetAm: new Date().toISOString(), status: fehler ? 'fehler' : 'erfolg', details });
+    return {
+      status: fehler ? 'fehler' : 'erfolg',
+      versendet,
+      wiederholung,
+      fehlgeschlagen,
+      empfaenger: gruppen.size,
+      ...(fehler ? { error: details } : {}),
+    };
   } catch (err) {
     finishCronLauf(db, laufId, { beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
+    return { status: 'fehler', error: err.message };
+  }
+}
+
+// Wiederholt fällige Einzelmails ('eingereiht') und fehlgeschlagene Digests ('geplant' mit
+// Versuchen > 0) -- nach SMTP-Ausfällen und nach einem Prozessneustart. Ohne fällige Zeilen läuft
+// nichts und es entsteht kein Eintrag im Cron-Verlauf/Auditprotokoll (Intervall standardmässig
+// 5 Minuten). Doppelversand verhindern die Zeilensperren in services/mailZustellung.js.
+const runMailZustellungJobAudited = auditedJob('mail-zustellung', runMailZustellungJobInternal);
+
+export async function runMailZustellungJob(db, config, mailer) {
+  if (!hatFaelligeMails(db)) return { status: 'uebersprungen', meldung: 'Keine fälligen Mails' };
+  return runMailZustellungJobAudited(db, config, mailer);
+}
+
+async function runMailZustellungJobInternal(db, config, mailer) {
+  const gestartetAm = new Date().toISOString();
+  try {
+    const bilanz = await stelleFaelligeMailsZu(db, config, mailer);
+    const abschluss = abschlussMitBilanz(`Digest-Empfänger: ${bilanz.digestEmpfaenger}`, bilanz);
+    logCronLauf(db, { job: 'mail-zustellung', gestartetAm, beendetAm: new Date().toISOString(), status: abschluss.status, details: abschluss.details });
+    return { status: abschluss.status, mails: bilanz, ...(abschluss.error ? { error: abschluss.error } : {}) };
+  } catch (err) {
+    logCronLauf(db, { job: 'mail-zustellung', gestartetAm, beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
     return { status: 'fehler', error: err.message };
   }
 }
@@ -633,52 +657,58 @@ async function runKkBelegErinnerungenJobInternal(db, config, mailer) {
     const schwelleIso = new Date(Date.now() - tage * 86400000).toISOString();
     const link = `${config.publicBaseUrl}/kreditkarte`;
 
-    // Pro Empfänger eine Mail mit allen Belegen, für die er zuständig ist (hochgeladen, gekauft
-    // oder verantwortlich) -- sonst bekäme die verantwortliche Person pro Beleg eine eigene Mail.
-    const belege = listKkBelegeFuerErinnerung(db, schwelleIso);
-    const proPerson = new Map();
-    for (const b of belege) {
-      const zeile = `- ${b.kaufdatum || b.hochgeladen_am.slice(0, 10)} ${b.betrag ?? '?'} ${b.beschreibung || '(noch zu ergänzen)'}${b.karte_bezeichnung ? ` (${b.karte_bezeichnung})` : ''}`;
-      for (const personId of new Set([b.hochgeladen_von, b.gekauft_von, b.verantwortlich_id].filter(Boolean))) {
-        if (!proPerson.has(personId)) proPerson.set(personId, []);
-        proPerson.get(personId).push(zeile);
+    // Auswahl, Einreihen und Marker in einer Transaktion (siehe planeInTransaktion).
+    const plan = planeInTransaktion(db, () => {
+      const eintraege = [];
+      // Pro Empfänger eine Mail mit allen Belegen, für die er zuständig ist (hochgeladen, gekauft
+      // oder verantwortlich) -- sonst bekäme die verantwortliche Person pro Beleg eine eigene Mail.
+      const belege = listKkBelegeFuerErinnerung(db, schwelleIso);
+      const proPerson = new Map();
+      for (const b of belege) {
+        const zeile = `- ${b.kaufdatum || b.hochgeladen_am.slice(0, 10)} ${b.betrag ?? '?'} ${b.beschreibung || '(noch zu ergänzen)'}${b.karte_bezeichnung ? ` (${b.karte_bezeichnung})` : ''}`;
+        for (const personId of new Set([b.hochgeladen_von, b.gekauft_von, b.verantwortlich_id].filter(Boolean))) {
+          if (!proPerson.has(personId)) proPerson.set(personId, []);
+          proPerson.get(personId).push(zeile);
+        }
       }
-    }
-    for (const [personId, eintraege] of proPerson) {
-      const person = getPersonById(db, personId);
-      if (!person || !person.aktiv) continue;
-      await sendNotification(db, mailer, {
-        to: person.email,
-        typ: 'kk-beleg-erinnerung',
-        jobId: null,
-        variablen: { empfaengerName: `${person.vorname} ${person.nachname}`, eintraege: eintraege.join('\n'), anzahl: eintraege.length, tage, link },
-      });
-    }
-    for (const b of belege) markKkBelegErinnert(db, b.id);
-
-    const abrechnungen = listKkAbrechnungenFuerErinnerung(db, schwelleIso);
-    for (const job of abrechnungen) {
-      const person = getPersonById(db, job.zugewiesen_an);
-      if (person && person.aktiv) {
-        await sendNotificationMitVertretung(db, mailer, {
-          person,
+      for (const [personId, zeilen] of proPerson) {
+        const person = getPersonById(db, personId);
+        if (!person || !person.aktiv) continue;
+        eintraege.push(reiheBenachrichtigungEin(db, {
+          to: person.email,
           typ: 'kk-beleg-erinnerung',
-          jobId: job.id,
-          variablen: {
-            eintraege: `- Abrechnung "${job.dateiname}" (${job.karte_bezeichnung}) wartet auf den Abgleich: ${config.publicBaseUrl}/kontierung/${job.id}/kk-abgleich`,
-            anzahl: 1,
-            tage,
-            link: `${config.publicBaseUrl}/kontierung/${job.id}/kk-abgleich`,
-            grund: 'Kreditkartenabrechnung wartet auf den Abgleich',
-          },
-        });
+          jobId: null,
+          variablen: { empfaengerName: `${person.vorname} ${person.nachname}`, eintraege: zeilen.join('\n'), anzahl: zeilen.length, tage, link },
+        }));
       }
-      markKkAbrechnungErinnert(db, job.id);
-    }
+      for (const b of belege) markKkBelegErinnert(db, b.id);
 
-    const ergebnis = { status: 'erfolg', belege: belege.length, abrechnungen: abrechnungen.length };
-    logCronLauf(db, { job: 'kk-beleg-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: 'erfolg', details: `Belege: ${ergebnis.belege}, Abrechnungen: ${ergebnis.abrechnungen}` });
-    return ergebnis;
+      const abrechnungen = listKkAbrechnungenFuerErinnerung(db, schwelleIso);
+      for (const job of abrechnungen) {
+        const person = getPersonById(db, job.zugewiesen_an);
+        if (person && person.aktiv) {
+          eintraege.push(...reiheBenachrichtigungMitVertretungEin(db, {
+            person,
+            typ: 'kk-beleg-erinnerung',
+            jobId: job.id,
+            variablen: {
+              eintraege: `- Abrechnung "${job.dateiname}" (${job.karte_bezeichnung}) wartet auf den Abgleich: ${config.publicBaseUrl}/kontierung/${job.id}/kk-abgleich`,
+              anzahl: 1,
+              tage,
+              link: `${config.publicBaseUrl}/kontierung/${job.id}/kk-abgleich`,
+              grund: 'Kreditkartenabrechnung wartet auf den Abgleich',
+            },
+          }));
+        }
+        markKkAbrechnungErinnert(db, job.id);
+      }
+      return { eintraege, belege: belege.length, abrechnungen: abrechnungen.length };
+    });
+
+    const bilanz = await stelleEintraegeZu(db, mailer, plan.eintraege);
+    const abschluss = abschlussMitBilanz(`Belege: ${plan.belege}, Abrechnungen: ${plan.abrechnungen}`, bilanz);
+    logCronLauf(db, { job: 'kk-beleg-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: abschluss.status, details: abschluss.details });
+    return { status: abschluss.status, belege: plan.belege, abrechnungen: plan.abrechnungen, mails: bilanz, ...(abschluss.error ? { error: abschluss.error } : {}) };
   } catch (err) {
     logCronLauf(db, { job: 'kk-beleg-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
     return { status: 'fehler', error: err.message };

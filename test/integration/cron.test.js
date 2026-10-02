@@ -6,6 +6,17 @@ import { openDatabase } from '../../src/db/index.js';
 import { createApp } from '../../src/app.js';
 import { startSyncLog } from '../../src/db/syncLogRepo.js';
 
+function stubMailer({ fail = false } = {}) {
+  const sent = [];
+  return {
+    sent,
+    async sendMail(mail) {
+      if (fail) throw new Error('SMTP nicht erreichbar');
+      sent.push(mail);
+    },
+  };
+}
+
 function testConfig() {
   return {
     sessionSecret: 'test-secret',
@@ -149,7 +160,7 @@ test('POST /internal/cron/pool-erinnerungen sends one reminder mail per stale po
 
   const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
   const client = setupMockChurchTools(config.churchtools.baseUrl);
-  const app = createApp({ db, config });
+  const app = createApp({ db, config, mailer: stubMailer() });
 
   const res1 = await request(app).post('/internal/cron/pool-erinnerungen').set('X-Cron-Secret', 'cron-secret');
   assert.equal(res1.status, 200);
@@ -175,7 +186,7 @@ test('POST /internal/cron/pool-erinnerungen sends escalation mail independently 
   upsertPerson(db, { id: '1', vorname: 'Buch', nachname: 'Halter', email: 'buch@example.org', gruppen: ['10'], loggedInNow: false });
 
   const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
-  const app = createApp({ db, config });
+  const app = createApp({ db, config, mailer: stubMailer() });
 
   const res = await request(app).post('/internal/cron/pool-erinnerungen').set('X-Cron-Secret', 'cron-secret');
   assert.equal(res.status, 200);
@@ -197,7 +208,7 @@ test('POST /internal/cron/pool-erinnerungen does not mark a job sent when resolv
   const jobId = createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
 
   const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
-  const app = createApp({ db, config });
+  const app = createApp({ db, config, mailer: stubMailer() });
 
   const res1 = await request(app).post('/internal/cron/pool-erinnerungen').set('X-Cron-Secret', 'cron-secret');
   assert.equal(res1.status, 200);
@@ -228,7 +239,7 @@ test('POST /internal/cron/pool-erinnerungen returns a JSON error body (not an HT
   setConfigValue(db, 'reminder_stunden', 'kaputt');
   createJob(db, { eingangAm: '2020-01-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/a.pdf' });
   const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
-  const app = createApp({ db, config });
+  const app = createApp({ db, config, mailer: stubMailer() });
 
   const res = await request(app).post('/internal/cron/pool-erinnerungen').set('X-Cron-Secret', 'cron-secret');
   assert.equal(res.status, 500);
@@ -262,7 +273,7 @@ test('POST /internal/cron/freigabe2-erinnerungen sends one reminder mail to the 
   db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, jobId);
 
   const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
-  const app = createApp({ db, config });
+  const app = createApp({ db, config, mailer: stubMailer() });
 
   const res1 = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
   assert.equal(res1.status, 200);
@@ -271,6 +282,8 @@ test('POST /internal/cron/freigabe2-erinnerungen sends one reminder mail to the 
   const mails = listMailLog(db).filter((m) => m.typ === 'freigabe2-reminder');
   assert.equal(mails.length, 1);
   assert.equal(mails[0].empfaenger, 'p3@example.org', 'must go to the Konto Freigeber2, not a configured group');
+  assert.equal(mails[0].status, 'versendet');
+  assert.match(mails[0].text, new RegExp(`https://portal\\.example\\.org/freigabe2/${jobId}\\b`), 'the link must open the concrete Freigabe-2 page');
 
   const res2 = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
   assert.equal(res2.status, 200);
@@ -297,7 +310,7 @@ test('POST /internal/cron/freigabe2-erinnerungen reminds the Stellvertreter2, no
   ).run(kontoId, jobId);
 
   const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
-  const app = createApp({ db, config });
+  const app = createApp({ db, config, mailer: stubMailer() });
   const res = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
 
   assert.equal(res.status, 200);
@@ -324,7 +337,7 @@ test('POST /internal/cron/freigabe2-erinnerungen hands a very-stale job to the a
   db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, jobId);
 
   const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
-  const app = createApp({ db, config });
+  const app = createApp({ db, config, mailer: stubMailer() });
   const res = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
 
   assert.equal(res.status, 200);
@@ -355,7 +368,7 @@ test('POST /internal/cron/freigabe2-erinnerungen does not mark the reminder sent
   db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, jobId);
 
   const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
-  const app = createApp({ db, config });
+  const app = createApp({ db, config, mailer: stubMailer() });
   const res = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
 
   assert.equal(res.status, 200);
@@ -383,7 +396,7 @@ test('POST /internal/cron/freigabe2-erinnerungen does not mark the escalation se
   db.prepare("UPDATE jobs SET status = 'freigabe2', konto_id = ?, freigabe2_seit = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(kontoId, jobId);
 
   const config = { ...testConfig(), publicBaseUrl: 'https://portal.example.org' };
-  const app = createApp({ db, config });
+  const app = createApp({ db, config, mailer: stubMailer() });
   const res = await request(app).post('/internal/cron/freigabe2-erinnerungen').set('X-Cron-Secret', 'cron-secret');
 
   assert.equal(res.status, 200);

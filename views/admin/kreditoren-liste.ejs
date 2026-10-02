@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Debitoren — <%= branding.seitenTitel %> Admin</title>
+  <title>Kreditoren — <%= branding.seitenTitel %> Admin</title>
 </head>
 <body>
   <%- include('../_header') %>
   <main class="container py-4">
     <%- include('./_nav') %>
-    <h1>Debitoren</h1>
+    <h1>Kreditoren</h1>
     <% if (gespeichert) { %>
       <div class="alert alert-success alert-dismissible fade show" role="alert">
         Gespeichert.
@@ -18,30 +18,30 @@
       </div>
     <% } %>
 
-    <h2 class="h4 mt-4">Debitoren</h2>
-    <% if (debitorErrors.length > 0) { %>
+    <h2 class="h4 mt-4">Kreditoren</h2>
+    <% if (kreditorErrors.length > 0) { %>
       <div class="alert alert-danger">
-        <ul class="mb-0"><% debitorErrors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+        <ul class="mb-0"><% kreditorErrors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
       </div>
     <% } %>
     <div class="table-responsive mb-3">
       <table class="table align-middle">
         <thead><tr><th>Name</th><th>Standard-Konto</th><th>Status</th><th></th></tr></thead>
         <tbody>
-          <% debitoren.forEach((debitor) => { %>
+          <% kreditoren.forEach((kreditor) => { %>
             <tr>
-              <td><%= debitor.name %></td>
-              <td><%= debitor.konto ? `${debitor.konto.kontonummer} — ${debitor.konto.bezeichnung}` : '—' %></td>
-              <td><%= debitor.aktiv ? 'Aktiv' : 'Inaktiv' %></td>
+              <td><%= kreditor.name %></td>
+              <td><%= kreditor.konto ? `${kreditor.konto.kontonummer} — ${kreditor.konto.bezeichnung}` : '—' %></td>
+              <td><%= kreditor.aktiv ? 'Aktiv' : 'Inaktiv' %></td>
               <td>
-                <a href="/admin/debitoren/<%= debitor.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
-                <% if (debitor.aktiv) { %>
-                  <form method="post" action="/admin/debitoren/<%= debitor.id %>/deaktivieren" class="d-inline">
+                <a href="/admin/kreditoren/<%= kreditor.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
+                <% if (kreditor.aktiv) { %>
+                  <form method="post" action="/admin/kreditoren/<%= kreditor.id %>/deaktivieren" class="d-inline">
                     <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                     <button type="submit" class="btn btn-outline-danger btn-sm">Deaktivieren</button>
                   </form>
                 <% } else { %>
-                  <form method="post" action="/admin/debitoren/<%= debitor.id %>/aktivieren" class="d-inline">
+                  <form method="post" action="/admin/kreditoren/<%= kreditor.id %>/aktivieren" class="d-inline">
                     <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                     <button type="submit" class="btn btn-outline-success btn-sm">Reaktivieren</button>
                   </form>
@@ -52,28 +52,28 @@
         </tbody>
       </table>
     </div>
-    <form method="post" action="/admin/debitoren" class="row g-2 align-items-end mb-4">
+    <form method="post" action="/admin/kreditoren" class="row g-2 align-items-end mb-4">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="col-auto">
-        <label class="form-label" for="debitorName">Name</label>
-        <input type="text" class="form-control" id="debitorName" name="name" value="<%= debitorValues.name || '' %>" required>
+        <label class="form-label" for="kreditorName">Name</label>
+        <input type="text" class="form-control" id="kreditorName" name="name" value="<%= kreditorValues.name || '' %>" required>
       </div>
       <div class="col-auto">
-        <label class="form-label" for="debitorKontoId">Standard-Konto (optional)</label>
-        <select class="form-select" id="debitorKontoId" name="kontoId">
+        <label class="form-label" for="kreditorKontoId">Standard-Konto (optional)</label>
+        <select class="form-select" id="kreditorKontoId" name="kontoId">
           <option value="">— keins —</option>
           <% konten.forEach((k) => { %>
-            <option value="<%= k.id %>" <%= String(k.id) === String(debitorValues.kontoId) ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+            <option value="<%= k.id %>" <%= String(k.id) === String(kreditorValues.kontoId) ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
           <% }) %>
         </select>
       </div>
       <div class="col-auto">
-        <button type="submit" class="btn btn-primary">Debitor anlegen</button>
+        <button type="submit" class="btn btn-primary">Kreditor anlegen</button>
       </div>
     </form>
 
     <h2 class="h4 mt-4">Zuweisungsregeln</h2>
-    <p class="text-muted">Ordnet einen Absender (E-Mail-Adresse oder Domain) automatisch einem Debitor zu. Trägt der Debitor ein Standard-Konto, wird die Rechnung zusätzlich direkt diesem Konto samt Freigeber 1 zugewiesen.</p>
+    <p class="text-muted">Ordnet einen Absender (E-Mail-Adresse oder Domain) automatisch einem Kreditor zu. Trägt der Kreditor ein Standard-Konto, wird die Rechnung zusätzlich direkt diesem Konto samt Freigeber 1 zugewiesen.</p>
     <% if (regelErrors.length > 0) { %>
       <div class="alert alert-danger">
         <ul class="mb-0"><% regelErrors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
@@ -81,15 +81,15 @@
     <% } %>
     <div class="table-responsive mb-3">
       <table class="table align-middle">
-        <thead><tr><th>Absender-Muster</th><th>Debitor</th><th></th></tr></thead>
+        <thead><tr><th>Absender-Muster</th><th>Kreditor</th><th></th></tr></thead>
         <tbody>
           <% regeln.forEach((regel) => { %>
             <tr>
               <td><%= regel.absender_muster %></td>
-              <td><%= regel.debitor ? regel.debitor.name : '—' %></td>
+              <td><%= regel.kreditor ? regel.kreditor.name : '—' %></td>
               <td>
-                <a href="/admin/debitoren/regeln/<%= regel.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
-                <form method="post" action="/admin/debitoren/regeln/<%= regel.id %>/loeschen" class="d-inline">
+                <a href="/admin/kreditoren/regeln/<%= regel.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
+                <form method="post" action="/admin/kreditoren/regeln/<%= regel.id %>/loeschen" class="d-inline">
                   <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                   <button type="submit" class="btn btn-outline-danger btn-sm">Löschen</button>
                 </form>
@@ -99,18 +99,18 @@
         </tbody>
       </table>
     </div>
-    <form method="post" action="/admin/debitoren/regeln" class="row g-2 align-items-end">
+    <form method="post" action="/admin/kreditoren/regeln" class="row g-2 align-items-end">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="col-auto">
         <label class="form-label" for="regelAbsenderMuster">Absender-Muster</label>
         <input type="text" class="form-control" id="regelAbsenderMuster" name="absenderMuster" value="<%= regelValues.absenderMuster || '' %>" placeholder="z.B. lieferant.ch" required>
       </div>
       <div class="col-auto">
-        <label class="form-label" for="regelDebitorId">Debitor</label>
-        <select class="form-select" id="regelDebitorId" name="debitorId" required>
+        <label class="form-label" for="regelKreditorId">Kreditor</label>
+        <select class="form-select" id="regelKreditorId" name="kreditorId" required>
           <option value="">— wählen —</option>
-          <% aktiveDebitoren.forEach((d) => { %>
-            <option value="<%= d.id %>" <%= String(d.id) === String(regelValues.debitorId) ? 'selected' : '' %>><%= d.name %></option>
+          <% aktiveKreditoren.forEach((d) => { %>
+            <option value="<%= d.id %>" <%= String(d.id) === String(regelValues.kreditorId) ? 'selected' : '' %>><%= d.name %></option>
           <% }) %>
         </select>
       </div>
@@ -133,10 +133,10 @@
           <% ibans.forEach((row) => { %>
             <tr>
               <td><%= row.iban %></td>
-              <td><%= row.debitor ? row.debitor.name : '—' %></td>
+              <td><%= row.kreditor ? row.kreditor.name : '—' %></td>
               <td><span class="badge <%= row.quelle === 'bestaetigt' ? 'text-bg-info' : 'text-bg-secondary' %>"><%= row.quelle === 'bestaetigt' ? 'bestätigt' : 'manuell' %></span></td>
               <td>
-                <form method="post" action="/admin/debitoren/ibans/<%= row.id %>/loeschen" class="d-inline">
+                <form method="post" action="/admin/kreditoren/ibans/<%= row.id %>/loeschen" class="d-inline">
                   <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                   <button type="submit" class="btn btn-outline-danger btn-sm">Löschen</button>
                 </form>
@@ -146,18 +146,18 @@
         </tbody>
       </table>
     </div>
-    <form method="post" action="/admin/debitoren/ibans" class="row g-2 align-items-end">
+    <form method="post" action="/admin/kreditoren/ibans" class="row g-2 align-items-end">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="col-auto">
         <label class="form-label" for="ibanIban">IBAN</label>
         <input type="text" class="form-control" id="ibanIban" name="iban" value="<%= ibanValues.iban || '' %>" placeholder="z.B. CH93 0076 2011 6238 5295 7" required>
       </div>
       <div class="col-auto">
-        <label class="form-label" for="ibanDebitorId">Lieferant</label>
-        <select class="form-select" id="ibanDebitorId" name="debitorId" required>
+        <label class="form-label" for="ibanKreditorId">Lieferant</label>
+        <select class="form-select" id="ibanKreditorId" name="kreditorId" required>
           <option value="">— wählen —</option>
-          <% aktiveDebitoren.forEach((d) => { %>
-            <option value="<%= d.id %>" <%= String(d.id) === String(ibanValues.debitorId) ? 'selected' : '' %>><%= d.name %></option>
+          <% aktiveKreditoren.forEach((d) => { %>
+            <option value="<%= d.id %>" <%= String(d.id) === String(ibanValues.kreditorId) ? 'selected' : '' %>><%= d.name %></option>
           <% }) %>
         </select>
       </div>

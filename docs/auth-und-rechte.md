@@ -57,7 +57,12 @@ Wichtige Details:
   die Person in einer der drei Gruppen ist — Freigeber/Stellvertreter
   können rein kontobasierte Rollen ohne jede Gruppenmitgliedschaft sein.
   Die eigentliche Autorisierung passiert weiter unten in der Kette, pro
-  Route bzw. pro Job.
+  Route bzw. pro Job. Der nächtliche Sync deaktiviert solche Personen
+  deshalb auch nicht wegen fehlender Gruppenmitgliedschaft, sondern nur,
+  wenn ChurchTools sie als gelöscht oder archiviert meldet (siehe
+  [personen-sync.md](personen-sync.md#zugangsmodell)). Deaktivierte Personen
+  gelten bei geschützten Seiten als nicht angemeldet, bis sie sich erneut
+  einloggen.
 - **`/pool` ist das Ziel für jeden Login** — es gibt keine separate
   Landingpage; `/` leitet eingeloggte Personen direkt dorthin weiter.
 
@@ -89,7 +94,9 @@ Drei ChurchTools-Gruppen werden auf drei Rollen abgebildet
 `personHasRole(person, config, rolle)` prüft, ob die zugehörige
 ChurchTools-Gruppen-ID in `person.gruppen` enthalten ist — dieses Array
 wird bei Login und beim nächtlichen Sync neu geschrieben, **nicht** bei
-jeder Anfrage live gegen ChurchTools geprüft.
+jeder Anfrage live gegen ChurchTools geprüft. Wer eine Gruppe verlässt,
+verliert die Rolle also spätestens mit dem nächsten Sync-Lauf, behält aber
+den Portalzugang für seine konto-, karten- oder rechtebasierten Aufgaben.
 
 ## Additive Einzelrechte (`person_berechtigungen`)
 
@@ -98,7 +105,7 @@ additive Rechte, unabhängig von ChurchTools-Gruppen
 (`src/middleware/permissions.js`, `src/db/personBerechtigungenRepo.js`):
 
 - `konten_verwalten`
-- `debitoren_verwalten`
+- `kreditoren_verwalten`
 - `geplante_jobs_verwalten`
 - `abgelehnt_verwalten`
 - `mails_einsehen`
@@ -117,11 +124,11 @@ Recht ohne jede ChurchTools-Gruppenmitgliedschaft. Vergeben werden sie
 ausschliesslich von einem `superadmin` unter **Admin → Personen**
 (`POST /admin/personen/:id/berechtigungen`).
 
-Drei Admin-Bereiche sind bewusst **nicht** vergebbar und bleiben
-`superadmin`-exklusiv: Eskalationszeiten, Erscheinungsbild, Zeitstempel —
-strukturell abgesichert (die Datenbank-Tabelle akzeptiert per `CHECK`-
-Constraint nur die neun oben genannten Werte; für diese drei Bereiche
-lässt sich gar kein Wert einfügen).
+Sieben Admin-Bereiche bleiben `superadmin`-exklusiv: Eskalationszeiten,
+Erscheinungsbild, Zeitstempel, Datenbank-Backup, Datei-Quarantäne, Module
+und Mail-Einstellungen. Für sie gibt es keine additiven Einzelrechte; die
+Routen prüfen die Rolle direkt. Der `CHECK`-Constraint akzeptiert nur die
+elf oben genannten Rechte.
 
 Details zur Rechte-Matrix pro Admin-Seite: [admin-bereich.md](admin-bereich.md).
 

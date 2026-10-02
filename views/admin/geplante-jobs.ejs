@@ -68,6 +68,15 @@
       </div>
       <p class="text-muted small">Die Reminder-/Eskalations-<strong>Schwellen</strong> werden separat unter <a href="/admin/eskalation">Eskalationszeiten</a> eingestellt — hier nur, wie oft diese Prüfung läuft.</p>
 
+      <h2 class="h5 mt-3">Mail-Zustellung (Wiederholungen)</h2>
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="mailZustellungIntervallMinuten">Intervall (Minuten)</label>
+          <input type="number" min="1" max="1440" class="form-control" id="mailZustellungIntervallMinuten" name="mailZustellungIntervallMinuten" value="<%= cronMailZustellungIntervallMinuten %>" required>
+        </div>
+      </div>
+      <p class="text-muted small">Wie oft eingereihte, noch nicht zugestellte Mails (nach SMTP-Fehlern oder einem Neustart) und fehlgeschlagene Tageszusammenfassungen erneut versucht werden. Der Abstand zwischen Versuchen derselben Mail wächst von 5 Minuten bis höchstens 6 Stunden; nach der eingestellten Höchstzahl an Versuchen gilt die Mail als fehlgeschlagen (siehe <a href="/admin/mails">Mail-Protokoll</a>).</p>
+
       <h2 class="h5 mt-3">Kreditkartenbelege-Erinnerungen</h2>
       <div class="form-check mb-2">
         <input type="checkbox" class="form-check-input" id="kkBelegErinnerungenAktiv" name="kkBelegErinnerungenAktiv" value="1" <%= kkBelegErinnerungenAktiv ? 'checked' : '' %>>
@@ -328,6 +337,35 @@
             </tr>
           <% }) %>
           <% if (kkBelegErinnerungenLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="h4 mt-4">Mail-Zustellung — Verlauf</h2>
+    <p class="text-muted small">Nur Läufe, in denen fällige Mails vorlagen, werden protokolliert.</p>
+    <form method="post" action="/admin/geplante-jobs/mail-zustellung/jetzt-ausfuehren" class="mb-2">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
+    </form>
+    <% if (getriggert === 'mail-zustellung' && mailZustellungLog.length > 0) { %>
+      <% const letzteMailZustellung = mailZustellungLog[0]; %>
+      <div class="alert <%= letzteMailZustellung.status === 'erfolg' ? 'alert-success' : 'alert-danger' %>">
+        <%= letzteMailZustellung.status === 'erfolg' ? 'Erfolgreich ausgeführt. ' + letzteMailZustellung.details : 'Fehlgeschlagen: ' + letzteMailZustellung.details %>
+      </div>
+    <% } %>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Gestartet</th><th>Beendet</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody>
+          <% mailZustellungLog.forEach((eintrag) => { %>
+            <tr>
+              <td><%= eintrag.gestartet_am %></td>
+              <td><%= eintrag.beendet_am %></td>
+              <td><%= eintrag.status %></td>
+              <td><%= eintrag.details || '' %></td>
+            </tr>
+          <% }) %>
+          <% if (mailZustellungLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
         </tbody>
       </table>
     </div>

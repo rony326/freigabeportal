@@ -44,7 +44,10 @@ Rollen-Einschränkung), Betrag, Auslage-Datum (nicht in der Zukunft),
 Verwendungszweck, Beleg (PDF/PNG/JPEG, Pflicht, max. 20 MB, Magic-Byte-
 geprüft — ein Bild-Upload wird wie beim
 [Beleg-Anhängen bei Kontierung](rechnungs-workflow.md#2-kontierung-status-zugewiesen)
-serverseitig in eine echte PDF-Seite umgewandelt).
+serverseitig in eine echte PDF-Seite umgewandelt; ein PDF-Beleg wird wie
+ein Rechnungseingang auf Verarbeitbarkeit geprüft — beschädigte,
+verschlüsselte oder seitenlose PDFs lehnt das Formular mit einer Meldung pro
+Position ab, siehe [n8n-schnittstelle.md](n8n-schnittstelle.md)).
 
 ```mermaid
 flowchart TD

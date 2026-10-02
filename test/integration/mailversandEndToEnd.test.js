@@ -8,7 +8,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
-import { createDebitor } from '../../src/db/debitorenRepo.js';
+import { createKreditor } from '../../src/db/kreditorenRepo.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { listMailLog } from '../../src/db/mailLogRepo.js';
 import { createApp } from '../../src/app.js';
@@ -82,8 +82,8 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
 
   // 1. Job creation with a matching Zuweisungsregel -> auto-assignment mail to freigeber1.
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
@@ -100,12 +100,12 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
   // 2. Freigeber 1 declares a conflict -> escalation mail to stellvertreter1.
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
   const freigeber1Token = await fetchCsrfToken(freigeber1Agent, '/pool');
-  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen', _csrf: freigeber1Token });
+  await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'ja', begruendung: 'Befangen', _csrf: freigeber1Token });
 
   // 3. Stellvertreter 1 completes Kontierung + Freigabe 1 -> handoff mail to freigeber2.
   const stellvertreter1Agent = await loginAs(app, client, { id: 2, vorname: 'Stellvertreter', nachname: 'Eins', email: 's1@example.org', gruppen: ['10'] });
   const stellvertreter1Token = await fetchCsrfToken(stellvertreter1Agent, '/pool');
-  await stellvertreter1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: stellvertreter1Token });
+  await stellvertreter1Agent.post(`/kontierung/${jobId}`).type('form').send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: stellvertreter1Token });
 
   // 4. Freigeber 2 declares a conflict -> escalation mail to stellvertreter2.
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'] });
@@ -145,22 +145,28 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
     .attach('pdf', stalePdf, { filename: 'altfall.pdf', contentType: 'application/pdf' });
   assert.equal(staleJobRes.status, 201);
 
+  // Unreachable SMTP: the reminders are durably queued and marked, but the run itself must report
+  // the failed delivery instead of claiming success (review 2026-09-29, finding 2).
   const sweepRes1 = await request(app).post('/internal/cron/pool-erinnerungen').set('X-Cron-Secret', 'cron-secret');
-  assert.equal(sweepRes1.status, 200);
+  assert.equal(sweepRes1.status, 500);
+  assert.equal(sweepRes1.body.status, 'fehler');
   assert.equal(sweepRes1.body.reminder, 1);
   assert.equal(sweepRes1.body.eskalation, 1);
+  const erinnerungsZeilen = listMailLog(db).filter((m) => m.typ === 'reminder' || m.typ === 'eskalation');
+  assert.ok(erinnerungsZeilen.length >= 2);
+  assert.equal(sweepRes1.body.mails.wiederholung, erinnerungsZeilen.length, 'every recipient row is reported as pending retry');
 
   const sweepRes2 = await request(app).post('/internal/cron/pool-erinnerungen').set('X-Cron-Secret', 'cron-secret');
   assert.equal(sweepRes2.status, 200);
   assert.equal(sweepRes2.body.reminder, 0, 'idempotent: the same stale job is not reminded twice');
   assert.equal(sweepRes2.body.eskalation, 0);
 
-  // 7. Every attempt above targeted an unreachable SMTP host -> all fehlgeschlagen. Admin views
-  // the log and retries one -> a new fehlgeschlagen row is appended (proves the retry path
-  // itself runs sendNotification again, without requiring a working SMTP server in this test).
+  // 7. Every attempt above targeted an unreachable SMTP host -> every row stays 'eingereiht' with
+  // one failed attempt and a scheduled retry (the mail-zustellung job picks them up). Admin views
+  // the log and retries one immediately -> the same row gets a second attempt, no duplicate row.
   const allMails = listMailLog(db);
   assert.ok(allMails.length >= 6, 'zuweisung x4 + ablehnung x1 + reminder x1 + eskalation x1');
-  assert.ok(allMails.every((m) => m.status === 'fehlgeschlagen'), 'unreachable SMTP host: every attempt failed, none crashed the app');
+  assert.ok(allMails.every((m) => m.status === 'eingereiht' && m.versuche === 1 && m.naechster_versuch_am), 'unreachable SMTP host: every attempt failed, is queued for retry, none crashed the app');
 
   const adminAgent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'] });
   const adminToken = await fetchCsrfToken(adminAgent, '/pool');
@@ -171,7 +177,14 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
   const countBeforeRetry = listMailLog(db).length;
   const retryRes = await adminAgent.post(`/admin/mails/${ablehnungMails[0].id}/erneut-versenden`).type('form').send({ _csrf: adminToken });
   assert.equal(retryRes.status, 302);
-  assert.equal(listMailLog(db).length, countBeforeRetry + 1, 'retry appends a new row rather than overwriting the original');
+  assert.equal(listMailLog(db).length, countBeforeRetry, 'a queued row is retried in place, never duplicated');
+  assert.equal(listMailLog(db).find((m) => m.id === ablehnungMails[0].id).versuche, 2);
+
+  // A finally failed row is resent as a new row, keeping the failed one as evidence.
+  db.prepare("UPDATE mail_log SET status = 'fehlgeschlagen', naechster_versuch_am = NULL WHERE id = ?").run(ablehnungMails[0].id);
+  const resendRes = await adminAgent.post(`/admin/mails/${ablehnungMails[0].id}/erneut-versenden`).type('form').send({ _csrf: adminToken });
+  assert.equal(resendRes.status, 302);
+  assert.equal(listMailLog(db).length, countBeforeRetry + 1, 'resending a fehlgeschlagen row appends a new row rather than overwriting the original');
 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });

@@ -44,7 +44,7 @@ test('loadNavFlags sets isManager true for a Manager group member, and adminNav 
   assert.equal(res.locals.isManager, true);
   assert.equal(res.locals.isSuperadmin, false);
   assert.equal(res.locals.adminNav.konten, true);
-  assert.equal(res.locals.adminNav.debitoren, true);
+  assert.equal(res.locals.adminNav.kreditoren, true);
   assert.equal(res.locals.adminNav.mails, true);
   assert.equal(res.locals.adminNav.sync, true);
   assert.equal(res.locals.adminNav.geplanteJobs, true);

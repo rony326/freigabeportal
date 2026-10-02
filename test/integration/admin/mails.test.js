@@ -153,3 +153,27 @@ test('GET /admin/mails as a person with only mails_einsehen shows the Mail-Proto
   assert.doesNotMatch(res.text, /href="\/admin\/konten"/);
   db.close();
 });
+
+test('POST /admin/mails/:id/erneut-versenden for an eingereiht row retries that same row immediately instead of creating a duplicate', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const { reiheMailEin } = await import('../../../src/services/mailZustellung.js');
+  const id = reiheMailEin(db, { typ: 'reminder', jobId: null, empfaenger: 'x@example.org', betreff: 'B', text: 'T' });
+  db.prepare("UPDATE mail_log SET versuche = 2, fehler_details = 'SMTP down', naechster_versuch_am = '2999-01-01T00:00:00.000Z' WHERE id = ?").run(id);
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const liste = await request(app).get('/admin/mails').set('x-test-person-id', '99');
+  assert.match(liste.text, /eingereiht/);
+  assert.match(liste.text, /2 Versuch\(e\)/);
+  assert.match(liste.text, /Jetzt erneut versuchen/);
+
+  const res = await request(app).post(`/admin/mails/${id}/erneut-versenden`).set('x-test-person-id', '99');
+  assert.equal(res.status, 302);
+  assert.equal(mailer.sent.length, 1);
+  const rows = listMailLog(db);
+  assert.equal(rows.length, 1, 'no second row -> no double delivery by the automatic retry');
+  assert.equal(rows[0].status, 'versendet');
+  assert.equal(rows[0].versuche, 3);
+  db.close();
+});

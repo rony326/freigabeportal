@@ -11,7 +11,7 @@ const CT_CONFIG = {
   groupIdAdmin: '20',
 };
 
-test('runPersonenSync upserts current members and deactivates people no longer in any group', async () => {
+test('runPersonenSync upserts current members and deactivates people ChurchTools no longer knows', async () => {
   // Headers are asserted here specifically (not on every sync test) to lock in the ChurchTools
   // Login-Token scheme: "Authorization: Login <token>", not "Bearer <token>" — the two auth
   // schemes are not interchangeable (a Bearer-scheme request against these endpoints 401s
@@ -23,6 +23,7 @@ test('runPersonenSync upserts current members and deactivates people no longer i
   client
     .intercept({ path: '/api/persons/7', method: 'GET', headers: { authorization: 'Login service-token' } })
     .reply(200, { data: { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' } });
+  client.intercept({ path: '/api/persons/99', method: 'GET', headers: { authorization: 'Login service-token' } }).reply(404, {});
 
   const db = openDatabase(':memory:');
   upsertPerson(db, { id: '99', vorname: 'Alt', nachname: 'Verlassen', email: 'alt@example.org', gruppen: ['10'], loggedInNow: false });
@@ -31,6 +32,7 @@ test('runPersonenSync upserts current members and deactivates people no longer i
 
   assert.equal(result.upserted, 1);
   assert.equal(result.deactivated, 1);
+  assert.equal(getPersonById(db, '99').deaktivierungsgrund, 'churchtools_geloescht');
   assert.equal(result.unresolved, 0);
   assert.equal(getPersonById(db, '7').vorname, 'Max');
   assert.equal(getPersonById(db, '99').aktiv, false);
@@ -182,6 +184,7 @@ test('runPersonenSync does NOT abort a small-population run even at 100% deactiv
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 7 }] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
   client.intercept({ path: '/api/persons/7', method: 'GET' }).reply(200, { data: { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' } });
+  client.intercept({ path: '/api/persons/99', method: 'GET' }).reply(404, {});
 
   const db = openDatabase(':memory:');
   const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
@@ -303,11 +306,15 @@ test('runPersonenSync does not overwrite real group membership for a person who 
   db.close();
 });
 
-test('runPersonenSync deactivates a person referenced only on a deactivated Konto when they have no group membership', async () => {
+test('runPersonenSync keeps persons from a deactivated Konto active while ChurchTools knows them, and distinguishes deletion from outage', async () => {
   const client = setupMockChurchTools(CT_CONFIG.baseUrl);
   client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 99 }] });
   client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
   client.intercept({ path: '/api/persons/99', method: 'GET' }).reply(200, { data: { id: 99, firstName: 'Bleibt', lastName: 'Aktiv', email: 'bleibt@example.org' } });
+  client.intercept({ path: '/api/persons/50', method: 'GET' }).reply(404, {});
+  client.intercept({ path: '/api/persons/51', method: 'GET' }).reply(410, {});
+  client.intercept({ path: '/api/persons/52', method: 'GET' }).reply(200, { data: { id: 52, firstName: 'Person52', lastName: 'Muster', email: 'p52@example.org' } });
+  client.intercept({ path: '/api/persons/53', method: 'GET' }).reply(503, {});
 
   const db = openDatabase(':memory:');
   upsertPerson(db, { id: '99', vorname: 'Bleibt', nachname: 'Aktiv', email: 'bleibt@example.org', gruppen: ['10'], loggedInNow: false });
@@ -320,8 +327,14 @@ test('runPersonenSync deactivates a person referenced only on a deactivated Kont
 
   const result = await runPersonenSync(db, CT_CONFIG, 'service-token');
 
-  assert.equal(result.deactivated, 4);
+  assert.equal(result.abgebrochen, false);
+  assert.equal(result.deactivated, 2, 'only the two persons ChurchTools reports as gone are deactivated');
+  assert.equal(result.unresolved, 1);
   assert.equal(getPersonById(db, '50').aktiv, false);
+  assert.equal(getPersonById(db, '51').aktiv, false);
+  assert.equal(getPersonById(db, '52').aktiv, true, 'still known to ChurchTools -> keeps portal access');
+  assert.equal(getPersonById(db, '53').aktiv, true, 'a temporary ChurchTools error must never deactivate');
+  assert.equal(getPersonById(db, '53').ct_person_unresolved, true);
   assert.equal(getPersonById(db, '99').aktiv, true);
   db.close();
 });

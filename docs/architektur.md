@@ -24,7 +24,7 @@ flowchart LR
 
     subgraph Portal["Freigabeportal (Node.js/Express)"]
         App["Express-App<br/>(Routen, Middleware)"]
-        Scheduler["In-Process-Scheduler<br/>(6 Hintergrund-Jobs)"]
+        Scheduler["In-Process-Scheduler<br/>(11 Hintergrund-Jobs)"]
         DB[("SQLite<br/>DB_PATH")]
         Files[("Dateisystem<br/>JOBS_DIR / BRANDING_DIR")]
     end
@@ -44,9 +44,10 @@ flowchart LR
 
 Es gibt keine separate Backend-API und kein Frontend-Build: jede Seite ist
 eine serverseitig gerenderte EJS-Ansicht, Formulare posten klassisch per
-`POST`. Die einzige echte JSON-API ist die n8n-Schnittstelle
-(`/api/n8n/jobs/*`, siehe [n8n-schnittstelle.md](n8n-schnittstelle.md)) plus
-eine kleine interne JSON-Route für den Pool (`/api/pool`).
+`POST`. JSON-Schnittstellen gibt es für n8n-Rechnungen und Kreditkartenbelege
+(`/api/n8n/jobs/*`, `/api/n8n/kk-belege`), den Pool (`/api/pool`),
+Cron-Aufrufe und den Healthcheck. Die Backup-API liefert eine Datei.
+Siehe [n8n-schnittstelle.md](n8n-schnittstelle.md).
 
 ## Bootstrap (`src/index.js`)
 
@@ -54,12 +55,14 @@ eine kleine interne JSON-Route für den Pool (`/api/pool`).
    Start sofort mit einer Fehlermeldung ab, wenn ein Pflichtwert fehlt oder
    ein `*_SECRET`/`*_TOKEN`/`*_KEY` kürzer als 32 Zeichen ist oder noch
    `changeme` enthält (`src/config/env.js`).
-2. `openDatabase(config.dbPath)` — öffnet/erstellt die SQLite-Datei, wendet
-   `schema.sql` an.
+2. `acquireStorageLock(baseConfig)` sperrt den Datenspeicher exklusiv;
+   `resolveStorageConfig(baseConfig)` löst einen nach Restore aktiven Datenstand
+   über `<DB_PATH>.active.json` auf. `openDatabase(config.dbPath)` öffnet/erstellt
+   die SQLite-Datei und wendet `schema.sql` sowie die additiven Migrationen an.
 3. `seedDefaults(db)` — schreibt Default-Werte in `admin_config`, falls noch
    nicht vorhanden (Eskalationszeiten, Cron-Zeitpläne, Sync-Schwellen, …).
 4. `createApp({ db, config })` — baut die Express-App (siehe unten).
-5. `startScheduler({ db, config, mailer })` — startet die sechs
+5. `startScheduler({ db, config, mailer })` — startet die elf
    In-Process-Hintergrund-Jobs (siehe
    [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)).
 6. `app.listen(config.port)`.
@@ -71,12 +74,15 @@ Middleware, bevor sie den passenden Router erreicht:
 
 ```mermaid
 flowchart TD
-    A["Security-Header<br/>(nosniff, X-Frame-Options: SAMEORIGIN,<br/>Referrer-Policy, CSP)"] --> B["express.static<br/>(public/)"]
+    A["Security-Header<br/>(nosniff, X-Frame-Options: SAMEORIGIN,<br/>Referrer-Policy, CSP)"] --> R["auditRequestContext<br/>serverseitige UUID / X-Request-ID"]
+    R --> B["express.static<br/>(public/)"]
     B --> C["loadBranding(db)<br/>res.locals.branding auf JEDER Antwort,<br/>auch Fehlerseiten"]
     C --> D["express.json() /<br/>express.urlencoded()"]
     D --> E["express-session<br/>(SqliteSessionStore,<br/>Cookie: httpOnly, sameSite=lax,<br/>secure nur bei https:// PUBLIC_BASE_URL)"]
-    E --> F["loadCurrentPerson(db)<br/>req.currentPerson aus session.personId"]
-    F --> G["loadNavFlags(db, config)<br/>res.locals.isBuchhaltung/isSuperadmin/isManager,<br/>res.locals.adminNav (pro Bereich)"]
+    E --> CS["cookieParser + attachCsrfToken<br/>(ausser n8n/Cron)"]
+    CS --> F["loadCurrentPerson(db)<br/>req.currentPerson aus session.personId"]
+    F --> AU["auditContext + zugriffsAuditMiddleware<br/>Akteur / verweigerte Zugriffe"]
+    AU --> G["loadNavFlags(db, config)<br/>res.locals.isBuchhaltung/isSuperadmin/isManager,<br/>res.locals.adminNav (pro Bereich)"]
     G --> H{"Router-Mount<br/>(eigener Rate-Limiter +<br/>eigene Zugriffsprüfung)"}
 ```
 
@@ -92,20 +98,23 @@ und Zugriffskontrolle — siehe
 | `/branding` | public | offen | Logo ausliefern |
 | `/admin` + Unterrouten | session | `requireAdminAreaAccess` + pro Bereich unterschiedlich (siehe [admin-bereich.md](admin-bereich.md)) | gesamter Admin-Bereich |
 | `/api/n8n/jobs` | machine | `X-API-Key` | Rechnungseingang/-abholung durch n8n |
-| `/api/n8n/backup` | machine | `X-API-Key` | Abholung des neuesten Backup-Archivs durch n8n (Offsite-Ablage) |
+| `/api/n8n/backup` | machine | `X-API-Key` mit separatem `BACKUP_API_KEY` | Abholung des neuesten Backup-Archivs durch n8n (Offsite-Ablage) |
+| `/api/n8n/kk-belege` | machine | `X-API-Key` mit `N8N_API_KEY`, Modul aktiv | Kreditkartenbelege per Mail als Entwurf erfassen |
+| `/kreditkarte` | session | eingeloggt + Beleg-/Kartenrechte | Kreditkartenbelege erfassen und bearbeiten |
+| `/ferienmodus` | session | eingeloggt | eigene Abwesenheit und Stellvertretung verwalten |
 | `/api/pool` | session | Rolle `buchhaltung` | JSON-Pool-API (Beanspruchen) |
 | `/pool` | session | eingeloggt | Dashboard für jede aktive Person (nur offene Aufgaben) |
 | `/meine-abgeschlossenen` | session | eingeloggt | eigene abgeschlossene Rechnungen, paginiert |
 | `/meine-spesen` | session | eingeloggt | eigene Spesen-Einreichungen über alle Stati, siehe [spesen-einreichung.md](spesen-einreichung.md) |
 | `/downloads` | eigene (session bzw. public je Route) | siehe [n8n-schnittstelle.md](n8n-schnittstelle.md) | signierte PDF-/Thumbnail-Auslieferung |
-| `/kontierung` | session | eingeloggt + Job-Autorisierung | Kontierung, Aufsplitten |
+| `/kontierung` | session | eingeloggt + Job-Autorisierung | Kontierung, Aufsplitten, Kreditkarten-Abgleich |
 | `/spesen` | session | eingeloggt | Spesen-Einreichung (Formular + Speichern) |
 | `/spesen-freigabe1` | session | eingeloggt + Job-Autorisierung | Freigabe 1 für Spesen-Positionen (review-only) |
 | `/freigabe2` | session | eingeloggt + Job-Autorisierung | zweite Freigabe (Rechnungen und Spesen) |
 | `/abgelehnt` | session | eingeloggt + Job-Autorisierung | Überarbeitung abgelehnter Rechnungen |
 | `/zeitstempel-pruefen` | session | eingeloggt | Zeitstempel-Verifikation + Zertifikat |
 | `/auth` | public | offen | ChurchTools-OAuth2-Login/-Logout |
-| `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen der sechs Hintergrund-Jobs |
+| `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen von acht Hintergrund-Jobs (nicht: `datenbank-sicherung`, `mail-digest`, `sicherheitsalarme`) |
 | `/healthz` | keiner | offen | `{status:"ok"}` |
 | `/` | public | — | leitet auf `/pool` (eingeloggt) oder `/auth/login` (anonym) weiter |
 

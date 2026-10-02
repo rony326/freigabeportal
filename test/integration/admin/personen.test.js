@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../../src/db/index.js';
-import { upsertPerson, setFerienmodus } from '../../../src/db/personenRepo.js';
+import { upsertPerson, setFerienmodus, deactivatePerson } from '../../../src/db/personenRepo.js';
 import { loadCurrentPerson, requireAnyRole, requireRole } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createPersonenRouter } from '../../../src/routes/admin/personen.js';
@@ -75,18 +75,21 @@ test('GET /admin/personen lists all persons including inactive ones, and flags u
   db.close();
 });
 
-test('GET /admin/personen flags a person kept active only via a Konto reference (no ChurchTools group left), and does not flag a normal group member', async () => {
+test('GET /admin/personen labels portal users without an administrative group neutrally, and shows why access was withdrawn', async () => {
   const db = openDatabase(':memory:');
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
   upsertPerson(db, { id: '4', vorname: 'Konto', nachname: 'Referenziert', email: 'k@example.org', gruppen: [], loggedInNow: false });
+  upsertPerson(db, { id: '5', vorname: 'Geloescht', nachname: 'Person', email: 'g@example.org', gruppen: [], loggedInNow: false });
+  deactivatePerson(db, '5', 'churchtools_geloescht');
 
   const app = buildTestApp(db);
   const res = await request(app).get('/admin/personen').set('x-test-person-id', '99');
   assert.equal(res.status, 200);
-  assert.match(res.text, /Nicht mehr in einer ChurchTools-Gruppe/);
+  assert.match(res.text, /Keine Verwaltungsgruppe – Portalzugang über ChurchTools-Login/);
+  assert.match(res.text, /Zugang entzogen: Person in ChurchTools gelöscht/);
 
   const adminRow = res.text.slice(res.text.indexOf('Admina Portal'), res.text.indexOf('Admina Portal') + 500);
-  assert.doesNotMatch(adminRow, /Nicht mehr in einer ChurchTools-Gruppe/, 'a person still in a real ChurchTools group must not be flagged');
+  assert.doesNotMatch(adminRow, /Keine Verwaltungsgruppe/, 'a person still in a real ChurchTools group must not be labelled');
   db.close();
 });
 

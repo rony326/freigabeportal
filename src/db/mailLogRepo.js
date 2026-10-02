@@ -17,12 +17,15 @@ export function getMailLogById(db, id) {
 }
 
 export function pruneMailLogOlderThan(db, isoThreshold) {
-  const result = db.prepare('DELETE FROM mail_log WHERE versucht_am < ?').run(isoThreshold);
+  // Nur abgeschlossene Zeilen: 'eingereiht'/'geplant' sind noch zuzustellen und dürfen nie durch
+  // die Aufbewahrungsfrist verloren gehen.
+  const result = db.prepare("DELETE FROM mail_log WHERE versucht_am < ? AND status IN ('versendet', 'fehlgeschlagen')").run(isoThreshold);
   return Number(result.changes);
 }
 
 export function listGeplantMailsGruppiertNachEmpfaenger(db) {
-  const rows = db.prepare("SELECT * FROM mail_log WHERE status = 'geplant' ORDER BY versucht_am").all();
+  const jetzt = new Date().toISOString();
+  const rows = db.prepare("SELECT * FROM mail_log WHERE status = 'geplant' AND (sperre_bis IS NULL OR sperre_bis <= ?) ORDER BY versucht_am, id").all(jetzt);
   const gruppen = new Map();
   for (const row of rows) {
     if (!gruppen.has(row.empfaenger)) gruppen.set(row.empfaenger, []);

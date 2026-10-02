@@ -1,4 +1,17 @@
 import { getPersonById } from '../db/personenRepo.js';
+import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
+
+// Protokolliert (fail-safe) und verweigert. Die Entscheidung ist bereits gefallen, bevor hier
+// irgendetwas protokolliert wird; ein Protokollfehler aendert weder Status noch Antwort.
+export function verweigereNichtAngemeldet(req, res) {
+  meldeZugriffVerweigert(req, { grund: 'nicht_angemeldet', status: 401 });
+  return res.status(401).render('error', { message: 'Bitte melde dich an, um fortzufahren.' });
+}
+
+export function verweigereOhneBerechtigung(req, res, grund, recht = null) {
+  meldeZugriffVerweigert(req, { grund, status: 403, recht });
+  return res.status(403).render('error', { message: 'Du hast keine Berechtigung für diesen Bereich.' });
+}
 
 export function loadCurrentPerson(db) {
   return (req, res, next) => {
@@ -38,12 +51,8 @@ export function personHasRole(person, config, role) {
 export function requireRole(config, role) {
   return (req, res, next) => {
     const person = req.currentPerson;
-    if (!person || !person.aktiv) {
-      return res.status(401).render('error', { message: 'Bitte melde dich an, um fortzufahren.' });
-    }
-    if (!personHasRole(person, config, role)) {
-      return res.status(403).render('error', { message: 'Du hast keine Berechtigung für diesen Bereich.' });
-    }
+    if (!person || !person.aktiv) return verweigereNichtAngemeldet(req, res);
+    if (!personHasRole(person, config, role)) return verweigereOhneBerechtigung(req, res, 'fehlende_rolle');
     next();
   };
 }
@@ -51,12 +60,8 @@ export function requireRole(config, role) {
 export function requireAnyRole(config, roles) {
   return (req, res, next) => {
     const person = req.currentPerson;
-    if (!person || !person.aktiv) {
-      return res.status(401).render('error', { message: 'Bitte melde dich an, um fortzufahren.' });
-    }
-    if (!roles.some((role) => personHasRole(person, config, role))) {
-      return res.status(403).render('error', { message: 'Du hast keine Berechtigung für diesen Bereich.' });
-    }
+    if (!person || !person.aktiv) return verweigereNichtAngemeldet(req, res);
+    if (!roles.some((role) => personHasRole(person, config, role))) return verweigereOhneBerechtigung(req, res, 'fehlende_rolle');
     next();
   };
 }
@@ -64,9 +69,7 @@ export function requireAnyRole(config, roles) {
 export function requireLogin() {
   return (req, res, next) => {
     const person = req.currentPerson;
-    if (!person || !person.aktiv) {
-      return res.status(401).render('error', { message: 'Bitte melde dich an, um fortzufahren.' });
-    }
+    if (!person || !person.aktiv) return verweigereNichtAngemeldet(req, res);
     next();
   };
 }

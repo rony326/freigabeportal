@@ -1,7 +1,25 @@
 # Audit-Behebung: Umsetzungsstand
 
-Stand: 2026-09-27. Keine Audit-Freigabe; die Umsetzung ist noch nicht abgeschlossen.
-Die Test-IDs im Behebungsplan sind Abnahmeanforderungen, keine Erfolgsmeldungen.
+Stand: 2026-09-27, fortgeschrieben 2026-09-29 anhand des Codes auf
+`feature/code-hardening-2026-09-29`. Keine Audit-Freigabe; die Umsetzung ist noch nicht
+abgeschlossen. Die Test-IDs im Behebungsplan sind Abnahmeanforderungen, keine Erfolgsmeldungen.
+
+## Statusuebersicht 2026-09-29
+
+"Getestet" heisst: lokale automatisierte Tests mit Test-Fixtures, keine Betriebsabnahme.
+
+| Thema | Umgesetzt | Getestet | Betrieblich abzunehmen | Weiterhin offen |
+| --- | --- | --- | --- | --- |
+| Request-/Laufkorrelation | ja ([Paket](audit-paket-request-korrelation.md)) | ja | Log-Anbindung | externe Logs, CLI-Status/Verify ohne Laufnachweis |
+| Backup-Loeschprotokoll inkl. manueller Pruefung | ja | ja | Prozess fuer Pruefung | kein kryptographischer Loeschnachweis |
+| Alarm offener Backup-Loeschabsichten | ja ([Paket](audit-paket-haertung-2026-09-29.md)) | ja | Empfaenger, SMTP-Zustellung | Alarmierung weiterer Rueckstaende (Audit-Export, Archiv) |
+| Verweigerte Zugriffe | ja, gedrosselt | ja | Auswertungsprozess | 429/404 nicht erfasst |
+| Datei-Eingriffe PDF-Bereinigung | ja, Absicht/Ergebnis | ja | – | Tmp-Datei-Sweep ohne Einzelprotokoll |
+| Verwaiste finale Dateien | Quarantaene + Admin-Entscheidung | ja | Stromausfallprobe Zielhost | – |
+| Export-/Zahlungsintegritaet | ja ([Doku](export-und-zahlungsintegritaet.md)) | ja | n8n-Umstellung, Altfall-Entscheidungen | Audit-Trigger fuer `altfall_entscheidungen` liegt als uncommitteter Patch im Codex-Worktree |
+| TSA-Pruefevidenz | ja, je neuem Zeitstempel | ja | DigiCert-Profil, CRL-Bereitstellung | Langzeitvalidierung, OCSP, Anzeige in Pruefbescheinigung |
+| Externer Audit-Nachweis | nur lokale Pakete/Kette ([Bedrohungsmodell](audit-externe-nachweise.md)) | ja (lokal) | – | Zielsystem, Transport, Quittung, Aufbewahrung (Betreiberentscheid) |
+| Kreditoren statt Debitoren | ja ([Doku](kreditoren-statt-debitoren.md)) | ja | Deployment-Schritte, Staging-Migration | Entfernen der Uebergangs-Aliase |
 
 ## Bereits umgesetzt
 
@@ -72,8 +90,9 @@ Die Test-IDs im Behebungsplan sind Abnahmeanforderungen, keine Erfolgsmeldungen.
 
 - DigiCert: konkrete TSA-URL, unabhaengig freigegebene Root-CAs und echte
   Betriebsabnahme einschliesslich CRL-Bereitstellung/Erneuerung; OCSP, Delta-/indirekte
-  CRLs, persistierte Sperrevidenz, weitere Zertifikats-/ESS-Kettenbeschraenkungen
-  und historische Langzeitvalidierung. Der konfigurierbare Truststore und die
+  CRLs, weitere Zertifikats-/ESS-Kettenbeschraenkungen und historische
+  Langzeitvalidierung. Die bei der Pruefung verwendete Sperr-/Zertifikatsevidenz wird seit
+  2026-09-29 je Zeitstempel gespeichert (keine Langzeitvalidierung). Der konfigurierbare Truststore und die
   Kettenpruefung fuer neue Zeitstempel sind mit lokalen Test-CAs umgesetzt. Ein mathematisch
   gueltiger Zeitstempel allein bedeutet weiterhin nicht "vertrauenswuerdiger Dienst".
 - Paperless-ngx: externe n8n-Umstellung und reale Upload-/Ruecklese-/Wiederanlaufprobe
@@ -85,13 +104,18 @@ Die Test-IDs im Behebungsplan sind Abnahmeanforderungen, keine Erfolgsmeldungen.
   Migration alter Klartext-ZIPs und reale Wiederherstellungs-/Stromausfallprobe
   auf dem Zielhost fehlen. Authentifizierte Verschluesselung ist umgesetzt. Die Sperre setzt
   kooperierende Prozesse voraus; Mehrhost-Betrieb und direkte DB-Schreiber sind nicht abgedeckt.
-- Externer unveraenderlicher Audit-Export, Request-Korrelation und komplette
-  Ereignisabdeckung (einschliesslich Backup-Loeschungen) fehlen noch.
-- Vollstaendige Snapshot-Bindung aller Exportmetadaten, Zahlungsdaten-Bestaetigung
-  fuer andere Belegarten als Spesen und abgesicherte Altfallmigration.
-- Automatische Bereinigung verwaister finaler Dateien fehlt weiterhin. Ein SIGKILL
-  vor dem Gruppen-Commit kann eine unreferenzierte Datei hinterlassen; Wiederanlauf
-  und Commit-Grenze sind getestet, reale Stromausfall-/Zielhostproben stehen aus.
+- Externer unveraenderlicher Audit-Nachweis: lokale, hashverkettete Exportpakete sind
+  umgesetzt; Zielsystem, Transport, Empfangsquittung und Aufbewahrung haengen an
+  Betreiberentscheidungen ([Bedrohungsmodell](audit-externe-nachweise.md)). Lokale Hashes
+  sind kein Beweis externer Unveraenderlichkeit. Request-Korrelation und
+  Backup-Loeschprotokoll sind umgesetzt (siehe Statusuebersicht).
+- Ereignisabdeckung: Verweigerte Zugriffe und Loeschungen der PDF-Bereinigung sind
+  ergaenzt. Nicht erfasst bleiben 429/404, der Tmp-Datei-Sweep und direkte DB-/Dateizugriffe
+  ausserhalb der Anwendung.
+- Export-/Zahlungsintegritaet ist umgesetzt; offen sind die externe n8n-Umstellung und die
+  Entscheidung der Altfaelle im Betrieb.
+- Verwaiste finale Dateien werden erkannt und in Quarantaene verschoben (nie automatisch
+  geloescht); reale Stromausfall-/Zielhostproben stehen aus.
 - Staging-Migration, Wiederherstellungsprobe, Last-/Absturztests und reale Betriebsabnahme.
 
 ## Betrieb: DigiCert, Paperless-ngx und n8n
@@ -168,6 +192,10 @@ die GCM-Pruefung nicht umgehen. Privater Schluesselbund, kollisionsfreie
 Veroeffentlichung, CLI-Authentifizierung, Link-sichere Downloads und fehlender
 Klartext-Fallback sind abgedeckt. Restore-/SIGKILL-Tests verwenden nun verschluesselte
 Sicherungen. Reale Schluesselbereitstellung und Wiederherstellungsprobe bleiben offen.
+
+Ergebnis am 2026-09-29 (Branch `feature/code-hardening-2026-09-29`): 1.619 Tests bestanden,
+null fehlgeschlagen; `git diff --check` ohne Befund. Details je Paket:
+[Code-Haertung](audit-paket-haertung-2026-09-29.md).
 
 Ergebnis am 2026-09-28: 1.378 Tests bestanden, null fehlgeschlagen;
 Dependency-Scan: null bekannte Schwachstellen; Whitespace-Pruefung ohne Befund.

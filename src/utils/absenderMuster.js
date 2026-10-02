@@ -1,6 +1,6 @@
 // Gültiges Absender-Muster: entweder eine E-Mail-Adresse ("rechnung@lieferant.ch", Treffer "exakt")
 // oder eine Domain mit mindestens einem Punkt ("lieferant.ch", Treffer "Domain"). Gemeinsam genutzt
-// von den Zuweisungsregeln (admin/debitoren.js) und der Kartenerkennung (admin/kreditkarten.js).
+// von den Zuweisungsregeln (admin/kreditoren.js) und der Kartenerkennung (admin/kreditkarten.js).
 const EMAIL_MUSTER_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DOMAIN_MUSTER_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
 

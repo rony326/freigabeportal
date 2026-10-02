@@ -1,8 +1,11 @@
 # Datenmodell
 
-SQLite-Datenbank (`schema.sql`), eine Datei unter `DB_PATH`. Kein ORM —
-alle Zugriffe laufen über handgeschriebenes SQL in `src/db/*Repo.js`
-(jeweils ein Repo pro Tabelle bzw. Konzept).
+SQLite-Datenbank aus `schema.sql` und den Migrationen in `src/db/index.js`
+sowie `src/db/*Schema.js`. Der konfigurierte `DB_PATH` kann nach einem
+Offline-Restore über `<DB_PATH>.active.json` auf den aktiven Datenstand
+verweisen. Kein ORM: Repositories und Services verwenden handgeschriebenes SQL.
+Das ER-Diagramm zeigt das fachliche Kernmodell; zusätzliche Nachweis- und
+Betriebstabellen sind darunter beschrieben.
 
 ## ER-Diagramm
 
@@ -13,10 +16,10 @@ erDiagram
     personen ||--o{ person_berechtigungen : "hat"
     personen ||--o{ freigaben : "handelt"
     konten ||--o{ jobs : "konto_id"
-    konten ||--o{ debitoren : "default-Konto"
-    debitoren ||--o{ jobs : "debitor_id"
-    debitoren ||--o{ debitor_ibans : "hat"
-    debitoren ||--o{ zuweisungsregeln : "Ziel"
+    konten ||--o{ kreditoren : "default-Konto"
+    kreditoren ||--o{ jobs : "kreditor_id"
+    kreditoren ||--o{ kreditor_ibans : "hat"
+    kreditoren ||--o{ zuweisungsregeln : "Ziel"
     jobs ||--o{ freigaben : "Verlauf"
     jobs ||--o{ mail_log : "ausgelöste Mails"
     jobs ||--o{ jobs : "aufgesplittet_von (Parent → Teile)"
@@ -45,10 +48,12 @@ erDiagram
         text ferienmodus_von
         text ferienmodus_bis
         text ferienmodus_stellvertreter_id FK
+        text deaktiviert_am
+        text deaktivierungsgrund
     }
     person_berechtigungen {
         text person_id PK,FK
-        text berechtigung PK "CHECK: 9 feste Werte"
+        text berechtigung PK "CHECK: 11 feste Werte"
     }
     konten {
         int id PK
@@ -60,15 +65,15 @@ erDiagram
         text stellvertreter2_id FK
         int aktiv
     }
-    debitoren {
+    kreditoren {
         int id PK
         text name
         int konto_id FK "optionales Default-Konto"
         int aktiv
     }
-    debitor_ibans {
+    kreditor_ibans {
         int id PK
-        int debitor_id FK
+        int kreditor_id FK
         text iban UK
         text quelle "manuell | bestaetigt"
         text erstellt_am
@@ -76,7 +81,7 @@ erDiagram
     zuweisungsregeln {
         int id PK
         text absender_muster UK
-        int debitor_id FK
+        int kreditor_id FK
     }
     spesenabrechnungen {
         int id PK
@@ -94,7 +99,7 @@ erDiagram
         text status "11 mögliche Werte"
         int konto_id FK
         text zugewiesen_an FK
-        int debitor_id FK
+        int kreditor_id FK
         int aufgesplittet_von FK "Parent-Job"
         text datei_hash "SHA-256, für n8n-Idempotenz"
         text betrag
@@ -187,8 +192,12 @@ erDiagram
         text typ "12 mögliche Werte"
         int job_id FK
         text empfaenger
-        text status "versendet | fehlgeschlagen"
+        text status "eingereiht | geplant | versendet | fehlgeschlagen"
         text versucht_am
+        int versuche
+        text naechster_versuch_am
+        text sperre_bis
+        text versendet_am
     }
     job_loeschungen {
         int id PK
@@ -219,8 +228,12 @@ ChurchTools-Gruppen-IDs als JSON-Array (nicht die komplette
 ChurchTools-Gruppenzugehörigkeit). `ct_person_unresolved` markiert eine
 Person, die in ChurchTools nicht mehr auffindbar ist (z. B. nach einem
 Personen-Merge) — sie bleibt als historischer Datensatz erhalten statt
-gelöscht zu werden. `aktiv = 0` heisst deaktiviert (kein aktiver Sync-Treffer
-mehr, siehe [personen-sync.md](personen-sync.md)).
+gelöscht zu werden. `aktiv = 0` heisst deaktiviert: ChurchTools meldet die
+Person als gelöscht oder archiviert (`deaktivierungsgrund`
+`churchtools_geloescht`/`churchtools_archiviert`, Zeitpunkt in
+`deaktiviert_am`). Fehlende Gruppenmitgliedschaft allein deaktiviert nicht,
+sie leert nur `gruppen`; ein erneuter Login reaktiviert und löscht beide
+Felder — siehe [personen-sync.md](personen-sync.md#zugangsmodell).
 
 **Ferienmodus** (`ferienmodus_von`, `ferienmodus_bis`, `ferienmodus_stellvertreter_id`):
 selbstverwalteter, additiver Abwesenheits-Zeitraum mit gewähltem Stellvertreter — siehe
@@ -230,9 +243,8 @@ gespeichert, sondern bei jeder Prüfung aus dem heutigen Datum berechnet
 
 ### `person_berechtigungen`
 Additive Einzelrechte, siehe [auth-und-rechte.md](auth-und-rechte.md). Ein
-`CHECK`-Constraint erlaubt strukturell nur sieben Werte — die drei
-`superadmin`-exklusiven Admin-Bereiche lassen sich gar nicht erst
-eintragen.
+`CHECK`-Constraint erlaubt elf Rechte. Für die sieben
+`superadmin`-exklusiven Admin-Bereiche gibt es keine vergebbaren Werte.
 
 ### `konten`
 Ein "Konto" ist eine Kostenstelle mit genau vier Rollen: Freigeber 1 +
@@ -241,11 +253,16 @@ müssen unterschiedliche, aktive Personen sein
 (`validateKontoRoles`). Freigeber 1 kontiert/erstfreigibt, Freigeber 2
 erteilt die zweite, unabhängige Freigabe (Vier-Augen-Prinzip).
 
-### `debitoren` und `zuweisungsregeln`
-Ein Debitor (Lieferant) kann ein Default-Konto haben. `zuweisungsregeln`
+### `kreditoren` und `zuweisungsregeln`
+Bis 2026-09-29 hiessen Tabellen und Spalten fachlich falsch `debitoren`,
+`debitor_ibans` und `debitor_id`; die Migration und die Leseadapter fuer
+historische Snapshots beschreibt [Kreditoren statt Debitoren](kreditoren-statt-debitoren.md).
+`kreditoren.id` ist eine interne ID, keine Kreditorennummer der Buchhaltung;
+`konto_id` verweist auf das Standard-Konto (`konten`) und wurde nicht veraendert.
+Ein Kreditor (Lieferant) kann ein Default-Konto haben. `zuweisungsregeln`
 bildet Absender-Muster (exakte E-Mail-Adresse oder Domain) auf einen
-Debitor ab — trifft eine Regel beim Rechnungseingang, wird der Job direkt
-diesem Debitor/Konto zugewiesen statt in den Pool zu fallen (siehe
+Kreditor ab — trifft eine Regel beim Rechnungseingang, wird der Job direkt
+diesem Kreditor/Konto zugewiesen statt in den Pool zu fallen (siehe
 [rechnungs-workflow.md](rechnungs-workflow.md)).
 
 ### `spesenabrechnungen`
@@ -267,8 +284,8 @@ eigenes Audit-Log für Belege, solange sie noch keine `jobs`-Zeile haben
 (`person_id = NULL` heisst System). Details:
 [kreditkarten-belege.md](kreditkarten-belege.md).
 
-### `debitor_ibans`
-Ein Debitor kann mehrere bekannte IBANs haben (`quelle`: manuell vom Admin
+### `kreditor_ibans`
+Ein Kreditor kann mehrere bekannte IBANs haben (`quelle`: manuell vom Admin
 erfasst, oder `bestaetigt` — automatisch übernommen, wenn eine Person bei
 der Kontierung einen unbekannten QR-Code-IBAN explizit bestätigt). Basis
 für den Betrugserkennungs-Abgleich, siehe
@@ -303,7 +320,7 @@ kopieren.
 `spesenabrechnung_id`, `rechnungsdatum`): nur bei `quelle = 'spesen'`
 befüllt, siehe [spesen-einreichung.md](spesen-einreichung.md). Alle
 rechnungsspezifischen Spalten (`absender`, `lieferant`, `rechnungsnummer`,
-`debitor_id`, `zahlungsziel`, `aufgesplittet_von`, `typ`) bleiben bei
+`kreditor_id`, `zahlungsziel`, `aufgesplittet_von`, `typ`) bleiben bei
 einer Spesen-Position `NULL`.
 
 **Kreditkarten-Spalten** (`kreditkarte_id`, `kk_eigenbeleg_grund`,
@@ -349,8 +366,18 @@ Foreign Key.
 Ferienmodus-Stellvertreter der eigentlich zuständigen Person war — sonst `NULL`.
 
 ### `mail_log`
-Jeder Zustellversuch (erfolgreich oder fehlgeschlagen), inkl. Volltext —
-Basis für **Admin → E-Mail-Protokoll** und die "erneut senden"-Funktion.
+Persistente Warteschlange und Protokoll jeder Benachrichtigung, inkl.
+Volltext — Basis für **Admin → E-Mail-Protokoll**, die automatische
+Wiederholung (`mail-zustellung`) und die "erneut senden"-Funktion. Eine
+Zeile je Empfänger. `status`: `eingereiht` (wartet auf Zustellung bzw.
+Wiederholung), `geplant` (wartet auf den Digest), `versendet` (vom
+SMTP-Server angenommen, `versendet_am`), `fehlgeschlagen` (endgültig).
+`versuche`, `naechster_versuch_am` und `fehler_details` dokumentieren die
+Wiederholungen; `sperre_token`/`sperre_bis` sind die befristete
+Versandsperre gegen parallele Doppelzustellung, `eingereiht_am` der
+Einreihungszeitpunkt. Die Aufbewahrungsfrist löscht nur `versendet` und
+`fehlgeschlagen`. Details:
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail).
 
 ### `job_loeschungen`
 Protokoll jeder endgültigen Löschung einer abgelehnten Rechnung.
@@ -362,26 +389,56 @@ ist. `dateiname` wird dupliziert, weil sie sonst nach der Löschung nicht
 mehr rekonstruierbar wäre.
 
 ### `backup_wiederherstellungen`
-Audit-Trail jeder Datenbank-Wiederherstellung über **Admin →
-Datenbank-Backup** (Dateiname des eingespielten Archivs, auslösende Person,
-Zeitpunkt) — Grundlage für den Wiederherstellungs-Verlauf auf dieser Seite.
+Audit-Trail jeder Datenbank-Wiederherstellung (Dateiname des eingespielten
+Archivs, auslösende Person, Zeitpunkt). Geschrieben vom Offline-Restore
+(`npm run backup:restore`, siehe [offline-restore.md](offline-restore.md));
+**Admin → Datenbank-Backup** zeigt den Verlauf nur an — eine Wiederherstellung
+im laufenden Betrieb gibt es nicht mehr.
 Eigene schlanke Tabelle statt Zweckentfremdung von `cron_log`, weil hier —
 anders als bei den geplanten Jobs — festgehalten werden muss, *welche
 Person* die Wiederherstellung ausgelöst hat.
 
 `wiederhergestellt_von` ist **absichtlich kein** Foreign Key auf `personen`
-— dieselbe Überlegung wie bei `job_loeschungen.job_id`, nur in die andere
-Richtung: Der Eintrag wird nicht in die laufende, sondern in die *gerade
-wiederhergestellte* Datenbank geschrieben (das offene File-Handle des
-Prozesses hängt nach dem Datei-Swap noch am alten Inode, ein Eintrag über
-die Live-Verbindung wäre beim Neustart weg). Deren `personen`-Tabelle stammt
-aus dem Archiv und muss die auslösende Person gar nicht enthalten — etwa
-beim Restore eines Archivs, das älter ist als deren Konto. Ein erzwungener
-FK würde genau dann den Audit-Eintrag scheitern lassen und einen bereits
-erfolgreichen Restore als Fehler melden.
+— der Nachweis wird beim Offline-Restore in die wiederhergestellte Datenbank
+mit deren historischem Personenbestand geschrieben. Dieser muss die auslösende
+Person nicht enthalten. Der Server bleibt während des Restores gestoppt;
+der aktive Datenstand wird über die Aktivierungsdatei umgeschaltet.
 
 ### `sync_log`, `cron_log`, `admin_config`, `sessions`
 Betriebs-/Konfigurationstabellen: Lauf-Historie des nächtlichen
-ChurchTools-Syncs bzw. der fünf anderen Hintergrund-Jobs, Key-Value-Store
+ChurchTools-Syncs (`sync_log`) bzw. der übrigen Hintergrund-Jobs
+(`cron_log`; `sicherheitsalarme` protokolliert stattdessen im Audit-Log),
+Key-Value-Store
 für alle Admin-Einstellungen (Eskalationszeiten, Cron-Zeitpläne,
 Branding, TSA-Konfiguration, …), und der Express-Session-Store.
+
+## Zusätzliche Nachweis- und Betriebstabellen
+
+Diese Tabellen entstehen durch die beim Datenbankstart ausgeführten Migrationen
+und gehören zur vollständigen Datenbanksicherung.
+
+| Tabelle | Zweck und wichtigste Bindung |
+|---|---|
+| `audit_ereignisse` | Zentrales Änderungs-/Sicherheitsprotokoll mit Objekt, Aktion, Akteur, Vorher-/Nachher-Werten und Begründung; UPDATE/DELETE gesperrt. |
+| `audit_request_zuordnung` | Eine unveränderliche HTTP-Request-Zuordnung je Audit-Ereignis; historische Ereignisse erhalten keine nachträglich erfundene ID. |
+| `audit_lauf_zuordnung` | Unveränderliche Lauf-ID und Lauftyp je Audit-Ereignis für Hintergrund-/Wartungsaktionen. |
+| `audit_zugriff_drosselung` | Drosselungszustand zur begrenzten Protokollierung wiederholter Zugriffsverweigerungen. |
+| `export_nachweise` | Unveränderliches Exportmanifest mit Export-ID, eindeutigem Jobbezug und SHA-256 der finalen Datei. |
+| `archiv_quittungen` | Unveränderliche Quittung je Export-ID mit eindeutiger Archiv-Dokument-ID, Task-ID und Datei-Hash. |
+| `datei_quarantaene` | Dateiname, Hash, Grösse und Verschiebezeit; genau eine begründete Entscheidung von `quarantaene` zu `wiederhergestellt` oder `geloescht`, keine Zeilenlöschung. |
+| `sicherheitsalarme` | Persistenter Versand-/Wiederholungsstand je Alarmtyp und Schlüssel; eine versendete Warnung klärt keine Löschabsicht. |
+| `tsa_evidenz_objekte` | Per SHA-256 deduplizierte DER-Objekte für Zertifikate, Sperrlisten und Zeitstempel-Token; UPDATE/DELETE gesperrt. |
+| `tsa_pruefnachweise` | Unveränderlicher Prüfnachweis je Job, Dokumentart (`einzel`/`gruppe`) und Dokument-Hash, einschliesslich Prüfzeitpunkt und Evidenzverweisen. |
+| `audit_export_pakete` | Unveränderliches lokales Register hashverketteter Audit-Pakete mit Ereignisbereich, Lücken und Vorgängerhash. |
+
+Die `jobs`-Spalten `final_datei_hash` und `gruppe_final_datei_hash` binden
+finale Dokumente auch ohne TSA. `zeitstempel_erforderlich` hält die gespeicherte Exportpflicht fest, bei
+Splitgruppen auf dem Elternjob; sie darf nach ihrer Aktivierung nicht
+aufgehoben werden.
+
+Details: [Archivübergabe](n8n-paperless-archivierung.md),
+[Request-/Laufzuordnung](audit-paket-request-korrelation.md),
+[Quarantäne, Alarme und TSA-Evidenz](audit-paket-haertung-2026-09-29.md),
+[Audit-Export](audit-externe-nachweise.md).
+Lokale Unveränderlichkeits-Trigger schützen nicht gegen direkte Eingriffe eines
+Datenbankadministrators; sie ersetzen kein extern kontrolliertes Archiv.

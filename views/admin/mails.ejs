@@ -17,6 +17,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
       </div>
     <% } %>
+    <p class="text-muted small">Status: <strong>eingereiht</strong> = gespeichert, Zustellung läuft bzw. wird automatisch mit wachsendem Abstand wiederholt; <strong>versendet</strong> = vom Mailserver angenommen; <strong>fehlgeschlagen</strong> = endgültig nicht zugestellt (Wiederholungen ausgeschöpft), nur manuell wiederholbar; <strong>geplant</strong> = wartet auf die tägliche Zusammenfassung.</p>
     <div class="table-responsive">
       <table class="table align-middle">
         <thead><tr><th>Zeitpunkt</th><th>Empfänger</th><th>Betreff</th><th>Typ</th><th>Status</th><th>Fehler</th><th></th></tr></thead>
@@ -27,13 +28,26 @@
               <td><%= mail.empfaenger %></td>
               <td><%= mail.betreff %></td>
               <td><%= mail.typ %></td>
-              <td><%= mail.status %></td>
+              <td>
+                <% if (mail.status === 'versendet') { %><span class="badge text-bg-success">versendet</span>
+                <% } else if (mail.status === 'fehlgeschlagen') { %><span class="badge text-bg-danger">fehlgeschlagen</span>
+                <% } else if (mail.status === 'eingereiht') { %><span class="badge text-bg-warning">eingereiht</span>
+                  <span class="d-block small text-muted"><%= mail.versuche > 0 ? `${mail.versuche} Versuch(e), nächster ${mail.naechster_versuch_am || '–'}` : 'wird zugestellt' %></span>
+                <% } else if (mail.status === 'geplant') { %><span class="badge text-bg-secondary">geplant (Digest)</span>
+                  <% if (mail.versuche > 0) { %><span class="d-block small text-muted"><%= mail.versuche %> Versuch(e), nächster <%= mail.naechster_versuch_am || '–' %></span><% } %>
+                <% } else { %><%= mail.status %><% } %>
+              </td>
               <td><%= mail.fehler_details || '' %></td>
               <td>
                 <% if (mail.status === 'fehlgeschlagen') { %>
                   <form method="post" action="/admin/mails/<%= mail.id %>/erneut-versenden">
                     <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                     <button type="submit" class="btn btn-outline-secondary btn-sm">Erneut versenden</button>
+                  </form>
+                <% } else if (mail.status === 'eingereiht' && mail.versuche > 0) { %>
+                  <form method="post" action="/admin/mails/<%= mail.id %>/erneut-versenden">
+                    <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                    <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt erneut versuchen</button>
                   </form>
                 <% } %>
               </td>

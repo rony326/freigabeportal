@@ -18,7 +18,7 @@ import { loadNavFlags } from './middleware/nav.js';
 import { loadBranding } from './middleware/branding.js';
 import { createBrandingRouter } from './routes/branding.js';
 import { createKontenRouter } from './routes/admin/konten.js';
-import { createDebitorenRouter } from './routes/admin/debitoren.js';
+import { createKreditorenRouter } from './routes/admin/kreditoren.js';
 import { createKreditkartenAdminRouter } from './routes/admin/kreditkarten.js';
 import { createEskalationRouter } from './routes/admin/eskalation.js';
 import { createErscheinungsbildRouter } from './routes/admin/erscheinungsbild.js';
@@ -35,6 +35,7 @@ import { createBackupRouter } from './routes/admin/backup.js';
 import { createModuleRouter } from './routes/admin/module.js';
 import { createMailEinstellungenRouter } from './routes/admin/mailEinstellungen.js';
 import { createAltfaelleRouter } from './routes/admin/altfaelle.js';
+import { createDateiQuarantaeneRouter } from './routes/admin/dateiQuarantaene.js';
 import { createPoolRouter } from './routes/pool.js';
 import { createPoolPageRouter } from './routes/poolPage.js';
 import { createMeineAbgeschlossenenRouter } from './routes/meineAbgeschlossenen.js';
@@ -53,10 +54,12 @@ import { createMailerOrFallback } from './services/mailer.js';
 import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
 import { getVersionInfo } from './utils/version.js';
 import { auditContext, auditRequestContext } from './services/auditContext.js';
+import { zugriffsAuditMiddleware, meldeZugriffVerweigert } from './services/zugriffsAudit.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export function createApp({ db, config }) {
+// `mailer` is injectable for tests (a stub instead of the SMTP-backed default).
+export function createApp({ db, config, mailer: injectedMailer = null }) {
   const app = express();
   app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
@@ -131,9 +134,10 @@ export function createApp({ db, config }) {
   });
   app.use(loadCurrentPerson(db));
   app.use(auditContext);
+  app.use(zugriffsAuditMiddleware(db));
   app.use(loadNavFlags(db, config));
 
-  const mailer = createMailerOrFallback(config.smtp);
+  const mailer = injectedMailer ?? createMailerOrFallback(config.smtp);
 
   const publicLimiter = createPublicRateLimiter();
   const sessionLimiter = createSessionRateLimiter();
@@ -150,7 +154,10 @@ export function createApp({ db, config }) {
     });
   });
   app.use('/admin/konten', requirePermission(db, config, 'konten_verwalten'), createKontenRouter({ db, csrfProtection }));
-  app.use('/admin/debitoren', requirePermission(db, config, 'debitoren_verwalten'), createDebitorenRouter({ db, csrfProtection }));
+  app.use('/admin/kreditoren', requirePermission(db, config, 'kreditoren_verwalten'), createKreditorenRouter({ db, csrfProtection }));
+  // Frueherer Pfad (fachlich falsch 'Debitoren'): Lesezeichen und vor dem Deployment geladene
+  // Formulare werden weitergeleitet; 308 erhaelt Methode und Body, die Pruefungen gelten am Ziel.
+  app.use('/admin/debitoren', (req, res) => res.redirect(req.method === 'GET' || req.method === 'HEAD' ? 301 : 308, `/admin/kreditoren${req.url.replace(/^\/(?=\?|$)/, '')}`));
   app.use('/admin/kreditkarten', requirePermission(db, config, 'kreditkarten_verwalten'), createKreditkartenAdminRouter({ db, csrfProtection }));
   app.use('/admin/eskalation', requireRole(config, 'superadmin'), createEskalationRouter({ db, csrfProtection }));
   app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config, csrfProtection }));
@@ -165,6 +172,7 @@ export function createApp({ db, config }) {
   app.use('/admin/module', requireRole(config, 'superadmin'), createModuleRouter({ db, csrfProtection }));
   app.use('/admin/mail-einstellungen', requireRole(config, 'superadmin'), createMailEinstellungenRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/altfaelle', requirePermission(db, config, 'workflow_eingreifen'), createAltfaelleRouter({ db, config, csrfProtection }));
+  app.use('/admin/dateiquarantaene', requireRole(config, 'superadmin'), createDateiQuarantaeneRouter({ db, config, csrfProtection }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/n8n/backup', machineLimiter, requireApiKey({ n8nApiKey: config.backupApiKey }), createN8nBackupRouter({ config }));
@@ -209,6 +217,8 @@ export function createApp({ db, config }) {
     if (err.code === 'EBADCSRFTOKEN') {
       // Most likely a stale/expired form (session changed since it was loaded, e.g. logged out
       // and back in another tab) rather than an actual attack — no need to log.stack this one.
+      // Still recorded (throttled, without the submitted token) as a denied access.
+      meldeZugriffVerweigert(req, { grund: 'csrf', status: 403 });
       return res
         .status(403)
         .render('error', { message: 'Sicherheitsprüfung fehlgeschlagen (ungültiges oder abgelaufenes Formular). Bitte lade die Seite neu und versuche es erneut.' });

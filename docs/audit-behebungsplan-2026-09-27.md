@@ -28,6 +28,18 @@ authentifizierte Huelle vor dem ZIP. Separater Schluesselbund, n8n-Formatwechsel
 und Abnahme sind erforderlich. Unabhaengiger Herkunftsnachweis gegen kompromittierte
 Schluesselinhaber, externe unveraenderliche Ablage und Altsicherungs-Migration bleiben offen.
 
+Ergaenzung 2026-09-29 (Branch `feature/code-hardening-2026-09-29`, anhand des Codes):
+Request-/Laufkorrelation, Backup-Loeschprotokoll, Export-/Zahlungsintegritaet sind umgesetzt
+und werden hier nicht mehr als fehlend gefuehrt. Neu umgesetzt und lokal getestet:
+Protokollierung verweigerter Zugriffe (B, gedrosselt, fail-safe), protokollierte
+Datei-Loeschungen der PDF-Bereinigung, Quarantaene verwaister finaler Dateien (C),
+Alarmierung offener Backup-Loeschabsichten mit Retry (B/E), persistierte TSA-Pruefevidenz (D),
+lokale hashverkettete Audit-Exportpakete als Vorstufe zu B07/G08 und die fachliche Korrektur
+Kreditoren statt Debitoren. Offen bleiben insbesondere: externes unveraenderliches Audit-Ziel
+(Betreiberentscheid), Langzeitvalidierung/OCSP, DigiCert-/n8n-/Paperless-Abnahmen und reale
+Stromausfall-/Wiederherstellungsproben. Aktueller Stand:
+[Umsetzungsstand, Statusuebersicht](audit-umsetzungsstand-2026-09-27.md#statusuebersicht-2026-09-29).
+
 ## Ziel und Vorgehen
 
 Jedes Arbeitspaket liefert Implementierung, Migration soweit erforderlich,

@@ -326,3 +326,32 @@ test('POST /spesen with a Beleg exceeding MAX_BELEG_SIZE 400s with a form re-ren
   assert.equal(db.prepare("SELECT COUNT(*) AS c FROM jobs WHERE quelle = 'spesen'").get().c, 0, 'no job may be created out of a rejected upload');
   db.close();
 });
+
+test('POST /spesen rejects a damaged or encrypted PDF Beleg with an understandable message and creates no job', async () => {
+  const { buildVerschluesseltesPdfFixture } = await import('../helpers/pdfFixture.js');
+  for (const [bytes, meldung] of [
+    [Buffer.from('%PDF-1.4\n%kaputt\n'), /beschädigt/],
+    [await buildVerschluesseltesPdfFixture(), /verschlüsselt/],
+  ]) {
+    const db = openDatabase(':memory:');
+    seedDefaults(db);
+    const kontoId = seedGrundlagen(db);
+    const app = buildTestApp(db, createStubMailer());
+
+    const res = await request(app)
+      .post('/spesen')
+      .set('x-test-person-id', '5')
+      .field('_csrf', 'valid-token')
+      .field('posKontoId', String(kontoId))
+      .field('posBetrag', '10.00')
+      .field('posAuslageDatum', '2026-08-20')
+      .field('posBeschreibung', 'x')
+      .attach('posBeleg_0', bytes, { filename: 'a.pdf', contentType: 'application/pdf' });
+
+    assert.equal(res.status, 400);
+    assert.match(res.text, /Position 1:/);
+    assert.match(res.text, meldung);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE quelle = 'spesen'").get().n, 0);
+    db.close();
+  }
+});

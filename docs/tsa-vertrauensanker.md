@@ -37,7 +37,8 @@ Eine Deaktivierung der globalen TSA-URL hebt bereits gespeicherte Pflichten nich
    CRL-Signatur und Gueltigkeit werden vom Portal geprueft; es gibt keinen
    zusaetzlichen Dateihash-Pin fuer die regelmaessig erneuerte CRL-Datei.
    Webprozess nur leseberechtigen, keine Symlinks und keine Ablage unter Nutzdaten.
-   Externe Erneuerung und Alarmierung vor `nextUpdate` einrichten und testen.
+   Erneuerung vor `nextUpdate` sicherstellen: entweder extern (eigener Cron) oder ueber
+   die eingebaute automatische Erneuerung (siehe unten).
    Neue Listen vollstaendig in einer Nachbardatei schreiben, dann atomar ersetzen.
    Nicht alte und neue Listen desselben Ausstellers sammeln: jede passende Liste
    muss aktuell und gueltig sein, jede enthaltene Sperrung blockiert.
@@ -51,12 +52,74 @@ ausgetauschte oder unlesbare Dateien fuehren nicht zu einem ungesicherten Fallba
 Der normale Konfigurationsloader erlaubt kein Abschalten der Kettenpflicht;
 ein interner Opt-out wird ausschliesslich zur Isolation anderer Tests verwendet.
 
+## Beispiel DigiCert (`http://timestamp.digicert.com`)
+
+Stand 2026-10-02 mit einem echten Zeitstempel geprueft (Kette, CRLs, Nachweis).
+Die Kette lautet *DigiCert SHA256 RSA4096 Timestamp Responder 2026 1* →
+*DigiCert Trusted G4 TimeStamping RSA4096 SHA256 2025 CA1* → *DigiCert Trusted Root G4*.
+
+```sh
+curl -o /tmp/root.crt https://cacerts.digicert.com/DigiCertTrustedRootG4.crt
+openssl x509 -inform DER -in /tmp/root.crt -out /etc/freigabeportal/tsa-roots.pem
+openssl x509 -in /etc/freigabeportal/tsa-roots.pem -noout -fingerprint -sha256
+# erwartet: 55:2F:7B:DC:F1:A7:AF:9E:6C:E6:72:01:7F:4F:12:AB:F7:72:40:C7:8E:76:1A:C2:03:D1:D9:D2:0A:C8:99:88
+sha256sum /etc/freigabeportal/tsa-roots.pem   # → TSA_TRUST_ANCHORS_SHA256
+
+# CRLs: am einfachsten `npm run tsa:crl-update` (siehe unten). Manuell (Gueltigkeit ca.
+# 3 Wochen, regelmaessig erneuern; Verteilpunkte bei Profilwechsel neu ermitteln):
+tmp=$(mktemp)
+for n in DigiCertTrustedG4TimeStampingRSA4096SHA2562025CA1 DigiCertTrustedRootG4; do
+  curl -fsS "http://crl3.digicert.com/$n.crl" | openssl crl -inform DER >> "$tmp" || exit 1
+done
+mv "$tmp" /etc/freigabeportal/tsa-crls.pem
+```
+
+Die Fingerprint-Angabe zusaetzlich mit der offiziellen DigiCert-Root-Liste abgleichen.
+Wechselt DigiCert Responder oder Zwischenzertifikat, aendern sich die CRL-URLs.
+
+## Automatische Sperrlisten-Erneuerung
+
+Mit `TSA_CRL_AUTO_UPDATE=true` erneuert das Portal `TSA_CRL_FILE` taeglich selbst
+(Standard 04:15 Europe/Zurich, aenderbar ueber `cron_tsa_crl_stunde`/`cron_tsa_crl_minute`;
+manuell per `POST /internal/cron/tsa-crl-aktualisierung`). Gedacht fuer Hosting ohne eigenen
+Cron, z.B. Infomaniak-Webhosting. Ablauf (`src/services/tsaCrlUpdate.js`):
+
+1. Testzeitstempel bei der konfigurierten TSA anfordern und dessen Kette gegen die lokalen
+   Anker validieren. Ohne gueltige Kette wird nichts geladen.
+2. CRL-Adressen (nur http/https, nur uneingeschraenkte Verteilpunkte) ausschliesslich aus
+   dieser validierten Kette lesen und laden (max. 4 MiB je Liste). Ein Wechsel des
+   DigiCert-Zwischenzertifikats wird so automatisch beruecksichtigt.
+3. Listen mit derselben Pruefung wie bei echten Zeitstempeln kontrollieren und die Datei
+   atomar ersetzen (temporaere Nachbardatei + rename, kein Symlink-Ziel).
+
+Schlaegt ein Schritt fehl, bleibt die bisherige Datei unveraendert. Ausnahme: authentische,
+aktuelle Listen, die ein Zertifikat der TSA-Kette sperren, werden trotzdem uebernommen, damit
+die Sperrung nicht durch aeltere Listen verdeckt wird. Eine Alarm-Mail (Typ `sicherheitsalarm`,
+Empfaenger `sicherheitsalarm_empfaenger`, Standard Admin-Gruppe) geht raus bei Sperrung, bei
+fehlender/unlesbarer Datei oder wenn die vorhandenen Listen in weniger als 7 Tagen ablaufen;
+voruebergehende Ausfaelle davor erscheinen nur im Audit-Log (`tsa-crl-aktualisierung`).
+
+Abweichung vom Grundsatz oben: Der Webprozess braucht Schreibrecht auf die CRL-Datei und ihr
+Verzeichnis und ruft Adressen aus Zertifikaten ab. Vertretbar, weil diese Zertifikate vorher
+gegen die gepinnten Anker validiert und alle Listen signaturgeprueft werden; die Anker-Datei
+bleibt schreibgeschuetzt. Wo SSH-Benutzer und Webprozess ohnehin identisch sind (Shared
+Hosting), entfaellt die Trennung praktisch ohnehin. Mit getrennten Benutzern kann weiterhin
+extern erneuert werden (`TSA_CRL_AUTO_UPDATE=false`).
+
+Ersteinrichtung bzw. manueller Lauf (auch ohne den Schalter, Exit-Code 1 bei Fehler):
+
+```sh
+npm run tsa:crl-update -- --url http://timestamp.digicert.com
+```
+
 ## Was geprueft wird
 
 - Nur lokal freigegebene Root-CAs sind vertrauenswuerdig; Zertifikate aus der
   Antwort dienen lediglich als ungesicherte Kettenkandidaten.
 - Der Pfad muss zum tatsaechlichen CMS-Unterzeichner und zu einem konfigurierten
-  Root fuehren. PKI.js validiert ihn zum behaupteten Zeitstempelzeitpunkt und
+  Root fuehren. Mitgelieferte Zertifikate mit Name und Schluessel eines konfigurierten
+  Roots (Querzertifikate, z.B. DigiCerts "Trusted Root G4" signiert von "Assured ID Root
+  CA") werden ignoriert; der Pfad endet immer am lokalen selbstsignierten Anker. PKI.js validiert ihn zum behaupteten Zeitstempelzeitpunkt und
   zum lokalen Empfangszeitpunkt. Fehlende Zwischenzertifikate werden nicht
   automatisch aus URLs nachgeladen.
 - SHA-256/384/512 als Signatur-Digest, ESS-Bindung an das Signierzertifikat,
@@ -67,8 +130,11 @@ ein interner Opt-out wird ausschliesslich zur Isolation anderer Tests verwendet.
   Gesperrte Signier- oder Zwischenzertifikate verhindern die Uebernahme.
 - Unterstuetzt sind vollstaendige direkte CRLs mit RSA-PKCS1- oder ECDSA-Signatur
   und SHA-256/384/512, maximal 16 Listen in einer regulaeren Datei bis 16 MiB.
-  Delta-CRLs, IssuingDistributionPoint, FreshestCRL, indirekte Eintraege,
-  doppelte Erweiterungen und kritische CRL-/Eintragserweiterungen werden abgelehnt.
+  Eine (kritische) IssuingDistributionPoint-Erweiterung wird nur akzeptiert, wenn sie
+  ausschliesslich fullName-URIs enthaelt (keine onlyContains*-, onlySomeReasons- oder
+  indirectCRL-Einschraenkung) und eine davon einem uneingeschraenkten CRL-Verteilpunkt
+  des geprueften Zertifikats entspricht. Delta-CRLs, FreshestCRL, indirekte Eintraege,
+  doppelte Erweiterungen und sonstige kritische CRL-/Eintragserweiterungen werden abgelehnt.
   Das ist ein bewusst begrenztes Profil, keine allgemeine CRL-/OCSP-Implementierung.
   Grundlage: [RFC 5280, Abschnitt 5](https://www.rfc-editor.org/rfc/rfc5280.html#section-5).
 
@@ -77,8 +143,22 @@ ein interner Opt-out wird ausschliesslich zur Isolation anderer Tests verwendet.
 Die Sperrpruefung gilt nur fuer neue Zeitstempel anhand lokal vorhandener, aktuell
 gueltiger CRLs. Sie beweist weder eine Live-Abfrage noch, dass zwischenzeitlich
 keine neuere Liste veroeffentlicht wurde. OCSP, Delta-/indirekte CRLs,
-historische Langzeitvalidierung, persistierte Evidenz je Zeitstempel und weitere
-ESS-Kettenbeschraenkungen bleiben offen. Die konkrete DigiCert-Kompatibilitaet
+historische Langzeitvalidierung und weitere ESS-Kettenbeschraenkungen bleiben offen.
+
+Seit 2026-09-29 wird je neuem Zeitstempel die bei der Pruefung verwendete Evidenz
+gespeichert (`tsa_pruefnachweise`, `tsa_evidenz_objekte`, `src/services/tsaNachweis.js`):
+Token-Hash, Zertifikatskette vom Signer bis zum lokalen Vertrauensanker, die tatsaechlich
+verwendeten CRLs byte-genau samt `thisUpdate`/`nextUpdate`, lokaler Pruefzeitpunkt,
+Truststore-SHA-256 und Zuordnung zu Job, Dokumentart und SHA-256 der gestempelten Datei.
+Einzelfreigabe, Nachholjob und Gruppenfinalisierung speichern den Nachweis in derselben
+Transaktion wie den Zeitstempel-Hash; scheitert das Speichern, wird der Zeitstempel nicht
+festgeschrieben und die Exportsperre bleibt bestehen. Ohne konfigurierte Anker vermerkt der
+Nachweis ausdruecklich `kettenpruefung: nicht_konfiguriert`. Der Nachweis belegt den Stand zum
+lokalen Pruefzeitpunkt; er ist keine Langzeitvalidierung (kein LTV/DSS in der PDF, keine
+OCSP-Antworten, keine Erneuerung per Archivzeitstempel) und lokal gegen DB-Administratoren nicht
+geschuetzt. Zusaetzliche OCSP-/CRL-Profile wurden nicht umgesetzt, da ohne konkrete
+DigiCert-Profilanalyse kein nachgewiesener Bedarf besteht. Die Anzeige des Nachweises in der
+Pruefbescheinigung steht noch aus. Die konkrete DigiCert-Kompatibilitaet
 und der externe Aktualisierungsprozess sind noch nicht betrieblich abgenommen.
 Es gibt bewusst keine Netzwerkabrufe von URLs aus ungesicherten
 Zertifikaten. Die vorhandene Upload-Pruefansicht behauptet weiterhin kein

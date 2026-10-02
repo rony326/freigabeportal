@@ -8,7 +8,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createDebitor } from '../../src/db/debitorenRepo.js';
+import { createKreditor } from '../../src/db/kreditorenRepo.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
@@ -73,7 +73,7 @@ test('Pool → Beanspruchen → Kontierung → Freigabe 2 completes the job with
   upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
 
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
   const createRes = await request(app)
@@ -94,7 +94,7 @@ test('Pool → Beanspruchen → Kontierung → Freigabe 2 completes the job with
   const kontierungRes = await freigeber1Agent
     .post(`/kontierung/${jobId}`)
     .type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
+    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
   assert.equal(kontierungRes.status, 302);
 
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'] });
@@ -134,7 +134,7 @@ test('a scanned QR invoice runs intake → Kontierung → confirmed payment at F
   upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
 
   const pdf = await buildQrBillPdfFixture({
     amount: 1949.75,
@@ -152,7 +152,7 @@ test('a scanned QR invoice runs intake → Kontierung → confirmed payment at F
   const freigeber1Token = await fetchCsrfToken(freigeber1Agent, '/pool');
   assert.equal((await freigeber1Agent.post(`/api/pool/${jobId}/beanspruchen`).type('form').send({ _csrf: freigeber1Token })).status, 200);
   const kontierungRes = await freigeber1Agent.post(`/kontierung/${jobId}`).type('form')
-    .send({ kontoId: String(kontoId), debitorId: String(debitorId), absender: 'Muster AG', rechnungsnummer: 'RE-QR', betrag: '1949.75', zahlungsziel: '2026-10-15', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
+    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-QR', betrag: '1949.75', zahlungsziel: '2026-10-15', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
   assert.equal(kontierungRes.status, 302);
 
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'] });

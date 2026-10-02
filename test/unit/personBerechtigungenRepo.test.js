@@ -59,8 +59,8 @@ test('setBerechtigungenForPerson does not affect another person\'s rights', () =
 test('personHasBerechtigung returns true only for a granted right', () => {
   const db = openDatabase(':memory:');
   seedPerson(db, '1');
-  setBerechtigungenForPerson(db, '1', ['debitoren_verwalten']);
-  assert.equal(personHasBerechtigung(db, '1', 'debitoren_verwalten'), true);
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
+  assert.equal(personHasBerechtigung(db, '1', 'kreditoren_verwalten'), true);
   assert.equal(personHasBerechtigung(db, '1', 'konten_verwalten'), false);
   db.close();
 });

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Datei-Quarantäne — <%= branding.seitenTitel %> Admin</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <h1>Datei-Quarantäne</h1>
+    <p class="text-muted">Finale Dokumente, die nach einem Abbruch vor dem Datenbank-Commit von keinem Beleg referenziert werden, werden hierher verschoben — nie automatisch gelöscht. Endgültiges Löschen oder Zurückholen erfordert eine Begründung und wird protokolliert.</p>
+    <% if (ergebnis) { %>
+      <div class="alert alert-info" role="alert">Prüfung ausgeführt: <%= ergebnis %></div>
+    <% } %>
+    <form method="post" action="/admin/dateiquarantaene/pruefen" class="mb-4">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button type="submit" class="btn btn-outline-primary">Jetzt prüfen</button>
+    </form>
+    <% if (eintraege.length === 0) { %>
+      <p>Keine Einträge.</p>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>ID</th><th>Datei</th><th>SHA-256</th><th>Verschoben</th><th>Status</th><th>Entscheidung</th></tr></thead>
+          <tbody>
+            <% eintraege.forEach((eintrag) => { %>
+              <tr>
+                <td><%= eintrag.id %></td>
+                <td><code><%= eintrag.dateiname %></code><br><small><%= eintrag.groesse %> Bytes</small></td>
+                <td><code class="small"><%= eintrag.sha256 %></code></td>
+                <td><%= eintrag.verschoben_am %></td>
+                <td><%= eintrag.status %><% if (eintrag.entschieden_am) { %><br><small><%= eintrag.entschieden_am %>: <%= eintrag.begruendung %></small><% } %></td>
+                <td>
+                  <% if (eintrag.status === 'quarantaene') { %>
+                    <form method="post" action="/admin/dateiquarantaene/<%= eintrag.id %>/wiederherstellen" class="mb-2">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <input type="text" name="begruendung" class="form-control form-control-sm mb-1" minlength="10" maxlength="2000" required placeholder="Begründung">
+                      <button type="submit" class="btn btn-outline-secondary btn-sm">Zurückholen</button>
+                    </form>
+                    <form method="post" action="/admin/dateiquarantaene/<%= eintrag.id %>/loeschen">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <input type="text" name="begruendung" class="form-control form-control-sm mb-1" minlength="10" maxlength="2000" required placeholder="Begründung">
+                      <button type="submit" class="btn btn-outline-danger btn-sm">Endgültig löschen</button>
+                    </form>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

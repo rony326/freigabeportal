@@ -9,7 +9,7 @@ import { openDatabase } from '../../../src/db/index.js';
 import { createJob, getJobById, setThumbnailPfad, updateKontierungMetadaten, setQrDaten, createSplitJob, markGruppeExportiert, createSpesenPosition } from '../../../src/db/jobsRepo.js';
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
-import { buildPdfFixture } from '../../helpers/pdfFixture.js';
+import { buildPdfFixture, buildTextlosesPdfFixture, buildVerschluesseltesPdfFixture, buildSeitenlosesPdfFixture } from '../../helpers/pdfFixture.js';
 import { setConfigValue, seedDefaults } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createKonto } from '../../../src/db/kontenRepo.js';
@@ -19,7 +19,9 @@ import { createKreditkarte } from '../../../src/db/kreditkartenRepo.js';
 import { listFreigabenByJob } from '../../../src/db/freigabenRepo.js';
 import { freigabeSnapshotsFuerTest, setzeFreigabeSnapshot } from '../../helpers/freigabeSnapshot.js';
 
-const PDF_BYTES = Buffer.from('%PDF-1.4\n%test-fixture-not-a-real-pdf-body\n');
+// Ein echtes, verarbeitbares PDF -- die frühere "%PDF"-Attrappe war kein gültiges Dokument und wird
+// seit der Eingangsprüfung (services/pdfEingang.js) zu Recht abgewiesen.
+const PDF_BYTES = await buildPdfFixture(['Testrechnung']);
 
 function buildTestApp(db, config, mailer) {
   const app = express();
@@ -108,7 +110,7 @@ test('POST /api/n8n/jobs submitting the exact same PDF bytes twice returns the o
   assert.equal(retry.body.id, first.body.id);
   assert.equal(retry.body.duplikat, true);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 1, 'no second job row should have been created');
-  assert.equal(readdirSync(jobsDir).length, 1, 'no second PDF file should have been written to disk');
+  assert.equal(readdirSync(jobsDir).filter((name) => name.endsWith('.pdf')).length, 1, 'no second PDF file should have been written to disk');
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
@@ -134,7 +136,7 @@ test('POST /api/n8n/jobs with different PDF bytes (even with identical metadata)
     .set('X-API-Key', 'n8n-key')
     .field('quelle', 'scanner')
     .field('dateiname', 'scan.pdf')
-    .attach('pdf', Buffer.from('%PDF-1.4\n%ein-anderes-dokument\n'), { filename: 'scan.pdf', contentType: 'application/pdf' });
+    .attach('pdf', await buildPdfFixture(['Ein anderes Dokument']), { filename: 'scan.pdf', contentType: 'application/pdf' });
 
   assert.equal(second.status, 201);
   assert.notEqual(second.body.id, first.body.id);
@@ -284,7 +286,7 @@ test('POST /api/n8n/jobs applies Zuweisungsregel matching and reports the result
   const { join } = await import('node:path');
   const { upsertPerson } = await import('../../../src/db/personenRepo.js');
   const { createKonto } = await import('../../../src/db/kontenRepo.js');
-  const { createDebitor } = await import('../../../src/db/debitorenRepo.js');
+  const { createKreditor } = await import('../../../src/db/kreditorenRepo.js');
   const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
 
   const db = openDatabase(':memory:');
@@ -293,8 +295,8 @@ test('POST /api/n8n/jobs applies Zuweisungsregel matching and reports the result
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
 
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
@@ -653,26 +655,58 @@ test('POST /api/n8n/jobs with a real PDF sets thumbnail_pfad to a valid PNG file
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('POST /api/n8n/jobs still creates the job with 201 and thumbnail_pfad null when the PDF cannot be rendered as a thumbnail', async () => {
-  const { mkdtempSync, rmSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
+for (const [fall, erzeuge, code] of [
+  ['beschädigtes PDF (Reproduktion aus dem Review)', async () => Buffer.from('%PDF kaputt'), 'pdf_beschaedigt'],
+  // mupdf repariert die Querverweise, findet aber keine Seite mehr.
+  ['abgeschnittenes PDF', async () => (await buildPdfFixture(['Rechnung'])).subarray(0, 300), 'pdf_keine_seiten'],
+  ['frühere Test-Attrappe mit %PDF-Kopf', async () => Buffer.from('%PDF-1.4\n%test-fixture-not-a-real-pdf-body\n'), 'pdf_beschaedigt'],
+  ['PDF ohne Seiten', buildSeitenlosesPdfFixture, 'pdf_keine_seiten'],
+  ['passwortgeschütztes PDF', buildVerschluesseltesPdfFixture, 'pdf_verschluesselt'],
+  ['nur mit Besitzerpasswort verschlüsseltes PDF', () => buildVerschluesseltesPdfFixture({ userPasswort: null }), 'pdf_verschluesselt'],
+]) {
+  test(`POST /api/n8n/jobs lehnt ${fall} mit 422 ab und hinterlässt weder Job noch Datei`, async () => {
+    const db = openDatabase(':memory:');
+    seedDefaults(db);
+    const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+    const mailer = createStubMailer();
+    const app = buildTestApp(db, testConfig(jobsDir), mailer);
+    const bytes = await erzeuge();
+
+    const res = await request(app)
+      .post('/api/n8n/jobs')
+      .set('X-API-Key', 'n8n-key')
+      .field('quelle', 'scanner')
+      .field('dateiname', 'kaputt.pdf')
+      .attach('pdf', bytes, { filename: 'kaputt.pdf', contentType: 'application/pdf' });
+
+    assert.equal(res.status, 422);
+    assert.equal(res.body.code, code);
+    assert.ok(res.body.error.length > 20, 'an understandable message for the n8n flow');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 0);
+    const { readdirSync } = await import('node:fs');
+    assert.deepEqual(readdirSync(jobsDir), [], 'no orphaned file');
+    assert.equal(mailer.sent?.length ?? 0, 0);
+
+    // Dieselben Bytes erneut: wieder abgelehnt, nicht als "Duplikat" eines Jobs angenommen.
+    const erneut = await request(app).post('/api/n8n/jobs').set('X-API-Key', 'n8n-key').field('quelle', 'scanner').field('dateiname', 'kaputt.pdf')
+      .attach('pdf', bytes, { filename: 'kaputt.pdf', contentType: 'application/pdf' });
+    assert.equal(erneut.status, 422);
+    db.close();
+    rmSync(jobsDir, { recursive: true, force: true });
+  });
+}
+
+test('POST /api/n8n/jobs nimmt ein lesbares PDF ohne Textebene und ohne QR-Code als regulären Job an', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
   const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
-
-  const res = await request(app)
-    .post('/api/n8n/jobs')
-    .set('X-API-Key', 'n8n-key')
-    .field('quelle', 'scanner')
-    .field('dateiname', 'scan.pdf')
-    .attach('pdf', PDF_BYTES, { filename: 'scan.pdf', contentType: 'application/pdf' });
-
+  const res = await request(app).post('/api/n8n/jobs').set('X-API-Key', 'n8n-key').field('quelle', 'scanner').field('dateiname', 'scan.pdf')
+    .attach('pdf', await buildTextlosesPdfFixture(), { filename: 'scan.pdf', contentType: 'application/pdf' });
   assert.equal(res.status, 201);
   const job = getJobById(db, res.body.id);
-  assert.equal(job.thumbnail_pfad, null);
-
+  assert.equal(job.qr_iban, null);
+  assert.ok(job.thumbnail_pfad && existsSync(job.thumbnail_pfad), 'a readable page always yields a preview');
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
@@ -683,7 +717,7 @@ test('POST /api/n8n/jobs with a matching Zuweisungsregel sends a Zuweisungs-Mail
   const { join } = await import('node:path');
   const { upsertPerson } = await import('../../../src/db/personenRepo.js');
   const { createKonto } = await import('../../../src/db/kontenRepo.js');
-  const { createDebitor } = await import('../../../src/db/debitorenRepo.js');
+  const { createKreditor } = await import('../../../src/db/kreditorenRepo.js');
   const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
   const { listMailLog } = await import('../../../src/db/mailLogRepo.js');
 
@@ -694,8 +728,8 @@ test('POST /api/n8n/jobs with a matching Zuweisungsregel sends a Zuweisungs-Mail
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
 
   const config = { ...testConfig(jobsDir), publicBaseUrl: 'https://portal.example.org' };
   const mailer = createStubMailer();
@@ -1164,7 +1198,7 @@ test('the automatic Zuweisungsregel-assignment mail also reaches the Freigeber1\
   const { join } = await import('node:path');
   const { upsertPerson, setFerienmodus } = await import('../../../src/db/personenRepo.js');
   const { createKonto } = await import('../../../src/db/kontenRepo.js');
-  const { createDebitor } = await import('../../../src/db/debitorenRepo.js');
+  const { createKreditor } = await import('../../../src/db/kreditorenRepo.js');
   const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
 
   const db = openDatabase(':memory:');
@@ -1173,8 +1207,8 @@ test('the automatic Zuweisungsregel-assignment mail also reaches the Freigeber1\
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const debitorId = createDebitor(db, { name: 'Muster AG', kontoId });
-  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', debitorId });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
   setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
 
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
@@ -1275,7 +1309,7 @@ test('POST /api/n8n/jobs does not auto-mark when the module is off, and still su
   const r1 = await request(app).post('/api/n8n/jobs').set('X-API-Key', 'n8n-key').field('quelle', 'scanner').field('dateiname', 'a.pdf').attach('pdf', pdf, 'a.pdf');
   assert.equal(getJobById(db, r1.body.id).kreditkarte_id, null);
   setConfigValue(db, 'modul_kreditkarten_aktiv', '1');
-  const r2 = await request(app).post('/api/n8n/jobs').set('X-API-Key', 'n8n-key').field('quelle', 'scanner').field('dateiname', 'b.pdf').attach('pdf', PDF_BYTES, 'b.pdf');
+  const r2 = await request(app).post('/api/n8n/jobs').set('X-API-Key', 'n8n-key').field('quelle', 'scanner').field('dateiname', 'b.pdf').attach('pdf', await buildTextlosesPdfFixture(), 'b.pdf');
   assert.equal(r2.status, 201);
   rmSync(jobsDir, { recursive: true, force: true });
 });

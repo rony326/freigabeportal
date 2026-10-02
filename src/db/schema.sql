@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS personen (
   last_login_at TEXT,
   ferienmodus_von TEXT,
   ferienmodus_bis TEXT,
-  ferienmodus_stellvertreter_id TEXT REFERENCES personen(churchtools_person_id)
+  ferienmodus_stellvertreter_id TEXT REFERENCES personen(churchtools_person_id),
+  deaktiviert_am TEXT,
+  deaktivierungsgrund TEXT
 );
 
 -- Additive Einzelrechte pro Person, unabhängig von der ChurchTools-Rolle (superadmin/manager).
@@ -20,7 +22,7 @@ CREATE TABLE IF NOT EXISTS personen (
 CREATE TABLE IF NOT EXISTS person_berechtigungen (
   person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
   berechtigung TEXT NOT NULL CHECK (berechtigung IN (
-    'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
+    'konten_verwalten', 'kreditoren_verwalten', 'geplante_jobs_verwalten',
     'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen', 'pool_zuweisen',
     'sync_verwalten', 'workflow_eingreifen', 'kreditkarten_verwalten'
   )),
@@ -57,7 +59,7 @@ CREATE TABLE IF NOT EXISTS admin_config (
 -- both fields in one shot via logCronLauf and never use 'laufend'.
 CREATE TABLE IF NOT EXISTS cron_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen')),
+  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen', 'mail-zustellung')),
   gestartet_am TEXT NOT NULL,
   beendet_am TEXT,
   status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
@@ -75,16 +77,16 @@ CREATE TABLE IF NOT EXISTS konten (
   aktiv INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS debitoren (
+CREATE TABLE IF NOT EXISTS kreditoren (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   konto_id INTEGER REFERENCES konten(id),
   aktiv INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS debitor_ibans (
+CREATE TABLE IF NOT EXISTS kreditor_ibans (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  debitor_id INTEGER NOT NULL REFERENCES debitoren(id),
+  kreditor_id INTEGER NOT NULL REFERENCES kreditoren(id),
   iban TEXT NOT NULL UNIQUE,
   quelle TEXT NOT NULL CHECK (quelle IN ('manuell', 'bestaetigt')) DEFAULT 'manuell',
   erstellt_am TEXT NOT NULL
@@ -93,7 +95,7 @@ CREATE TABLE IF NOT EXISTS debitor_ibans (
 CREATE TABLE IF NOT EXISTS zuweisungsregeln (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   absender_muster TEXT NOT NULL UNIQUE,
-  debitor_id INTEGER NOT NULL REFERENCES debitoren(id)
+  kreditor_id INTEGER NOT NULL REFERENCES kreditoren(id)
 );
 
 CREATE TABLE IF NOT EXISTS spesenabrechnungen (
@@ -133,7 +135,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   zahlungsziel TEXT,
   rechnungsnummer TEXT,
   lieferant TEXT,
-  debitor_id INTEGER REFERENCES debitoren(id),
+  kreditor_id INTEGER REFERENCES kreditoren(id),
   aufgesplittet_von INTEGER REFERENCES jobs(id),
   datei_hash TEXT,
   hinweis_konto_id INTEGER REFERENCES konten(id),
@@ -227,14 +229,21 @@ CREATE TABLE IF NOT EXISTS freigaben (
 
 CREATE TABLE IF NOT EXISTS mail_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen')),
+  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm')),
   job_id INTEGER REFERENCES jobs(id),
   empfaenger TEXT NOT NULL,
   betreff TEXT NOT NULL,
   text TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen', 'geplant')),
+  status TEXT NOT NULL CHECK (status IN ('eingereiht', 'versendet', 'fehlgeschlagen', 'geplant')),
   fehler_details TEXT,
-  versucht_am TEXT NOT NULL
+  versucht_am TEXT NOT NULL,
+  -- Persistente Zustellung (services/mailZustellung.js)
+  eingereiht_am TEXT,
+  versuche INTEGER NOT NULL DEFAULT 0,
+  naechster_versuch_am TEXT,
+  sperre_token TEXT,
+  sperre_bis TEXT,
+  versendet_am TEXT
 );
 
 -- job_id is deliberately NOT a foreign key: the whole point of this table is to keep a record

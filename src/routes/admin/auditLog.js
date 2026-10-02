@@ -12,6 +12,17 @@ function bisEndeDesTages(bis) {
   return bis.length === 10 ? `${bis}T23:59:59.999Z` : bis;
 }
 
+// Historische Ereignisse vor der fachlichen Korrektur tragen die alten Tabellennamen. Sie werden
+// nicht umgeschrieben (unveraenderliches Protokoll), nur fuer die Anzeige erlaeutert.
+const HISTORISCHE_OBJEKTNAMEN = {
+  debitoren: 'kreditoren (historisch: debitoren)',
+  debitor_ibans: 'kreditor_ibans (historisch: debitor_ibans)',
+};
+
+export function objektLabel(objekt) {
+  return HISTORISCHE_OBJEKTNAMEN[objekt] || objekt;
+}
+
 export function createAuditLogRouter({ db }) {
   const router = Router();
 
@@ -42,6 +53,7 @@ export function createAuditLogRouter({ db }) {
       personen: listAllPersons(db),
       konten: listKonten(db, { includeInactive: true }),
       ereignisLabels: EREIGNIS_LABEL,
+      objektLabel,
     });
   });
 

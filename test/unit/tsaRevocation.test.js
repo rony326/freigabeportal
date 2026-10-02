@@ -107,3 +107,27 @@ test('issuer without cRLSign is rejected and missing CRL configuration blocks be
     url: 'https://tsa.example.org/tsr', trustAnchorsFile: tsa.rootFile, trustAnchorsSha256: tsa.rootSha256,
   }), /Sperrlisten muessen konfiguriert/);
 });
+
+test('CRLs with a critical IssuingDistributionPoint naming the certificate distribution point are accepted', async (t) => {
+  // Profil wie bei DigiCert: IDP nur mit fullName-URI, die zum CRL-Verteilpunkt des Zertifikats passt.
+  const tsa = createChainedTsa(t);
+  tsa.writeCrlBundle({ idp: (issuer) => `fullname=URI:http://crl.example.org/${issuer}.crl` });
+  assert.equal((await verifyTsaRevocation(chain(tsa), loadTsaCrls(tsa.crlFile))).sperrstatus, 'crl_geprueft');
+  tsa.writeCrlBundle({ revoke: ['signer'], idp: (issuer) => `fullname=URI:http://crl.example.org/${issuer}.crl` });
+  await assert.rejects(() => verifyTsaRevocation(chain(tsa), loadTsaCrls(tsa.crlFile)), /gesperrt/);
+});
+
+for (const [label, idp] of [
+  ['a foreign distribution point', () => 'fullname=URI:http://crl.example.org/other.crl'],
+  ['onlyContainsUserCerts', (issuer) => `fullname=URI:http://crl.example.org/${issuer}.crl\nonlyuser=TRUE`],
+  ['onlyContainsCACerts', (issuer) => `fullname=URI:http://crl.example.org/${issuer}.crl\nonlyCA=TRUE`],
+  ['onlySomeReasons', (issuer) => `fullname=URI:http://crl.example.org/${issuer}.crl\nonlysomereasons=keyCompromise`],
+  ['indirectCRL', (issuer) => `fullname=URI:http://crl.example.org/${issuer}.crl\nindirectCRL=TRUE`],
+  ['no distribution point name', () => 'onlyAA=FALSE'],
+]) {
+  test(`IssuingDistributionPoint with ${label} is rejected`, async (t) => {
+    const tsa = createChainedTsa(t);
+    tsa.writeCrlBundle({ idp });
+    await assert.rejects(() => verifyTsaRevocation(chain(tsa), loadTsaCrls(tsa.crlFile)), /Erweiterung|Verteilpunkt/);
+  });
+}

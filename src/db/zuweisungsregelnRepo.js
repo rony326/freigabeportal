@@ -1,10 +1,10 @@
-export function createZuweisungsregel(db, { absenderMuster, debitorId }) {
-  const result = db.prepare('INSERT INTO zuweisungsregeln (absender_muster, debitor_id) VALUES (?, ?)').run(absenderMuster, debitorId);
+export function createZuweisungsregel(db, { absenderMuster, kreditorId }) {
+  const result = db.prepare('INSERT INTO zuweisungsregeln (absender_muster, kreditor_id) VALUES (?, ?)').run(absenderMuster, kreditorId);
   return Number(result.lastInsertRowid);
 }
 
-export function updateZuweisungsregel(db, id, { absenderMuster, debitorId }) {
-  db.prepare('UPDATE zuweisungsregeln SET absender_muster = ?, debitor_id = ? WHERE id = ?').run(absenderMuster, debitorId, id);
+export function updateZuweisungsregel(db, id, { absenderMuster, kreditorId }) {
+  db.prepare('UPDATE zuweisungsregeln SET absender_muster = ?, kreditor_id = ? WHERE id = ?').run(absenderMuster, kreditorId, id);
 }
 
 export function deleteZuweisungsregel(db, id) {

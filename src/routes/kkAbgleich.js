@@ -5,7 +5,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { getKreditkarteById } from '../db/kreditkartenRepo.js';
 import { listOffeneKkBelegeFuerKarte, getKkBelegById, ordneKkBelegZu, createKkBeleg, logKkBelegEreignis } from '../db/kkBelegeRepo.js';
 import { listKonten, getKontoById } from '../db/kontenRepo.js';
-import { listDebitoren, getDebitorById } from '../db/debitorenRepo.js';
+import { listKreditoren, getKreditorById } from '../db/kreditorenRepo.js';
+import { kreditorIdAusEingabe, KreditorFeldKonflikt } from '../services/kreditorFelder.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { buildAuditLog } from '../services/auditLog.js';
@@ -87,7 +88,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
       belege: offeneBelege(karte.id, analyse),
       alleKonten: listKonten(db),
       eigeneKontoIds: ladeKontenFuerJob(db, req, job).map((k) => k.id),
-      debitoren: listDebitoren(db),
+      kreditoren: listKreditoren(db),
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       werte,
       zeilen,
@@ -102,7 +103,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
     renderSeite(req, res, 200, job, {
       werte: {
         gesamtbetrag: job.betrag || job.qr_betrag || ladeAnalyse(job).total || '',
-        debitorId: job.debitor_id ? String(job.debitor_id) : '',
+        kreditorId: job.kreditor_id ? String(job.kreditor_id) : '',
         rechnungsnummer: job.rechnungsnummer || '',
         zahlungsziel: job.zahlungsziel || '',
         begruendung: '',
@@ -129,7 +130,8 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           const b = req.body;
           const werte = {
             gesamtbetrag: (b.gesamtbetrag || '').trim(),
-            debitorId: b.debitorId || '',
+            // Uebergangsweise auch debitorId; widerspruechliche Angaben werden abgelehnt (400).
+            kreditorId: kreditorIdAusEingabe(b) || '',
             rechnungsnummer: (b.rechnungsnummer || '').trim(),
             zahlungsziel: (b.zahlungsziel || '').trim(),
             begruendung: (b.begruendung || '').trim(),
@@ -163,8 +165,8 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
 
           if (!KK_BETRAG_PATTERN.test(werte.gesamtbetrag)) errors.push('Bitte ein gültiges Abrechnungstotal angeben.');
           if (werte.zahlungsziel && !DATUM_PATTERN.test(werte.zahlungsziel)) errors.push('Zahlungsziel ist kein gültiges Datum.');
-          const debitor = werte.debitorId ? getDebitorById(db, werte.debitorId) : null;
-          if (werte.debitorId && !debitor) errors.push('Bitte einen gültigen Kartenherausgeber wählen.');
+          const kreditor = werte.kreditorId ? getKreditorById(db, werte.kreditorId) : null;
+          if (werte.kreditorId && !kreditor) errors.push('Bitte einen gültigen Kartenherausgeber wählen.');
           if (zeilen.length === 0) errors.push('Mindestens eine Position ist nötig.');
 
           // Nachgereichte Dateien müssen sich öffnen lassen, sonst scheitert erst die Dateiarbeit
@@ -285,13 +287,13 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           try {
             setJobBetrag(db, job.id, total);
             setKkAbrechnungKopfdaten(db, job.id, {
-              debitorId: debitor?.id ?? job.debitor_id,
-              lieferant: debitor?.name ?? job.lieferant,
+              kreditorId: kreditor?.id ?? job.kreditor_id,
+              lieferant: kreditor?.name ?? job.lieferant,
               rechnungsnummer: werte.rechnungsnummer || job.rechnungsnummer,
               zahlungsziel: werte.zahlungsziel || job.zahlungsziel,
             });
             if (!markJobAufgesplittet(db, job.id)) throw new AbgleichKonflikt('Diese Abrechnung wurde inzwischen bereits bearbeitet.');
-            const parent = { ...job, betrag: total, ...db.prepare('SELECT debitor_id, lieferant, rechnungsnummer, zahlungsziel FROM jobs WHERE id = ?').get(job.id) };
+            const parent = { ...job, betrag: total, ...db.prepare('SELECT kreditor_id, lieferant, rechnungsnummer, zahlungsziel FROM jobs WHERE id = ?').get(job.id) };
             ergebnis = erzeugeTeilJobs(db, {
               job: parent,
               teile: vorbereitet,
@@ -343,6 +345,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           await pruefeIbanNachAufsplitten(db, mailer, config, { job, teile: vorbereitet, konten, person: req.currentPerson, ip: req.ip });
           res.redirect('/pool');
         } catch (err) {
+          if (err instanceof KreditorFeldKonflikt) return res.status(400).render('error', { message: err.message });
           next(err);
         }
       });

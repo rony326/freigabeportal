@@ -340,3 +340,23 @@ test('startScheduler runs kk-beleg-erinnerungen at a saved custom time instead o
   assert.equal(calls, 1, 'must fire at the configured 09:30');
   db.close();
 });
+
+test('startScheduler runs the sicherheitsalarme job on the configured interval (default 30 minutes)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const db = seededDb();
+  let calls = 0;
+  startScheduler({
+    db,
+    config: {},
+    mailer: {},
+    jobs: fakeJobs({ runSicherheitsalarmeJob: async () => { calls += 1; return { status: 'erfolg' }; } }),
+  });
+
+  t.mock.timers.tick(29 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 0);
+  t.mock.timers.tick(60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+  db.close();
+});

@@ -78,3 +78,17 @@ test('path validation binds signer, intermediate checks and local revocation evi
   intermediate.notAfter.value = new Date('2000-01-01');
   await assert.rejects(() => verifyTsaChain(binding, anchors, crls), /Kette/);
 });
+
+test('a cross-signed copy of a configured root in the response does not break path building', async (t) => {
+  // DigiCert liefert "Trusted Root G4" quersigniert von "Assured ID Root CA" mit; PKI.js folgte dieser Kopie.
+  const tsa = createChainedTsa(t, { crossSigned: true });
+  const session = new TimestampSession(await buildPdfFixture(['cross-signed root']), { enableLTV: false });
+  t.after(() => session.dispose());
+  const request = freshTimestampRequest(await session.createTimestampRequest());
+  const binding = validateTimestampBinding(request, parseTimestampResponse(Uint8Array.from(tsa.reply({ body: request }))).token);
+  const anchors = loadTsaTrustAnchors(tsa.rootFile, tsa.rootSha256);
+  const result = await verifyTsaChain(binding, anchors, loadTsaCrls(tsa.crlFile));
+  assert.equal(result.kette, 'geprueft');
+  assert.equal(result.kettenzertifikate.length, 3);
+  assert.ok(result.kettenzertifikate.at(-1).subject.isEqual(result.kettenzertifikate.at(-1).issuer), 'evidence ends at the self-signed local anchor, not the cross certificate');
+});

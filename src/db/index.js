@@ -6,6 +6,12 @@ import { currentAuditActor, currentAuditRequestId, currentAuditOperation } from 
 import { migrateAuditRequestSchema } from './auditRequestSchema.js';
 import { migrateSecuritySchema } from './securitySchema.js';
 import { migrateExportIntegritaetSchema } from './exportIntegritaetSchema.js';
+import { migrateZugriffsAuditSchema } from './zugriffsAuditSchema.js';
+import { migrateKreditorenBezeichnung } from './kreditorenMigration.js';
+import { migrateDateiQuarantaeneSchema } from './dateiQuarantaeneSchema.js';
+import { migrateSicherheitsalarmSchema } from './sicherheitsalarmSchema.js';
+import { migrateTsaNachweisSchema } from './tsaNachweisSchema.js';
+import { migrateAuditExportSchema } from './auditExportSchema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -20,7 +26,7 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'zahlungsziel', ddl: 'ALTER TABLE jobs ADD COLUMN zahlungsziel TEXT' },
   { column: 'rechnungsnummer', ddl: 'ALTER TABLE jobs ADD COLUMN rechnungsnummer TEXT' },
   { column: 'lieferant', ddl: 'ALTER TABLE jobs ADD COLUMN lieferant TEXT' },
-  { column: 'debitor_id', ddl: 'ALTER TABLE jobs ADD COLUMN debitor_id INTEGER REFERENCES debitoren(id)' },
+  { column: 'kreditor_id', ddl: 'ALTER TABLE jobs ADD COLUMN kreditor_id INTEGER REFERENCES kreditoren(id)' },
   { column: 'aufgesplittet_von', ddl: 'ALTER TABLE jobs ADD COLUMN aufgesplittet_von INTEGER REFERENCES jobs(id)' },
   { column: 'datei_hash', ddl: 'ALTER TABLE jobs ADD COLUMN datei_hash TEXT' },
   { column: 'hinweis_konto_id', ddl: 'ALTER TABLE jobs ADD COLUMN hinweis_konto_id INTEGER REFERENCES konten(id)' },
@@ -62,6 +68,9 @@ const PERSONEN_TABLE_MIGRATIONS = [
   { column: 'ferienmodus_von', ddl: 'ALTER TABLE personen ADD COLUMN ferienmodus_von TEXT' },
   { column: 'ferienmodus_bis', ddl: 'ALTER TABLE personen ADD COLUMN ferienmodus_bis TEXT' },
   { column: 'ferienmodus_stellvertreter_id', ddl: 'ALTER TABLE personen ADD COLUMN ferienmodus_stellvertreter_id TEXT REFERENCES personen(churchtools_person_id)' },
+  // Personen-Sync (services/sync.js): wann und warum der Portalzugang entzogen wurde.
+  { column: 'deaktiviert_am', ddl: 'ALTER TABLE personen ADD COLUMN deaktiviert_am TEXT' },
+  { column: 'deaktivierungsgrund', ddl: 'ALTER TABLE personen ADD COLUMN deaktivierungsgrund TEXT' },
 ];
 
 function migratePersonenTable(db) {
@@ -148,7 +157,7 @@ function migrateJobsTableQuelleCheck(db) {
         zahlungsziel TEXT,
         rechnungsnummer TEXT,
         lieferant TEXT,
-        debitor_id INTEGER REFERENCES debitoren(id),
+        kreditor_id INTEGER REFERENCES kreditoren(id),
         aufgesplittet_von INTEGER REFERENCES jobs(id),
         datei_hash TEXT,
         hinweis_konto_id INTEGER REFERENCES konten(id),
@@ -176,7 +185,7 @@ function migrateJobsTableQuelleCheck(db) {
         abgelehnt_von, ablehnungsgrund, fetched_by_n8n_at, thumbnail_pfad, freigabe1_eskaliert_von,
         freigabe1_eskalationsgrund, freigabe2_eskaliert_von, freigabe2_eskalationsgrund,
         reminder_gesendet_at, eskalation_gesendet_at, archiviert_am, freigabe1_eskaliert_an_admin,
-        freigabe2_eskaliert_an_admin, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id,
+        freigabe2_eskaliert_an_admin, betrag, zahlungsziel, rechnungsnummer, lieferant, kreditor_id,
         aufgesplittet_von, datei_hash, hinweis_konto_id, zeitstempel_gesetzt_am,
         zeitstempel_datei_hash, abgeschlossen_am, qr_iban, qr_referenz, qr_betrag, qr_waehrung,
         qr_creditor_name, qr_erkannt_am, typ, rechnungsposition, gruppe_pdf_pfad,
@@ -187,7 +196,7 @@ function migrateJobsTableQuelleCheck(db) {
         abgelehnt_von, ablehnungsgrund, fetched_by_n8n_at, thumbnail_pfad, freigabe1_eskaliert_von,
         freigabe1_eskalationsgrund, freigabe2_eskaliert_von, freigabe2_eskalationsgrund,
         reminder_gesendet_at, eskalation_gesendet_at, archiviert_am, freigabe1_eskaliert_an_admin,
-        freigabe2_eskaliert_an_admin, betrag, zahlungsziel, rechnungsnummer, lieferant, debitor_id,
+        freigabe2_eskaliert_an_admin, betrag, zahlungsziel, rechnungsnummer, lieferant, kreditor_id,
         aufgesplittet_von, datei_hash, hinweis_konto_id, zeitstempel_gesetzt_am,
         zeitstempel_datei_hash, abgeschlossen_am, qr_iban, qr_referenz, qr_betrag, qr_waehrung,
         qr_creditor_name, qr_erkannt_am, typ, rechnungsposition, gruppe_pdf_pfad,
@@ -435,6 +444,8 @@ function migratePersonBerechtigungenTable(db) {
     db.exec(`
       CREATE TABLE person_berechtigungen (
         person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+        -- Historischer Zwischenstand: 'debitoren_verwalten' wird erst in migrateSecuritySchema
+        -- auf 'kreditoren_verwalten' abgebildet.
         berechtigung TEXT NOT NULL CHECK (berechtigung IN (
           'konten_verwalten', 'debitoren_verwalten', 'geplante_jobs_verwalten',
           'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen', 'pool_zuweisen'
@@ -701,6 +712,70 @@ function migrateKreditkartenChecks(db) {
   });
 }
 
+// Sicherheitsalarme (services/sicherheitsalarme.js) protokollieren ihren Versand im bestehenden
+// mail_log; dafuer wird der typ-CHECK um 'sicherheitsalarm' erweitert (gleiches Rebuild-Muster).
+function migrateMailLogSicherheitsalarm(db) {
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'mail_log',
+    marker: 'sicherheitsalarm',
+    createSql: `CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL
+    )`,
+    spalten: ['id', 'typ', 'job_id', 'empfaenger', 'betreff', 'text', 'status', 'fehler_details', 'versucht_am'],
+  });
+}
+
+// Persistente Mail-Zustellung (services/mailZustellung.js): neuer Status 'eingereiht' plus
+// Zustellspalten (Versuche, nächster Versuch, befristete Sperre). Gleiches Rebuild-Muster; bereits
+// protokollierte Zeilen behalten ihren Status ('versendet'/'fehlgeschlagen'/'geplant'). Der Index
+// entsteht erst hier, weil schema.sql auf einer alten Tabelle ohne diese Spalten laufen kann.
+function migrateMailZustellung(db) {
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'mail_log',
+    marker: 'eingereiht',
+    createSql: `CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('eingereiht', 'versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL,
+      eingereiht_am TEXT,
+      versuche INTEGER NOT NULL DEFAULT 0,
+      naechster_versuch_am TEXT,
+      sperre_token TEXT,
+      sperre_bis TEXT,
+      versendet_am TEXT
+    )`,
+    spalten: ['id', 'typ', 'job_id', 'empfaenger', 'betreff', 'text', 'status', 'fehler_details', 'versucht_am'],
+  });
+  db.exec('CREATE INDEX IF NOT EXISTS mail_log_zustellung_idx ON mail_log(status, naechster_versuch_am)');
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'cron_log',
+    marker: 'mail-zustellung',
+    createSql: `CREATE TABLE cron_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen', 'mail-zustellung')),
+      gestartet_am TEXT NOT NULL,
+      beendet_am TEXT,
+      status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
+      details TEXT
+    )`,
+    spalten: ['id', 'job', 'gestartet_am', 'beendet_am', 'status', 'details'],
+  });
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -711,6 +786,8 @@ export function openDatabase(dbPath) {
   db.function('audit_request_id', currentAuditRequestId);
   db.function('audit_operation_id', () => currentAuditOperation()?.id || null);
   db.function('audit_operation_kind', () => currentAuditOperation()?.kind || null);
+  // Vor schema.sql: benennt debitoren/debitor_* in bestehenden Datenbanken um (siehe Datei).
+  migrateKreditorenBezeichnung(db);
   const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
   migrateJobsTableQuelleCheck(db);
@@ -727,11 +804,18 @@ export function openDatabase(dbPath) {
   migratePersonenTable(db);
   migrateFreigabenTableVertretung(db);
   migrateKreditkartenChecks(db);
+  migrateMailLogSicherheitsalarm(db);
+  migrateMailZustellung(db);
   // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)
   // verwerfen die Trigger der alten Tabelle, und migrateSecuritySchema legt die Audit-Trigger mit
   // der aktuellen Spaltenliste neu an. person_berechtigungen gehört allein migrateSecuritySchema.
   migrateExportIntegritaetSchema(db);
   migrateSecuritySchema(db);
   migrateAuditRequestSchema(db);
+  migrateZugriffsAuditSchema(db);
+  migrateDateiQuarantaeneSchema(db);
+  migrateSicherheitsalarmSchema(db);
+  migrateTsaNachweisSchema(db);
+  migrateAuditExportSchema(db);
   return db;
 }

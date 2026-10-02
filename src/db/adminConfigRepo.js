@@ -51,9 +51,9 @@ const DEFAULTS = {
   mail_vorlage_sync_fehler_betreff: 'Freigabeportal: ChurchTools-Sync fehlgeschlagen',
   mail_vorlage_sync_fehler_text: 'Der ChurchTools-Personen-Sync konnte nicht erfolgreich abgeschlossen werden (%zeitpunkt%): %fehlerDetails%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_iban_warnung_betreff: 'Freigabeportal: IBAN-Abweichung bei Rechnung festgestellt',
-  mail_vorlage_iban_warnung_text: 'Bei der Kontierung von "%jobDateiname%" (Lieferant: %debitorName%) weicht die im QR-Code gefundene IBAN (%tatsaechlicheIban%) von der hinterlegten IBAN ab.\n\nBitte prüfen: %link%\n\nFreundliche Grüsse\n%portalName%',
+  mail_vorlage_iban_warnung_text: 'Bei der Kontierung von "%jobDateiname%" (Lieferant: %kreditorName%) weicht die im QR-Code gefundene IBAN (%tatsaechlicheIban%) von der hinterlegten IBAN ab.\n\nBitte prüfen: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_rechnungsnummer_warnung_betreff: 'Freigabeportal: Doppelte Rechnungsnummer festgestellt',
-  mail_vorlage_rechnungsnummer_warnung_text: 'Bei der Kontierung von "%jobDateiname%" (Lieferant: %debitorName%) wurde die Rechnungsnummer "%rechnungsnummer%" bereits bei einem anderen Job erfasst (%dupJobIds%).\n\nBitte prüfen: %link%\n\nFreundliche Grüsse\n%portalName%',
+  mail_vorlage_rechnungsnummer_warnung_text: 'Bei der Kontierung von "%jobDateiname%" (Lieferant: %kreditorName%) wurde die Rechnungsnummer "%rechnungsnummer%" bereits bei einem anderen Job erfasst (%dupJobIds%).\n\nBitte prüfen: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_digest_betreff: 'Freigabeportal: Tägliche Zusammenfassung (%anzahl% Ereignisse)',
   mail_vorlage_digest_text: 'Hallo %empfaengerName%,\n\nfolgende Ereignisse warten auf dich:\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_batching_aktiv: '0',
@@ -70,6 +70,12 @@ const DEFAULTS = {
   mail_vorlage_kk_beleg_eingegangen_betreff: 'Freigabeportal: Kreditkartenbeleg eingegangen – bitte ergänzen',
   mail_vorlage_kk_beleg_eingegangen_text: 'Hallo %empfaengerName%,\n\ndein per Mail eingereichter Kreditkartenbeleg ist im Portal eingegangen. Bitte ergänze Karte, Betrag, Kaufdatum und Beschreibung: %link%\n\nFreundliche Grüsse\n%portalName%',
   kk_beleg_verworfen_loeschen_tage: '90',
+  verwaiste_dateien_mindestalter_stunden: '24',
+  sicherheitsalarm_empfaenger: 'gruppe:admin',
+  sicherheitsalarm_wiederholung_stunden: '24',
+  cron_sicherheitsalarme_intervall_minuten: '30',
+  cron_mail_zustellung_intervall_minuten: '5',
+  mail_zustellung_max_versuche: '8',
 };
 
 export function seedDefaults(db) {

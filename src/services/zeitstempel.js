@@ -3,6 +3,7 @@ import { TimestampSession, MAX_PDF_SIZE, sendTimestampRequest, parseTimestampRes
 import { freshTimestampRequest, validateTimestampBinding } from './tsaResponse.js';
 import { loadTsaTrustAnchors, verifyTsaChain } from './tsaTrust.js';
 import { loadTsaCrls } from './tsaRevocation.js';
+import { baueTsaNachweis } from './tsaNachweis.js';
 
 // Bounded well below the library's own defaults (timeout 30000ms, retry 3, retryDelay 1000ms —
 // worst case over 90s) because setZeitstempel runs synchronously inside the Freigabe-2 POST
@@ -14,7 +15,7 @@ const TSA_TIMING = { timeout: 8000, retry: 1, retryDelay: 300 };
 // pdf-rfc3161's TSAConfig has no built-in `auth` option (confirmed against the real published
 // API — see this task's notes above), so TSA Basic-Auth has to be built by hand into a header.
 // Only needed for a production-grade TSA that requires credentials; FreeTSA does not.
-function buildTsaHeaders(tsaConfig) {
+export function buildTsaHeaders(tsaConfig) {
   if (!tsaConfig.user) return undefined;
   const credentials = Buffer.from(`${tsaConfig.user}:${tsaConfig.passwort || ''}`).toString('base64');
   return { Authorization: `Basic ${credentials}` };
@@ -27,6 +28,13 @@ function buildTsaHeaders(tsaConfig) {
 // already expect a catchable, user-facing German message rather than the library's raw error.
 // omitModificationTime is required, not optional — see this task's notes above.
 export async function setZeitstempel(pdfBuffer, tsaConfig) {
+  return (await setZeitstempelMitNachweis(pdfBuffer, tsaConfig)).stamped;
+}
+
+// Wie setZeitstempel, liefert zusaetzlich den Nachweis der verwendeten Zertifikats-/Sperrevidenz
+// (services/tsaNachweis.js). Aufrufer, die einen Zeitstempel festschreiben, speichern diesen
+// Nachweis in derselben Transaktion wie den Zeitstempel-Hash.
+export async function setZeitstempelMitNachweis(pdfBuffer, tsaConfig) {
   let session;
   try {
     const anchors = tsaConfig.trustAnchorsFile || tsaConfig.requireTrustedChain !== false
@@ -44,8 +52,9 @@ export async function setZeitstempel(pdfBuffer, tsaConfig) {
     const stamped = Buffer.from(await session.embedTimestampToken(response.token));
     const verification = await verifyZeitstempel(stamped);
     if (!verification.gueltig) throw new Error('TSA-Signatur oder Dokumentbindung ist ungueltig.');
-    if (anchors) await verifyTsaChain(binding, anchors, crls);
-    return stamped;
+    const kette = anchors ? await verifyTsaChain(binding, anchors, crls) : null;
+    const nachweis = baueTsaNachweis({ binding, token: response.token, kette, trustAnchorsSha256: tsaConfig.trustAnchorsSha256 || null });
+    return { stamped, nachweis };
   } catch (err) {
     throw new Error(`Zeitstempel konnte nicht gesetzt werden: ${err.message}`);
   } finally {

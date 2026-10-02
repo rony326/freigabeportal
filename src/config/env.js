@@ -36,6 +36,10 @@ export function loadConfig(env = process.env) {
       env.TSA_TRUST_ANCHORS_SHA256 && !/^[a-f0-9]{64}$/.test(env.TSA_TRUST_ANCHORS_SHA256)) {
     throw new Error('TSA_TRUST_ANCHORS_FILE und TSA_TRUST_ANCHORS_SHA256 muessen gemeinsam mit einem gueltigen SHA-256 gesetzt werden.');
   }
+  if (env.TSA_CRL_AUTO_UPDATE && (!['true', 'false'].includes(env.TSA_CRL_AUTO_UPDATE) ||
+      (env.TSA_CRL_AUTO_UPDATE === 'true' && (!env.TSA_CRL_FILE || !env.TSA_TRUST_ANCHORS_FILE)))) {
+    throw new Error('TSA_CRL_AUTO_UPDATE muss true oder false sein und setzt TSA_CRL_FILE sowie die TSA-Vertrauensanker voraus.');
+  }
   if (env.BACKUP_API_KEY && env.BACKUP_API_KEY === env.N8N_API_KEY) {
     throw new Error('BACKUP_API_KEY muss sich von N8N_API_KEY unterscheiden.');
   }
@@ -63,6 +67,7 @@ export function loadConfig(env = process.env) {
     backupApiKey: env.BACKUP_API_KEY ? requiredSecret(env, 'BACKUP_API_KEY') : null,
     tsaTrustRequired: true,
     tsaCrlFile: env.TSA_CRL_FILE || null,
+    tsaCrlAutoUpdate: env.TSA_CRL_AUTO_UPDATE === 'true',
     tsaTrustAnchorsFile: env.TSA_TRUST_ANCHORS_FILE || null,
     tsaTrustAnchorsSha256: env.TSA_TRUST_ANCHORS_SHA256 || null,
     smtp: {

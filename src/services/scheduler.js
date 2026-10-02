@@ -1,6 +1,7 @@
 import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from './cronJobs.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { runSicherheitsalarmeJob } from './sicherheitsalarme.js';
+import { runTsaCrlAktualisierungJob } from './tsaCrlUpdate.js';
 
 const ZEITZONE = 'Europe/Zurich';
 const MINUTE_MS = 60 * 1000;
@@ -104,6 +105,7 @@ export function startScheduler({
     // Aeltere Test-Fakes ohne diesen Eintrag bekommen einen wirkungslosen Platzhalter.
     runSicherheitsalarmeJob: sicherheitsalarmeJob = async () => ({ status: 'uebersprungen' }),
     runMailZustellungJob: mailZustellungJob = async () => ({ status: 'uebersprungen' }),
+    runTsaCrlAktualisierungJob: tsaCrlJob = async () => ({ status: 'uebersprungen' }),
   } = {
     runSyncPersonenJob,
     runPoolErinnerungenJob,
@@ -116,6 +118,7 @@ export function startScheduler({
     runKkBelegErinnerungenJob,
     runSicherheitsalarmeJob,
     runMailZustellungJob,
+    runTsaCrlAktualisierungJob,
   },
 }) {
   scheduleDaily(
@@ -202,6 +205,16 @@ export function startScheduler({
     async () => {
       const result = await mailZustellungJob(db, config, mailer);
       if (result.status === 'fehler') console.error('Geplanter mail-zustellung-Lauf mit Zustellfehlern:', result.error);
+    }
+  );
+
+  // Erneuert die lokalen TSA-Sperrlisten (nur mit TSA_CRL_AUTO_UPDATE=true, services/tsaCrlUpdate.js).
+  scheduleDaily(
+    () => zahlOderStandard(getConfigValue(db, 'cron_tsa_crl_stunde'), 4),
+    () => zahlOderStandard(getConfigValue(db, 'cron_tsa_crl_minute'), 15),
+    async () => {
+      const result = await tsaCrlJob(db, config, mailer);
+      if (result.status === 'fehler') console.error('Geplante TSA-Sperrlisten-Erneuerung fehlgeschlagen:', result.error);
     }
   );
 

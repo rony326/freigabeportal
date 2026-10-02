@@ -41,7 +41,9 @@ export function loadTsaTrustAnchors(path, expectedHash) {
   });
 }
 
-export async function verifyTsaChain({ signed, info, signer }, anchors, crls = []) {
+// Validiert den Pfad vom tatsaechlichen Unterzeichner zu einem lokalen Anker zum Zeitstempel- und
+// zum Empfangszeitpunkt, ohne Sperrpruefung. Liefert die Kette (Signer zuerst, Anker zuletzt).
+export async function validateTsaPath({ signed, info, signer }, anchors) {
   const certificates = (signed.certificates || []).filter((cert) => cert instanceof Certificate);
   if (!anchors.length || certificates.length > 12) throw new Error('TSA-Zertifikatskette fehlt oder ist zu gross.');
   const signerHash = fingerprint(signer);
@@ -52,18 +54,25 @@ export async function verifyTsaChain({ signed, info, signer }, anchors, crls = [
   // PKI.js takes the last untrusted certificate as the leaf. Bind the result to the actual signer.
   const ordered = [...certificates.filter((cert) => fingerprint(cert) !== signerHash && !isAnchorCopy(cert)), signer];
   const roots = new Set(anchors.map(fingerprint));
-  const now = new Date();
-  let evidenz;
-  for (const checkDate of [info.genTime, now]) {
+  let chain;
+  for (const checkDate of [info.genTime, new Date()]) {
     const engine = new CertificateChainValidationEngine({ trustedCerts: anchors, certs: ordered, checkDate });
     const result = await engine.verify({ passedWhenNotRevValues: true });
-    const chain = result.certificatePath || [];
+    chain = result.certificatePath || [];
     if (!result.result || !chain.length || fingerprint(chain[0]) !== signerHash || !roots.has(fingerprint(chain.at(-1)))) {
       throw new Error('TSA-Signierzertifikat hat keine gueltige Kette zu den konfigurierten Vertrauensankern.');
     }
-    const sperre = await verifyTsaRevocation(chain, crls, now);
-    evidenz = { kettenzertifikate: chain, sperrlisten: sperre.sperrlisten };
   }
+  return { chain, signerHash };
+}
+
+export async function verifyTsaChain(binding, anchors, crls = []) {
+  const { chain, signerHash } = await validateTsaPath(binding, anchors);
+  const now = new Date();
+  const sperre = await verifyTsaRevocation(chain, crls, now);
   // Die Evidenz belegt den Sperrstatus zum lokalen Pruefzeitpunkt, keine historische Validierung.
-  return { kette: 'geprueft', sperrstatus: 'crl_geprueft', signerSha256: signerHash, pruefzeitpunkt: now, ...evidenz };
+  return {
+    kette: 'geprueft', sperrstatus: 'crl_geprueft', signerSha256: signerHash, pruefzeitpunkt: now,
+    kettenzertifikate: chain, sperrlisten: sperre.sperrlisten,
+  };
 }

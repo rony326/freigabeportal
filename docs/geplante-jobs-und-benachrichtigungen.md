@@ -60,7 +60,7 @@ flowchart LR
   [offline-restore.md](offline-restore.md#abbruch-und-sperren). Solange der
   Server deshalb nicht läuft, laufen auch keine Jobs — siehe erster Punkt.
 
-## Die elf Jobs
+## Die zwölf Jobs
 
 | Job | Standard-Zeitplan | Einstellbar unter | `POST /internal/cron/…` | Protokoll | Zweck |
 |---|---|---|---|---|---|
@@ -75,6 +75,7 @@ flowchart LR
 | `datenbank-sicherung` | täglich 03:00 (Europe/Zürich) | Datenbank-Backup | nein | `cron_log` | verschlüsselte `.fpbak`-Sicherung von DB + `JOBS_DIR` + `BRANDING_DIR` nach `BACKUP_DIR`, Retention nur für `.fpbak` |
 | `mail-digest` | täglich 07:00 (Europe/Zürich) | Mail-Einstellungen | nein | `cron_log` | fasst wegen aktivem Batching eingereihte (`mail_log.status = 'geplant'`) Mails pro Empfänger zu einer täglichen Zusammenfassung zusammen |
 | `sicherheitsalarme` | alle 30 Minuten | nur `admin_config` (`cron_sicherheitsalarme_intervall_minuten`) | nein | Audit-Log (`hintergrundlauf`), `mail_log` | meldet ungeklärte Backup-Löschabsichten |
+| `tsa-crl-aktualisierung` | täglich 04:15 (Europe/Zürich), nur mit `TSA_CRL_AUTO_UPDATE=true` | nur `admin_config` (`cron_tsa_crl_stunde`/`cron_tsa_crl_minute`) | ja | Audit-Log (`hintergrundlauf`), `mail_log` bei Alarm | erneuert `TSA_CRL_FILE` aus der validierten TSA-Kette — siehe [tsa-vertrauensanker.md](tsa-vertrauensanker.md#automatische-sperrlisten-erneuerung) |
 
 Alle Läufe außer leeren `mail-zustellung`-Läufen (ohne fällige Mails)
 erscheinen zusätzlich als `hintergrundlauf` im Audit-Log.

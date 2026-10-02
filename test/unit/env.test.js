@@ -125,3 +125,12 @@ test('loadConfig throws when CT_CUSTOM_FIELD_IBAN is missing', () => {
   const { CT_CUSTOM_FIELD_IBAN, ...incomplete } = FULL_ENV;
   assert.throws(() => loadConfig(incomplete), /Fehlende Umgebungsvariable: CT_CUSTOM_FIELD_IBAN/);
 });
+
+test('TSA_CRL_AUTO_UPDATE is opt-in and needs the CRL file and trust anchors', () => {
+  const tsa = { TSA_TRUST_ANCHORS_FILE: '/root.pem', TSA_TRUST_ANCHORS_SHA256: 'a'.repeat(64), TSA_CRL_FILE: '/crls.pem' };
+  assert.equal(loadConfig({ ...FULL_ENV, ...tsa }).tsaCrlAutoUpdate, false);
+  assert.equal(loadConfig({ ...FULL_ENV, ...tsa, TSA_CRL_AUTO_UPDATE: 'true' }).tsaCrlAutoUpdate, true);
+  assert.throws(() => loadConfig({ ...FULL_ENV, ...tsa, TSA_CRL_AUTO_UPDATE: 'ja' }), /TSA_CRL_AUTO_UPDATE/);
+  assert.throws(() => loadConfig({ ...FULL_ENV, TSA_CRL_AUTO_UPDATE: 'true' }), /TSA_CRL_AUTO_UPDATE/);
+  assert.throws(() => loadConfig({ ...FULL_ENV, TSA_CRL_FILE: '/crls.pem', TSA_CRL_AUTO_UPDATE: 'true' }), /TSA_CRL_AUTO_UPDATE/);
+});

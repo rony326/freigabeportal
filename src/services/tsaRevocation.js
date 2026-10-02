@@ -29,14 +29,20 @@ export function loadTsaCrls(path) {
   if (!blocks.length || blocks.length > 16 || pem.replace(pattern, '').trim()) {
     throw new Error('TSA-Sperrlistendatei muss ausschliesslich PEM-Sperrlisten enthalten.');
   }
-  return blocks.map((block) => {
-    const der = Buffer.from(block[1], 'base64');
-    const parsed = asn1js.fromBER(Uint8Array.from(der).buffer);
-    if (parsed.offset !== der.length) throw new Error('Ungueltige TSA-Sperrliste.');
-    const crl = new CertificateRevocationList({ schema: parsed.result });
-    CRL_DER.set(crl, der);
-    return crl;
-  });
+  return blocks.map((block) => parseTsaCrl(Buffer.from(block[1], 'base64')));
+}
+
+export function parseTsaCrl(der) {
+  const parsed = asn1js.fromBER(Uint8Array.from(der).buffer);
+  if (parsed.offset === -1 || parsed.offset !== der.length) throw new Error('Ungueltige TSA-Sperrliste.');
+  const crl = new CertificateRevocationList({ schema: parsed.result });
+  CRL_DER.set(crl, Buffer.from(der));
+  return crl;
+}
+
+export function crlZuPem(crl) {
+  const zeilen = crlDer(crl).toString('base64').match(/.{1,64}/g);
+  return `-----BEGIN X509 CRL-----\n${zeilen.join('\n')}\n-----END X509 CRL-----\n`;
 }
 
 const ISSUING_DISTRIBUTION_POINT = '2.5.29.28';
@@ -104,7 +110,7 @@ export async function verifyTsaRevocation(chain, crls, now = new Date()) {
         throw new Error('Nicht unterstuetzter TSA-Sperrlisten-Signaturalgorithmus.');
       }
       if (!await crl.verify({ issuerCertificate: issuer })) throw new Error('TSA-Sperrlisten-Signatur ist ungueltig.');
-      if (crl.isCertificateRevoked(certificate)) throw new Error('TSA-Zertifikat ist gesperrt.');
+      if (crl.isCertificateRevoked(certificate)) throw Object.assign(new Error('TSA-Zertifikat ist gesperrt.'), { code: 'TSA_GESPERRT' });
       if (!verwendet.includes(crl)) verwendet.push(crl);
     }
   }

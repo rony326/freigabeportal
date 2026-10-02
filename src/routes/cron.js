@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { machineAuditContext } from '../services/auditContext.js';
+import { runTsaCrlAktualisierungJob } from '../services/tsaCrlUpdate.js';
 import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from '../services/cronJobs.js';
 
 function httpStatusFuer(status) {
@@ -49,6 +50,15 @@ export function createCronRouter({ db, config, mailer }) {
   router.post('/pdf-bereinigung', async (req, res, next) => {
     try {
       const result = await runPdfBereinigungJob(db, config);
+      res.status(httpStatusFuer(result.status)).json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/tsa-crl-aktualisierung', async (req, res, next) => {
+    try {
+      const result = await runTsaCrlAktualisierungJob(db, config, mailer);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);

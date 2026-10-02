@@ -34,7 +34,8 @@ Restore zugelassen. Vor Umstellung Wiederherstellungsprobe durchfuehren:
 **TSA-Konfiguration:** Neue Zeitstempel verlangen ein geprueftes Root-CA-Buendel
 und dessen SHA-256 in `TSA_TRUST_ANCHORS_FILE`/`TSA_TRUST_ANCHORS_SHA256`.
 Zusaetzlich verlangt `TSA_CRL_FILE` aktuelle signierte Sperrlisten fuer alle
-Aussteller der Kette. Ohne diese Nachweise bleiben TSA-pflichtige Exporte gesperrt. Installation und
+Aussteller der Kette; mit `TSA_CRL_AUTO_UPDATE=true` erneuert das Portal sie taeglich selbst
+(`npm run tsa:crl-update` fuer die Ersteinrichtung). Ohne diese Nachweise bleiben TSA-pflichtige Exporte gesperrt. Installation und
 verbleibende Pruefluecken: [TSA-Vertrauensanker](docs/tsa-vertrauensanker.md).
 
 **Betrieb und Wiederherstellung:** Der aktualisierte Server verwendet eine exklusive
@@ -119,7 +120,7 @@ das erste Konto anzulegen oder später Einzelrechte zuzuweisen.
 ### Zeitgesteuerte Jobs — laufen im Node-Prozess selbst
 
 Kein externer Task Scheduler nötig: Solange der Node-Prozess läuft (Infomaniaks
-Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App elf
+Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App zwölf
 Hintergrund-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 
 | Job | Zeitplan | Zweck |
@@ -135,6 +136,7 @@ Hintergrund-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/inde
 | `datenbank-sicherung` | täglich, Default 03:00 (Europe/Zürich) | DB + `JOBS_DIR` + `BRANDING_DIR` als authentifiziert verschlüsselte `.fpbak` sichern (Schlüsselbund `BACKUP_KEYRING_FILE` Pflicht, sonst scheitert der Lauf); Retention nur für `.fpbak`, alte ZIPs bleiben erhalten |
 | `mail-digest` | täglich, Default 07:00 (Europe/Zürich) | fasst wegen aktivem Batching eingereihte Mails pro Empfänger zu einer täglichen Zusammenfassung zusammen |
 | `sicherheitsalarme` | Intervall, Default alle 30 Min. | Alarm-Mails zu ungeklärten Backup-Löschabsichten |
+| `tsa-crl-aktualisierung` | täglich, Default 04:15 (Europe/Zürich), nur mit `TSA_CRL_AUTO_UPDATE=true` | erneuert die TSA-Sperrlisten (`TSA_CRL_FILE`) aus der validierten TSA-Kette; Alarm-Mail, wenn sie in weniger als 7 Tagen ablaufen |
 
 **Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan von acht Jobs
 einstellen (wirkt ab dem nächsten planmässigen Lauf, kein Neustart nötig),

@@ -37,7 +37,8 @@ Eine Deaktivierung der globalen TSA-URL hebt bereits gespeicherte Pflichten nich
    CRL-Signatur und Gueltigkeit werden vom Portal geprueft; es gibt keinen
    zusaetzlichen Dateihash-Pin fuer die regelmaessig erneuerte CRL-Datei.
    Webprozess nur leseberechtigen, keine Symlinks und keine Ablage unter Nutzdaten.
-   Externe Erneuerung und Alarmierung vor `nextUpdate` einrichten und testen.
+   Erneuerung vor `nextUpdate` sicherstellen: entweder extern (eigener Cron) oder ueber
+   die eingebaute automatische Erneuerung (siehe unten).
    Neue Listen vollstaendig in einer Nachbardatei schreiben, dann atomar ersetzen.
    Nicht alte und neue Listen desselben Ausstellers sammeln: jede passende Liste
    muss aktuell und gueltig sein, jede enthaltene Sperrung blockiert.
@@ -64,8 +65,8 @@ openssl x509 -in /etc/freigabeportal/tsa-roots.pem -noout -fingerprint -sha256
 # erwartet: 55:2F:7B:DC:F1:A7:AF:9E:6C:E6:72:01:7F:4F:12:AB:F7:72:40:C7:8E:76:1A:C2:03:D1:D9:D2:0A:C8:99:88
 sha256sum /etc/freigabeportal/tsa-roots.pem   # → TSA_TRUST_ANCHORS_SHA256
 
-# CRLs (Gueltigkeit ca. 3 Wochen, regelmaessig erneuern; Verteilpunkte bei Profilwechsel
-# aus den Zertifikaten der TSA-Antwort neu ermitteln):
+# CRLs: am einfachsten `npm run tsa:crl-update` (siehe unten). Manuell (Gueltigkeit ca.
+# 3 Wochen, regelmaessig erneuern; Verteilpunkte bei Profilwechsel neu ermitteln):
 tmp=$(mktemp)
 for n in DigiCertTrustedG4TimeStampingRSA4096SHA2562025CA1 DigiCertTrustedRootG4; do
   curl -fsS "http://crl3.digicert.com/$n.crl" | openssl crl -inform DER >> "$tmp" || exit 1
@@ -75,6 +76,41 @@ mv "$tmp" /etc/freigabeportal/tsa-crls.pem
 
 Die Fingerprint-Angabe zusaetzlich mit der offiziellen DigiCert-Root-Liste abgleichen.
 Wechselt DigiCert Responder oder Zwischenzertifikat, aendern sich die CRL-URLs.
+
+## Automatische Sperrlisten-Erneuerung
+
+Mit `TSA_CRL_AUTO_UPDATE=true` erneuert das Portal `TSA_CRL_FILE` taeglich selbst
+(Standard 04:15 Europe/Zurich, aenderbar ueber `cron_tsa_crl_stunde`/`cron_tsa_crl_minute`;
+manuell per `POST /internal/cron/tsa-crl-aktualisierung`). Gedacht fuer Hosting ohne eigenen
+Cron, z.B. Infomaniak-Webhosting. Ablauf (`src/services/tsaCrlUpdate.js`):
+
+1. Testzeitstempel bei der konfigurierten TSA anfordern und dessen Kette gegen die lokalen
+   Anker validieren. Ohne gueltige Kette wird nichts geladen.
+2. CRL-Adressen (nur http/https, nur uneingeschraenkte Verteilpunkte) ausschliesslich aus
+   dieser validierten Kette lesen und laden (max. 4 MiB je Liste). Ein Wechsel des
+   DigiCert-Zwischenzertifikats wird so automatisch beruecksichtigt.
+3. Listen mit derselben Pruefung wie bei echten Zeitstempeln kontrollieren und die Datei
+   atomar ersetzen (temporaere Nachbardatei + rename, kein Symlink-Ziel).
+
+Schlaegt ein Schritt fehl, bleibt die bisherige Datei unveraendert. Ausnahme: authentische,
+aktuelle Listen, die ein Zertifikat der TSA-Kette sperren, werden trotzdem uebernommen, damit
+die Sperrung nicht durch aeltere Listen verdeckt wird. Eine Alarm-Mail (Typ `sicherheitsalarm`,
+Empfaenger `sicherheitsalarm_empfaenger`, Standard Admin-Gruppe) geht raus bei Sperrung, bei
+fehlender/unlesbarer Datei oder wenn die vorhandenen Listen in weniger als 7 Tagen ablaufen;
+voruebergehende Ausfaelle davor erscheinen nur im Audit-Log (`tsa-crl-aktualisierung`).
+
+Abweichung vom Grundsatz oben: Der Webprozess braucht Schreibrecht auf die CRL-Datei und ihr
+Verzeichnis und ruft Adressen aus Zertifikaten ab. Vertretbar, weil diese Zertifikate vorher
+gegen die gepinnten Anker validiert und alle Listen signaturgeprueft werden; die Anker-Datei
+bleibt schreibgeschuetzt. Wo SSH-Benutzer und Webprozess ohnehin identisch sind (Shared
+Hosting), entfaellt die Trennung praktisch ohnehin. Mit getrennten Benutzern kann weiterhin
+extern erneuert werden (`TSA_CRL_AUTO_UPDATE=false`).
+
+Ersteinrichtung bzw. manueller Lauf (auch ohne den Schalter, Exit-Code 1 bei Fehler):
+
+```sh
+npm run tsa:crl-update -- --url http://timestamp.digicert.com
+```
 
 ## Was geprueft wird
 

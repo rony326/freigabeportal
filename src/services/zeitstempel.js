@@ -15,7 +15,7 @@ const TSA_TIMING = { timeout: 8000, retry: 1, retryDelay: 300 };
 // pdf-rfc3161's TSAConfig has no built-in `auth` option (confirmed against the real published
 // API — see this task's notes above), so TSA Basic-Auth has to be built by hand into a header.
 // Only needed for a production-grade TSA that requires credentials; FreeTSA does not.
-function buildTsaHeaders(tsaConfig) {
+export function buildTsaHeaders(tsaConfig) {
   if (!tsaConfig.user) return undefined;
   const credentials = Buffer.from(`${tsaConfig.user}:${tsaConfig.passwort || ''}`).toString('base64');
   return { Authorization: `Basic ${credentials}` };

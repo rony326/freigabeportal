@@ -1,5 +1,7 @@
 import { getJobById } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById } from '../db/kontenRepo.js';
+import { getPersonById } from '../db/personenRepo.js';
+import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { istAktiveVertretungFuer } from './vertretung.js';
 
 function isSuperadmin(config, person) {
@@ -46,4 +48,24 @@ export function ladeKontenFuerJob(db, req, job) {
     if (bestehendes) konten.push(bestehendes);
   }
   return konten;
+}
+
+// Ziel der strikten Freigeber-1-Weiterleitung. Wer für diesen Vorgang einen Freigabe-1-Konflikt
+// erklärt hat, darf die Freigabe nie (zurück)bekommen -- auch nicht, wenn ein Admin den Vorgang
+// inzwischen umgehängt hat. Läuft eine Konflikt-Eskalation, ist Stellvertreter 1 der legitime
+// Freigeber und kommt zuerst. Ohne zulässigen Kandidaten geht der Vorgang an die Admin-Gruppe.
+export function ermittleStriktesWeiterleitungsZiel(db, job, konto, aktuellePersonId) {
+  const konfliktmelder = new Set(
+    listFreigabenByJob(db, job.id).filter((f) => f.rolle === 'freigabe1_eskalation').map((f) => f.person_id)
+  );
+  if (job.freigabe1_eskaliert_von) konfliktmelder.add(job.freigabe1_eskaliert_von);
+  const kandidaten = job.freigabe1_eskaliert_von
+    ? [konto.stellvertreter1_id, konto.freigeber1_id]
+    : [konto.freigeber1_id, konto.stellvertreter1_id];
+  for (const id of kandidaten) {
+    if (!id || konfliktmelder.has(id) || id === aktuellePersonId) continue;
+    const person = getPersonById(db, id);
+    if (person && person.aktiv) return { personId: id };
+  }
+  return { anAdmin: true };
 }

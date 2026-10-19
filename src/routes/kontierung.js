@@ -32,7 +32,7 @@ import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { isValidIban } from '../services/ibanUtils.js';
-import { ladeKontierbarenJob, ladeKontenFuerJob as ladeKontenFuerJobService } from '../services/kontierungZugriff.js';
+import { ladeKontierbarenJob, ermittleStriktesWeiterleitungsZiel, ladeKontenFuerJob as ladeKontenFuerJobService } from '../services/kontierungZugriff.js';
 import { markiereAlsKkAbrechnung } from '../services/kkMarkierung.js';
 import { kkHinweisFuerJob } from '../services/kkStempel.js';
 import {
@@ -316,6 +316,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         (Boolean(job.freigabe1_eskaliert_von) && konto.stellvertreter1_id === req.currentPerson.churchtools_person_id);
       const wirdWeitergeleitet = !hatKonflikt && !eskaliertAnAdmin && strikteFreigeber1Pruefung && !job.freigabe1_eskaliert_an_admin && !istEchterFreigeber1;
 
+      const weiterleitungsZiel = wirdWeitergeleitet
+        ? ermittleStriktesWeiterleitungsZiel(db, job, konto, req.currentPerson.churchtools_person_id)
+        : null;
+
       db.exec('BEGIN');
       try {
         setKontierung(db, job.id, konto.id);
@@ -353,7 +357,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           });
           eskalierenFreigabe1(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung, stellvertreterId: konto.stellvertreter1_id });
         } else if (wirdWeitergeleitet) {
-          weiterleitenAnEchtenFreigeber1(db, job.id, konto.freigeber1_id);
+          if (weiterleitungsZiel.anAdmin) {
+            eskalierenFreigabe1AnAdmin(db, job.id, {
+              eskaliertVon: job.freigabe1_eskaliert_von || req.currentPerson.churchtools_person_id,
+              grund: 'Strikte Freigeber-1-Prüfung: Freigeber 1 und Stellvertreter 1 sind für diesen Vorgang ausgeschlossen.',
+            });
+          } else {
+            weiterleitenAnEchtenFreigeber1(db, job.id, weiterleitungsZiel.personId);
+          }
           createFreigabe(db, { jobId: job.id, personId: req.currentPerson.churchtools_person_id, rolle: 'freigabe1_weiterleitung', zeitpunkt: new Date().toISOString(), ip: req.ip, interessenskonflikt: false, kommentar: begruendung || null, eskaliertVon: job.freigabe1_eskaliert_von });
         } else {
           createFreigabe(db, {
@@ -492,8 +503,23 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             },
           });
         }
+      } else if (wirdWeitergeleitet && weiterleitungsZiel.anAdmin) {
+        const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
+        for (const email of empfaenger) {
+          await sendNotification(db, mailer, {
+            to: email,
+            typ: 'zuweisung',
+            jobId: job.id,
+            variablen: {
+              empfaengerName: 'Portal-Admin-Team',
+              jobDateiname: job.dateiname,
+              grund: 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da Freigeber 1 und Stellvertreter 1 für diesen Vorgang ausgeschlossen sind.',
+              link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+            },
+          });
+        }
       } else if (wirdWeitergeleitet) {
-        const echterFreigeber1 = getPersonById(db, konto.freigeber1_id);
+        const echterFreigeber1 = getPersonById(db, weiterleitungsZiel.personId);
         if (echterFreigeber1) {
           await sendNotificationMitVertretung(db, mailer, {
             person: echterFreigeber1,

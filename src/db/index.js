@@ -62,6 +62,8 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'kk_markiert_am', ddl: 'ALTER TABLE jobs ADD COLUMN kk_markiert_am TEXT' },
   { column: 'kk_erinnert_am', ddl: 'ALTER TABLE jobs ADD COLUMN kk_erinnert_am TEXT' },
   { column: 'kk_text_betraege', ddl: 'ALTER TABLE jobs ADD COLUMN kk_text_betraege TEXT' },
+  // Admin-Umhängen bei Freigabe 2 (/admin/vorgaenge): hat Vorrang vor Stellvertreter2/Freigeber2.
+  { column: 'freigabe2_umgeleitet_an', ddl: 'ALTER TABLE jobs ADD COLUMN freigabe2_umgeleitet_an TEXT REFERENCES personen(churchtools_person_id)' },
 ];
 
 const PERSONEN_TABLE_MIGRATIONS = [
@@ -776,6 +778,56 @@ function migrateMailZustellung(db) {
   });
 }
 
+// Admin-Umhängen (/admin/vorgaenge): neue freigaben-Rolle 'admin_umzuweisung' plus zwei Spalten
+// (vorher zuständige Person, Zielperson) und neuer Mail-Typ 'admin-umzuweisung'. Gleiches
+// Rebuild-Muster wie oben. Muss VOR migrateSecuritySchema laufen, damit die dort neu erzeugten
+// Audit-Trigger die neuen freigaben-Spalten in ihren Snapshot aufnehmen.
+function migrateAdminUmzuweisung(db) {
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'freigaben',
+    marker: 'admin_umzuweisung',
+    createSql: `CREATE TABLE freigaben (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL REFERENCES jobs(id),
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung', 'kk_abrechnung_markiert', 'kk_markierung_aufgehoben', 'kk_abgleich', 'admin_umzuweisung')),
+      zeitpunkt TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      interessenskonflikt INTEGER NOT NULL DEFAULT 0,
+      kommentar TEXT,
+      eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+      vertretung_fuer TEXT REFERENCES personen(churchtools_person_id),
+      vorher_zustaendig TEXT REFERENCES personen(churchtools_person_id),
+      ziel_person_id TEXT REFERENCES personen(churchtools_person_id)
+    )`,
+    spalten: ['id', 'job_id', 'person_id', 'rolle', 'zeitpunkt', 'ip', 'interessenskonflikt', 'kommentar', 'eskaliert_von', 'vertretung_fuer'],
+  });
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'mail_log',
+    marker: 'admin-umzuweisung',
+    createSql: `CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('eingereiht', 'versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL,
+      eingereiht_am TEXT,
+      versuche INTEGER NOT NULL DEFAULT 0,
+      naechster_versuch_am TEXT,
+      sperre_token TEXT,
+      sperre_bis TEXT,
+      versendet_am TEXT
+    )`,
+    spalten: ['id', 'typ', 'job_id', 'empfaenger', 'betreff', 'text', 'status', 'fehler_details', 'versucht_am', 'eingereiht_am', 'versuche', 'naechster_versuch_am', 'sperre_token', 'sperre_bis', 'versendet_am'],
+  });
+  // Der Index verschwindet mit der alten Tabelle beim Rebuild.
+  db.exec('CREATE INDEX IF NOT EXISTS mail_log_zustellung_idx ON mail_log(status, naechster_versuch_am)');
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -806,6 +858,7 @@ export function openDatabase(dbPath) {
   migrateKreditkartenChecks(db);
   migrateMailLogSicherheitsalarm(db);
   migrateMailZustellung(db);
+  migrateAdminUmzuweisung(db);
   // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)
   // verwerfen die Trigger der alten Tabelle, und migrateSecuritySchema legt die Audit-Trigger mit
   // der aktuellen Spaltenliste neu an. person_berechtigungen gehört allein migrateSecuritySchema.

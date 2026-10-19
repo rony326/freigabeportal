@@ -177,7 +177,7 @@ test('pre-feature on-disk database: reopening rebuilds CHECKs without losing aud
       zeitpunkt TEXT NOT NULL, ip TEXT NOT NULL, interessenskonflikt INTEGER NOT NULL DEFAULT 0, kommentar TEXT,
       eskaliert_von TEXT REFERENCES personen(churchtools_person_id), vertretung_fuer TEXT REFERENCES personen(churchtools_person_id)
     );
-    INSERT INTO freigaben SELECT * FROM freigaben_tmp;
+    INSERT INTO freigaben (id, job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von, vertretung_fuer) SELECT id, job_id, person_id, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliert_von, vertretung_fuer FROM freigaben_tmp;
     DROP TABLE freigaben_tmp;
     CREATE TRIGGER audit_freigaben_INSERT AFTER INSERT ON freigaben BEGIN SELECT 1; END;
     DROP TRIGGER audit_jobs_UPDATE;

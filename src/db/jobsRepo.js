@@ -300,6 +300,20 @@ export function abschliessenFreigabe1(db, jobId) {
   db.prepare(
     "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe2_seit = ?, freigabe2_reminder_gesendet_at = NULL, freigabe2_eskalation_gesendet_at = NULL WHERE id = ?"
   ).run(new Date().toISOString(), jobId);
+  // Ein Freigabe-2-Konflikt gehört ebenfalls zur Rechnung. Erreicht der Vorgang Freigabe 2 erneut
+  // (Admin-Umhängen, Ablehnung, Überarbeitung) und wäre die effektive Freigabe-2-Person jemand,
+  // der dafür schon einen Konflikt erklärt hat, geht er an die Admin-Gruppe -- wie beim zweiten
+  // Konflikt in freigabe2.js. Die Aufrufer lesen den Job danach neu und benachrichtigen
+  // entsprechend die Admin-Gruppe statt der ausgeschlossenen Person.
+  db.prepare(
+    `UPDATE jobs SET freigabe2_eskaliert_an_admin = 1, freigabe2_umgeleitet_an = NULL
+     WHERE id = ? AND status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0
+       AND EXISTS (
+         SELECT 1 FROM konten, freigaben f
+         WHERE konten.id = jobs.konto_id AND f.job_id = jobs.id AND f.rolle = 'freigabe2_eskalation'
+           AND f.person_id = ${EFFEKTIVER_FREIGEBER2_SQL}
+       )`
+  ).run(jobId);
 }
 
 export function eskalierenFreigabe2(db, jobId, { eskaliertVon, grund }) {
@@ -588,9 +602,10 @@ export function listFreigabe2JobsForPerson(db, personId) {
          AND jobs.freigabe2_eskaliert_an_admin = 0
          AND (${EFFEKTIVER_FREIGEBER2_SQL} = ? OR ${EFFEKTIVER_FREIGEBER2_SQL} IN (${VERTRETUNG_ZIEL_SUBQUERY}))
          AND NOT (jobs.quelle = 'spesen' AND jobs.eingereicht_von = ?)
+         AND NOT EXISTS (SELECT 1 FROM freigaben f WHERE f.job_id = jobs.id AND f.rolle = 'freigabe2_eskalation' AND f.person_id = ?)
        ORDER BY jobs.eingang_am`
     )
-    .all(personId, personId, personId);
+    .all(personId, personId, personId, personId);
 }
 
 // listAbgeschlossenJobsForPerson feeds the dedicated "Meine abgeschlossenen Rechnungen" page

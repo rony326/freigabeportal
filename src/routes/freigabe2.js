@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { getJobById, eskalierenFreigabe2, eskalierenFreigabe2AnAdmin, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id, markZeitstempelGesetzt } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { getSpesenabrechnungById } from '../db/spesenabrechnungenRepo.js';
-import { createFreigabe, listFreigabenByJob } from '../db/freigabenRepo.js';
+import { createFreigabe, listFreigabenByJob, istKonfliktmelder } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { stampAndFinalize } from '../services/pdfStamp.js';
@@ -67,6 +67,15 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     if (freigabe1 && freigabe1.person_id === req.currentPerson.churchtools_person_id) {
       res.status(403).render('error', {
         message: 'Du hast diese Rechnung bereits in Freigabe 1 freigegeben und kannst sie nicht auch in Freigabe 2 freigeben (Vier-Augen-Prinzip).',
+      });
+      return null;
+    }
+    // Ein erklärter Interessenskonflikt gehört zur Rechnung: wer ihn auf dieser Stufe erklärt hat,
+    // darf Freigabe 2 nie erteilen -- unabhängig davon, wie der Vorgang ihn wieder erreicht
+    // (Admin-Umhängen mit anschliessender Ablehnung, Ferienvertretung, Admin-Gruppe).
+    if (istKonfliktmelder(db, job.id, 2, req.currentPerson.churchtools_person_id)) {
+      res.status(403).render('error', {
+        message: 'Du hast für diese Rechnung einen Interessenskonflikt erklärt und kannst Freigabe 2 nicht erteilen.',
       });
       return null;
     }
@@ -188,7 +197,9 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
               variablen: {
                 empfaengerName: 'Portal-Admin-Team',
                 jobDateiname: job.dateiname,
-                grund: 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.',
+                grund: job.freigabe2_umgeleitet_an
+                  ? 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da die vom Admin bestimmte Person einen Interessenskonflikt erklärt hat.'
+                  : 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.',
                 link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
               },
             });

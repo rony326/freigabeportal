@@ -1,7 +1,7 @@
 import { getJobById, adminUmhaengen } from '../db/jobsRepo.js';
 import { listPersonenMitFreigeberRolle } from '../db/kontenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
-import { createFreigabe, listFreigabenByJob } from '../db/freigabenRepo.js';
+import { createFreigabe, listFreigabenByJob, listKonfliktmelder } from '../db/freigabenRepo.js';
 import { reiheBenachrichtigungEin, reiheBenachrichtigungMitVertretungEin } from './notify.js';
 import { stelleEintraegeZu } from './mailZustellung.js';
 import { LAUFENDE_STATUS, ermittleZustaendigkeit, standToken } from './vorgangZustaendigkeit.js';
@@ -30,15 +30,11 @@ export function listUmhaengenZiele(db, job) {
   const { personId } = ermittleZustaendigkeit(db, job);
   if (personId) ausgeschlossen.add(personId);
   if (job.quelle === 'spesen' && job.eingereicht_von) ausgeschlossen.add(job.eingereicht_von);
-  const freigaben = listFreigabenByJob(db, job.id);
   if (job.status === 'freigabe2') {
-    const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
+    const freigabe1 = listFreigabenByJob(db, job.id).findLast((f) => f.rolle === 'freigeber1');
     if (freigabe1) ausgeschlossen.add(freigabe1.person_id);
-    for (const f of freigaben) if (f.rolle === 'freigabe2_eskalation') ausgeschlossen.add(f.person_id);
-  } else {
-    for (const f of freigaben) if (f.rolle === 'freigabe1_eskalation') ausgeschlossen.add(f.person_id);
-    if (job.freigabe1_eskaliert_von) ausgeschlossen.add(job.freigabe1_eskaliert_von);
   }
+  for (const id of listKonfliktmelder(db, job.id, job.status === 'freigabe2' ? 2 : 1)) ausgeschlossen.add(id);
   return listPersonenMitFreigeberRolle(db).filter((p) => !ausgeschlossen.has(p.churchtools_person_id));
 }
 
@@ -115,7 +111,7 @@ export async function umhaengeVorgang(db, config, mailer, { jobId, zielId, bemer
     }
     db.exec('COMMIT');
   } catch (err) {
-    db.exec('ROLLBACK');
+    if (db.isTransaction) db.exec('ROLLBACK');
     throw err;
   }
   // Nach dem Commit zustellen: scheitert SMTP, bleibt das Umhängen gültig und mail-zustellung

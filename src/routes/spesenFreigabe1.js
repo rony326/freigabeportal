@@ -10,10 +10,10 @@ import {
 } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { getSpesenabrechnungById } from '../db/spesenabrechnungenRepo.js';
-import { createFreigabe } from '../db/freigabenRepo.js';
+import { createFreigabe, istKonfliktmelder } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
-import { sendNotification, resolveEmpfaenger } from '../services/notify.js';
+import { sendNotification, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from '../services/notify.js';
 import { buildAuditLog } from '../services/auditLog.js';
 
 export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
@@ -39,6 +39,14 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
     if (job.eingereicht_von === req.currentPerson.churchtools_person_id) {
       res.status(403).render('error', {
         message: 'Du hast diese Spesen-Position selbst eingereicht und kannst sie nicht selbst freigeben.',
+      });
+      return null;
+    }
+    // Wie in der Kontierung (kontierungZugriff.js): wer für diese Position bei Freigabe 1 einen
+    // Interessenskonflikt erklärt hat, darf sie nie mehr prüfen -- auch nicht als Superadmin.
+    if (istKonfliktmelder(db, job.id, 1, req.currentPerson.churchtools_person_id)) {
+      res.status(403).render('error', {
+        message: 'Du hast für diese Spesen-Position einen Interessenskonflikt erklärt und kannst sie nicht prüfen.',
       });
       return null;
     }
@@ -218,6 +226,22 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
         throw err;
       }
       const aktualisierterJob = getJobById(db, job.id);
+      if (aktualisierterJob.freigabe2_eskaliert_an_admin) {
+        for (const email of resolveEmpfaenger(db, config, 'gruppe:admin')) {
+          await sendNotification(db, mailer, {
+            to: email,
+            typ: 'zuweisung',
+            jobId: job.id,
+            variablen: {
+              empfaengerName: 'Portal-Admin-Team',
+              jobDateiname: job.dateiname,
+              grund: FREIGABE2_AN_ADMIN_GRUND,
+              link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
+            },
+          });
+        }
+        return res.redirect('/pool');
+      }
       const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(aktualisierterJob, konto));
       if (freigeber2) {
         await sendNotification(db, mailer, {

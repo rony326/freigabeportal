@@ -730,6 +730,43 @@ export function forceEskalierenFreigabe2AnAdmin(db, jobId) {
   return result.changes > 0;
 }
 
+// Admin-Eingriff (/admin/vorgaenge): übergibt einen laufenden Vorgang an zielId. Pro Phase genau
+// die Felder, die die Spec nennt; die WHERE-Klausel auf den Status schützt gegen einen Wechsel
+// zwischen Prüfung und Update. Prüfung von Ziel und Stand macht services/vorgangUmhaengen.js.
+export function adminUmhaengen(db, jobId, { status, zielId }) {
+  const jetzt = new Date().toISOString();
+  const statements = {
+    unzugewiesen: [
+      `UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = ?,
+         pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL,
+         reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL
+       WHERE id = ? AND status = 'unzugewiesen'`,
+      [zielId, jobId],
+    ],
+    zugewiesen: [
+      `UPDATE jobs SET zugewiesen_an = ?, freigabe1_eskaliert_an_admin = 0,
+         reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL
+       WHERE id = ? AND status = 'zugewiesen'`,
+      [zielId, jobId],
+    ],
+    freigabe2: [
+      `UPDATE jobs SET freigabe2_umgeleitet_an = ?, freigabe2_eskaliert_an_admin = 0, freigabe2_seit = ?,
+         freigabe2_reminder_gesendet_at = NULL, freigabe2_eskalation_gesendet_at = NULL
+       WHERE id = ? AND status = 'freigabe2'`,
+      [zielId, jetzt, jobId],
+    ],
+    abgelehnt: [
+      `UPDATE jobs SET zugewiesen_an = ?, freigabe1_eskaliert_an_admin = 0
+       WHERE id = ? AND status = 'abgelehnt' AND quelle != 'spesen'`,
+      [zielId, jobId],
+    ],
+  };
+  const eintrag = statements[status];
+  if (!eintrag) return false;
+  const [sql, params] = eintrag;
+  return db.prepare(sql).run(...params).changes > 0;
+}
+
 // The parent stays in the table (never deleted) as a historical reference — its own approval
 // chain is superseded by its split children, so it must leave every active list (Pool,
 // Kontierung, Freigabe 1/2) without pretending it was ever itself approved or rejected.

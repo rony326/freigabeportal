@@ -10,11 +10,16 @@ import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS, personHasPermission, req
 
 const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
 
-test('GRANTABLE_BERECHTIGUNGEN lists exactly the eleven catalog permissions, separating sync reading and writing', () => {
+test('GRANTABLE_BERECHTIGUNGEN lists exactly the twelve catalog permissions, separating sync reading and writing', () => {
   assert.deepEqual(
     [...GRANTABLE_BERECHTIGUNGEN].sort(),
-    ['abgelehnt_verwalten', 'audit_log_einsehen', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'kreditoren_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'workflow_eingreifen']
+    ['abgelehnt_verwalten', 'audit_log_einsehen', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'kreditoren_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'vorgaenge_einsehen', 'workflow_eingreifen']
   );
+});
+
+test('vorgaenge_einsehen hat ein Label und workflow_eingreifen heisst jetzt "In laufende Vorgänge eingreifen"', () => {
+  assert.equal(BERECHTIGUNG_LABELS.vorgaenge_einsehen, 'Laufende Vorgänge einsehen');
+  assert.equal(BERECHTIGUNG_LABELS.workflow_eingreifen, 'In laufende Vorgänge eingreifen');
 });
 
 test('kreditkarten_verwalten is grantable and labelled', () => {

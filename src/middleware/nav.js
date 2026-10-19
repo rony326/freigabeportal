@@ -11,6 +11,7 @@ export function loadNavFlags(db, config) {
     res.locals.isManager = personHasRole(person, config, 'manager');
     const hasPermission = (permission) => personHasPermission(db, config, person, permission);
     res.locals.adminNav = {
+      vorgaenge: hasPermission('vorgaenge_einsehen'),
       konten: hasPermission('konten_verwalten'),
       kreditoren: hasPermission('kreditoren_verwalten'),
       eskalation: res.locals.isSuperadmin,

@@ -796,6 +796,36 @@ test('POST /kontierung/:id: toggle on — a person who only holds Freigeber2 on 
   db.close();
 });
 
+test('POST /kontierung/:id: toggle on — nach Konfliktmeldung von Freigeber1 geht die strikte Weiterleitung an Stellvertreter1, nie zurück an Freigeber1', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedKontoAndPersonen(db);
+  setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: 1 });
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '3');
+  setKontierung(db, jobId, 1);
+  createFreigabe(db, { jobId, personId: '1', rolle: 'freigabe1_eskalation', zeitpunkt: '2026-09-06T09:00:00.000Z', ip: '1', interessenskonflikt: true, kommentar: 'befangen', eskaliertVon: null });
+  db.prepare("UPDATE jobs SET freigabe1_eskaliert_von = '1' WHERE id = ?").run(jobId);
+  const mailer = { sent: [], async sendMail(mail) { this.sent.push(mail); } };
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${jobId}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'kontieren', kontoId: '1', absender: 'Muster AG', kreditorId: String(kreditorId), rechnungsnummer: 'RE-1', betrag: '10.00', zahlungsziel: '2026-10-01', typ: 'rechnung', interessenskonflikt: '' });
+
+  assert.equal(res.status, 302);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.zugewiesen_an, '2');
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'p2@example.org');
+  db.close();
+});
+
 test('POST /kontierung/:id with a Beleg PDF attached merges it into the job\'s PDF before completing Kontierung', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);

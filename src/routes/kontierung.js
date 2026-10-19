@@ -3,6 +3,7 @@ import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
 import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
 import {
+  getJobById,
   setKontierung,
   updateKontierungMetadaten,
   ablehnenJob,
@@ -27,12 +28,12 @@ import { getKreditkarteById, listKreditkarten } from '../db/kreditkartenRepo.js'
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
-import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger } from '../services/notify.js';
+import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from '../services/notify.js';
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { isValidIban } from '../services/ibanUtils.js';
-import { ladeKontierbarenJob, ladeKontenFuerJob as ladeKontenFuerJobService } from '../services/kontierungZugriff.js';
+import { ladeKontierbarenJob, ermittleStriktesWeiterleitungsZiel, ladeKontenFuerJob as ladeKontenFuerJobService } from '../services/kontierungZugriff.js';
 import { markiereAlsKkAbrechnung } from '../services/kkMarkierung.js';
 import { kkHinweisFuerJob } from '../services/kkStempel.js';
 import {
@@ -85,7 +86,7 @@ function buildQrInfo(db, job) {
 export function createKontierungRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
-  const loadAuthorizedJob = (req, res) => ladeKontierbarenJob(db, config, req, res);
+  const loadAuthorizedJob = (req, res, optionen) => ladeKontierbarenJob(db, config, req, res, optionen);
   const ladeKontenFuerJob = (req, job) => ladeKontenFuerJobService(db, req, job);
 
   function sperreKkAbrechnung(job, res) {
@@ -316,6 +317,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         (Boolean(job.freigabe1_eskaliert_von) && konto.stellvertreter1_id === req.currentPerson.churchtools_person_id);
       const wirdWeitergeleitet = !hatKonflikt && !eskaliertAnAdmin && strikteFreigeber1Pruefung && !job.freigabe1_eskaliert_an_admin && !istEchterFreigeber1;
 
+      const weiterleitungsZiel = wirdWeitergeleitet
+        ? ermittleStriktesWeiterleitungsZiel(db, job, konto, req.currentPerson.churchtools_person_id)
+        : null;
+
       db.exec('BEGIN');
       try {
         setKontierung(db, job.id, konto.id);
@@ -353,7 +358,16 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           });
           eskalierenFreigabe1(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung, stellvertreterId: konto.stellvertreter1_id });
         } else if (wirdWeitergeleitet) {
-          weiterleitenAnEchtenFreigeber1(db, job.id, konto.freigeber1_id);
+          if (weiterleitungsZiel.anAdmin) {
+            eskalierenFreigabe1AnAdmin(db, job.id, {
+              // Nur echte Konfliktmelder gehören hierher: der Kontierer hat keinen Konflikt erklärt
+              // und darf durch die Weiterleitung nicht selbst gesperrt werden.
+              eskaliertVon: job.freigabe1_eskaliert_von ?? null,
+              grund: 'Strikte Freigeber-1-Prüfung: Freigeber 1 und Stellvertreter 1 sind für diesen Vorgang ausgeschlossen.',
+            });
+          } else {
+            weiterleitenAnEchtenFreigeber1(db, job.id, weiterleitungsZiel.personId);
+          }
           createFreigabe(db, { jobId: job.id, personId: req.currentPerson.churchtools_person_id, rolle: 'freigabe1_weiterleitung', zeitpunkt: new Date().toISOString(), ip: req.ip, interessenskonflikt: false, kommentar: begruendung || null, eskaliertVon: job.freigabe1_eskaliert_von });
         } else {
           createFreigabe(db, {
@@ -492,8 +506,23 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             },
           });
         }
+      } else if (wirdWeitergeleitet && weiterleitungsZiel.anAdmin) {
+        const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
+        for (const email of empfaenger) {
+          await sendNotification(db, mailer, {
+            to: email,
+            typ: 'zuweisung',
+            jobId: job.id,
+            variablen: {
+              empfaengerName: 'Portal-Admin-Team',
+              jobDateiname: job.dateiname,
+              grund: 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da Freigeber 1 und Stellvertreter 1 für diesen Vorgang ausgeschlossen sind.',
+              link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+            },
+          });
+        }
       } else if (wirdWeitergeleitet) {
-        const echterFreigeber1 = getPersonById(db, konto.freigeber1_id);
+        const echterFreigeber1 = getPersonById(db, weiterleitungsZiel.personId);
         if (echterFreigeber1) {
           await sendNotificationMitVertretung(db, mailer, {
             person: echterFreigeber1,
@@ -507,18 +536,37 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           });
         }
       } else {
-        const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(job, konto));
-        if (freigeber2) {
-          await sendNotificationMitVertretung(db, mailer, {
-            person: freigeber2,
-            typ: 'zuweisung',
-            jobId: job.id,
-            variablen: {
-              jobDateiname: job.dateiname,
-              grund: 'Eine Rechnung wartet auf deine Freigabe 2.',
-              link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
-            },
-          });
+        // abschliessenFreigabe1 kann den Vorgang an die Admin-Gruppe gegeben haben (effektive
+        // Freigabe-2-Person hat für diese Rechnung bereits einen Konflikt erklärt): neu lesen.
+        const jobNachFreigabe1 = getJobById(db, job.id);
+        if (jobNachFreigabe1.freigabe2_eskaliert_an_admin) {
+          for (const email of resolveEmpfaenger(db, config, 'gruppe:admin')) {
+            await sendNotification(db, mailer, {
+              to: email,
+              typ: 'zuweisung',
+              jobId: job.id,
+              variablen: {
+                empfaengerName: 'Portal-Admin-Team',
+                jobDateiname: job.dateiname,
+                grund: FREIGABE2_AN_ADMIN_GRUND,
+                link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
+              },
+            });
+          }
+        } else {
+          const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(jobNachFreigabe1, konto));
+          if (freigeber2) {
+            await sendNotificationMitVertretung(db, mailer, {
+              person: freigeber2,
+              typ: 'zuweisung',
+              jobId: job.id,
+              variablen: {
+                jobDateiname: job.dateiname,
+                grund: 'Eine Rechnung wartet auf deine Freigabe 2.',
+                link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
+              },
+            });
+          }
         }
       }
 
@@ -532,7 +580,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
 
   router.post('/:id/zurueck-in-pool', csrfProtection, async (req, res, next) => {
     try {
-      const job = loadAuthorizedJob(req, res);
+      const job = loadAuthorizedJob(req, res, { zurueckgeben: true });
       if (!job) return;
       if (sperreKkAbrechnung(job, res)) return;
 
@@ -575,7 +623,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   });
 
   router.post('/:id/an-gruppe-zurueck', csrfProtection, (req, res) => {
-    const job = loadAuthorizedJob(req, res);
+    const job = loadAuthorizedJob(req, res, { zurueckgeben: true });
     if (!job) return;
     if (sperreKkAbrechnung(job, res)) return;
 

@@ -59,6 +59,10 @@ stateDiagram-v2
 
     abgelehnt --> zugewiesen: überarbeiten (wiederOeffnenJob)
     abgelehnt --> geloescht: Admin löscht endgültig\n(nicht durch den eigenen Ablehner)
+    unzugewiesen --> zugewiesen: Admin hängt um\n(/admin/vorgaenge)
+    zugewiesen --> zugewiesen: Admin hängt um
+    freigabe2 --> freigabe2: Admin leitet Freigabe 2 um
+    abgelehnt --> abgelehnt: Admin hängt um
 
     abgeschlossen --> abgeholt: n8n bestätigt Abholung
     abgeholt --> archiviert: pdf-bereinigung-Job (Dateien bereits weg)
@@ -137,9 +141,20 @@ Schalter `kontierung_strikte_freigeber1_pruefung` aktiv, gilt Freigabe 1
 nur noch als erteilt, wenn die kontierende Person tatsächlich Freigeber1
 (oder bei laufender Eskalation: Stellvertreter1) des gewählten Kontos
 ist. Andernfalls bleiben die erfassten Daten gespeichert, der Job bleibt
-`zugewiesen`, wechselt aber zum echten Freigeber1 (`freigaben`-Eintrag
-`freigabe1_weiterleitung`, Mail an ihn) — SYNC-8-Admin-Eskalationen
+`zugewiesen`, wechselt aber an eine zuständige Person (`freigaben`-Eintrag
+`freigabe1_weiterleitung`, Mail an sie) — SYNC-8-Admin-Eskalationen
 bleiben davon ausgenommen. Per Default deaktiviert (`'0'`).
+
+Das Weiterleitungsziel (`ermittleStriktesWeiterleitungsZiel` in
+`src/services/kontierungZugriff.js`) ist nicht mehr zwingend
+`konto.freigeber1_id`: Gewählt wird die erste der Personen
+[Stellvertreter 1, falls eine Freigabe-1-Konflikteskalation läuft
+(`freigabe1_eskaliert_von` gesetzt), sonst Freigeber 1; danach die jeweils
+andere], die auf diesem Job keinen Freigabe-1-Interessenskonflikt erklärt hat
+(`freigaben`-Eintrag `freigabe1_eskalation` oder Job-Feld `freigabe1_eskaliert_von`),
+nicht die aktuelle Person und aktiv ist. Qualifiziert sich niemand, wird der
+Job per `eskalierenFreigabe1AnAdmin` an die Admin-Gruppe eskaliert und diese
+erhält die Mail.
 
 Zusätzlich, unabhängig vom Ausgang: ein optional mit hochgeladener
 **Beleg** (PDF/PNG/JPEG, z. B. bei Kreditkartenabrechnungen) wird per
@@ -170,10 +185,25 @@ den Job selbst zuzuweisen.
 
 Autorisiert ist der **effektive Freigeber 2** des Kontos —
 `stellvertreter2_id`, wenn der Job bereits einmal eskaliert wurde, sonst
-`freigeber2_id` — bzw. bei SYNC-8-Eskalation jede `superadmin`-Person. Ein
+`freigeber2_id` — bzw. die per Admin-Eingriff umgeleitete Person
+(`freigabe2_umgeleitet_an`, siehe Abschnitt 8) — bzw. bei
+SYNC-8-Eskalation jede `superadmin`-Person. Ein
 harter Zusatz-Check verhindert, dass dieselbe Person, die Freigabe 1
 erteilt hat, auch Freigabe 2 erteilen kann (Vier-Augen-Prinzip, siehe
 [auth-und-rechte.md](auth-und-rechte.md)).
+
+**Interessenskonflikt-Sperre, hart erzwungen**: Ein erklärter Konflikt gehört
+zur Rechnung. Wer für diesen Job einen `freigaben`-Eintrag
+`freigabe2_eskalation` hat, bekommt bei `/freigabe2/:id` immer 403 —
+direkt zuständig, als Ferienvertretung oder als Superadmin — und sieht den
+Job nicht unter „Meine Freigaben“. Erreicht ein Job Freigabe 2 erneut
+(z. B. Admin-Umhängen → Ablehnung → Überarbeitung) und wäre die effektive
+Freigabe-2-Person ein solcher Konfliktmelder, setzt `abschliessenFreigabe1`
+`freigabe2_eskaliert_an_admin` und die „Freigabe 2 wartet“-Mail geht an die
+Admin-Gruppe. Dasselbe gilt bei Freigabe 1: Konfliktmelder (Einträge
+`freigabe1_eskalation` plus `freigabe1_eskaliert_von`) bekommen bei
+`/kontierung/:id` und `/spesen-freigabe1/:id` 403; zurück in den Pool bzw.
+an die Gruppe geben können sie einen Job weiterhin.
 
 ```mermaid
 flowchart TD
@@ -308,6 +338,55 @@ Erst mit Archivquittung, nach sieben Tagen und erneutem Hashvergleich darf
 `pdf-bereinigung` die lokale Datei entfernen und `archiviert` setzen.
 Siehe [Archivvertrag](n8n-paperless-archivierung.md) und
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md).
+
+## 8. Admin-Eingriff: laufende Vorgänge umhängen
+
+Unter **Admin → Laufende Vorgänge** (`/admin/vorgaenge`, Recht
+`vorgaenge_einsehen`) stehen alle Vorgänge in `unzugewiesen`, `zugewiesen`,
+`freigabe2` und `abgelehnt` mit aktuell zuständiger Person und
+voraussichtlicher Freigabe-2-Person. Mit `workflow_eingreifen` lässt sich ein
+Vorgang auf der Detailseite mit Pflicht-Bemerkung (mind. 10 Zeichen) an eine
+andere Person mit Konto-Rolle übergeben:
+
+| Phase | Wirkung |
+|---|---|
+| `unzugewiesen` | wird `zugewiesen` an die Zielperson (wie Pool-Weiterleitung) |
+| `zugewiesen` / `abgelehnt` | `zugewiesen_an` = Zielperson, Admin-Eskalation bei Freigabe 1 aufgehoben |
+| `freigabe2` | `freigabe2_umgeleitet_an` = Zielperson, Admin-Eskalation aufgehoben, Erinnerungsuhr startet neu |
+
+Die bisher zuständige Person verliert den Zugriff. Ausgeschlossen sind die
+aktuell zuständige Person, bei Freigabe 2 die Person mit Freigabe 1 und alle
+Konfliktmelder dieser Stufe, bei Kontierung alle Konfliktmelder bei Freigabe 1,
+bei Spesen die einreichende Person. Abgelehnte Spesen sind nicht umhängbar.
+Die strikte Freigeber1-Prüfung bleibt in Kraft. Jeder Eingriff erzeugt einen
+`freigaben`-Eintrag `admin_umzuweisung` und Mails (`admin-umzuweisung`, immer
+sofort) an neue und bisherige Person.
+
+**Effektive Freigabe-2-Person**: Admin-Eskalation → `freigabe2_umgeleitet_an`
+→ Stellvertreter 2 (nach Konflikt) → Freigeber 2, danach Ferienvertretung.
+Umgesetzt einmal als `getEffectiveFreigeber2Id` und einmal als
+`EFFEKTIVER_FREIGEBER2_SQL` (`src/db/jobsRepo.js`). Die Umleitung endet bei
+Abschluss, Ablehnung, Admin-Eskalation und jedem Pool-Reset. Erklärt die
+umgeleitete Person einen Interessenskonflikt, geht der Vorgang direkt an die
+Admin-Gruppe.
+
+**Umhängen setzt Konflikte nicht zurück**: Das Umhängen ändert nur
+Routing-Felder (`zugewiesen_an`, `freigabe2_umgeleitet_an`, Admin-Flags).
+Die Sperre für Konfliktmelder liest den `freigaben`-Verlauf und greift im
+Moment des Handelns (siehe Abschnitt 3), auch wenn der Vorgang später über
+Ablehnung und Überarbeitung wieder bei einer gesperrten Person landen
+würde. Der Hinweis zur strikten Freigeber1-Prüfung auf der Detailseite nennt
+das tatsächliche Weiterleitungsziel (`ermittleStriktesWeiterleitungsZiel`)
+bzw. die Admin-Gruppe.
+
+**„Hängt“ in der Übersicht** ist exakt die Menge, die `listStalledJobs`
+liefert (siehe unten); ein `freigabe2`-Job, der bereits an die Admin-Gruppe
+eskaliert wurde, gilt nie als „überfällig“.
+
+**„Meine abgeschlossenen“** (`listAbgeschlossenJobsForPerson`) enthält
+zusätzlich Jobs, bei denen die Person einen `freigaben`-Eintrag mit Rolle
+`freigeber2` hat — so sieht auch die nach einer Admin-Umleitung freigebende
+Person den Vorgang dort.
 
 ## "Stalled Jobs" — blockierte Rechnungen
 

@@ -13,6 +13,7 @@ export const GRANTABLE_BERECHTIGUNGEN = [
   'kreditkarten_verwalten',
   'sync_verwalten',
   'workflow_eingreifen',
+  'vorgaenge_einsehen',
 ];
 
 export const BERECHTIGUNG_LABELS = {
@@ -26,7 +27,8 @@ export const BERECHTIGUNG_LABELS = {
   pool_zuweisen: 'Pool-Belege an Personen zuweisen',
   kreditkarten_verwalten: 'Kreditkarten verwalten',
   sync_verwalten: 'Sync konfigurieren',
-  workflow_eingreifen: 'Blockierte Vorgaenge bearbeiten',
+  workflow_eingreifen: 'In laufende Vorgänge eingreifen',
+  vorgaenge_einsehen: 'Laufende Vorgänge einsehen',
 };
 
 // Superadmin und Manager bekommen jedes vergebbare Recht über ihr Rollen-Bundle, unabhängig von

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Laufende Vorgänge — <%= branding.seitenTitel %> Admin</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container-fluid py-4">
+    <%- include('./_nav') %>
+    <h1>Laufende Vorgänge</h1>
+    <form method="get" action="/admin/vorgaenge" class="row g-2 align-items-end mb-3">
+      <div class="col-auto">
+        <label class="form-label" for="status">Status</label>
+        <select class="form-select" id="status" name="status">
+          <option value="">Alle</option>
+          <% Object.entries(statusLabel).forEach(([wert, label]) => { %>
+            <option value="<%= wert %>"<%= filter.status === wert ? ' selected' : '' %>><%= label %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label" for="art">Art</label>
+        <select class="form-select" id="art" name="art">
+          <option value="">Alle</option>
+          <option value="rechnung"<%= filter.art === 'rechnung' ? ' selected' : '' %>>Rechnung</option>
+          <option value="gutschrift"<%= filter.art === 'gutschrift' ? ' selected' : '' %>>Gutschrift</option>
+          <option value="spesen"<%= filter.art === 'spesen' ? ' selected' : '' %>>Spesen</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label" for="person">Zuständig</label>
+        <select class="form-select" id="person" name="person">
+          <option value="">Alle</option>
+          <% personen.forEach((p) => { %>
+            <option value="<%= p.id %>"<%= filter.personId === p.id ? ' selected' : '' %>><%= p.name %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto form-check ms-2">
+        <input class="form-check-input" type="checkbox" id="probleme" name="probleme" value="1"<%= filter.nurProbleme ? ' checked' : '' %>>
+        <label class="form-check-label" for="probleme">nur hängende / überfällige</label>
+      </div>
+      <div class="col-auto"><button type="submit" class="btn btn-outline-primary">Filtern</button></div>
+    </form>
+
+    <% if (vorgaenge.length === 0) { %>
+      <p>Keine laufenden Vorgänge für diese Auswahl.</p>
+    <% } else { %>
+      <p class="text-body-secondary"><%= vorgaenge.length %> Vorgang<%= vorgaenge.length === 1 ? '' : 'e' %>, älteste zuerst.</p>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr><th>Eingang / seit</th><th>Art</th><th>Lieferant / Einreicher</th><th>Betrag</th><th>Konto</th><th>Status</th><th>Aktuell zuständig</th><th>Voraussichtlich Freigabe 2</th><th></th></tr>
+          </thead>
+          <tbody>
+            <% vorgaenge.forEach((v) => { %>
+              <tr class="<%= v.haengt ? 'table-danger' : (v.ueberfaellig ? 'table-warning' : '') %>">
+                <td><%= v.eingangAm.slice(0, 10) %><br><small class="text-body-secondary">seit <%= (v.seit || '').slice(0, 10) %></small></td>
+                <td><%= v.artLabel %></td>
+                <td><a href="/admin/vorgaenge/<%= v.id %>"><%= v.gegenueber %></a><br><small class="text-body-secondary"><%= v.dateiname %></small></td>
+                <td><%= v.betrag || '—' %></td>
+                <td><%= v.kontoLabel %></td>
+                <td>
+                  <%= v.statusLabel %>
+                  <% v.kennzeichen.forEach((k) => { %><span class="badge text-bg-secondary ms-1"><%= k %></span><% }) %>
+                  <% if (v.haengt) { %><span class="badge text-bg-danger ms-1">hängt</span><% } %>
+                  <% if (v.ueberfaellig) { %><span class="badge text-bg-warning ms-1">überfällig</span><% } %>
+                </td>
+                <td><%= v.zustaendig.name %><% if (v.zustaendig.vertretungName) { %><br><small class="text-body-secondary">vertreten durch <%= v.zustaendig.vertretungName %></small><% } %></td>
+                <td>
+                  <% if (!v.prognoseF2) { %>—
+                  <% } else if (v.prognoseF2.offen) { %><span class="text-body-secondary">noch offen</span>
+                  <% } else { %><%= v.prognoseF2.name %><% if (v.prognoseF2.prognose) { %> <span class="badge text-bg-light">Prognose</span><% } %><% } %>
+                </td>
+                <td><% if (darfEingreifen) { %><a href="/admin/vorgaenge/<%= v.id %>#umhaengen" class="btn btn-outline-primary btn-sm">Umhängen</a><% } %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

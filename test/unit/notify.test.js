@@ -4,7 +4,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { createJob } from '../../src/db/jobsRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { listMailLog } from '../../src/db/mailLogRepo.js';
-import { sendNotification, sendRenderedMail, resolveEmpfaenger, sendNotificationMitVertretung } from '../../src/services/notify.js';
+import { sendNotification, sendRenderedMail, resolveEmpfaenger, sendNotificationMitVertretung, reiheBenachrichtigungEin } from '../../src/services/notify.js';
 import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { setFerienmodus } from '../../src/db/personenRepo.js';
 
@@ -303,5 +303,17 @@ test('sendNotificationMitVertretung also sends to the active Stellvertreter, wit
   assert.equal(mailer.sent[1].to, 'bo@example.org');
   assert.match(mailer.sent[1].text, /Stellvertreter für Ana Muster/);
   assert.match(mailer.sent[1].text, /Eine Rechnung wartet auf deine Freigabe 2\./);
+  db.close();
+});
+
+test('admin-umzuweisung wird auch bei aktivem Batching sofort eingereiht', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'mail_batching_aktiv', '1');
+  const eintrag = reiheBenachrichtigungEin(db, {
+    to: 'x@example.org', typ: 'admin-umzuweisung', jobId: null,
+    variablen: { empfaengerName: 'X', grund: 'G', jobDateiname: 'a.pdf', adminName: 'A', bemerkung: 'B', link: 'L' },
+  });
+  assert.equal(eintrag.status, 'eingereiht');
   db.close();
 });

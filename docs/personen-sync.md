@@ -105,7 +105,7 @@ den aktuellen Schritt zuständige Person inzwischen deaktiviert oder
 | Job-Status | zuständige Person |
 |---|---|
 | `zugewiesen` / `abgelehnt` | `zugewiesen_an` |
-| `freigabe2` (nicht admin-eskaliert) | effektiver Freigeber 2 des Kontos |
+| `freigabe2` (nicht admin-eskaliert) | effektiver Freigeber 2 des Kontos (bzw. die per Admin-Eingriff umgeleitete Person) |
 
 Ein `freigabe2`-Job, der bereits an die Admin-Gruppe eskaliert wurde, gilt
 **nicht** als hängend — ein gleichzeitiger Ausfall der gesamten

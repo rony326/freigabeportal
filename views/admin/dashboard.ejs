@@ -18,6 +18,16 @@
       <% } %>
     <% } %>
     <div class="row row-cols-1 row-cols-md-3 g-3">
+      <% if (adminNav.vorgaenge) { %>
+      <div class="col">
+        <a href="/admin/vorgaenge" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Laufende Vorgänge</h2>
+            <p class="card-text text-body-secondary">Alle offenen Vorgänge, wer zuständig ist und wer Freigabe 2 macht.</p>
+          </div>
+        </a>
+      </div>
+      <% } %>
       <% if (adminNav.konten) { %>
       <div class="col">
         <a href="/admin/konten" class="card text-decoration-none h-100">

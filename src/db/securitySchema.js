@@ -2,6 +2,7 @@ const RIGHTS = [
   'konten_verwalten', 'kreditoren_verwalten', 'geplante_jobs_verwalten',
   'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen',
   'pool_zuweisen', 'sync_verwalten', 'workflow_eingreifen', 'kreditkarten_verwalten',
+  'vorgaenge_einsehen',
 ];
 
 export function migrateSecuritySchema(db) {

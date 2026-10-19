@@ -25,6 +25,16 @@ const VERTRETUNG_ZIEL_SUBQUERY = `
     )
 `;
 
+// Effektive Freigabe-2-Person in SQL -- muss exakt getEffectiveFreigeber2Id (unten) entsprechen,
+// test/unit/effektiverFreigeber2.test.js prüft beide gegeneinander. Admin-Eskalation
+// (freigabe2_eskaliert_an_admin) prüft jeder Aufrufer weiterhin selbst. Setzt
+// "FROM jobs JOIN konten ON konten.id = jobs.konto_id" voraus.
+export const EFFEKTIVER_FREIGEBER2_SQL = `(CASE
+    WHEN jobs.freigabe2_umgeleitet_an IS NOT NULL THEN jobs.freigabe2_umgeleitet_an
+    WHEN jobs.freigabe2_eskaliert_von IS NOT NULL THEN konten.stellvertreter2_id
+    ELSE konten.freigeber2_id
+  END)`;
+
 function extractDomain(email) {
   const at = email.lastIndexOf('@');
   return at === -1 ? null : email.slice(at + 1).toLowerCase();
@@ -290,6 +300,20 @@ export function abschliessenFreigabe1(db, jobId) {
   db.prepare(
     "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe2_seit = ?, freigabe2_reminder_gesendet_at = NULL, freigabe2_eskalation_gesendet_at = NULL WHERE id = ?"
   ).run(new Date().toISOString(), jobId);
+  // Ein Freigabe-2-Konflikt gehört ebenfalls zur Rechnung. Erreicht der Vorgang Freigabe 2 erneut
+  // (Admin-Umhängen, Ablehnung, Überarbeitung) und wäre die effektive Freigabe-2-Person jemand,
+  // der dafür schon einen Konflikt erklärt hat, geht er an die Admin-Gruppe -- wie beim zweiten
+  // Konflikt in freigabe2.js. Die Aufrufer lesen den Job danach neu und benachrichtigen
+  // entsprechend die Admin-Gruppe statt der ausgeschlossenen Person.
+  db.prepare(
+    `UPDATE jobs SET freigabe2_eskaliert_an_admin = 1, freigabe2_umgeleitet_an = NULL
+     WHERE id = ? AND status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0
+       AND EXISTS (
+         SELECT 1 FROM konten, freigaben f
+         WHERE konten.id = jobs.konto_id AND f.job_id = jobs.id AND f.rolle = 'freigabe2_eskalation'
+           AND f.person_id = ${EFFEKTIVER_FREIGEBER2_SQL}
+       )`
+  ).run(jobId);
 }
 
 export function eskalierenFreigabe2(db, jobId, { eskaliertVon, grund }) {
@@ -312,7 +336,7 @@ export function abschliessenFreigabe2(db, jobId) {
   // now behave differently.)
   const result = db
     .prepare(
-      "UPDATE jobs SET status = 'abgeschlossen', abgeschlossen_am = ?, freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0 WHERE id = ? AND status = 'freigabe2'"
+      "UPDATE jobs SET status = 'abgeschlossen', abgeschlossen_am = ?, freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0, freigabe2_umgeleitet_an = NULL WHERE id = ? AND status = 'freigabe2'"
     )
     .run(new Date().toISOString(), jobId);
   return result.changes > 0;
@@ -355,7 +379,7 @@ export function eskalierenFreigabe1AnAdmin(db, jobId, { eskaliertVon, grund }) {
 
 export function eskalierenFreigabe2AnAdmin(db, jobId, { eskaliertVon, grund }) {
   db.prepare(
-    'UPDATE jobs SET freigabe2_eskaliert_an_admin = 1, freigabe2_eskaliert_von = ?, freigabe2_eskalationsgrund = ? WHERE id = ?'
+    'UPDATE jobs SET freigabe2_eskaliert_an_admin = 1, freigabe2_eskaliert_von = ?, freigabe2_eskalationsgrund = ?, freigabe2_umgeleitet_an = NULL WHERE id = ?'
   ).run(eskaliertVon, grund, jobId);
 }
 
@@ -384,6 +408,7 @@ export function releaseJob(db, jobId, personId, { hinweisKontoId } = {}) {
            freigabe1_eskaliert_an_admin = 0,
            freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL,
            freigabe2_eskaliert_an_admin = 0,
+           freigabe2_umgeleitet_an = NULL,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
            hinweis_konto_id = ?,
            pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
@@ -408,6 +433,7 @@ export function sendJobBackToGroup(db, jobId, currentZugewiesenAn, { bemerkung }
            freigabe1_eskaliert_an_admin = 0,
            freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL,
            freigabe2_eskaliert_an_admin = 0,
+           freigabe2_umgeleitet_an = NULL,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
            pool_rueckgesendet_bemerkung = ?, pool_rueckgesendet_von = ?, pool_rueckgesendet_am = ?
        WHERE id = ? AND zugewiesen_an = ? AND status = 'zugewiesen'`
@@ -423,7 +449,7 @@ export function sendJobBackToGroup(db, jobId, currentZugewiesenAn, { bemerkung }
 export function ablehnenJob(db, jobId, { abgelehntVon, grund }) {
   const result = db
     .prepare(
-      "UPDATE jobs SET status = 'abgelehnt', abgelehnt_von = ?, ablehnungsgrund = ? WHERE id = ? AND status IN ('freigabe2', 'zugewiesen')"
+      "UPDATE jobs SET status = 'abgelehnt', abgelehnt_von = ?, ablehnungsgrund = ?, freigabe2_umgeleitet_an = NULL WHERE id = ? AND status IN ('freigabe2', 'zugewiesen')"
     )
     .run(abgelehntVon, grund, jobId);
   return result.changes > 0;
@@ -574,14 +600,12 @@ export function listFreigabe2JobsForPerson(db, personId) {
        JOIN konten ON konten.id = jobs.konto_id
        WHERE jobs.status = 'freigabe2'
          AND jobs.freigabe2_eskaliert_an_admin = 0
-         AND (
-           (jobs.freigabe2_eskaliert_von IS NULL AND (konten.freigeber2_id = ? OR konten.freigeber2_id IN (${VERTRETUNG_ZIEL_SUBQUERY})))
-           OR (jobs.freigabe2_eskaliert_von IS NOT NULL AND (konten.stellvertreter2_id = ? OR konten.stellvertreter2_id IN (${VERTRETUNG_ZIEL_SUBQUERY})))
-         )
+         AND (${EFFEKTIVER_FREIGEBER2_SQL} = ? OR ${EFFEKTIVER_FREIGEBER2_SQL} IN (${VERTRETUNG_ZIEL_SUBQUERY}))
          AND NOT (jobs.quelle = 'spesen' AND jobs.eingereicht_von = ?)
+         AND NOT EXISTS (SELECT 1 FROM freigaben f WHERE f.job_id = jobs.id AND f.rolle = 'freigabe2_eskalation' AND f.person_id = ?)
        ORDER BY jobs.eingang_am`
     )
-    .all(personId, personId, personId, personId, personId);
+    .all(personId, personId, personId, personId);
 }
 
 // listAbgeschlossenJobsForPerson feeds the dedicated "Meine abgeschlossenen Rechnungen" page
@@ -608,12 +632,14 @@ export function listAbgeschlossenJobsForPerson(db, personId, { seite = 1, proSei
   const seiteGewuenscht = Math.max(1, Math.trunc(seite) || 1);
   const proSeiteSicher = Math.max(1, Math.trunc(proSeite) || ABGESCHLOSSEN_SEITENGROESSE);
 
+  // Die dritte Bedingung deckt die Person ab, die Freigabe 2 tatsächlich erteilt hat: nach einer
+  // Admin-Umleitung ist freigabe2_umgeleitet_an beim Abschluss bereits wieder gelöscht.
   const where = `WHERE jobs.status IN ('abgeschlossen', 'abgeholt', 'archiviert')
          AND jobs.freigabe2_eskaliert_an_admin = 0
          AND (
            jobs.zugewiesen_an = ?
-           OR (jobs.freigabe2_eskaliert_von IS NULL AND konten.freigeber2_id = ?)
-           OR (jobs.freigabe2_eskaliert_von IS NOT NULL AND konten.stellvertreter2_id = ?)
+           OR ${EFFEKTIVER_FREIGEBER2_SQL} = ?
+           OR EXISTS (SELECT 1 FROM freigaben f WHERE f.job_id = jobs.id AND f.rolle = 'freigeber2' AND f.person_id = ?)
          )`;
   const params = [personId, personId, personId];
 
@@ -652,7 +678,10 @@ export function listAdminEskalierteFreigaben(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 1 ORDER BY eingang_am").all();
 }
 
+// Muss exakt EFFEKTIVER_FREIGEBER2_SQL (oben) entsprechen. Die Admin-Eskalation prüfen die
+// Aufrufer selbst (sie hat Vorrang vor allem hier).
 export function getEffectiveFreigeber2Id(job, konto) {
+  if (job.freigabe2_umgeleitet_an) return job.freigabe2_umgeleitet_an;
   return job.freigabe2_eskaliert_von ? konto.stellvertreter2_id : konto.freigeber2_id;
 }
 
@@ -695,6 +724,7 @@ export function forceReleaseJob(db, jobId) {
        SET status = 'unzugewiesen', zugewiesen_an = NULL, konto_id = NULL,
            freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe1_eskaliert_an_admin = 0,
            freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0,
+           freigabe2_umgeleitet_an = NULL,
            abgelehnt_von = NULL, ablehnungsgrund = NULL,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
            pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
@@ -710,9 +740,46 @@ export function forceReleaseJob(db, jobId) {
 // which is the correct next legitimate actor for a job already past Freigabe 1.
 export function forceEskalierenFreigabe2AnAdmin(db, jobId) {
   const result = db
-    .prepare("UPDATE jobs SET freigabe2_eskaliert_an_admin = 1 WHERE id = ? AND status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0")
+    .prepare("UPDATE jobs SET freigabe2_eskaliert_an_admin = 1, freigabe2_umgeleitet_an = NULL WHERE id = ? AND status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0")
     .run(jobId);
   return result.changes > 0;
+}
+
+// Admin-Eingriff (/admin/vorgaenge): übergibt einen laufenden Vorgang an zielId. Pro Phase genau
+// die Felder, die die Spec nennt; die WHERE-Klausel auf den Status schützt gegen einen Wechsel
+// zwischen Prüfung und Update. Prüfung von Ziel und Stand macht services/vorgangUmhaengen.js.
+export function adminUmhaengen(db, jobId, { status, zielId }) {
+  const jetzt = new Date().toISOString();
+  const statements = {
+    unzugewiesen: [
+      `UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = ?,
+         pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL,
+         reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL
+       WHERE id = ? AND status = 'unzugewiesen'`,
+      [zielId, jobId],
+    ],
+    zugewiesen: [
+      `UPDATE jobs SET zugewiesen_an = ?, freigabe1_eskaliert_an_admin = 0,
+         reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL
+       WHERE id = ? AND status = 'zugewiesen'`,
+      [zielId, jobId],
+    ],
+    freigabe2: [
+      `UPDATE jobs SET freigabe2_umgeleitet_an = ?, freigabe2_eskaliert_an_admin = 0, freigabe2_seit = ?,
+         freigabe2_reminder_gesendet_at = NULL, freigabe2_eskalation_gesendet_at = NULL
+       WHERE id = ? AND status = 'freigabe2'`,
+      [zielId, jetzt, jobId],
+    ],
+    abgelehnt: [
+      `UPDATE jobs SET zugewiesen_an = ?, freigabe1_eskaliert_an_admin = 0
+       WHERE id = ? AND status = 'abgelehnt' AND quelle != 'spesen'`,
+      [zielId, jobId],
+    ],
+  };
+  const eintrag = statements[status];
+  if (!eintrag) return false;
+  const [sql, params] = eintrag;
+  return db.prepare(sql).run(...params).changes > 0;
 }
 
 // The parent stays in the table (never deleted) as a historical reference — its own approval

@@ -11,7 +11,7 @@ import { getKreditorById } from '../db/kreditorenRepo.js';
 import { listKreditorIbansByKreditor } from '../db/kreditorIbanRepo.js';
 import { kreditorNameVariablen } from './kreditorFelder.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
-import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger } from './notify.js';
+import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from './notify.js';
 
 // teilPosition landet später wörtlich auf der gemeinsamen Stempelseite der Splitgruppe
 // (stampGruppenDokument, pdfStamp.js), die mit pdf-lib's Helvetica-Standardfont gezeichnet wird —
@@ -161,6 +161,24 @@ export function erzeugeTeilJobs(db, { job, teile, konten, person, ip, begruendun
 export async function benachrichtigeNachAufsplitten(db, mailer, config, { job, ergebnis, person }) {
   for (const { id: kindId, konto } of ergebnis.selbstFreigegeben) {
     const kindJob = getJobById(db, kindId);
+    // Splitkinder haben keinen eigenen Konfliktverlauf, abschliessenFreigabe1 lässt sie deshalb
+    // nie an die Admin-Gruppe gehen. Geprüft wird trotzdem wie in kontierung.js/spesenFreigabe1.js.
+    if (kindJob.freigabe2_eskaliert_an_admin) {
+      for (const email of resolveEmpfaenger(db, config, 'gruppe:admin')) {
+        await sendNotification(db, mailer, {
+          to: email,
+          typ: 'zuweisung',
+          jobId: kindJob.id,
+          variablen: {
+            empfaengerName: 'Portal-Admin-Team',
+            jobDateiname: kindJob.dateiname,
+            grund: FREIGABE2_AN_ADMIN_GRUND,
+            link: `${config.publicBaseUrl}/freigabe2/${kindJob.id}`,
+          },
+        });
+      }
+      continue;
+    }
     const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(kindJob, konto));
     if (freigeber2) {
       await sendNotificationMitVertretung(db, mailer, {

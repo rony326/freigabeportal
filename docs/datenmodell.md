@@ -129,6 +129,7 @@ erDiagram
         text kk_markiert_am
         text kk_erinnert_am "letzte Abrechnungs-Erinnerung"
         text kk_text_betraege "JSON-Cache der PDF-Textanalyse"
+        text freigabe2_umgeleitet_an FK "Admin-Umleitung Freigabe 2"
     }
     kreditkarten {
         int id PK
@@ -179,17 +180,19 @@ erDiagram
         int id PK
         int job_id FK "kein enforced FK, siehe unten"
         text person_id FK
-        text rolle "13 mögliche Werte"
+        text rolle "14 mögliche Werte"
         text zeitpunkt
         text ip
         int interessenskonflikt
         text kommentar
         text eskaliert_von FK
         text vertretung_fuer FK
+        text vorher_zustaendig FK
+        text ziel_person_id FK
     }
     mail_log {
         int id PK
-        text typ "12 mögliche Werte"
+        text typ "14 mögliche Werte"
         int job_id FK
         text empfaenger
         text status "eingereiht | geplant | versendet | fehlgeschlagen"
@@ -243,7 +246,7 @@ gespeichert, sondern bei jeder Prüfung aus dem heutigen Datum berechnet
 
 ### `person_berechtigungen`
 Additive Einzelrechte, siehe [auth-und-rechte.md](auth-und-rechte.md). Ein
-`CHECK`-Constraint erlaubt elf Rechte. Für die sieben
+`CHECK`-Constraint erlaubt zwölf Rechte. Für die sieben
 `superadmin`-exklusiven Admin-Bereiche gibt es keine vergebbaren Werte.
 
 ### `konten`
@@ -364,6 +367,8 @@ Foreign Key.
 
 `vertretung_fuer` ist gesetzt, wenn die handelnde Person zum Zeitpunkt der Aktion aktiver
 Ferienmodus-Stellvertreter der eigentlich zuständigen Person war — sonst `NULL`.
+
+`vorher_zustaendig`/`ziel_person_id` sind nur bei `rolle = 'admin_umzuweisung'` gesetzt (vorher zuständige Person — `NULL` bei Pool/Admin-Gruppe — und Zielperson).
 
 ### `mail_log`
 Persistente Warteschlange und Protokoll jeder Benachrichtigung, inkl.

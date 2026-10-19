@@ -117,6 +117,13 @@
         <label class="form-label mt-2" for="kkBelegEingegangenText">Kreditkartenbeleg eingegangen — Text</label>
         <textarea class="form-control" id="kkBelegEingegangenText" name="kkBelegEingegangenText" rows="4" required><%= kkBelegEingegangenText %></textarea>
       </div>
+      <div class="mb-3">
+        <label class="form-label" for="adminUmzuweisungBetreff">Vorgang durch Administration übergeben — Betreff</label>
+        <input type="text" class="form-control" id="adminUmzuweisungBetreff" name="adminUmzuweisungBetreff" value="<%= adminUmzuweisungBetreff %>" required>
+        <label class="form-label mt-2" for="adminUmzuweisungText">Vorgang durch Administration übergeben — Text</label>
+        <textarea class="form-control" id="adminUmzuweisungText" name="adminUmzuweisungText" rows="4" required><%= adminUmzuweisungText %></textarea>
+        <div class="form-text">Variablen: %empfaengerName%, %grund%, %jobDateiname%, %adminName%, %bemerkung%, %link%, %portalName%</div>
+      </div>
 
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>

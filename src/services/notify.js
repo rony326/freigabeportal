@@ -8,11 +8,18 @@ import { reiheMailEin, stelleMailZu } from './mailZustellung.js';
 const GRUPPE_BUCHHALTUNG_TOKEN = 'gruppe:buchhaltung';
 const GRUPPE_ADMIN_TOKEN = 'gruppe:admin';
 
+// Grund der "Freigabe 2 wartet"-Mail, wenn abschliessenFreigabe1 den Vorgang an die Admin-Gruppe
+// gegeben hat, weil die effektive Freigabe-2-Person bereits einen Interessenskonflikt erklärt hat.
+export const FREIGABE2_AN_ADMIN_GRUND =
+  'Eine Rechnung wartet auf Freigabe 2 und wurde an die Portal-Admin-Gruppe übergeben, da die zuständige Freigabe-2-Person für diese Rechnung bereits einen Interessenskonflikt erklärt hat.';
+
 // sync-fehler (ChurchTools-Ausfall) und iban-warnung (Betrugsverdacht) sind betriebs-/
 // sicherheitskritisch und ignorieren den globalen Batching-Schalter -- sie warten nie auf den
 // nächsten Digest-Lauf. kk-beleg-eingegangen kommt dazu: die Person, die per Mail einen Beleg
 // eingereicht hat, soll sofort den Ergänzen-Link bekommen statt bis zum nächsten Digest zu warten.
-const IMMER_SOFORT_TYPEN = new Set(['sync-fehler', 'iban-warnung', 'kk-beleg-eingegangen']);
+// admin-umzuweisung: ein Admin hat einen laufenden Vorgang umgehängt -- die neue Person soll sofort
+// handeln können, die bisherige sofort wissen, dass sie nichts mehr tun muss.
+const IMMER_SOFORT_TYPEN = new Set(['sync-fehler', 'iban-warnung', 'kk-beleg-eingegangen', 'admin-umzuweisung']);
 
 // The low-level "enqueue and try now" primitive for an already-rendered mail. /admin/mails'
 // "erneut versenden" replays an already-rendered mail_log row verbatim through here and must

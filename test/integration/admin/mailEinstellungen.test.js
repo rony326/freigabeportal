@@ -53,6 +53,7 @@ const VALID_BODY = {
   kkAbrechnungZugewiesenBetreff: 'B11', kkAbrechnungZugewiesenText: 'T11',
   kkBelegErinnerungBetreff: 'B12', kkBelegErinnerungText: 'T12',
   kkBelegEingegangenBetreff: 'B13', kkBelegEingegangenText: 'T13',
+  adminUmzuweisungBetreff: 'B14', adminUmzuweisungText: 'T14',
   batchingAktiv: '1',
   batchingStunde: '6',
   batchingMinute: '30',

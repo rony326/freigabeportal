@@ -1,12 +1,17 @@
 import { getJobById } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById } from '../db/kontenRepo.js';
+import { getPersonById } from '../db/personenRepo.js';
+import { listKonfliktmelder } from '../db/freigabenRepo.js';
 import { istAktiveVertretungFuer } from './vertretung.js';
 
 function isSuperadmin(config, person) {
   return Boolean(person && person.gruppen.includes(String(config.churchtools.groupIdAdmin)));
 }
 
-export function ladeKontierbarenJob(db, config, req, res) {
+// zurueckgeben: nur für "zurück in den Pool"/"an die Gruppe zurück". Ein Konfliktmelder kann
+// einen Vorgang nach einem Pool-Zyklus wieder halten (releaseJob setzt freigabe1_eskaliert_von
+// zurück, der Verlauf bleibt); ihn abzugeben muss möglich bleiben, sonst hängt der Vorgang.
+export function ladeKontierbarenJob(db, config, req, res, { zurueckgeben = false } = {}) {
   const job = getJobById(db, Number(req.params.id));
   if (!job || job.status !== 'zugewiesen') {
     res.status(403).render('error', { message: 'Dieser Job ist dir aktuell nicht zur Kontierung zugewiesen.' });
@@ -25,6 +30,13 @@ export function ladeKontierbarenJob(db, config, req, res) {
       istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, job.zugewiesen_an);
   if (!authorized) {
     res.status(403).render('error', { message: 'Dieser Job ist dir aktuell nicht zur Kontierung zugewiesen.' });
+    return null;
+  }
+  // Ein erklärter Interessenskonflikt gehört zur Rechnung: wer ihn bei Freigabe 1 erklärt hat,
+  // darf sie nie mehr kontieren -- weder als Ferienvertretung der zuständigen Person noch nach
+  // einem Admin-Umhängen noch als Superadmin bei einer an die Admin-Gruppe eskalierten Rechnung.
+  if (!zurueckgeben && listKonfliktmelder(db, job.id, 1).has(req.currentPerson.churchtools_person_id)) {
+    res.status(403).render('error', { message: 'Du hast für diese Rechnung einen Interessenskonflikt erklärt und kannst sie nicht kontieren.' });
     return null;
   }
   return job;
@@ -46,4 +58,21 @@ export function ladeKontenFuerJob(db, req, job) {
     if (bestehendes) konten.push(bestehendes);
   }
   return konten;
+}
+
+// Ziel der strikten Freigeber-1-Weiterleitung. Wer für diesen Vorgang einen Freigabe-1-Konflikt
+// erklärt hat, darf die Freigabe nie (zurück)bekommen -- auch nicht, wenn ein Admin den Vorgang
+// inzwischen umgehängt hat. Läuft eine Konflikt-Eskalation, ist Stellvertreter 1 der legitime
+// Freigeber und kommt zuerst. Ohne zulässigen Kandidaten geht der Vorgang an die Admin-Gruppe.
+export function ermittleStriktesWeiterleitungsZiel(db, job, konto, aktuellePersonId) {
+  const konfliktmelder = listKonfliktmelder(db, job.id, 1);
+  const kandidaten = job.freigabe1_eskaliert_von
+    ? [konto.stellvertreter1_id, konto.freigeber1_id]
+    : [konto.freigeber1_id, konto.stellvertreter1_id];
+  for (const id of kandidaten) {
+    if (!id || konfliktmelder.has(id) || id === aktuellePersonId) continue;
+    const person = getPersonById(db, id);
+    if (person && person.aktiv) return { personId: id };
+  }
+  return { anAdmin: true };
 }

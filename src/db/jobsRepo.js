@@ -25,6 +25,16 @@ const VERTRETUNG_ZIEL_SUBQUERY = `
     )
 `;
 
+// Effektive Freigabe-2-Person in SQL -- muss exakt getEffectiveFreigeber2Id (unten) entsprechen,
+// test/unit/effektiverFreigeber2.test.js prüft beide gegeneinander. Admin-Eskalation
+// (freigabe2_eskaliert_an_admin) prüft jeder Aufrufer weiterhin selbst. Setzt
+// "FROM jobs JOIN konten ON konten.id = jobs.konto_id" voraus.
+export const EFFEKTIVER_FREIGEBER2_SQL = `(CASE
+    WHEN jobs.freigabe2_umgeleitet_an IS NOT NULL THEN jobs.freigabe2_umgeleitet_an
+    WHEN jobs.freigabe2_eskaliert_von IS NOT NULL THEN konten.stellvertreter2_id
+    ELSE konten.freigeber2_id
+  END)`;
+
 function extractDomain(email) {
   const at = email.lastIndexOf('@');
   return at === -1 ? null : email.slice(at + 1).toLowerCase();
@@ -574,14 +584,11 @@ export function listFreigabe2JobsForPerson(db, personId) {
        JOIN konten ON konten.id = jobs.konto_id
        WHERE jobs.status = 'freigabe2'
          AND jobs.freigabe2_eskaliert_an_admin = 0
-         AND (
-           (jobs.freigabe2_eskaliert_von IS NULL AND (konten.freigeber2_id = ? OR konten.freigeber2_id IN (${VERTRETUNG_ZIEL_SUBQUERY})))
-           OR (jobs.freigabe2_eskaliert_von IS NOT NULL AND (konten.stellvertreter2_id = ? OR konten.stellvertreter2_id IN (${VERTRETUNG_ZIEL_SUBQUERY})))
-         )
+         AND (${EFFEKTIVER_FREIGEBER2_SQL} = ? OR ${EFFEKTIVER_FREIGEBER2_SQL} IN (${VERTRETUNG_ZIEL_SUBQUERY}))
          AND NOT (jobs.quelle = 'spesen' AND jobs.eingereicht_von = ?)
        ORDER BY jobs.eingang_am`
     )
-    .all(personId, personId, personId, personId, personId);
+    .all(personId, personId, personId);
 }
 
 // listAbgeschlossenJobsForPerson feeds the dedicated "Meine abgeschlossenen Rechnungen" page
@@ -612,10 +619,9 @@ export function listAbgeschlossenJobsForPerson(db, personId, { seite = 1, proSei
          AND jobs.freigabe2_eskaliert_an_admin = 0
          AND (
            jobs.zugewiesen_an = ?
-           OR (jobs.freigabe2_eskaliert_von IS NULL AND konten.freigeber2_id = ?)
-           OR (jobs.freigabe2_eskaliert_von IS NOT NULL AND konten.stellvertreter2_id = ?)
+           OR ${EFFEKTIVER_FREIGEBER2_SQL} = ?
          )`;
-  const params = [personId, personId, personId];
+  const params = [personId, personId];
 
   const gesamtAnzahl = db
     .prepare(`SELECT COUNT(*) AS anzahl FROM jobs JOIN konten ON konten.id = jobs.konto_id ${where}`)
@@ -652,7 +658,10 @@ export function listAdminEskalierteFreigaben(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 1 ORDER BY eingang_am").all();
 }
 
+// Muss exakt EFFEKTIVER_FREIGEBER2_SQL (oben) entsprechen. Die Admin-Eskalation prüfen die
+// Aufrufer selbst (sie hat Vorrang vor allem hier).
 export function getEffectiveFreigeber2Id(job, konto) {
+  if (job.freigabe2_umgeleitet_an) return job.freigabe2_umgeleitet_an;
   return job.freigabe2_eskaliert_von ? konto.stellvertreter2_id : konto.freigeber2_id;
 }
 

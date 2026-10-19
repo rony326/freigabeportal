@@ -149,7 +149,11 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         // escalated once — and per loadAuthorized, the only person who could reach this line for
         // an already-escalated job is that Tier-1 escalated Stellvertreter2 themselves, now also
         // declaring their own conflict. Route to Portal-Admin instead of blocking.
-        const eskaliertAnAdmin = Boolean(job.freigabe2_eskaliert_von);
+        // Eine vom Admin umgeleitete Person, die selbst einen Konflikt erklärt, geht direkt an die
+        // Admin-Gruppe: der Admin hat die reguläre Kette (Freigeber2/Stellvertreter2) bewusst
+        // übergangen, ein Rücksprung dorthin wäre unklar. eskalierenFreigabe2AnAdmin löscht die
+        // Umleitung.
+        const eskaliertAnAdmin = Boolean(job.freigabe2_eskaliert_von) || Boolean(job.freigabe2_umgeleitet_an);
 
         db.exec('BEGIN');
         try {

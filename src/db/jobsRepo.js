@@ -322,7 +322,7 @@ export function abschliessenFreigabe2(db, jobId) {
   // now behave differently.)
   const result = db
     .prepare(
-      "UPDATE jobs SET status = 'abgeschlossen', abgeschlossen_am = ?, freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0 WHERE id = ? AND status = 'freigabe2'"
+      "UPDATE jobs SET status = 'abgeschlossen', abgeschlossen_am = ?, freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0, freigabe2_umgeleitet_an = NULL WHERE id = ? AND status = 'freigabe2'"
     )
     .run(new Date().toISOString(), jobId);
   return result.changes > 0;
@@ -365,7 +365,7 @@ export function eskalierenFreigabe1AnAdmin(db, jobId, { eskaliertVon, grund }) {
 
 export function eskalierenFreigabe2AnAdmin(db, jobId, { eskaliertVon, grund }) {
   db.prepare(
-    'UPDATE jobs SET freigabe2_eskaliert_an_admin = 1, freigabe2_eskaliert_von = ?, freigabe2_eskalationsgrund = ? WHERE id = ?'
+    'UPDATE jobs SET freigabe2_eskaliert_an_admin = 1, freigabe2_eskaliert_von = ?, freigabe2_eskalationsgrund = ?, freigabe2_umgeleitet_an = NULL WHERE id = ?'
   ).run(eskaliertVon, grund, jobId);
 }
 
@@ -394,6 +394,7 @@ export function releaseJob(db, jobId, personId, { hinweisKontoId } = {}) {
            freigabe1_eskaliert_an_admin = 0,
            freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL,
            freigabe2_eskaliert_an_admin = 0,
+           freigabe2_umgeleitet_an = NULL,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
            hinweis_konto_id = ?,
            pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
@@ -418,6 +419,7 @@ export function sendJobBackToGroup(db, jobId, currentZugewiesenAn, { bemerkung }
            freigabe1_eskaliert_an_admin = 0,
            freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL,
            freigabe2_eskaliert_an_admin = 0,
+           freigabe2_umgeleitet_an = NULL,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
            pool_rueckgesendet_bemerkung = ?, pool_rueckgesendet_von = ?, pool_rueckgesendet_am = ?
        WHERE id = ? AND zugewiesen_an = ? AND status = 'zugewiesen'`
@@ -433,7 +435,7 @@ export function sendJobBackToGroup(db, jobId, currentZugewiesenAn, { bemerkung }
 export function ablehnenJob(db, jobId, { abgelehntVon, grund }) {
   const result = db
     .prepare(
-      "UPDATE jobs SET status = 'abgelehnt', abgelehnt_von = ?, ablehnungsgrund = ? WHERE id = ? AND status IN ('freigabe2', 'zugewiesen')"
+      "UPDATE jobs SET status = 'abgelehnt', abgelehnt_von = ?, ablehnungsgrund = ?, freigabe2_umgeleitet_an = NULL WHERE id = ? AND status IN ('freigabe2', 'zugewiesen')"
     )
     .run(abgelehntVon, grund, jobId);
   return result.changes > 0;
@@ -615,13 +617,16 @@ export function listAbgeschlossenJobsForPerson(db, personId, { seite = 1, proSei
   const seiteGewuenscht = Math.max(1, Math.trunc(seite) || 1);
   const proSeiteSicher = Math.max(1, Math.trunc(proSeite) || ABGESCHLOSSEN_SEITENGROESSE);
 
+  // Die dritte Bedingung deckt die Person ab, die Freigabe 2 tatsächlich erteilt hat: nach einer
+  // Admin-Umleitung ist freigabe2_umgeleitet_an beim Abschluss bereits wieder gelöscht.
   const where = `WHERE jobs.status IN ('abgeschlossen', 'abgeholt', 'archiviert')
          AND jobs.freigabe2_eskaliert_an_admin = 0
          AND (
            jobs.zugewiesen_an = ?
            OR ${EFFEKTIVER_FREIGEBER2_SQL} = ?
+           OR EXISTS (SELECT 1 FROM freigaben f WHERE f.job_id = jobs.id AND f.rolle = 'freigeber2' AND f.person_id = ?)
          )`;
-  const params = [personId, personId];
+  const params = [personId, personId, personId];
 
   const gesamtAnzahl = db
     .prepare(`SELECT COUNT(*) AS anzahl FROM jobs JOIN konten ON konten.id = jobs.konto_id ${where}`)
@@ -704,6 +709,7 @@ export function forceReleaseJob(db, jobId) {
        SET status = 'unzugewiesen', zugewiesen_an = NULL, konto_id = NULL,
            freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe1_eskaliert_an_admin = 0,
            freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0,
+           freigabe2_umgeleitet_an = NULL,
            abgelehnt_von = NULL, ablehnungsgrund = NULL,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
            pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
@@ -719,7 +725,7 @@ export function forceReleaseJob(db, jobId) {
 // which is the correct next legitimate actor for a job already past Freigabe 1.
 export function forceEskalierenFreigabe2AnAdmin(db, jobId) {
   const result = db
-    .prepare("UPDATE jobs SET freigabe2_eskaliert_an_admin = 1 WHERE id = ? AND status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0")
+    .prepare("UPDATE jobs SET freigabe2_eskaliert_an_admin = 1, freigabe2_umgeleitet_an = NULL WHERE id = ? AND status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0")
     .run(jobId);
   return result.changes > 0;
 }

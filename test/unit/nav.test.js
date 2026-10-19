@@ -51,6 +51,7 @@ test('loadNavFlags sets isManager true for a Manager group member, and adminNav 
   assert.equal(res.locals.adminNav.abgelehnt, true);
   assert.equal(res.locals.adminNav.personen, true);
   assert.equal(res.locals.adminNav.auditLog, true);
+  assert.equal(res.locals.adminNav.vorgaenge, true);
   assert.equal(res.locals.adminNav.eskalation, false);
   assert.equal(res.locals.adminNav.erscheinungsbild, false);
   assert.equal(res.locals.adminNav.zeitstempel, false);

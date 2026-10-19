@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <title>Vorgang <%= vorgang.dateiname %> — <%= branding.seitenTitel %> Admin</title>
+</head>
+<body>
+  <%- include('../_header') %>
+  <main class="container py-4">
+    <%- include('./_nav') %>
+    <p><a href="/admin/vorgaenge">← Laufende Vorgänge</a></p>
+    <h1 class="h3"><%= vorgang.gegenueber %> <small class="text-body-secondary"><%= vorgang.dateiname %></small></h1>
+
+    <% if (umgehaengt) { %>
+      <div class="alert alert-success">Vorgang umgehängt. Die beteiligten Personen wurden per Mail informiert.</div>
+    <% } %>
+    <% if (errors.length) { %>
+      <div class="alert alert-danger"><ul class="mb-0"><% errors.forEach((e) => { %><li><%= e %></li><% }) %></ul></div>
+    <% } %>
+
+    <dl class="row">
+      <dt class="col-sm-3">Status</dt><dd class="col-sm-9"><%= vorgang.statusLabel %><% vorgang.kennzeichen.forEach((k) => { %> <span class="badge text-bg-secondary"><%= k %></span><% }) %></dd>
+      <dt class="col-sm-3">Art</dt><dd class="col-sm-9"><%= vorgang.artLabel %></dd>
+      <dt class="col-sm-3">Betrag</dt><dd class="col-sm-9"><%= vorgang.betrag || '—' %></dd>
+      <dt class="col-sm-3">Konto</dt><dd class="col-sm-9"><%= vorgang.kontoLabel %></dd>
+      <dt class="col-sm-3">Eingang / seit</dt><dd class="col-sm-9"><%= vorgang.eingangAm %> / <%= vorgang.seit %></dd>
+      <dt class="col-sm-3">Aktuell zuständig</dt>
+      <dd class="col-sm-9"><%= vorgang.zustaendig.name %><% if (vorgang.zustaendig.vertretungName) { %> (vertreten durch <%= vorgang.zustaendig.vertretungName %>)<% } %><% if (vorgang.haengt) { %> <span class="badge text-bg-danger">hängt</span><% } %></dd>
+      <% if (vorgang.prognoseF2) { %>
+        <dt class="col-sm-3">Voraussichtlich Freigabe 2</dt>
+        <dd class="col-sm-9"><%= vorgang.prognoseF2.offen ? 'noch offen' : vorgang.prognoseF2.name %><% if (vorgang.prognoseF2.prognose && !vorgang.prognoseF2.offen) { %> <span class="badge text-bg-light">Prognose</span><% } %></dd>
+      <% } %>
+      <% if (pdfUrl) { %>
+        <dt class="col-sm-3">Beleg</dt><dd class="col-sm-9"><a href="<%= pdfUrl %>" target="_blank" rel="noopener">PDF öffnen</a></dd>
+      <% } %>
+    </dl>
+
+    <h2 class="h5">Verlauf</h2>
+    <% if (auditLog.length === 0) { %>
+      <p class="text-body-secondary">Noch keine Einträge.</p>
+    <% } else { %>
+      <table class="table table-sm">
+        <thead><tr><th>Zeitpunkt</th><th>Ereignis</th><th>Person</th><th>Kommentar</th></tr></thead>
+        <tbody>
+          <% auditLog.forEach((e) => { %>
+            <tr><td><%= e.zeitpunkt %></td><td><%= e.ereignis %></td><td><%= e.person %><% if (e.vertretungFuerPerson) { %> (für <%= e.vertretungFuerPerson %>)<% } %></td><td><%= e.kommentar || '' %></td></tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+
+    <% if (darfEingreifen) { %>
+      <h2 class="h5 mt-4" id="umhaengen">Umhängen</h2>
+      <% if (ziele.length === 0) { %>
+        <p class="text-body-secondary">Keine Person kann diesen Vorgang übernehmen (alle Personen mit Konto-Rolle sind ausgeschlossen).</p>
+      <% } else { %>
+        <form method="post" action="/admin/vorgaenge/<%= vorgang.id %>/umhaengen" class="col-lg-8">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <input type="hidden" name="stand" value="<%= stand %>">
+          <div class="mb-3">
+            <label class="form-label" for="zielId">Neue zuständige Person</label>
+            <select class="form-select" id="zielId" name="zielId" required>
+              <option value="">Bitte wählen …</option>
+              <% ziele.forEach((p) => { %>
+                <option value="<%= p.churchtools_person_id %>"<%= werte.zielId === p.churchtools_person_id ? ' selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+              <% }) %>
+            </select>
+            <div class="form-text">Ausgeschlossen sind die aktuell zuständige Person sowie alle, die das Vier-Augen-Prinzip oder ein erklärter Interessenskonflikt sperrt.</div>
+          </div>
+          <% if (strikterFreigeber1) { %>
+            <div class="alert alert-warning">Strikte Freigeber-1-Prüfung ist aktiv: Ist die gewählte Person nicht <%= strikterFreigeber1 %>, wird der Vorgang bei der Kontierung an <%= strikterFreigeber1 %> weitergeleitet.</div>
+          <% } %>
+          <div class="mb-3">
+            <label class="form-label" for="bemerkung">Bemerkung (Pflicht, mindestens <%= minBemerkung %> Zeichen)</label>
+            <textarea class="form-control" id="bemerkung" name="bemerkung" rows="3" minlength="<%= minBemerkung %>" required><%= werte.bemerkung %></textarea>
+            <div class="form-text">Erscheint im Verlauf und in den Mails an die beteiligten Personen.</div>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="bestaetigung" name="bestaetigung" value="ja" required>
+            <label class="form-check-label" for="bestaetigung">Ich übergebe diesen Vorgang. Die bisher zuständige Person verliert den Zugriff.</label>
+          </div>
+          <button type="submit" class="btn btn-primary">Umhängen</button>
+        </form>
+      <% } %>
+    <% } else if (vorgang.status === 'abgelehnt' && vorgang.art === 'spesen') { %>
+      <p class="text-body-secondary mt-4">Abgelehnte Spesen-Positionen können nicht umgehängt werden, weil es für sie keinen Überarbeiten-Weg gibt.</p>
+    <% } %>
+  </main>
+  <%- include('../_footer') %>
+</body>
+</html>

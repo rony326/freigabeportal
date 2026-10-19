@@ -71,3 +71,14 @@ test('getVorlage resolves freigabe2-reminder and freigabe2-eskalation after seed
   assert.ok(eskalation.text.includes('%stunden%'));
   db.close();
 });
+
+test('admin-umzuweisung hat eine Standardvorlage mit Bemerkung und Link', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const vorlage = getVorlage(db, 'admin-umzuweisung');
+  assert.match(vorlage.betreff, /übergeben/);
+  for (const variable of ['%empfaengerName%', '%grund%', '%jobDateiname%', '%adminName%', '%bemerkung%', '%link%']) {
+    assert.ok(vorlage.text.includes(variable), variable);
+  }
+  db.close();
+});

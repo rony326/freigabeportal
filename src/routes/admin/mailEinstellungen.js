@@ -32,6 +32,8 @@ const VORLAGEN_FELDER = [
   ['kkBelegErinnerungText', 'mail_vorlage_kk_beleg_erinnerung_text'],
   ['kkBelegEingegangenBetreff', 'mail_vorlage_kk_beleg_eingegangen_betreff'],
   ['kkBelegEingegangenText', 'mail_vorlage_kk_beleg_eingegangen_text'],
+  ['adminUmzuweisungBetreff', 'mail_vorlage_admin_umzuweisung_betreff'],
+  ['adminUmzuweisungText', 'mail_vorlage_admin_umzuweisung_text'],
 ];
 
 export function createMailEinstellungenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {

@@ -13,6 +13,7 @@ export const EREIGNIS_LABEL = {
   pool_zuweisung: 'An Person weitergeleitet',
   pool_ruecksendung: 'An Gruppe zurückgesendet',
   freigabe1_weiterleitung: 'An Freigeber 1 weitergeleitet (Kontierung durch andere Person)',
+  admin_umzuweisung: 'Vorgang durch Administration übergeben',
   loeschung: 'Job gelöscht',
   kk_abrechnung_markiert: 'Als Kreditkartenabrechnung markiert',
   kk_markierung_aufgehoben: 'Kreditkarten-Markierung aufgehoben',

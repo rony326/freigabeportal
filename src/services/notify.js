@@ -12,7 +12,9 @@ const GRUPPE_ADMIN_TOKEN = 'gruppe:admin';
 // sicherheitskritisch und ignorieren den globalen Batching-Schalter -- sie warten nie auf den
 // nächsten Digest-Lauf. kk-beleg-eingegangen kommt dazu: die Person, die per Mail einen Beleg
 // eingereicht hat, soll sofort den Ergänzen-Link bekommen statt bis zum nächsten Digest zu warten.
-const IMMER_SOFORT_TYPEN = new Set(['sync-fehler', 'iban-warnung', 'kk-beleg-eingegangen']);
+// admin-umzuweisung: ein Admin hat einen laufenden Vorgang umgehängt -- die neue Person soll sofort
+// handeln können, die bisherige sofort wissen, dass sie nichts mehr tun muss.
+const IMMER_SOFORT_TYPEN = new Set(['sync-fehler', 'iban-warnung', 'kk-beleg-eingegangen', 'admin-umzuweisung']);
 
 // The low-level "enqueue and try now" primitive for an already-rendered mail. /admin/mails'
 // "erneut versenden" replays an already-rendered mail_log row verbatim through here and must

@@ -10,6 +10,7 @@ import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../../services/
 import { listLaufendeVorgaenge, beschreibeVorgang, STATUS_LABEL } from '../../services/vorgaengeUebersicht.js';
 import { LAUFENDE_STATUS, ermittleZustaendigkeit, standToken } from '../../services/vorgangZustaendigkeit.js';
 import { listUmhaengenZiele, umhaengeVorgang, istUmhaengbar, MIN_BEMERKUNG_LAENGE } from '../../services/vorgangUmhaengen.js';
+import { ermittleStriktesWeiterleitungsZiel } from '../../services/kontierungZugriff.js';
 
 const NICHT_LAUFEND = 'Dieser Vorgang existiert nicht oder ist nicht (mehr) in Bearbeitung.';
 
@@ -25,17 +26,21 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     return job && LAUFENDE_STATUS.includes(job.status) ? job : null;
   }
 
-  // Hinweis bei aktiver strikter Freigeber1-Prüfung: der Admin-Eingriff hebelt sie nicht aus.
-  function strikteHinweisPerson(job) {
+  // Hinweis bei aktiver strikter Freigeber1-Prüfung: der Admin-Eingriff hebelt sie nicht aus. Das
+  // Ziel kommt aus derselben Funktion wie die Weiterleitung in der Kontierung, damit der Hinweis
+  // nie eine Person nennt, die wegen eines erklärten Konflikts gar nicht in Frage kommt.
+  function strikterHinweis(job) {
     if (job.status !== 'zugewiesen' || !job.konto_id) return null;
     if (getConfigValue(db, 'kontierung_strikte_freigeber1_pruefung') !== '1') return null;
     const konto = getKontoById(db, job.konto_id);
-    const id = konto ? (job.freigabe1_eskaliert_von ? konto.stellvertreter1_id : konto.freigeber1_id) : null;
-    const person = id ? getPersonById(db, id) : null;
-    return person ? `${person.vorname} ${person.nachname}` : null;
+    if (!konto) return null;
+    const ziel = ermittleStriktesWeiterleitungsZiel(db, job, konto, null);
+    if (ziel.anAdmin) return { anAdmin: true };
+    const person = getPersonById(db, ziel.personId);
+    return person ? { name: `${person.vorname} ${person.nachname}` } : null;
   }
 
-  function renderDetail(req, res, status, job, { errors = [], werte = {}, umgehaengt = false } = {}) {
+  function renderDetail(req, res, status, job, { errors = [], werte = {}, umgehaengt = false, standOverride = null } = {}) {
     const darfEingreifen = kannEingreifen(req) && istUmhaengbar(job);
     res.status(status).render('admin/vorgang-detail', {
       vorgang: beschreibeVorgang(db, job),
@@ -43,8 +48,10 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
       pdfUrl: canViewJobPdf(db, config, req.currentPerson, job) ? buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS) : null,
       darfEingreifen,
       ziele: darfEingreifen ? listUmhaengenZiele(db, job) : [],
-      stand: standToken(job, ermittleZustaendigkeit(db, job)),
-      strikterFreigeber1: darfEingreifen ? strikteHinweisPerson(job) : null,
+      // Bei einer 422-Neuanzeige bleibt der abgeschickte Stand stehen: ein frisch berechneter
+      // würde eine zwischenzeitliche Änderung beim nächsten Absenden verschlucken (409 entfiele).
+      stand: standOverride ?? standToken(job, ermittleZustaendigkeit(db, job)),
+      strikterHinweis: darfEingreifen ? strikterHinweis(job) : null,
       minBemerkung: MIN_BEMERKUNG_LAENGE,
       errors,
       werte: { zielId: '', bemerkung: '', ...werte },
@@ -89,13 +96,14 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
       if (bemerkung.length < MIN_BEMERKUNG_LAENGE) errors.push(`Bitte eine Bemerkung mit mindestens ${MIN_BEMERKUNG_LAENGE} Zeichen angeben.`);
       if (req.body.bestaetigung !== 'ja') errors.push('Bitte das Umhängen bestätigen.');
       if (!zielId) errors.push('Bitte eine Zielperson auswählen.');
-      if (errors.length) return renderDetail(req, res, 422, job, { errors, werte });
+      const standErwartet = typeof req.body.stand === 'string' ? req.body.stand : '';
+      if (errors.length) return renderDetail(req, res, 422, job, { errors, werte, standOverride: standErwartet });
 
       const ergebnis = await umhaengeVorgang(db, config, mailer, {
         jobId: job.id,
         zielId,
         bemerkung,
-        standErwartet: typeof req.body.stand === 'string' ? req.body.stand : '',
+        standErwartet,
         admin: req.currentPerson,
         ip: req.ip,
       });
@@ -103,7 +111,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
 
       const aktuell = ladeLaufendenJob(job.id);
       if (ergebnis.fehler === 'phase' || !aktuell) return res.status(404).render('error', { message: NICHT_LAUFEND });
-      if (ergebnis.fehler === 'ziel') return renderDetail(req, res, 422, aktuell, { errors: ['Diese Person kann den Vorgang nicht übernehmen. Bitte eine Person aus der Liste wählen.'], werte });
+      if (ergebnis.fehler === 'ziel') return renderDetail(req, res, 422, aktuell, { errors: ['Diese Person kann den Vorgang nicht übernehmen. Bitte eine Person aus der Liste wählen.'], werte, standOverride: standErwartet });
       return renderDetail(req, res, 409, aktuell, { errors: ['Der Vorgang hat sich inzwischen geändert. Bitte den aktuellen Stand prüfen und erneut umhängen.'], werte: { bemerkung } });
     } catch (err) {
       next(err);

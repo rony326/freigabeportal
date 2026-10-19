@@ -69,8 +69,10 @@
             </select>
             <div class="form-text">Ausgeschlossen sind die aktuell zuständige Person sowie alle, die das Vier-Augen-Prinzip oder ein erklärter Interessenskonflikt sperrt.</div>
           </div>
-          <% if (strikterFreigeber1) { %>
-            <div class="alert alert-warning">Strikte Freigeber-1-Prüfung ist aktiv: Ist die gewählte Person nicht <%= strikterFreigeber1 %>, wird der Vorgang bei der Kontierung an <%= strikterFreigeber1 %> weitergeleitet.</div>
+          <% if (strikterHinweis && strikterHinweis.anAdmin) { %>
+            <div class="alert alert-warning">Strikte Freigeber-1-Prüfung ist aktiv: Weder Freigeber 1 noch Stellvertreter 1 kommen für diesen Vorgang in Frage (Interessenskonflikt erklärt oder inaktiv), deshalb wird der Vorgang bei der Kontierung an die Admin-Gruppe übergeben.</div>
+          <% } else if (strikterHinweis) { %>
+            <div class="alert alert-warning">Strikte Freigeber-1-Prüfung ist aktiv: Ist die gewählte Person nicht <%= strikterHinweis.name %>, wird der Vorgang bei der Kontierung an <%= strikterHinweis.name %> weitergeleitet.</div>
           <% } %>
           <div class="mb-3">
             <label class="form-label" for="bemerkung">Bemerkung (Pflicht, mindestens <%= minBemerkung %> Zeichen)</label>

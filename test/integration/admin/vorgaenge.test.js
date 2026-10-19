@@ -6,9 +6,9 @@ import { openDatabase } from '../../../src/db/index.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createKonto } from '../../../src/db/kontenRepo.js';
 import { createJob, getJobById } from '../../../src/db/jobsRepo.js';
-import { listFreigabenByJob } from '../../../src/db/freigabenRepo.js';
+import { listFreigabenByJob, createFreigabe } from '../../../src/db/freigabenRepo.js';
 import { listMailLog } from '../../../src/db/mailLogRepo.js';
-import { seedDefaults } from '../../../src/db/adminConfigRepo.js';
+import { seedDefaults, setConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
 import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
@@ -145,5 +145,50 @@ test('abgelehnte Spesen-Position: Detail zeigt kein Formular, POST liefert 404',
   const post = await request(app).post(`/admin/vorgaenge/${spesenId}/umhaengen`).set('x-test-person-id', '99').type('form')
     .send({ zielId: '5', bemerkung: 'Zuständigkeit geklärt', bestaetigung: 'ja', stand: 'egal' });
   assert.equal(post.status, 404);
+  db.close();
+});
+
+test('strikter Hinweis nennt das tatsächliche Weiterleitungsziel: Stellvertreter 1, wenn Freigeber 1 Konflikt erklärt hat', async () => {
+  const db = openDatabase(':memory:');
+  const jobId = seed(db);
+  setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
+  // Nach Überarbeitung steht der Konflikt nur noch im Verlauf, freigabe1_eskaliert_von ist leer.
+  createFreigabe(db, { jobId, personId: '1', rolle: 'freigabe1_eskalation', zeitpunkt: '2026-10-01T09:00:00.000Z', ip: '1', interessenskonflikt: true, kommentar: 'befangen', eskaliertVon: null });
+  db.prepare("UPDATE jobs SET zugewiesen_an = '5' WHERE id = ?").run(jobId);
+  const app = buildApp(db);
+  const res = await request(app).get(`/admin/vorgaenge/${jobId}`).set('x-test-person-id', '99');
+  assert.match(res.text, /wird der Vorgang bei der Kontierung an P2 M weitergeleitet/);
+  assert.doesNotMatch(res.text, /an P1 M weitergeleitet/);
+  db.close();
+});
+
+test('strikter Hinweis: sind Freigeber 1 und Stellvertreter 1 ausgeschlossen, nennt er die Admin-Gruppe', async () => {
+  const db = openDatabase(':memory:');
+  const jobId = seed(db);
+  setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
+  for (const personId of ['1', '2']) {
+    createFreigabe(db, { jobId, personId, rolle: 'freigabe1_eskalation', zeitpunkt: '2026-10-01T09:00:00.000Z', ip: '1', interessenskonflikt: true, kommentar: 'befangen', eskaliertVon: null });
+  }
+  db.prepare("UPDATE jobs SET zugewiesen_an = '5' WHERE id = ?").run(jobId);
+  const app = buildApp(db);
+  const res = await request(app).get(`/admin/vorgaenge/${jobId}`).set('x-test-person-id', '99');
+  assert.match(res.text, /bei der Kontierung an die Admin-Gruppe übergeben/);
+  db.close();
+});
+
+test('422-Neuanzeige behält den abgeschickten Stand, damit eine zwischenzeitliche Änderung erkannt wird', async () => {
+  const db = openDatabase(':memory:');
+  const jobId = seed(db);
+  const app = buildApp(db);
+  const token = stand((await request(app).get(`/admin/vorgaenge/${jobId}`).set('x-test-person-id', '99')).text);
+  // Zwischenzeitliche Änderung: jemand anderes übernimmt den Vorgang.
+  db.prepare("UPDATE jobs SET zugewiesen_an = '2' WHERE id = ?").run(jobId);
+  const fehler = await request(app).post(`/admin/vorgaenge/${jobId}/umhaengen`).set('x-test-person-id', '99').type('form')
+    .send({ zielId: '5', bemerkung: 'kurz', bestaetigung: 'ja', stand: token });
+  assert.equal(fehler.status, 422);
+  assert.equal(stand(fehler.text), token);
+  const erneut = await request(app).post(`/admin/vorgaenge/${jobId}/umhaengen`).set('x-test-person-id', '99').type('form')
+    .send({ zielId: '5', bemerkung: 'Zuständigkeit geklärt', bestaetigung: 'ja', stand: stand(fehler.text) });
+  assert.equal(erneut.status, 409);
   db.close();
 });

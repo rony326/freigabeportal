@@ -170,6 +170,17 @@ erteilt hat — unabhängig davon, was zum Zeitpunkt der Konto-Zuweisung
 galt (Konto-Rollen können sich zwischendurch geändert haben, oder eine
 Person hat sowohl Buchhaltungs- als auch Superadmin-Rolle).
 
+**Interessenskonflikt-Sperre, hart erzwungen**: Ebenso prüfen Freigabe 2
+(`loadAuthorized` in `src/routes/freigabe2.js`), Kontierung
+(`ladeKontierbarenJob` in `src/services/kontierungZugriff.js`) und
+Spesen-Freigabe 1 bei jeder Anfrage, ob die Person für genau diesen Job auf
+dieser Stufe einen Interessenskonflikt erklärt hat
+(`listKonfliktmelder` in `src/db/freigabenRepo.js`, gelesen aus dem
+`freigaben`-Verlauf). Falls ja: 403 — auch für Ferienvertretungen und
+Superadmins, und auch nachdem ein Admin den Vorgang umgehängt hat. Der
+Routing-Zustand (`*_eskaliert_von`, Admin-Flags) allein reicht dafür nicht,
+weil Umhängen und Ablehnung ihn zurücksetzen können.
+
 ## Kreditkarten-Belege — eigene Rechte
 
 Eine dritte, von der Job-Autorisierung oben unabhängige Rechte-Ebene:

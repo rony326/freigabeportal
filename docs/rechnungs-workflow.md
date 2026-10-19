@@ -192,6 +192,19 @@ harter Zusatz-Check verhindert, dass dieselbe Person, die Freigabe 1
 erteilt hat, auch Freigabe 2 erteilen kann (Vier-Augen-Prinzip, siehe
 [auth-und-rechte.md](auth-und-rechte.md)).
 
+**Interessenskonflikt-Sperre, hart erzwungen**: Ein erklärter Konflikt gehört
+zur Rechnung. Wer für diesen Job einen `freigaben`-Eintrag
+`freigabe2_eskalation` hat, bekommt bei `/freigabe2/:id` immer 403 —
+direkt zuständig, als Ferienvertretung oder als Superadmin — und sieht den
+Job nicht unter „Meine Freigaben“. Erreicht ein Job Freigabe 2 erneut
+(z. B. Admin-Umhängen → Ablehnung → Überarbeitung) und wäre die effektive
+Freigabe-2-Person ein solcher Konfliktmelder, setzt `abschliessenFreigabe1`
+`freigabe2_eskaliert_an_admin` und die „Freigabe 2 wartet“-Mail geht an die
+Admin-Gruppe. Dasselbe gilt bei Freigabe 1: Konfliktmelder (Einträge
+`freigabe1_eskalation` plus `freigabe1_eskaliert_von`) bekommen bei
+`/kontierung/:id` und `/spesen-freigabe1/:id` 403; zurück in den Pool bzw.
+an die Gruppe geben können sie einen Job weiterhin.
+
 ```mermaid
 flowchart TD
     A["POST /freigabe2/:id"] --> B{"Aktion?"}
@@ -356,6 +369,15 @@ Umgesetzt einmal als `getEffectiveFreigeber2Id` und einmal als
 Abschluss, Ablehnung, Admin-Eskalation und jedem Pool-Reset. Erklärt die
 umgeleitete Person einen Interessenskonflikt, geht der Vorgang direkt an die
 Admin-Gruppe.
+
+**Umhängen setzt Konflikte nicht zurück**: Das Umhängen ändert nur
+Routing-Felder (`zugewiesen_an`, `freigabe2_umgeleitet_an`, Admin-Flags).
+Die Sperre für Konfliktmelder liest den `freigaben`-Verlauf und greift im
+Moment des Handelns (siehe Abschnitt 3), auch wenn der Vorgang später über
+Ablehnung und Überarbeitung wieder bei einer gesperrten Person landen
+würde. Der Hinweis zur strikten Freigeber1-Prüfung auf der Detailseite nennt
+das tatsächliche Weiterleitungsziel (`ermittleStriktesWeiterleitungsZiel`)
+bzw. die Admin-Gruppe.
 
 **„Hängt“ in der Übersicht** ist exakt die Menge, die `listStalledJobs`
 liefert (siehe unten); ein `freigabe2`-Job, der bereits an die Admin-Gruppe

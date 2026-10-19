@@ -106,6 +106,8 @@ vorherigen Zyklus übersprungen zu werden.
 
 ### `freigabe2-erinnerungen`
 
+Empfänger des Reminders ist die effektive Freigabe-2-Person, also auch eine per Admin-Eingriff umgeleitete Person.
+
 ```mermaid
 flowchart TD
     A["Lauf startet"] --> B["Reminder-Phase:<br/>freigabe2-Jobs älter als<br/>freigabe2_reminder_stunden (Default 24h)<br/>OHNE bereits gesendeten Reminder"]
@@ -387,10 +389,11 @@ codierten Strings.
 | `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Kreditor erfasst |
 | `kk-abrechnung-zugewiesen` | Kreditkartenabrechnung (manuell oder automatisch erkannt) einer Karte zugeordnet — geht an die verantwortliche Person |
 | `kk-beleg-erinnerung` | seit langem offener Kreditkartenbeleg/-entwurf bzw. noch nicht abgeglichene Kreditkartenabrechnung (Job `kk-beleg-erinnerungen`, siehe oben) |
+| `admin-umzuweisung` | Admin hat einen laufenden Vorgang umgehängt; an die neue Person (plus deren Ferienvertretung) und die bisherige; ignoriert das Batching wie `sync-fehler`/`iban-warnung`/`kk-beleg-eingegangen` |
 | `kk-beleg-eingegangen` | per Mail eingereichter Kreditkartenbeleg als Entwurf angelegt — **immer sofort**, unabhängig vom Batching-Schalter (Link zum Vervollständigen soll nicht bis zum nächsten Digest warten) |
 
 **Batching:** Ist unter **Admin → Mail-Einstellungen** aktiviert, werden
-alle Typen ausser `sync-fehler`/`iban-warnung`/`kk-beleg-eingegangen`
+alle Typen ausser `sync-fehler`/`iban-warnung`/`admin-umzuweisung`/`kk-beleg-eingegangen`
 nicht sofort verschickt, sondern als `status = 'geplant'` eingereiht
 und vom `mail-digest`-Job (siehe oben) einmal täglich pro Empfänger zu
 einer Sammel-Mail zusammengefasst — `kk-abrechnung-zugewiesen` und

@@ -1,7 +1,7 @@
 # Admin-Dashboard laufende Vorgänge + Umhängen — Design
 
 Datum: 2026-10-19
-Status: Freigegeben (2026-10-19)
+Status: Umgesetzt (2026-10-19)
 
 ## Ziel
 
@@ -85,6 +85,8 @@ Anzeigeobjekt (inkl. aufgelöster Personennamen) erzeugt. Die
 Personennamen werden einmal pro Request gesammelt geladen, nicht pro Zeile.
 
 ## 2. Umhängen
+
+Umsetzung: Detailseite `GET /admin/vorgaenge/:id` enthält das Formular (keine eigene `…/umhaengen`-GET-Route).
 
 **UI:** Button "Umhängen" je Zeile (nur mit `workflow_eingreifen`) →
 `GET /admin/vorgaenge/:id/umhaengen`: aktueller Stand (Status, zuständige

@@ -100,7 +100,7 @@ den Portalzugang für seine konto-, karten- oder rechtebasierten Aufgaben.
 
 ## Additive Einzelrechte (`person_berechtigungen`)
 
-Zusätzlich zum Gruppenmodell gibt es elf einzeln vergebbare,
+Zusätzlich zum Gruppenmodell gibt es zwölf einzeln vergebbare,
 additive Rechte, unabhängig von ChurchTools-Gruppen
 (`src/middleware/permissions.js`, `src/db/personBerechtigungenRepo.js`):
 
@@ -114,7 +114,8 @@ additive Rechte, unabhängig von ChurchTools-Gruppen
 - `pool_zuweisen`: Pool-Belege an Personen zuweisen — erlaubt `POST /pool/:id/zuweisen`
 - `kreditkarten_verwalten`: Kreditkarten anlegen/bearbeiten/(de)aktivieren und Erfasser pflegen — erlaubt `/admin/kreditkarten/*`, siehe [kreditkarten-belege.md](kreditkarten-belege.md#rechte)
 - `sync_verwalten`: Sync konfigurieren (zusätzlich zu `sync_einsehen`)
-- `workflow_eingreifen`: blockierte Vorgänge per Force-Aktion bearbeiten
+- `vorgaenge_einsehen`: Übersicht laufender Vorgänge — erlaubt `GET /admin/vorgaenge` und `GET /admin/vorgaenge/:id`
+- `workflow_eingreifen`: in laufende Vorgänge eingreifen — Force-Aktionen bei hängenden Jobs, Altfälle und Umhängen (`POST /admin/vorgaenge/:id/umhaengen`)
 
 `superadmin` erhält jedes dieser Rechte automatisch über sein
 Rollen-Bundle, `manager` jedes ausser `sync_verwalten` und
@@ -128,7 +129,7 @@ Sieben Admin-Bereiche bleiben `superadmin`-exklusiv: Eskalationszeiten,
 Erscheinungsbild, Zeitstempel, Datenbank-Backup, Datei-Quarantäne, Module
 und Mail-Einstellungen. Für sie gibt es keine additiven Einzelrechte; die
 Routen prüfen die Rolle direkt. Der `CHECK`-Constraint akzeptiert nur die
-elf oben genannten Rechte.
+zwölf oben genannten Rechte.
 
 Details zur Rechte-Matrix pro Admin-Seite: [admin-bereich.md](admin-bereich.md).
 

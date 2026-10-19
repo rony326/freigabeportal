@@ -26,6 +26,7 @@ feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 | Personen | `/admin/personen` | `superadmin` oder `manager` |
 | E-Mail-Protokoll | `/admin/mails` | Einzelrecht `mails_einsehen` |
 | Personen-Sync | `/admin/sync` | `sync_einsehen`; Konfiguration zusätzlich `sync_verwalten`, Force-Aktionen zusätzlich `workflow_eingreifen` |
+| Laufende Vorgänge | `/admin/vorgaenge` | Einzelrecht `vorgaenge_einsehen` (Umhängen: `workflow_eingreifen`); `superadmin` ✓, `manager` ✓ (nur ansehen) |
 | Abgelehnte Rechnungen | `/admin/abgelehnt` | Einzelrecht `abgelehnt_verwalten` |
 | Altfälle | `/admin/altfaelle` | Einzelrecht `workflow_eingreifen` (nicht im Manager-Bündel) |
 | Geplante Jobs | `/admin/geplante-jobs` | Einzelrecht `geplante_jobs_verwalten` |
@@ -35,6 +36,8 @@ feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 | Kreditkarten | `/admin/kreditkarten` | Einzelrecht `kreditkarten_verwalten` |
 | Module | `/admin/module` | **nur** `superadmin` |
 | Mail-Einstellungen | `/admin/mail-einstellungen` | **nur** `superadmin` |
+
+Die Seite **Laufende Vorgänge** zeigt alle Vorgänge in `unzugewiesen`, `zugewiesen`, `freigabe2` und `abgelehnt`; mit `workflow_eingreifen` lassen sie sich umhängen. Details: [rechnungs-workflow.md](rechnungs-workflow.md#8-admin-eingriff-laufende-vorgänge-umhängen).
 
 Die mit **nur `superadmin`** markierten Bereiche lassen sich als
 Einzelrecht gar nicht vergeben — strukturell abgesichert über den

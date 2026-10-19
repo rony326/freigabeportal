@@ -95,3 +95,23 @@ test('seit: Freigabe 2 nimmt freigabe2_seit, Kontierung den letzten Verlaufseint
   assert.equal(v['f.pdf'].seit, '2026-10-04T08:00:00.000Z');
   db.close();
 });
+
+test('hängt folgt listStalledJobs: F2 ohne Konto nicht, eskalierte Kontierung mit inaktiver Person ja', () => {
+  const db = openDatabase(':memory:');
+  const { kontoA } = seed(db);
+  deactivatePerson(db, '2', 'churchtools_geloescht');
+  job(db, { name: 'ohnekonto', status: 'freigabe2' });
+  job(db, { name: 'eskaliert', status: 'zugewiesen', zugewiesen_an: '2', konto_id: kontoA, freigabe1_eskaliert_an_admin: 1 });
+  const v = Object.fromEntries(listLaufendeVorgaenge(db).map((x) => [x.dateiname, x]));
+  assert.equal(v['ohnekonto.pdf'].haengt, false);
+  assert.equal(v['eskaliert.pdf'].haengt, true);
+  db.close();
+});
+
+test('admin-eskalierte Freigabe 2 ist nie überfällig', () => {
+  const db = openDatabase(':memory:');
+  const { kontoA } = seed(db);
+  job(db, { name: 'esk', status: 'freigabe2', konto_id: kontoA, freigabe2_seit: '2020-01-01T00:00:00.000Z', freigabe2_eskaliert_an_admin: 1 });
+  assert.equal(listLaufendeVorgaenge(db)[0].ueberfaellig, false);
+  db.close();
+});

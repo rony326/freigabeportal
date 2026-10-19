@@ -1,5 +1,6 @@
 import { getKontoById } from '../db/kontenRepo.js';
 import { getKreditorById } from '../db/kreditorenRepo.js';
+import { listStalledJobs } from '../db/jobsRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { listFreigabenByJob } from '../db/freigabenRepo.js';
@@ -48,7 +49,7 @@ function prognoseFreigabe2(db, job, person) {
     const konto = kontoId ? getKontoById(db, kontoId) : null;
     if (!konto) continue;
     const spesenSelbst = job.quelle === 'spesen' && konto.freigeber2_id === job.eingereicht_von;
-    const personId = job.freigabe2_eskaliert_von || spesenSelbst ? konto.stellvertreter2_id : konto.freigeber2_id;
+    const personId = (job.freigabe2_eskaliert_von || spesenSelbst) ? konto.stellvertreter2_id : konto.freigeber2_id;
     return { personId, name: anzeigeName(person(personId)), prognose, offen: false };
   }
   return { personId: null, name: null, prognose: true, offen: true };
@@ -66,7 +67,7 @@ function istUeberfaellig(db, job, jetzt) {
     const stunden = Number(getConfigValue(db, 'reminder_stunden'));
     return Boolean(stunden) && Date.parse(job.eingang_am) < jetzt - stunden * STUNDE_MS;
   }
-  if (job.status === 'freigabe2' && job.freigabe2_seit) {
+  if (job.status === 'freigabe2' && job.freigabe2_seit && !job.freigabe2_eskaliert_an_admin) {
     const stunden = Number(getConfigValue(db, 'freigabe2_reminder_stunden'));
     return Boolean(stunden) && Date.parse(job.freigabe2_seit) < jetzt - stunden * STUNDE_MS;
   }
@@ -82,7 +83,12 @@ function kennzeichenVon(job) {
   return liste;
 }
 
-export function beschreibeVorgang(db, job, { jetzt = Date.now(), namen = namensAufloeser(db) } = {}) {
+// Gleiche Definition wie der Admin-Hänger-Bericht, damit beide nie auseinanderlaufen.
+function haengendeJobIds(db) {
+  return new Set(listStalledJobs(db).map((s) => s.job.id));
+}
+
+export function beschreibeVorgang(db, job, { jetzt = Date.now(), namen = namensAufloeser(db), haengendeIds = haengendeJobIds(db) } = {}) {
   const zust = ermittleZustaendigkeit(db, job);
   const zustaendigPerson = namen(zust.personId);
   const vertreterId = zust.personId ? getAktivenVertreter(db, zust.personId) : null;
@@ -107,7 +113,7 @@ export function beschreibeVorgang(db, job, { jetzt = Date.now(), namen = namensA
     zustaendig: { art: zust.art, personId: zust.personId, name: zustaendigName, vertretungName: vertreterId ? anzeigeName(namen(vertreterId)) : null },
     prognoseF2: prognoseFreigabe2(db, job, namen),
     kennzeichen: kennzeichenVon(job),
-    haengt: zust.art === 'person' && (!zustaendigPerson || !zustaendigPerson.aktiv || Boolean(zustaendigPerson.ct_person_unresolved)),
+    haengt: haengendeIds.has(job.id),
     ueberfaellig: istUeberfaellig(db, job, jetzt),
   };
 }
@@ -115,7 +121,7 @@ export function beschreibeVorgang(db, job, { jetzt = Date.now(), namen = namensA
 export function listLaufendeVorgaenge(db, filter = {}) {
   const platzhalter = LAUFENDE_STATUS.map(() => '?').join(', ');
   const jobs = db.prepare(`SELECT * FROM jobs WHERE status IN (${platzhalter}) ORDER BY eingang_am, id`).all(...LAUFENDE_STATUS);
-  const kontext = { jetzt: Date.now(), namen: namensAufloeser(db) };
+  const kontext = { jetzt: Date.now(), namen: namensAufloeser(db), haengendeIds: haengendeJobIds(db) };
   return jobs
     .map((job) => beschreibeVorgang(db, job, kontext))
     .filter((v) => !filter.status || v.status === filter.status)

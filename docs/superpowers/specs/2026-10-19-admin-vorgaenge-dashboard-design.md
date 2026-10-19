@@ -1,7 +1,7 @@
 # Admin-Dashboard laufende Vorgänge + Umhängen — Design
 
 Datum: 2026-10-19
-Status: In Review
+Status: Freigegeben (2026-10-19)
 
 ## Ziel
 

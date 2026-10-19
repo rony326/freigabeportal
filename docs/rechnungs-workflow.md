@@ -151,7 +151,7 @@ Das Weiterleitungsziel (`ermittleStriktesWeiterleitungsZiel` in
 [Stellvertreter 1, falls eine Freigabe-1-Konflikteskalation läuft
 (`freigabe1_eskaliert_von` gesetzt), sonst Freigeber 1; danach die jeweils
 andere], die auf diesem Job keinen Freigabe-1-Interessenskonflikt erklärt hat
-(`freigaben`-Rolle `freigabe1_eskalation` oder `freigabe1_eskaliert_von`),
+(`freigaben`-Eintrag `freigabe1_eskalation` oder Job-Feld `freigabe1_eskaliert_von`),
 nicht die aktuelle Person und aktiv ist. Qualifiziert sich niemand, wird der
 Job per `eskalierenFreigabe1AnAdmin` an die Admin-Gruppe eskaliert und diese
 erhält die Mail.

@@ -192,7 +192,7 @@ erDiagram
     }
     mail_log {
         int id PK
-        text typ "13 mögliche Werte"
+        text typ "14 mögliche Werte"
         int job_id FK
         text empfaenger
         text status "eingereiht | geplant | versendet | fehlgeschlagen"

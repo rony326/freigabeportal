@@ -7,6 +7,7 @@ import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import {
   createJob, getJobById, abschliessenFreigabe2, ablehnenJob, eskalierenFreigabe2AnAdmin,
   forceEskalierenFreigabe2AnAdmin, listAbgeschlossenJobsForPerson,
+  releaseJob, sendJobBackToGroup, forceReleaseJob,
 } from '../../src/db/jobsRepo.js';
 
 function seedUmgeleitet(db) {
@@ -53,5 +54,22 @@ test('Meine abgeschlossenen: wer Freigabe 2 erteilt hat, sieht den Job auch nach
   createFreigabe(db, { jobId, personId: '5', rolle: 'freigeber2', zeitpunkt: '2026-10-02T08:00:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
   abschliessenFreigabe2(db, jobId);
   assert.deepEqual(listAbgeschlossenJobsForPerson(db, '5').jobs.map((j) => j.id), [jobId]);
+  db.close();
+});
+
+// Spec §7: jeder Neustart über den Pool verwirft eine Admin-Umleitung. Im Status 'zugewiesen' kann
+// sie nur als Altlast stehen (ablehnenJob löscht sie), darf aber keinen neuen Zyklus überleben.
+test('Pool-Rückgabe (releaseJob, sendJobBackToGroup, forceReleaseJob) löscht die Umleitung', () => {
+  const db = openDatabase(':memory:');
+  const a = seedUmgeleitet(db);
+  const b = createJob(db, { eingangAm: '2026-10-01T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+  const c = createJob(db, { eingangAm: '2026-10-01T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'c.pdf', pdfPfad: '/tmp/c.pdf' });
+  for (const jobId of [a, b, c]) {
+    db.prepare("UPDATE jobs SET status = 'zugewiesen', konto_id = 1, zugewiesen_an = '1', freigabe2_umgeleitet_an = '5' WHERE id = ?").run(jobId);
+  }
+  assert.ok(releaseJob(db, a, '1'));
+  assert.ok(sendJobBackToGroup(db, b, '1', { bemerkung: 'falsches Konto' }));
+  assert.ok(forceReleaseJob(db, c));
+  for (const jobId of [a, b, c]) assert.equal(getJobById(db, jobId).freigabe2_umgeleitet_an, null);
   db.close();
 });

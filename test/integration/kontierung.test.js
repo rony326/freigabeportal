@@ -28,6 +28,7 @@ import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { fetchCsrfToken } from '../helpers/csrf.js';
 import { stampAndFinalize } from '../../src/services/pdfStamp.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../src/services/splitGruppenExport.js';
+import { bestimmeZahlungsart } from '../../src/services/paymentApproval.js';
 import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { freigabeSnapshotsFuerTest } from '../helpers/freigabeSnapshot.js';
 
@@ -1801,6 +1802,115 @@ test('POST /kontierung/:id/aufsplitten persists teilPosition as rechnungspositio
   const kinder = listSplitKinder(db, id);
   assert.equal(kinder.length, 2);
   assert.deepEqual(kinder.map((k) => k.rechnungsposition).sort(), ['Pos. 1', 'Pos. 2']);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /kontierung/:id/aufsplitten offers a Typ choice (Rechnung/Gutschrift), Rechnung preselected by default', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /name="typ"[^>]*value="rechnung"[^>]*checked/);
+  assert.doesNotMatch(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /kontierung/:id/aufsplitten preselects Gutschrift from the typ query param (the not-yet-saved Kontierung-Typ)', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).query({ typ: 'gutschrift' }).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /kontierung/:id/aufsplitten preselects Gutschrift when the job is already saved as Gutschrift', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  db.prepare("UPDATE jobs SET typ = 'gutschrift' WHERE id = ?").run(id);
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten with typ=gutschrift marks every split child and the parent as Gutschrift', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).typ, 'gutschrift');
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) assert.equal(kind.typ, 'gutschrift');
+  // Die Zahlung einer Splitgruppe richtet sich nach dem Elternjob — ohne dessen Typ würde eine
+  // aufgeteilte Gutschrift wie eine zu bezahlende Rechnung exportiert.
+  assert.equal(bestimmeZahlungsart(kinder[0], getJobById(db, id)), 'keine_zahlung');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten without (or with an unknown) typ saves the split children as Rechnung', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ gesamtbetrag: '100.00', typ: 'quatsch', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).typ, 'rechnung');
+  for (const kind of listSplitKinder(db, id)) assert.equal(kind.typ, 'rechnung');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten keeps the Gutschrift selection when the form is re-rendered with errors', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '30.00'] });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
+  assert.equal(listSplitKinder(db, id).length, 0);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });

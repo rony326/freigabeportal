@@ -15,6 +15,7 @@ import {
   getEffectiveFreigeber2Id,
   markJobAufgesplittet,
   setJobBetrag,
+  setJobTyp,
   addBelegSeiten,
   findJobsByKreditorUndRechnungsnummer,
   sendJobBackToGroup,
@@ -688,9 +689,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     res.redirect('/pool');
   });
 
-  function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors) {
-    res.status(status).render('kontierung-aufsplitten', { job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors });
+  function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ) {
+    res.status(status).render('kontierung-aufsplitten', { job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ });
   }
+
+  // Eine aufgesplittete Rechnung hat genau einen Typ für alle Teile — eine Mischung aus Rechnung
+  // und Gutschrift innerhalb eines Belegs gibt es nicht. Unbekannte Werte gelten als Rechnung,
+  // wie in der normalen Kontierung.
+  const normalisiereTyp = (typ) => (typ === 'gutschrift' ? 'gutschrift' : 'rechnung');
 
   router.get('/:id/aufsplitten', (req, res) => {
     const job = loadAuthorizedJob(req, res);
@@ -702,10 +708,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     // opened, so a value the person typed there but hasn't saved yet still shows up here instead
     // of falling back to whatever is (or isn't) persisted on the job.
     const queryBetrag = typeof req.query.betrag === 'string' && BETRAG_PATTERN.test(req.query.betrag) ? req.query.betrag : null;
+    // Wie beim Betrag: ein im Kontierungsformular gewählter, noch nicht gespeicherter Typ kommt
+    // als ?typ=... mit und hat Vorrang vor dem gespeicherten.
+    const typ = normalisiereTyp(req.query.typ === 'gutschrift' || req.query.typ === 'rechnung' ? req.query.typ : job.typ);
     renderAufsplittenForm(req, res, 200, job, konten, listKonten(db), queryBetrag || job.betrag || '', [
       { kontoId: '', betrag: '', interessenskonflikt: false },
       { kontoId: '', betrag: '', interessenskonflikt: false },
-    ], '', []);
+    ], '', [], typ);
   });
 
   router.post('/:id/aufsplitten', (req, res, next) => {
@@ -727,6 +736,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const konflikte = [].concat(req.body.teilInteressenskonflikt || []);
       const positionen = [].concat(req.body.teilPosition || []);
       const begruendung = req.body.begruendung || '';
+      const typ = normalisiereTyp(req.body.typ);
       const teileEingabe = kontoIds.map((kontoId, i) => ({
         kontoId,
         betrag: betraege[i] || '',
@@ -778,7 +788,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         }
         const belegEintrag = teilBelegByIndex.get(originalIndex);
         aufgeloesteTeile.push({
-          konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt, position: teil.position, originalIndex,
+          konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt, position: teil.position, originalIndex, typ,
           beleg: belegEintrag ? { buffer: belegEintrag.file.buffer, mimetype: belegEintrag.mimetype } : null,
         });
       });
@@ -800,7 +810,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       }
 
       if (errors.length > 0) {
-        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors);
+        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors, typ);
       }
 
       // Persisted on the parent even though it's about to be retired: the parent may never have
@@ -816,6 +826,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       db.exec('BEGIN');
       try {
         setJobBetrag(db, job.id, job.betrag);
+        setJobTyp(db, job.id, typ);
         const markiert = markJobAufgesplittet(db, job.id);
         if (!markiert) {
           db.exec('ROLLBACK');

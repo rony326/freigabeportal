@@ -132,9 +132,8 @@ Vorzeichen-/Gegenbuchungslogik. Bei `gutschrift` ist das Zahlungsziel
 optional (eine Gutschrift hat kein Fälligkeitsdatum), und das
 Rechnungsnummer-Feld wird in der UI zu "Gutschriftnummer" umbeschriftet
 (gleiche Spalte). Freigabe 1/2 laufen identisch zur normalen Rechnung, kein
-Shortcut. **Bekannte Lücke**: Aufsplitten (Abschnitt 5) übernimmt `typ`
-nicht an die Teil-Jobs — eine Gutschrift lässt sich aktuell effektiv nicht
-aufsplitten, jeder Teil-Job wird implizit wieder zur Rechnung.
+Shortcut. Auch beim Aufsplitten (Abschnitt 5) wird der Typ gewählt; er gilt
+für alle Teile gemeinsam.
 
 **Strikte Freigeber1-Prüfung (optional, `/admin/module`)**: ist der
 Schalter `kontierung_strikte_freigeber1_pruefung` aktiv, gilt Freigabe 1
@@ -272,10 +271,15 @@ oben). Details:
 Für Sammelrechnungen/Kreditkartenabrechnungen, die auf mehrere Konten
 verteilt werden müssen (`GET/POST /kontierung/:id/aufsplitten`):
 
-1. Die Person gibt den Gesamtbetrag und mindestens zwei Teile
+1. Die Person wählt den **Typ** (Rechnung/Gutschrift, vorbelegt aus dem
+   Kontierungsformular bzw. dem gespeicherten `typ`) und gibt den
+   Gesamtbetrag und mindestens zwei Teile
    (Konto + Betrag, optional eine Freitext-**Position auf der Rechnung**
    wie "Pos. 3", optional eigener Beleg pro Teil) ein; die Summe der Teile
-   muss dem Gesamtbetrag entsprechen (Toleranz 0.005).
+   muss dem Gesamtbetrag entsprechen (Toleranz 0.005). Der Typ wird auf
+   dem Ursprungs-Job und auf jedem Teil-Job gespeichert — eine Mischung
+   innerhalb eines Belegs gibt es nicht. Der Typ des Ursprungs-Jobs ist
+   massgeblich für die Zahlungsart der Splitgruppe.
 2. Der Ursprungs-Job wird auf `aufgesplittet` gesetzt und bleibt als
    historische Referenz stehen — er selbst gilt nie als freigegeben oder
    abgelehnt.

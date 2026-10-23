@@ -326,7 +326,12 @@
           // submitted yet, so the split's Gesamtbetrag doesn't need to be typed in again.
           var betragFeld = document.getElementById('betrag');
           var betrag = betragFeld ? betragFeld.value.trim() : '';
-          frame.src = betrag ? frameUrl + '?betrag=' + encodeURIComponent(betrag) : frameUrl;
+          // Same for the Typ radio, so a Gutschrift chosen here stays a Gutschrift in the split.
+          var typFeld = document.querySelector('input[name="typ"]:checked');
+          var params = [];
+          if (betrag) params.push('betrag=' + encodeURIComponent(betrag));
+          if (typFeld) params.push('typ=' + encodeURIComponent(typFeld.value));
+          frame.src = params.length ? frameUrl + '?' + params.join('&') : frameUrl;
         }
       });
       frame.addEventListener('load', function () {

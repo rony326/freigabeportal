@@ -19,6 +19,8 @@ import {
   setJobTyp,
   addBelegSeiten,
   findJobsByKreditorUndRechnungsnummer,
+  findMoeglicheDoppelrechnungen,
+  DOPPELRECHNUNG_FENSTER_TAGE,
   sendJobBackToGroup,
   hebeKkMarkierungAuf,
 } from '../db/jobsRepo.js';
@@ -451,6 +453,46 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
 
       if (kreditor) {
         const duplikate = findJobsByKreditorUndRechnungsnummer(db, kreditor.id, rechnungsnummer, job.id);
+        // Szenario 2 (Doppelscan, Rechnungsnummer evtl. anders abgetippt) — nur wenn die strengere
+        // Rechnungsnummer-Prüfung nicht schon angeschlagen hat, damit es nur eine Warnung gibt.
+        const doppelrechnungen = duplikate.length > 0
+          ? []
+          : findMoeglicheDoppelrechnungen(db, { job, kreditorId: kreditor.id, betrag: values.betrag, zahlungsziel: values.zahlungsziel });
+        if (doppelrechnungen.length > 0) {
+          const dupJobIds = doppelrechnungen.map((d) => `#${d.id}`).join(', ');
+          const betragText = String(values.betrag).replace(',', '.');
+          createFreigabe(db, {
+            jobId: job.id,
+            personId: req.currentPerson.churchtools_person_id,
+            rolle: 'duplikat_verdacht',
+            zeitpunkt: new Date().toISOString(),
+            ip: req.ip,
+            interessenskonflikt: false,
+            kommentar: `Gleicher Lieferant (${kreditor.name}), Betrag ${betragText} und Zahlungsziel ${values.zahlungsziel} wie Job ${dupJobIds} (Eingang innerhalb von ${DOPPELRECHNUNG_FENSTER_TAGE} Tagen).`,
+            eskaliertVon: null,
+          });
+          const empfaenger = new Set([req.currentPerson.email]);
+          for (const personId of [konto.freigeber1_id, konto.freigeber2_id]) {
+            const person = getPersonById(db, personId);
+            if (person) empfaenger.add(person.email);
+          }
+          for (const email of empfaenger) {
+            await sendNotification(db, mailer, {
+              to: email,
+              typ: 'duplikat-warnung',
+              jobId: job.id,
+              variablen: {
+                jobDateiname: job.dateiname,
+                ...kreditorNameVariablen(kreditor.name),
+                betrag: betragText,
+                zahlungsziel: values.zahlungsziel,
+                tage: DOPPELRECHNUNG_FENSTER_TAGE,
+                dupJobIds,
+                link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+              },
+            });
+          }
+        }
         if (duplikate.length > 0) {
           createFreigabe(db, {
             jobId: job.id,

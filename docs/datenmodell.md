@@ -180,7 +180,7 @@ erDiagram
         int id PK
         int job_id FK "kein enforced FK, siehe unten"
         text person_id FK
-        text rolle "14 mögliche Werte"
+        text rolle "15 mögliche Werte"
         text zeitpunkt
         text ip
         int interessenskonflikt

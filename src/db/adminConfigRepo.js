@@ -69,6 +69,8 @@ const DEFAULTS = {
   mail_vorlage_kk_beleg_erinnerung_text: 'Hallo %empfaengerName%,\n\nfolgende Kreditkartenbelege bzw. -abrechnungen sind seit mehr als %tage% Tagen offen (%anzahl%):\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_kk_beleg_eingegangen_betreff: 'Freigabeportal: Kreditkartenbeleg eingegangen – bitte ergänzen',
   mail_vorlage_kk_beleg_eingegangen_text: 'Hallo %empfaengerName%,\n\ndein per Mail eingereichter Kreditkartenbeleg ist im Portal eingegangen. Bitte ergänze Karte, Betrag, Kaufdatum und Beschreibung: %link%\n\nFreundliche Grüsse\n%portalName%',
+  mail_vorlage_duplikat_warnung_betreff: 'Freigabeportal: Mögliche doppelte Rechnung festgestellt',
+  mail_vorlage_duplikat_warnung_text: 'Bei der Kontierung von "%jobDateiname%" (Lieferant: %kreditorName%) wurde ein anderer Vorgang mit gleichem Betrag (%betrag%) und gleichem Zahlungsziel (%zahlungsziel%) gefunden, der innerhalb von %tage% Tagen eingegangen ist (%dupJobIds%). Möglicherweise wurde dieselbe Rechnung zweimal erfasst.\n\nBitte prüfen: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_admin_umzuweisung_betreff: 'Freigabeportal: Vorgang durch Administration übergeben',
   mail_vorlage_admin_umzuweisung_text: 'Hallo %empfaengerName%,\n\n%grund%\n\nVorgang: %jobDateiname%\nBemerkung von %adminName%: %bemerkung%\n\n%link%\n\nFreundliche Grüsse\n%portalName%',
   kk_beleg_verworfen_loeschen_tage: '90',

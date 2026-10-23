@@ -828,6 +828,54 @@ function migrateAdminUmzuweisung(db) {
   db.exec('CREATE INDEX IF NOT EXISTS mail_log_zustellung_idx ON mail_log(status, naechster_versuch_am)');
 }
 
+// Duplikaterkennung Szenario 2 (gleicher Kreditor/Betrag/Zahlungsziel binnen 14 Tagen): neue
+// freigaben-Rolle 'duplikat_verdacht' und Mail-Typ 'duplikat-warnung'. Gleiches Rebuild-Muster wie
+// migrateAdminUmzuweisung, läuft danach und vor migrateSecuritySchema (Audit-Trigger neu).
+function migrateDuplikatVerdacht(db) {
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'freigaben',
+    marker: 'duplikat_verdacht',
+    createSql: `CREATE TABLE freigaben (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL REFERENCES jobs(id),
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung', 'kk_abrechnung_markiert', 'kk_markierung_aufgehoben', 'kk_abgleich', 'admin_umzuweisung', 'duplikat_verdacht')),
+      zeitpunkt TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      interessenskonflikt INTEGER NOT NULL DEFAULT 0,
+      kommentar TEXT,
+      eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+      vertretung_fuer TEXT REFERENCES personen(churchtools_person_id),
+      vorher_zustaendig TEXT REFERENCES personen(churchtools_person_id),
+      ziel_person_id TEXT REFERENCES personen(churchtools_person_id)
+    )`,
+    spalten: ['id', 'job_id', 'person_id', 'rolle', 'zeitpunkt', 'ip', 'interessenskonflikt', 'kommentar', 'eskaliert_von', 'vertretung_fuer', 'vorher_zustaendig', 'ziel_person_id'],
+  });
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'mail_log',
+    marker: 'duplikat-warnung',
+    createSql: `CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('eingereiht', 'versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL,
+      eingereiht_am TEXT,
+      versuche INTEGER NOT NULL DEFAULT 0,
+      naechster_versuch_am TEXT,
+      sperre_token TEXT,
+      sperre_bis TEXT,
+      versendet_am TEXT
+    )`,
+    spalten: ['id', 'typ', 'job_id', 'empfaenger', 'betreff', 'text', 'status', 'fehler_details', 'versucht_am', 'eingereiht_am', 'versuche', 'naechster_versuch_am', 'sperre_token', 'sperre_bis', 'versendet_am'],
+  });
+  db.exec('CREATE INDEX IF NOT EXISTS mail_log_zustellung_idx ON mail_log(status, naechster_versuch_am)');
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -859,6 +907,7 @@ export function openDatabase(dbPath) {
   migrateMailLogSicherheitsalarm(db);
   migrateMailZustellung(db);
   migrateAdminUmzuweisung(db);
+  migrateDuplikatVerdacht(db);
   // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)
   // verwerfen die Trigger der alten Tabelle, und migrateSecuritySchema legt die Audit-Trigger mit
   // der aktuellen Spaltenliste neu an. person_berechtigungen gehört allein migrateSecuritySchema.

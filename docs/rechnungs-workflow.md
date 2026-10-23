@@ -160,8 +160,8 @@ Zusätzlich, unabhängig vom Ausgang: ein optional mit hochgeladener
 `mergeBelegInPdf` (`src/services/belegAnhaengen.js`) als zusätzliche
 Seite(n) in die bestehende Rechnungs-PDF eingefügt — als PDF durch
 Seiten-Kopie, als Bild durch eine neue, bildgrosse Seite. Beim Kontieren
-mit hinterlegtem Kreditor laufen ausserdem zwei unabhängige,
-nicht-blockierende Prüfungen: der IBAN-Abgleich gegen den gescannten
+mit hinterlegtem Kreditor laufen ausserdem drei nicht-blockierende
+Prüfungen: der IBAN-Abgleich gegen den gescannten
 QR-Code (siehe
 [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)) sowie
 ein Duplikat-Check auf **Kreditor + Rechnungsnummer** — stimmt die
@@ -172,7 +172,16 @@ und Freigeber 1+2 des gewählten Kontos sowie die kontierende Person per
 Mail informiert (`typ: 'rechnungsnummer-warnung'`, siehe
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)) —
 die Kontierung wird dadurch nicht blockiert, gleiches Muster wie bei der
-IBAN-Abweichung.
+IBAN-Abweichung. Schlägt diese Prüfung nicht an, folgt ein
+**Doppelscan-Check** (`findMoeglicheDoppelrechnungen`): gleicher Kreditor,
+gleicher Betrag (numerisch) und gleiches Zahlungsziel bei einem Job, der
+höchstens 14 Tage vorher oder nachher eingegangen ist
+(`DOPPELRECHNUNG_FENSTER_TAGE`; das Fenster verhindert Fehlalarme bei
+monatlich gleichen Beträgen). Ohne Zahlungsziel (z. B. Gutschrift) entfällt
+die Prüfung; Teile derselben aufgesplitteten Rechnung zählen nicht. Treffer
+erzeugen einen `freigaben`-Eintrag `duplikat_verdacht` ("Mögliche doppelte
+Rechnung festgestellt") und eine Mail `duplikat-warnung` an dieselben
+Empfänger — ebenfalls ohne Blockade.
 
 **Zurück in den Pool** (`POST /kontierung/:id/zurueck-in-pool`): setzt den
 Job auf `unzugewiesen` zurück und löscht alle Konto-/Eskalations-Felder —

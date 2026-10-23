@@ -73,6 +73,13 @@
         <textarea class="form-control" id="rechnungsnummerWarnungText" name="rechnungsnummerWarnungText" rows="4" required><%= rechnungsnummerWarnungText %></textarea>
       </div>
       <div class="mb-3">
+        <label class="form-label" for="duplikatWarnungBetreff">Mögliche doppelte Rechnung — Betreff</label>
+        <input type="text" class="form-control" id="duplikatWarnungBetreff" name="duplikatWarnungBetreff" value="<%= duplikatWarnungBetreff %>" required>
+        <label class="form-label mt-2" for="duplikatWarnungText">Mögliche doppelte Rechnung — Text</label>
+        <textarea class="form-control" id="duplikatWarnungText" name="duplikatWarnungText" rows="4" required><%= duplikatWarnungText %></textarea>
+        <div class="form-text">Variablen: %jobDateiname%, %kreditorName%, %betrag%, %zahlungsziel%, %tage%, %dupJobIds%, %link%, %portalName%</div>
+      </div>
+      <div class="mb-3">
         <label class="form-label" for="digestBetreff">Digest (tägliche Zusammenfassung) — Betreff</label>
         <input type="text" class="form-control" id="digestBetreff" name="digestBetreff" value="<%= digestBetreff %>" required>
         <label class="form-label mt-2" for="digestText">Digest — Text</label>

@@ -50,5 +50,5 @@ externer CRL-Erneuerung und Betriebsabnahmen bleiben offen. Die Upload-Prüfansi
 führt keine historische TSA-Ketten-/Sperrprüfung durch; LTV und OCSP fehlen.
 Audit-Pakete können lokal erzeugt werden, aber automatischer Transport und ein
 unabhängig kontrolliertes unveränderliches Ziel sind nicht implementiert.
-Altfallentscheidungen besitzen einen eigenen unveränderlichen Nachweis, sind
-aber weiterhin nicht in der zentralen Audit-Trigger-Liste enthalten.
+Altfallentscheidungen besitzen einen eigenen unveränderlichen Nachweis und
+sind seit 2026-10-23 auch in der zentralen Audit-Trigger-Liste enthalten.

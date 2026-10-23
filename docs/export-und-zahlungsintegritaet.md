@@ -261,9 +261,9 @@ mit Entscheidung "Nur archivieren" diese Felder weiterhin tragen können.
 - Gutschriften innerhalb einer Splitgruppe bestimmen die Zahlungsart der
   Gruppe nicht; massgeblich ist der Typ des Elternjobs.
 - Audit-Abdeckung: `altfall_entscheidungen` ist selbst append-only mit
-  Akteur, Zeitpunkt und Begründung, aber noch nicht in der zentralen
-  Audit-Trigger-Liste (`securitySchema.js`). Aufnahme koordiniert mit dem
-  Audit-Paket. Die neue `jobs`-Spalte wird bereits von den bestehenden
-  Audit-Triggern erfasst.
+  Akteur, Zeitpunkt und Begründung und steht zusätzlich in der zentralen
+  Audit-Trigger-Liste (`securitySchema.js`): jede Entscheidung erscheint als
+  `INSERT` in `audit_ereignisse`. Die neue `jobs`-Spalte wird ebenfalls von
+  den bestehenden Audit-Triggern erfasst.
 - Der produktive n8n-Workflow muss extern umgestellt und in Staging
   abgenommen werden.

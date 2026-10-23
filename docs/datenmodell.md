@@ -354,7 +354,8 @@ Append-only (Trigger gegen `UPDATE`/`DELETE`), höchstens eine Zeile je Job
 Admin → Vorgänge → Altfälle getroffene Entscheidung (`nachbestaetigt`/`nur_archiv`),
 den angezeigten Stand mit Herkunft je Wert (`angezeigte_daten`, JSON), den
 Fingerprint (`stand`), Person, Namen zum Zeitpunkt, Pflichtbegründung und
-Zeitpunkt.
+Zeitpunkt. Jede neue Zeile wird über die zentralen Audit-Trigger zusätzlich
+in `audit_ereignisse` protokolliert.
 
 ### `freigaben`
 Append-only-Protokoll jeder Freigabe-relevanten Aktion (Freigabe 1/2,

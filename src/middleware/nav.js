@@ -46,7 +46,7 @@ export function loadNavFlags(db, config) {
               pfad: res.locals.currentPath,
               spesenModulAktiv: res.locals.spesenModulAktiv !== false,
               zeigeKreditkarteNav: res.locals.zeigeKreditkarteNav,
-              offeneAufgaben: zaehleOffeneAufgaben(db, person.churchtools_person_id),
+              offeneAufgaben: zaehleOffeneAufgaben(db, person.churchtools_person_id, { istSuperadmin: res.locals.isSuperadmin }),
             });
       res.locals.navigation = { bereich, zeigeAdminReiter, gruppen };
     } else {

@@ -61,3 +61,57 @@ test('loadNavFlags setzt res.locals.navigation nur mit Person', () => {
   assert.equal(resAdmin.locals.navigation.bereich, 'admin');
   db.close();
 });
+
+test('zaehleOffeneAufgaben zählt eine Spesen-Freigabe 1', () => {
+  const db = setup();
+  const s = neuerJob(db, 'spesen.pdf');
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', quelle = 'spesen', zugewiesen_an = '50', eingereicht_von = '1' WHERE id = ?").run(s);
+  assert.equal(zaehleOffeneAufgaben(db, '50'), 1);
+  db.close();
+});
+
+test('zaehleOffeneAufgaben zählt eskalierte Abschnitte nur für Superadmins', () => {
+  const db = setup();
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '2' });
+  const k = neuerJob(db, 'esk-k.pdf');
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', freigabe1_eskaliert_an_admin = 1 WHERE id = ?").run(k);
+  const f = neuerJob(db, 'esk-f.pdf');
+  setKontierung(db, f, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2', freigabe2_eskaliert_an_admin = 1 WHERE id = ?").run(f);
+  const s = neuerJob(db, 'esk-s.pdf');
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', quelle = 'spesen', zugewiesen_an = '1', eingereicht_von = '2', freigabe1_eskaliert_an_admin = 1 WHERE id = ?").run(s);
+  assert.equal(zaehleOffeneAufgaben(db, '50'), 0);
+  assert.equal(zaehleOffeneAufgaben(db, '50', { istSuperadmin: false }), 0);
+  assert.equal(zaehleOffeneAufgaben(db, '50', { istSuperadmin: true }), 3);
+  db.close();
+});
+
+test('zaehleOffeneAufgaben zählt Vertretungsfälle (Ferienmodus) wie /pool', () => {
+  const db = setup();
+  const a = neuerJob(db, 'vertretung.pdf');
+  claimJob(db, a, '1');
+  db.prepare(
+    "UPDATE personen SET ferienmodus_stellvertreter_id = '50', ferienmodus_von = date('now', '-1 day'), ferienmodus_bis = date('now', '+1 day') WHERE churchtools_person_id = '1'"
+  ).run();
+  assert.equal(zaehleOffeneAufgaben(db, '50'), 1);
+  assert.equal(zaehleOffeneAufgaben(db, '1'), 1);
+  db.close();
+});
+
+test('loadNavFlags zählt für Superadmins eskalierte Aufgaben im Badge', () => {
+  const db = setup();
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
+  const k = neuerJob(db, 'esk.pdf');
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1', freigabe1_eskaliert_an_admin = 1 WHERE id = ?").run(k);
+  const mw = loadNavFlags(db, config);
+  const badge = (gruppen) => JSON.stringify(gruppen);
+  const resAdmin = { locals: {} };
+  mw({ path: '/pool', currentPerson: { churchtools_person_id: '50', gruppen: ['20'] } }, resAdmin, () => {});
+  const resNormal = { locals: {} };
+  mw({ path: '/pool', currentPerson: { churchtools_person_id: '50', gruppen: ['10'] } }, resNormal, () => {});
+  const aufgaben = (res) => res.locals.navigation.gruppen.flatMap((g) => g.punkte ?? g.eintraege ?? g.items ?? []).find((p) => /Aufgaben/.test(p.label ?? p.titel ?? ''));
+  assert.ok(aufgaben(resAdmin), badge(resAdmin.locals.navigation.gruppen));
+  assert.equal(aufgaben(resAdmin).zaehler ?? aufgaben(resAdmin).badge, 1, badge(resAdmin.locals.navigation.gruppen));
+  assert.ok(!(aufgaben(resNormal).zaehler ?? aufgaben(resNormal).badge));
+  db.close();
+});

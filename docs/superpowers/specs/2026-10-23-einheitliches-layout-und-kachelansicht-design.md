@@ -104,8 +104,10 @@ auf den Reiter „Admin“.
 
 **Zähler (Badges):** „Aufgaben“ zeigt die Zahl der persönlich offenen Aufgaben.
 Das ist die Summe der Einträge in den persönlichen Abschnitten der Pool-Seite:
-eigene offene Kontierungen, eigene Freigaben, eigene Spesen-Freigaben. Der
-allgemeine Pool zählt nicht mit. Ohne offene Aufgaben wird kein Zähler gezeigt.
+eigene offene Kontierungen, eigene Freigaben, eigene Spesen-Freigaben. Bei
+Superadmins zählen zusätzlich die drei Abschnitte mit eskalierten
+Kontierungen, Freigaben und Spesen-Freigaben mit, weil auch dort Arbeit wartet.
+*(Entscheidung von Claude)* Der allgemeine Pool zählt nicht mit. Ohne offene Aufgaben wird kein Zähler gezeigt.
 Ein Zähler bei „Kreditkartenbelege“ (offene Vorab-Belege bzw. offene
 Abgleiche) ist erwünscht, wenn er sich mit einer einfachen Abfrage ermitteln
 lässt. Andernfalls entfällt er. *(Entscheidung von Claude)*
@@ -121,11 +123,20 @@ lässt. Andernfalls entfällt er. *(Entscheidung von Claude)*
 
 ### Seiten mit PDF-Vorschau
 
-Betroffen: Kontierung, Kontierung-Aufsplitten, Freigabe 2, Spesen-Freigabe 1,
-KK-Abgleich. Dort ist die Seitenleiste standardmässig auf eine schmale
+Betroffen: Kontierung, Freigabe 2, Spesen-Freigabe 1, KK-Abgleich. Dort ist die Seitenleiste standardmässig auf eine schmale
 Symbolleiste (ca. 44 px) eingeklappt. Jedes Symbol hat einen Tooltip und ein
 `aria-label`. Dadurch behalten PDF und Formular fast die ganze Breite des
-gemeinsamen 1320-px-Rahmens. Die heutigen Zusatzknöpfe „← Zurück“,
+gemeinsamen 1320-px-Rahmens. Dass das PDF auf sehr grossen Monitoren etwas
+kleiner wird als heute, ist bewusst akzeptiert.
+
+**Ausnahme Aufsplitten:** `views/kontierung-aufsplitten.ejs` ist keine eigene
+Seite, sondern wird von `kontierung.ejs` im Modal `#aufsplitten-modal` per
+`<iframe>` geladen. Das bleibt so. Die Ansicht bekommt **kein** Grundgerüst,
+also keine obere Leiste, keine Seitenleiste und keinen Footer. Sie nutzt nur den
+gemeinsamen `<head>`-Teil (Bootstrap einmal laden, Branding, Theme). Das Layout
+braucht dafür eine ausdrückliche Variante „ohne Rahmen“, mit Test.
+*(Entscheidung von Claude, folgt aus dem Nicht-Ziel „keine
+Funktionsänderung“)* Die heutigen Zusatzknöpfe „← Zurück“,
 „Vorschau neu laden“ und „+ Lieferant“ wandern aus der Navigationszeile in eine
 Aktionszeile über dem Seiteninhalt. Ihre Reihenfolge bleibt erhalten.
 
@@ -171,15 +182,27 @@ Personen, Mail-Protokoll, Audit-Log, Geplante Jobs, Sync, Backup und Quarantäne
 
 ### Wie eine Kachel aussieht
 
+Grundregel: **Eine Kachel zeigt genau die Felder und Aktionen der
+Tabellenzeile derselben Liste, nur anders angeordnet.** Für Kacheln werden
+keine zusätzlichen Daten geladen, Routen und Repos bleiben unverändert. Was
+die Tabelle nicht hat, hat auch die Kachel nicht. Die Felder im visuellen
+Entwurf sind Beispiele. *(Entscheidung von Claude, folgt aus „reiner Umbau“)*
+
 - Kacheln stehen im Raster, je nach Breite 1–4 Spalten.
-- **Belege mit Vorschaubild** (Pool-Abschnitte, Abgeschlossene, Kreditkarte,
-  Meine Spesen): oben das Vorschaubild. Ein Klick öffnet die PDF-Vorschau wie
-  heute (`.pdf-preview`). Darunter folgen Lieferant/Einreicher als Titel, der
-  Betrag hervorgehoben, dann Quelle, Eingang und Konto bzw. Kontohinweis. Unten
-  stehen Status und Aktionen.
-- **Admin-Vorgänge:** ohne Bild. Titel Lieferant/Einreicher, Art, Betrag,
-  Status mit allen Kennzeichen, „seit“, Zuständig (mit Vertretung),
-  voraussichtliche Freigabe 2, „Umhängen“.
+- Das wichtigste Feld der Zeile wird Kacheltitel: Lieferant/Einreicher oder,
+  wo es das nicht gibt, der Dateiname. Ein vorhandener Betrag wird
+  hervorgehoben. Die übrigen Felder folgen als kleine Zeilen „Bezeichnung:
+  Wert“. Status und Aktionen stehen unten.
+- **Kacheln mit Bild:** Hat die Tabellenzeile ein Vorschaubild (heute die
+  Pool-Abschnitte über `_job_table.ejs` und die Kreditkartenbelege), steht es
+  gross oben in der Kachel. Ein Klick darauf macht dasselbe wie heute: Im Pool
+  öffnet er die `.pdf-preview`, bei Kreditkartenbelegen die Datei in einem
+  neuen Tab.
+- **Kacheln ohne Bild:** alle anderen Listen, also Abgeschlossene Rechnungen,
+  Meine Spesen, Admin → Laufende Vorgänge, Abgelehnte und Altfälle. Bei
+  Laufende Vorgänge sind das Lieferant/Einreicher, Art, Betrag, Status mit
+  allen Kennzeichen, „seit“, Zuständig (mit Vertretung), voraussichtliche
+  Freigabe 2 und „Umhängen“.
 - Jede Kachel enthält **alle** Angaben und **alle** Aktionen der
   Tabellenzeile, auch Formulare wie „Beanspruchen“, „An Person senden“ und
   „In den Pool legen“. Ebenso Hinweise wie die Rückläufer-Bemerkung.

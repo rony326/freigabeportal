@@ -1,15 +1,4 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Altfall prüfen — <%= branding.seitenTitel %> Admin</title>
-</head>
-<body>
-  <%- include('../_header') %>
-  <main class="container py-4">
-    <%- include('./_nav') %>
+<%- include('../_seite_anfang', { titel: 'Altfall prüfen' }) %>
     <% const m = anzeige.daten.metadaten; const z = anzeige.daten.zahlung; const h = anzeige.daten.herkunft; %>
     <% const herkunftText = { freigabe_snapshot: 'eingefrorener Freigabe-Snapshot', freigabe_snapshot_unbestaetigt: 'Freigabe-Snapshot, damals nicht bestätigt', jobdatensatz: 'aktueller Jobdatensatz (nicht freigabegebunden)', kontenstamm_aktuell: 'aktueller Kontenstamm (nicht freigabegebunden)', qr_scan_eingang: 'QR-Scan beim Eingang', churchtools_aktuell: 'AKTUELLER ChurchTools-Stand, nicht der historische Freigabestand', nicht_verfuegbar: 'nicht verfügbar', jobdatensatz_und_aktueller_stamm: 'Jobdatensatz und aktueller Stamm', lieferanten_iban_aktuell: 'aktuell hinterlegte Lieferanten-IBANs' }; %>
     <h1>Altfall <%= anzeige.job.id %>: <%= anzeige.job.dateiname %></h1>
@@ -78,7 +67,4 @@
       <button type="submit" class="btn btn-primary">Entscheidung speichern</button>
       <a href="/admin/altfaelle" class="btn btn-outline-secondary">Abbrechen</a>
     </form>
-  </main>
-  <%- include('../_footer') %>
-</body>
-</html>
+<%- include('../_seite_ende') %>

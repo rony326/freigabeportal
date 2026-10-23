@@ -266,8 +266,10 @@ test('Hauptmenü shows both Aufgaben and Admin entries for a Portal-Admin, Admin
   await agent.get('/auth/callback').query({ code: 'the-code', state });
 
   const res = await agent.get('/admin');
-  assert.match(res.text, /href="\/pool">Aufgaben/);
-  assert.match(res.text, /class="dropdown-item active" href="\/admin">Admin/);
+  const reiter = res.text.match(/<nav class="portal-reiter[\s\S]*?<\/nav>/);
+  assert.ok(reiter, 'Reiter fehlen');
+  assert.match(reiter[0], /<a [^>]*href="\/pool"[^>]*>Portal<\/a>/);
+  assert.match(reiter[0], /<a [^>]*href="\/admin"[^>]*aria-current="page"[^>]*>Admin<\/a>/);
   db.close();
 });
 

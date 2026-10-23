@@ -1,15 +1,4 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Datei-Quarantäne — <%= branding.seitenTitel %> Admin</title>
-</head>
-<body>
-  <%- include('../_header') %>
-  <main class="container py-4">
-    <%- include('./_nav') %>
+<%- include('../_seite_anfang', { titel: 'Datei-Quarantäne' }) %>
     <h1>Datei-Quarantäne</h1>
     <p class="text-muted">Finale Dokumente, die nach einem Abbruch vor dem Datenbank-Commit von keinem Beleg referenziert werden, werden hierher verschoben — nie automatisch gelöscht. Endgültiges Löschen oder Zurückholen erfordert eine Begründung und wird protokolliert.</p>
     <% if (ergebnis) { %>
@@ -53,7 +42,4 @@
         </table>
       </div>
     <% } %>
-  </main>
-  <%- include('../_footer') %>
-</body>
-</html>
+<%- include('../_seite_ende') %>

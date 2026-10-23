@@ -11,8 +11,10 @@ import { createApp } from '../../src/app.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, claimJob } from '../../src/db/jobsRepo.js';
+import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
 
 const viewsDir = new URL('../../views', import.meta.url).pathname;
+const adminViewsDir = new URL('../../views/admin', import.meta.url).pathname;
 
 function seitenViews(dir) {
   return readdirSync(dir)
@@ -23,20 +25,30 @@ function seitenViews(dir) {
 test('Layout-Sweep: keine View baut ihr Grundgerüst selbst', () => {
   const views = seitenViews(viewsDir);
   assert.ok(views.length >= 17, `erwartet mindestens 17 Views, gefunden ${views.length}`);
-  for (const datei of views) {
+  const adminViews = seitenViews(adminViewsDir);
+  assert.ok(adminViews.length >= 25, `erwartet mindestens 25 Admin-Views, gefunden ${adminViews.length}`);
+  for (const datei of [...views, ...adminViews]) {
     const inhalt = readFileSync(datei, 'utf8');
-    for (const verboten of ['<!DOCTYPE', 'container-fluid', "include('_header'", "include('../_header'", 'navContainerClass']) {
+    for (const verboten of ['<!DOCTYPE', 'container-fluid', "include('_header'", "include('../_header'", "include('./_nav')", 'navContainerClass']) {
       assert.ok(!inhalt.includes(verboten), `${datei} enthält "${verboten}"`);
     }
   }
 });
 
 test('Layout-Sweep: jede View beginnt mit genau einem _seite_anfang und endet mit _seite_ende', () => {
-  for (const datei of seitenViews(viewsDir)) {
+  const alle = [
+    ...seitenViews(viewsDir).map((datei) => ({ datei, praefix: '' })),
+    ...seitenViews(adminViewsDir).map((datei) => ({ datei, praefix: '../' })),
+  ];
+  for (const { datei, praefix } of alle) {
     const inhalt = readFileSync(datei, 'utf8').trim();
-    assert.ok(inhalt.startsWith("<%- include('_seite_anfang'"), `${datei} beginnt nicht mit _seite_anfang`);
-    assert.equal(inhalt.split("include('_seite_anfang'").length - 1, 1, `${datei}: _seite_anfang nicht genau einmal`);
-    assert.match(inhalt, /<%- include\('_seite_ende'[^%]*%>$/, `${datei} endet nicht mit _seite_ende`);
+    assert.ok(inhalt.startsWith(`<%- include('${praefix}_seite_anfang'`), `${datei} beginnt nicht mit ${praefix}_seite_anfang`);
+    assert.equal(inhalt.split("_seite_anfang'").length - 1, 1, `${datei}: _seite_anfang nicht genau einmal`);
+    assert.match(inhalt, new RegExp(`<%- include\\('${praefix.replace('.', '\\.')}_seite_ende'[^%]*%>$`), `${datei} endet nicht mit ${praefix}_seite_ende`);
+    // rahmen 'ohne' muss am Anfang und am Ende gleich gesetzt sein (sonst bleibt der Footer stehen bzw. fehlt ein </div>).
+    const anfangOhne = /_seite_anfang'[^%]*rahmen:\s*'ohne'/.test(inhalt);
+    const endeOhne = /_seite_ende'[^%]*rahmen:\s*'ohne'/.test(inhalt);
+    assert.equal(endeOhne, anfangOhne, `${datei}: rahmen 'ohne' in _seite_anfang und _seite_ende nicht gleich`);
   }
 });
 
@@ -58,15 +70,15 @@ function testConfig() {
   };
 }
 
-async function loginBuchhaltung(db) {
+async function loginBuchhaltung(db, { personId = 1, vorname = 'Buch', nachname = 'Halter', buchhaltung = true, admin = false } = {}) {
   const config = testConfig();
   const client = setupMockChurchTools(config.churchtools.baseUrl);
   client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
   client
     .intercept({ path: '/oauth/userinfo', method: 'GET' })
-    .reply(200, { id: 1, firstName: 'Buch', lastName: 'Halter', email: 'buch@example.org' });
-  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 1 }] });
-  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+    .reply(200, { id: personId, firstName: vorname, lastName: nachname, email: 'buch@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: buchhaltung ? [{ personId }] : [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: admin ? [{ personId }] : [] });
   const app = createApp({ db, config });
   const agent = request.agent(app);
   const loginRes = await agent.get('/auth/login');
@@ -166,5 +178,58 @@ test('Aufsplitten-View (iframe im Modal) rendert ohne Kopfleiste und ohne Footer
   assert.doesNotMatch(res.text, /portal-seitenleiste/);
   assert.match(res.text, /<main class="container-xxl py-3">/);
   assert.equal(anzahl(res.text, 'bootstrap.min.css'), 1);
+  db.close();
+});
+
+function reiterUndLeiste(text) {
+  const reiter = text.match(/<nav class="portal-reiter[\s\S]*?<\/nav>/);
+  const leiste = text.match(/<nav class="portal-seitenleiste[^"]*"[\s\S]*?<\/nav>/);
+  assert.ok(reiter, 'Reiter fehlen');
+  assert.ok(leiste, 'Seitenleiste fehlt');
+  return { reiter: reiter[0], leiste: leiste[0] };
+}
+
+test('GET /admin/konten/neu (Superadmin): Konten aktiv, Reiter Admin aktiv, alle 4 Gruppenüberschriften, Titel mit Admin', async () => {
+  const db = openDatabase(':memory:');
+  const agent = await loginBuchhaltung(db, { personId: 9, vorname: 'Super', nachname: 'Admin', buchhaltung: false, admin: true });
+  const res = await agent.get('/admin/konten/neu');
+  assert.equal(res.status, 200);
+  const { reiter, leiste } = reiterUndLeiste(res.text);
+  assert.match(leiste, /<a [^>]*href="\/admin\/konten"[^>]*aria-current="page"/);
+  assert.equal(anzahl(leiste, 'aria-current="page"'), 1);
+  assert.match(reiter, /<a [^>]*href="\/admin"[^>]*aria-current="page"[^>]*>Admin<\/a>/);
+  for (const titel of ['Vorgänge', 'Stammdaten', 'Einstellungen', 'Betrieb']) {
+    assert.match(leiste, new RegExp(`portal-gruppe-titel">${titel}<`), `Gruppe ${titel} fehlt`);
+  }
+  assert.doesNotMatch(res.text, /nav-pills/);
+  assert.equal(anzahl(res.text, 'bootstrap.min.css'), 1);
+  assert.match(res.text, /<title>Konto — .* Admin<\/title>/);
+  db.close();
+});
+
+test('GET /admin/mails (nur mails_einsehen): nur Gruppe Betrieb, Reiter Admin vorhanden', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '5', vorname: 'Nur', nachname: 'Mails', email: 'buch@example.org', gruppen: [], loggedInNow: false });
+  setBerechtigungenForPerson(db, '5', ['mails_einsehen']);
+  const agent = await loginBuchhaltung(db, { personId: 5, vorname: 'Nur', nachname: 'Mails', buchhaltung: false });
+  const res = await agent.get('/admin/mails');
+  assert.equal(res.status, 200);
+  const { reiter, leiste } = reiterUndLeiste(res.text);
+  assert.equal(anzahl(leiste, 'portal-gruppe-titel'), 1);
+  assert.match(leiste, /portal-gruppe-titel">Betrieb</);
+  assert.match(leiste, /<a [^>]*href="\/admin\/mails"[^>]*aria-current="page"/);
+  assert.match(reiter, /<a [^>]*href="\/admin"[^>]*aria-current="page"[^>]*>Admin<\/a>/);
+  db.close();
+});
+
+test('GET /admin (Dashboard): Reiter Admin aktiv, kein Seitenleisten-Punkt aktiv, Titel ohne doppeltes Admin', async () => {
+  const db = openDatabase(':memory:');
+  const agent = await loginBuchhaltung(db, { personId: 9, vorname: 'Super', nachname: 'Admin', buchhaltung: false, admin: true });
+  const res = await agent.get('/admin');
+  assert.equal(res.status, 200);
+  const { reiter, leiste } = reiterUndLeiste(res.text);
+  assert.match(reiter, /<a [^>]*href="\/admin"[^>]*aria-current="page"[^>]*>Admin<\/a>/);
+  assert.equal(anzahl(leiste, 'aria-current'), 0);
+  assert.match(res.text, /<title>Übersicht — [^<]* Admin<\/title>/);
   db.close();
 });

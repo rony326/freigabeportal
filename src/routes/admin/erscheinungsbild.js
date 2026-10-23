@@ -3,7 +3,7 @@ import multer from 'multer';
 import { mitAuditKontext } from '../../services/auditContext.js';
 import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
+import { getConfigValue, setConfigValue, deleteConfigValue } from '../../db/adminConfigRepo.js';
 
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
 const VALID_THEME_DEFAULTS = new Set(['hell', 'dunkel', 'system']);
@@ -11,6 +11,12 @@ const VALID_LOGO_AUSRICHTUNGEN = new Set(['links', 'mitte', 'rechts']);
 const ALLOWED_MIMETYPES = { 'image/png': 'png', 'image/jpeg': 'jpg' };
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
+
+// Zwei Logos: hell (Standard, auch Druck) und optional dunkel für den Dunkelmodus.
+const LOGOS = [
+  { feld: 'logo', label: 'Logo hell', datei: 'logo', pfadKey: 'branding_logo_pfad', mimetypeKey: 'branding_logo_mimetype' },
+  { feld: 'logoDunkel', label: 'Logo dunkel', datei: 'logo-dunkel', pfadKey: 'branding_logo_dunkel_pfad', mimetypeKey: 'branding_logo_dunkel_mimetype' },
+];
 
 // Sniffs the actual file-signature bytes so a mislabeled upload (e.g. an SVG
 // renamed to logo.png with a spoofed `Content-Type: image/png`) is caught
@@ -47,7 +53,28 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
       footerText: getConfigValue(db, 'footer_text') ?? '',
       seitenTitel: getConfigValue(db, 'seiten_titel') ?? '',
       hasLogo: Boolean(getConfigValue(db, 'branding_logo_pfad')),
+      hasLogoDunkel: Boolean(getConfigValue(db, 'branding_logo_dunkel_pfad')),
     };
+  }
+
+  function loescheLogoDatei({ pfadKey }) {
+    const pfad = getConfigValue(db, pfadKey);
+    if (pfad && existsSync(pfad)) unlinkSync(pfad);
+  }
+
+  function entferneLogo(logo) {
+    loescheLogoDatei(logo);
+    deleteConfigValue(db, logo.pfadKey);
+    deleteConfigValue(db, logo.mimetypeKey);
+  }
+
+  function speichereLogo(logo, datei) {
+    loescheLogoDatei(logo);
+    mkdirSync(config.brandingDir, { recursive: true });
+    const neuerPfad = join(config.brandingDir, `${logo.datei}.${ALLOWED_MIMETYPES[datei.mimetype]}`);
+    writeFileSync(neuerPfad, datei.buffer);
+    setConfigValue(db, logo.pfadKey, neuerPfad);
+    setConfigValue(db, logo.mimetypeKey, datei.mimetype);
   }
 
   router.get('/', (req, res) => {
@@ -55,7 +82,7 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
   });
 
   router.post('/', (req, res, next) => {
-    mitAuditKontext(upload.single('logo'))(req, res, (uploadErr) => {
+    mitAuditKontext(upload.fields(LOGOS.map(({ feld }) => ({ name: feld, maxCount: 1 }))))(req, res, (uploadErr) => {
       // csrfProtection runs after multer parses the multipart body (including the _csrf field) —
       // any earlier and req.body would still be empty, rejecting every legitimate submission.
       csrfProtection(req, res, (csrfErr) => {
@@ -70,6 +97,7 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
           footerText: req.body.footerText || '',
           seitenTitel: req.body.seitenTitel || '',
           hasLogo: currentState().hasLogo,
+          hasLogoDunkel: currentState().hasLogoDunkel,
           errors: [message],
           gespeichert: false,
         });
@@ -85,10 +113,13 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
       if (!VALID_LOGO_AUSRICHTUNGEN.has(logoAusrichtung)) errors.push('Ungültige Logo-Ausrichtung.');
       if (footerText.length > 200) errors.push('Footer-Text darf höchstens 200 Zeichen lang sein.');
       if (seitenTitel.length > 60) errors.push('Seitentitel darf höchstens 60 Zeichen lang sein.');
-      if (req.file) {
-        const detectedMimetype = detectImageMimetype(req.file.buffer);
-        if (!ALLOWED_MIMETYPES[req.file.mimetype] || !detectedMimetype || detectedMimetype !== req.file.mimetype) {
-          errors.push('Logo muss eine PNG- oder JPEG-Datei sein.');
+      const dateien = Object.fromEntries(LOGOS.map(({ feld }) => [feld, req.files?.[feld]?.[0]]));
+      for (const { feld, label } of LOGOS) {
+        const datei = dateien[feld];
+        if (!datei) continue;
+        const detectedMimetype = detectImageMimetype(datei.buffer);
+        if (!ALLOWED_MIMETYPES[datei.mimetype] || !detectedMimetype || detectedMimetype !== datei.mimetype) {
+          errors.push(`${label} muss eine PNG- oder JPEG-Datei sein.`);
         }
       }
 
@@ -101,6 +132,7 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
           footerText,
           seitenTitel,
           hasLogo: currentState().hasLogo,
+          hasLogoDunkel: currentState().hasLogoDunkel,
           errors,
           gespeichert: false,
         });
@@ -113,18 +145,12 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
       setConfigValue(db, 'footer_text', footerText);
       setConfigValue(db, 'seiten_titel', seitenTitel || 'Freigabeportal');
 
-      if (req.file) {
-        const ext = ALLOWED_MIMETYPES[req.file.mimetype];
-        const oldPfad = getConfigValue(db, 'branding_logo_pfad');
-        if (oldPfad && existsSync(oldPfad)) {
-          unlinkSync(oldPfad);
-        }
-        mkdirSync(config.brandingDir, { recursive: true });
-        const neuerPfad = join(config.brandingDir, `logo.${ext}`);
-        writeFileSync(neuerPfad, req.file.buffer);
-        setConfigValue(db, 'branding_logo_pfad', neuerPfad);
-        setConfigValue(db, 'branding_logo_mimetype', req.file.mimetype);
+      for (const logo of LOGOS) {
+        const datei = dateien[logo.feld];
+        if (datei) speichereLogo(logo, datei);
       }
+      // Ein gleichzeitig hochgeladenes dunkles Logo hat Vorrang vor dem Entfernen-Häkchen.
+      if (req.body.logoDunkelEntfernen === '1' && !dateien.logoDunkel) entferneLogo(LOGOS[1]);
 
       res.redirect('/admin/erscheinungsbild?gespeichert=1');
       });

@@ -124,7 +124,7 @@ test('GET /pool renders the logo in the centered header cell when logoAusrichtun
 
   const res = await agent.get('/pool');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<div class="text-center">\s*<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2">/);
+  assert.match(res.text, /<div class="text-center">\s*<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2 logo-hell">/);
   assert.doesNotMatch(res.text, /<div class="text-start">\s*<img/, 'the left cell should stay empty when alignment is "mitte"');
   db.close();
 });
@@ -137,7 +137,7 @@ test('GET /nonexistent-route-xyz renders the logo in the right header cell along
   const app = createApp({ db, config: testConfig() });
   const res = await request(app).get('/nonexistent-route-xyz');
   assert.equal(res.status, 404);
-  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2">\s*<button type="button" id="theme-toggle"/);
+  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2 logo-hell">\s*<button type="button" id="theme-toggle"/);
   db.close();
 });
 

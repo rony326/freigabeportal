@@ -40,11 +40,13 @@ function setup(t) {
   const pdf = Buffer.from('%PDF restored invoice');
   writeFileSync(join(source.jobsDir, 'invoice.pdf'), pdf);
   writeFileSync(join(source.brandingDir, 'logo.png'), 'logo');
+  writeFileSync(join(source.brandingDir, 'logo-dunkel.png'), 'logo dunkel');
   const sourceDb = openDatabase(source.dbPath);
   const jobId = createJob(sourceDb, { eingangAm: '2026-09-27T00:00:00Z', quelle: 'scanner', dateiname: 'invoice.pdf', pdfPfad: join(source.jobsDir, 'invoice.pdf') });
   sourceDb.prepare("UPDATE jobs SET status = 'abgeschlossen', final_datei_hash = ? WHERE id = ?").run(hash(pdf), jobId);
   setzeFreigabeSnapshot(sourceDb, jobId);
   setConfigValue(sourceDb, 'branding_logo_pfad', join(source.brandingDir, 'logo.png'));
+  setConfigValue(sourceDb, 'branding_logo_dunkel_pfad', join(source.brandingDir, 'logo-dunkel.png'));
   upsertPerson(sourceDb, { id: '1', vorname: 'K', nachname: 'K', email: 'k@example.org', gruppen: [] });
   mkdirSync(join(source.jobsDir, 'kk'));
   writeFileSync(join(source.jobsDir, 'kk', 'beleg.pdf'), 'kk receipt');
@@ -89,6 +91,8 @@ test('offline restore activates only a complete generation and keeps original fi
     assert.equal(job.pdf_pfad, join(restored.current.jobsDir, 'invoice.pdf'));
     assert.deepEqual(readFileSync(job.pdf_pfad), s.pdf);
     assert.equal(getConfigValue(db, 'branding_logo_pfad'), join(restored.current.brandingDir, 'logo.png'));
+    assert.equal(getConfigValue(db, 'branding_logo_dunkel_pfad'), join(restored.current.brandingDir, 'logo-dunkel.png'));
+    assert.equal(readFileSync(getConfigValue(db, 'branding_logo_dunkel_pfad'), 'utf8'), 'logo dunkel');
     const kk = getKkBelegById(db, s.kkBelegId);
     assert.equal(kk.pdf_pfad, join(restored.current.jobsDir, 'kk', 'beleg.pdf'));
     assert.equal(kk.thumbnail_pfad, join(restored.current.jobsDir, 'kk', 'beleg.png'));

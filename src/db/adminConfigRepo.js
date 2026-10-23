@@ -97,3 +97,7 @@ export function setConfigValue(db, key, value) {
     'INSERT INTO admin_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
   ).run(key, value);
 }
+
+export function deleteConfigValue(db, key) {
+  db.prepare('DELETE FROM admin_config WHERE key = ?').run(key);
+}

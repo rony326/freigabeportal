@@ -101,8 +101,10 @@ function restoreOfflineInternal(buffer, config, options) {
               rebase(beleg.pdf_pfad, 'jobs', manifest.quellpfade, current),
               rebase(beleg.thumbnail_pfad, 'jobs', manifest.quellpfade, current), beleg.id);
           }
-          const logo = db.prepare("SELECT value FROM admin_config WHERE key = 'branding_logo_pfad'").get();
-          if (logo?.value) db.prepare("UPDATE admin_config SET value = ? WHERE key = 'branding_logo_pfad'").run(rebase(logo.value, 'branding', manifest.quellpfade, current));
+          for (const key of ['branding_logo_pfad', 'branding_logo_dunkel_pfad']) {
+            const logo = db.prepare('SELECT value FROM admin_config WHERE key = ?').get(key);
+            if (logo?.value) db.prepare('UPDATE admin_config SET value = ? WHERE key = ?').run(rebase(logo.value, 'branding', manifest.quellpfade, current), key);
+          }
           db.exec('DELETE FROM sessions');
           logBackupWiederherstellung(db, { dateiname: options.sourceName || 'Offline-Backup', wiederhergestelltVon: identity.operator });
           db.prepare(`INSERT INTO audit_ereignisse (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher, begruendung)

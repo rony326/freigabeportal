@@ -19,6 +19,8 @@ export function loadBranding(db) {
     const logoPfad = getConfigValue(db, 'branding_logo_pfad');
     const logoMimetype = getConfigValue(db, 'branding_logo_mimetype');
     const logoAusrichtung = getConfigValue(db, 'branding_logo_ausrichtung') || 'links';
+    const logoDunkelPfad = getConfigValue(db, 'branding_logo_dunkel_pfad');
+    const logoDunkelMimetype = getConfigValue(db, 'branding_logo_dunkel_mimetype');
     const footerText = getConfigValue(db, 'footer_text') ?? 'Freigabeportal';
     const seitenTitel = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
 
@@ -36,6 +38,7 @@ export function loadBranding(db) {
       primaryColor,
       secondaryColor,
       hasLogo: Boolean(logoPfad) && Boolean(logoMimetype),
+      hasLogoDunkel: Boolean(logoDunkelPfad) && Boolean(logoDunkelMimetype),
       logoAusrichtung,
       themeAttr,
       footerText,

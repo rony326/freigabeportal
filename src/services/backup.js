@@ -55,8 +55,10 @@ function validateFileReferences(db, manifest, zip) {
     check(beleg.pdf_pfad, 'jobs', true);
     check(beleg.thumbnail_pfad, 'jobs', true);
   }
-  const logo = db.prepare("SELECT value FROM admin_config WHERE key = 'branding_logo_pfad'").get();
-  if (logo?.value) check(logo.value, 'branding', true);
+  for (const key of ['branding_logo_pfad', 'branding_logo_dunkel_pfad']) {
+    const logo = db.prepare('SELECT value FROM admin_config WHERE key = ?').get(key);
+    if (logo?.value) check(logo.value, 'branding', true);
+  }
 }
 
 export const BACKUP_DATEINAME_PATTERN = /^backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.(?:zip|fpbak)$/;

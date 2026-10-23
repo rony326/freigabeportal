@@ -124,6 +124,9 @@ tatsächlich zuständige Person. Siehe
 Corporate-Design-Anpassung: Primär-/Sekundärfarbe, Standard-Theme
 (hell/dunkel/System), Logo-Upload (max. 2 MB, Magic-Byte-geprüft
 PNG/JPEG, nicht nur der deklarierte MIME-Typ), Logo-Ausrichtung,
+optional ein zweites „Logo dunkel“ für den Dunkelmodus (ohne dunkles
+Logo erscheint dort das helle; die gedruckte Prüfbescheinigung nutzt
+immer das helle; das dunkle lässt sich per Häkchen wieder entfernen),
 Footer-Text, Seitentitel, sowie ob das Audit-Log lokale Zeit
 (Europe/Zürich) statt UTC anzeigt.
 

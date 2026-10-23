@@ -95,7 +95,7 @@ und Zugriffskontrolle — siehe
 
 | Mount | Rate-Limiter | Zugriff | Zweck |
 |---|---|---|---|
-| `/branding` | public | offen | Logo ausliefern |
+| `/branding` | public | offen | Logo ausliefern (`/branding/logo`, optional `/branding/logo-dunkel`) |
 | `/admin` + Unterrouten | session | `requireAdminAreaAccess` + pro Bereich unterschiedlich (siehe [admin-bereich.md](admin-bereich.md)) | gesamter Admin-Bereich |
 | `/api/n8n/jobs` | machine | `X-API-Key` | Rechnungseingang/-abholung durch n8n |
 | `/api/n8n/backup` | machine | `X-API-Key` mit separatem `BACKUP_API_KEY` | Abholung des neuesten Backup-Archivs durch n8n (Offsite-Ablage) |

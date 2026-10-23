@@ -1,0 +1,4 @@
+<% /* Logo der oberen Leiste. Mit dunklem Logo werden beide gerendert; portal.css zeigt je nach
+     data-theme das passende (Druck immer hell). */ %>
+<img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2 logo-hell<%= branding.hasLogoDunkel ? ' hat-dunkel' : '' %>">
+<% if (branding.hasLogoDunkel) { %><img src="/branding/logo-dunkel" alt="Logo" height="48" class="mt-2 mx-2 logo-dunkel"><% } %>

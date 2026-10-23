@@ -235,8 +235,26 @@
   word-break: break-all;
 }
 
+/* ---------- Logo hell/dunkel ---------- */
+/* data-theme ist immer gesetzt (bei "System" setzt das Vorab-Skript es nach prefers-color-scheme). */
+.logo-dunkel {
+  display: none;
+}
+:root[data-theme="dunkel"] .logo-hell.hat-dunkel {
+  display: none;
+}
+:root[data-theme="dunkel"] .logo-dunkel {
+  display: inline;
+}
+
 /* ---------- Druck (z.B. zeitstempel-zertifikat) ---------- */
 @media print {
+  .logo-dunkel {
+    display: none !important;
+  }
+  .logo-hell {
+    display: inline !important;
+  }
   .portal-kopf,
   .portal-seitenleiste,
   .portal-aktionen,

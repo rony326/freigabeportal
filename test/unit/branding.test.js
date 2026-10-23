@@ -144,3 +144,14 @@ test('bsThemeAttr maps dunkel to dark and hell to light, and stays null when the
   assert.equal(runMiddleware(db, undefined).bsThemeAttr, null);
   db.close();
 });
+
+test('hasLogoDunkel ist true, sobald Pfad und Mimetype des dunklen Logos gesetzt sind', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.equal(runMiddleware(db, undefined).hasLogoDunkel, false);
+  setConfigValue(db, 'branding_logo_dunkel_pfad', '/data/branding/logo-dunkel.png');
+  assert.equal(runMiddleware(db, undefined).hasLogoDunkel, false, 'ohne Mimetype kein dunkles Logo');
+  setConfigValue(db, 'branding_logo_dunkel_mimetype', 'image/png');
+  assert.equal(runMiddleware(db, undefined).hasLogoDunkel, true);
+  db.close();
+});

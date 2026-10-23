@@ -53,3 +53,39 @@ test('the error page also renders the shared header partial', async () => {
   assert.match(res.text, /<html lang="de" data-theme="hell"/);
   db.close();
 });
+
+test('GET /branding/logo-dunkel liefert 404 ohne dunkles Logo', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/branding/logo-dunkel');
+  assert.equal(res.status, 404);
+  db.close();
+});
+
+test('obere Leiste: mit dunklem Logo zwei Bilder (hell/dunkel), ohne nur das helle', async () => {
+  const db = openDatabase(':memory:');
+  setConfigValue(db, 'branding_logo_pfad', '/tmp/logo.png');
+  setConfigValue(db, 'branding_logo_mimetype', 'image/png');
+  const app = createApp({ db, config: testConfig() });
+  let res = await request(app).get('/nonexistent-route-xyz');
+  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo"[^>]*class="[^"]*logo-hell/);
+  assert.doesNotMatch(res.text, /\/branding\/logo-dunkel/);
+
+  setConfigValue(db, 'branding_logo_dunkel_pfad', '/tmp/logo-dunkel.png');
+  setConfigValue(db, 'branding_logo_dunkel_mimetype', 'image/png');
+  res = await request(app).get('/nonexistent-route-xyz');
+  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo"[^>]*class="[^"]*logo-hell/);
+  assert.match(res.text, /<img src="\/branding\/logo-dunkel" alt="Logo"[^>]*class="[^"]*logo-dunkel/);
+  db.close();
+});
+
+test('portal.css: dunkles Logo nur im Dunkelmodus, beim Drucken immer das helle', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../../public/css/portal.css', import.meta.url), 'utf8');
+  assert.match(css, /\.logo-dunkel\s*\{\s*display:\s*none;?\s*\}/);
+  assert.match(css, /:root\[data-theme="dunkel"\]\s+\.logo-hell\.hat-dunkel\s*\{\s*display:\s*none;?\s*\}/);
+  assert.match(css, /:root\[data-theme="dunkel"\]\s+\.logo-dunkel\s*\{\s*display:\s*inline(-block)?;?\s*\}/);
+  const druck = css.slice(css.indexOf('@media print'));
+  assert.match(druck, /\.logo-dunkel\s*\{\s*display:\s*none\s*!important;?\s*\}/);
+  assert.match(druck, /\.logo-hell\s*\{\s*display:\s*inline(-block)?\s*!important;?\s*\}/);
+});

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../../src/db/index.js';
@@ -459,6 +459,80 @@ test('POST /admin/erscheinungsbild rejects a file whose declared Content-Type is
 
   assert.equal(res.status, 400);
   assert.equal(getConfigValue(db, 'branding_logo_pfad'), null);
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+function postErscheinungsbild(app) {
+  return request(app)
+    .post('/admin/erscheinungsbild')
+    .set('x-test-person-id', '99')
+    .field('primaryColor', '#2f4858')
+    .field('secondaryColor', '#4d7ea8')
+    .field('themeDefault', 'system')
+    .field('logoAusrichtung', 'links');
+}
+
+test('dunkles Logo: Upload wird gespeichert, unter /branding/logo-dunkel ausgeliefert, helles Logo bleibt unberührt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const hell = Buffer.from('89504e470d0a1a0a01', 'hex');
+  const dunkel = Buffer.from('ffd8ff00aa', 'hex');
+
+  assert.equal((await postErscheinungsbild(app).attach('logo', hell, { filename: 'hell.png', contentType: 'image/png' })).status, 302);
+  assert.equal((await postErscheinungsbild(app).attach('logoDunkel', dunkel, { filename: 'dunkel.jpg', contentType: 'image/jpeg' })).status, 302);
+
+  assert.equal(getConfigValue(db, 'branding_logo_dunkel_mimetype'), 'image/jpeg');
+  const dunkelRes = await request(app).get('/branding/logo-dunkel');
+  assert.equal(dunkelRes.status, 200);
+  assert.equal(dunkelRes.headers['content-type'], 'image/jpeg');
+  assert.ok(dunkelRes.body.equals(dunkel));
+  const hellRes = await request(app).get('/branding/logo');
+  assert.ok(hellRes.body.equals(hell), 'helles Logo darf durch den Upload des dunklen nicht ersetzt werden');
+
+  const seite = await request(app).get('/admin/erscheinungsbild').set('x-test-person-id', '99');
+  assert.match(seite.text, /<img src="\/branding\/logo" alt="Aktuelles Logo hell"/);
+  assert.match(seite.text, /<img src="\/branding\/logo-dunkel" alt="Aktuelles Logo dunkel"/);
+  assert.match(seite.text, /name="logoDunkelEntfernen"/);
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('dunkles Logo entfernen löscht Datei und Konfiguration, helles bleibt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  await postErscheinungsbild(app).attach('logo', Buffer.from('89504e470d0a1a0a', 'hex'), { filename: 'hell.png', contentType: 'image/png' });
+  await postErscheinungsbild(app).attach('logoDunkel', Buffer.from('89504e470d0a1a0a02', 'hex'), { filename: 'dunkel.png', contentType: 'image/png' });
+  const dunkelPfad = getConfigValue(db, 'branding_logo_dunkel_pfad');
+  assert.ok(dunkelPfad && existsSync(dunkelPfad));
+
+  const res = await postErscheinungsbild(app).field('logoDunkelEntfernen', '1');
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'branding_logo_dunkel_pfad'), null);
+  assert.equal(getConfigValue(db, 'branding_logo_dunkel_mimetype'), null);
+  assert.equal(existsSync(dunkelPfad), false);
+  assert.equal((await request(app).get('/branding/logo-dunkel')).status, 404);
+  assert.equal((await request(app).get('/branding/logo')).status, 200);
+  db.close();
+  rmSync(brandingDir, { recursive: true, force: true });
+});
+
+test('dunkles Logo mit gefälschtem Content-Type wird abgelehnt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
+  const app = buildTestApp(db, brandingDir);
+  const res = await postErscheinungsbild(app).attach('logoDunkel', Buffer.from('<svg/>'), { filename: 'evil.png', contentType: 'image/png' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Logo dunkel muss eine PNG- oder JPEG-Datei sein/);
+  assert.equal(getConfigValue(db, 'branding_logo_dunkel_pfad'), null);
   db.close();
   rmSync(brandingDir, { recursive: true, force: true });
 });

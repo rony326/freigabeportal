@@ -48,7 +48,7 @@
       <% } %>
       <div class="portal-kopf-marke text-start">
         <% if (branding.hasLogo && branding.logoAusrichtung === 'links') { %>
-          <img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2">
+          <%- include('_logo') %>
         <% } else if (!branding.hasLogo) { %>
           <span class="portal-kopf-titel"><%= branding.seitenTitel %></span>
         <% } %>
@@ -64,12 +64,12 @@
     </div>
     <div class="text-center">
       <% if (branding.hasLogo && branding.logoAusrichtung === 'mitte') { %>
-        <img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2">
+        <%- include('_logo') %>
       <% } %>
     </div>
     <div class="d-flex justify-content-end align-items-center gap-2">
       <% if (branding.hasLogo && branding.logoAusrichtung === 'rechts') { %>
-        <img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2">
+        <%- include('_logo') %>
       <% } %>
       <% if (sEingeloggt) { %>
         <span class="text-muted small d-none d-md-inline">Angemeldet als <%= currentPerson.vorname %> <%= currentPerson.nachname %></span>

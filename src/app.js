@@ -1,3 +1,4 @@
+import { parseEmpfaengerListe } from './services/auditNachweisJobs.js';
 import express from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
@@ -161,6 +162,10 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
     res.render('admin/dashboard', {
       zeitstempelUeberfaellig: tsaAktiv ? countZeitstempelUeberfaellig(db, zeitstempelWarnungSchwelle) : 0,
       zeitstempelWarnungSchwelle,
+      // Hinweis nur für Superadmins, nur solange der automatische Nachweis aktiv ist.
+      auditRevisionEmpfaengerFehlt: res.locals.isSuperadmin === true
+        && getConfigValue(db, 'modul_audit_nachweis_aktiv') === '1'
+        && parseEmpfaengerListe(getConfigValue(db, 'audit_revision_empfaenger')).adressen.length === 0,
     });
   });
   app.use('/admin/konten', requirePermission(db, config, 'konten_verwalten'), createKontenRouter({ db, csrfProtection }));
@@ -171,7 +176,7 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   app.use('/admin/kreditkarten', requirePermission(db, config, 'kreditkarten_verwalten'), createKreditkartenAdminRouter({ db, csrfProtection }));
   app.use('/admin/eskalation', requireRole(config, 'superadmin'), createEskalationRouter({ db, csrfProtection }));
   app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config, csrfProtection }));
-  app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db, csrfProtection }));
+  app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/personen', requireAnyRole(config, ['superadmin', 'manager']), createPersonenRouter({ db, config, csrfProtection }));
   app.use('/admin/mails', requirePermission(db, config, 'mails_einsehen'), createMailsRouter({ db, mailer, csrfProtection }));
   app.use('/admin/sync', requirePermission(db, config, 'sync_einsehen'), createSyncRouter({ db, config, csrfProtection }));

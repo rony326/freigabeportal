@@ -119,7 +119,7 @@ sequenceDiagram
   | `beschreibung` | Verwendungszweck der Spesen-Position, nur bei `quelle: "spesen"` gesetzt, sonst `null` |
   | `rechnungsdatum` | Gespeichertes Rechnungsdatum, sonst `null`; das Zahlungsziel wird nicht als Rechnungsdatum ausgegeben |
   | `iban`, `kontoinhaber` | Bei Freigabe 2 bestätigte Zahlungsdaten, nur bei `quelle: "spesen"` mit `zahlung.freigegeben`; sonst `null`, kein Live-Abruf beim Export |
-  | `nachweis_status` | `snapshot`, `altfall_nachbestaetigt` oder `altfall_nur_archiv`; Belege ohne ausreichenden Nachweis erscheinen gar nicht (Admin → Altfälle) |
+  | `nachweis_status` | `snapshot`, `altfall_nachbestaetigt` oder `altfall_nur_archiv`; Belege ohne ausreichenden Nachweis erscheinen gar nicht (Admin → Vorgänge → Altfälle) |
   | `zahlung` | Bestätigte Zahlung: `{art, freigegeben, herkunft, iban, kontoinhaber, referenz, betrag, waehrung, iban_abgleich, hinweise, bestaetigt_von, bestaetigt_am}` — **nur bei `freigegeben: true` darf n8n zahlen**, siehe [export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md#exportvertrag) |
   | `altfall` | nur bei Altfall-Entscheidung: Person, Begründung, Zeitpunkt und Herkunft der Werte |
   | `qr_iban`, `qr_referenz`, `qr_betrag`, `qr_waehrung`, `qr_creditor_name` | beim Eingang gescannte QR-Bill-Werte, wie bei Freigabe 2 eingefroren, sonst `null` — kein Zahlungsauftrag |

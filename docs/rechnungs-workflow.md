@@ -321,7 +321,7 @@ offen noch abgelehnt/gelöscht):
   Gruppen-Snapshot (`gruppe_freigabe_snapshot`) zusammen mit dem Dokument
   gespeichert. Fehlt ein Snapshot oder haben die Teile unterschiedliche bzw.
   unbestätigte Zahlungsdaten, entsteht kein Dokument; die Gruppe erscheint
-  unter Admin → Altfälle.
+  unter Admin → Vorgänge → Altfälle.
 - Ausgelöst wird der Merge-Versuch direkt nach Abschluss des jeweils
   letzten offenen Geschwister-Teils und nach Auflösung einer blockierenden
   Ablehnung; der Hintergrund-Job `split-gruppen-nachholen` holt einen

@@ -351,7 +351,7 @@ einzige Quelle für exportierte Metadaten — siehe
 ### `altfall_entscheidungen`
 Append-only (Trigger gegen `UPDATE`/`DELETE`), höchstens eine Zeile je Job
 (`UNIQUE job_id`, bei Splitgruppen der Elternjob). Hält die unter
-Admin → Altfälle getroffene Entscheidung (`nachbestaetigt`/`nur_archiv`),
+Admin → Vorgänge → Altfälle getroffene Entscheidung (`nachbestaetigt`/`nur_archiv`),
 den angezeigten Stand mit Herkunft je Wert (`angezeigte_daten`, JSON), den
 Fingerprint (`stand`), Person, Namen zum Zeitpunkt, Pflichtbegründung und
 Zeitpunkt.

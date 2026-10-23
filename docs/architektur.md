@@ -62,7 +62,7 @@ Siehe [n8n-schnittstelle.md](n8n-schnittstelle.md).
 3. `seedDefaults(db)` — schreibt Default-Werte in `admin_config`, falls noch
    nicht vorhanden (Eskalationszeiten, Cron-Zeitpläne, Sync-Schwellen, …).
 4. `createApp({ db, config })` — baut die Express-App (siehe unten).
-5. `startScheduler({ db, config, mailer })` — startet die elf
+5. `startScheduler({ db, config, mailer })` — startet die vierzehn
    In-Process-Hintergrund-Jobs (siehe
    [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)).
 6. `app.listen(config.port)`.

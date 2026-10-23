@@ -26,7 +26,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md) | Swiss-QR-Bill-Erkennung und IBAN-Abgleich gegen hinterlegte Lieferanten-IBANs |
 | [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md) | RFC3161-Zeitstempel, Nachhol-Mechanismus, Verifikations- und Zertifikatsseite |
 | [admin-bereich.md](admin-bereich.md) | Alle Admin-Seiten mit den jeweils benötigten Rechten |
-| [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md) | Die elf automatischen Hintergrund-Jobs, persistente Mailzustellung mit Wiederholung, Eskalationslogik, Verhalten nach Neustart |
+| [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md) | Die vierzehn automatischen Hintergrund-Jobs, persistente Mailzustellung mit Wiederholung, Eskalationslogik, Verhalten nach Neustart |
 | [personen-sync.md](personen-sync.md) | Nächtlicher ChurchTools-Personen-/Gruppen-Sync: Zugangsmodell (Gruppenaustritt vs. entzogener Zugang vs. Ausfall), Schutzmechanismen, "stalled jobs" |
 | [backup-verschluesselung.md](backup-verschluesselung.md) | **Verbindlich:** verschlüsselte `.fpbak`-Sicherungen, Schlüsselbund und Schlüsselaufbewahrung, Rotation, n8n-Abholung, Altsicherungen |
 | [offline-restore.md](offline-restore.md) | **Verbindlich:** Offline-Wiederherstellung und Rückwechsel, Prozesssperre, verwaiste Sperren |

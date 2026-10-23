@@ -120,7 +120,7 @@ das erste Konto anzulegen oder später Einzelrechte zuzuweisen.
 ### Zeitgesteuerte Jobs — laufen im Node-Prozess selbst
 
 Kein externer Task Scheduler nötig: Solange der Node-Prozess läuft (Infomaniaks
-Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App zwölf
+Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App vierzehn
 Hintergrund-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 
 | Job | Zeitplan | Zweck |
@@ -147,7 +147,7 @@ jeden davon manuell sofort auslösen, und den Verlauf der letzten Läufe
 ausgelöste Läufe landen im selben Verlauf. `datenbank-sicherung` wird unter
 **Admin → Betrieb → Datenbank-Backup**, `mail-digest` unter **Admin → Einstellungen →
 Mail-Einstellungen** eingestellt; `sicherheitsalarme` nur über `admin_config`.
-Details zu allen elf Jobs:
+Details zu allen vierzehn Jobs:
 [docs/geplante-jobs-und-benachrichtigungen.md](docs/geplante-jobs-und-benachrichtigungen.md).
 
 **Verpasste Termine werden nicht nachgeholt:** Nach einem Neustart plant der

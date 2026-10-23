@@ -4,7 +4,7 @@
 
 Kein externer Task-Scheduler nötig: Solange der Node-Prozess läuft
 (Infomaniaks Node.js-Hosting hält ihn dauerhaft am Leben), plant sich die
-App **elf** Hintergrund-Jobs selbst ein (`src/services/scheduler.js`,
+App **vierzehn** Hintergrund-Jobs selbst ein (`src/services/scheduler.js`,
 gestartet in `src/index.js`). Jeder Zeitplan wird bei **jedem** Tick neu
 aus `admin_config` gelesen (nicht einmalig beim Start) — eine gespeicherte
 Änderung wirkt ab dem nächsten Lauf, ganz ohne Neustart.

@@ -257,7 +257,7 @@ unveränderlich. Siehe
 
 ## Geplante Jobs (`/admin/geplante-jobs`)
 
-Zeitplan-Konfiguration und manuelles Sofort-Auslösen von acht der elf
+Zeitplan-Konfiguration und manuelles Sofort-Auslösen von acht der vierzehn
 Hintergrund-Jobs (`datenbank-sicherung` und `mail-digest` haben eigene
 Konfigurationsseiten, siehe oben; `sicherheitsalarme` nur über
 `admin_config`), inklusive ihrer Lauf-Historie — einschließlich des

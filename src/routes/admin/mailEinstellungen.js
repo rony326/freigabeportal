@@ -36,6 +36,8 @@ const VORLAGEN_FELDER = [
   ['adminUmzuweisungText', 'mail_vorlage_admin_umzuweisung_text'],
   ['duplikatWarnungBetreff', 'mail_vorlage_duplikat_warnung_betreff'],
   ['duplikatWarnungText', 'mail_vorlage_duplikat_warnung_text'],
+  ['auditPruefnummerBetreff', 'mail_vorlage_audit_pruefnummer_betreff'],
+  ['auditPruefnummerText', 'mail_vorlage_audit_pruefnummer_text'],
 ];
 
 export function createMailEinstellungenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {

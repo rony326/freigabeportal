@@ -55,6 +55,7 @@ const VALID_BODY = {
   kkBelegEingegangenBetreff: 'B13', kkBelegEingegangenText: 'T13',
   adminUmzuweisungBetreff: 'B14', adminUmzuweisungText: 'T14',
   duplikatWarnungBetreff: 'B15', duplikatWarnungText: 'T15',
+  auditPruefnummerBetreff: 'B16', auditPruefnummerText: 'T16',
   batchingAktiv: '1',
   batchingStunde: '6',
   batchingMinute: '30',

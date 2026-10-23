@@ -22,6 +22,17 @@ export function migrateAuditExportSchema(db) {
     BEGIN SELECT RAISE(ABORT, 'audit_export_pakete ist unveraenderlich'); END;
     CREATE TRIGGER IF NOT EXISTS audit_export_pakete_no_delete BEFORE DELETE ON audit_export_pakete
     BEGIN SELECT RAISE(ABORT, 'audit_export_pakete ist unveraenderlich'); END;
+    CREATE TABLE IF NOT EXISTS audit_export_zeitstempel (
+      paket_nr INTEGER PRIMARY KEY REFERENCES audit_export_pakete(id),
+      token BLOB NOT NULL,
+      gen_time TEXT NOT NULL,
+      nachweis TEXT NOT NULL,
+      erstellt_am TEXT NOT NULL
+    );
+    CREATE TRIGGER IF NOT EXISTS audit_export_zeitstempel_no_update BEFORE UPDATE ON audit_export_zeitstempel
+    BEGIN SELECT RAISE(ABORT, 'audit_export_zeitstempel ist unveraenderlich'); END;
+    CREATE TRIGGER IF NOT EXISTS audit_export_zeitstempel_no_delete BEFORE DELETE ON audit_export_zeitstempel
+    BEGIN SELECT RAISE(ABORT, 'audit_export_zeitstempel ist unveraenderlich'); END;
     `);
     db.exec('RELEASE audit_export_schema');
   } catch (err) {

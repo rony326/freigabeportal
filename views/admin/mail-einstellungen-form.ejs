@@ -80,6 +80,13 @@
         <div class="form-text">Variablen: %jobDateiname%, %kreditorName%, %betrag%, %zahlungsziel%, %tage%, %dupJobIds%, %link%, %portalName%</div>
       </div>
       <div class="mb-3">
+        <label class="form-label" for="auditPruefnummerBetreff">Audit-Prüfnummer — Betreff</label>
+        <input type="text" class="form-control" id="auditPruefnummerBetreff" name="auditPruefnummerBetreff" value="<%= auditPruefnummerBetreff %>" required>
+        <label class="form-label mt-2" for="auditPruefnummerText">Audit-Prüfnummer — Text</label>
+        <textarea class="form-control" id="auditPruefnummerText" name="auditPruefnummerText" rows="8" required><%= auditPruefnummerText %></textarea>
+        <div class="form-text">Variablen: %paketNr%, %pruefnummer%, %vonZeit%, %bisZeit%, %anzahlEreignisse%, %zeitstempelZeit%, %ohneZeitstempel%, %pruefseite%, %link%, %portalName%</div>
+      </div>
+      <div class="mb-3">
         <label class="form-label" for="digestBetreff">Digest (tägliche Zusammenfassung) — Betreff</label>
         <input type="text" class="form-control" id="digestBetreff" name="digestBetreff" value="<%= digestBetreff %>" required>
         <label class="form-label mt-2" for="digestText">Digest — Text</label>

@@ -15,8 +15,9 @@
 - Prüfnummer = `audit_export_pakete.paket_sha256` (64 Hex, klein). TSA-MessageImprint = SHA-256 über die UTF-8-Bytes dieser 64 Zeichen.
 - Nach aussen (Mail, Prüfseite) nie personenbezogene Daten: nur Paketnummer, Hashes, Anzahlen, Zeitpunkte.
 - Empfänger-Schlüssel `audit_revision_empfaenger` (komma-getrennt), nur Superadmin über `/admin/zeitstempel`.
-- Zeitplan-Schlüssel ohne UI: `cron_audit_export_stunde`=3, `cron_audit_export_minute`=15, `cron_audit_pruefnummer_stunde`=7, `cron_audit_pruefnummer_minute`=0. Monatsmail am 1. des Monats (Zeitzone wie Scheduler, `Europe/Zurich`).
-- Alarm: ältestes Paket ohne Zeitstempel > 3 Tage → höchstens alle 24 h Mail an `sicherheitsalarm_empfaenger` (Default `gruppe:admin`), `typ: 'sicherheitsalarm'` via `sendRenderedMail`.
+- Einstellungen (alle auf `/admin/zeitstempel`, nur Superadmin, siehe Spec-Tabelle "Einstellbar über die Admin-Oberfläche"): `modul_audit_nachweis_aktiv` (`'1'`), `audit_pruefnummer_rhythmus` (`'monatlich'`|`'quartalsweise'`|`'jaehrlich'`, Default `'monatlich'`), `audit_pruefnummer_tag` (1–28, `'1'`), `cron_audit_export_stunde`/`_minute` (`'3'`/`'15'`), `cron_audit_pruefnummer_stunde`/`_minute` (`'7'`/`'0'`), `audit_zeitstempel_alarm_tage` (1–30, `'3'`). Kalenderlogik in Zeitzone `Europe/Zurich`. Quartalsweise = Monate 1/4/7/10, jährlich = Monat 1.
+- Abgeschaltet (`modul_audit_nachweis_aktiv` ≠ `'1'`): beide Jobs liefern `{ status: 'uebersprungen' }` ohne Seiteneffekt; Prüfseite funktioniert weiter mit Hinweis.
+- Alarm: ältestes Paket ohne Zeitstempel länger als `audit_zeitstempel_alarm_tage` → höchstens alle 24 h Mail an `sicherheitsalarm_empfaenger` (Default `gruppe:admin`), `typ: 'sicherheitsalarm'` via `sendRenderedMail`.
 - Zeitstempel gilt als rechtzeitig, wenn `gen_time ≥ erstellt_am − 5 min` und `gen_time ≤ erstellt_am + 7 Tage`.
 - `audit-pruefnummer` ist in `IMMER_SOFORT_TYPEN` (kein Digest).
 - CHECK-Erweiterungen nur über `erweitereCheckPerRebuild` in `src/db/index.js`, aufgerufen nach `migrateDuplikatVerdacht`.
@@ -44,7 +45,7 @@
 
 **Interfaces:**
 - Produces: Tabelle `audit_export_zeitstempel(paket_nr INTEGER PRIMARY KEY REFERENCES audit_export_pakete(id), token BLOB NOT NULL, gen_time TEXT NOT NULL, nachweis TEXT NOT NULL, erstellt_am TEXT NOT NULL)`, Trigger `audit_export_zeitstempel_no_update` / `_no_delete`.
-- Produces: Config-Defaults `audit_revision_empfaenger: ''`, `cron_audit_export_stunde: '3'`, `cron_audit_export_minute: '15'`, `cron_audit_pruefnummer_stunde: '7'`, `cron_audit_pruefnummer_minute: '0'`, `mail_vorlage_audit_pruefnummer_betreff`, `mail_vorlage_audit_pruefnummer_text`.
+- Produces: Config-Defaults `audit_revision_empfaenger: ''`, alle Einstellungs-Schlüssel aus Global Constraints mit ihren Defaults, `mail_vorlage_audit_pruefnummer_betreff`, `mail_vorlage_audit_pruefnummer_text`.
 
 - [ ] **Step 1: Failing tests** in `test/unit/auditNachweisSchema.test.js`:
   - `frische DB: audit_export_zeitstempel existiert und ist unveränderlich` — Paket via `erstelleAuditExportPaket` anlegen, Zeile einfügen, `UPDATE`/`DELETE` werfen `/unveraenderlich/`, zweites INSERT mit gleicher `paket_nr` wirft `/UNIQUE|PRIMARY/`.
@@ -118,7 +119,9 @@
   - `ohne TSA-Konfiguration: Pakete ja, Stempel nein, status erfolg`.
   - `TSA-Fehler: Paket bleibt registriert, nächster Lauf holt in Reihenfolge nach` — erster Lauf `stemple` wirft → `status:'fehler'`, `ohneZeitstempel:1`; zweiter Lauf ok → Zeile vorhanden, keine Duplikate, Aufrufreihenfolge der `stemple`-Hashes = aufsteigende Paketnummer.
   - `nach erstem TSA-Fehler im Lauf keine weiteren Versuche in diesem Lauf` (Stub zählt Aufrufe = 1 bei 3 offenen Paketen).
-  - `Alarm, wenn ältestes Paket > 3 Tage ohne Zeitstempel` — `jetzt` = erstellt_am + 3 d + 1 min → `alarmiert:true`, ein `mail_log` mit `typ='sicherheitsalarm'`, Text nennt Paketnummer.
+  - `abgeschaltet → uebersprungen, kein Paket, kein Stempel, kein Alarm`; wieder eingeschaltet → nächster Lauf erzeugt Paket mit allen zwischenzeitlichen Ereignissen.
+  - `Alarmschwelle aus Konfiguration` — `audit_zeitstempel_alarm_tage='5'`: bei 4 Tagen kein Alarm, bei 5 Tagen + 1 min Alarm.
+  - `Alarm, wenn ältestes Paket > 3 Tage ohne Zeitstempel` (Default) — `jetzt` = erstellt_am + 3 d + 1 min → `alarmiert:true`, ein `mail_log` mit `typ='sicherheitsalarm'`, Text nennt Paketnummer.
   - `Alarm höchstens alle 24 h` — zweiter Lauf 1 h später → `alarmiert:false`; 25 h später → wieder `true`.
   - `kein Alarm bei 2 Tagen Rückstand`.
 - [ ] **Step 2:** Run → FAIL.
@@ -138,7 +141,9 @@
 - Produces: `parseEmpfaengerListe(wert: string) → { adressen: string[], ungueltig: string[] }` (trim, leer ignorieren, Duplikate entfernen, einfache Prüfung `/^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/`).
 - Produces: `formatierePruefnummer(hex) → string` (8 Gruppen à 8 Zeichen, mit Leerzeichen getrennt).
 - Produces: `async sendeAuditPruefnummer(db, config, mailer) → { status: 'versendet'|'kein_empfaenger'|'kein_paket', paketNr?: number, empfaenger?: number }`.
-- Produces: `runAuditPruefnummerJob(db, config, mailer, { jetzt?: Date }) → Promise<{ status: 'erfolg'|'uebersprungen'|'fehler', … }>` via `auditedJob('audit-pruefnummer', …)`; sendet nur am 1. (Zürcher Datum) und nur wenn `audit_pruefnummer_zuletzt_monat` ≠ aktueller Monat `YYYY-MM`, setzt den Schlüssel nach Versand.
+- Produces: `istVersandtag(jetzt: Date, { rhythmus: string, tag: number }) → boolean` (Zürcher Datum; Monat passt zum Rhythmus und Tag = `tag`).
+- Produces: `runAuditPruefnummerJob(db, config, mailer, { jetzt?: Date }) → Promise<{ status: 'erfolg'|'uebersprungen'|'fehler', … }>` via `auditedJob('audit-pruefnummer', …)`; sendet nur wenn Funktion aktiv, `istVersandtag(...)` mit den Config-Werten und `audit_pruefnummer_zuletzt_monat` ≠ aktueller Monat `YYYY-MM`; setzt den Schlüssel nach Versand.
+- Produces: `async meldeAuditNachweisAenderung(db, config, mailer, { aenderungen: string[], person: {vorname, nachname} }) → void` — `sendRenderedMail` mit `typ:'audit-pruefnummer'` an die aktuellen Revisions-Empfänger, Betreff `'Freigabeportal: Einstellungen des Audit-Nachweises geändert'`, eine Zeile pro Änderung (z. B. `Automatischer Nachweis: aktiv → abgeschaltet`), Person und Zeitpunkt.
 - Produces: `async meldeAuditEmpfaengerWechsel(db, config, mailer, { alt: string, neu: string, person: {vorname, nachname} }) → void` — `sendRenderedMail` mit `typ:'audit-pruefnummer'` an Vereinigung von alt+neu, Betreff `'Freigabeportal: Empfänger der Audit-Prüfnummer geändert'`, Text nennt alte und neue Adressen, Person und Zeitpunkt.
 
 - [ ] **Step 1: Failing tests:**
@@ -146,6 +151,9 @@
   - `kein_empfaenger` bei leerem Schlüssel, `kein_paket` ohne Pakete — jeweils keine Mail.
   - `ohneZeitstempel` und `zeitstempelZeit` ("noch keiner" ohne Stempel) korrekt im Text.
   - `Monatsjob sendet am 1. genau einmal` — `jetzt` 2026-11-01T06:00Z → versendet; gleicher Tag zweiter Lauf → `uebersprungen`; 2026-11-02 → `uebersprungen`; 2026-12-01 → versendet.
+  - `istVersandtag` — quartalsweise Tag 15: 2027-04-15 true, 2027-05-15 false; jährlich Tag 1: 2027-01-01 true, 2027-02-01 false; Zürcher Mitternacht: 2026-10-31T23:30Z ist bereits der 1.11. in Zürich.
+  - `abgeschaltet → kein Versand` am Versandtag.
+  - `meldeAuditNachweisAenderung` schickt eine Mail pro Empfänger mit allen Änderungszeilen.
   - `Empfängerwechsel geht an alte und neue Adresse` — 2 Mails, Text nennt beide Adressen.
   - `parseEmpfaengerListe` und `formatierePruefnummer` Grundfälle.
 - [ ] **Step 2:** Run → FAIL.
@@ -176,7 +184,7 @@
   - `unbekannte Paketnummer → unbekannt`; `noch kein Paket → kein_paket`.
   - Route: `GET /audit-pruefen` ohne Login → 200 mit Formular; `?paket=1&pruefnummer=<hex>` → 200 "Keine Veränderung festgestellt"; `ungültige Eingaben` (`paket=abc`, `pruefnummer=xyz`, leer) → 400 mit Meldung, nie 500; Antwort enthält keinen Personennamen aus dem Audit-Log.
 - [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3: Implement.** View im bestehenden Layout (`_seite_anfang` mit `rahmen: 'ohne'`, ohne Login lauffähig), Formular `method="get"`, Ergebnisliste grün/rot, Druckknopf (`window.print()`), Absatz zur ehrlichen Grenze aus der Spec ("Die Seite läuft im Portal selbst …").
+- [ ] **Step 3: Implement.** Bei abgeschalteter Funktion oben Hinweis "Der automatische Audit-Nachweis ist derzeit abgeschaltet." (Test: `abgeschaltet → Hinweis, Prüfung vorhandener Pakete funktioniert`). View im bestehenden Layout (`_seite_anfang` mit `rahmen: 'ohne'`, ohne Login lauffähig), Formular `method="get"`, Ergebnisliste grün/rot, Druckknopf (`window.print()`), Absatz zur ehrlichen Grenze aus der Spec ("Die Seite läuft im Portal selbst …").
 - [ ] **Step 4:** Test + `npm test` (inkl. `csrfSweep`, `layoutSweep`) → PASS.
 - [ ] **Step 5:** Commit `feat(audit): öffentliche Prüfseite für die Revision`.
 
@@ -187,13 +195,16 @@
 - Test: `test/integration/admin/zeitstempel.test.js` (bestehend, sonst neu), `test/integration/csrfSweep.test.js` (neue POST-Route aufnehmen, falls die Liste explizit ist)
 
 **Interfaces:**
-- Consumes: `parseEmpfaengerListe`, `meldeAuditEmpfaengerWechsel`, `sendeAuditPruefnummer` (Task 4), `listPaketeOhneZeitstempel` (Task 3).
-- Produces: Formularfeld `auditRevisionEmpfaenger` im bestehenden `POST /admin/zeitstempel`; neue Route `POST /admin/zeitstempel/audit-pruefnummer-senden` (csrfProtection) → Redirect `/admin/zeitstempel` mit Flash/Query-Hinweis über das Ergebnis.
+- Consumes: `parseEmpfaengerListe`, `meldeAuditEmpfaengerWechsel`, `meldeAuditNachweisAenderung`, `sendeAuditPruefnummer` (Task 4), `listPaketeOhneZeitstempel` (Task 3).
+- Produces: Formularfelder im bestehenden `POST /admin/zeitstempel`: `auditRevisionEmpfaenger`, `auditNachweisAktiv` (Checkbox), `auditPruefnummerRhythmus` (Select), `auditPruefnummerTag`, `auditExportStunde`, `auditExportMinute`, `auditPruefnummerStunde`, `auditPruefnummerMinute`, `auditZeitstempelAlarmTage` — validiert mit den Bereichen aus Global Constraints (Fehler → 400, nichts gespeichert, Muster `ganzzahlImBereich` aus `src/routes/admin/geplanteJobs.js`); neue Route `POST /admin/zeitstempel/audit-pruefnummer-senden` (csrfProtection) → Redirect `/admin/zeitstempel` mit Flash/Query-Hinweis über das Ergebnis.
 - Produces: Dashboard-Variable `auditRevisionEmpfaengerFehlt: boolean`.
 
 - [ ] **Step 1: Failing tests:**
   - `Superadmin speichert Empfänger; alte und neue Adresse bekommen Mail; admin_config-Änderung steht im Audit-Log` (`audit_ereignisse` objekt `admin_config`, objekt_id `audit_revision_empfaenger`).
   - `unveränderter Empfänger → keine Wechsel-Mail`.
+  - `Abschalten oder Rhythmus/Tag ändern → Änderungs-Mail an Revisions-Empfänger`; nur Uhrzeit oder Alarmschwelle ändern → keine Mail.
+  - `ungültige Werte` (Tag 29, Stunde 24, Alarmtage 0, Rhythmus "woechentlich") → 400, nichts gespeichert.
+  - Seite zeigt alle Einstellungen vorbelegt mit den gespeicherten Werten.
   - `ungültige Adresse → 400, nichts gespeichert`.
   - `Adresse eines Superadmins → gespeichert, Seite zeigt Warnung "gehört einer Person mit Admin-Rechten"`.
   - `Nicht-Superadmin → 403` für GET, POST und `audit-pruefnummer-senden`.

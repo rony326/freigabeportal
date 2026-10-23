@@ -166,3 +166,28 @@ Technische Anpassungen nach Abgleich mit dem Code; das freigegebene Verhalten bl
 - **Was die TSA bestätigt:** Der MessageImprint ist SHA-256 über die UTF-8-Bytes der 64-stelligen
   hexadezimalen Prüfnummer (`paket_sha256`). Ein externer Prüfer kann das mit Standardwerkzeugen
   nachrechnen.
+
+## Einstellbar über die Admin-Oberfläche (Nutzerwunsch 2026-10-23)
+
+Alle Einstellungen im Abschnitt "Audit-Nachweis für die Revision" auf **Admin → Zeitstempel**
+(nur Superadmin):
+
+| Einstellung | Schlüssel | Werte | Standard |
+| --- | --- | --- | --- |
+| Funktion aktiv | `modul_audit_nachweis_aktiv` | `1`/`0` | `1` |
+| Versandrhythmus | `audit_pruefnummer_rhythmus` | `monatlich`, `quartalsweise` (Jan/Apr/Jul/Okt), `jaehrlich` (Januar) | `monatlich` |
+| Versandtag im Monat | `audit_pruefnummer_tag` | 1–28 | 1 |
+| Uhrzeit nächtlicher Export | `cron_audit_export_stunde` / `_minute` | 0–23 / 0–59 | 03:15 |
+| Uhrzeit Mailversand | `cron_audit_pruefnummer_stunde` / `_minute` | 0–23 / 0–59 | 07:00 |
+| Alarmschwelle | `audit_zeitstempel_alarm_tage` | 1–30 Tage | 3 |
+
+Meine Calls dazu:
+- Der Schalter liegt **nicht** unter Admin → Module, sondern auf derselben Superadmin-Seite: das
+  Abschalten des Nachweises ist sicherheitsrelevant und soll nicht über ein Teilrecht möglich sein.
+- **Abschalten und jede Änderung von Rhythmus/Tag** lösen wie der Empfängerwechsel sofort eine Mail an
+  die eingetragenen Revisions-Empfänger aus ("Audit-Nachweis wurde deaktiviert/geändert von … durch …").
+  Sonst könnte jemand den Nachweis still abstellen.
+- Abgeschaltet: kein Export, keine Stempel, keine Mails, kein Alarm. Die Prüfseite bleibt für die
+  vorhandenen Pakete nutzbar und zeigt den Hinweis "automatischer Nachweis ist derzeit abgeschaltet".
+  Nach dem Wiedereinschalten holt der nächste Lauf alle ausstehenden Ereignisse nach.
+- Uhrzeiten wirken ohne Neustart (der Scheduler liest sie bei jeder Planung neu).

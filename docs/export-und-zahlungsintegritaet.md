@@ -17,7 +17,7 @@ einem unveränderlichen Nachweis:
 |---|---|---|
 | Freigabe-Snapshot (Version 2) | Freigabe 2 eines Einzelbelegs oder Teilbelegs | `jobs.freigabe_snapshot` |
 | Gruppen-Freigabe-Snapshot | Finalisierung einer Splitgruppe | `jobs.gruppe_freigabe_snapshot` (Elternjob) |
-| Altfall-Entscheidung | ausdrückliche Entscheidung unter Admin → Altfälle | `altfall_entscheidungen` |
+| Altfall-Entscheidung | ausdrückliche Entscheidung unter Admin → Vorgänge → Altfälle | `altfall_entscheidungen` |
 
 Die aktuelle `jobs`-Zeile, der Kontenstamm, hinterlegte Lieferanten-IBANs
 und ChurchTools werden beim Export **nie** gelesen. Einzige Stelle, die
@@ -123,7 +123,7 @@ PDF-Arbeit den Gruppen-Snapshot (`bereiteGruppenSnapshotVor`):
 
 Ist eine Bedingung verletzt, liefert die Finalisierung `nachpruefung`. Dann
 entsteht kein Archivdokument, und die Gruppe erscheint unter Admin →
-Altfälle. Der Gruppen-Snapshot wird in derselben Transaktion wie Dateipfad
+Vorgänge → Altfälle. Der Gruppen-Snapshot wird in derselben Transaktion wie Dateipfad
 und finaler Hash gespeichert. Er ist per Trigger unveränderlich, auch gegen
 ein Zurücksetzen auf `NULL`.
 
@@ -142,7 +142,7 @@ Eigenschaften:
 Solche Belege sind in `/abholbereit` unsichtbar (und werden nicht als
 angeboten markiert). `abholung-bestaetigen` und `exportnachweis` liefern 409.
 
-### Entscheidung unter Admin → Altfälle
+### Entscheidung unter Admin → Vorgänge → Altfälle
 
 Recht: `workflow_eingreifen` (Superadmins; nicht im Manager-Bündel).
 Die Seite zeigt jeden Wert mit seiner Herkunft:
@@ -225,7 +225,7 @@ mit Entscheidung "Nur archivieren" diese Felder weiterhin tragen können.
      AND id NOT IN (SELECT job_id FROM export_nachweise);
    ```
 
-   Nach dem Update zeigt Admin → Altfälle die tatsächlich betroffenen
+   Nach dem Update zeigt Admin → Vorgänge → Altfälle die tatsächlich betroffenen
    Einträge (Einzelbelege mit vollständigem Snapshot erscheinen dort nicht).
 2. Den n8n-Workflow auf `zahlung.freigegeben` umstellen, **bevor** neue
    QR-Rechnungen über die neue Freigabe laufen.

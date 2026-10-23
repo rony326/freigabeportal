@@ -122,7 +122,7 @@ Rollen-Bundle, `manager` jedes ausser `sync_verwalten` und
 `workflow_eingreifen` (siehe
 [audit-umsetzungsstand-2026-09-27.md](audit-umsetzungsstand-2026-09-27.md)). Für alle anderen Personen sind sie rein additiv: ein
 Recht ohne jede ChurchTools-Gruppenmitgliedschaft. Vergeben werden sie
-ausschliesslich von einem `superadmin` unter **Admin → Personen**
+ausschliesslich von einem `superadmin` unter **Admin → Stammdaten → Personen**
 (`POST /admin/personen/:id/berechtigungen`).
 
 Sieben Admin-Bereiche bleiben `superadmin`-exklusiv: Eskalationszeiten,
@@ -223,5 +223,5 @@ additiv — die abwesende Person behält ihren eigenen Zugriff unverändert:
   (`freigaben.vertretung_fuer`)
 
 Auswählbar als Stellvertreter sind nur aktive Personen, die mit der eigenen Person mindestens ein
-Konto teilen (`listVertretungsKandidaten`, `src/db/kontenRepo.js`). Admin → Personen zeigt einen
+Konto teilen (`listVertretungsKandidaten`, `src/db/kontenRepo.js`). Admin → Stammdaten → Personen zeigt einen
 gesetzten Ferienmodus rein informativ an — Verwaltung bleibt Selbstbedienung.

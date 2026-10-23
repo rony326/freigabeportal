@@ -82,26 +82,29 @@ test('GET /pool carries a viewport meta tag and wraps the Pool table in table-re
   db.close();
 });
 
-test('GET /pool renders the nav bar as a centered container, matching every other page, even though the dashboard\'s own main is full-width', async () => {
+test('GET /pool renders inside the shared centered container-xxl shell, matching every other page', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
-  assert.match(res.text, /<nav class="container mb-3/);
+  assert.match(res.text, /<div class="container-xxl">\s*<div class="portal-rahmen">/);
+  assert.doesNotMatch(res.text, /container-fluid/);
   db.close();
 });
 
-test('GET /pool shows a reload button in the nav bar, next to the Menü button', async () => {
+test('GET /pool shows the reload button in the page header actions, not in a .portal-aktionen row', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
-  const navMatch = res.text.match(/<nav[^>]*>[\s\S]*?<\/nav>/);
-  assert.ok(navMatch, 'expected a <nav> element');
-  assert.match(navMatch[0], /id="hauptmenue-toggle"/, 'nav should contain the Menü dropdown button');
-  assert.match(navMatch[0], /<a href="\/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">/, 'reload button should be inside the nav bar');
+  const kopf = res.text.match(/<main class="portal-inhalt">\s*<div class="seitenkopf">\s*<h1 class="seitenkopf-titel">Aufgaben<\/h1>\s*<div class="seitenkopf-aktionen">[\s\S]*?<\/div>/);
+  assert.ok(kopf, 'expected the .seitenkopf with .seitenkopf-aktionen at the top of main');
+  assert.match(res.text, /<nav class="portal-seitenleiste/, 'the sidebar replaces the old Menü dropdown');
+  assert.match(kopf[0], /<a href="\/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">/, 'reload button should be inside .seitenkopf-aktionen');
+  assert.doesNotMatch(res.text, /class="portal-aktionen/, 'no .portal-aktionen row on /pool any more');
+  assert.equal(res.text.split('aria-label="Dashboard neu laden"').length - 1, 1);
   db.close();
 });
 
@@ -163,7 +166,7 @@ test('GET /pool returns 200 for a logged-in person without the buchhaltung or po
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '77');
   assert.equal(res.status, 200);
-  assert.doesNotMatch(res.text, /<h2 class="h4 mt-4">Pool<\/h2>/);
+  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Pool<\/h2>/);
   // No jobs exist anywhere for this person — every section is empty, so the dashboard shows
   // the summary empty-state instead of a heading with nothing under it.
   assert.doesNotMatch(res.text, /Meine offenen Kontierungen/);
@@ -171,15 +174,16 @@ test('GET /pool returns 200 for a logged-in person without the buchhaltung or po
   db.close();
 });
 
-test('GET /pool shows the "Zeitstempel prüfen" menu item even for a logged-in person with no group membership at all', async () => {
+test('GET /pool shows the "Zeitstempel prüfen" sidebar item even for a logged-in person with no group membership at all', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   upsertPerson(db, { id: '77', vorname: 'Frei', nachname: 'Geber', email: 'a@example.org', gruppen: [], loggedInNow: true });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '77');
   assert.equal(res.status, 200);
-  assert.match(res.text, /id="hauptmenue-toggle"/, 'the Menü dropdown itself must be shown, not just role-gated');
-  assert.match(res.text, /href="\/zeitstempel-pruefen">Zeitstempel prüfen</);
+  const seitenleiste = res.text.match(/<nav class="portal-seitenleiste[\s\S]*?<\/nav>/);
+  assert.ok(seitenleiste, 'the sidebar itself must be shown, not just role-gated');
+  assert.match(seitenleiste[0], /href="\/zeitstempel-pruefen"[\s\S]*?<span class="portal-label">Zeitstempel prüfen<\/span>/);
   db.close();
 });
 
@@ -467,7 +471,7 @@ test('GET /pool no longer shows a "Meine Spesen" section — it moved to its own
   });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '60');
-  assert.doesNotMatch(res.text, /<h2 class="h4 mt-4">Meine Spesen<\/h2>/);
+  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Meine Spesen<\/h2>/);
   assert.doesNotMatch(res.text, /Taxi/);
   assert.match(res.text, /href="\/meine-spesen"/);
   db.close();
@@ -639,7 +643,9 @@ test('GET /pool wires the Beanspruchen error fallback to the button\'s own row, 
   // here (not `pool-row-<id>`), since this job is a Rückläufer — the handler must look it up via
   // the clicked button's own row rather than reconstructing a pool-specific id string.
   assert.match(res.text, new RegExp(`id="ruecklaeufer-row-${jobId}"`));
-  assert.match(res.text, /const row = btn\.closest\('tr'\);/);
+  // Since the tile view (Task 7) the container is the row or the tile, both marked data-job-container.
+  assert.match(res.text, /const container = btn\.closest\('\[data-job-container\]'\);/);
+  assert.match(res.text, new RegExp(`id="ruecklaeufer-row-${jobId}" data-job-container`));
   assert.doesNotMatch(res.text, /document\.getElementById\(`pool-row-\$\{id\}`\)/);
   db.close();
 });

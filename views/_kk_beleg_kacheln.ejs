@@ -1,0 +1,24 @@
+<% /* Kachel-Gegenstück zu _kk_beleg_tabelle.ejs (gleiche Daten: belege, aktionen; idPrefix je Abschnitt, weil ein Beleg in mehreren Abschnitten stehen kann). */ %>
+<% if (belege.length > 0) { %>
+<div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
+  <% belege.forEach((b) => { %>
+    <div class="col">
+      <div class="kachel d-flex flex-column gap-2" id="<%= idPrefix %>-kachel-<%= b.id %>">
+        <% if (b.thumbnail_pfad) { %>
+          <a href="/kreditkarte/belege/<%= b.id %>/datei" target="_blank" rel="noopener"><img class="kachel-vorschau rounded" src="/kreditkarte/belege/<%= b.id %>/thumbnail" alt="Beleg"></a>
+        <% } else if (b.pdf_pfad) { %>
+          <a href="/kreditkarte/belege/<%= b.id %>/datei" target="_blank" rel="noopener">PDF</a>
+        <% } %>
+        <div class="fw-semibold text-break"><%= b.beschreibung || '—' %></div>
+        <div class="kachel-betrag"><%= b.betrag || '—' %></div>
+        <dl class="kachel-angaben small mb-0">
+          <dt>Kaufdatum</dt><dd><%= b.kaufdatum || '—' %></dd>
+          <dt>Karte</dt><dd><%= b.karte_bezeichnung || '—' %></dd>
+          <dt>Status</dt><dd><%- include('_kk_beleg_status', { b }) %></dd>
+        </dl>
+        <div class="mt-auto d-flex flex-wrap gap-1"><%- include('_kk_beleg_aktionen', { b, aktionen }) %></div>
+      </div>
+    </div>
+  <% }) %>
+</div>
+<% } %>

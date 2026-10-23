@@ -1,17 +1,18 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Meine Spesen — <%= branding.seitenTitel %></title>
-</head>
-<body>
-  <%- include('_header') %>
-  <main class="container py-4">
-    <h1 class="h3">Meine Spesen</h1>
-    <%- include('_spesen_meine_tabelle', { jobs }) %>
-  </main>
-  <%- include('_footer') %>
-</body>
-</html>
+<%- include('_seite_anfang', { titel: 'Meine Spesen' }) %>
+<% /* Ansichtswahl (src/middleware/ansicht.js): 'tabelle', 'kacheln' oder 'auto' (Kacheln unter lg, sonst Tabelle). */
+   const gewaehlteAnsicht = (typeof ansicht !== 'undefined' && ansicht) || 'auto';
+   const zeigeTabelle = gewaehlteAnsicht !== 'kacheln';
+   const zeigeKacheln = gewaehlteAnsicht !== 'tabelle';
+   const klasseTabelle = 'ansicht-tabelle' + (gewaehlteAnsicht === 'auto' ? ' d-none d-lg-block' : '');
+   const klasseKacheln = 'ansicht-kacheln' + (gewaehlteAnsicht === 'auto' ? ' d-lg-none' : ''); %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Meine Spesen</h1>
+      <div class="seitenkopf-aktionen"><%- include('_ansicht_umschalter') %></div>
+    </div>
+    <% if (jobs.length === 0) { %>
+      <p>Keine eigenen Spesen-Einreichungen.</p>
+    <% } else { %>
+      <% if (zeigeTabelle) { %><div class="<%= klasseTabelle %>"><%- include('_spesen_meine_tabelle', { jobs }) %></div><% } %>
+      <% if (zeigeKacheln) { %><div class="<%= klasseKacheln %>"><%- include('_spesen_meine_kacheln', { jobs }) %></div><% } %>
+    <% } %>
+<%- include('_seite_ende') %>

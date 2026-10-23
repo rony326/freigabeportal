@@ -16,11 +16,7 @@
                 ausstehend
               <% } %>
             </td>
-            <td>
-              <% if (['abgeschlossen', 'abgeholt', 'archiviert'].includes(job.status)) { %>
-                <a href="/zeitstempel-pruefen?jobId=<%= job.id %>" class="btn btn-outline-primary btn-sm">Jetzt prüfen</a>
-              <% } %>
-            </td>
+            <td><%- include('_zeitstempel_aktion', { job }) %></td>
           </tr>
         <% }) %>
       </tbody>

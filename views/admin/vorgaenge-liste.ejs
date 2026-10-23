@@ -1,17 +1,15 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Laufende Vorgänge — <%= branding.seitenTitel %> Admin</title>
-</head>
-<body>
-  <%- include('../_header') %>
-  <main class="container-fluid py-4">
-    <%- include('./_nav') %>
-    <h1>Laufende Vorgänge</h1>
-    <form method="get" action="/admin/vorgaenge" class="row g-2 align-items-end mb-3">
+<%- include('../_seite_anfang', { titel: 'Laufende Vorgänge' }) %>
+<% /* Ansichtswahl (src/middleware/ansicht.js): 'tabelle', 'kacheln' oder 'auto' (Kacheln unter lg, sonst Tabelle). */
+   const gewaehlteAnsicht = (typeof ansicht !== 'undefined' && ansicht) || 'auto';
+   const zeigeTabelle = gewaehlteAnsicht !== 'kacheln';
+   const zeigeKacheln = gewaehlteAnsicht !== 'tabelle';
+   const klasseTabelle = 'ansicht-tabelle' + (gewaehlteAnsicht === 'auto' ? ' d-none d-lg-block' : '');
+   const klasseKacheln = 'ansicht-kacheln' + (gewaehlteAnsicht === 'auto' ? ' d-lg-none' : ''); %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Laufende Vorgänge</h1>
+      <div class="seitenkopf-aktionen"><%- include('../_ansicht_umschalter') %></div>
+    </div>
+    <form method="get" action="/admin/vorgaenge" class="filterzeile">
       <div class="col-auto">
         <label class="form-label" for="status">Status</label>
         <select class="form-select" id="status" name="status">
@@ -50,6 +48,7 @@
       <p>Keine laufenden Vorgänge für diese Auswahl.</p>
     <% } else { %>
       <p class="text-body-secondary"><%= vorgaenge.length %> Vorgang<%= vorgaenge.length === 1 ? '' : 'e' %>, älteste zuerst.</p>
+      <% if (zeigeTabelle) { %><div class="<%= klasseTabelle %>">
       <div class="table-responsive">
         <table class="table table-sm align-middle">
           <thead>
@@ -81,8 +80,7 @@
           </tbody>
         </table>
       </div>
+      </div><% } %>
+      <% if (zeigeKacheln) { %><div class="<%= klasseKacheln %>"><%- include('_vorgaenge_kacheln', { vorgaenge, darfEingreifen }) %></div><% } %>
     <% } %>
-  </main>
-  <%- include('../_footer') %>
-</body>
-</html>
+<%- include('../_seite_ende') %>

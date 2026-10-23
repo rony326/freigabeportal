@@ -1,20 +1,12 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Kreditkartenabrechnung abgleichen — <%= branding.seitenTitel %></title>
-</head>
-<body>
-  <%- include('_header', { navContainerClass: 'container-fluid px-4' }) %>
-  <main class="container-fluid px-4 py-3">
+<%- include('_seite_anfang', { titel: 'Kreditkartenabrechnung abgleichen', rahmen: 'kompakt' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Abgleich: <%= karte.bezeichnung %><%= karte.karte_endziffern ? ` (•••• ${karte.karte_endziffern})` : '' %></h1>
+    </div>
     <div class="row g-4">
       <div class="col-lg-5">
         <iframe id="kontierung-preview-frame" data-preview-url="<%= previewUrl %>" src="" class="w-100 rounded pdf-preview" style="height:85vh"></iframe>
       </div>
       <div class="col-lg-7">
-        <h1 class="h4">Abgleich: <%= karte.bezeichnung %><%= karte.karte_endziffern ? ` (•••• ${karte.karte_endziffern})` : '' %></h1>
         <p class="text-muted mb-2"><%= job.dateiname %> · Vorgang #<%= job.id %></p>
         <% if (errors.length > 0) { %>
           <div class="alert alert-danger"><ul class="mb-0"><% errors.forEach((e) => { %><li><%= e %></li><% }) %></ul>
@@ -46,7 +38,7 @@
             </div>
           </div>
 
-          <h2 class="h6">Offene Belege dieser Karte</h2>
+          <h2 class="h5">Offene Belege dieser Karte</h2>
           <% if (belege.length === 0) { %>
             <p class="text-muted small">Keine offenen Belege erfasst.</p>
           <% } else { %>
@@ -67,7 +59,7 @@
             </div>
           <% } %>
 
-          <h2 class="h6">Positionen</h2>
+          <h2 class="h5">Positionen</h2>
           <div id="zeilen"></div>
           <div class="d-flex flex-wrap gap-2 mb-3">
             <button type="button" class="btn btn-outline-secondary btn-sm" data-neue-zeile="nachreichen">+ Beleg nachreichen</button>
@@ -99,7 +91,6 @@
         <%- include('_audit_log') %>
       </div>
     </div>
-  </main>
 
   <template id="zeile-template">
     <div class="border rounded p-2 mb-2 zeile">
@@ -247,6 +238,4 @@
     window.kkAbgleich = { neueZeile: neueZeile, updateSummen: updateSummen };
   })();
   </script>
-  <%- include('_footer') %>
-</body>
-</html>
+<%- include('_seite_ende') %>

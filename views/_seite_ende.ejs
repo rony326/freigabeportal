@@ -1,0 +1,14 @@
+<%
+  // Gegenstück zu _seite_anfang. Für rahmen 'ohne' muss es include('_seite_ende', { rahmen: 'ohne' }) heissen,
+  // damit nur <main> geschlossen und kein Footer gerendert wird.
+  const eRahmenOhne = locals.rahmen === 'ohne';
+  const eNavigation = Boolean(locals.navigation);
+%></main>
+<% if (!eRahmenOhne) { %>
+<% if (eNavigation) { %></div><% } %>
+</div>
+<%- include('_footer') %>
+<% } %>
+<script src="/js/portal.js" defer></script>
+</body>
+</html>

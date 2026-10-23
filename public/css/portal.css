@@ -1,0 +1,318 @@
+/* Gemeinsames Grundgerüst (views/_seite_anfang.ejs, _seitenleiste.ejs, _seite_ende.ejs).
+   Farben kommen aus Bootstrap-Variablen (Hell/Dunkel) und --brand-primary (_brand_styles). */
+
+/* ---------- Obere Leiste ---------- */
+.portal-kopf-zeile {
+  display: grid;
+  /* minmax(0, …): die äusseren Spalten dürfen unter ihre Inhaltsbreite schrumpfen, sonst
+     drückt ein langer Titel oder ein Logo links die Seite auf Telefonen breiter als 375 px. */
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: .5rem;
+  padding-block: .5rem;
+}
+.portal-kopf-links {
+  min-width: 0;
+}
+.portal-kopf-marke {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.portal-kopf-zeile img {
+  max-width: 100%;
+  height: auto;
+  max-height: 48px;
+}
+.portal-kopf-titel {
+  display: block;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.portal-reiter {
+  --bs-nav-underline-gap: .75rem;
+  --bs-nav-underline-link-active-color: var(--bs-emphasis-color);
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  margin-left: .5rem;
+}
+.portal-reiter .nav-link {
+  color: var(--bs-secondary-color);
+  padding-block: .25rem;
+}
+.portal-reiter .nav-link.active {
+  border-bottom-color: var(--brand-primary);
+  font-weight: 600;
+}
+
+/* ---------- Rahmen ---------- */
+.portal-inhalt {
+  min-width: 0;
+  padding-bottom: 1rem;
+}
+@media (min-width: 992px) {
+  .portal-rahmen {
+    display: grid;
+    grid-template-columns: 210px minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+  .portal-rahmen.kompakt {
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 1rem;
+  }
+}
+
+/* ---------- Seitenleiste ---------- */
+.portal-seitenleiste {
+  --bs-offcanvas-width: 260px;
+  font-size: .925rem;
+}
+@media (min-width: 992px) {
+  .portal-seitenleiste {
+    position: sticky;
+    top: 1rem;
+    /* Auf niedrigen Bildschirmen (z. B. 768 px) sonst unerreichbare untere Punkte der
+       Admin-Seitenleiste: höchstens bildschirmhoch (abzüglich top und etwas Luft), scrollt selbst. */
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+  }
+}
+.portal-seitenleiste-inhalt {
+  padding: .25rem 0;
+}
+@media (max-width: 991.98px) {
+  .portal-seitenleiste-inhalt {
+    padding: 0 1rem 1rem;
+    overflow-y: auto;
+  }
+}
+.portal-gruppe + .portal-gruppe {
+  margin-top: .75rem;
+}
+.portal-gruppe-titel {
+  font-size: .75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--bs-secondary-color);
+  padding: 0 .625rem .25rem;
+}
+.portal-punkt {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .35rem .625rem;
+  border-left: 3px solid transparent;
+  border-radius: 0 var(--bs-border-radius) var(--bs-border-radius) 0;
+  color: var(--bs-body-color);
+  text-decoration: none;
+}
+.portal-punkt:hover,
+.portal-punkt:focus-visible {
+  background: var(--bs-tertiary-bg);
+  color: var(--bs-emphasis-color);
+}
+.portal-punkt.aktiv {
+  border-left-color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  color: var(--bs-emphasis-color);
+  font-weight: 600;
+}
+.portal-symbol {
+  display: inline-block;
+  width: 1.25rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+.portal-label {
+  flex-grow: 1;
+  min-width: 0;
+}
+.portal-zaehler {
+  background: var(--brand-primary);
+  color: #fff;
+  font-size: .7rem;
+}
+
+/* Eingeklappt (PDF-Seiten): ab lg nur Symbole. Unter lg zeigt das Offcanvas wieder Labels. */
+@media (min-width: 992px) {
+  .portal-seitenleiste.eingeklappt .portal-gruppe-titel,
+  .portal-seitenleiste.eingeklappt .portal-label {
+    display: none;
+  }
+  .portal-seitenleiste.eingeklappt .portal-gruppe + .portal-gruppe {
+    margin-top: .25rem;
+    padding-top: .25rem;
+    border-top: 1px solid var(--bs-border-color-translucent);
+  }
+  .portal-seitenleiste.eingeklappt .portal-punkt {
+    position: relative;
+    justify-content: center;
+    padding: .4rem 0;
+    border-left: 0;
+    border-radius: var(--bs-border-radius);
+  }
+  .portal-seitenleiste.eingeklappt .portal-punkt.aktiv {
+    box-shadow: inset 0 -2px 0 var(--brand-primary);
+  }
+  .portal-seitenleiste.eingeklappt .portal-zaehler {
+    position: absolute;
+    top: 0;
+    right: 0;
+    font-size: .6rem;
+    padding: .15em .4em;
+  }
+}
+
+/* ---------- Aktionszeile (Kontierung / Freigabe 2) ---------- */
+.portal-aktionen:empty {
+  display: none !important;
+}
+
+/* ---------- Einheitlicher Seitenaufbau ----------
+   Reihenfolge jeder Seite: .seitenkopf → Meldungen (.alert) → .filterzeile → Inhalt. */
+.seitenkopf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem 1rem;
+  margin-bottom: 1rem;
+}
+.seitenkopf-titel {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: calc(1.3rem + .6vw);
+  font-weight: 500;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 1200px) {
+  .seitenkopf-titel {
+    font-size: 1.75rem;
+  }
+}
+.seitenkopf-aktionen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+.seitenkopf-aktionen:empty {
+  display: none;
+}
+
+/* GET-Filterformulare: eine umbrechende Zeile, Felder unten bündig. */
+.filterzeile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: .5rem;
+  margin-bottom: 1rem;
+  padding: .75rem;
+  background: var(--bs-tertiary-bg);
+  border: 1px solid var(--bs-border-color-translucent);
+  border-radius: var(--bs-border-radius);
+}
+.filterzeile > * {
+  flex: 0 0 auto;
+}
+.filterzeile > .form-check {
+  padding-bottom: .375rem;
+}
+
+/* ---------- Prüfbescheinigung (views/zeitstempel-zertifikat.ejs) ---------- */
+.bescheinigung {
+  border: 2px solid var(--bs-emphasis-color);
+  padding: 2rem;
+}
+.bescheinigung .hash-wert {
+  font-family: var(--bs-font-monospace);
+  word-break: break-all;
+}
+
+/* ---------- Druck (z.B. zeitstempel-zertifikat) ---------- */
+@media print {
+  .portal-kopf,
+  .portal-seitenleiste,
+  .portal-aktionen,
+  .seitenkopf-aktionen,
+  footer {
+    display: none !important;
+  }
+  .portal-rahmen {
+    display: block;
+  }
+  body:has(.bescheinigung) {
+    padding: 0;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  /* Prüfbescheinigung: der Titel steht im Druck im Kasten (.bescheinigung-titel), der
+     Seitenkopf darüber entfällt. */
+  body:has(.bescheinigung) .seitenkopf,
+  body:has(.bescheinigung) .no-print {
+    display: none !important;
+  }
+  .bescheinigung {
+    border-color: #000;
+  }
+}
+
+/* ---------- Ansichtswahl Tabelle/Kacheln ---------- */
+.ansicht-umschalter .btn[aria-pressed="true"] {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #fff;
+}
+.kachel {
+  height: 100%;
+  background: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  padding: .75rem;
+}
+.kachel-haengt {
+  border-color: var(--bs-danger);
+  border-width: 2px;
+}
+.kachel-ueberfaellig {
+  border-color: var(--bs-warning);
+  border-width: 2px;
+}
+.kachel-vorschau {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  object-position: top;
+  cursor: pointer;
+  border: 1px solid var(--bs-border-color);
+}
+.kachel-vorschau-leer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 140px;
+  background: var(--bs-tertiary-bg);
+  border-radius: var(--bs-border-radius);
+}
+.kachel-angaben {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: .5rem;
+}
+.kachel-angaben dt {
+  font-weight: normal;
+  color: var(--bs-secondary-color);
+}
+.kachel-angaben dd {
+  margin-bottom: 0;
+}
+.kachel-betrag {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}

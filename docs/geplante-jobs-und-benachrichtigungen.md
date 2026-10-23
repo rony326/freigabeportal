@@ -19,7 +19,7 @@ Dieselben Job-Funktionen (`src/services/cronJobs.js`) sind zusätzlich über
 `POST /internal/cron/*` (Header `X-Cron-Secret`) erreichbar — nützlich für
 die Go-Live-Checkliste oder falls doch ein externer Scheduler eingerichtet
 wird — und über einen manuellen "Jetzt ausführen"-Button pro Job unter
-**Admin → Geplante Jobs**. Alle drei Auslösewege rufen exakt dieselbe
+**Admin → Betrieb → Geplante Jobs**. Alle drei Auslösewege rufen exakt dieselbe
 Logik auf und schreiben in dasselbe Protokoll.
 
 ```mermaid
@@ -39,8 +39,8 @@ flowchart LR
   `pdf-bereinigung`-, `mail-digest`- oder `kk-beleg-erinnerungen`-Lauf.
   Intervall-Jobs starten nach dem Neustart erst nach Ablauf ihres ersten
   Intervalls. Nach jedem ungeplanten Ausfall deshalb unter **Admin →
-  Geplante Jobs**, **Admin → Datenbank-Backup** und **Admin →
-  Mail-Einstellungen** prüfen, ob der letzte Lauf fehlt, und ihn bei Bedarf
+  Betrieb → Geplante Jobs**, **Admin → Betrieb → Datenbank-Backup** und **Admin →
+  Einstellungen → Mail-Einstellungen** prüfen, ob der letzte Lauf fehlt, und ihn bei Bedarf
   über „Jetzt ausführen“ (bzw. `POST /internal/cron/*`) nachholen. Für die
   Sicherung empfiehlt sich zusätzlich eine externe Überwachung, die das Alter
   der neuesten `.fpbak`-Datei (bzw. des letzten n8n-Abrufs) prüft.
@@ -92,7 +92,7 @@ flowchart TD
 
 Beide Schwellen und die jeweiligen Empfängerlisten (E-Mail-Adressen oder
 `gruppe:buchhaltung` / `gruppe:admin`) sind unter **Admin →
-Eskalationszeiten** konfigurierbar. Auswahl der fälligen Jobs, Einreihen der
+Einstellungen → Eskalationszeiten** konfigurierbar. Auswahl der fälligen Jobs, Einreihen der
 Mails (`mail_log.status = 'eingereiht'`) und Setzen des Markers geschehen in
 **einer** Datenbanktransaktion; parallele Auslöser (Timer und manueller
 Aufruf) können dieselbe Erinnerung deshalb nicht doppelt planen. Die
@@ -164,10 +164,10 @@ Beide Schwellen (`freigabe2_reminder_stunden`, Default 24h;
 `freigabe2_eskalation_stunden`, Default 48h) sowie die
 Eskalations-Empfängerliste (`freigabe2_eskalation_empfaenger`,
 E-Mail-Adressen oder `gruppe:buchhaltung`/`gruppe:admin`, Default
-`gruppe:admin`) sind unter **Admin → Eskalationszeiten** konfigurierbar.
+`gruppe:admin`) sind unter **Admin → Einstellungen → Eskalationszeiten** konfigurierbar.
 Der Lauf-Intervall selbst (Default 60 Minuten, Config-Key
 `cron_freigabe2_erinnerungen_intervall_minuten`) liegt dagegen — wie bei
-allen anderen Jobs dieser Liste — unter **Admin → Geplante Jobs**.
+allen anderen Jobs dieser Liste — unter **Admin → Betrieb → Geplante Jobs**.
 
 ### `pdf-bereinigung`
 
@@ -227,7 +227,7 @@ bewusst auf einer konfigurierten, aber nicht erreichbaren TSA — das
 zusammengeführte Dokument ist die Archivkopie und soll ohne seinen
 Zeitstempel gar nicht erst entstehen; genau dafür existiert dieser
 Nachhol-Lauf. Überlappungsschutz und "Jetzt ausführen" wie bei
-`zeitstempel-nachholen`; der Verlauf unter **Admin → Geplante Jobs**
+`zeitstempel-nachholen`; der Verlauf unter **Admin → Betrieb → Geplante Jobs**
 zeigt an, ob und woran ein Lauf scheitert.
 
 ### `datenbank-sicherung`
@@ -255,15 +255,15 @@ oder fehlende Sicherungen müssen deshalb aktiv überwacht werden.
 Verbindliche Anleitungen: [backup-verschluesselung.md](backup-verschluesselung.md)
 (Format, Schlüssel, Rotation, n8n-Abholung) und
 [offline-restore.md](offline-restore.md) (Ablauf, Sperren, Rückwechsel).
-Zeitplan und Aufbewahrung leben nicht unter **Admin → Geplante Jobs**,
-sondern auf der superadmin-only Seite **Admin → Datenbank-Backup**
+Zeitplan und Aufbewahrung leben nicht unter **Admin → Betrieb → Geplante Jobs**,
+sondern auf der superadmin-only Seite **Admin → Betrieb → Datenbank-Backup**
 (siehe [admin-bereich.md](admin-bereich.md#datenbank-backup-adminbackup)).
 Überlappungsschutz wie bei `zeitstempel-nachholen`. Ein verpasster
 Termin wird nicht nachgeholt (siehe oben).
 
 ### `mail-digest`
 
-Nur relevant, wenn **Admin → Mail-Einstellungen** den Batching-Schalter
+Nur relevant, wenn **Admin → Einstellungen → Mail-Einstellungen** den Batching-Schalter
 aktiviert hat — dann reiht `sendNotification` (siehe unten) eine Zeile mit
 `status = 'geplant'` ein, statt sofort zu versenden. Dieser Job gruppiert
 alle wartenden Zeilen nach Empfänger, beansprucht sie mit einer befristeten
@@ -278,8 +278,8 @@ wiederholbar). `sync-fehler`, `iban-warnung` und `kk-beleg-eingegangen`
 ignorieren den Batching-Schalter und werden immer sofort zugestellt.
 Überlappungsschutz wie bei `zeitstempel-nachholen`. Zeitplan,
 Vorlagen-Bearbeitung und manuelles "Jetzt ausführen" leben — wie bei
-`datenbank-sicherung` — nicht unter **Admin → Geplante Jobs**, sondern auf
-der eigenen Seite **Admin → Mail-Einstellungen**.
+`datenbank-sicherung` — nicht unter **Admin → Betrieb → Geplante Jobs**, sondern auf
+der eigenen Seite **Admin → Einstellungen → Mail-Einstellungen**.
 
 ### `mail-zustellung`
 
@@ -320,7 +320,7 @@ aktiv sind. Zwei unabhängige Arbeitslisten mit derselben Schwelle
 Wie bei `pool-erinnerungen` wird eine Erinnerung erst nach mindestens
 einem weiteren Intervall wiederholt, kein zweiter Sonder-Zeitplan wie bei
 `datenbank-sicherung`/`mail-digest`: Zeitplan (Default täglich 08:00,
-Europe/Zürich) und Schwelle leben unter **Admin → Geplante Jobs**.
+Europe/Zürich) und Schwelle leben unter **Admin → Betrieb → Geplante Jobs**.
 Details: [kreditkarten-belege.md](kreditkarten-belege.md#6a-erinnerungen).
 
 ### `sync-personen`
@@ -359,7 +359,7 @@ dauerhaft in `mail_log` gespeichert und durchläuft diese Status:
   Zustellfehlern enden im Verlauf mit Status `fehler` und nennen die Bilanz
   (versendet / zur Wiederholung eingereiht / endgültig fehlgeschlagen /
   für Digest geplant). `POST /internal/cron/*` antwortet dann mit `500`.
-  **Admin → Mail-Protokoll** zeigt Status, Versuche und nächsten Versuch.
+  **Admin → Betrieb → Mail-Protokoll** zeigt Status, Versuche und nächsten Versuch.
 - **Manueller Weg:** „Erneut versenden“ legt für eine `fehlgeschlagen`e
   (oder `versendet`e) Zeile eine neue Zeile an und stellt sie sofort zu;
   die alte bleibt als Nachweis. Für eine noch `eingereiht`e Zeile mit
@@ -372,7 +372,7 @@ dauerhaft in `mail_log` gespeichert und durchläuft diese Status:
 `resolveEmpfaenger` löst die Tokens `gruppe:buchhaltung`/`gruppe:admin` zur
 Versandzeit gegen die **aktuelle** Gruppenmitgliedschaft auf (keine feste
 Liste, die veraltet). Betreff und Text jedes Typs kommen aus einer unter
-**Admin → Mail-Einstellungen** editierbaren Vorlage mit `%variable%`-
+**Admin → Einstellungen → Mail-Einstellungen** editierbaren Vorlage mit `%variable%`-
 Platzhaltern (`src/services/mailTemplates.js`), nicht mehr aus fest
 codierten Strings.
 
@@ -392,7 +392,7 @@ codierten Strings.
 | `admin-umzuweisung` | Admin hat einen laufenden Vorgang umgehängt; an die neue Person (plus deren Ferienvertretung) und die bisherige; ignoriert das Batching wie `sync-fehler`/`iban-warnung`/`kk-beleg-eingegangen` |
 | `kk-beleg-eingegangen` | per Mail eingereichter Kreditkartenbeleg als Entwurf angelegt — **immer sofort**, unabhängig vom Batching-Schalter (Link zum Vervollständigen soll nicht bis zum nächsten Digest warten) |
 
-**Batching:** Ist unter **Admin → Mail-Einstellungen** aktiviert, werden
+**Batching:** Ist unter **Admin → Einstellungen → Mail-Einstellungen** aktiviert, werden
 alle Typen ausser `sync-fehler`/`iban-warnung`/`admin-umzuweisung`/`kk-beleg-eingegangen`
 nicht sofort verschickt, sondern als `status = 'geplant'` eingereiht
 und vom `mail-digest`-Job (siehe oben) einmal täglich pro Empfänger zu
@@ -405,7 +405,7 @@ Wird eine `geplant`e Zeile so als Teil einer Digest-Mail verschickt, wird
 ihr `mail_log`-Eintrag trotzdem auf `versendet` gesetzt, obwohl der darin
 gespeicherte, individuell gerenderte `text` nie eigenständig als E-Mail
 zugestellt wurde — nur die Digest-Sammel-Mail wurde tatsächlich
-verschickt. **Admin → Mail-Protokoll** zeigt also, was verschickt worden
+verschickt. **Admin → Betrieb → Mail-Protokoll** zeigt also, was verschickt worden
 *wäre*, nicht wortwörtlich, was verschickt wurde.
 
 Der Mailer ist optional: fehlt eine vollständige SMTP-Konfiguration, fällt

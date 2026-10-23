@@ -1,0 +1,29 @@
+<% /* Kachel-Gegenstück zu _spesen_meine_tabelle.ejs (gleiche Daten: jobs). */ %>
+<div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
+  <% jobs.forEach((job) => { %>
+    <div class="col">
+      <div class="kachel d-flex flex-column gap-2" id="spesen-meine-kachel-<%= job.id %>">
+        <div class="fw-semibold text-break"><%= job.beschreibung %></div>
+        <div class="kachel-betrag"><%= job.betrag %></div>
+        <dl class="kachel-angaben small mb-0">
+          <dt>Eingereicht am</dt><dd><%= job.eingang_am %></dd>
+          <dt>Konto</dt><dd><%= job.kontonummer || '—' %></dd>
+          <dt>Status</dt>
+          <dd>
+            <span class="badge text-bg-secondary"><%= job.status %></span>
+            <% if (job.status === 'abgelehnt' && job.ablehnungsgrund) { %>
+              — <%= job.ablehnungsgrund %>
+            <% } %>
+          </dd>
+          <dt>Zeitstempel</dt>
+          <dd>
+            <% if (['abgeschlossen', 'abgeholt', 'archiviert'].includes(job.status)) { %>
+              <%= job.zeitstempel_gesetzt_am ? `✓ gesetzt am ${job.zeitstempel_gesetzt_am}` : 'ausstehend' %>
+            <% } else { %>—<% } %>
+          </dd>
+        </dl>
+        <div class="mt-auto d-flex flex-wrap gap-1"><%- include('_zeitstempel_aktion', { job }) %></div>
+      </div>
+    </div>
+  <% }) %>
+</div>

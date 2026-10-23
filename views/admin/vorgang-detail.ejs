@@ -1,17 +1,8 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Vorgang <%= vorgang.dateiname %> — <%= branding.seitenTitel %> Admin</title>
-</head>
-<body>
-  <%- include('../_header') %>
-  <main class="container py-4">
-    <%- include('./_nav') %>
+<%- include('../_seite_anfang', { titel: `Vorgang ${vorgang.dateiname}` }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel"><%= vorgang.gegenueber %> <small class="text-body-secondary"><%= vorgang.dateiname %></small></h1>
+    </div>
     <p><a href="/admin/vorgaenge">← Laufende Vorgänge</a></p>
-    <h1 class="h3"><%= vorgang.gegenueber %> <small class="text-body-secondary"><%= vorgang.dateiname %></small></h1>
 
     <% if (umgehaengt) { %>
       <div class="alert alert-success">Vorgang umgehängt. Die beteiligten Personen wurden per Mail informiert.</div>
@@ -41,14 +32,16 @@
     <% if (auditLog.length === 0) { %>
       <p class="text-body-secondary">Noch keine Einträge.</p>
     <% } else { %>
-      <table class="table table-sm">
-        <thead><tr><th>Zeitpunkt</th><th>Ereignis</th><th>Person</th><th>Kommentar</th></tr></thead>
-        <tbody>
-          <% auditLog.forEach((e) => { %>
-            <tr><td><%= e.zeitpunkt %></td><td><%= e.ereignis %></td><td><%= e.person %><% if (e.vertretungFuerPerson) { %> (für <%= e.vertretungFuerPerson %>)<% } %></td><td><%= e.kommentar || '' %></td></tr>
-          <% }) %>
-        </tbody>
-      </table>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead><tr><th>Zeitpunkt</th><th>Ereignis</th><th>Person</th><th>Kommentar</th></tr></thead>
+          <tbody>
+            <% auditLog.forEach((e) => { %>
+              <tr><td><%= e.zeitpunkt %></td><td><%= e.ereignis %></td><td><%= e.person %><% if (e.vertretungFuerPerson) { %> (für <%= e.vertretungFuerPerson %>)<% } %></td><td><%= e.kommentar || '' %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
     <% } %>
 
     <% if (darfEingreifen) { %>
@@ -89,7 +82,4 @@
     <% } else if (vorgang.status === 'abgelehnt' && vorgang.art === 'spesen') { %>
       <p class="text-body-secondary mt-4">Abgelehnte Spesen-Positionen können nicht umgehängt werden, weil es für sie keinen Überarbeiten-Weg gibt.</p>
     <% } %>
-  </main>
-  <%- include('../_footer') %>
-</body>
-</html>
+<%- include('../_seite_ende') %>

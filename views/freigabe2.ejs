@@ -1,22 +1,14 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Freigabe 2 — <%= branding.seitenTitel %></title>
-</head>
-<body>
-  <%- include('_header') %>
-  <main class="container-fluid py-4">
-    <div class="row g-3 justify-content-center">
-      <div class="col-lg-6">
+<%- include('_seite_anfang', { titel: 'Freigabe 2', rahmen: 'kompakt' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Freigabe 2: <%= job.dateiname %></h1>
+    </div>
+    <div class="row g-3">
+      <div class="col-lg-7">
         <iframe id="freigabe2-preview-frame" data-preview-url="<%= previewUrl %>" src="" class="w-100 rounded pdf-preview" style="height:85vh"></iframe>
       </div>
-      <div class="col-lg-6 col-xl-4">
+      <div class="col-lg-5">
         <div class="card">
           <div class="card-body">
-            <h1 class="h3">Freigabe 2: <%= job.dateiname %></h1>
             <% if (typeof kkHinweis !== 'undefined' && kkHinweis) { %>
               <div class="alert <%= kkHinweis.startsWith('Kreditkartenbeleg') ? 'alert-info' : 'alert-warning' %> py-2"><%= kkHinweis %></div>
             <% } %>
@@ -56,7 +48,7 @@
               <% } %>
               <% if (paymentReview) { %>
                 <div class="border rounded p-2 mb-3" id="zahlungsdatenPruefung">
-                  <h2 class="h6">Zahlungsdaten</h2>
+                  <h2 class="h5">Zahlungsdaten</h2>
                   <% const daten = paymentReview.daten || {}; %>
                   <% if (paymentReview.art === 'spesen') { %>
                     <p class="mb-1"><strong>IBAN:</strong> <span class="text-break"><%= daten.iban %></span></p>
@@ -106,7 +98,6 @@
         <%- include('_audit_log') %>
       </div>
     </div>
-  </main>
   <script>
     // See pool.ejs's thumbnail-click handler for why file= must be resolved to an absolute URL.
     (function () {
@@ -133,6 +124,4 @@
       });
     })();
   </script>
-  <%- include('_footer') %>
-</body>
-</html>
+<%- include('_seite_ende') %>

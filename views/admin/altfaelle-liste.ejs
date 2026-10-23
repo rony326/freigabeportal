@@ -1,16 +1,14 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Altfälle — <%= branding.seitenTitel %> Admin</title>
-</head>
-<body>
-  <%- include('../_header') %>
-  <main class="container py-4">
-    <%- include('./_nav') %>
-    <h1>Altfälle ohne Freigabe-/Zahlungsnachweis</h1>
+<%- include('../_seite_anfang', { titel: 'Altfälle' }) %>
+<% /* Ansichtswahl (src/middleware/ansicht.js): 'tabelle', 'kacheln' oder 'auto' (Kacheln unter lg, sonst Tabelle). */
+   const gewaehlteAnsicht = (typeof ansicht !== 'undefined' && ansicht) || 'auto';
+   const zeigeTabelle = gewaehlteAnsicht !== 'kacheln';
+   const zeigeKacheln = gewaehlteAnsicht !== 'tabelle';
+   const klasseTabelle = 'ansicht-tabelle' + (gewaehlteAnsicht === 'auto' ? ' d-none d-lg-block' : '');
+   const klasseKacheln = 'ansicht-kacheln' + (gewaehlteAnsicht === 'auto' ? ' d-lg-none' : ''); %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Altfälle ohne Freigabe-/Zahlungsnachweis</h1>
+      <div class="seitenkopf-aktionen"><%- include('../_ansicht_umschalter') %></div>
+    </div>
     <p class="text-muted">Diese Belege sind abgeschlossen, aber ohne belastbaren Freigabe-Snapshot oder ohne ausdrücklich bestätigte Zahlungsdaten. Sie werden nicht an n8n übergeben, bis hier entschieden wurde.</p>
     <% if (gespeichert) { %>
       <div class="alert alert-success" role="alert">Entscheidung gespeichert.</div>
@@ -18,6 +16,7 @@
     <% if (altfaelle.length === 0) { %>
       <p>Keine offenen Altfälle.</p>
     <% } else { %>
+      <% if (zeigeTabelle) { %><div class="<%= klasseTabelle %>">
       <div class="table-responsive">
         <table class="table align-middle">
           <thead><tr><th>Job</th><th>Art</th><th>Dateiname</th><th>Grund</th><th></th></tr></thead>
@@ -34,8 +33,7 @@
           </tbody>
         </table>
       </div>
+      </div><% } %>
+      <% if (zeigeKacheln) { %><div class="<%= klasseKacheln %>"><%- include('_altfaelle_kacheln', { altfaelle }) %></div><% } %>
     <% } %>
-  </main>
-  <%- include('../_footer') %>
-</body>
-</html>
+<%- include('../_seite_ende') %>

@@ -1,16 +1,7 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Mail-Einstellungen — <%= branding.seitenTitel %> Admin</title>
-</head>
-<body>
-  <%- include('../_header') %>
-  <main class="container py-4">
-    <%- include('./_nav') %>
-    <h1>Mail-Einstellungen</h1>
+<%- include('../_seite_anfang', { titel: 'Mail-Einstellungen' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Mail-Einstellungen</h1>
+    </div>
     <% if (errors.length > 0) { %>
       <div class="alert alert-danger">
         <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
@@ -134,7 +125,7 @@
       <% } %>
     </form>
 
-    <h2 class="h4 mt-4">Mail-Digest — Verlauf</h2>
+    <h2 class="h5 mt-4">Mail-Digest — Verlauf</h2>
     <form method="post" action="/admin/mail-einstellungen/jetzt-ausfuehren" class="mb-2">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
@@ -161,7 +152,4 @@
         </tbody>
       </table>
     </div>
-  </main>
-  <%- include('../_footer') %>
-</body>
-</html>
+<%- include('../_seite_ende') %>

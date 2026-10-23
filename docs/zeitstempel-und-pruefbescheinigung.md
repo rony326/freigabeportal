@@ -170,11 +170,12 @@ Bescheinigung selbst) — gedacht als Ausdruck/PDF-Export für die externe
 Revision oder Steuerprüfung, ohne dass die prüfende Stelle selbst Zugriff
 auf das Portal braucht.
 
-## Konfiguration (**Admin → Zeitstempel**, `superadmin`-exklusiv)
+## Konfiguration (**Admin → Einstellungen → Zeitstempel**, `superadmin`-exklusiv)
 
 TSA-URL, optionaler Benutzername/Passwort (HTTP-Basic-Auth, von Hand als
 Header gebaut — die verwendete Bibliothek hat kein eingebautes
-Auth-Konzept), und eine Warnschwelle in Stunden: **Admin-Dashboard** zeigt
+Auth-Konzept), und eine Warnschwelle in Stunden: die **Übersicht** im Reiter
+Admin (`/admin`) zeigt
 eine Warnung, sobald abgeschlossene Jobs länger als diese Schwelle ohne
 gesetzten Zeitstempel warten (nur relevant, solange eine TSA-URL
 konfiguriert ist).

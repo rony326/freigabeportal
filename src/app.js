@@ -9,6 +9,7 @@ import { createCronRouter } from './routes/cron.js';
 import { requireApiKey } from './middleware/apiKey.js';
 import { requireCronSecret } from './middleware/cronAuth.js';
 import { createCsrfProtection } from './middleware/csrf.js';
+import { ansichtWahl } from './middleware/ansicht.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { createN8nBackupRouter } from './routes/n8n/backup.js';
 import { createN8nKkBelegeRouter } from './routes/n8n/kkBelege.js';
@@ -84,11 +85,15 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
     // third party via the Referer header.
     res.setHeader('Referrer-Policy', 'no-referrer');
     // Content-Security-Policy: defense-in-depth backstop, not the primary XSS defense — every EJS
-    // view was audited to only ever use auto-escaping `<%= %>` on user-controlled data (`<%- %>`
-    // is used exclusively for trusted static `include()`s), so there's no known unescaped-output
-    // path today. 'unsafe-inline' is required for script-src/style-src because several views use
-    // inline <script> blocks and style="" attributes without nonces; a future refactor to
-    // nonce-based CSP could drop it. Still meaningfully restricts where a future injection could
+    // view was audited to only ever use auto-escaping `<%= %>` on user-controlled data. `<%- %>`
+    // (raw output) is used for `include()`s and for two view-local helpers that concatenate
+    // include() results into HTML strings: `jobListe` in views/pool.ejs and `kkListe` in
+    // views/kreditkarte.ejs. Those helpers interpolate nothing but the (self-escaping) partials'
+    // output and fixed CSS class names — headings and other data stay outside, in `<%= %>`; the
+    // "Roh-Ausgabe-Sweep" in test/integration/layoutSweep.test.js enforces this. So there's no
+    // known unescaped-output path today. 'unsafe-inline' is required for script-src/style-src
+    // because several views use inline <script> blocks and style="" attributes without nonces; a
+    // future refactor to nonce-based CSP could drop it. Still meaningfully restricts where a future injection could
     // load resources from or exfiltrate to, and blocks base-tag/form-action hijacking outright.
     res.setHeader(
       'Content-Security-Policy',
@@ -123,6 +128,7 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   // cookie-parser must run after express-session (session parses its own cookie first) and
   // before the CSRF middleware, which reads/writes its own separate, non-session cookie.
   app.use(cookieParser());
+  app.use(ansichtWahl());
   const { attachCsrfToken, csrfProtection } = createCsrfProtection(config);
   app.use((req, res, next) => {
     // /api/n8n/* and /internal/cron/* are machine routes authenticated via X-API-Key /

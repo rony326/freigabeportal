@@ -348,7 +348,7 @@ unverändert durch Freigabe 1/2 und Export. Details:
 
 `kk_beleg_ereignisse` erscheint gemeinsam mit `freigaben` und
 `job_loeschungen` in der einen durchsuchbaren Zeitleiste unter
-**Admin → Audit-Log** (`src/services/globalAuditLog.js`, dritte Quelle in
+**Admin → Betrieb → Audit-Log** (`src/services/globalAuditLog.js`, dritte Quelle in
 der `UNION ALL`-Abfrage) — filterbar wie die übrigen Ereignisse. Ein
 Eintrag ohne `person_id` (automatische Kartenerkennung, Fristlöschung —
 siehe unten) wird dort als Person „System“ angezeigt.
@@ -361,7 +361,7 @@ Neuer Cron-Job `kk-beleg-erinnerungen` (`runKkBelegErinnerungenJob`,
 `src/services/cronJobs.js`), Standard-Zeitplan täglich 08:00
 (Europe/Zürich, Config-Keys `cron_kk_beleg_erinnerungen_stunde`/`_minute`),
 zusätzlich über `POST /internal/cron/kk-beleg-erinnerungen` und den
-"Jetzt ausführen"-Button unter **Admin → Geplante Jobs** auslösbar. Läuft
+"Jetzt ausführen"-Button unter **Admin → Betrieb → Geplante Jobs** auslösbar. Läuft
 nur, wenn sowohl das Kreditkartenmodul (`modul_kreditkarten_aktiv`) als
 auch der eigene Schalter `kk_beleg_erinnerungen_aktiv` (Default an)
 aktiviert sind. Details zum Zeitplan und zu den Mail-Vorlagen:
@@ -539,7 +539,7 @@ liegengebliebenen Entwurf, nicht nur an offene Belege.
 Neuer Teilschritt des bestehenden `pdf-bereinigung`-Cron-Jobs (kein
 eigener Job): für jeden `verworfen`en Beleg, dessen `verworfen_am` die
 konfigurierte Frist `kk_beleg_verworfen_loeschen_tage` (Default 90 Tage,
-einstellbar unter **Admin → Geplante Jobs**) überschreitet, werden
+einstellbar unter **Admin → Betrieb → Geplante Jobs**) überschreitet, werden
 `pdf_pfad`/`thumbnail_pfad` gelöscht und `datei_geloescht_am` gesetzt
 (`markKkBelegDateiGeloescht`), plus Audit-Eintrag
 `kk_beleg_datei_geloescht` (`person_id = NULL` = System).

@@ -1,18 +1,9 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Audit-Log — <%= branding.seitenTitel %> Admin</title>
-</head>
-<body>
-  <%- include('../_header') %>
-  <main class="container py-4">
-    <%- include('./_nav') %>
-    <h1>Globales Audit-Log</h1>
+<%- include('../_seite_anfang', { titel: 'Audit-Log' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Globales Audit-Log</h1>
+    </div>
     <% if (aenderungen.length) { %>
-    <h2 class="h4">Änderungshistorie</h2>
+    <h2 class="h5">Änderungshistorie</h2>
     <div class="table-responsive">
       <table class="table">
         <thead><tr><th>Zeitpunkt</th><th>Person</th><th>Objekt</th><th>Aktion</th><th>Änderung</th></tr></thead>
@@ -34,9 +25,9 @@
       <% if (aenderungen.length === 50) { %> · <a href="?vor=<%= aenderungen[aenderungen.length - 1].id %>">Ältere Änderungen</a><% } %>
     </p>
     <% } %>
-    <h2 class="h4">Freigaben und Löschungen</h2>
+    <h2 class="h5">Freigaben und Löschungen</h2>
 
-    <form method="get" class="row g-2 mb-3">
+    <form method="get" class="filterzeile">
       <div class="col-auto">
         <select class="form-select" name="person">
           <option value="">Alle Personen</option>
@@ -71,7 +62,7 @@
         <input type="text" class="form-control" name="q" value="<%= query.q || '' %>" placeholder="Suche in Kommentar/Dateiname">
       </div>
       <div class="col-auto">
-        <button type="submit" class="btn btn-primary">Filtern</button>
+        <button type="submit" class="btn btn-outline-primary">Filtern</button>
       </div>
     </form>
 
@@ -117,7 +108,4 @@
         </ul>
       </nav>
     <% } %>
-  </main>
-  <%- include('../_footer') %>
-</body>
-</html>
+<%- include('../_seite_ende') %>

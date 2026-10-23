@@ -1,0 +1,16 @@
+<% /* Kachel-Gegenstück zur Tabelle in altfaelle-liste.ejs (gleiche Daten: altfaelle). */ %>
+<div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
+  <% altfaelle.forEach((fall) => { %>
+    <div class="col">
+      <div class="kachel d-flex flex-column gap-2" id="altfall-kachel-<%= fall.job.id %>">
+        <div class="fw-semibold text-break"><%= fall.job.dateiname %></div>
+        <dl class="kachel-angaben small mb-0">
+          <dt>Job</dt><dd><%= fall.job.id %></dd>
+          <dt>Art</dt><dd><%= fall.gruppe ? 'Splitgruppe' : fall.job.quelle === 'spesen' ? 'Spesen' : 'Rechnung' %></dd>
+          <dt>Grund</dt><dd><%= fall.grund %></dd>
+        </dl>
+        <div class="mt-auto"><a href="/admin/altfaelle/<%= fall.job.id %>" class="btn btn-outline-primary btn-sm">Prüfen</a></div>
+      </div>
+    </div>
+  <% }) %>
+</div>

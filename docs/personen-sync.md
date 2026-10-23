@@ -87,12 +87,12 @@ flowchart TD
   - Eine einzelne Person, die als einzige aktive Person austritt, ist
     davon ausgenommen — das ist ein normaler Vorgang, kein Fehlersignal.
   - Ein abgebrochener Lauf löst eine `sync-fehler`-Mail an die unter
-    **Admin → Personen-Sync** konfigurierten Empfänger aus.
+    **Admin → Betrieb → Sync-Übersicht** konfigurierten Empfänger aus.
 - **Nicht auflösbare Personen** werden als `ct_person_unresolved` markiert,
   nicht gelöscht oder deaktiviert — ihre historischen Freigaben/Rechnungen
   bleiben nachvollziehbar zuordenbar.
 - Die Konfiguration (Prozent-/Anzahl-Schwelle, Fehler-Empfänger) ist unter
-  **Admin → Personen-Sync** (Recht `sync_einsehen`) einstellbar.
+  **Admin → Betrieb → Sync-Übersicht** (Recht `sync_einsehen`) einstellbar.
 - Der Sync ruft je aktiver Person das ChurchTools-Profil ab; die Laufzeit
   wächst damit linear mit der Zahl der Portalnutzer.
 
@@ -111,7 +111,7 @@ Ein `freigabe2`-Job, der bereits an die Admin-Gruppe eskaliert wurde, gilt
 **nicht** als hängend — ein gleichzeitiger Ausfall der gesamten
 `superadmin`-Gruppe ist bewusst nicht abgedeckt.
 
-**Admin → Personen-Sync** listet jeden hängenden Job mit Name/Grund und
+**Admin → Betrieb → Sync-Übersicht** listet jeden hängenden Job mit Name/Grund und
 bietet einen Force-Freigeben-Button:
 
 - für `zugewiesen`/`abgelehnt`: vollständiger Reset auf `unzugewiesen`

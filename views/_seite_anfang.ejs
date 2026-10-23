@@ -1,0 +1,102 @@
+<%
+  // Gemeinsames Grundgerüst jeder Seite. Aufruf: include('_seite_anfang', { titel, rahmen })
+  //   rahmen 'voll' (Standard) | 'kompakt' (eingeklappte Seitenleiste, PDF-Seiten) | 'ohne' (iframe, nur <main>)
+  // Gegenstück: include('_seite_ende') bzw. include('_seite_ende', { rahmen: 'ohne' }).
+  const sRahmen = locals.rahmen === 'kompakt' || locals.rahmen === 'ohne' ? locals.rahmen : 'voll';
+  const sNavigation = locals.navigation || null;
+  const sPfad = locals.currentPath || '';
+  const sAdminBereich = Boolean(sNavigation && sNavigation.bereich === 'admin');
+  const sZeigeAktionen = sPfad.startsWith('/kontierung') || sPfad.startsWith('/freigabe2');
+  const sZeigeLieferant = sPfad.startsWith('/kontierung');
+  const sEingeloggt = Boolean(locals.currentPerson);
+%><!DOCTYPE html>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<head>
+  <meta charset="utf-8">
+  <script>
+    // Bootstrap 5.3's own components (e.g. .table) obey ONLY the explicit data-bs-theme attribute —
+    // it has no built-in prefers-color-scheme auto-detection. When branding.themeAttr is null (no
+    // theme cookie and no admin default — i.e. "system"), <html> carries neither data-theme nor
+    // data-bs-theme at all, so Bootstrap silently defaults every component to light regardless of
+    // the OS's dark mode, even though this app's own --bg/--fg CSS variables (see _brand_styles)
+    // already react correctly via @media (prefers-color-scheme: dark). Runs first, synchronously,
+    // before any Bootstrap-styled markup below is parsed, so there is no flash of the wrong theme.
+    (function () {
+      var root = document.documentElement;
+      if (root.hasAttribute('data-bs-theme')) return;
+      var dunkel = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      root.setAttribute('data-theme', dunkel ? 'dunkel' : 'hell');
+      root.setAttribute('data-bs-theme', dunkel ? 'dark' : 'light');
+    })();
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="/css/portal.css">
+  <%- include('_brand_styles') %>
+  <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+  <title><%= titel %> — <%= branding.seitenTitel %><%= sAdminBereich ? ' Admin' : '' %></title>
+</head>
+<body>
+<% if (sRahmen === 'ohne') { %>
+<main class="container-xxl py-3">
+<% } else { %>
+<header class="portal-kopf border-bottom mb-3">
+  <div class="container-xxl portal-kopf-zeile">
+    <div class="portal-kopf-links d-flex align-items-center gap-2">
+      <% if (sNavigation) { %>
+        <button type="button" id="seitenleiste-toggle" class="btn btn-outline-secondary btn-sm d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#portal-seitenleiste" aria-controls="portal-seitenleiste" aria-label="Navigation öffnen">☰</button>
+      <% } %>
+      <div class="portal-kopf-marke text-start">
+        <% if (branding.hasLogo && branding.logoAusrichtung === 'links') { %>
+          <img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2">
+        <% } else if (!branding.hasLogo) { %>
+          <span class="portal-kopf-titel"><%= branding.seitenTitel %></span>
+        <% } %>
+      </div>
+      <% if (sNavigation) { %>
+        <nav class="portal-reiter nav nav-underline" aria-label="Bereiche">
+          <a class="nav-link<%= sAdminBereich ? '' : ' active' %>" href="/pool"<% if (!sAdminBereich) { %> aria-current="page"<% } %>>Portal</a>
+          <% if (sNavigation.zeigeAdminReiter) { %>
+            <a class="nav-link<%= sAdminBereich ? ' active' : '' %>" href="/admin"<% if (sAdminBereich) { %> aria-current="page"<% } %>>Admin</a>
+          <% } %>
+        </nav>
+      <% } %>
+    </div>
+    <div class="text-center">
+      <% if (branding.hasLogo && branding.logoAusrichtung === 'mitte') { %>
+        <img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2">
+      <% } %>
+    </div>
+    <div class="d-flex justify-content-end align-items-center gap-2">
+      <% if (branding.hasLogo && branding.logoAusrichtung === 'rechts') { %>
+        <img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2">
+      <% } %>
+      <% if (sEingeloggt) { %>
+        <span class="text-muted small d-none d-md-inline">Angemeldet als <%= currentPerson.vorname %> <%= currentPerson.nachname %></span>
+      <% } %>
+      <button type="button" id="theme-toggle" class="btn btn-outline-secondary btn-sm" aria-label="Farbmodus umschalten">🌓</button>
+      <% if (sEingeloggt) { %>
+        <form method="post" action="/auth/logout" class="d-inline">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <button type="submit" class="btn btn-outline-secondary btn-sm">Abmelden</button>
+        </form>
+      <% } %>
+    </div>
+  </div>
+</header>
+<div class="container-xxl">
+<% if (sNavigation) { %>
+<div class="portal-rahmen<%= sRahmen === 'kompakt' ? ' kompakt' : '' %>">
+  <%- include('_seitenleiste', { gruppen: sNavigation.gruppen, eingeklappt: sRahmen === 'kompakt' }) %>
+<% } %>
+<main class="portal-inhalt">
+<% } %>
+<% if (sRahmen !== 'ohne' && sZeigeAktionen) { %>
+  <div class="portal-aktionen d-flex flex-wrap align-items-center gap-2 mb-3">
+    <a href="/pool" class="btn btn-primary btn-sm">← Zurück</a>
+    <button type="button" id="preview-refresh-btn" class="btn btn-outline-secondary btn-sm">Vorschau neu laden</button>
+    <% if (sZeigeLieferant) { %>
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#neuer-lieferant-modal">+ Lieferant</button>
+    <% } %>
+  </div>
+<% } %>

@@ -454,6 +454,11 @@ test('GET /zeitstempel-pruefen/zertifikat?jobId= renders the Prüfbescheinigung 
   assert.match(res.text, new RegExp(hash));
   assert.match(res.text, /window\.print\(\)/);
   assert.doesNotMatch(res.text, /<img src="\/branding\/logo"/, 'no logo configured for this test app — must not render a broken/empty logo tag');
+  // Ausdruck als Nachweis: der Titel muss im umrandeten Kasten stehen (nur im Druck sichtbar),
+  // der Seitenkopf darüber wird beim Drucken ausgeblendet. Weiterhin genau ein <h1 auf der Seite.
+  const kasten = res.text.slice(res.text.indexOf('<div class="bescheinigung'));
+  assert.match(kasten, /<p class="bescheinigung-titel h1 d-none d-print-block">Prüfbescheinigung<\/p>/);
+  assert.equal(res.text.split('<h1').length - 1, 1);
 
   rmSync(dir, { recursive: true, force: true });
   db.close();

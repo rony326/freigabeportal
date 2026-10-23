@@ -1,0 +1,35 @@
+<% /* Kachel-Gegenstück zur Tabelle in vorgaenge-liste.ejs (gleiche Daten: vorgaenge, darfEingreifen).
+     Hängend/überfällig: farbiger Rand plus Badge, damit die Information nicht nur über Farbe läuft. */ %>
+<div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
+  <% vorgaenge.forEach((v) => { %>
+    <div class="col">
+      <div class="kachel d-flex flex-column gap-2<%= v.haengt ? ' kachel-haengt' : (v.ueberfaellig ? ' kachel-ueberfaellig' : '') %>" id="vorgang-kachel-<%= v.id %>">
+        <div class="fw-semibold text-break"><a href="/admin/vorgaenge/<%= v.id %>"><%= v.gegenueber %></a></div>
+        <div class="small text-body-secondary text-break"><%= v.dateiname %></div>
+        <div class="kachel-betrag"><%= v.betrag || '—' %></div>
+        <div>
+          <%= v.statusLabel %>
+          <% v.kennzeichen.forEach((k) => { %><span class="badge text-bg-secondary ms-1"><%= k %></span><% }) %>
+          <% if (v.haengt) { %><span class="badge text-bg-danger ms-1">hängt</span><% } %>
+          <% if (v.ueberfaellig) { %><span class="badge text-bg-warning ms-1">überfällig</span><% } %>
+        </div>
+        <dl class="kachel-angaben small mb-0">
+          <dt>Eingang</dt><dd><%= v.eingangAm.slice(0, 10) %></dd>
+          <dt>Seit</dt><dd><%= (v.seit || '').slice(0, 10) %></dd>
+          <dt>Art</dt><dd><%= v.artLabel %></dd>
+          <dt>Konto</dt><dd><%= v.kontoLabel %></dd>
+          <dt>Zuständig</dt><dd><%= v.zustaendig.name %><% if (v.zustaendig.vertretungName) { %><br><small class="text-body-secondary">vertreten durch <%= v.zustaendig.vertretungName %></small><% } %></dd>
+          <dt>Freigabe 2</dt>
+          <dd>
+            <% if (!v.prognoseF2) { %>—
+            <% } else if (v.prognoseF2.offen) { %><span class="text-body-secondary">noch offen</span>
+            <% } else { %><%= v.prognoseF2.name %><% if (v.prognoseF2.prognose) { %> <span class="badge text-bg-light">Prognose</span><% } %><% } %>
+          </dd>
+        </dl>
+        <% if (darfEingreifen) { %>
+          <div class="mt-auto"><a href="/admin/vorgaenge/<%= v.id %>#umhaengen" class="btn btn-outline-primary btn-sm">Umhängen</a></div>
+        <% } %>
+      </div>
+    </div>
+  <% }) %>
+</div>

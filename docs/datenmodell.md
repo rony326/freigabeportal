@@ -351,7 +351,7 @@ einzige Quelle für exportierte Metadaten — siehe
 ### `altfall_entscheidungen`
 Append-only (Trigger gegen `UPDATE`/`DELETE`), höchstens eine Zeile je Job
 (`UNIQUE job_id`, bei Splitgruppen der Elternjob). Hält die unter
-Admin → Altfälle getroffene Entscheidung (`nachbestaetigt`/`nur_archiv`),
+Admin → Vorgänge → Altfälle getroffene Entscheidung (`nachbestaetigt`/`nur_archiv`),
 den angezeigten Stand mit Herkunft je Wert (`angezeigte_daten`, JSON), den
 Fingerprint (`stand`), Person, Namen zum Zeitpunkt, Pflichtbegründung und
 Zeitpunkt.
@@ -372,7 +372,7 @@ Ferienmodus-Stellvertreter der eigentlich zuständigen Person war — sonst `NUL
 
 ### `mail_log`
 Persistente Warteschlange und Protokoll jeder Benachrichtigung, inkl.
-Volltext — Basis für **Admin → E-Mail-Protokoll**, die automatische
+Volltext — Basis für **Admin → Betrieb → Mail-Protokoll**, die automatische
 Wiederholung (`mail-zustellung`) und die "erneut senden"-Funktion. Eine
 Zeile je Empfänger. `status`: `eingereiht` (wartet auf Zustellung bzw.
 Wiederholung), `geplant` (wartet auf den Digest), `versendet` (vom
@@ -397,7 +397,7 @@ mehr rekonstruierbar wäre.
 Audit-Trail jeder Datenbank-Wiederherstellung (Dateiname des eingespielten
 Archivs, auslösende Person, Zeitpunkt). Geschrieben vom Offline-Restore
 (`npm run backup:restore`, siehe [offline-restore.md](offline-restore.md));
-**Admin → Datenbank-Backup** zeigt den Verlauf nur an — eine Wiederherstellung
+**Admin → Betrieb → Datenbank-Backup** zeigt den Verlauf nur an — eine Wiederherstellung
 im laufenden Betrieb gibt es nicht mehr.
 Eigene schlanke Tabelle statt Zweckentfremdung von `cron_log`, weil hier —
 anders als bei den geplanten Jobs — festgehalten werden muss, *welche

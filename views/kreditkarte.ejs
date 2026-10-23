@@ -1,15 +1,14 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Kreditkartenbelege — <%= branding.seitenTitel %></title>
-</head>
-<body>
-  <%- include('_header') %>
-  <main class="container py-4">
-    <h1 class="h3">Kreditkartenbelege</h1>
+<%- include('_seite_anfang', { titel: 'Kreditkartenbelege' }) %>
+<% /* Ansichtswahl (src/middleware/ansicht.js): 'tabelle', 'kacheln' oder 'auto' (Kacheln unter lg, sonst Tabelle). */
+   const gewaehlteAnsicht = (typeof ansicht !== 'undefined' && ansicht) || 'auto';
+   const zeigeTabelle = gewaehlteAnsicht !== 'kacheln';
+   const zeigeKacheln = gewaehlteAnsicht !== 'tabelle';
+   const klasseTabelle = 'ansicht-tabelle' + (gewaehlteAnsicht === 'auto' ? ' d-none d-lg-block' : '');
+   const klasseKacheln = 'ansicht-kacheln' + (gewaehlteAnsicht === 'auto' ? ' d-lg-none' : ''); %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Kreditkartenbelege</h1>
+      <div class="seitenkopf-aktionen"><%- include('_ansicht_umschalter') %></div>
+    </div>
     <p class="text-muted">Lade Belege zu Kreditkartenkäufen hier hoch, sobald du sie hast. Sie werden erst verbucht, wenn die Monatsabrechnung der Karte eintrifft und abgeglichen wird.</p>
     <% if (gespeichert) { %><div class="alert alert-success">Gespeichert.</div><% } %>
     <% if (errors.length > 0) { %>
@@ -71,18 +70,27 @@
       </div></div>
     <% } %>
 
-    <%- include('_kk_beleg_tabelle', { titel: 'Zu ergänzen', belege: entwuerfe, aktionen: true }) %>
-    <%- include('_kk_beleg_tabelle', { titel: 'Meine offenen Belege', belege: offen, aktionen: true }) %>
-    <% if (verantwortlichOffen.length > 0) { %>
-      <%- include('_kk_beleg_tabelle', { titel: 'Offene Belege meiner Karten', belege: verantwortlichOffen, aktionen: true }) %>
+<%# kkListe liefert nur include()-Ergebnisse (die Partials escapen selbst). Die Überschriften stehen
+    ausserhalb und werden escapet ausgegeben, damit keine Daten ungeschützt roh ausgegeben werden. %>
+<% const kkListe = (idPrefix, belege, aktionen) => {
+     let html = '';
+     if (zeigeTabelle) html += `<div class="${klasseTabelle}">${include('_kk_beleg_tabelle', { belege, aktionen })}</div>`;
+     if (zeigeKacheln) html += `<div class="${klasseKacheln}">${include('_kk_beleg_kacheln', { belege, aktionen, idPrefix })}</div>`;
+     return html;
+   };
+   const kkAbschnitte = [
+     ['kk-entwurf', 'Zu ergänzen', entwuerfe],
+     ['kk-offen', 'Meine offenen Belege', offen],
+     ['kk-verantwortlich', 'Offene Belege meiner Karten', verantwortlichOffen],
+   ]; %>
+    <% for (const [idPrefix, titel, belege] of kkAbschnitte) { if (belege.length === 0) continue; %>
+      <h2 class="h5 mt-4"><%= titel %></h2>
+      <%- kkListe(idPrefix, belege, true) %>
     <% } %>
     <% if (erledigt.length > 0) { %>
       <details class="mt-4">
         <summary class="h6">Zugeordnet / verworfen (<%= erledigt.length %>)</summary>
-        <%- include('_kk_beleg_tabelle', { titel: null, belege: erledigt, aktionen: false }) %>
+        <%- kkListe('kk-erledigt', erledigt, false) %>
       </details>
     <% } %>
-  </main>
-  <%- include('_footer') %>
-</body>
-</html>
+<%- include('_seite_ende') %>

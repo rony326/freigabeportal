@@ -1,0 +1,4 @@
+<% /* Aktion „Jetzt prüfen“ für abgeschlossene Belege — gemeinsam für Tabellenzeilen und Kacheln. */ %>
+<% if (['abgeschlossen', 'abgeholt', 'archiviert'].includes(job.status)) { %>
+  <a href="/zeitstempel-pruefen?jobId=<%= job.id %>" class="btn btn-outline-primary btn-sm">Jetzt prüfen</a>
+<% } %>

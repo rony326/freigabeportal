@@ -1,24 +1,10 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Prüfbescheinigung — <%= branding.seitenTitel %></title>
-  <style>
-    .bescheinigung { border: 2px solid #333; padding: 2rem; }
-    .hash-wert { font-family: monospace; word-break: break-all; }
-    @media print {
-      .no-print { display: none !important; }
-      .bescheinigung { border: 2px solid #000; }
-      body { padding: 0; }
-      body { background: #fff !important; color: #000 !important; }
-    }
-  </style>
-</head>
-<body>
-  <div class="no-print"><%- include('_header') %></div>
-  <main class="container py-4">
+<%- include('_seite_anfang', { titel: 'Prüfbescheinigung' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Prüfbescheinigung</h1>
+      <div class="seitenkopf-aktionen">
+        <button type="button" class="btn btn-primary btn-sm" onclick="window.print()">Drucken / als PDF speichern</button>
+      </div>
+    </div>
     <p class="no-print"><a href="/zeitstempel-pruefen?jobId=<%= job.id %>">← Zurück zur Prüfung</a></p>
 
     <div class="bescheinigung col-12 col-lg-8">
@@ -26,7 +12,9 @@
         <% if (branding.hasLogo) { %><img src="/branding/logo" alt="Logo" height="40"><% } %>
         <strong><%= branding.seitenTitel %></strong>
       </div>
-      <h1>Prüfbescheinigung</h1>
+      <%# Nur im Druck: der Ausdruck dient als Nachweis, der Titel gehört in den umrandeten Kasten.
+          Bewusst keine h1-Überschrift: genau eine pro Seite, im Seitenkopf, der beim Drucken ausgeblendet wird. %>
+      <p class="bescheinigung-titel h1 d-none d-print-block">Prüfbescheinigung</p>
       <p class="text-muted">Diese Bescheinigung ist kein rechtsverbindliches Signaturzertifikat. Sie fasst das Ergebnis der RFC3161-Zeitstempel- und Hash-Prüfung dieses Dokuments zusammen.</p>
 
       <h2 class="h5 mt-4">Beleg</h2>
@@ -63,9 +51,4 @@
 
       <p class="text-muted small mt-4">Diese Bescheinigung wurde erstellt am <%= erstelltAm %> durch <%= erstelltVon %>.</p>
     </div>
-
-    <p class="no-print mt-3"><button type="button" class="btn btn-primary" onclick="window.print()">Drucken / als PDF speichern</button></p>
-  </main>
-  <div class="no-print"><%- include('_footer') %></div>
-</body>
-</html>
+<%- include('_seite_ende') %>

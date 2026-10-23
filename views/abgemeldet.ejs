@@ -1,17 +1,11 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Abgemeldet — <%= branding.seitenTitel %></title>
-</head>
-<body>
-  <%- include('_header') %>
-  <main class="container py-4">
-    <h1>Du wurdest abgemeldet</h1>
+<%- include('_seite_anfang', { titel: 'Abgemeldet' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Du wurdest abgemeldet</h1>
+      <div class="seitenkopf-aktionen">
+        <a href="/auth/login" class="btn btn-primary btn-sm">Erneut anmelden</a>
+      </div>
+    </div>
     <p class="alert alert-success">Deine Sitzung im Freigabeportal wurde beendet.</p>
-    <p><a href="/auth/login" class="btn btn-primary">Erneut anmelden</a></p>
     <% if (churchtoolsBaseUrl) { %>
       <p class="text-muted small">
         Solange du bei ChurchTools selbst noch angemeldet bist, meldet dich "Erneut anmelden" ohne
@@ -21,7 +15,4 @@
         <a href="<%= churchtoolsBaseUrl %>/?q=logout" target="_blank" rel="noopener noreferrer">Auch bei ChurchTools abmelden</a>
       </p>
     <% } %>
-  </main>
-  <%- include('_footer') %>
-</body>
-</html>
+<%- include('_seite_ende') %>

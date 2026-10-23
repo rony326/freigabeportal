@@ -1,0 +1,5 @@
+<% /* Statustext eines Kreditkartenbelegs — gemeinsam für Tabellenzeile und Kachel. */ %>
+<% if (b.status === 'zugeordnet') { %>Zugeordnet (Job #<%= b.zugeordnet_job_id %>)
+<% } else if (b.status === 'verworfen') { %>Verworfen: <%= b.verworfen_grund %><% if (b.datei_geloescht_am) { %> <span class="text-muted">(Datei gelöscht am <%= b.datei_geloescht_am.slice(0, 10) %>)</span><% } %>
+<% } else if (b.status === 'entwurf') { %>Zu ergänzen
+<% } else { %>Offen<% } %>

@@ -1,15 +1,7 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Rechnung aufsplitten — <%= branding.seitenTitel %></title>
-</head>
-<body>
-  <%- include('_brand_styles') %>
-  <main class="container py-4">
-    <h1 class="h3">Rechnung aufsplitten: <%= job.dateiname %></h1>
+<%- include('_seite_anfang', { titel: 'Rechnung aufsplitten', rahmen: 'ohne' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Rechnung aufsplitten: <%= job.dateiname %></h1>
+    </div>
     <p class="text-muted">Vorgangsnummer: <%= job.id %></p>
     <% if (errors.length > 0) { %>
       <div class="alert alert-danger">
@@ -67,7 +59,6 @@
         <a href="/kontierung/<%= job.id %>" id="abbrechen-link" class="btn btn-outline-secondary">Abbrechen</a>
       </div>
     </form>
-  </main>
   <script>
     (function () {
       // Reached both standalone (direct navigation) and embedded in an <iframe> inside a Bootstrap
@@ -137,5 +128,4 @@
       });
     })();
   </script>
-</body>
-</html>
+<%- include('_seite_ende', { rahmen: 'ohne' }) %>

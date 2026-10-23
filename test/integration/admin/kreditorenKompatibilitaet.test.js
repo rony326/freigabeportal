@@ -49,7 +49,7 @@ test('Kreditoren are created and listed under the correct name; the former path 
   assert.equal((await admin.post('/admin/kreditoren').type('form').send({ _csrf: token, name: 'Papier AG' })).status, 302);
   const liste = await admin.get('/admin/kreditoren');
   assert.equal(liste.status, 200);
-  assert.match(liste.text, /<h1>Kreditoren<\/h1>/);
+  assert.match(liste.text, /<h1 class="seitenkopf-titel">Kreditoren<\/h1>/);
   assert.match(liste.text, /Papier AG/);
   assert.doesNotMatch(liste.text, /Debitor/);
   const dashboard = await admin.get('/admin');

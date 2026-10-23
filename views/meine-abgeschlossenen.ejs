@@ -1,21 +1,21 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Meine abgeschlossenen Rechnungen — <%= branding.seitenTitel %></title>
-</head>
-<body>
-  <%- include('_header') %>
-  <main class="container py-4">
-    <h1 class="h3">Meine abgeschlossenen Rechnungen</h1>
+<%- include('_seite_anfang', { titel: 'Meine abgeschlossenen Rechnungen' }) %>
+<% /* Ansichtswahl (src/middleware/ansicht.js): 'tabelle', 'kacheln' oder 'auto' (Kacheln unter lg, sonst Tabelle). */
+   const gewaehlteAnsicht = (typeof ansicht !== 'undefined' && ansicht) || 'auto';
+   const zeigeTabelle = gewaehlteAnsicht !== 'kacheln';
+   const zeigeKacheln = gewaehlteAnsicht !== 'tabelle';
+   const klasseTabelle = 'ansicht-tabelle' + (gewaehlteAnsicht === 'auto' ? ' d-none d-lg-block' : '');
+   const klasseKacheln = 'ansicht-kacheln' + (gewaehlteAnsicht === 'auto' ? ' d-lg-none' : ''); %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Meine abgeschlossenen Rechnungen</h1>
+      <div class="seitenkopf-aktionen"><%- include('_ansicht_umschalter') %></div>
+    </div>
 
     <% if (jobs.length === 0) { %>
       <p>Keine abgeschlossenen Rechnungen.</p>
     <% } else { %>
       <p class="text-muted"><%= gesamtAnzahl %> Rechnungen</p>
-      <%- include('_abgeschlossen_table', { jobs }) %>
+      <% if (zeigeTabelle) { %><div class="<%= klasseTabelle %>"><%- include('_abgeschlossen_table', { jobs }) %></div><% } %>
+      <% if (zeigeKacheln) { %><div class="<%= klasseKacheln %>"><%- include('_abgeschlossen_kacheln', { jobs }) %></div><% } %>
 
       <nav aria-label="Seiten">
         <ul class="pagination">
@@ -37,7 +37,4 @@
         </ul>
       </nav>
     <% } %>
-  </main>
-  <%- include('_footer') %>
-</body>
-</html>
+<%- include('_seite_ende') %>

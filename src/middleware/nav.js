@@ -2,6 +2,8 @@ import { personHasRole } from './roles.js';
 import { personHasPermission } from './permissions.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { zeigeKreditkartenBereich } from '../services/kkRechte.js';
+import { bereichFuerPfad, bauePortalGruppen, baueAdminGruppen } from '../services/navigation.js';
+import { zaehleOffeneAufgaben } from '../services/aufgabenZaehler.js';
 
 export function loadNavFlags(db, config) {
   return (req, res, next) => {
@@ -34,6 +36,22 @@ export function loadNavFlags(db, config) {
     res.locals.currentPath = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
     res.locals.kreditkartenModulAktiv = getConfigValue(db, 'modul_kreditkarten_aktiv') === '1';
     res.locals.zeigeKreditkarteNav = Boolean(person) && res.locals.kreditkartenModulAktiv && zeigeKreditkartenBereich(db, person.churchtools_person_id);
+    if (person) {
+      const bereich = bereichFuerPfad(res.locals.currentPath);
+      const zeigeAdminReiter = Boolean(res.locals.isSuperadmin || res.locals.isManager || Object.values(res.locals.adminNav).some(Boolean));
+      const gruppen =
+        bereich === 'admin'
+          ? baueAdminGruppen({ pfad: res.locals.currentPath, adminNav: res.locals.adminNav })
+          : bauePortalGruppen({
+              pfad: res.locals.currentPath,
+              spesenModulAktiv: res.locals.spesenModulAktiv !== false,
+              zeigeKreditkarteNav: res.locals.zeigeKreditkarteNav,
+              offeneAufgaben: zaehleOffeneAufgaben(db, person.churchtools_person_id, { istSuperadmin: res.locals.isSuperadmin }),
+            });
+      res.locals.navigation = { bereich, zeigeAdminReiter, gruppen };
+    } else {
+      res.locals.navigation = null;
+    }
     next();
   };
 }

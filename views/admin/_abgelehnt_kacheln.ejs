@@ -1,0 +1,18 @@
+<% /* Kachel-Gegenstück zur Tabelle in abgelehnt-liste.ejs (gleiche Daten: jobs). */ %>
+<div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
+  <% jobs.forEach((job) => { %>
+    <div class="col">
+      <div class="kachel d-flex flex-column gap-2" id="abgelehnt-kachel-<%= job.id %>">
+        <div class="fw-semibold text-break"><%= job.lieferant || job.dateiname %></div>
+        <dl class="kachel-angaben small mb-0">
+          <dt>Dateiname</dt><dd class="text-break"><%= job.dateiname %></dd>
+          <dt>Lieferant</dt><dd><%= job.lieferant || '—' %></dd>
+          <dt>Grund</dt><dd><%= job.ablehnungsgrund %></dd>
+          <dt>Abgelehnt von</dt><dd><%= job.abgelehntVonPerson ? `${job.abgelehntVonPerson.vorname} ${job.abgelehntVonPerson.nachname}` : 'Unbekannt' %></dd>
+          <dt>Eingang</dt><dd><%= job.eingang_am %></dd>
+        </dl>
+        <div class="mt-auto"><a href="/admin/abgelehnt/<%= job.id %>" class="btn btn-outline-danger btn-sm">Löschen</a></div>
+      </div>
+    </div>
+  <% }) %>
+</div>

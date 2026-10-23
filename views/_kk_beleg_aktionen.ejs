@@ -1,0 +1,4 @@
+<% /* Aktion eines Kreditkartenbelegs — gemeinsam für Tabellenzeile und Kachel. */ %>
+<% if (aktionen && (b.status === 'offen' || b.status === 'entwurf')) { %>
+  <a href="/kreditkarte/belege/<%= b.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm"><%= b.status === 'entwurf' ? 'Ergänzen' : 'Bearbeiten' %></a>
+<% } %>

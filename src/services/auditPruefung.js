@@ -38,8 +38,8 @@ async function zeitstempelStatus(db, paket) {
 
 const liste = (nummern) => nummern.map((nr) => `Paket ${nr}`).join(', ');
 
-function zeitstempelText(db, paketNr, maengel) {
-  if (!Object.values(maengel).some((n) => n.length)) {
+function zeitstempelText(db, paketNr, maengel, spaet = false) {
+  if (!spaet && !Object.values(maengel).some((n) => n.length)) {
     return paketNr === 1
       ? 'Paket 1 hat einen gültigen, rechtzeitig gesetzten Zeitstempel, der zum Paket passt.'
       : `Paket ${paketNr} und alle älteren Pakete haben einen gültigen, rechtzeitig gesetzten Zeitstempel, der zum jeweiligen Paket passt.`;
@@ -50,8 +50,11 @@ function zeitstempelText(db, paketNr, maengel) {
     teile.push(`Ohne Zeitstempel${ohneTsa}: ${liste(maengel.fehlt)}.`);
   }
   if (maengel.ungueltig.length) teile.push(`Zeitstempel ungültig oder passt nicht zum Paket: ${liste(maengel.ungueltig)}.`);
-  if (maengel.verspaetet.length) teile.push(`Zeitstempel verspätet (mehr als 7 Tage nach Erstellung des Pakets): ${liste(maengel.verspaetet)}.`);
-  if (maengel.zu_frueh.length) teile.push(`Zeitstempel liegt vor der Erstellung des Pakets: ${liste(maengel.zu_frueh)}.`);
+  if (!teile.length) {
+    return paketNr === 1
+      ? 'Paket 1 hat einen gültigen Zeitstempel, der zum Paket passt.'
+      : `Paket ${paketNr} und alle älteren Pakete haben einen gültigen Zeitstempel, der zum jeweiligen Paket passt.`;
+  }
   return teile.join(' ');
 }
 
@@ -91,10 +94,16 @@ export async function pruefeAuditNachweis(db, { paketNr, pruefnummer }) {
       neuereAlleGestempelt = false;
     }
   }
+  // Verspaetet gesetzte Stempel sind nur ein Hinweis (amber), fehlende/ungueltige bleiben rot.
+  const hinweise = [];
+  if (maengel.verspaetet.length) hinweise.push(`Zeitstempel verspätet gesetzt (mehr als 7 Tage nach Erstellung des Pakets): ${liste(maengel.verspaetet)}.`);
+  if (maengel.zu_frueh.length) hinweise.push(`Zeitstempel verspätet gesetzt bzw. zeitlich nicht passend (vor der Erstellung des Pakets): ${liste(maengel.zu_frueh)}.`);
+  const harteMaengel = { fehlt: maengel.fehlt, ungueltig: maengel.ungueltig };
   punkte.push({
     titel: 'Zeitstempel',
-    ok: Object.values(maengel).every((n) => n.length === 0),
-    text: zeitstempelText(db, paket.id, maengel),
+    ok: maengel.fehlt.length === 0 && maengel.ungueltig.length === 0,
+    text: zeitstempelText(db, paket.id, harteMaengel, hinweise.length > 0),
+    hinweise,
   });
 
   return {

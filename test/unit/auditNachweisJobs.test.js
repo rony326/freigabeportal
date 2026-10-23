@@ -128,6 +128,16 @@ test('Alarm, wenn ältestes Paket > 3 Tage ohne Zeitstempel (Default)', async (t
   assert.match(mails[0].text, /https:\/\/portal\.example\.org\/admin\/zeitstempel/);
 });
 
+test('ohne TSA-Konfiguration kein Alarm, auch bei 10 Tagen Rückstand', async (t) => {
+  const { db, mailer } = setup(t, { tsa: false });
+  ereignis(db);
+  await runAuditExportJob(db, config, mailer, { jetzt: T0, stemple: failStempel });
+  const r = await runAuditExportJob(db, config, mailer, { jetzt: new Date(T0.getTime() + 10 * TAG), stemple: failStempel });
+  assert.equal(r.alarmiert, false);
+  assert.ok(r.ohneZeitstempel >= 1);
+  assert.equal(alarmMails(db).length, 0);
+});
+
 test('kein Alarm bei 2 Tagen Rückstand', async (t) => {
   const { db, mailer } = await altesPaketOhneStempel(t);
   const r = await runAuditExportJob(db, config, mailer, { jetzt: new Date(T0.getTime() + 2 * TAG), stemple: failStempel });
@@ -227,6 +237,15 @@ test('abgeschaltet: kein Versand am Versandtag', async (t) => {
   const r = await runAuditPruefnummerJob(db, config, mailer, { jetzt: new Date('2026-11-01T06:00:00Z') });
   assert.equal(r.status, 'uebersprungen');
   assert.equal(mails.length, 0);
+});
+
+test('meldeAuditNachweisAenderung: zusätzliche Empfänger werden ohne Duplikate (case-insensitiv) bedient', async (t) => {
+  const { db, mails, mailer } = setup(t);
+  setConfigValue(db, 'audit_revision_empfaenger', 'Neu@example.org');
+  await meldeAuditNachweisAenderung(db, config, mailer, {
+    aenderungen: ['x'], person: null, zusaetzlicheEmpfaenger: ['neu@example.org', 'alt@example.org'],
+  });
+  assert.deepEqual(mails.map((m) => m.to).sort(), ['Neu@example.org', 'alt@example.org']);
 });
 
 test('meldeAuditNachweisAenderung: eine Mail pro Empfänger mit allen Zeilen', async (t) => {

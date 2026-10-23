@@ -60,6 +60,9 @@
           <% ergebnis.punkte.forEach((punkt) => { %>
             <li class="mb-2 <%= punkt.ok ? 'text-success' : 'text-danger' %>">
               <strong><%= punkt.ok ? '✓' : '✗' %> <%= punkt.titel %>:</strong> <span class="text-body"><%= punkt.text %></span>
+              <% (punkt.hinweise || []).forEach((hinweis) => { %>
+                <div class="text-warning-emphasis bg-warning-subtle border border-warning-subtle rounded px-2 py-1 mt-1 small">⚠ <%= hinweis %></div>
+              <% }) %>
             </li>
           <% }) %>
         </ul>

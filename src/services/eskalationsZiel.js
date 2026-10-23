@@ -1,3 +1,4 @@
+import { getPersonById } from '../db/personenRepo.js';
 import { listFreigabenByJob, listKonfliktmelder } from '../db/freigabenRepo.js';
 
 // Prüft, ob eine Stellvertretung als Eskalationsziel überhaupt freigeben dürfte. Wenn nicht, muss
@@ -8,6 +9,8 @@ import { listFreigabenByJob, listKonfliktmelder } from '../db/freigabenRepo.js';
 export function ausschlussGrundFuerEskalationsziel(db, job, { stufe, zielId, meldenderId }) {
   if (!zielId) return 'keine Stellvertretung hinterlegt';
   if (zielId === meldenderId) return 'ist selbst die meldende Person';
+  const ziel = getPersonById(db, zielId);
+  if (ziel && !ziel.aktiv) return 'ist nicht mehr aktiv';
   // Aus freigaben gelesen, nicht nur aus *_eskaliert_von: Umhängen und Pool-Rückgabe setzen diese
   // Spalten zurück, der erklärte Konflikt gehört aber weiterhin zur Rechnung.
   if (listKonfliktmelder(db, job.id, stufe).has(zielId)) return 'hat bereits einen Interessenskonflikt erklärt';

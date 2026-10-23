@@ -116,7 +116,9 @@ export function createZeitstempelAdminRouter({ db, config = null, mailer = null,
 
     setConfigValue(db, 'zeitstempel_tsa_url', trimmedUrl);
     setConfigValue(db, 'zeitstempel_tsa_user', trimmedUser);
-    setConfigValue(db, 'zeitstempel_tsa_passwort', tsaPasswort || '');
+    // Leeres Feld behält das gespeicherte Passwort; nur die Checkbox löscht es.
+    if (req.body.tsaPasswortEntfernen === '1') setConfigValue(db, 'zeitstempel_tsa_passwort', '');
+    else if (tsaPasswort) setConfigValue(db, 'zeitstempel_tsa_passwort', tsaPasswort);
     setConfigValue(db, 'zeitstempel_warnung_ab_stunden', trimmedWarnung);
 
     // Normalisierte Liste speichern (ohne Duplikate/Leerzeichen).
@@ -143,7 +145,7 @@ export function createZeitstempelAdminRouter({ db, config = null, mailer = null,
         await meldeAuditEmpfaengerWechsel(db, config, mailer, { alt: alteListe, neu: neueListe, person: req.currentPerson });
       }
       if (aenderungen.length > 0) {
-        await meldeAuditNachweisAenderung(db, config, mailer, { aenderungen, person: req.currentPerson });
+        await meldeAuditNachweisAenderung(db, config, mailer, { aenderungen, person: req.currentPerson, zusaetzlicheEmpfaenger: parseEmpfaengerListe(alteListe).adressen });
       }
     } catch (err) {
       console.error('Audit-Nachweis: Änderungsmail fehlgeschlagen', err);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../../src/db/index.js';
-import { seedDefaults, getConfigValue } from '../../../src/db/adminConfigRepo.js';
+import { seedDefaults, getConfigValue, setConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
@@ -27,6 +27,7 @@ function buildTestApp(db) {
   app.use(loadNavFlags(db, config));
   const mailer = { sent: [], async sendMail(mail) { this.sent.push(mail); } };
   app.use('/admin/mail-einstellungen', requireRole(config, 'superadmin'), createMailEinstellungenRouter({ db, config, mailer }));
+  app.mailer = mailer;
   return app;
 }
 
@@ -174,5 +175,29 @@ test('POST /admin/mail-einstellungen/jetzt-ausfuehren triggers runMailDigestJob 
   const res = await request(app).post('/admin/mail-einstellungen/jetzt-ausfuehren').set('x-test-person-id', '99');
   assert.equal(res.status, 302);
   assert.equal(res.headers.location, '/admin/mail-einstellungen?getriggert=1');
+  db.close();
+});
+
+test('Änderung der Prüfnummer-Mail-Vorlage meldet an die Revision (ohne Vorlageninhalt); ohne Änderung keine Mail', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  setConfigValue(db, 'audit_revision_empfaenger', 'revision@example.org');
+  const app = buildTestApp(db);
+  const post = (body) => request(app).post('/admin/mail-einstellungen').set('x-test-person-id', '99').type('form').send(body);
+  let res = await post(VALID_BODY);
+  assert.equal(res.status, 302);
+  assert.equal(app.mailer.sent.length, 1);
+  assert.equal(app.mailer.sent[0].to, 'revision@example.org');
+  assert.match(app.mailer.sent[0].text, /Betreff der Prüfnummer-Mail wurde geändert/);
+  assert.match(app.mailer.sent[0].text, /Text der Prüfnummer-Mail wurde geändert/);
+  assert.doesNotMatch(app.mailer.sent[0].text, /B16|T16/);
+  app.mailer.sent.length = 0;
+  res = await post(VALID_BODY);
+  assert.equal(res.status, 302);
+  assert.equal(app.mailer.sent.length, 0);
+  res = await post({ ...VALID_BODY, zuweisungBetreff: 'anderer Betreff' });
+  assert.equal(res.status, 302);
+  assert.equal(app.mailer.sent.length, 0);
   db.close();
 });

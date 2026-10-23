@@ -22,7 +22,11 @@
       <div class="mb-3">
         <label class="form-label" for="tsaPasswort">Passwort (optional)</label>
         <input type="password" class="form-control" id="tsaPasswort" name="tsaPasswort" autocomplete="off">
-        <div class="form-text">Aus Sicherheitsgründen wird ein bereits gespeichertes Passwort hier nie angezeigt. Leer lassen und speichern löscht ein vorhandenes Passwort.</div>
+        <div class="form-text">Aus Sicherheitsgründen wird ein bereits gespeichertes Passwort hier nie angezeigt. Leer lassen, um das gespeicherte Passwort zu behalten.</div>
+        <div class="form-check mt-2">
+          <input class="form-check-input" type="checkbox" id="tsaPasswortEntfernen" name="tsaPasswortEntfernen" value="1">
+          <label class="form-check-label" for="tsaPasswortEntfernen">Gespeichertes Passwort entfernen</label>
+        </div>
       </div>
       <div class="mb-3">
         <label class="form-label" for="warnungAbStunden">Admin-Warnung ab (Stunden)</label>

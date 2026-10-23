@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
 import { createJob } from '../../src/db/jobsRepo.js';
-import { upsertPerson } from '../../src/db/personenRepo.js';
+import { upsertPerson, deactivatePerson } from '../../src/db/personenRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss } from '../../src/services/eskalationsZiel.js';
 
@@ -58,4 +58,11 @@ test('the submitter of a Spesen position is excluded', (t) => {
 test('grundMitAusschluss appends the exclusion reason only when there is one', () => {
   assert.equal(grundMitAusschluss('Verwandt', null), 'Verwandt');
   assert.equal(grundMitAusschluss('Verwandt', 'hat bereits Freigabe 1 erteilt'), 'Verwandt — Stellvertretung ausgeschlossen (hat bereits Freigabe 1 erteilt)');
+});
+
+test('an inactive Stellvertretung is excluded', (t) => {
+  const { db, job } = setup();
+  t.after(() => db.close());
+  deactivatePerson(db, '2', 'churchtools_geloescht');
+  assert.match(ausschlussGrundFuerEskalationsziel(db, job, { stufe: 1, zielId: '2', meldenderId: '1' }), /nicht mehr aktiv/);
 });

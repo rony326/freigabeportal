@@ -27,6 +27,8 @@ function alarmSchwelleMs(db) {
 async function alarmiereBeiRueckstand(db, config, mailer, offen, jetzt) {
   const aeltestes = offen[0];
   if (!aeltestes) return false;
+  // Ohne TSA-Konfiguration bleibt der Rueckstand nur auf der Admin-Seite sichtbar, kein Dauer-Alarm.
+  if (!tsaConfigAusDb(db, config)) return false;
   if (jetzt.getTime() - new Date(aeltestes.erstellt_am).getTime() <= alarmSchwelleMs(db)) return false;
   const zuletzt = Date.parse(getConfigValue(db, ALARM_KEY) ?? '');
   if (Number.isFinite(zuletzt) && jetzt.getTime() - zuletzt < TAG_MS) return false;
@@ -177,12 +179,20 @@ async function sendeAnAlle(db, mailer, adressen, subject, text) {
   }
 }
 
-export async function meldeAuditNachweisAenderung(db, config, mailer, { aenderungen, person }) {
+// zusaetzlicheEmpfaenger: z. B. die bisherigen Adressen, damit auch sie die Aenderung erfahren.
+export async function meldeAuditNachweisAenderung(db, config, mailer, { aenderungen, person, zusaetzlicheEmpfaenger = [] }) {
   const portal = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
   const text = 'Guten Tag\n\nDie Einstellungen des Audit-Nachweises wurden geändert:\n\n'
     + aenderungen.map((a) => `- ${a}`).join('\n')
     + `\n\nGeändert von ${personName(person)} am ${formatiereZeit(new Date())}.\n\nFreundliche Grüsse\n${portal}`;
-  await sendeAnAlle(db, mailer, revisionsEmpfaenger(db), 'Freigabeportal: Einstellungen des Audit-Nachweises geändert', text);
+  const gesehen = new Set();
+  const empfaenger = [...revisionsEmpfaenger(db), ...zusaetzlicheEmpfaenger].filter((a) => {
+    const k = String(a).toLowerCase();
+    if (!k || gesehen.has(k)) return false;
+    gesehen.add(k);
+    return true;
+  });
+  await sendeAnAlle(db, mailer, empfaenger, 'Freigabeportal: Einstellungen des Audit-Nachweises geändert', text);
 }
 
 export async function meldeAuditEmpfaengerWechsel(db, config, mailer, { alt, neu, person }) {

@@ -156,21 +156,32 @@ test('POST /admin/zeitstempel rejects a non-numeric or zero Warnschwelle, config
   db.close();
 });
 
-test('POST /admin/zeitstempel with a blank password clears an already-stored one', async () => {
+async function passwortPost(felder) {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedAdmin(db);
-  const { setConfigValue } = await import('../../../src/db/adminConfigRepo.js');
   setConfigValue(db, 'zeitstempel_tsa_passwort', 'altes-passwort');
-  const app = buildTestApp(db);
-  const res = await request(app)
+  const res = await request(buildTestApp(db))
     .post('/admin/zeitstempel')
     .set('x-test-person-id', '99')
     .type('form')
-    .send({ tsaUrl: 'https://freetsa.org/tsr', tsaUser: '', tsaPasswort: '', warnungAbStunden: '2' });
+    .send({ tsaUrl: 'https://freetsa.org/tsr', tsaUser: '', warnungAbStunden: '2', ...felder });
   assert.equal(res.status, 302);
-  assert.equal(getConfigValue(db, 'zeitstempel_tsa_passwort'), '');
+  const wert = getConfigValue(db, 'zeitstempel_tsa_passwort');
   db.close();
+  return wert;
+}
+
+test('POST /admin/zeitstempel with a blank password keeps the stored one', async () => {
+  assert.equal(await passwortPost({ tsaPasswort: '' }), 'altes-passwort');
+});
+
+test('POST /admin/zeitstempel with tsaPasswortEntfernen clears the stored password', async () => {
+  assert.equal(await passwortPost({ tsaPasswort: '', tsaPasswortEntfernen: '1' }), '');
+});
+
+test('POST /admin/zeitstempel with a new password replaces the stored one', async () => {
+  assert.equal(await passwortPost({ tsaPasswort: 'neues-passwort' }), 'neues-passwort');
 });
 
 // --- Audit-Nachweis für die Revision ---
@@ -251,7 +262,8 @@ test('Empfänger und Rhythmus im selben Speichern → beide Mails', async (t) =>
   setConfigValue(db, 'audit_revision_empfaenger', 'alt@example.org');
   await speichere(app, { auditRevisionEmpfaenger: 'neu@example.org', auditPruefnummerRhythmus: 'jaehrlich' });
   assert.equal(mails.filter((m) => /Empfänger der Audit-Prüfnummer/.test(m.subject)).length, 2);
-  assert.equal(mails.filter((m) => /Einstellungen des Audit-Nachweises/.test(m.subject)).length, 1);
+  // Änderungsmail geht an alte und neue Adresse (Empfängerwechsel)
+  assert.equal(mails.filter((m) => /Einstellungen des Audit-Nachweises/.test(m.subject)).length, 2);
 });
 
 test('nur Uhrzeit oder Alarmschwelle ändern → keine Mail', async (t) => {
@@ -365,4 +377,13 @@ test('alter Formular-Post ohne Audit-Felder lässt die Audit-Einstellungen unver
   assert.equal(getConfigValue(db, 'audit_pruefnummer_tag'), '9');
   assert.equal(getConfigValue(db, 'modul_audit_nachweis_aktiv'), '0');
   assert.equal(mails.length, 0);
+});
+
+test('Empfänger ersetzen und abschalten im selben POST → "abgeschaltet"-Mail geht an alte und neue Adresse', async (t) => {
+  const { db, app, mails } = await setup(t);
+  setConfigValue(db, 'audit_revision_empfaenger', 'alt@example.org');
+  await speichere(app, { auditRevisionEmpfaenger: 'neu@example.org', auditNachweisAktiv: undefined });
+  const mailsAbgeschaltet = mails.filter((m) => /Einstellungen des Audit-Nachweises/.test(m.subject));
+  assert.deepEqual(mailsAbgeschaltet.map((m) => m.to).sort(), ['alt@example.org', 'neu@example.org']);
+  assert.match(mailsAbgeschaltet[0].text, /aktiv → abgeschaltet/);
 });

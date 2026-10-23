@@ -129,26 +129,28 @@ test('ohne Zeitstempel-Konfiguration nennt Punkt 3 das ausdrücklich', async (t)
   assert.match(ergebnis.punkte[2].text, /kein Zeitstempeldienst konfiguriert/i);
 });
 
-test('Zeitstempel verspätet (> 7 Tage nach Erstellung) → Punkt 3 rot mit "verspätet"', async (t) => {
+test('Zeitstempel verspätet (> 7 Tage nach Erstellung) → nur amber Hinweis, Status ok', async (t) => {
   const db = setup(t);
   const tsaConfig = tsaVorbereiten(t);
   const p1 = paket(db, { jetzt: new Date(Date.now() - 8 * TAG) });
   await stempeln(db, tsaConfig, p1);
   const ergebnis = await pruefeAuditNachweis(db, { paketNr: p1.id, pruefnummer: p1.paket_sha256 });
-  assert.equal(ergebnis.status, 'abweichung');
-  assert.equal(ergebnis.punkte[2].ok, false);
-  assert.match(ergebnis.punkte[2].text, /verspätet/);
-  assert.match(ergebnis.punkte[2].text, /Paket 1/);
+  assert.equal(ergebnis.status, 'ok');
+  assert.equal(ergebnis.punkte[2].ok, true);
+  assert.equal(ergebnis.punkte[2].hinweise.length, 1);
+  assert.match(ergebnis.punkte[2].hinweise[0], /verspätet gesetzt/);
+  assert.match(ergebnis.punkte[2].hinweise[0], /Paket 1/);
 });
 
-test('Zeitstempel vor der Erstellung des Pakets → Punkt 3 rot', async (t) => {
+test('Zeitstempel vor der Erstellung des Pakets → amber Hinweis, Status ok', async (t) => {
   const db = setup(t);
   const tsaConfig = tsaVorbereiten(t);
   const p1 = paket(db, { jetzt: new Date(Date.now() + 10 * 60 * 1000) });
   await stempeln(db, tsaConfig, p1);
   const ergebnis = await pruefeAuditNachweis(db, { paketNr: p1.id, pruefnummer: p1.paket_sha256 });
-  assert.equal(ergebnis.punkte[2].ok, false);
-  assert.match(ergebnis.punkte[2].text, /vor der Erstellung/);
+  assert.equal(ergebnis.status, 'ok');
+  assert.equal(ergebnis.punkte[2].ok, true);
+  assert.match(ergebnis.punkte[2].hinweise[0], /vor der Erstellung/);
 });
 
 test('Zeitstempel eines anderen Pakets (Stub-Token) → Punkt 3 rot "ungültig"', async (t) => {

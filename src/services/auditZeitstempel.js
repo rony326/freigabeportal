@@ -43,6 +43,9 @@ export async function stempleAuditPaket(paketSha256, tsaConfig) {
     }));
     if (![0, 1].includes(response.status) || !response.token) throw new Error('TSA hat keinen erfolgreichen Zeitstempel geliefert.');
     const binding = validateTimestampBinding(request, response.token);
+    // Bindung und Kette pruefen die CMS-Signatur nicht; ohne diese Pruefung waere ein kaputtes Token speicherbar.
+    const signatur = await pruefeAuditZeitstempelToken(response.token, paketSha256);
+    if (!signatur.gueltig) throw new Error(signatur.fehler);
     const kette = anchors ? await verifyTsaChain(binding, anchors, crls) : null;
     const nachweis = baueTsaNachweis({ binding, token: response.token, kette, trustAnchorsSha256: tsaConfig.trustAnchorsSha256 || null });
     return { token: Buffer.from(response.token), genTime: binding.info.genTime, nachweis };

@@ -91,3 +91,14 @@ test('tsaConfigAusDb baut die Konfiguration aus admin_config und Vertrauensanker
     url: TSA_URL, user: 'nutzer', passwort: 'geheim',
   });
 });
+
+test('Token mit kaputter Signatur wird beim Stempeln abgelehnt', async (t) => {
+  const tsa = createChainedTsa(t);
+  setupMockTsa(TSA_URL).intercept({ path: '/tsr', method: 'POST' }).reply(200, (opts) => {
+    const antwort = Buffer.from(tsa.reply(opts));
+    // Die Signatur steht am Ende der Antwort; Imprint und Nonce bleiben intakt.
+    antwort[antwort.length - 10] ^= 0xff;
+    return antwort;
+  });
+  await assert.rejects(() => stempleAuditPaket(HASH, tsaConfig(tsa)), /Zeitstempel.*Signatur/);
+});

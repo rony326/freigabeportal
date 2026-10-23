@@ -174,7 +174,8 @@ auf das Portal braucht.
 
 TSA-URL, optionaler Benutzername/Passwort (HTTP-Basic-Auth, von Hand als
 Header gebaut — die verwendete Bibliothek hat kein eingebautes
-Auth-Konzept), und eine Warnschwelle in Stunden: **Admin-Dashboard** zeigt
+Auth-Konzept), und eine Warnschwelle in Stunden: die **Übersicht** im Reiter
+Admin (`/admin`) zeigt
 eine Warnung, sobald abgeschlossene Jobs länger als diese Schwelle ohne
 gesetzten Zeitstempel warten (nur relevant, solange eine TSA-URL
 konfiguriert ist).

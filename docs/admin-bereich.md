@@ -167,8 +167,8 @@ Ein/Aus-Schalter für optionale Portal-Bereiche, gespeichert im
 Modul-Einträge (Default: **Spesenmodul aktiv**, **Kreditkartenmodul
 deaktiviert**):
 
-- **Spesenmodul** (`modul_spesen_aktiv`) — deaktiviert blendet "Spesen einreichen" aus dem Hauptmenü aus und lässt `GET /spesen/neu`/`POST /spesen` mit `403` abweisen; bereits eingereichte Spesen-Positionen laufen unverändert durch Freigabe 1/2 (siehe [spesen-einreichung.md](spesen-einreichung.md)).
-- **Kreditkartenmodul** (`modul_kreditkarten_aktiv`, Default aus) — deaktiviert blendet "Meine Kreditkartenbelege" aus dem Hauptmenü aus, blockiert neue Uploads (`GET /kreditkarte`/`POST /kreditkarte/belege` → `403`) und neue Markierungen als Kreditkartenabrechnung; bereits markierte Abrechnungen lassen sich weiter abgleichen, bestehende Teil-Jobs laufen unverändert weiter (siehe [kreditkarten-belege.md](kreditkarten-belege.md#modul-schalter-adminmodule)).
+- **Spesenmodul** (`modul_spesen_aktiv`) — deaktiviert blendet "Spesen einreichen" in der Seitenleiste (Reiter Portal, Gruppe Spesen) aus und lässt `GET /spesen/neu`/`POST /spesen` mit `403` abweisen; bereits eingereichte Spesen-Positionen laufen unverändert durch Freigabe 1/2 (siehe [spesen-einreichung.md](spesen-einreichung.md)).
+- **Kreditkartenmodul** (`modul_kreditkarten_aktiv`, Default aus) — deaktiviert blendet "Kreditkartenbelege" in der Seitenleiste (Reiter Portal, Gruppe Belege) aus, blockiert neue Uploads (`GET /kreditkarte`/`POST /kreditkarte/belege` → `403`) und neue Markierungen als Kreditkartenabrechnung; bereits markierte Abrechnungen lassen sich weiter abgleichen, bestehende Teil-Jobs laufen unverändert weiter (siehe [kreditkarten-belege.md](kreditkarten-belege.md#modul-schalter-adminmodule)).
 - **Strikte Freigeber1-Prüfung** (`kontierung_strikte_freigeber1_pruefung`, Default aus) — siehe [rechnungs-workflow.md](rechnungs-workflow.md#2-kontierung-status-zugewiesen).
 
 Gedacht als Sammelstelle für künftige, ebenfalls unabhängig einführbare Module.

@@ -5,7 +5,7 @@ import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createJob } from '../../src/db/jobsRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import { setConfigValue } from '../../src/db/adminConfigRepo.js';
-import { buildAuditLog, EREIGNIS_LABEL, personName, formatZeitpunkt } from '../../src/services/auditLog.js';
+import { buildAuditLog, EREIGNIS_LABEL, personName, formatZeitpunkt, zeitpunktAnzeige } from '../../src/services/auditLog.js';
 
 function seedJobMitFreigabe(db, zeitpunkt) {
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'f@example.org', gruppen: [], loggedInNow: false });
@@ -112,4 +112,12 @@ test('buildAuditLog leaves vertretungFuerPerson null when vertretung_fuer is not
   const [eintrag] = buildAuditLog(db, jobId);
   assert.equal(eintrag.vertretungFuerPerson, null);
   db.close();
+});
+
+test('zeitpunktAnzeige zeigt ISO-Zeitstempel als Schweizer Ortszeit, fehlende Werte als Strich', () => {
+  assert.equal(zeitpunktAnzeige('2026-10-23T11:10:59.000Z'), '23.10.2026 13:10');
+  assert.equal(zeitpunktAnzeige('2026-12-01T08:05:00.000Z'), '01.12.2026 09:05');
+  assert.equal(zeitpunktAnzeige(null), '—');
+  assert.equal(zeitpunktAnzeige(''), '—');
+  assert.equal(zeitpunktAnzeige('kein Datum'), 'kein Datum');
 });

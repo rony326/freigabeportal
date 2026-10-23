@@ -315,3 +315,18 @@ test('/admin/altfaelle Kacheln: Dateiname, Grund, Prüfen', async () => {
   });
   db.close();
 });
+
+test('/pool zeigt den Eingang lesbar in Ortszeit, in Tabelle und Kacheln', async () => {
+  const db = openDatabase(':memory:');
+  const agent = await loginBuchhaltung(db);
+  seed(db);
+  const res = await agent.get('/pool');
+  assert.equal(res.status, 200);
+  const tabelle = divBereiche(res.text, 'ansicht-tabelle').join('');
+  const kacheln = divBereiche(res.text, 'ansicht-kacheln').join('');
+  for (const teil of [tabelle, kacheln]) {
+    assert.match(teil, /15\.08\.2026 10:00/);
+    assert.doesNotMatch(teil, /2026-08-15T08:00:00\.000Z/);
+  }
+  db.close();
+});

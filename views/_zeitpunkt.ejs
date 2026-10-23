@@ -1,0 +1,2 @@
+<% /* Zeitstempel lesbar anzeigen (TT.MM.JJJJ HH:MM, Ortszeit). zeitpunktAnzeige kommt aus app.locals;
+     Test-Apps ohne diese Funktion zeigen den Rohwert. */ %><%= typeof zeitpunktAnzeige === 'function' ? zeitpunktAnzeige(wert) : (wert || '—') %>

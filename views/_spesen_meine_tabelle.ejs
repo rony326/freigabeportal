@@ -7,7 +7,7 @@
       <tbody>
         <% jobs.forEach((job) => { %>
           <tr id="spesen-meine-row-<%= job.id %>">
-            <td><%= job.eingang_am %></td>
+            <td><%- include('_zeitpunkt', { wert: job.eingang_am }) %></td>
             <td><%= job.kontonummer || '—' %></td>
             <td><%= job.betrag %></td>
             <td><%= job.beschreibung %></td>

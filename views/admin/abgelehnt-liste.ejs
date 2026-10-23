@@ -29,7 +29,7 @@
                 <td><%= job.lieferant || '—' %></td>
                 <td><%= job.ablehnungsgrund %></td>
                 <td><%= job.abgelehntVonPerson ? `${job.abgelehntVonPerson.vorname} ${job.abgelehntVonPerson.nachname}` : 'Unbekannt' %></td>
-                <td><%= job.eingang_am %></td>
+                <td><%- include('../_zeitpunkt', { wert: job.eingang_am }) %></td>
                 <td><a href="/admin/abgelehnt/<%= job.id %>" class="btn btn-outline-danger btn-sm">Löschen</a></td>
               </tr>
             <% }) %>

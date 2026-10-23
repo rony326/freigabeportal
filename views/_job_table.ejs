@@ -17,7 +17,7 @@
             <td><%= job.absender || '—' %></td>
             <td><%= job.lieferant || '—' %></td>
             <td><%= job.kontonummer || (job.hinweisKonto ? `Hinweis: ${job.hinweisKonto.kontonummer} — ${job.hinweisKonto.bezeichnung}` : '—') %></td>
-            <td><%= job.eingang_am %></td>
+            <td><%- include('_zeitpunkt', { wert: job.eingang_am }) %></td>
             <td>
               <%- include('_job_aktionen', { job }) %>
             </td>

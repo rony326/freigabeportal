@@ -6,7 +6,7 @@
         <div class="fw-semibold text-break"><%= job.beschreibung %></div>
         <div class="kachel-betrag"><%= job.betrag %></div>
         <dl class="kachel-angaben small mb-0">
-          <dt>Eingereicht am</dt><dd><%= job.eingang_am %></dd>
+          <dt>Eingereicht am</dt><dd><%- include('_zeitpunkt', { wert: job.eingang_am }) %></dd>
           <dt>Konto</dt><dd><%= job.kontonummer || '—' %></dd>
           <dt>Status</dt>
           <dd>

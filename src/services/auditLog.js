@@ -55,6 +55,13 @@ export function formatZeitpunkt(iso, lokaleZeit) {
   return `${teil('day')}.${teil('month')}.${teil('year')} ${teil('hour')}:${teil('minute')}`;
 }
 
+// Für Listen und Kacheln: immer Ortszeit, fehlender Wert als Strich, Unlesbares unverändert.
+export function zeitpunktAnzeige(iso) {
+  if (!iso) return '—';
+  if (Number.isNaN(new Date(iso).getTime())) return iso;
+  return formatZeitpunkt(iso, true);
+}
+
 // The freigaben table is the system's only per-action record (who, when, from which IP) — it
 // already exists for the Vier-Augen-Prinzip lookups in kontierung.js/freigabe2.js/ablehnung.js.
 // This turns those same rows into the human-readable timeline shown under the Freigabe section

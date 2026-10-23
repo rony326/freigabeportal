@@ -360,3 +360,24 @@ test('startScheduler runs the sicherheitsalarme job on the configured interval (
   assert.equal(calls, 1);
   db.close();
 });
+
+test('startScheduler runs the daily audit-export job at the configured time (default 03:15)', async (t) => {
+  // 2026-01-15T00:00:00Z is 01:00 in Zurich (CET, UTC+1) -- 03:15 is 2h15m away.
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: new Date('2026-01-15T00:00:00.000Z') });
+  const db = seededDb();
+  let calls = 0;
+  startScheduler({
+    db,
+    config: {},
+    mailer: {},
+    jobs: fakeJobs({ runAuditExportJob: async () => { calls += 1; return { status: 'erfolg' }; } }),
+  });
+
+  t.mock.timers.tick(2 * 60 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 0);
+  t.mock.timers.tick(15 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+  db.close();
+});

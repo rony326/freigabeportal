@@ -5,7 +5,7 @@
       <thead><tr><th>Vorschau</th><th>Quelle</th><th>Absender</th><th>Kreditor</th><th>Konto</th><th>Eingang</th><th></th></tr></thead>
       <tbody>
         <% jobs.forEach((job) => { %>
-          <tr id="<%= idPrefix %>-row-<%= job.id %>">
+          <tr id="<%= idPrefix %>-row-<%= job.id %>" data-job-container>
             <td>
               <% if (job.thumbnail_pfad) { %>
                 <img class="thumbnail-preview pdf-preview rounded" src="/downloads/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau" height="60" style="cursor:pointer">
@@ -19,31 +19,7 @@
             <td><%= job.kontonummer || (job.hinweisKonto ? `Hinweis: ${job.hinweisKonto.kontonummer} — ${job.hinweisKonto.bezeichnung}` : '—') %></td>
             <td><%= job.eingang_am %></td>
             <td>
-              <% if (typeof istPoolArtig !== 'undefined' && istPoolArtig) { %>
-                <button type="button" class="beanspruchen-btn btn btn-primary btn-sm" data-job-id="<%= job.id %>">Beanspruchen</button>
-                <% if (typeof kannZuweisen !== 'undefined' && kannZuweisen) { %>
-                  <form class="zuweisen-form d-inline-flex gap-1 align-items-center mt-1" data-job-id="<%= job.id %>">
-                    <select class="form-select form-select-sm" name="personId" style="width:auto" required>
-                      <option value="">— an Person senden —</option>
-                      <% zielPersonen.forEach((p) => { %>
-                        <option value="<%= p.churchtools_person_id %>"><%= p.vorname %> <%= p.nachname %></option>
-                      <% }) %>
-                    </select>
-                    <button type="submit" class="btn btn-outline-primary btn-sm">Senden</button>
-                  </form>
-                <% } %>
-                <% if (job.pool_rueckgesendet_bemerkung) { %>
-                  <div class="text-muted small mt-1">Rückläufer von <%= job.rueckgesendetVonName %>: „<%= job.pool_rueckgesendet_bemerkung %>“</div>
-                <% } %>
-              <% } else { %>
-                <a href="<%= linkPrefix %>/<%= job.id %>" class="btn btn-outline-primary btn-sm"><%= aktionLabel %></a>
-                <% if (idPrefix === 'kontierung') { %>
-                  <form method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool" class="d-inline">
-                    <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-                    <button type="submit" class="btn btn-outline-secondary btn-sm">In den Pool legen</button>
-                  </form>
-                <% } %>
-              <% } %>
+              <%- include('_job_aktionen', { job }) %>
             </td>
           </tr>
         <% }) %>

@@ -643,7 +643,9 @@ test('GET /pool wires the Beanspruchen error fallback to the button\'s own row, 
   // here (not `pool-row-<id>`), since this job is a Rückläufer — the handler must look it up via
   // the clicked button's own row rather than reconstructing a pool-specific id string.
   assert.match(res.text, new RegExp(`id="ruecklaeufer-row-${jobId}"`));
-  assert.match(res.text, /const row = btn\.closest\('tr'\);/);
+  // Since the tile view (Task 7) the container is the row or the tile, both marked data-job-container.
+  assert.match(res.text, /const container = btn\.closest\('\[data-job-container\]'\);/);
+  assert.match(res.text, new RegExp(`id="ruecklaeufer-row-${jobId}" data-job-container`));
   assert.doesNotMatch(res.text, /document\.getElementById\(`pool-row-\$\{id\}`\)/);
   db.close();
 });

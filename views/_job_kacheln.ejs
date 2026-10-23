@@ -1,0 +1,28 @@
+<% /* Kachel-Gegenstück zu _job_table.ejs (gleiche Parameter). Jede Kachel zeigt alle Angaben der
+     Tabellenzeile; die Aktionen kommen aus demselben Partial _job_aktionen. Callers include this only
+     when jobs.length > 0. */ %>
+<div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
+  <% jobs.forEach((job) => { %>
+    <div class="col">
+      <div class="kachel d-flex flex-column gap-2" id="<%= idPrefix %>-kachel-<%= job.id %>" data-job-container>
+        <% if (job.thumbnail_pfad) { %>
+          <img class="thumbnail-preview pdf-preview kachel-vorschau rounded" src="/downloads/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau">
+        <% } else { %>
+          <div class="thumbnail-placeholder kachel-vorschau-leer text-muted small">Keine Vorschau</div>
+        <% } %>
+        <div class="fw-semibold text-break"><%= job.lieferant || job.absender || '—' %></div>
+        <dl class="kachel-angaben small mb-0">
+          <% if (job.lieferant && job.absender) { %>
+            <dt>Absender</dt><dd class="text-break"><%= job.absender %></dd>
+          <% } %>
+          <dt>Quelle</dt><dd><%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %></dd>
+          <dt>Eingang</dt><dd><%= job.eingang_am %></dd>
+          <dt>Konto</dt><dd><%= job.kontonummer || (job.hinweisKonto ? `Hinweis: ${job.hinweisKonto.kontonummer} — ${job.hinweisKonto.bezeichnung}` : '—') %></dd>
+        </dl>
+        <div class="mt-auto d-flex flex-wrap gap-1 align-items-start">
+          <%- include('_job_aktionen', { job }) %>
+        </div>
+      </div>
+    </div>
+  <% }) %>
+</div>

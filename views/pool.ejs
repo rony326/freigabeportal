@@ -1,14 +1,28 @@
 <%- include('_seite_anfang', { titel: 'Aufgaben' }) %>
+<% /* Ansichtswahl (src/middleware/ansicht.js): 'tabelle', 'kacheln' oder 'auto' (unter lg Kacheln,
+     sonst Tabelle — dann werden beide gerendert). Ohne Middleware (Test-Apps) gilt 'auto'. */
+   const gewaehlteAnsicht = (typeof ansicht !== 'undefined' && ansicht) || 'auto';
+   const jobListe = (daten) => {
+     let html = '';
+     if (gewaehlteAnsicht !== 'kacheln') {
+       html += `<div class="ansicht-tabelle${gewaehlteAnsicht === 'auto' ? ' d-none d-lg-block' : ''}">${include('_job_table', daten)}</div>`;
+     }
+     if (gewaehlteAnsicht !== 'tabelle') {
+       html += `<div class="ansicht-kacheln${gewaehlteAnsicht === 'auto' ? ' d-lg-none' : ''}">${include('_job_kacheln', daten)}</div>`;
+     }
+     return html;
+   }; %>
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Aufgaben</h1>
       <div class="seitenkopf-aktionen">
         <a href="/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">🔄 Neu laden</a>
+        <%- include('_ansicht_umschalter') %>
       </div>
     </div>
 
     <% if (typeof isBuchhaltung !== 'undefined' && (isBuchhaltung || isSuperadmin) && poolJobs.length > 0) { %>
       <h2 class="h5 mt-4">Pool</h2>
-      <%- include('_job_table', { jobs: poolJobs, idPrefix: 'pool', istPoolArtig: true, kannZuweisen, zielPersonen }) %>
+      <%- jobListe({ jobs: poolJobs, idPrefix: 'pool', istPoolArtig: true, kannZuweisen, zielPersonen }) %>
       <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0) { %>
         <form method="post" id="kk-markieren-form" class="d-flex flex-wrap gap-2 align-items-center mt-2">
           <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
@@ -35,44 +49,44 @@
 
     <% if (typeof kannZuweisen !== 'undefined' && kannZuweisen && ruecklaeufer.length > 0) { %>
       <h2 class="h5 mt-4">Rückläufer</h2>
-      <%- include('_job_table', { jobs: ruecklaeufer, idPrefix: 'ruecklaeufer', istPoolArtig: true, kannZuweisen, zielPersonen }) %>
+      <%- jobListe({ jobs: ruecklaeufer, idPrefix: 'ruecklaeufer', istPoolArtig: true, kannZuweisen, zielPersonen }) %>
     <% } %>
 
     <% if (typeof isSuperadmin !== 'undefined' && isSuperadmin) { %>
       <% if (adminEskalierteKontierungen.length > 0) { %>
         <h2 class="h5 mt-4">An Superadmin eskalierte Kontierungen</h2>
-        <%- include('_job_table', { jobs: adminEskalierteKontierungen, idPrefix: 'admin-eskalation-kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren' }) %>
+        <%- jobListe({ jobs: adminEskalierteKontierungen, idPrefix: 'admin-eskalation-kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren' }) %>
       <% } %>
 
       <% if (adminEskalierteFreigaben.length > 0) { %>
         <h2 class="h5 mt-4">An Superadmin eskalierte Freigaben</h2>
-        <%- include('_job_table', { jobs: adminEskalierteFreigaben, idPrefix: 'admin-eskalation-freigabe', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben' }) %>
+        <%- jobListe({ jobs: adminEskalierteFreigaben, idPrefix: 'admin-eskalation-freigabe', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben' }) %>
       <% } %>
 
       <% if (adminEskalierteSpesenFreigaben.length > 0) { %>
         <h2 class="h5 mt-4">An Superadmin eskalierte Spesen-Freigaben</h2>
-        <%- include('_job_table', { jobs: adminEskalierteSpesenFreigaben, idPrefix: 'admin-eskalation-spesen-freigabe', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen' }) %>
+        <%- jobListe({ jobs: adminEskalierteSpesenFreigaben, idPrefix: 'admin-eskalation-spesen-freigabe', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen' }) %>
       <% } %>
     <% } %>
 
     <% if (meineKontierungen.length > 0) { %>
       <h2 class="h5 mt-4">Meine offenen Kontierungen</h2>
-      <%- include('_job_table', { jobs: meineKontierungen, idPrefix: 'kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren' }) %>
+      <%- jobListe({ jobs: meineKontierungen, idPrefix: 'kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren' }) %>
     <% } %>
 
     <% if (meineSpesenFreigaben.length > 0) { %>
       <h2 class="h5 mt-4">Meine offenen Spesen-Freigaben</h2>
-      <%- include('_job_table', { jobs: meineSpesenFreigaben, idPrefix: 'spesen-freigabe1', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen' }) %>
+      <%- jobListe({ jobs: meineSpesenFreigaben, idPrefix: 'spesen-freigabe1', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen' }) %>
     <% } %>
 
     <% if (meineFreigaben.length > 0) { %>
       <h2 class="h5 mt-4">Meine Freigaben</h2>
-      <%- include('_job_table', { jobs: meineFreigaben, idPrefix: 'freigabe2', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben' }) %>
+      <%- jobListe({ jobs: meineFreigaben, idPrefix: 'freigabe2', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben' }) %>
     <% } %>
 
     <% if (meineAbgelehnten.length > 0) { %>
       <h2 class="h5 mt-4">Meine abgelehnten Jobs</h2>
-      <%- include('_job_table', { jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen' }) %>
+      <%- jobListe({ jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen' }) %>
     <% } %>
 
     <% if (poolJobs.length === 0 && ruecklaeufer.length === 0 && adminEskalierteKontierungen.length === 0 && adminEskalierteFreigaben.length === 0
@@ -98,17 +112,24 @@
           return;
         }
         const body = await res.json().catch(() => ({}));
-        // Use the button's own row rather than reconstructing `pool-row-${id}`: since Task 9
-        // this button also appears in the Rückläufer section, whose rows are id'd
-        // `ruecklaeufer-row-${id}`, not `pool-row-${id}`.
-        const row = btn.closest('tr');
-        if (row) {
-          const msg = document.createElement('tr');
-          const cell = document.createElement('td');
-          cell.colSpan = 4;
-          cell.textContent = body.error || 'Job ist nicht mehr verfügbar.';
-          msg.appendChild(cell);
-          row.replaceWith(msg);
+        // Use the button's own container (table row or tile) rather than reconstructing an id:
+        // the button appears in the Pool and Rückläufer sections, each as row and as tile.
+        const container = btn.closest('[data-job-container]');
+        if (container) {
+          const text = body.error || 'Job ist nicht mehr verfügbar.';
+          let msg;
+          if (container.tagName === 'TR') {
+            msg = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = container.children.length;
+            cell.textContent = text;
+            msg.appendChild(cell);
+          } else {
+            msg = document.createElement('div');
+            msg.className = 'kachel text-muted';
+            msg.textContent = text;
+          }
+          container.replaceWith(msg);
         }
       });
     });

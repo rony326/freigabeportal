@@ -51,6 +51,7 @@ import { createSpesenFreigabe1Router } from './routes/spesenFreigabe1.js';
 import { createFreigabe2Router } from './routes/freigabe2.js';
 import { createAblehnungRouter } from './routes/ablehnung.js';
 import { createZeitstempelPruefenRouter } from './routes/zeitstempelPruefen.js';
+import { createAuditPruefenRouter } from './routes/auditPruefen.js';
 import { createKreditkarteRouter } from './routes/kreditkarte.js';
 import { createMailerOrFallback } from './services/mailer.js';
 import { zeitpunktAnzeige } from './services/auditLog.js';
@@ -208,6 +209,8 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   app.use('/zeitstempel-pruefen', sessionLimiter, requireLogin(), createZeitstempelPruefenRouter({ db, config, csrfProtection }));
 
   app.use('/auth', publicLimiter, createAuthRouter({ db, config, csrfProtection }));
+  // Oeffentlich fuer die Revision (ohne Portal-Login), nur GET.
+  app.use('/audit-pruefen', publicLimiter, createAuditPruefenRouter({ db }));
   app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));
 
   app.get('/healthz', (req, res) => res.json({ status: 'ok' }));

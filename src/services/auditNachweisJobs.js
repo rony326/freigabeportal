@@ -134,9 +134,7 @@ export async function sendeAuditPruefnummer(db, config, mailer) {
   const zeitpunkt = (id) => db.prepare('SELECT zeitpunkt FROM audit_ereignisse WHERE id = ?').get(id)?.zeitpunkt;
   const anzahl = db.prepare('SELECT COALESCE(SUM(anzahl), 0) AS n FROM audit_export_pakete').get().n;
   const stempel = ladeAuditZeitstempel(db, letztes.id);
-  // Route /audit-pruefen folgt in einem spaeteren Task; bewusst ausserhalb des mailLinks-Musters gebaut.
-  const basis = config.publicBaseUrl;
-  const pruefseite = `${basis}/audit-pruefen`;
+  const pruefseite = `${config.publicBaseUrl}/audit-pruefen`;
   const variablen = {
     paketNr: String(letztes.id),
     pruefnummer: formatierePruefnummer(letztes.paket_sha256),

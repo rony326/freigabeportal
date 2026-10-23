@@ -1,0 +1,81 @@
+<%- include('_seite_anfang', { titel: 'Audit-Nachweis prüfen', rahmen: 'ohne' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Audit-Nachweis prüfen</h1>
+      <% if (ergebnis && ['ok', 'abweichung'].includes(ergebnis.status)) { %>
+        <div class="seitenkopf-aktionen">
+          <button type="button" class="btn btn-primary btn-sm" onclick="window.print()">Drucken / als PDF speichern</button>
+        </div>
+      <% } %>
+    </div>
+
+    <% if (abgeschaltet) { %>
+      <div class="alert alert-warning col-12 col-lg-8">Der automatische Audit-Nachweis ist derzeit abgeschaltet. Bereits vorhandene Pakete können weiterhin geprüft werden.</div>
+    <% } %>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger col-12 col-lg-8">
+        <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+
+    <% if (ergebnis && ergebnis.status === 'kein_paket') { %>
+      <div class="alert alert-warning col-12 col-lg-8">Im Portal gibt es noch kein Audit-Paket. Eine Prüfung ist erst nach dem ersten nächtlichen Export möglich.</div>
+    <% } else if (ergebnis && ergebnis.status === 'unbekannt') { %>
+      <div class="alert alert-danger col-12 col-lg-8">Paket <%= ergebnis.paketNr %> ist nicht bekannt. Bitte die Paketnummer in der Mail kontrollieren. Ist sie richtig, fehlt das Paket im Portal – bitte die Verantwortlichen informieren.</div>
+    <% } %>
+
+    <div class="no-print">
+      <p class="col-12 col-lg-8">Hier prüfen Sie, ob das Audit-Log des Portals seit dem Versand einer Prüfnummer unverändert geblieben ist. Geben Sie Paketnummer und Prüfnummer aus der zuletzt erhaltenen Mail ein.</p>
+      <form method="get" action="/audit-pruefen" class="filterzeile">
+        <div>
+          <label class="form-label" for="paket">Paketnummer</label>
+          <input type="text" inputmode="numeric" class="form-control" id="paket" name="paket" size="8" value="<%= eingabe.paket %>" required>
+        </div>
+        <div style="flex: 1 1 28rem;">
+          <label class="form-label" for="pruefnummer">Prüfnummer</label>
+          <input type="text" class="form-control font-monospace" id="pruefnummer" name="pruefnummer" value="<%= eingabe.pruefnummer %>" autocomplete="off" spellcheck="false" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Prüfen</button>
+      </form>
+      <p class="form-text mt-n2 mb-4">Prüfnummer: 64 Zeichen aus der Mail; Leerzeichen und Gross-/Kleinschreibung spielen keine Rolle.</p>
+    </div>
+
+    <% if (ergebnis && !['kein_paket', 'unbekannt'].includes(ergebnis.status)) { %>
+      <div class="bescheinigung col-12 col-lg-8">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <% if (branding.hasLogo) { %><img src="/branding/logo" alt="Logo" height="40"><% } %>
+          <strong><%= branding.seitenTitel %></strong>
+        </div>
+        <p class="bescheinigung-titel h1 d-none d-print-block">Prüfbericht Audit-Nachweis</p>
+        <% if (ergebnis.status === 'ok') { %>
+          <p class="alert alert-success"><strong>✓ Keine Veränderung festgestellt.</strong> Das Audit-Log bis und mit Paket <%= ergebnis.paketNr %> entspricht dem Stand, für den die Prüfnummer ausgestellt wurde.</p>
+        <% } else { %>
+          <p class="alert alert-danger"><strong>✗ Abweichung festgestellt.</strong> Mindestens ein Prüfpunkt ist nicht erfüllt. Bitte diesen Bericht ausdrucken und die Verantwortlichen informieren.</p>
+        <% } %>
+
+        <p class="mb-1"><strong>Paketnummer:</strong> <%= ergebnis.paketNr %></p>
+        <p class="mb-1"><strong>Geprüfte Prüfnummer:</strong> <span class="hash-wert font-monospace"><%= ergebnis.pruefnummer %></span></p>
+        <p class="mb-3"><strong>Geprüft am:</strong> <%- include('_zeitpunkt', { wert: ergebnis.geprueftAm.toISOString() }) %></p>
+
+        <ul class="list-unstyled mb-3">
+          <% ergebnis.punkte.forEach((punkt) => { %>
+            <li class="mb-2 <%= punkt.ok ? 'text-success' : 'text-danger' %>">
+              <strong><%= punkt.ok ? '✓' : '✗' %> <%= punkt.titel %>:</strong> <span class="text-body"><%= punkt.text %></span>
+            </li>
+          <% }) %>
+        </ul>
+
+        <h2 class="h5">Neuere Pakete</h2>
+        <% if (ergebnis.neuere.anzahl === 0) { %>
+          <p>Seit Paket <%= ergebnis.paketNr %> ist kein weiteres Paket entstanden.</p>
+        <% } else { %>
+          <p>Seit Paket <%= ergebnis.paketNr %> sind <%= ergebnis.neuere.anzahl %> weitere Pakete entstanden; ihre Verkettung ist in der Prüfung oben enthalten.
+            <% if (ergebnis.neuere.alleGestempelt) { %>Alle haben einen gültigen, rechtzeitig gesetzten Zeitstempel.
+            <% } else { %><span class="text-danger">Nicht alle haben (noch) einen gültigen, rechtzeitig gesetzten Zeitstempel.</span> Das betrifft nicht das Ergebnis für Paket <%= ergebnis.paketNr %>.<% } %>
+          </p>
+        <% } %>
+      </div>
+    <% } %>
+
+    <h2 class="h5 mt-4">Grenzen dieser Prüfung</h2>
+    <p class="text-muted small col-12 col-lg-8">Die Seite läuft im Portal selbst. Ein Angreifer mit vollem Serverzugriff könnte auch sie verfälschen. Für eine vertiefte Prüfung bleibt die Offline-Prüfung einer Backup-Kopie mit <code>npm run audit:verify</code> sowie der Vergleich der Zeitstempel mit den per Mail erhaltenen Prüfnummern. Die Zeitstempel werden hier auf Unversehrtheit und Zugehörigkeit zum Paket geprüft; die Vertrauenskette des Zeitstempeldienstes wurde beim Stempeln geprüft.</p>
+<%- include('_seite_ende', { rahmen: 'ohne' }) %>

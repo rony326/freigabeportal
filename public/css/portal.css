@@ -312,6 +312,18 @@
 .kachel-angaben dd {
   margin-bottom: 0;
 }
+/* In der Tabelle ist das Formular inline mit Breite nach Inhalt. In der schmalen Kachel
+   nimmt es eine eigene Zeile und das Auswahlfeld schrumpft, damit nichts über den Rand läuft. */
+.kachel .zuweisen-form {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+.kachel .zuweisen-form select {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto !important;
+}
 .kachel-betrag {
   font-size: 1.25rem;
   font-variant-numeric: tabular-nums;

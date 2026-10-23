@@ -355,6 +355,17 @@ test('portal.css: obere Leiste schrumpft auf Telefonbreite (minmax(0,1fr), Titel
   assert.match(css, /\.portal-kopf-zeile img\s*\{[^}]*max-width:\s*100%/);
 });
 
+test('portal.css: Zuweisen-Formular in Kacheln bleibt innerhalb der Kachel', () => {
+  const css = portalCss();
+  const form = cssRegel(css, '.kachel .zuweisen-form');
+  assert.match(form, /display:\s*flex/);
+  assert.match(form, /width:\s*100%/);
+  const select = cssRegel(css, '.kachel .zuweisen-form select');
+  assert.match(select, /flex:\s*1 1 0/);
+  assert.match(select, /min-width:\s*0/);
+  assert.match(select, /width:\s*auto\s*!important/);
+});
+
 test('portal.css: klebende Seitenleiste ist höchstens bildschirmhoch und scrollt selbst', () => {
   const css = portalCss();
   const sticky = css.match(/@media \(min-width: 992px\) \{\s*\.portal-seitenleiste \{[^}]*\}/);

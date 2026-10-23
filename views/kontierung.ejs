@@ -1,14 +1,4 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Kontierung — <%= branding.seitenTitel %></title>
-</head>
-<body>
-  <%- include('_header') %>
-  <main class="container-fluid py-4">
+<%- include('_seite_anfang', { titel: 'Kontierung', rahmen: 'kompakt' }) %>
     <div class="row g-3 justify-content-center">
       <div class="col-lg-12 col-xl-10">
         <h1 class="h3">Kontierung: <%= job.dateiname %></h1>
@@ -261,7 +251,6 @@
         </div>
       </div>
     </div>
-  </main>
   <script>
     // See pool.ejs's thumbnail-click handler for why file= must be resolved to an absolute URL.
     (function () {
@@ -561,6 +550,4 @@
       });
     })();
   </script>
-  <%- include('_footer') %>
-</body>
-</html>
+<%- include('_seite_ende') %>

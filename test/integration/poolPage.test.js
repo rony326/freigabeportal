@@ -82,26 +82,27 @@ test('GET /pool carries a viewport meta tag and wraps the Pool table in table-re
   db.close();
 });
 
-test('GET /pool renders the nav bar as a centered container, matching every other page, even though the dashboard\'s own main is full-width', async () => {
+test('GET /pool renders inside the shared centered container-xxl shell, matching every other page', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
-  assert.match(res.text, /<nav class="container mb-3/);
+  assert.match(res.text, /<div class="container-xxl">\s*<div class="portal-rahmen">/);
+  assert.doesNotMatch(res.text, /container-fluid/);
   db.close();
 });
 
-test('GET /pool shows a reload button in the nav bar, next to the Menü button', async () => {
+test('GET /pool shows a reload button in the action row at the top of main', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
-  const navMatch = res.text.match(/<nav[^>]*>[\s\S]*?<\/nav>/);
-  assert.ok(navMatch, 'expected a <nav> element');
-  assert.match(navMatch[0], /id="hauptmenue-toggle"/, 'nav should contain the Menü dropdown button');
-  assert.match(navMatch[0], /<a href="\/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">/, 'reload button should be inside the nav bar');
+  const aktionen = res.text.match(/<main class="portal-inhalt">\s*<div class="portal-aktionen[^"]*">[\s\S]*?<\/div>/);
+  assert.ok(aktionen, 'expected the .portal-aktionen row at the top of main');
+  assert.match(res.text, /<nav class="portal-seitenleiste/, 'the sidebar replaces the old Menü dropdown');
+  assert.match(aktionen[0], /<a href="\/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">/, 'reload button should be inside the action row');
   db.close();
 });
 
@@ -171,15 +172,16 @@ test('GET /pool returns 200 for a logged-in person without the buchhaltung or po
   db.close();
 });
 
-test('GET /pool shows the "Zeitstempel prüfen" menu item even for a logged-in person with no group membership at all', async () => {
+test('GET /pool shows the "Zeitstempel prüfen" sidebar item even for a logged-in person with no group membership at all', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   upsertPerson(db, { id: '77', vorname: 'Frei', nachname: 'Geber', email: 'a@example.org', gruppen: [], loggedInNow: true });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '77');
   assert.equal(res.status, 200);
-  assert.match(res.text, /id="hauptmenue-toggle"/, 'the Menü dropdown itself must be shown, not just role-gated');
-  assert.match(res.text, /href="\/zeitstempel-pruefen">Zeitstempel prüfen</);
+  const seitenleiste = res.text.match(/<nav class="portal-seitenleiste[\s\S]*?<\/nav>/);
+  assert.ok(seitenleiste, 'the sidebar itself must be shown, not just role-gated');
+  assert.match(seitenleiste[0], /href="\/zeitstempel-pruefen"[\s\S]*?<span class="portal-label">Zeitstempel prüfen<\/span>/);
   db.close();
 });
 

@@ -1,14 +1,4 @@
-<!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <title>Kreditkartenabrechnung abgleichen — <%= branding.seitenTitel %></title>
-</head>
-<body>
-  <%- include('_header', { navContainerClass: 'container-fluid px-4' }) %>
-  <main class="container-fluid px-4 py-3">
+<%- include('_seite_anfang', { titel: 'Kreditkartenabrechnung abgleichen', rahmen: 'kompakt' }) %>
     <div class="row g-4">
       <div class="col-lg-5">
         <iframe id="kontierung-preview-frame" data-preview-url="<%= previewUrl %>" src="" class="w-100 rounded pdf-preview" style="height:85vh"></iframe>
@@ -99,7 +89,6 @@
         <%- include('_audit_log') %>
       </div>
     </div>
-  </main>
 
   <template id="zeile-template">
     <div class="border rounded p-2 mb-2 zeile">
@@ -247,6 +236,4 @@
     window.kkAbgleich = { neueZeile: neueZeile, updateSummen: updateSummen };
   })();
   </script>
-  <%- include('_footer') %>
-</body>
-</html>
+<%- include('_seite_ende') %>

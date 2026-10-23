@@ -1,0 +1,26 @@
+<%# Linke Seitenleiste. Ab lg fest im Rahmen, darunter als Offcanvas hinter #seitenleiste-toggle.
+    eingeklappt: nur Symbole (Label als title/aria-label; im Offcanvas unter lg wieder sichtbar). %>
+<nav class="portal-seitenleiste<%= eingeklappt ? ' eingeklappt' : '' %> offcanvas-lg offcanvas-start" id="portal-seitenleiste" tabindex="-1" aria-label="Navigation">
+  <div class="offcanvas-header d-lg-none">
+    <span class="offcanvas-title fw-semibold">Navigation</span>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#portal-seitenleiste" aria-label="Schliessen"></button>
+  </div>
+  <div class="portal-seitenleiste-inhalt">
+    <% gruppen.forEach((gruppe) => { %>
+      <div class="portal-gruppe">
+        <div class="portal-gruppe-titel"><%= gruppe.titel %></div>
+        <ul class="list-unstyled mb-0">
+          <% gruppe.punkte.forEach((punkt) => { %>
+            <li>
+              <a class="portal-punkt<%= punkt.aktiv ? ' aktiv' : '' %>" href="<%= punkt.href %>"<% if (punkt.aktiv) { %> aria-current="page"<% } %><% if (eingeklappt) { %> title="<%= punkt.label %>" aria-label="<%= punkt.label %>"<% } %>>
+                <span class="portal-symbol" aria-hidden="true"><%= punkt.symbol %></span>
+                <span class="portal-label"><%= punkt.label %></span>
+                <% if (punkt.zaehler) { %><span class="badge rounded-pill portal-zaehler"><%= punkt.zaehler %></span><% } %>
+              </a>
+            </li>
+          <% }) %>
+        </ul>
+      </div>
+    <% }) %>
+  </div>
+</nav>

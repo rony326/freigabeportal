@@ -210,7 +210,7 @@ test('every response carries the baseline security headers', async () => {
   db.close();
 });
 
-test('Hauptmenü shows only the Aufgaben entry for a Buchhaltung-only member, active on /pool', async () => {
+test('Navigation marks Aufgaben (sidebar) and Portal (tab) as current on /pool for a Buchhaltung-only member, without an Admin tab', async () => {
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -234,7 +234,10 @@ test('Hauptmenü shows only the Aufgaben entry for a Buchhaltung-only member, ac
   await agent.get('/auth/callback').query({ code: 'the-code', state });
 
   const res = await agent.get('/pool');
-  assert.match(res.text, /class="dropdown-item active" href="\/pool"/);
+  const seitenleiste = res.text.match(/<nav class="portal-seitenleiste[\s\S]*?<\/nav>/);
+  assert.ok(seitenleiste, 'expected the sidebar');
+  assert.match(seitenleiste[0], /href="\/pool" aria-current="page"/);
+  assert.match(res.text, /<nav class="portal-reiter[\s\S]*?href="\/pool" aria-current="page">Portal</);
   assert.doesNotMatch(res.text, /href="\/admin"/);
   db.close();
 });
@@ -634,7 +637,7 @@ test('GET /kontierung/:id is reachable through the real app for the assigned per
   db.close();
 });
 
-test('on /kontierung, the Zurück button renders to the right of the Menü dropdown', async () => {
+test('on /kontierung, the Zurück button renders first in the action row, after the sidebar, both btn-sm', async () => {
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -667,16 +670,18 @@ test('on /kontierung, the Zurück button renders to the right of the Menü dropd
 
   const res = await agent.get(`/kontierung/${jobId}`);
   assert.equal(res.status, 200);
-  const menuIndex = res.text.indexOf('hauptmenue-toggle');
+  const seitenleisteIndex = res.text.indexOf('portal-seitenleiste');
   const zurueckIndex = res.text.indexOf('← Zurück');
-  assert.ok(menuIndex >= 0 && zurueckIndex >= 0, 'both the Menü dropdown and the Zurück button should be present');
-  assert.ok(menuIndex < zurueckIndex, 'Menü dropdown should render before (to the left of) the Zurück button');
-  assert.match(res.text, /class="btn btn-outline-secondary btn-sm dropdown-toggle"/, 'Menü button should be btn-sm, matching Zurück');
-  assert.match(res.text, /class="btn btn-primary btn-sm">← Zurück/, 'Zurück button should be btn-sm, matching Menü');
+  assert.ok(seitenleisteIndex >= 0 && zurueckIndex >= 0, 'both the sidebar and the Zurück button should be present');
+  assert.ok(seitenleisteIndex < zurueckIndex, 'the sidebar should render before (to the left of) the Zurück button');
+  const aktionen = res.text.match(/<div class="portal-aktionen[^"]*">([\s\S]*?)<\/div>/);
+  assert.ok(aktionen, 'expected the .portal-aktionen row');
+  assert.match(aktionen[1].trim(), /^<a href="\/pool" class="btn btn-primary btn-sm">← Zurück<\/a>/, 'Zurück should be the first action, btn-sm');
+  assert.match(aktionen[1], /id="preview-refresh-btn" class="btn btn-outline-secondary btn-sm"/, 'Vorschau neu laden should be btn-sm, matching Zurück');
   db.close();
 });
 
-test('on /kontierung, a "+ Lieferant" button sits in the nav bar alongside Menü/Zurück/Vorschau neu laden, not down in the form', async () => {
+test('on /kontierung, a "+ Lieferant" button sits in the action row after Zurück/Vorschau neu laden, not down in the form', async () => {
   const config = testConfig();
   config.churchtools = {
     ...config.churchtools,
@@ -709,13 +714,13 @@ test('on /kontierung, a "+ Lieferant" button sits in the nav bar alongside Menü
 
   const res = await agent.get(`/kontierung/${jobId}`);
   assert.equal(res.status, 200);
-  const navMatch = res.text.match(/<nav[^>]*>[\s\S]*?<\/nav>/);
-  assert.ok(navMatch, 'expected a <nav> element');
-  assert.match(navMatch[0], /data-bs-target="#neuer-lieferant-modal"/, 'the Lieferant trigger should live inside the nav bar');
-  const menuIndex = navMatch[0].indexOf('hauptmenue-toggle');
-  const zurueckIndex = navMatch[0].indexOf('← Zurück');
-  const lieferantIndex = navMatch[0].indexOf('data-bs-target="#neuer-lieferant-modal"');
-  assert.ok(menuIndex < zurueckIndex && zurueckIndex < lieferantIndex, 'Menü, then Zurück, then + Lieferant, left to right');
+  const aktionen = res.text.match(/<div class="portal-aktionen[^"]*">[\s\S]*?<\/div>/);
+  assert.ok(aktionen, 'expected the .portal-aktionen row');
+  assert.match(aktionen[0], /data-bs-target="#neuer-lieferant-modal"/, 'the Lieferant trigger should live inside the action row');
+  const zurueckIndex = aktionen[0].indexOf('← Zurück');
+  const refreshIndex = aktionen[0].indexOf('id="preview-refresh-btn"');
+  const lieferantIndex = aktionen[0].indexOf('data-bs-target="#neuer-lieferant-modal"');
+  assert.ok(zurueckIndex >= 0 && zurueckIndex < refreshIndex && refreshIndex < lieferantIndex, 'Zurück, then Vorschau neu laden, then + Lieferant, left to right');
   db.close();
 });
 

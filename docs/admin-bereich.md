@@ -5,7 +5,7 @@ Der gesamte Admin-Bereich hängt unter `/admin`. Der äussere Zugriffsschutz
 `superadmin`, `manager` ist, oder mindestens ein additives Einzelrecht
 besitzt — pro Unterbereich entscheidet danach eine **eigene, feinere**
 Prüfung, ob die Seite tatsächlich sichtbar/bedienbar ist. Das
-Admin-Dashboard selbst (`GET /admin`) zeigt nur eine
+Übersichtsseite selbst (`GET /admin`) zeigt nur eine
 Zeitstempel-Rückstands-Warnung, keine geschützten Daten.
 
 Hintergrund: Bis zur Einführung der additiven Einzelrechte
@@ -13,18 +13,48 @@ Hintergrund: Bis zur Einführung der additiven Einzelrechte
 über eine einzige ChurchTools-Gruppe erreichbar. Das ist heute
 feingranularer — siehe [auth-und-rechte.md](auth-und-rechte.md).
 
+## Navigation und Layout
+
+Alle Seiten teilen dasselbe Grundgerüst:
+
+- **Obere Leiste:** Logo (Ausrichtung aus dem Erscheinungsbild), die Reiter
+  „Portal“ und „Admin“ (Admin nur mit mindestens einem Admin-Recht), rechts
+  „Angemeldet als“, Farbmodus und Abmelden. Unter 992 px öffnet „☰“ die
+  Seitenleiste als Offcanvas.
+- **Seitenleiste mit Gruppen** (Quelle: `src/services/navigation.js`). Portal:
+  Arbeit (Aufgaben, mit Zähler offener Aufgaben), Spesen, Belege, Persönlich.
+  Admin: Vorgänge, Stammdaten, Einstellungen, Betrieb. Menüpfade in der
+  Doku folgen dieser Struktur, z. B. „Admin → Stammdaten → Konten“. Seiten
+  mit PDF-Vorschau (Kontierung, Freigabe 2, Spesen-Freigabe 1,
+  KK-Abgleich) zeigen die Seitenleiste auf Icons eingeklappt; ihre
+  Schaltflächen (Zurück, Vorschau neu laden, + Lieferant) stehen in einer
+  Aktionszeile über dem Inhalt.
+- **Einheitliche Breite** (max. 1320 px) und derselbe Seitenkopf (Titel,
+  Hauptaktion, Ansichtsumschalter) auf jeder Seite. Der Titel von `/admin`
+  lautet „Übersicht“.
+
+### Kachelansicht
+
+Sieben Listen bieten den Umschalter „☰ Tabelle | ▦ Kacheln“: Aufgaben,
+Meine Spesen, Abgeschlossene Rechnungen, Kreditkartenbelege sowie
+Admin → Vorgänge → Laufende Vorgänge, Abgelehnte Rechnungen und Altfälle.
+Die Wahl wird pro Liste und pro Gerät im Cookie `ansicht_<schluessel>`
+gespeichert (1 Jahr). Ohne Wahl gilt: Tabelle auf grossen, Kacheln auf
+kleinen Bildschirmen. Schlüsseltabelle und Cookie-Logik:
+`src/middleware/ansicht.js`.
+
 ## Rechte-Matrix
 
 | Seite | Route | benötigtes Recht |
 |---|---|---|
-| Dashboard | `/admin` | jedes Einzelrecht, `superadmin` oder `manager` |
+| Übersicht | `/admin` | jedes Einzelrecht, `superadmin` oder `manager` |
 | Konten | `/admin/konten` | Einzelrecht `konten_verwalten` |
 | Kreditoren | `/admin/kreditoren` | Einzelrecht `kreditoren_verwalten` |
 | Eskalationszeiten | `/admin/eskalation` | **nur** `superadmin` |
 | Erscheinungsbild | `/admin/erscheinungsbild` | **nur** `superadmin` |
 | Zeitstempel | `/admin/zeitstempel` | **nur** `superadmin` |
 | Personen | `/admin/personen` | `superadmin` oder `manager` |
-| E-Mail-Protokoll | `/admin/mails` | Einzelrecht `mails_einsehen` |
+| Mail-Protokoll | `/admin/mails` | Einzelrecht `mails_einsehen` |
 | Personen-Sync | `/admin/sync` | `sync_einsehen`; Konfiguration zusätzlich `sync_verwalten`, Force-Aktionen zusätzlich `workflow_eingreifen` |
 | Laufende Vorgänge | `/admin/vorgaenge` | Einzelrecht `vorgaenge_einsehen` (Umhängen: `workflow_eingreifen`); `superadmin` ✓, `manager` ✓ (nur ansehen) |
 | Abgelehnte Rechnungen | `/admin/abgelehnt` | Einzelrecht `abgelehnt_verwalten` |

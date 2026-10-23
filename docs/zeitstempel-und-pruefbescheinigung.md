@@ -170,7 +170,7 @@ Bescheinigung selbst) — gedacht als Ausdruck/PDF-Export für die externe
 Revision oder Steuerprüfung, ohne dass die prüfende Stelle selbst Zugriff
 auf das Portal braucht.
 
-## Konfiguration (**Admin → Zeitstempel**, `superadmin`-exklusiv)
+## Konfiguration (**Admin → Einstellungen → Zeitstempel**, `superadmin`-exklusiv)
 
 TSA-URL, optionaler Benutzername/Passwort (HTTP-Basic-Auth, von Hand als
 Header gebaut — die verwendete Bibliothek hat kein eingebautes

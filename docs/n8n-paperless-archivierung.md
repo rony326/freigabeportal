@@ -29,7 +29,7 @@ Alle folgenden Requests brauchen `X-API-Key: <N8N_API_KEY>`, ueber HTTPS.
    bei Altfaellen zusaetzlich `altfall`, `archiv_ohne_zahlung` und `unbelegte_jobdaten`.
    Bereits festgeschriebene Manifeste der Version 1 bleiben unveraendert.
    Belege ohne ausreichenden Freigabe-/Zahlungsnachweis liefern 409, solange sie
-   nicht uebergeben und nicht unter Admin → Altfaelle entschieden sind.
+   nicht uebergeben und nicht unter Admin → Vorgänge → Altfaelle entschieden sind.
    Die Version bezeichnet das Manifestformat. Derzeit gibt es genau einen Export je Job;
    nachtraeglich andere Bytes werden nicht still als neue Version akzeptiert.
 3. `GET {download_pfad}` liefert genau die zum Nachweis gehoerenden PDF-Bytes.

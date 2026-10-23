@@ -138,12 +138,12 @@ Hintergrund-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/inde
 | `sicherheitsalarme` | Intervall, Default alle 30 Min. | Alarm-Mails zu ungeklärten Backup-Löschabsichten |
 | `tsa-crl-aktualisierung` | täglich, Default 04:15 (Europe/Zürich), nur mit `TSA_CRL_AUTO_UPDATE=true` | erneuert die TSA-Sperrlisten (`TSA_CRL_FILE`) aus der validierten TSA-Kette; Alarm-Mail, wenn sie in weniger als 7 Tagen ablaufen |
 
-**Admin → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan von acht Jobs
+**Admin → Betrieb → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan von acht Jobs
 einstellen (wirkt ab dem nächsten planmässigen Lauf, kein Neustart nötig),
 jeden davon manuell sofort auslösen, und den Verlauf der letzten Läufe
 (Erfolg/Fehler samt Details) einsehen — sowohl geplante als auch manuell
 ausgelöste Läufe landen im selben Verlauf. `datenbank-sicherung` wird unter
-**Admin → Datenbank-Backup**, `mail-digest` unter **Admin →
+**Admin → Betrieb → Datenbank-Backup**, `mail-digest` unter **Admin → Einstellungen →
 Mail-Einstellungen** eingestellt; `sicherheitsalarme` nur über `admin_config`.
 Details zu allen elf Jobs:
 [docs/geplante-jobs-und-benachrichtigungen.md](docs/geplante-jobs-und-benachrichtigungen.md).
@@ -186,7 +186,7 @@ laut Lastenheft zwingend für das Portal.
    einmal manuell auslösen (z. B. via
    `curl -X POST -H "X-Cron-Secret: <CRON_SECRET>" https://<domain>/internal/cron/sync-personen`)
    und den `200`/`erfolg`-Response prüfen, bevor man sich auf den
-   automatischen Zeitplan verlässt. Unter **Admin → Datenbank-Backup** eine
+   automatischen Zeitplan verlässt. Unter **Admin → Betrieb → Datenbank-Backup** eine
    Sicherung auslösen und mit `npm run backup:verify` offline prüfen.
 5. Eine Test-Mail-Zustellung prüfen: unter `/admin/mails` muss die Zeile
    `versendet` zeigen, nicht `eingereiht`/`fehlgeschlagen`.

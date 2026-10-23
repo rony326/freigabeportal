@@ -49,7 +49,7 @@ flowchart TD
 Die Warn-Mail blockiert die Kontierung **nicht** — sie ist ein Hinweis,
 kein Stopp: die Person kann die Rechnung trotzdem freigeben, aber
 Freigeber 1, Freigeber 2 und ggf. weitere konfigurierte Empfänger
-(**Admin → Eskalationszeiten**, Feld "IBAN-Abweichungs-Empfänger") werden
+(**Admin → Einstellungen → Eskalationszeiten**, Feld "IBAN-Abweichungs-Empfänger") werden
 zusätzlich informiert und können gezielt nachfragen.
 
 ## Aufsplitten
@@ -71,7 +71,7 @@ Muster (Warn-Mail + Audit-Log-Eintrag, blockiert nicht). Details:
 
 ## Verwaltung der hinterlegten IBANs
 
-**Admin → Kreditoren** (Recht `kreditoren_verwalten`) verwaltet pro
+**Admin → Stammdaten → Kreditoren** (Recht `kreditoren_verwalten`) verwaltet pro
 Lieferant beliebig viele IBANs (`kreditor_ibans`, eindeutig über die
 gesamte Tabelle — eine IBAN kann nur einem Lieferanten zugeordnet sein).
 Validierung einer Schweizer IBAN: `^CH\d{2}[0-9A-Z]{17}$`

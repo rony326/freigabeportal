@@ -118,7 +118,7 @@ Historie ebenfalls immer erreichbar.
 
 ## Navigation
 
-- **Menü** (`_header.ejs`): "Spesen einreichen" → `/spesen/neu`, sichtbar
+- **Seitenleiste** (Portal → Gruppe Spesen, `src/services/navigation.js`): "Spesen einreichen" → `/spesen/neu`, sichtbar
   für jede eingeloggte Person (kein Rollen-/Rechte-Filter, gleiches Niveau
   wie `/kontierung`).
 - **`/pool`-Dashboard**: Sektion "Meine offenen Spesen-Freigaben"
@@ -157,7 +157,7 @@ Zahlungsdaten oder ein geaenderter Vorgangs-/Kontostand verlangen eine neue
 Bestaetigung. Identitaet, Zeitpunkt und bestaetigter Stand werden im unveraenderlichen
 Freigabe-Snapshot gespeichert. Ablehnen und Eskalieren bleiben ohne Zahlungsdaten moeglich.
 Die Pruefsumme bestaetigt weder Kontoinhaberschaft noch die Existenz des Bankkontos.
-Altfaelle ohne bestaetigte Zahlungsdaten werden nicht exportiert, bis unter Admin → Altfaelle
+Altfaelle ohne bestaetigte Zahlungsdaten werden nicht exportiert, bis unter Admin → Vorgänge → Altfaelle
 entschieden wurde. Eine Nachbestaetigung zeigt die aktuelle ChurchTools-IBAN ausdruecklich als
 aktuellen, nicht historischen Stand; die einreichende Person kann nicht selbst entscheiden.
 Siehe [export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md#altfälle).

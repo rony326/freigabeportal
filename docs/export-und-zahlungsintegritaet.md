@@ -123,7 +123,7 @@ PDF-Arbeit den Gruppen-Snapshot (`bereiteGruppenSnapshotVor`):
 
 Ist eine Bedingung verletzt, liefert die Finalisierung `nachpruefung`. Dann
 entsteht kein Archivdokument, und die Gruppe erscheint unter Admin →
-Altfälle. Der Gruppen-Snapshot wird in derselben Transaktion wie Dateipfad
+Vorgänge → Altfälle. Der Gruppen-Snapshot wird in derselben Transaktion wie Dateipfad
 und finaler Hash gespeichert. Er ist per Trigger unveränderlich, auch gegen
 ein Zurücksetzen auf `NULL`.
 

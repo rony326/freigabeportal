@@ -341,7 +341,7 @@ Siehe [Archivvertrag](n8n-paperless-archivierung.md) und
 
 ## 8. Admin-Eingriff: laufende Vorgänge umhängen
 
-Unter **Admin → Laufende Vorgänge** (`/admin/vorgaenge`, Recht
+Unter **Admin → Vorgänge → Laufende Vorgänge** (`/admin/vorgaenge`, Recht
 `vorgaenge_einsehen`) stehen alle Vorgänge in `unzugewiesen`, `zugewiesen`,
 `freigabe2` und `abgelehnt` mit aktuell zuständiger Person und
 voraussichtlicher Freigabe-2-Person. Mit `workflow_eingreifen` lässt sich ein
@@ -392,7 +392,7 @@ Person den Vorgang dort.
 
 Ein Job "hängt", wenn die für den nächsten Schritt zuständige Person
 deaktiviert wurde oder in ChurchTools nicht mehr auflösbar ist (erkannt
-vom nächtlichen Personen-Sync). **Admin → Personen-Sync** listet solche
+vom nächtlichen Personen-Sync). **Admin → Betrieb → Sync-Übersicht** listet solche
 Jobs mit einer Force-Freigeben-Funktion — siehe
 [personen-sync.md](personen-sync.md#stalled-jobs).
 

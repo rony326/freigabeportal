@@ -60,7 +60,7 @@ flowchart LR
   [offline-restore.md](offline-restore.md#abbruch-und-sperren). Solange der
   Server deshalb nicht läuft, laufen auch keine Jobs — siehe erster Punkt.
 
-## Die zwölf Jobs
+## Die vierzehn Jobs
 
 | Job | Standard-Zeitplan | Einstellbar unter | `POST /internal/cron/…` | Protokoll | Zweck |
 |---|---|---|---|---|---|
@@ -76,6 +76,8 @@ flowchart LR
 | `mail-digest` | täglich 07:00 (Europe/Zürich) | Mail-Einstellungen | nein | `cron_log` | fasst wegen aktivem Batching eingereihte (`mail_log.status = 'geplant'`) Mails pro Empfänger zu einer täglichen Zusammenfassung zusammen |
 | `sicherheitsalarme` | alle 30 Minuten | nur `admin_config` (`cron_sicherheitsalarme_intervall_minuten`) | nein | Audit-Log (`hintergrundlauf`), `mail_log` | meldet ungeklärte Backup-Löschabsichten |
 | `tsa-crl-aktualisierung` | täglich 04:15 (Europe/Zürich), nur mit `TSA_CRL_AUTO_UPDATE=true` | nur `admin_config` (`cron_tsa_crl_stunde`/`cron_tsa_crl_minute`) | ja | Audit-Log (`hintergrundlauf`), `mail_log` bei Alarm | erneuert `TSA_CRL_FILE` aus der validierten TSA-Kette — siehe [tsa-vertrauensanker.md](tsa-vertrauensanker.md#automatische-sperrlisten-erneuerung) |
+| `audit-export` | täglich 03:15 (Europe/Zürich) | nur `admin_config` / Admin → Zeitstempel (`cron_audit_export_stunde`/`_minute`) | nein | Audit-Log (`hintergrundlauf`), kein `cron_log` | erzeugt Audit-Pakete, holt RFC3161-Zeitstempel (auch nachträglich), Alarm bei Rückstand |
+| `audit-pruefnummer` | täglich 07:00 (Europe/Zürich), sendet nur am Versandtag | nur `admin_config` / Admin → Zeitstempel (`cron_audit_pruefnummer_stunde`/`_minute`) | nein | Audit-Log (`hintergrundlauf`), `mail_log` | Prüfnummer-Mail an die Revision |
 
 Alle Läufe außer leeren `mail-zustellung`-Läufen (ohne fällige Mails)
 erscheinen zusätzlich als `hintergrundlauf` im Audit-Log.
@@ -215,6 +217,21 @@ Exportmanifest sperrt die automatische Aenderung dieser Dokumentversion. Läuft 
 "Jetzt ausführen"-Klick während eines laufenden geplanten Durchlaufs
 startet keinen zweiten, parallelen Lauf. Details:
 [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md).
+
+### `audit-export` und `audit-pruefnummer`
+
+Beide laufen nur, wenn `modul_audit_nachweis_aktiv` = `1`; sonst liefern sie `uebersprungen`.
+`audit-export` erzeugt jede Nacht Pakete (`erstelleAuditExportPaket`), stempelt alle Pakete ohne
+Nachweis bei der TSA (älteste zuerst; TSA-Fehler → Status `fehler`, Nachholung im nächsten Lauf) und
+verschickt bei Rückstand über `audit_zeitstempel_alarm_tage` höchstens alle 24 h eine Mail
+(`typ: sicherheitsalarm`) an `sicherheitsalarm_empfaenger`. `audit-pruefnummer` läuft täglich, sendet
+aber nur am Versandtag (`audit_pruefnummer_rhythmus`, `audit_pruefnummer_tag`) und höchstens einmal
+je Monat (Marker `audit_pruefnummer_zuletzt_monat`). **Bekannte Grenze:** Verpasst der Prozess an
+diesem Tag die Versandzeit (z. B. weil er gestoppt war), wird die Periode übersprungen — kein
+Nachholen; manuell über Admin → Zeitstempel auslösbar. Der Mail-Typ `audit-pruefnummer` gehört zu
+den immer sofort zugestellten Typen (kein Digest); dieselbe Typ-Kennung tragen die Änderungsmails
+bei Wechsel von Empfänger/Rhythmus/Abschaltung. Beide Jobs stehen weder unter Geplante Jobs noch
+bei `/internal/cron`. Hintergrund: [audit-externe-nachweise.md](audit-externe-nachweise.md).
 
 ### `split-gruppen-nachholen`
 

@@ -436,6 +436,7 @@ und gehören zur vollständigen Datenbanksicherung.
 | `tsa_evidenz_objekte` | Per SHA-256 deduplizierte DER-Objekte für Zertifikate, Sperrlisten und Zeitstempel-Token; UPDATE/DELETE gesperrt. |
 | `tsa_pruefnachweise` | Unveränderlicher Prüfnachweis je Job, Dokumentart (`einzel`/`gruppe`) und Dokument-Hash, einschliesslich Prüfzeitpunkt und Evidenzverweisen. |
 | `audit_export_pakete` | Unveränderliches lokales Register hashverketteter Audit-Pakete mit Ereignisbereich, Lücken und Vorgängerhash. |
+| `audit_export_zeitstempel` | Unveränderlicher RFC3161-Zeitstempel je Audit-Paket (`paket_nr` PK → `audit_export_pakete.id`, `token`, `gen_time`, `nachweis` JSON inkl. beim Stempeln geprüfter Kette, `erstellt_am`); UPDATE/DELETE gesperrt. Wie das Paketregister nicht in der zentralen Audit-Trigger-Liste. |
 
 Die `jobs`-Spalten `final_datei_hash` und `gruppe_final_datei_hash` binden
 finale Dokumente auch ohne TSA. `zeitstempel_erforderlich` hält die gespeicherte Exportpflicht fest, bei

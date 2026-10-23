@@ -113,6 +113,7 @@ und Zugriffskontrolle — siehe
 | `/freigabe2` | session | eingeloggt + Job-Autorisierung | zweite Freigabe (Rechnungen und Spesen) |
 | `/abgelehnt` | session | eingeloggt + Job-Autorisierung | Überarbeitung abgelehnter Rechnungen |
 | `/zeitstempel-pruefen` | session | eingeloggt | Zeitstempel-Verifikation + Zertifikat |
+| `/audit-pruefen` | public (`publicLimiter`) | offen, nur lesend | Prüfseite des Audit-Nachweises für die Revision, siehe [audit-externe-nachweise.md](audit-externe-nachweise.md) |
 | `/auth` | public | offen | ChurchTools-OAuth2-Login/-Logout |
 | `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen von acht Hintergrund-Jobs (nicht: `datenbank-sicherung`, `mail-digest`, `sicherheitsalarme`) |
 | `/healthz` | keiner | offen | `{status:"ok"}` |

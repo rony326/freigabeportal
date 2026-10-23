@@ -48,7 +48,9 @@ ist nicht implementiert; der Eingang erfolgt über n8n.
 Die produktive n8n-/Paperless-Umstellung, konkrete DigiCert-Konfiguration mit
 externer CRL-Erneuerung und Betriebsabnahmen bleiben offen. Die Upload-Prüfansicht
 führt keine historische TSA-Ketten-/Sperrprüfung durch; LTV und OCSP fehlen.
-Audit-Pakete können lokal erzeugt werden, aber automatischer Transport und ein
-unabhängig kontrolliertes unveränderliches Ziel sind nicht implementiert.
+Audit-Pakete entstehen seit 2026-10-23 automatisch (Jobs `audit-export`, `audit-pruefnummer`) und
+werden per RFC3161 gestempelt; nur Prüfnummern gehen per Mail an die Revision. Ein automatischer
+Transport der Paketinhalte und ein unabhängig kontrolliertes unveränderliches Ziel sind weiterhin
+nicht implementiert.
 Altfallentscheidungen besitzen einen eigenen unveränderlichen Nachweis und
 sind seit 2026-10-23 auch in der zentralen Audit-Trigger-Liste enthalten.

@@ -136,6 +136,22 @@ RFC3161-TSA-Konfiguration (URL, optionale Basic-Auth-Zugangsdaten,
 Warnschwelle in Stunden) — siehe
 [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md).
 
+Abschnitt **Audit-Nachweis für die Revision** (nur Superadmin, Hintergrund in
+[audit-externe-nachweise.md](audit-externe-nachweise.md)):
+
+- Funktion aktiv (`modul_audit_nachweis_aktiv`, Default an) — bewusst hier und nicht unter Module.
+- Empfänger der Prüfnummer (`audit_revision_empfaenger`, komma-getrennt). Ein Wechsel geht per Mail
+  an alte und neue Adresse; Warnung, wenn eine Adresse zu einer Person mit Admin-Rechten gehört;
+  Hinweis (auch im Admin-Dashboard), wenn kein Empfänger festgelegt ist.
+- Versandrhythmus (`audit_pruefnummer_rhythmus`: monatlich, quartalsweise Jan/Apr/Jul/Okt, jährlich
+  Januar) und Versandtag (`audit_pruefnummer_tag`, 1–28). Abschalten sowie Änderung von Rhythmus/Tag
+  lösen eine Mail an die Empfänger aus.
+- Uhrzeit des nächtlichen Exports (`cron_audit_export_stunde`/`_minute`, Default 03:15) und des
+  Mailversands (`cron_audit_pruefnummer_stunde`/`_minute`, Default 07:00), wirksam ohne Neustart.
+- Alarmschwelle (`audit_zeitstempel_alarm_tage`, 1–30, Default 3).
+- Knopf „Prüfnummer jetzt senden“ (`POST /admin/zeitstempel/audit-pruefnummer-senden`).
+- Anzeige des letzten Pakets.
+
 ## Datenbank-Backup (`/admin/backup`)
 
 Zeitplan (täglich, Default 03:00, Europe/Zürich), Aufbewahrung (Default: die

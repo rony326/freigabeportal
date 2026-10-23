@@ -2,7 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults, setConfigValue, getConfigValue } from '../../src/db/adminConfigRepo.js';
-import { runAuditExportJob, listPaketeOhneZeitstempel, ladeAuditZeitstempel } from '../../src/services/auditNachweisJobs.js';
+import {
+  runAuditExportJob, listPaketeOhneZeitstempel, ladeAuditZeitstempel, parseEmpfaengerListe, formatierePruefnummer,
+  sendeAuditPruefnummer, istVersandtag, runAuditPruefnummerJob, meldeAuditNachweisAenderung, meldeAuditEmpfaengerWechsel,
+} from '../../src/services/auditNachweisJobs.js';
 
 const TAG = 24 * 3600 * 1000;
 const T0 = new Date('2026-10-01T03:15:00.000Z');
@@ -149,4 +152,108 @@ test('Alarm höchstens alle 24 h', async (t) => {
   assert.equal((await runAuditExportJob(db, config, mailer, { jetzt: new Date(t1 + 25 * 3600000), stemple: failStempel })).alarmiert, true);
   assert.equal(alarmMails(db).length, 2);
   assert.equal(getConfigValue(db, 'audit_zeitstempel_alarm_gesendet_am'), new Date(t1 + 25 * 3600000).toISOString());
+});
+
+// --- Prüfnummer-Mail ---
+async function mitPaket(t, opts) {
+  const s = setup(t, opts);
+  setConfigValue(s.db, 'audit_revision_empfaenger', 'rev1@example.org, rev2@example.org');
+  s.db.prepare(`INSERT INTO audit_ereignisse (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher)
+    VALUES ('2026-09-29T08:30:00Z', 'p1', 'Erika Muster', 'test', '1', 'test', '{}')`).run();
+  await runAuditExportJob(s.db, config, s.mailer, { jetzt: T0, stemple: okStempel() });
+  s.db.prepare('DELETE FROM mail_log').run();
+  s.mails.length = 0;
+  return s;
+}
+const pruefMails = (db) => db.prepare("SELECT * FROM mail_log WHERE typ = 'audit-pruefnummer' ORDER BY id").all();
+
+test('sendet Prüfnummer an alle Empfänger mit Link zur Prüfseite', async (t) => {
+  const { db, mailer, mails } = await mitPaket(t);
+  const paket = db.prepare('SELECT * FROM audit_export_pakete ORDER BY id DESC LIMIT 1').get();
+  const r = await sendeAuditPruefnummer(db, config, mailer);
+  assert.deepEqual(r, { status: 'versendet', paketNr: paket.id, empfaenger: 2 });
+  assert.equal(mails.length, 2);
+  const text = mails[0].text;
+  assert.match(text, new RegExp(formatierePruefnummer(paket.paket_sha256)));
+  assert.ok(text.includes(`https://portal.example.org/audit-pruefen?paket=${paket.id}&pruefnummer=${paket.paket_sha256}`));
+  assert.match(text, /Zeitraum: \d\d\.\d\d\.\d{4} \d\d:\d\d bis \d\d\.\d\d\.\d{4} \d\d:\d\d/);
+  assert.doesNotMatch(text, /Erika/);
+  assert.equal(getConfigValue(db, 'audit_pruefnummer_zuletzt_monat') ?? '', '');
+});
+
+test('kein_empfaenger und kein_paket versenden nichts', async (t) => {
+  const { db, mailer, mails } = setup(t);
+  assert.deepEqual(await sendeAuditPruefnummer(db, config, mailer), { status: 'kein_empfaenger' });
+  setConfigValue(db, 'audit_revision_empfaenger', 'rev@example.org');
+  assert.deepEqual(await sendeAuditPruefnummer(db, config, mailer), { status: 'kein_paket' });
+  assert.equal(mails.length, 0);
+});
+
+test('ohneZeitstempel und zeitstempelZeit im Text', async (t) => {
+  const mit = await mitPaket(t);
+  await sendeAuditPruefnummer(mit.db, config, mit.mailer);
+  assert.match(mit.mails[0].text, /Zeitstempel: 01\.10\.2026 05:15/);
+  assert.match(mit.mails[0].text, /ohne Zeitstempel: 0/);
+  const ohne = await mitPaket(t, { tsa: false });
+  await sendeAuditPruefnummer(ohne.db, config, ohne.mailer);
+  assert.match(ohne.mails[0].text, /Zeitstempel: noch keiner/);
+  assert.match(ohne.mails[0].text, /ohne Zeitstempel: 1/);
+});
+
+test('Monatsjob sendet am 1. genau einmal', async (t) => {
+  const { db, mailer, mails } = await mitPaket(t);
+  const lauf = (iso) => runAuditPruefnummerJob(db, config, mailer, { jetzt: new Date(iso) });
+  assert.equal((await lauf('2026-11-01T06:00:00Z')).status, 'erfolg');
+  assert.equal(mails.length, 2);
+  assert.equal((await lauf('2026-11-01T06:30:00Z')).status, 'uebersprungen');
+  assert.equal((await lauf('2026-11-02T06:00:00Z')).status, 'uebersprungen');
+  assert.equal((await lauf('2026-12-01T06:00:00Z')).status, 'erfolg');
+  assert.equal(mails.length, 4);
+  assert.equal(getConfigValue(db, 'audit_pruefnummer_zuletzt_monat'), '2026-12');
+});
+
+test('istVersandtag: Rhythmus, Tag und Zürcher Mitternacht', () => {
+  assert.equal(istVersandtag(new Date('2027-04-15T10:00:00Z'), { rhythmus: 'quartalsweise', tag: 15 }), true);
+  assert.equal(istVersandtag(new Date('2027-05-15T10:00:00Z'), { rhythmus: 'quartalsweise', tag: 15 }), false);
+  assert.equal(istVersandtag(new Date('2027-01-01T10:00:00Z'), { rhythmus: 'jaehrlich', tag: 1 }), true);
+  assert.equal(istVersandtag(new Date('2027-02-01T10:00:00Z'), { rhythmus: 'jaehrlich', tag: 1 }), false);
+  assert.equal(istVersandtag(new Date('2026-10-31T23:30:00Z'), { rhythmus: 'monatlich', tag: 1 }), true);
+  assert.equal(istVersandtag(new Date('2026-10-31T22:30:00Z'), { rhythmus: 'monatlich', tag: 1 }), false);
+});
+
+test('abgeschaltet: kein Versand am Versandtag', async (t) => {
+  const { db, mailer, mails } = await mitPaket(t);
+  setConfigValue(db, 'modul_audit_nachweis_aktiv', '0');
+  const r = await runAuditPruefnummerJob(db, config, mailer, { jetzt: new Date('2026-11-01T06:00:00Z') });
+  assert.equal(r.status, 'uebersprungen');
+  assert.equal(mails.length, 0);
+});
+
+test('meldeAuditNachweisAenderung: eine Mail pro Empfänger mit allen Zeilen', async (t) => {
+  const { db, mailer, mails } = await mitPaket(t);
+  await meldeAuditNachweisAenderung(db, config, mailer, {
+    aenderungen: ['Automatischer Nachweis: aktiv → abgeschaltet', 'Rhythmus: monatlich → jaehrlich'],
+    person: { vorname: 'Anna', nachname: 'Admin' },
+  });
+  assert.equal(mails.length, 2);
+  assert.equal(mails[0].subject, 'Freigabeportal: Einstellungen des Audit-Nachweises geändert');
+  assert.match(mails[0].text, /aktiv → abgeschaltet/);
+  assert.match(mails[0].text, /monatlich → jaehrlich/);
+  assert.match(mails[0].text, /Anna Admin/);
+  assert.equal(pruefMails(db).length, 2);
+});
+
+test('Empfängerwechsel geht an alte und neue Adresse', async (t) => {
+  const { db, mailer, mails } = setup(t);
+  await meldeAuditEmpfaengerWechsel(db, config, mailer, { alt: 'alt@example.org', neu: 'neu@example.org', person: { vorname: 'Anna', nachname: 'Admin' } });
+  assert.equal(mails.length, 2);
+  assert.deepEqual(mails.map((m) => m.to).sort(), ['alt@example.org', 'neu@example.org']);
+  assert.match(mails[0].text, /alt@example\.org/);
+  assert.match(mails[0].text, /neu@example\.org/);
+});
+
+test('parseEmpfaengerListe und formatierePruefnummer', () => {
+  assert.deepEqual(parseEmpfaengerListe(' a@b.ch, ,a@b.ch,kaputt, c@d.org '), { adressen: ['a@b.ch', 'c@d.org'], ungueltig: ['kaputt'] });
+  assert.deepEqual(parseEmpfaengerListe(''), { adressen: [], ungueltig: [] });
+  assert.equal(formatierePruefnummer('a'.repeat(16) + 'b'.repeat(8)), 'aaaaaaaa aaaaaaaa bbbbbbbb');
 });

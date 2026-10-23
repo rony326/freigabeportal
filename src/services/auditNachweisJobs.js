@@ -2,7 +2,7 @@ import { auditedJob } from './auditOperation.js';
 import { erstelleAuditExportPaket } from './auditExport.js';
 import { stempleAuditPaket, tsaConfigAusDb } from './auditZeitstempel.js';
 import { kanonischesJson } from './tsaNachweis.js';
-import { resolveEmpfaenger, sendRenderedMail } from './notify.js';
+import { resolveEmpfaenger, sendRenderedMail, sendNotification } from './notify.js';
 import { getConfigValue, setConfigValue } from '../db/adminConfigRepo.js';
 
 const TAG_MS = 24 * 3600 * 1000;
@@ -77,3 +77,123 @@ async function runAuditExportJobInternal(db, config, mailer, { jetzt = new Date(
 }
 
 export const runAuditExportJob = auditedJob('audit-export', runAuditExportJobInternal);
+
+const ZEITZONE = 'Europe/Zurich';
+const ZULETZT_KEY = 'audit_pruefnummer_zuletzt_monat';
+const RHYTHMUS_MONATE = { monatlich: null, quartalsweise: [1, 4, 7, 10], jaehrlich: [1] };
+
+export function parseEmpfaengerListe(wert) {
+  const adressen = [];
+  const ungueltig = [];
+  for (const roh of String(wert ?? '').split(',')) {
+    const adresse = roh.trim();
+    if (!adresse) continue;
+    if (!/^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(adresse)) { if (!ungueltig.includes(adresse)) ungueltig.push(adresse); continue; }
+    if (!adressen.includes(adresse)) adressen.push(adresse);
+  }
+  return { adressen, ungueltig };
+}
+
+export function formatierePruefnummer(hex) {
+  return String(hex).match(/.{1,8}/g)?.join(' ') ?? '';
+}
+
+function zuericherTeile(datum) {
+  const teile = new Intl.DateTimeFormat('en-US', {
+    timeZone: ZEITZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(datum);
+  const p = Object.fromEntries(teile.map((t) => [t.type, t.value]));
+  return { jahr: p.year, monat: Number(p.month), tag: Number(p.day), stunde: p.hour === '24' ? '00' : p.hour, minute: p.minute };
+}
+
+// dd.MM.yyyy HH:mm in Zuercher Zeit
+function formatiereZeit(wert) {
+  const d = new Date(wert);
+  if (Number.isNaN(d.getTime())) return String(wert ?? '');
+  const z = zuericherTeile(d);
+  return `${String(z.tag).padStart(2, '0')}.${String(z.monat).padStart(2, '0')}.${z.jahr} ${z.stunde}:${z.minute}`;
+}
+
+export function istVersandtag(jetzt, { rhythmus, tag }) {
+  const z = zuericherTeile(jetzt);
+  const monate = RHYTHMUS_MONATE[rhythmus] === undefined ? null : RHYTHMUS_MONATE[rhythmus];
+  if (monate && !monate.includes(z.monat)) return false;
+  return z.tag === Number(tag);
+}
+
+function revisionsEmpfaenger(db) {
+  return parseEmpfaengerListe(getConfigValue(db, 'audit_revision_empfaenger')).adressen;
+}
+
+export async function sendeAuditPruefnummer(db, config, mailer) {
+  const empfaenger = revisionsEmpfaenger(db);
+  if (!empfaenger.length) return { status: 'kein_empfaenger' };
+  const letztes = db.prepare('SELECT * FROM audit_export_pakete ORDER BY id DESC LIMIT 1').get();
+  if (!letztes) return { status: 'kein_paket' };
+  const erstes = db.prepare('SELECT * FROM audit_export_pakete ORDER BY id LIMIT 1').get();
+  const zeitpunkt = (id) => db.prepare('SELECT zeitpunkt FROM audit_ereignisse WHERE id = ?').get(id)?.zeitpunkt;
+  const anzahl = db.prepare('SELECT COALESCE(SUM(anzahl), 0) AS n FROM audit_export_pakete').get().n;
+  const stempel = ladeAuditZeitstempel(db, letztes.id);
+  // Route /audit-pruefen folgt in einem spaeteren Task; bewusst ausserhalb des mailLinks-Musters gebaut.
+  const basis = config.publicBaseUrl;
+  const pruefseite = `${basis}/audit-pruefen`;
+  const variablen = {
+    paketNr: String(letztes.id),
+    pruefnummer: formatierePruefnummer(letztes.paket_sha256),
+    vonZeit: formatiereZeit(zeitpunkt(erstes.von_id)),
+    bisZeit: formatiereZeit(zeitpunkt(letztes.bis_id)),
+    anzahlEreignisse: String(anzahl),
+    zeitstempelZeit: stempel ? formatiereZeit(stempel.gen_time) : 'noch keiner',
+    ohneZeitstempel: String(listPaketeOhneZeitstempel(db).length),
+    pruefseite,
+    link: `${pruefseite}?paket=${letztes.id}&pruefnummer=${letztes.paket_sha256}`,
+  };
+  for (const to of empfaenger) {
+    await sendNotification(db, mailer, { to, typ: 'audit-pruefnummer', jobId: null, variablen });
+  }
+  return { status: 'versendet', paketNr: letztes.id, empfaenger: empfaenger.length };
+}
+
+async function runAuditPruefnummerJobInternal(db, config, mailer, { jetzt = new Date() } = {}) {
+  if (getConfigValue(db, 'modul_audit_nachweis_aktiv') !== '1') return { status: 'uebersprungen' };
+  const rhythmus = getConfigValue(db, 'audit_pruefnummer_rhythmus') ?? 'monatlich';
+  const tag = Number(getConfigValue(db, 'audit_pruefnummer_tag') ?? 1);
+  if (!istVersandtag(jetzt, { rhythmus, tag })) return { status: 'uebersprungen' };
+  const z = zuericherTeile(jetzt);
+  const monat = `${z.jahr}-${String(z.monat).padStart(2, '0')}`;
+  if (getConfigValue(db, ZULETZT_KEY) === monat) return { status: 'uebersprungen' };
+  const result = await sendeAuditPruefnummer(db, config, mailer);
+  if (result.status === 'versendet') setConfigValue(db, ZULETZT_KEY, monat);
+  return { ...result, status: result.status === 'versendet' ? 'erfolg' : 'uebersprungen', grund: result.status };
+}
+
+export const runAuditPruefnummerJob = auditedJob('audit-pruefnummer', runAuditPruefnummerJobInternal);
+
+function personName(person) {
+  return `${person?.vorname ?? ''} ${person?.nachname ?? ''}`.trim() || 'unbekannt';
+}
+
+async function sendeAnAlle(db, mailer, adressen, subject, text) {
+  for (const to of adressen) {
+    await sendRenderedMail(db, mailer, { to, subject, text, typ: 'audit-pruefnummer', jobId: null });
+  }
+}
+
+export async function meldeAuditNachweisAenderung(db, config, mailer, { aenderungen, person }) {
+  const portal = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
+  const text = 'Guten Tag\n\nDie Einstellungen des Audit-Nachweises wurden geändert:\n\n'
+    + aenderungen.map((a) => `- ${a}`).join('\n')
+    + `\n\nGeändert von ${personName(person)} am ${formatiereZeit(new Date())}.\n\nFreundliche Grüsse\n${portal}`;
+  await sendeAnAlle(db, mailer, revisionsEmpfaenger(db), 'Freigabeportal: Einstellungen des Audit-Nachweises geändert', text);
+}
+
+export async function meldeAuditEmpfaengerWechsel(db, config, mailer, { alt, neu, person }) {
+  const portal = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
+  const altListe = parseEmpfaengerListe(alt).adressen;
+  const neuListe = parseEmpfaengerListe(neu).adressen;
+  const alle = [...new Set([...altListe, ...neuListe])];
+  const text = 'Guten Tag\n\nDie Empfänger der Audit-Prüfnummer wurden geändert.\n\n'
+    + `Bisher: ${altListe.join(', ') || '(keine)'}\nNeu: ${neuListe.join(', ') || '(keine)'}\n\n`
+    + `Geändert von ${personName(person)} am ${formatiereZeit(new Date())}.\n\nFreundliche Grüsse\n${portal}`;
+  await sendeAnAlle(db, mailer, alle, 'Freigabeportal: Empfänger der Audit-Prüfnummer geändert', text);
+}

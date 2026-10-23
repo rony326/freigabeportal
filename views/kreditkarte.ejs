@@ -1,6 +1,13 @@
 <%- include('_seite_anfang', { titel: 'Kreditkartenbelege' }) %>
+<% /* Ansichtswahl (src/middleware/ansicht.js): 'tabelle', 'kacheln' oder 'auto' (Kacheln unter lg, sonst Tabelle). */
+   const gewaehlteAnsicht = (typeof ansicht !== 'undefined' && ansicht) || 'auto';
+   const zeigeTabelle = gewaehlteAnsicht !== 'kacheln';
+   const zeigeKacheln = gewaehlteAnsicht !== 'tabelle';
+   const klasseTabelle = 'ansicht-tabelle' + (gewaehlteAnsicht === 'auto' ? ' d-none d-lg-block' : '');
+   const klasseKacheln = 'ansicht-kacheln' + (gewaehlteAnsicht === 'auto' ? ' d-lg-none' : ''); %>
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Kreditkartenbelege</h1>
+      <div class="seitenkopf-aktionen"><%- include('_ansicht_umschalter') %></div>
     </div>
     <p class="text-muted">Lade Belege zu Kreditkartenkäufen hier hoch, sobald du sie hast. Sie werden erst verbucht, wenn die Monatsabrechnung der Karte eintrifft und abgeglichen wird.</p>
     <% if (gespeichert) { %><div class="alert alert-success">Gespeichert.</div><% } %>
@@ -63,15 +70,22 @@
       </div></div>
     <% } %>
 
-    <%- include('_kk_beleg_tabelle', { titel: 'Zu ergänzen', belege: entwuerfe, aktionen: true }) %>
-    <%- include('_kk_beleg_tabelle', { titel: 'Meine offenen Belege', belege: offen, aktionen: true }) %>
+<% const kkListe = (idPrefix, titel, belege, aktionen) => {
+     if (belege.length === 0) return '';
+     let html = titel ? `<h2 class="h5 mt-4">${titel}</h2>` : '';
+     if (zeigeTabelle) html += `<div class="${klasseTabelle}">${include('_kk_beleg_tabelle', { belege, aktionen })}</div>`;
+     if (zeigeKacheln) html += `<div class="${klasseKacheln}">${include('_kk_beleg_kacheln', { belege, aktionen, idPrefix })}</div>`;
+     return html;
+   }; %>
+    <%- kkListe('kk-entwurf', 'Zu ergänzen', entwuerfe, true) %>
+    <%- kkListe('kk-offen', 'Meine offenen Belege', offen, true) %>
     <% if (verantwortlichOffen.length > 0) { %>
-      <%- include('_kk_beleg_tabelle', { titel: 'Offene Belege meiner Karten', belege: verantwortlichOffen, aktionen: true }) %>
+      <%- kkListe('kk-verantwortlich', 'Offene Belege meiner Karten', verantwortlichOffen, true) %>
     <% } %>
     <% if (erledigt.length > 0) { %>
       <details class="mt-4">
         <summary class="h6">Zugeordnet / verworfen (<%= erledigt.length %>)</summary>
-        <%- include('_kk_beleg_tabelle', { titel: null, belege: erledigt, aktionen: false }) %>
+        <%- kkListe('kk-erledigt', null, erledigt, false) %>
       </details>
     <% } %>
 <%- include('_seite_ende') %>

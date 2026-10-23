@@ -286,3 +286,7 @@
 .kachel-angaben dd {
   margin-bottom: 0;
 }
+.kachel-betrag {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}

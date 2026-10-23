@@ -1,6 +1,18 @@
 <%- include('_seite_anfang', { titel: 'Meine Spesen' }) %>
+<% /* Ansichtswahl (src/middleware/ansicht.js): 'tabelle', 'kacheln' oder 'auto' (Kacheln unter lg, sonst Tabelle). */
+   const gewaehlteAnsicht = (typeof ansicht !== 'undefined' && ansicht) || 'auto';
+   const zeigeTabelle = gewaehlteAnsicht !== 'kacheln';
+   const zeigeKacheln = gewaehlteAnsicht !== 'tabelle';
+   const klasseTabelle = 'ansicht-tabelle' + (gewaehlteAnsicht === 'auto' ? ' d-none d-lg-block' : '');
+   const klasseKacheln = 'ansicht-kacheln' + (gewaehlteAnsicht === 'auto' ? ' d-lg-none' : ''); %>
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Meine Spesen</h1>
+      <div class="seitenkopf-aktionen"><%- include('_ansicht_umschalter') %></div>
     </div>
-    <%- include('_spesen_meine_tabelle', { jobs }) %>
+    <% if (jobs.length === 0) { %>
+      <p>Keine eigenen Spesen-Einreichungen.</p>
+    <% } else { %>
+      <% if (zeigeTabelle) { %><div class="<%= klasseTabelle %>"><%- include('_spesen_meine_tabelle', { jobs }) %></div><% } %>
+      <% if (zeigeKacheln) { %><div class="<%= klasseKacheln %>"><%- include('_spesen_meine_kacheln', { jobs }) %></div><% } %>
+    <% } %>
 <%- include('_seite_ende') %>

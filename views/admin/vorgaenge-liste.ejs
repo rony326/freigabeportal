@@ -1,6 +1,13 @@
 <%- include('../_seite_anfang', { titel: 'Laufende Vorgänge' }) %>
+<% /* Ansichtswahl (src/middleware/ansicht.js): 'tabelle', 'kacheln' oder 'auto' (Kacheln unter lg, sonst Tabelle). */
+   const gewaehlteAnsicht = (typeof ansicht !== 'undefined' && ansicht) || 'auto';
+   const zeigeTabelle = gewaehlteAnsicht !== 'kacheln';
+   const zeigeKacheln = gewaehlteAnsicht !== 'tabelle';
+   const klasseTabelle = 'ansicht-tabelle' + (gewaehlteAnsicht === 'auto' ? ' d-none d-lg-block' : '');
+   const klasseKacheln = 'ansicht-kacheln' + (gewaehlteAnsicht === 'auto' ? ' d-lg-none' : ''); %>
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Laufende Vorgänge</h1>
+      <div class="seitenkopf-aktionen"><%- include('../_ansicht_umschalter') %></div>
     </div>
     <form method="get" action="/admin/vorgaenge" class="filterzeile">
       <div class="col-auto">
@@ -41,6 +48,7 @@
       <p>Keine laufenden Vorgänge für diese Auswahl.</p>
     <% } else { %>
       <p class="text-body-secondary"><%= vorgaenge.length %> Vorgang<%= vorgaenge.length === 1 ? '' : 'e' %>, älteste zuerst.</p>
+      <% if (zeigeTabelle) { %><div class="<%= klasseTabelle %>">
       <div class="table-responsive">
         <table class="table table-sm align-middle">
           <thead>
@@ -72,5 +80,7 @@
           </tbody>
         </table>
       </div>
+      </div><% } %>
+      <% if (zeigeKacheln) { %><div class="<%= klasseKacheln %>"><%- include('_vorgaenge_kacheln', { vorgaenge, darfEingreifen }) %></div><% } %>
     <% } %>
 <%- include('../_seite_ende') %>

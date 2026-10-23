@@ -1,0 +1,15 @@
+<% /* Kachel-Gegenstück zu _abgeschlossen_table.ejs (gleiche Daten: jobs). */ %>
+<div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
+  <% jobs.forEach((job) => { %>
+    <div class="col">
+      <div class="kachel d-flex flex-column gap-2" id="abgeschlossen-kachel-<%= job.id %>">
+        <div class="fw-semibold text-break"><%= job.dateiname %></div>
+        <dl class="kachel-angaben small mb-0">
+          <dt>Status</dt><dd><span class="badge text-bg-secondary"><%= job.status %></span></dd>
+          <dt>Zeitstempel</dt><dd><%= job.zeitstempel_gesetzt_am ? `✓ gesetzt am ${job.zeitstempel_gesetzt_am}` : 'ausstehend' %></dd>
+        </dl>
+        <div class="mt-auto d-flex flex-wrap gap-1"><%- include('_zeitstempel_aktion', { job }) %></div>
+      </div>
+    </div>
+  <% }) %>
+</div>

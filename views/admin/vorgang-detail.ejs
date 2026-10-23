@@ -1,6 +1,8 @@
 <%- include('../_seite_anfang', { titel: `Vorgang ${vorgang.dateiname}` }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel"><%= vorgang.gegenueber %> <small class="text-body-secondary"><%= vorgang.dateiname %></small></h1>
+    </div>
     <p><a href="/admin/vorgaenge">← Laufende Vorgänge</a></p>
-    <h1 class="h3"><%= vorgang.gegenueber %> <small class="text-body-secondary"><%= vorgang.dateiname %></small></h1>
 
     <% if (umgehaengt) { %>
       <div class="alert alert-success">Vorgang umgehängt. Die beteiligten Personen wurden per Mail informiert.</div>

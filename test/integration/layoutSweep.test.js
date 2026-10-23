@@ -233,3 +233,103 @@ test('GET /admin (Dashboard): Reiter Admin aktiv, kein Seitenleisten-Punkt aktiv
   assert.match(res.text, /<title>Übersicht — [^<]* Admin<\/title>/);
   db.close();
 });
+
+// ---------- Einheitlicher Seitenaufbau: Seitenkopf → Meldungen → Filterzeile → Inhalt ----------
+
+function alleSeitenViews() {
+  return [...seitenViews(viewsDir), ...seitenViews(adminViewsDir)];
+}
+
+function rahmenOhne(inhalt) {
+  return /_seite_anfang'[^%]*rahmen:\s*'ohne'/.test(inhalt);
+}
+
+test('Seitenaufbau-Sweep: jede View mit Rahmen voll/kompakt hat genau ein h1, und zwar als h1.seitenkopf-titel im .seitenkopf', () => {
+  for (const datei of alleSeitenViews()) {
+    const inhalt = readFileSync(datei, 'utf8');
+    if (rahmenOhne(inhalt)) continue;
+    assert.equal(anzahl(inhalt, '<h1'), 1, `${datei}: nicht genau ein <h1`);
+    assert.match(inhalt, /<div class="seitenkopf">\s*<h1 class="seitenkopf-titel">/, `${datei}: <h1> steht nicht als h1.seitenkopf-titel im .seitenkopf`);
+  }
+});
+
+test('Seitenaufbau-Sweep: der Seitenkopf ist das erste Element nach _seite_anfang', () => {
+  for (const datei of alleSeitenViews()) {
+    const inhalt = readFileSync(datei, 'utf8');
+    if (rahmenOhne(inhalt)) continue;
+    const nachAnfang = inhalt.slice(inhalt.indexOf('%>', inhalt.indexOf("_seite_anfang'")) + 2);
+    // Reine EJS-Anweisungen (<% … %>, keine Ausgabe) dürfen davor stehen.
+    const ersteAusgabe = nachAnfang.replace(/^(\s*<%(?![-=])[\s\S]*?%>)*\s*/, '');
+    assert.ok(ersteAusgabe.startsWith('<div class="seitenkopf">'), `${datei}: Seitenkopf ist nicht das erste Element`);
+  }
+});
+
+test('Seitenaufbau-Sweep: keine View enthält <h1 class="h3"', () => {
+  for (const datei of alleSeitenViews()) {
+    assert.ok(!readFileSync(datei, 'utf8').includes('<h1 class="h3"'), `${datei} enthält <h1 class="h3"`);
+  }
+});
+
+test('Seitenaufbau-Sweep: Unterüberschriften sind einheitlich h2.h5 (auch in Partials)', () => {
+  const alle = [viewsDir, adminViewsDir].flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.ejs')).map((f) => join(dir, f)));
+  for (const datei of alle) {
+    const inhalt = readFileSync(datei, 'utf8');
+    for (const h2 of inhalt.match(/<h2\b[^>]*>/g) || []) {
+      assert.match(h2, /^<h2 class="h5[ "]/, `${datei}: ${h2} ist nicht h2.h5`);
+    }
+    assert.doesNotMatch(inhalt, /<h[346]\b/, `${datei}: Überschrift h3/h4/h6 statt h2.h5`);
+  }
+});
+
+test('Seitenaufbau-Sweep: GET-Filterformulare sind .filterzeile und stehen nach Seitenkopf und Meldungen', () => {
+  for (const datei of alleSeitenViews()) {
+    const inhalt = readFileSync(datei, 'utf8');
+    for (const form of inhalt.match(/<form\b[^>]*method="get"[^>]*>/gi) || []) {
+      assert.match(form, /class="filterzeile[ "]/, `${datei}: ${form} ist keine .filterzeile`);
+    }
+    const filter = inhalt.indexOf('class="filterzeile');
+    if (filter < 0) continue;
+    assert.ok(inhalt.indexOf('class="seitenkopf"') < filter, `${datei}: Filterzeile vor dem Seitenkopf`);
+    const meldung = inhalt.indexOf('class="alert');
+    if (meldung >= 0) assert.ok(meldung < filter, `${datei}: Meldung nach der Filterzeile`);
+  }
+});
+
+test('Seitenaufbau-Sweep: der Seitenkopf hat genau ein btn-primary (die Hauptaktion), und zwar btn-sm', () => {
+  for (const datei of alleSeitenViews()) {
+    const inhalt = readFileSync(datei, 'utf8');
+    const kopf = inhalt.match(/<div class="seitenkopf">[\s\S]*?<\/h1>\s*(<div class="seitenkopf-aktionen">[\s\S]*?<\/div>)?/);
+    if (!kopf || !kopf[1]) continue;
+    for (const knopf of kopf[1].match(/class="btn [^"]*"/g) || []) {
+      if (knopf.includes('btn-primary')) assert.match(knopf, /btn btn-primary btn-sm/, `${datei}: Hauptaktion nicht btn-primary btn-sm`);
+    }
+    assert.ok(anzahl(kopf[1], 'btn-primary') <= 1, `${datei}: mehr als eine Hauptaktion im Seitenkopf`);
+  }
+});
+
+test('GET /admin/konten: Seitenkopf mit Titel und Hauptaktion „Neues Konto anlegen“, danach die Meldung', async () => {
+  const db = openDatabase(':memory:');
+  const agent = await loginBuchhaltung(db, { personId: 9, vorname: 'Super', nachname: 'Admin', buchhaltung: false, admin: true });
+  const res = await agent.get('/admin/konten?gespeichert=1');
+  assert.equal(res.status, 200);
+  const main = res.text.slice(res.text.indexOf('<main'));
+  const kopf = main.match(/<div class="seitenkopf">\s*<h1 class="seitenkopf-titel">Konten<\/h1>\s*<div class="seitenkopf-aktionen">([\s\S]*?)<\/div>/);
+  assert.ok(kopf, 'Seitenkopf mit Titel Konten und Aktionen fehlt');
+  assert.match(kopf[1], /<a href="\/admin\/konten\/neu" class="btn btn-primary btn-sm">Neues Konto anlegen<\/a>/);
+  assert.equal(anzahl(main, 'Neues Konto anlegen'), 1);
+  assert.equal(anzahl(res.text, '<h1'), 1);
+  assert.ok(main.indexOf('class="alert alert-success') > main.indexOf('<div class="seitenkopf">'), 'Meldung steht nach dem Seitenkopf');
+  db.close();
+});
+
+test('GET /admin/vorgaenge: Reihenfolge Seitenkopf → Filterzeile → Inhalt', async () => {
+  const db = openDatabase(':memory:');
+  const agent = await loginBuchhaltung(db, { personId: 9, vorname: 'Super', nachname: 'Admin', buchhaltung: false, admin: true });
+  const res = await agent.get('/admin/vorgaenge');
+  assert.equal(res.status, 200);
+  const kopf = res.text.indexOf('<div class="seitenkopf">');
+  const filter = res.text.indexOf('<form method="get" action="/admin/vorgaenge" class="filterzeile');
+  const inhalt = res.text.indexOf('Keine laufenden Vorgänge');
+  assert.ok(kopf >= 0 && filter > kopf && inhalt > filter, 'Reihenfolge Seitenkopf → Filterzeile → Inhalt');
+  db.close();
+});

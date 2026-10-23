@@ -1,7 +1,9 @@
 <%- include('../_seite_anfang', { titel: 'Kreditkarten' }) %>
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h1 class="h3 mb-0">Kreditkarten</h1>
-      <a href="/admin/kreditkarten/neu" class="btn btn-primary btn-sm">Neue Karte</a>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Kreditkarten</h1>
+      <div class="seitenkopf-aktionen">
+        <a href="/admin/kreditkarten/neu" class="btn btn-primary btn-sm">Neue Karte</a>
+      </div>
     </div>
     <% if (karten.length === 0) { %>
       <p class="text-muted">Noch keine Kreditkarten erfasst.</p>

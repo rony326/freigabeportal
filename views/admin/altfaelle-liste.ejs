@@ -1,5 +1,7 @@
 <%- include('../_seite_anfang', { titel: 'Altfälle' }) %>
-    <h1>Altfälle ohne Freigabe-/Zahlungsnachweis</h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Altfälle ohne Freigabe-/Zahlungsnachweis</h1>
+    </div>
     <p class="text-muted">Diese Belege sind abgeschlossen, aber ohne belastbaren Freigabe-Snapshot oder ohne ausdrücklich bestätigte Zahlungsdaten. Sie werden nicht an n8n übergeben, bis hier entschieden wurde.</p>
     <% if (gespeichert) { %>
       <div class="alert alert-success" role="alert">Entscheidung gespeichert.</div>

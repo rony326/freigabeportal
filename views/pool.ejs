@@ -1,8 +1,13 @@
 <%- include('_seite_anfang', { titel: 'Aufgaben' }) %>
-    <h1>Aufgaben</h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Aufgaben</h1>
+      <div class="seitenkopf-aktionen">
+        <a href="/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">🔄 Neu laden</a>
+      </div>
+    </div>
 
     <% if (typeof isBuchhaltung !== 'undefined' && (isBuchhaltung || isSuperadmin) && poolJobs.length > 0) { %>
-      <h2 class="h4 mt-4">Pool</h2>
+      <h2 class="h5 mt-4">Pool</h2>
       <%- include('_job_table', { jobs: poolJobs, idPrefix: 'pool', istPoolArtig: true, kannZuweisen, zielPersonen }) %>
       <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0) { %>
         <form method="post" id="kk-markieren-form" class="d-flex flex-wrap gap-2 align-items-center mt-2">
@@ -29,44 +34,44 @@
     <% } %>
 
     <% if (typeof kannZuweisen !== 'undefined' && kannZuweisen && ruecklaeufer.length > 0) { %>
-      <h2 class="h4 mt-4">Rückläufer</h2>
+      <h2 class="h5 mt-4">Rückläufer</h2>
       <%- include('_job_table', { jobs: ruecklaeufer, idPrefix: 'ruecklaeufer', istPoolArtig: true, kannZuweisen, zielPersonen }) %>
     <% } %>
 
     <% if (typeof isSuperadmin !== 'undefined' && isSuperadmin) { %>
       <% if (adminEskalierteKontierungen.length > 0) { %>
-        <h2 class="h4 mt-4">An Superadmin eskalierte Kontierungen</h2>
+        <h2 class="h5 mt-4">An Superadmin eskalierte Kontierungen</h2>
         <%- include('_job_table', { jobs: adminEskalierteKontierungen, idPrefix: 'admin-eskalation-kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren' }) %>
       <% } %>
 
       <% if (adminEskalierteFreigaben.length > 0) { %>
-        <h2 class="h4 mt-4">An Superadmin eskalierte Freigaben</h2>
+        <h2 class="h5 mt-4">An Superadmin eskalierte Freigaben</h2>
         <%- include('_job_table', { jobs: adminEskalierteFreigaben, idPrefix: 'admin-eskalation-freigabe', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben' }) %>
       <% } %>
 
       <% if (adminEskalierteSpesenFreigaben.length > 0) { %>
-        <h2 class="h4 mt-4">An Superadmin eskalierte Spesen-Freigaben</h2>
+        <h2 class="h5 mt-4">An Superadmin eskalierte Spesen-Freigaben</h2>
         <%- include('_job_table', { jobs: adminEskalierteSpesenFreigaben, idPrefix: 'admin-eskalation-spesen-freigabe', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen' }) %>
       <% } %>
     <% } %>
 
     <% if (meineKontierungen.length > 0) { %>
-      <h2 class="h4 mt-4">Meine offenen Kontierungen</h2>
+      <h2 class="h5 mt-4">Meine offenen Kontierungen</h2>
       <%- include('_job_table', { jobs: meineKontierungen, idPrefix: 'kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren' }) %>
     <% } %>
 
     <% if (meineSpesenFreigaben.length > 0) { %>
-      <h2 class="h4 mt-4">Meine offenen Spesen-Freigaben</h2>
+      <h2 class="h5 mt-4">Meine offenen Spesen-Freigaben</h2>
       <%- include('_job_table', { jobs: meineSpesenFreigaben, idPrefix: 'spesen-freigabe1', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen' }) %>
     <% } %>
 
     <% if (meineFreigaben.length > 0) { %>
-      <h2 class="h4 mt-4">Meine Freigaben</h2>
+      <h2 class="h5 mt-4">Meine Freigaben</h2>
       <%- include('_job_table', { jobs: meineFreigaben, idPrefix: 'freigabe2', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben' }) %>
     <% } %>
 
     <% if (meineAbgelehnten.length > 0) { %>
-      <h2 class="h4 mt-4">Meine abgelehnten Jobs</h2>
+      <h2 class="h5 mt-4">Meine abgelehnten Jobs</h2>
       <%- include('_job_table', { jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen' }) %>
     <% } %>
 

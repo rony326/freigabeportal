@@ -425,7 +425,7 @@ test('GET / redirects a logged-in person in neither Buchhaltung nor Portal-Admin
 
   const poolRes = await agent.get('/pool');
   assert.equal(poolRes.status, 200);
-  assert.doesNotMatch(poolRes.text, /<h2 class="h4 mt-4">Pool<\/h2>/);
+  assert.doesNotMatch(poolRes.text, /<h2 class="h5 mt-4">Pool<\/h2>/);
   assert.doesNotMatch(poolRes.text, /href="\/admin"/);
   db.close();
 });

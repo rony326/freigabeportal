@@ -91,17 +91,12 @@
 <% } %>
 <main class="portal-inhalt">
 <% } %>
-<% if (sRahmen !== 'ohne' && (sZeigeAktionen || sPfad === '/pool')) { %>
+<% if (sRahmen !== 'ohne' && sZeigeAktionen) { %>
   <div class="portal-aktionen d-flex flex-wrap align-items-center gap-2 mb-3">
-    <% if (sZeigeAktionen) { %>
-      <a href="/pool" class="btn btn-primary btn-sm">← Zurück</a>
-      <button type="button" id="preview-refresh-btn" class="btn btn-outline-secondary btn-sm">Vorschau neu laden</button>
-      <% if (sZeigeLieferant) { %>
-        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#neuer-lieferant-modal">+ Lieferant</button>
-      <% } %>
-    <% } %>
-    <% if (sPfad === '/pool') { %>
-      <a href="/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">🔄 Neu laden</a>
+    <a href="/pool" class="btn btn-primary btn-sm">← Zurück</a>
+    <button type="button" id="preview-refresh-btn" class="btn btn-outline-secondary btn-sm">Vorschau neu laden</button>
+    <% if (sZeigeLieferant) { %>
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#neuer-lieferant-modal">+ Lieferant</button>
     <% } %>
   </div>
 <% } %>

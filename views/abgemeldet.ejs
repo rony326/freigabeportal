@@ -1,7 +1,11 @@
 <%- include('_seite_anfang', { titel: 'Abgemeldet' }) %>
-    <h1>Du wurdest abgemeldet</h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Du wurdest abgemeldet</h1>
+      <div class="seitenkopf-aktionen">
+        <a href="/auth/login" class="btn btn-primary btn-sm">Erneut anmelden</a>
+      </div>
+    </div>
     <p class="alert alert-success">Deine Sitzung im Freigabeportal wurde beendet.</p>
-    <p><a href="/auth/login" class="btn btn-primary">Erneut anmelden</a></p>
     <% if (churchtoolsBaseUrl) { %>
       <p class="text-muted small">
         Solange du bei ChurchTools selbst noch angemeldet bist, meldet dich "Erneut anmelden" ohne

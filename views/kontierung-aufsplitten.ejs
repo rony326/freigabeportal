@@ -1,5 +1,7 @@
 <%- include('_seite_anfang', { titel: 'Rechnung aufsplitten', rahmen: 'ohne' }) %>
-    <h1 class="h3">Rechnung aufsplitten: <%= job.dateiname %></h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Rechnung aufsplitten: <%= job.dateiname %></h1>
+    </div>
     <p class="text-muted">Vorgangsnummer: <%= job.id %></p>
     <% if (errors.length > 0) { %>
       <div class="alert alert-danger">

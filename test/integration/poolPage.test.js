@@ -93,16 +93,18 @@ test('GET /pool renders inside the shared centered container-xxl shell, matching
   db.close();
 });
 
-test('GET /pool shows a reload button in the action row at the top of main', async () => {
+test('GET /pool shows the reload button in the page header actions, not in a .portal-aktionen row', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedBuchhaltungPerson(db);
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
-  const aktionen = res.text.match(/<main class="portal-inhalt">\s*<div class="portal-aktionen[^"]*">[\s\S]*?<\/div>/);
-  assert.ok(aktionen, 'expected the .portal-aktionen row at the top of main');
+  const kopf = res.text.match(/<main class="portal-inhalt">\s*<div class="seitenkopf">\s*<h1 class="seitenkopf-titel">Aufgaben<\/h1>\s*<div class="seitenkopf-aktionen">[\s\S]*?<\/div>/);
+  assert.ok(kopf, 'expected the .seitenkopf with .seitenkopf-aktionen at the top of main');
   assert.match(res.text, /<nav class="portal-seitenleiste/, 'the sidebar replaces the old Menü dropdown');
-  assert.match(aktionen[0], /<a href="\/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">/, 'reload button should be inside the action row');
+  assert.match(kopf[0], /<a href="\/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">/, 'reload button should be inside .seitenkopf-aktionen');
+  assert.doesNotMatch(res.text, /class="portal-aktionen/, 'no .portal-aktionen row on /pool any more');
+  assert.equal(res.text.split('aria-label="Dashboard neu laden"').length - 1, 1);
   db.close();
 });
 
@@ -164,7 +166,7 @@ test('GET /pool returns 200 for a logged-in person without the buchhaltung or po
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '77');
   assert.equal(res.status, 200);
-  assert.doesNotMatch(res.text, /<h2 class="h4 mt-4">Pool<\/h2>/);
+  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Pool<\/h2>/);
   // No jobs exist anywhere for this person — every section is empty, so the dashboard shows
   // the summary empty-state instead of a heading with nothing under it.
   assert.doesNotMatch(res.text, /Meine offenen Kontierungen/);
@@ -469,7 +471,7 @@ test('GET /pool no longer shows a "Meine Spesen" section — it moved to its own
   });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '60');
-  assert.doesNotMatch(res.text, /<h2 class="h4 mt-4">Meine Spesen<\/h2>/);
+  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Meine Spesen<\/h2>/);
   assert.doesNotMatch(res.text, /Taxi/);
   assert.match(res.text, /href="\/meine-spesen"/);
   db.close();

@@ -1,10 +1,12 @@
 <%- include('_seite_anfang', { titel: 'Spesen-Freigabe 1', rahmen: 'kompakt' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Spesen-Freigabe 1: <%= job.dateiname %></h1>
+    </div>
     <div class="row">
       <div class="col-lg-6">
         <iframe id="spesen-freigabe1-preview-frame" class="pdf-preview" style="width:100%;height:80vh" data-preview-url="<%= previewUrl %>"></iframe>
       </div>
       <div class="col-lg-6 col-xl-4">
-        <h1 class="h3">Spesen-Freigabe 1: <%= job.dateiname %></h1>
         <% if (job.freigabe1_eskaliert_von) { %>
           <p class="text-muted">Hinweis: dir zugewiesen — <%= job.freigabe1_eskalationsgrund %></p>
         <% } %>

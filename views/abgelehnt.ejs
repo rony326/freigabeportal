@@ -1,5 +1,7 @@
 <%- include('_seite_anfang', { titel: 'Abgelehnt' }) %>
-    <h1>Abgelehnt: <%= job.dateiname %></h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Abgelehnt: <%= job.dateiname %></h1>
+    </div>
     <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %><% if (job.absender) { %> · Absender: <%= job.absender %><% } %></p>
     <p><strong>Abgelehnt von:</strong> <%= abgelehntVonPerson ? `${abgelehntVonPerson.vorname} ${abgelehntVonPerson.nachname}` : 'Unbekannt' %></p>
     <p><strong>Grund:</strong> <%= job.ablehnungsgrund %></p>

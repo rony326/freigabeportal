@@ -1,5 +1,7 @@
 <%- include('../_seite_anfang', { titel: 'Geplante Jobs' }) %>
-    <h1>Geplante Jobs</h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Geplante Jobs</h1>
+    </div>
     <p class="text-muted">Diese Jobs laufen automatisch im laufenden Node-Prozess, kein externer Task Scheduler nötig. Zeiten gelten in Lokalzeit (Europe/Zürich); eine Zeitplan-Änderung greift ab dem nächsten planmässigen Lauf.</p>
     <% if (errors.length > 0) { %>
       <div class="alert alert-danger">
@@ -113,7 +115,7 @@
 
     <hr class="my-4">
 
-    <h2 class="h4">ChurchTools-Personen-Sync — Verlauf</h2>
+    <h2 class="h5">ChurchTools-Personen-Sync — Verlauf</h2>
     <form method="post" action="/admin/geplante-jobs/sync-personen/jetzt-ausfuehren" class="mb-2">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
@@ -150,7 +152,7 @@
     </div>
     <p><a href="/admin/sync">Vollständige Sync-Historie &amp; feststeckende Jobs</a></p>
 
-    <h2 class="h4 mt-4">Pool-Erinnerungen — Verlauf</h2>
+    <h2 class="h5 mt-4">Pool-Erinnerungen — Verlauf</h2>
     <form method="post" action="/admin/geplante-jobs/pool-erinnerungen/jetzt-ausfuehren" class="mb-2">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
@@ -178,7 +180,7 @@
       </table>
     </div>
 
-    <h2 class="h4 mt-4">PDF-Bereinigung — Verlauf</h2>
+    <h2 class="h5 mt-4">PDF-Bereinigung — Verlauf</h2>
     <form method="post" action="/admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren" class="mb-2">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
@@ -206,7 +208,7 @@
       </table>
     </div>
 
-    <h2 class="h4 mt-4">Zeitstempel-Nachholen — Verlauf</h2>
+    <h2 class="h5 mt-4">Zeitstempel-Nachholen — Verlauf</h2>
     <form method="post" action="/admin/geplante-jobs/zeitstempel-nachholen/jetzt-ausfuehren" class="mb-2">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
@@ -240,7 +242,7 @@
       </table>
     </div>
 
-    <h2 class="h4 mt-4">Splitgruppen-Nachholen — Verlauf</h2>
+    <h2 class="h5 mt-4">Splitgruppen-Nachholen — Verlauf</h2>
     <form method="post" action="/admin/geplante-jobs/split-gruppen-nachholen/jetzt-ausfuehren" class="mb-2">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
@@ -274,7 +276,7 @@
       </table>
     </div>
 
-    <h2 class="h4 mt-4">Freigabe2-Erinnerungen — Verlauf</h2>
+    <h2 class="h5 mt-4">Freigabe2-Erinnerungen — Verlauf</h2>
     <form method="post" action="/admin/geplante-jobs/freigabe2-erinnerungen/jetzt-ausfuehren" class="mb-2">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
@@ -302,7 +304,7 @@
       </table>
     </div>
 
-    <h2 class="h4 mt-4">Kreditkartenbelege-Erinnerungen — Verlauf</h2>
+    <h2 class="h5 mt-4">Kreditkartenbelege-Erinnerungen — Verlauf</h2>
     <form method="post" action="/admin/geplante-jobs/kk-beleg-erinnerungen/jetzt-ausfuehren" class="mb-2">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
@@ -330,7 +332,7 @@
       </table>
     </div>
 
-    <h2 class="h4 mt-4">Mail-Zustellung — Verlauf</h2>
+    <h2 class="h5 mt-4">Mail-Zustellung — Verlauf</h2>
     <p class="text-muted small">Nur Läufe, in denen fällige Mails vorlagen, werden protokolliert.</p>
     <form method="post" action="/admin/geplante-jobs/mail-zustellung/jetzt-ausfuehren" class="mb-2">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">

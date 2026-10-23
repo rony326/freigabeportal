@@ -1,12 +1,16 @@
 <%- include('../_seite_anfang', { titel: 'Konten' }) %>
-    <h1>Konten</h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Konten</h1>
+      <div class="seitenkopf-aktionen">
+        <a href="/admin/konten/neu" class="btn btn-primary btn-sm">Neues Konto anlegen</a>
+      </div>
+    </div>
     <% if (gespeichert) { %>
       <div class="alert alert-success alert-dismissible fade show" role="alert">
         Gespeichert.
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
       </div>
     <% } %>
-    <p><a href="/admin/konten/neu" class="btn btn-primary btn-sm">Neues Konto anlegen</a></p>
     <p>
       <% if (zeigtAlle) { %>
         <a href="/admin/konten">Nur aktive Konten anzeigen</a>

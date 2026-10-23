@@ -1,5 +1,7 @@
 <%- include('../_seite_anfang', { titel: 'Übersicht' }) %>
-    <h1>Admin</h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Admin</h1>
+    </div>
     <% if (adminNav.zeitstempel) { %>
       <% if (typeof zeitstempelUeberfaellig !== 'undefined' && zeitstempelUeberfaellig > 0) { %>
         <div class="alert alert-danger">

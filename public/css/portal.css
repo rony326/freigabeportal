@@ -144,9 +144,72 @@
   }
 }
 
-/* ---------- Aktionszeile ---------- */
+/* ---------- Aktionszeile (Kontierung / Freigabe 2) ---------- */
 .portal-aktionen:empty {
   display: none !important;
+}
+
+/* ---------- Einheitlicher Seitenaufbau ----------
+   Reihenfolge jeder Seite: .seitenkopf → Meldungen (.alert) → .filterzeile → Inhalt. */
+.seitenkopf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem 1rem;
+  margin-bottom: 1rem;
+}
+.seitenkopf-titel {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: calc(1.3rem + .6vw);
+  font-weight: 500;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 1200px) {
+  .seitenkopf-titel {
+    font-size: 1.75rem;
+  }
+}
+.seitenkopf-aktionen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+.seitenkopf-aktionen:empty {
+  display: none;
+}
+
+/* GET-Filterformulare: eine umbrechende Zeile, Felder unten bündig. */
+.filterzeile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: .5rem;
+  margin-bottom: 1rem;
+  padding: .75rem;
+  background: var(--bs-tertiary-bg);
+  border: 1px solid var(--bs-border-color-translucent);
+  border-radius: var(--bs-border-radius);
+}
+.filterzeile > * {
+  flex: 0 0 auto;
+}
+.filterzeile > .form-check {
+  padding-bottom: .375rem;
+}
+
+/* ---------- Prüfbescheinigung (views/zeitstempel-zertifikat.ejs) ---------- */
+.bescheinigung {
+  border: 2px solid var(--bs-emphasis-color);
+  padding: 2rem;
+}
+.bescheinigung .hash-wert {
+  font-family: var(--bs-font-monospace);
+  word-break: break-all;
 }
 
 /* ---------- Druck (z.B. zeitstempel-zertifikat) ---------- */
@@ -154,10 +217,22 @@
   .portal-kopf,
   .portal-seitenleiste,
   .portal-aktionen,
+  .seitenkopf-aktionen,
   footer {
     display: none !important;
   }
   .portal-rahmen {
     display: block;
+  }
+  body:has(.bescheinigung) {
+    padding: 0;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  body:has(.bescheinigung) .no-print {
+    display: none !important;
+  }
+  .bescheinigung {
+    border-color: #000;
   }
 }

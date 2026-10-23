@@ -1,5 +1,7 @@
 <%- include('../_seite_anfang', { titel: 'Datei-Quarantäne' }) %>
-    <h1>Datei-Quarantäne</h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Datei-Quarantäne</h1>
+    </div>
     <p class="text-muted">Finale Dokumente, die nach einem Abbruch vor dem Datenbank-Commit von keinem Beleg referenziert werden, werden hierher verschoben — nie automatisch gelöscht. Endgültiges Löschen oder Zurückholen erfordert eine Begründung und wird protokolliert.</p>
     <% if (ergebnis) { %>
       <div class="alert alert-info" role="alert">Prüfung ausgeführt: <%= ergebnis %></div>

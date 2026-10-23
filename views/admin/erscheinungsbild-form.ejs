@@ -1,5 +1,7 @@
 <%- include('../_seite_anfang', { titel: 'Erscheinungsbild' }) %>
-    <h1>Erscheinungsbild</h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Erscheinungsbild</h1>
+    </div>
     <% if (errors.length > 0) { %>
       <div class="alert alert-danger">
         <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>

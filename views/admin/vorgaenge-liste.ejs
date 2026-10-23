@@ -1,6 +1,8 @@
 <%- include('../_seite_anfang', { titel: 'Laufende Vorgänge' }) %>
-    <h1>Laufende Vorgänge</h1>
-    <form method="get" action="/admin/vorgaenge" class="row g-2 align-items-end mb-3">
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Laufende Vorgänge</h1>
+    </div>
+    <form method="get" action="/admin/vorgaenge" class="filterzeile">
       <div class="col-auto">
         <label class="form-label" for="status">Status</label>
         <select class="form-select" id="status" name="status">

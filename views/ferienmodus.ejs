@@ -1,7 +1,9 @@
 <%- include('_seite_anfang', { titel: 'Ferienmodus' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Ferienmodus</h1>
+    </div>
     <div class="row justify-content-center">
       <div class="col-lg-6">
-        <h1 class="h3">Ferienmodus</h1>
         <p class="text-muted">
           Während eines aktiven Zeitraums erhält dein Stellvertreter zusätzlichen Zugriff auf deine
           Kontierungs- und Freigabe-Aufgaben (Freigeber 1/2) sowie die zugehörigen Mails — du selbst
@@ -50,7 +52,7 @@
 
         <div class="card">
           <div class="card-body">
-            <h2 class="h6">Ferienmodus setzen</h2>
+            <h2 class="h5">Ferienmodus setzen</h2>
             <form method="post" action="/ferienmodus">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
               <div class="mb-3">

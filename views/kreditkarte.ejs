@@ -1,5 +1,7 @@
 <%- include('_seite_anfang', { titel: 'Kreditkartenbelege' }) %>
-    <h1 class="h3">Kreditkartenbelege</h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Kreditkartenbelege</h1>
+    </div>
     <p class="text-muted">Lade Belege zu Kreditkartenkäufen hier hoch, sobald du sie hast. Sie werden erst verbucht, wenn die Monatsabrechnung der Karte eintrifft und abgeglichen wird.</p>
     <% if (gespeichert) { %><div class="alert alert-success">Gespeichert.</div><% } %>
     <% if (errors.length > 0) { %>

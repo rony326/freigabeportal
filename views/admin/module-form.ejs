@@ -1,5 +1,7 @@
 <%- include('../_seite_anfang', { titel: 'Module' }) %>
-    <h1>Module</h1>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Module</h1>
+    </div>
     <p class="text-muted">Optionale Bereiche des Portals ein- oder ausschalten. Bereits laufende Vorgänge laufen unverändert zu Ende, auch wenn ein Modul deaktiviert wird.</p>
     <form method="post" action="/admin/module" class="col-12 col-md-8 col-lg-6">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">

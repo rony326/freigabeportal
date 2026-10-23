@@ -70,22 +70,27 @@
       </div></div>
     <% } %>
 
-<% const kkListe = (idPrefix, titel, belege, aktionen) => {
-     if (belege.length === 0) return '';
-     let html = titel ? `<h2 class="h5 mt-4">${titel}</h2>` : '';
+<%# kkListe liefert nur include()-Ergebnisse (die Partials escapen selbst). Die Überschriften stehen
+    ausserhalb und werden escapet ausgegeben, damit keine Daten ungeschützt roh ausgegeben werden. %>
+<% const kkListe = (idPrefix, belege, aktionen) => {
+     let html = '';
      if (zeigeTabelle) html += `<div class="${klasseTabelle}">${include('_kk_beleg_tabelle', { belege, aktionen })}</div>`;
      if (zeigeKacheln) html += `<div class="${klasseKacheln}">${include('_kk_beleg_kacheln', { belege, aktionen, idPrefix })}</div>`;
      return html;
-   }; %>
-    <%- kkListe('kk-entwurf', 'Zu ergänzen', entwuerfe, true) %>
-    <%- kkListe('kk-offen', 'Meine offenen Belege', offen, true) %>
-    <% if (verantwortlichOffen.length > 0) { %>
-      <%- kkListe('kk-verantwortlich', 'Offene Belege meiner Karten', verantwortlichOffen, true) %>
+   };
+   const kkAbschnitte = [
+     ['kk-entwurf', 'Zu ergänzen', entwuerfe],
+     ['kk-offen', 'Meine offenen Belege', offen],
+     ['kk-verantwortlich', 'Offene Belege meiner Karten', verantwortlichOffen],
+   ]; %>
+    <% for (const [idPrefix, titel, belege] of kkAbschnitte) { if (belege.length === 0) continue; %>
+      <h2 class="h5 mt-4"><%= titel %></h2>
+      <%- kkListe(idPrefix, belege, true) %>
     <% } %>
     <% if (erledigt.length > 0) { %>
       <details class="mt-4">
         <summary class="h6">Zugeordnet / verworfen (<%= erledigt.length %>)</summary>
-        <%- kkListe('kk-erledigt', null, erledigt, false) %>
+        <%- kkListe('kk-erledigt', erledigt, false) %>
       </details>
     <% } %>
 <%- include('_seite_ende') %>

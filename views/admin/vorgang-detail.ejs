@@ -32,14 +32,16 @@
     <% if (auditLog.length === 0) { %>
       <p class="text-body-secondary">Noch keine Einträge.</p>
     <% } else { %>
-      <table class="table table-sm">
-        <thead><tr><th>Zeitpunkt</th><th>Ereignis</th><th>Person</th><th>Kommentar</th></tr></thead>
-        <tbody>
-          <% auditLog.forEach((e) => { %>
-            <tr><td><%= e.zeitpunkt %></td><td><%= e.ereignis %></td><td><%= e.person %><% if (e.vertretungFuerPerson) { %> (für <%= e.vertretungFuerPerson %>)<% } %></td><td><%= e.kommentar || '' %></td></tr>
-          <% }) %>
-        </tbody>
-      </table>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead><tr><th>Zeitpunkt</th><th>Ereignis</th><th>Person</th><th>Kommentar</th></tr></thead>
+          <tbody>
+            <% auditLog.forEach((e) => { %>
+              <tr><td><%= e.zeitpunkt %></td><td><%= e.ereignis %></td><td><%= e.person %><% if (e.vertretungFuerPerson) { %> (für <%= e.vertretungFuerPerson %>)<% } %></td><td><%= e.kommentar || '' %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
     <% } %>
 
     <% if (darfEingreifen) { %>

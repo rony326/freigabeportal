@@ -12,6 +12,9 @@
         <% if (branding.hasLogo) { %><img src="/branding/logo" alt="Logo" height="40"><% } %>
         <strong><%= branding.seitenTitel %></strong>
       </div>
+      <%# Nur im Druck: der Ausdruck dient als Nachweis, der Titel gehört in den umrandeten Kasten.
+          Bewusst keine h1-Überschrift: genau eine pro Seite, im Seitenkopf, der beim Drucken ausgeblendet wird. %>
+      <p class="bescheinigung-titel h1 d-none d-print-block">Prüfbescheinigung</p>
       <p class="text-muted">Diese Bescheinigung ist kein rechtsverbindliches Signaturzertifikat. Sie fasst das Ergebnis der RFC3161-Zeitstempel- und Hash-Prüfung dieses Dokuments zusammen.</p>
 
       <h2 class="h5 mt-4">Beleg</h2>

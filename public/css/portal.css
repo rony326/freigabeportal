@@ -4,19 +4,38 @@
 /* ---------- Obere Leiste ---------- */
 .portal-kopf-zeile {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  /* minmax(0, …): die äusseren Spalten dürfen unter ihre Inhaltsbreite schrumpfen, sonst
+     drückt ein langer Titel oder ein Logo links die Seite auf Telefonen breiter als 375 px. */
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: .5rem;
   padding-block: .5rem;
 }
+.portal-kopf-links {
+  min-width: 0;
+}
+.portal-kopf-marke {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.portal-kopf-zeile img {
+  max-width: 100%;
+  height: auto;
+  max-height: 48px;
+}
 .portal-kopf-titel {
+  display: block;
+  min-width: 0;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .portal-reiter {
   --bs-nav-underline-gap: .75rem;
   --bs-nav-underline-link-active-color: var(--bs-emphasis-color);
   flex-wrap: nowrap;
+  flex-shrink: 0;
   margin-left: .5rem;
 }
 .portal-reiter .nav-link {
@@ -55,6 +74,10 @@
   .portal-seitenleiste {
     position: sticky;
     top: 1rem;
+    /* Auf niedrigen Bildschirmen (z. B. 768 px) sonst unerreichbare untere Punkte der
+       Admin-Seitenleiste: höchstens bildschirmhoch (abzüglich top und etwas Luft), scrollt selbst. */
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
   }
 }
 .portal-seitenleiste-inhalt {
@@ -229,6 +252,9 @@
     background: #fff !important;
     color: #000 !important;
   }
+  /* Prüfbescheinigung: der Titel steht im Druck im Kasten (.bescheinigung-titel), der
+     Seitenkopf darüber entfällt. */
+  body:has(.bescheinigung) .seitenkopf,
   body:has(.bescheinigung) .no-print {
     display: none !important;
   }

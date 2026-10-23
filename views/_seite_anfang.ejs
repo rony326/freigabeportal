@@ -42,11 +42,11 @@
 <% } else { %>
 <header class="portal-kopf border-bottom mb-3">
   <div class="container-xxl portal-kopf-zeile">
-    <div class="d-flex align-items-center gap-2">
+    <div class="portal-kopf-links d-flex align-items-center gap-2">
       <% if (sNavigation) { %>
         <button type="button" id="seitenleiste-toggle" class="btn btn-outline-secondary btn-sm d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#portal-seitenleiste" aria-controls="portal-seitenleiste" aria-label="Navigation öffnen">☰</button>
       <% } %>
-      <div class="text-start">
+      <div class="portal-kopf-marke text-start">
         <% if (branding.hasLogo && branding.logoAusrichtung === 'links') { %>
           <img src="/branding/logo" alt="Logo" height="48" class="mt-2 mx-2">
         <% } else if (!branding.hasLogo) { %>

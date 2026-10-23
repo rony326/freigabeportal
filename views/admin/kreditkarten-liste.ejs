@@ -8,26 +8,28 @@
     <% if (karten.length === 0) { %>
       <p class="text-muted">Noch keine Kreditkarten erfasst.</p>
     <% } else { %>
-      <table class="table table-sm align-middle">
-        <thead><tr><th>Bezeichnung</th><th>Endziffern</th><th>Verantwortlich</th><th>Erfassung</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          <% karten.forEach((k) => { %>
-            <tr class="<%= k.aktiv ? '' : 'text-muted' %>">
-              <td><%= k.bezeichnung %><% if (k.karteninhaber_name) { %><div class="small text-muted">Inhaber: <%= k.karteninhaber_name %></div><% } %></td>
-              <td><%= k.karte_endziffern ? '•••• ' + k.karte_endziffern : '—' %></td>
-              <td><%= k.verantwortlich ? `${k.verantwortlich.vorname} ${k.verantwortlich.nachname}` : 'Unbekannt' %></td>
-              <td><%= k.erfassung_offen ? 'Alle Personen' : 'Nur Liste' %></td>
-              <td><%= k.aktiv ? 'Aktiv' : 'Deaktiviert' %></td>
-              <td class="text-end">
-                <a href="/admin/kreditkarten/<%= k.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
-                <form method="post" action="/admin/kreditkarten/<%= k.id %>/<%= k.aktiv ? 'deaktivieren' : 'aktivieren' %>" class="d-inline">
-                  <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-                  <button type="submit" class="btn btn-outline-<%= k.aktiv ? 'danger' : 'success' %> btn-sm"><%= k.aktiv ? 'Deaktivieren' : 'Reaktivieren' %></button>
-                </form>
-              </td>
-            </tr>
-          <% }) %>
-        </tbody>
-      </table>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Bezeichnung</th><th>Endziffern</th><th>Verantwortlich</th><th>Erfassung</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <% karten.forEach((k) => { %>
+              <tr class="<%= k.aktiv ? '' : 'text-muted' %>">
+                <td><%= k.bezeichnung %><% if (k.karteninhaber_name) { %><div class="small text-muted">Inhaber: <%= k.karteninhaber_name %></div><% } %></td>
+                <td><%= k.karte_endziffern ? '•••• ' + k.karte_endziffern : '—' %></td>
+                <td><%= k.verantwortlich ? `${k.verantwortlich.vorname} ${k.verantwortlich.nachname}` : 'Unbekannt' %></td>
+                <td><%= k.erfassung_offen ? 'Alle Personen' : 'Nur Liste' %></td>
+                <td><%= k.aktiv ? 'Aktiv' : 'Deaktiviert' %></td>
+                <td class="text-end">
+                  <a href="/admin/kreditkarten/<%= k.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
+                  <form method="post" action="/admin/kreditkarten/<%= k.id %>/<%= k.aktiv ? 'deaktivieren' : 'aktivieren' %>" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                    <button type="submit" class="btn btn-outline-<%= k.aktiv ? 'danger' : 'success' %> btn-sm"><%= k.aktiv ? 'Deaktivieren' : 'Reaktivieren' %></button>
+                  </form>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
     <% } %>
 <%- include('../_seite_ende') %>

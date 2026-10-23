@@ -333,3 +333,82 @@ test('GET /admin/vorgaenge: Reihenfolge Seitenkopf → Filterzeile → Inhalt', 
   assert.ok(kopf >= 0 && filter > kopf && inhalt > filter, 'Reihenfolge Seitenkopf → Filterzeile → Inhalt');
   db.close();
 });
+
+// ---------- portal.css: statische Prüfungen für schmale und niedrige Bildschirme ----------
+
+const portalCss = () => readFileSync(new URL('../../public/css/portal.css', import.meta.url), 'utf8');
+
+function cssRegel(css, selektor) {
+  const start = css.indexOf(`${selektor} {`);
+  assert.ok(start >= 0, `Regel ${selektor} fehlt`);
+  return css.slice(start, css.indexOf('}', start));
+}
+
+test('portal.css: obere Leiste schrumpft auf Telefonbreite (minmax(0,1fr), Titel mit Ellipse)', () => {
+  const css = portalCss();
+  assert.match(cssRegel(css, '.portal-kopf-zeile'), /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+minmax\(0,\s*1fr\)/);
+  const titel = cssRegel(css, '.portal-kopf-titel');
+  assert.match(titel, /min-width:\s*0/);
+  assert.match(titel, /overflow:\s*hidden/);
+  assert.match(titel, /text-overflow:\s*ellipsis/);
+  assert.match(cssRegel(css, '.portal-kopf-links'), /min-width:\s*0/);
+  assert.match(css, /\.portal-kopf-zeile img\s*\{[^}]*max-width:\s*100%/);
+});
+
+test('portal.css: klebende Seitenleiste ist höchstens bildschirmhoch und scrollt selbst', () => {
+  const css = portalCss();
+  const sticky = css.match(/@media \(min-width: 992px\) \{\s*\.portal-seitenleiste \{[^}]*\}/);
+  assert.ok(sticky, 'Sticky-Regel der Seitenleiste fehlt');
+  assert.match(sticky[0], /position:\s*sticky/);
+  assert.match(sticky[0], /max-height:\s*calc\(100vh - [^)]+\)/);
+  assert.match(sticky[0], /overflow-y:\s*auto/);
+});
+
+test('PDF-Seiten: PDF und Formular füllen ab lg die ganze Zeile (keine Zentrierlücke)', () => {
+  for (const name of ['kontierung.ejs', 'freigabe2.ejs', 'spesen-freigabe1.ejs']) {
+    const inhalt = readFileSync(join(viewsDir, name), 'utf8');
+    assert.doesNotMatch(inhalt, /justify-content-center/, `${name}: zentrierte Zeile lässt Breite leer`);
+    assert.doesNotMatch(inhalt, /col-xl-\d/, `${name}: eigene xl-Spaltenbreite lässt Breite leer`);
+    const pdf = inhalt.match(/<div class="col-lg-(\d+)">\s*<iframe[^\n]*pdf-preview/);
+    assert.ok(pdf, `${name}: PDF-Spalte fehlt`);
+    const formular = inhalt.slice(pdf.index + pdf[0].length).match(/<div class="col-lg-(\d+)">/);
+    assert.ok(formular, `${name}: Formularspalte fehlt`);
+    assert.equal(Number(pdf[1]) + Number(formular[1]), 12, `${name}: PDF + Formular ≠ 12 Spalten`);
+  }
+});
+
+test('portal.css: beim Drucken der Prüfbescheinigung entfällt der Seitenkopf (Titel steht im Kasten)', () => {
+  const druck = portalCss().slice(portalCss().indexOf('@media print'));
+  assert.match(druck, /body:has\(\.bescheinigung\) \.seitenkopf[,\s][^{]*\{[^}]*display:\s*none/);
+});
+
+test('Tabellen-Sweep: jede <table> steckt direkt in einem div.table-responsive (kein seitliches Verschieben auf dem Handy)', () => {
+  const alle = [viewsDir, adminViewsDir].flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.ejs')).map((f) => join(dir, f)));
+  for (const datei of alle) {
+    const inhalt = readFileSync(datei, 'utf8');
+    let pos = inhalt.indexOf('<table');
+    while (pos >= 0) {
+      const davor = inhalt.slice(0, pos).trimEnd();
+      assert.match(davor, /<div class="table-responsive[^"]*">$/, `${datei}: <table an Zeichen ${pos} ohne div.table-responsive`);
+      pos = inhalt.indexOf('<table', pos + 1);
+    }
+  }
+});
+
+test('Roh-Ausgabe-Sweep: HTML-Bausteine in <% %>-Helfern interpolieren nur include()-Ergebnisse und feste Klassen', () => {
+  // Hintergrund: der CSP-Kommentar in src/app.js. pool.ejs (jobListe) und kreditkarte.ejs (kkListe)
+  // bauen HTML-Strings, die per <%- ausgegeben werden. Daten (Titel, Namen …) dürfen dort nicht
+  // hinein, sonst entgehen sie der Escaping-Pflicht von <%= %>.
+  const erlaubt = [/^include\(/, /^klasse(Tabelle|Kacheln)$/, /^gewaehlteAnsicht === 'auto' \? '[^']*' : ''$/];
+  const alle = [viewsDir, adminViewsDir].flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.ejs')).map((f) => join(dir, f)));
+  for (const datei of alle) {
+    const inhalt = readFileSync(datei, 'utf8').replace(/<script\b[\s\S]*?<\/script>/g, '');
+    for (const block of inhalt.match(/<%(?![-=#])[\s\S]*?%>/g) || []) {
+      for (const literal of block.match(/`[^`]*<[^`]*`/g) || []) {
+        for (const [, ausdruck] of literal.matchAll(/\$\{([^}]*(?:\{[^}]*\}[^}]*)*)\}/g)) {
+          assert.ok(erlaubt.some((re) => re.test(ausdruck.trim())), `${datei}: \${${ausdruck}} landet ungeschützt in <%- %>`);
+        }
+      }
+    }
+  }
+});

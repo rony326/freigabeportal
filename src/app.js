@@ -9,6 +9,7 @@ import { createCronRouter } from './routes/cron.js';
 import { requireApiKey } from './middleware/apiKey.js';
 import { requireCronSecret } from './middleware/cronAuth.js';
 import { createCsrfProtection } from './middleware/csrf.js';
+import { ansichtWahl } from './middleware/ansicht.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { createN8nBackupRouter } from './routes/n8n/backup.js';
 import { createN8nKkBelegeRouter } from './routes/n8n/kkBelege.js';
@@ -123,6 +124,7 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   // cookie-parser must run after express-session (session parses its own cookie first) and
   // before the CSRF middleware, which reads/writes its own separate, non-session cookie.
   app.use(cookieParser());
+  app.use(ansichtWahl());
   const { attachCsrfToken, csrfProtection } = createCsrfProtection(config);
   app.use((req, res, next) => {
     // /api/n8n/* and /internal/cron/* are machine routes authenticated via X-API-Key /

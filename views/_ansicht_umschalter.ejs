@@ -1,0 +1,8 @@
+<% if (typeof ansichtSchluessel !== 'undefined' && ansichtSchluessel) {
+  const basis = (typeof ansichtBasisQuery !== 'undefined' && ansichtBasisQuery) ? ansichtBasisQuery + '&' : '';
+  const aktuell = typeof ansicht !== 'undefined' ? ansicht : 'auto'; %>
+<div class="btn-group btn-group-sm ansicht-umschalter" role="group" aria-label="Ansicht wählen">
+  <a class="btn btn-outline-secondary<%= aktuell === 'tabelle' ? ' active' : '' %>" href="?<%= basis %>ansicht=tabelle" aria-pressed="<%= aktuell === 'tabelle' %>">☰ Tabelle</a>
+  <a class="btn btn-outline-secondary<%= aktuell === 'kacheln' ? ' active' : '' %>" href="?<%= basis %>ansicht=kacheln" aria-pressed="<%= aktuell === 'kacheln' %>">▦ Kacheln</a>
+</div>
+<% } %>

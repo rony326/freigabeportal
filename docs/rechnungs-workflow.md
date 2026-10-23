@@ -120,7 +120,7 @@ flowchart TD
     B -- ablehnen --> R["Status: abgelehnt<br/>+ Ablehnungs-Mail (bei Admin-Eskalation an Admin-Gruppe)"]
     B -- kontieren --> C{"Interessenskonflikt<br/>erklärt?"}
     C -- nein --> D["Freigabe 1 erteilt (freigeber1)<br/>Status: freigabe2<br/>+ Mail an Freigeber 2"]
-    C -- ja --> E{"bereits eskaliert ODER<br/>ich bin selbst Stellvertreter1<br/>des gewählten Kontos?"}
+    C -- ja --> E{"bereits eskaliert ODER<br/>Stellvertreter1 ausgeschlossen?<br/>(siehe unten)"}
     E -- nein --> F["eskalierenFreigabe1<br/>zugewiesen_an = Stellvertreter1<br/>Status bleibt zugewiesen<br/>+ Mail an Stellvertreter1"]
     E -- ja --> G["eskalierenFreigabe1AnAdmin<br/>(SYNC-8)<br/>Status bleibt zugewiesen<br/>+ Mail an Admin-Gruppe"]
 ```
@@ -203,6 +203,19 @@ Admin-Gruppe. Dasselbe gilt bei Freigabe 1: Konfliktmelder (Einträge
 `freigabe1_eskalation` plus `freigabe1_eskaliert_von`) bekommen bei
 `/kontierung/:id` und `/spesen-freigabe1/:id` 403; zurück in den Pool bzw.
 an die Gruppe geben können sie einen Job weiterhin.
+
+**Ausgeschlossene Stellvertretung → Admin-Gruppe**: Bevor eine
+Konfliktmeldung an Stellvertreter 1 bzw. 2 geht, prüft
+`ausschlussGrundFuerEskalationsziel` (`src/services/eskalationsZiel.js`), ob
+diese Person den Vorgang überhaupt bearbeiten dürfte. Ausgeschlossen ist sie,
+wenn sie fehlt, selbst die meldende Person ist, auf dieser Stufe schon einen
+Konflikt erklärt hat (aus `freigaben`, also auch nach Umhängen oder
+Pool-Rückgabe), bei Freigabe 2 schon Freigabe 1 erteilt hat oder die Spesen
+selbst eingereicht hat. Dann geht der Vorgang direkt an die Admin-Gruppe; der
+Ausschlussgrund steht im Eskalationsgrund und in der Admin-Mail. Gilt für
+Kontierung, Aufsplitten (geprüft gegen den Verlauf der Originalrechnung),
+Spesen-Freigabe 1, Freigabe 2 und die Umleitung bei Spesen-Selbsteinreichung
+durch Freigeber 2.
 
 ```mermaid
 flowchart TD

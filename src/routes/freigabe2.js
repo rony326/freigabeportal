@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { getJobById, eskalierenFreigabe2, eskalierenFreigabe2AnAdmin, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id, markZeitstempelGesetzt } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { getSpesenabrechnungById } from '../db/spesenabrechnungenRepo.js';
+import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalationsText } from '../services/eskalationsZiel.js';
 import { createFreigabe, listFreigabenByJob, istKonfliktmelder } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -162,7 +163,12 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         // Admin-Gruppe: der Admin hat die reguläre Kette (Freigeber2/Stellvertreter2) bewusst
         // übergangen, ein Rücksprung dorthin wäre unklar. eskalierenFreigabe2AnAdmin löscht die
         // Umleitung.
-        const eskaliertAnAdmin = Boolean(job.freigabe2_eskaliert_von) || Boolean(job.freigabe2_umgeleitet_an);
+        // Und: Stellvertreter 2 darf selbst nicht freigeben (hat Freigabe 1 erteilt, früher Konflikt
+        // erklärt, Spesen eingereicht, ...) → ebenfalls Admin-Gruppe, siehe services/eskalationsZiel.js.
+        const sv2Ausschluss = job.freigabe2_eskaliert_von || job.freigabe2_umgeleitet_an
+          ? null
+          : ausschlussGrundFuerEskalationsziel(db, job, { stufe: 2, zielId: konto.stellvertreter2_id, meldenderId: req.currentPerson.churchtools_person_id });
+        const eskaliertAnAdmin = Boolean(job.freigabe2_eskaliert_von) || Boolean(job.freigabe2_umgeleitet_an) || Boolean(sv2Ausschluss);
 
         db.exec('BEGIN');
         try {
@@ -177,7 +183,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
             eskaliertVon: job.freigabe2_eskaliert_von,
           });
           if (eskaliertAnAdmin) {
-            eskalierenFreigabe2AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+            eskalierenFreigabe2AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: grundMitAusschluss(begruendung, sv2Ausschluss) });
           } else {
             eskalierenFreigabe2(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
           }
@@ -199,7 +205,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
                 jobDateiname: job.dateiname,
                 grund: job.freigabe2_umgeleitet_an
                   ? 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da die vom Admin bestimmte Person einen Interessenskonflikt erklärt hat.'
-                  : 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.',
+                  : adminEskalationsText('Eine Rechnung', sv2Ausschluss),
                 link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
               },
             });

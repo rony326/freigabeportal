@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
 import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
+import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalationsText } from '../services/eskalationsZiel.js';
 import {
   getJobById,
   setKontierung,
@@ -310,7 +311,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       // ALSO have a conflict), or the chosen Konto's stellvertreter1 IS the current person
       // (escalating would target themselves). Both route to the Portal-Admin group instead of
       // blocking with the old "go back to pool / contact admin" dead end.
-      const eskaliertAnAdmin = hatKonflikt && Boolean(job.freigabe1_eskaliert_von || konto.stellvertreter1_id === req.currentPerson.churchtools_person_id);
+      // Zusätzlich: Stellvertreter 1 darf den Vorgang aus einem anderen Grund nicht bearbeiten
+      // (früher erklärter Konflikt, Spesen-Einreicher, ...) — dann ebenfalls an die Admin-Gruppe,
+      // siehe services/eskalationsZiel.js.
+      const sv1Ausschluss = hatKonflikt && !job.freigabe1_eskaliert_von
+        ? ausschlussGrundFuerEskalationsziel(db, job, { stufe: 1, zielId: konto.stellvertreter1_id, meldenderId: req.currentPerson.churchtools_person_id })
+        : null;
+      const eskaliertAnAdmin = hatKonflikt && Boolean(job.freigabe1_eskaliert_von || sv1Ausschluss);
       const strikteFreigeber1Pruefung = getConfigValue(db, 'kontierung_strikte_freigeber1_pruefung') === '1';
       const istEchterFreigeber1 =
         konto.freigeber1_id === req.currentPerson.churchtools_person_id ||
@@ -345,7 +352,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             kommentar: begruendung,
             eskaliertVon: job.freigabe1_eskaliert_von,
           });
-          eskalierenFreigabe1AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+          eskalierenFreigabe1AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: grundMitAusschluss(begruendung, sv1Ausschluss) });
         } else if (hatKonflikt) {
           createFreigabe(db, {
             jobId: job.id,
@@ -487,7 +494,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             variablen: {
               empfaengerName: 'Portal-Admin-Team',
               jobDateiname: job.dateiname,
-              grund: 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.',
+              grund: adminEskalationsText('Eine Rechnung', sv1Ausschluss),
               link: `${config.publicBaseUrl}/kontierung/${job.id}`,
             },
           });

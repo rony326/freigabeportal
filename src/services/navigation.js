@@ -43,16 +43,16 @@ const ADMIN = [
     { label: 'Eskalationszeiten', href: '/admin/eskalation', symbol: '⏰', flag: 'eskalation' },
     { label: 'Mail-Einstellungen', href: '/admin/mail-einstellungen', symbol: '✉', flag: 'mailEinstellungen' },
     { label: 'Erscheinungsbild', href: '/admin/erscheinungsbild', symbol: '◐', flag: 'erscheinungsbild' },
-    { label: 'Zeitstempel', href: '/admin/zeitstempel', symbol: '⏱', flag: 'zeitstempel' },
     { label: 'Module', href: '/admin/module', symbol: '❖', flag: 'module' },
+    { label: 'Zeitstempel', href: '/admin/zeitstempel', symbol: '⏱', flag: 'zeitstempel' },
   ] },
   { titel: 'Betrieb', punkte: [
+    { label: 'Datenbank-Backup', href: '/admin/backup', symbol: '⛁', flag: 'backup' },
+    { label: 'Datei-Quarantäne', href: '/admin/dateiquarantaene', symbol: '⚠', flag: 'backup' },
     { label: 'Mail-Protokoll', href: '/admin/mails', symbol: '✉', flag: 'mails' },
     { label: 'Sync-Übersicht', href: '/admin/sync', symbol: '⟳', flag: 'sync' },
     { label: 'Geplante Jobs', href: '/admin/geplante-jobs', symbol: '⚙', flag: 'geplanteJobs' },
     { label: 'Audit-Log', href: '/admin/audit-log', symbol: '☷', flag: 'auditLog' },
-    { label: 'Datenbank-Backup', href: '/admin/backup', symbol: '⛁', flag: 'backup' },
-    { label: 'Datei-Quarantäne', href: '/admin/dateiquarantaene', symbol: '⚠', flag: 'backup' },
   ] },
 ];
 

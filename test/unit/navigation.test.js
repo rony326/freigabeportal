@@ -16,7 +16,12 @@ test('nur mails_einsehen → nur Gruppe Betrieb mit Mail-Protokoll', () => {
 test('Admin-Gruppen in Reihenfolge Vorgänge, Stammdaten, Einstellungen, Betrieb bei allen Rechten', () => {
   const gruppen = baueAdminGruppen({ pfad: '/admin', adminNav: adminNav(() => true) });
   assert.deepEqual(gruppen.map((g) => g.titel), ['Vorgänge', 'Stammdaten', 'Einstellungen', 'Betrieb']);
-  assert.equal(gruppen.flatMap((g) => g.punkte).length, 18);
+  assert.deepEqual(gruppen.map((g) => g.punkte.map((p) => p.label)), [
+    ['Laufende Vorgänge', 'Abgelehnte Rechnungen', 'Altfälle'],
+    ['Konten', 'Kreditoren', 'Kreditkarten', 'Personen'],
+    ['Eskalationszeiten', 'Mail-Einstellungen', 'Erscheinungsbild', 'Module', 'Zeitstempel'],
+    ['Datenbank-Backup', 'Datei-Quarantäne', 'Mail-Protokoll', 'Sync-Übersicht', 'Geplante Jobs', 'Audit-Log'],
+  ]);
   assert.ok(gruppen.flatMap((g) => g.punkte).every((p) => p.symbol && !p.aktiv));
 });
 
@@ -42,6 +47,12 @@ test('bereichFuerPfad', () => {
 test('Portal: Spesen einreichen fehlt bei inaktivem Modul, Kreditkartenbelege nur mit Flag', () => {
   const voll = portal();
   assert.deepEqual(voll.map((g) => g.titel), ['Arbeit', 'Spesen', 'Belege', 'Persönlich']);
+  assert.deepEqual(voll.map((g) => g.punkte.map((p) => p.label)), [
+    ['Aufgaben'],
+    ['Spesen einreichen', 'Meine Spesen'],
+    ['Abgeschlossene Rechnungen', 'Kreditkartenbelege'],
+    ['Ferienmodus', 'Zeitstempel prüfen'],
+  ]);
   assert.ok(finde(voll, 'Spesen einreichen'));
   assert.ok(finde(voll, 'Kreditkartenbelege'));
   const knapp = portal({ spesenModulAktiv: false, zeigeKreditkarteNav: false });

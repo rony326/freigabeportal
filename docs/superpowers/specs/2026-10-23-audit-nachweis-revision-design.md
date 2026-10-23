@@ -142,3 +142,27 @@ Hürde damit von "eine SQL-Zeile" auf "Code des Portals fälschen" gestiegen.
   ohne Zeitstempel, verspäteter Zeitstempel), Migrationen, CSRF-Sweep für das neue POST.
 - Doku-Updates: `docs/audit-externe-nachweise.md` (Ist-Stand, Bedrohungsmodell-Zeilen),
   `docs/geplante-jobs-und-benachrichtigungen.md`, `docs/admin-bereich.md`, `docs/datenmodell.md`.
+
+## Präzisierungen beim Planen (2026-10-23)
+
+Technische Anpassungen nach Abgleich mit dem Code; das freigegebene Verhalten bleibt gleich.
+
+- **Prüfseite ohne Login:** `/zeitstempel-pruefen` verlangt in Wirklichkeit ein Login. `/audit-pruefen`
+  wird deshalb als eigene öffentliche Seite mit `publicLimiter` eingehängt. Sie ist rein lesend und
+  nimmt Paketnummer und Prüfnummer als Query-Parameter (`GET /audit-pruefen?paket=N&pruefnummer=…`),
+  damit kein CSRF-Token nötig ist und der Link aus der Mail direkt zum Ergebnis führt.
+- **Zeitstempel-Tabelle:** `audit_export_zeitstempel` entsteht in `migrateAuditExportSchema` neben
+  `audit_export_pakete`, mit denselben UPDATE/DELETE-Sperren. Wie `audit_export_pakete` steht sie
+  **nicht** in der zentralen Audit-Trigger-Liste (das Register ist selbst der Nachweis, und die
+  Migration läuft nach `migrateSecuritySchema`).
+- **Alarm bei fehlendem Zeitstempel:** statt eines zweiten Typs in `sicherheitsalarme` (die Tabelle
+  und ihr Versand sind fest auf Backup-Löschungen zugeschnitten) verschickt der nächtliche Job selbst
+  höchstens alle 24 h eine Mail an `sicherheitsalarm_empfaenger`, protokolliert als
+  `mail_log.typ = 'sicherheitsalarm'`.
+- **Zeitplan:** wie bei der TSA-Sperrlisten-Erneuerung über `admin_config`-Schlüssel ohne eigene
+  UI und ohne `cron_log`-Eintrag (`cron_audit_export_stunde/minute`, Standard 03:15;
+  `cron_audit_pruefnummer_stunde/minute`, Standard 07:00). Der Lauf ist über `auditedJob` im
+  Audit-Log sichtbar.
+- **Was die TSA bestätigt:** Der MessageImprint ist SHA-256 über die UTF-8-Bytes der 64-stelligen
+  hexadezimalen Prüfnummer (`paket_sha256`). Ein externer Prüfer kann das mit Standardwerkzeugen
+  nachrechnen.

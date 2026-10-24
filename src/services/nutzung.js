@@ -128,6 +128,17 @@ export function erfasseSeitenaufruf(db, { req, res, dauerMs }) {
   }
 }
 
+// Body-Parser-Fehler (err.type 'entity.*') enthalten in Meldung und erster Stack-Zeile Auszüge
+// des Anfrage-Inhalts: dann nur eine allgemeine Meldung und der Stack ohne erste Zeile.
+function meldungUndStack(err) {
+  const stack = String(err?.stack ?? '');
+  if (typeof err?.type === 'string' && err.type.startsWith('entity.')) {
+    const ohneErsteZeile = stack.split('\n').slice(1).join('\n');
+    return [`Ungültiger Anfrage-Inhalt (${err.type.slice(0, 50)})`, ohneErsteZeile.slice(0, STACK_MAX) || null];
+  }
+  return [String(err?.message ?? err ?? '').slice(0, MELDUNG_MAX), stack.slice(0, STACK_MAX) || null];
+}
+
 // Speichert einen Serverfehler und gibt die Request-ID (= Fehler-ID) zurück; wirft nie.
 export function erfasseFehler(db, { req, err, status }) {
   let requestId = null;
@@ -139,7 +150,7 @@ export function erfasseFehler(db, { req, err, status }) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       String(requestId), new Date().toISOString(), req.currentPerson?.churchtools_person_id ?? null,
       String(req.method || '').slice(0, 10), pfadOhneQuery(req), status,
-      String(err?.message ?? err ?? '').slice(0, MELDUNG_MAX), String(err?.stack ?? '').slice(0, STACK_MAX) || null,
+      ...meldungUndStack(err),
       userAgent(req) || null, gueltigeGeraeteId(req),
     );
   } catch (fehler) {

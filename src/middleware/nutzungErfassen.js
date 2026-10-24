@@ -31,6 +31,8 @@ function erfasseBeiEnde(db, req, res, person, pfad) {
   };
   res.on('finish', () => {
     try {
+      // Weiterleitungen (z.B. nach Formular-POSTs) sind keine Seitenaufrufe.
+      if (res.statusCode >= 300 && res.statusCode < 400) return;
       if (!String(res.getHeader('Content-Type') || '').toLowerCase().startsWith('text/html')) return;
       erfasseSeitenaufruf(db, { req, res, dauerMs: Number(process.hrtime.bigint() - start) / 1e6 });
     } catch { /* Erfassen darf nie stören. */ }

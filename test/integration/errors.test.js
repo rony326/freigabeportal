@@ -134,3 +134,17 @@ test('404 erzeugt keinen Fehler-Eintrag', async () => {
   assert.equal(db.prepare('SELECT count(*) AS n FROM betrieb_fehler').get().n, 0);
   db.close();
 });
+
+test('Body-Parser-Fehler speichern keine Auszüge des Anfrage-Inhalts', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).post('/healthz').set('Content-Type', 'application/json').send('{"a": geheimpasswort}');
+  assert.equal(res.status, 500);
+  const row = db.prepare('SELECT * FROM betrieb_fehler').get();
+  assert.equal(row.meldung, 'Ungültiger Anfrage-Inhalt (entity.parse.failed)');
+  assert.doesNotMatch(row.meldung, /geheim/);
+  assert.doesNotMatch(row.stack, /geheim/);
+  assert.match(row.stack, /^\s+at /);
+  db.close();
+});

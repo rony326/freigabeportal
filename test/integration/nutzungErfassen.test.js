@@ -160,6 +160,7 @@ function miniApp(db, { angemeldet = true } = {}) {
   });
   app.use(nutzungErfassen(db));
   app.get('/json', (req, res) => res.json({ ok: true }));
+  app.post('/formular', (req, res) => res.redirect('/seite'));
   app.use((req, res) => res.type('html').send('<p>ok</p>'));
   return app;
 }
@@ -181,6 +182,15 @@ test('ohne angemeldete Person wird kein Geräte-Cookie gesetzt', async () => {
   const db = openDatabase(':memory:');
   const res = await request(miniApp(db, { angemeldet: false })).get('/seite');
   assert.equal(extractCookieValue(res.headers, 'fp_geraet'), null);
+  assert.equal(aufrufe(db).length, 0);
+  db.close();
+});
+
+test('Weiterleitungen (z.B. nach Formular-POST) werden nicht erfasst', async () => {
+  const db = openDatabase(':memory:');
+  const res = await request(miniApp(db)).post('/formular').set('Accept', 'text/html');
+  assert.equal(res.status, 302);
+  assert.match(res.headers['content-type'], /text\/html/);
   assert.equal(aufrufe(db).length, 0);
   db.close();
 });

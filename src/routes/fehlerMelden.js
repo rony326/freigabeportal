@@ -5,7 +5,8 @@ import { sendNotification } from '../services/notify.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
 const MAX_BESCHREIBUNG = 2000;
-const FEHLER_ID_MUSTER = /^[0-9a-f]{8,}$/i;
+// Wie in admin/betrieb.js: UUID-Präfix oder volle UUID.
+const FEHLER_ID_MUSTER = /^[0-9a-f][0-9a-f-]{7,63}$/i;
 
 // Referer-Pfad ohne Query, nur wenn er zum eigenen Portal gehört.
 function seiteAusReferer(req, config) {
@@ -25,7 +26,7 @@ function findeFehlerRequestId(db, fehlerId, personId) {
   if (typeof fehlerId !== 'string' || !FEHLER_ID_MUSTER.test(fehlerId)) return null;
   const treffer = db
     .prepare("SELECT request_id, person_id FROM betrieb_fehler WHERE request_id LIKE ? ESCAPE '\\' LIMIT 2")
-    .all(`${fehlerId}%`);
+    .all(`${fehlerId.toLowerCase()}%`);
   if (treffer.length !== 1) return null;
   const { request_id: requestId, person_id: fehlerPerson } = treffer[0];
   return fehlerPerson == null || fehlerPerson === personId ? requestId : null;

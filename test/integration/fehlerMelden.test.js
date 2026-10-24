@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
+import { randomUUID } from 'node:crypto';
 import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
@@ -9,7 +10,8 @@ import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createFehlerMeldenRouter } from '../../src/routes/fehlerMelden.js';
 
 const BASE = 'https://portal.example.org';
-const REQ_ID = 'abcdef0123456789abcdef0123456789';
+// Echte Request-IDs sind UUIDs mit Bindestrichen.
+const REQ_ID = randomUUID();
 
 function buildTestApp(db, mailer) {
   const app = express();
@@ -78,6 +80,14 @@ test('Meldung mit eigener Fehler-ID verknüpft', async () => {
   assert.equal(m.seite, '/kontierung/5');
   assert.equal(m.user_agent, 'TestAgent/1');
   assert.equal(m.status, 'offen');
+  db.close();
+});
+
+test('volle UUID (mit Bindestrichen, gross geschrieben) wird ebenfalls verknüpft', async () => {
+  const { db, app } = setup();
+  fehlerAnlegen(db, REQ_ID, '1');
+  await request(app).post('/fehler-melden').set('x-test-person-id', '1').type('form').send({ fehlerId: REQ_ID.toUpperCase() });
+  assert.equal(meldungen(db)[0].request_id, REQ_ID);
   db.close();
 });
 

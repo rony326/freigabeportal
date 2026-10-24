@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
+import { randomUUID } from 'node:crypto';
 import { openDatabase } from '../../../src/db/index.js';
 import { seedDefaults, getConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
@@ -11,7 +12,9 @@ import { requirePermission } from '../../../src/middleware/permissions.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createBetriebRouter } from '../../../src/routes/admin/betrieb.js';
 
-const REQ_ID = 'abcdef0123456789abcdef0123456789';
+// Echte Request-IDs sind UUIDs mit Bindestrichen.
+const REQ_ID = randomUUID();
+const REQ_ID_2 = randomUUID();
 
 function buildTestApp(db) {
   const app = express();
@@ -146,17 +149,24 @@ test('Personendetail', async () => {
 test('Fehlerdetail zeigt Stack nur hier, escaped in <pre>; Liste mit Präfixsuche', async () => {
   const { db, app } = setup();
   fehlerAnlegen(db);
-  fehlerAnlegen(db, '12345678'.repeat(4), '8');
+  fehlerAnlegen(db, REQ_ID_2, '8');
 
   const liste = await request(app).get('/admin/betrieb/fehler').set('x-test-person-id', '7');
   assert.equal(liste.status, 200);
-  assert.match(liste.text, />abcdef01</);
-  assert.match(liste.text, />12345678</);
+  assert.match(liste.text, new RegExp(`>${REQ_ID.slice(0, 8)}<`));
+  assert.match(liste.text, new RegExp(`>${REQ_ID_2.slice(0, 8)}<`));
   assert.doesNotMatch(liste.text, /alert\(1\)/, 'kein Stack in der Liste');
 
-  const gesucht = await request(app).get('/admin/betrieb/fehler?suche=ABCDEF01').set('x-test-person-id', '7');
-  assert.match(gesucht.text, />abcdef01</);
-  assert.doesNotMatch(gesucht.text, />12345678</);
+  // Liste verlinkt die volle UUID; der Link muss zur Detailseite führen.
+  const link = liste.text.match(new RegExp(`href="(/admin/betrieb/fehler/${REQ_ID})"`))?.[1];
+  assert.ok(link, 'Liste verlinkt die volle Request-ID');
+  assert.equal((await request(app).get(link).set('x-test-person-id', '7')).status, 200);
+
+  const gesucht = await request(app).get(`/admin/betrieb/fehler?suche=${REQ_ID.slice(0, 8).toUpperCase()}`).set('x-test-person-id', '7');
+  assert.match(gesucht.text, new RegExp(`>${REQ_ID.slice(0, 8)}<`));
+  assert.doesNotMatch(gesucht.text, new RegExp(`>${REQ_ID_2.slice(0, 8)}<`));
+  const gesuchtVoll = await request(app).get(`/admin/betrieb/fehler?suche=${REQ_ID}`).set('x-test-person-id', '7');
+  assert.match(gesuchtVoll.text, new RegExp(`>${REQ_ID.slice(0, 8)}<`));
 
   const detail = await request(app).get(`/admin/betrieb/fehler/${REQ_ID}`).set('x-test-person-id', '7');
   assert.equal(detail.status, 200);
@@ -164,7 +174,7 @@ test('Fehlerdetail zeigt Stack nur hier, escaped in <pre>; Liste mit Präfixsuch
   assert.doesNotMatch(detail.text, /<script>alert/);
   assert.match(detail.text, /Eva Muster/);
 
-  const praefix = await request(app).get('/admin/betrieb/fehler/abcdef01').set('x-test-person-id', '7');
+  const praefix = await request(app).get(`/admin/betrieb/fehler/${REQ_ID.slice(0, 8)}`).set('x-test-person-id', '7');
   assert.equal(praefix.status, 200);
   assert.match(praefix.text, /Kaputt/);
 

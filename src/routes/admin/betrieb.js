@@ -10,7 +10,8 @@ const STANDARD_TAGE = 30;
 const MELDUNG_STATUS = ['offen', 'in_arbeit', 'erledigt'];
 const NOTIZ_MAX = 2000;
 const DATENSCHUTZ_MAX = 20000;
-const FEHLER_ID = /^[0-9a-f]{8,64}$/i;
+// Request-IDs sind UUIDs: Hex am Anfang, danach Hex und Bindestriche (Präfix oder voll).
+const FEHLER_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i;
 const LISTE_MAX = 200;
 
 // Locker: leer oder genau ein "@" ohne Leerzeichen, mit Text davor und danach.

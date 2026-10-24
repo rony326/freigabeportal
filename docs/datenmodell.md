@@ -246,7 +246,7 @@ gespeichert, sondern bei jeder Prüfung aus dem heutigen Datum berechnet
 
 ### `person_berechtigungen`
 Additive Einzelrechte, siehe [auth-und-rechte.md](auth-und-rechte.md). Ein
-`CHECK`-Constraint erlaubt zwölf Rechte. Für die sieben
+`CHECK`-Constraint erlaubt dreizehn Rechte. Für die sieben
 `superadmin`-exklusiven Admin-Bereiche gibt es keine vergebbaren Werte.
 
 ### `konten`

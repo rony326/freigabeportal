@@ -130,7 +130,7 @@ Sieben Admin-Bereiche bleiben `superadmin`-exklusiv: Eskalationszeiten,
 Erscheinungsbild, Zeitstempel, Datenbank-Backup, Datei-Quarantäne, Module
 und Mail-Einstellungen. Für sie gibt es keine additiven Einzelrechte; die
 Routen prüfen die Rolle direkt. Der `CHECK`-Constraint akzeptiert nur die
-zwölf oben genannten Rechte.
+dreizehn oben genannten Rechte.
 
 Details zur Rechte-Matrix pro Admin-Seite: [admin-bereich.md](admin-bereich.md).
 

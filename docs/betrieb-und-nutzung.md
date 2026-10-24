@@ -101,8 +101,12 @@ der Seitenleiste verlinkt. Er nennt, welche Daten erfasst werden, den Zweck, die
 Aufbewahrung und wer Zugriff hat. Bezug zum Schweizer Datenschutzgesetz (revDSG):
 Information der Betroffenen, Zweckbindung (nur Wartung, Weiterentwicklung, Sicherheit),
 Datensparsamkeit (keine Inhalte, kein Query-String) und begrenzte Aufbewahrung durch den
-automatischen Löschjob. Der Text muss von der Betreiberin bei Bedarf rechtlich geprüft
-und angepasst werden.
+automatischen Löschjob. Der Standardtext nennt auch das Cookie `fp_geraet` (Erkennung
+neuer Geräte) sowie die Fristen für Fehlermeldungen (1 Jahr) und Geräte (1 Jahr nach
+letzter Nutzung). Der Standard gilt nur, solange noch kein Text gespeichert ist:
+**bestehende Installationen behalten ihren gespeicherten Text** und müssen ihn bei Bedarf
+unter Admin → Betrieb & Nutzung → Datenschutz selbst ergänzen. Der Text muss von der
+Betreiberin bei Bedarf rechtlich geprüft und angepasst werden.
 
 ## Bekannte Grenzen
 

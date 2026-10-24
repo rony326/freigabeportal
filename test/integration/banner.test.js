@@ -96,6 +96,10 @@ test('Datenschutzseite zeigt Text; ohne Login nicht erreichbar', async () => {
   assert.equal(res.status, 200);
   assert.match(res.text, /Seitenaufrufe/);
   assert.match(res.text, /90 Tage/);
+  assert.match(res.text, /fp_geraet/);
+  assert.match(res.text, /Erkennung neuer Geräte/);
+  assert.match(res.text, /Fehlermeldungen 1 Jahr/);
+  assert.match(res.text, /Geräte 1 Jahr nach der letzten Nutzung/);
   assert.match(res.text, /Betrieb &amp; Nutzung/);
   assert.match(res.text, /die Portal-Administration/);
   setConfigValue(db, 'betrieb_kontakt_email', 'it@example.org');

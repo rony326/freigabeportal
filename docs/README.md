@@ -26,13 +26,14 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md) | Swiss-QR-Bill-Erkennung und IBAN-Abgleich gegen hinterlegte Lieferanten-IBANs |
 | [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md) | RFC3161-Zeitstempel, Nachhol-Mechanismus, Verifikations- und Zertifikatsseite |
 | [admin-bereich.md](admin-bereich.md) | Alle Admin-Seiten mit den jeweils benötigten Rechten |
-| [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md) | Die vierzehn automatischen Hintergrund-Jobs, persistente Mailzustellung mit Wiederholung, Eskalationslogik, Verhalten nach Neustart |
+| [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md) | Die fünfzehn automatischen Hintergrund-Jobs, persistente Mailzustellung mit Wiederholung, Eskalationslogik, Verhalten nach Neustart |
 | [personen-sync.md](personen-sync.md) | Nächtlicher ChurchTools-Personen-/Gruppen-Sync: Zugangsmodell (Gruppenaustritt vs. entzogener Zugang vs. Ausfall), Schutzmechanismen, "stalled jobs" |
 | [backup-verschluesselung.md](backup-verschluesselung.md) | **Verbindlich:** verschlüsselte `.fpbak`-Sicherungen, Schlüsselbund und Schlüsselaufbewahrung, Rotation, n8n-Abholung, Altsicherungen |
 | [offline-restore.md](offline-restore.md) | **Verbindlich:** Offline-Wiederherstellung und Rückwechsel, Prozesssperre, verwaiste Sperren |
 | [backup-sicherheit.md](backup-sicherheit.md) | Prüfungen und Grenzen des Backup-/Restore-Formats |
 | [kreditoren-statt-debitoren.md](kreditoren-statt-debitoren.md) | Fachliche Korrektur der Bezeichnung, Migration, Kompatibilität, Deployment-Schritte |
 | [audit-paket-haertung-2026-09-29.md](audit-paket-haertung-2026-09-29.md) | Zugriffsverweigerungen, Datei-Quarantäne, Sicherheitsalarme, TSA-Evidenz |
+| [betrieb-und-nutzung.md](betrieb-und-nutzung.md) | Nutzungsdaten, Fehlererfassung und „Problem melden“, Neues-Gerät-Mail, Banner, Datenschutzhinweis, Aufbewahrungsfristen, Recht `betrieb_einsehen` |
 | [audit-externe-nachweise.md](audit-externe-nachweise.md) | Bedrohungsmodell und lokale Grundlage für externe Audit-Nachweise |
 
 Phasenpläne und historische Design-Dokumente der einzelnen Ausbaustufen

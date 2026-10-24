@@ -4,7 +4,7 @@
 
 Kein externer Task-Scheduler nötig: Solange der Node-Prozess läuft
 (Infomaniaks Node.js-Hosting hält ihn dauerhaft am Leben), plant sich die
-App **vierzehn** Hintergrund-Jobs selbst ein (`src/services/scheduler.js`,
+App **fünfzehn** Hintergrund-Jobs selbst ein (`src/services/scheduler.js`,
 gestartet in `src/index.js`). Jeder Zeitplan wird bei **jedem** Tick neu
 aus `admin_config` gelesen (nicht einmalig beim Start) — eine gespeicherte
 Änderung wirkt ab dem nächsten Lauf, ganz ohne Neustart.
@@ -60,7 +60,7 @@ flowchart LR
   [offline-restore.md](offline-restore.md#abbruch-und-sperren). Solange der
   Server deshalb nicht läuft, laufen auch keine Jobs — siehe erster Punkt.
 
-## Die vierzehn Jobs
+## Die fünfzehn Jobs
 
 | Job | Standard-Zeitplan | Einstellbar unter | `POST /internal/cron/…` | Protokoll | Zweck |
 |---|---|---|---|---|---|
@@ -78,6 +78,7 @@ flowchart LR
 | `tsa-crl-aktualisierung` | täglich 04:15 (Europe/Zürich), nur mit `TSA_CRL_AUTO_UPDATE=true` | nur `admin_config` (`cron_tsa_crl_stunde`/`cron_tsa_crl_minute`) | ja | Audit-Log (`hintergrundlauf`), `mail_log` bei Alarm | erneuert `TSA_CRL_FILE` aus der validierten TSA-Kette — siehe [tsa-vertrauensanker.md](tsa-vertrauensanker.md#automatische-sperrlisten-erneuerung) |
 | `audit-export` | täglich 03:15 (Europe/Zürich) | nur `admin_config` / Admin → Zeitstempel (`cron_audit_export_stunde`/`_minute`) | nein | Audit-Log (`hintergrundlauf`), kein `cron_log` | erzeugt Audit-Pakete, holt RFC3161-Zeitstempel (auch nachträglich), Alarm bei Rückstand (nur mit konfigurierter TSA-URL) |
 | `audit-pruefnummer` | täglich 07:00 (Europe/Zürich), sendet nur am Versandtag | nur `admin_config` / Admin → Zeitstempel (`cron_audit_pruefnummer_stunde`/`_minute`) | nein | Audit-Log (`hintergrundlauf`), `mail_log` | Prüfnummer-Mail an die Revision |
+| `nutzungsdaten-bereinigung` | täglich 03:45 (Europe/Zürich) | nur `admin_config` (`cron_nutzungsdaten_bereinigung_stunde`/`_minute`) | nein | Audit-Log (`hintergrundlauf`), kein `cron_log` | löscht Seitenaufrufe nach 90 Tagen; Anmeldungen, Fehler, Fehlermeldungen und Geräte nach 365 Tagen; Ausblend-Merker abgelaufener Banner — siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md) |
 
 Alle Läufe außer leeren `mail-zustellung`-Läufen (ohne fällige Mails)
 erscheinen zusätzlich als `hintergrundlauf` im Audit-Log.
@@ -409,9 +410,11 @@ codierten Strings.
 | `kk-beleg-erinnerung` | seit langem offener Kreditkartenbeleg/-entwurf bzw. noch nicht abgeglichene Kreditkartenabrechnung (Job `kk-beleg-erinnerungen`, siehe oben) |
 | `admin-umzuweisung` | Admin hat einen laufenden Vorgang umgehängt; an die neue Person (plus deren Ferienvertretung) und die bisherige; ignoriert das Batching wie `sync-fehler`/`iban-warnung`/`kk-beleg-eingegangen` |
 | `kk-beleg-eingegangen` | per Mail eingereichter Kreditkartenbeleg als Entwurf angelegt — **immer sofort**, unabhängig vom Batching-Schalter (Link zum Vervollständigen soll nicht bis zum nächsten Digest warten) |
+| `neues-geraet` | Anmeldung von einem für die Person noch unbekannten Gerät (Cookie `fp_geraet`) — an die Person selbst, **immer sofort**; siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md) |
+| `fehlermeldung` | Person hat über „Problem melden“ ein Problem gemeldet — an alle mit Recht `betrieb_einsehen`, **immer sofort** |
 
 **Batching:** Ist unter **Admin → Einstellungen → Mail-Einstellungen** aktiviert, werden
-alle Typen ausser `sync-fehler`/`iban-warnung`/`admin-umzuweisung`/`kk-beleg-eingegangen`
+alle Typen ausser `sync-fehler`/`iban-warnung`/`admin-umzuweisung`/`kk-beleg-eingegangen`/`neues-geraet`/`fehlermeldung`
 nicht sofort verschickt, sondern als `status = 'geplant'` eingereiht
 und vom `mail-digest`-Job (siehe oben) einmal täglich pro Empfänger zu
 einer Sammel-Mail zusammengefasst — `kk-abrechnung-zugewiesen` und

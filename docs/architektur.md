@@ -62,7 +62,7 @@ Siehe [n8n-schnittstelle.md](n8n-schnittstelle.md).
 3. `seedDefaults(db)` — schreibt Default-Werte in `admin_config`, falls noch
    nicht vorhanden (Eskalationszeiten, Cron-Zeitpläne, Sync-Schwellen, …).
 4. `createApp({ db, config })` — baut die Express-App (siehe unten).
-5. `startScheduler({ db, config, mailer })` — startet die vierzehn
+5. `startScheduler({ db, config, mailer })` — startet die fünfzehn
    In-Process-Hintergrund-Jobs (siehe
    [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)).
 6. `app.listen(config.port)`.
@@ -113,6 +113,9 @@ und Zugriffskontrolle — siehe
 | `/freigabe2` | session | eingeloggt + Job-Autorisierung | zweite Freigabe (Rechnungen und Spesen) |
 | `/abgelehnt` | session | eingeloggt + Job-Autorisierung | Überarbeitung abgelehnter Rechnungen |
 | `/zeitstempel-pruefen` | session | eingeloggt | Zeitstempel-Verifikation + Zertifikat |
+| `/fehler-melden` | session | eingeloggt | Problem melden (Fehler-ID, Beschreibung), siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md) |
+| `/banner` | session | eingeloggt | Info-Banner ausblenden (`POST /banner/:id/ausblenden`) |
+| `/datenschutz` | session | eingeloggt | Datenschutzhinweis zu den Nutzungsdaten |
 | `/audit-pruefen` | public (`publicLimiter`) | offen, nur lesend | Prüfseite des Audit-Nachweises für die Revision, siehe [audit-externe-nachweise.md](audit-externe-nachweise.md) |
 | `/auth` | public | offen | ChurchTools-OAuth2-Login/-Logout |
 | `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen von acht Hintergrund-Jobs (nicht: `datenbank-sicherung`, `mail-digest`, `sicherheitsalarme`) |

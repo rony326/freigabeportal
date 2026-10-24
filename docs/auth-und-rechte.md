@@ -100,7 +100,7 @@ den Portalzugang für seine konto-, karten- oder rechtebasierten Aufgaben.
 
 ## Additive Einzelrechte (`person_berechtigungen`)
 
-Zusätzlich zum Gruppenmodell gibt es zwölf einzeln vergebbare,
+Zusätzlich zum Gruppenmodell gibt es dreizehn einzeln vergebbare,
 additive Rechte, unabhängig von ChurchTools-Gruppen
 (`src/middleware/permissions.js`, `src/db/personBerechtigungenRepo.js`):
 
@@ -116,10 +116,11 @@ additive Rechte, unabhängig von ChurchTools-Gruppen
 - `sync_verwalten`: Sync konfigurieren (zusätzlich zu `sync_einsehen`)
 - `vorgaenge_einsehen`: Übersicht laufender Vorgänge — erlaubt `GET /admin/vorgaenge` und `GET /admin/vorgaenge/:id`
 - `workflow_eingreifen`: in laufende Vorgänge eingreifen — Force-Aktionen bei hängenden Jobs, Altfälle und Umhängen (`POST /admin/vorgaenge/:id/umhaengen`)
+- `betrieb_einsehen` („Betrieb & Nutzung“): Nutzungsdaten und Fehler einsehen, Fehlermeldungen bearbeiten, Banner und Datenschutztext verwalten — erlaubt `/admin/betrieb/*`, siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md)
 
 `superadmin` erhält jedes dieser Rechte automatisch über sein
-Rollen-Bundle, `manager` jedes ausser `sync_verwalten` und
-`workflow_eingreifen` (siehe
+Rollen-Bundle, `manager` jedes ausser `sync_verwalten`,
+`workflow_eingreifen` und `betrieb_einsehen` (siehe
 [audit-umsetzungsstand-2026-09-27.md](audit-umsetzungsstand-2026-09-27.md)). Für alle anderen Personen sind sie rein additiv: ein
 Recht ohne jede ChurchTools-Gruppenmitgliedschaft. Vergeben werden sie
 ausschliesslich von einem `superadmin` unter **Admin → Stammdaten → Personen**

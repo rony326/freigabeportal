@@ -129,12 +129,13 @@ export function erfasseSeitenaufruf(db, { req, res, dauerMs }) {
 }
 
 // Body-Parser-Fehler (err.type 'entity.*') enthalten in Meldung und erster Stack-Zeile Auszüge
-// des Anfrage-Inhalts: dann nur eine allgemeine Meldung und der Stack ohne erste Zeile.
+// des Anfrage-Inhalts: dann nur eine allgemeine Meldung und die Stack-Frames.
 function meldungUndStack(err) {
   const stack = String(err?.stack ?? '');
   if (typeof err?.type === 'string' && err.type.startsWith('entity.')) {
-    const ohneErsteZeile = stack.split('\n').slice(1).join('\n');
-    return [`Ungültiger Anfrage-Inhalt (${err.type.slice(0, 50)})`, ohneErsteZeile.slice(0, STACK_MAX) || null];
+    // Nur Stack-Frames behalten: der Auszug kann über mehrere Zeilen gehen.
+    const frames = stack.split('\n').filter((zeile) => /^\s+at /.test(zeile)).join('\n');
+    return [`Ungültiger Anfrage-Inhalt (${err.type.slice(0, 50)})`, frames.slice(0, STACK_MAX) || null];
   }
   return [String(err?.message ?? err ?? '').slice(0, MELDUNG_MAX), stack.slice(0, STACK_MAX) || null];
 }

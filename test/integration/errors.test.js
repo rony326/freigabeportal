@@ -148,3 +148,16 @@ test('Body-Parser-Fehler speichern keine Auszüge des Anfrage-Inhalts', async (t
   assert.match(row.stack, /^\s+at /);
   db.close();
 });
+
+test('Body-Parser-Fehler mit mehrzeiligem Inhalt speichern nur Stack-Frames', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).post('/healthz').set('Content-Type', 'application/json').send('{"a":\n geheim\n passwort}');
+  assert.equal(res.status, 500);
+  const row = db.prepare('SELECT * FROM betrieb_fehler').get();
+  assert.doesNotMatch(row.meldung, /geheim|passwort/);
+  assert.doesNotMatch(row.stack, /geheim|passwort/);
+  for (const zeile of row.stack.split('\n')) assert.match(zeile, /^\s+at /);
+  db.close();
+});

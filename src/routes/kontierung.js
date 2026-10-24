@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
 import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
+import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalationsText } from '../services/eskalationsZiel.js';
 import {
   getJobById,
   setKontierung,
@@ -15,8 +16,11 @@ import {
   getEffectiveFreigeber2Id,
   markJobAufgesplittet,
   setJobBetrag,
+  setJobTyp,
   addBelegSeiten,
   findJobsByKreditorUndRechnungsnummer,
+  findMoeglicheDoppelrechnungen,
+  DOPPELRECHNUNG_FENSTER_TAGE,
   sendJobBackToGroup,
   hebeKkMarkierungAuf,
 } from '../db/jobsRepo.js';
@@ -309,7 +313,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       // ALSO have a conflict), or the chosen Konto's stellvertreter1 IS the current person
       // (escalating would target themselves). Both route to the Portal-Admin group instead of
       // blocking with the old "go back to pool / contact admin" dead end.
-      const eskaliertAnAdmin = hatKonflikt && Boolean(job.freigabe1_eskaliert_von || konto.stellvertreter1_id === req.currentPerson.churchtools_person_id);
+      // Zusätzlich: Stellvertreter 1 darf den Vorgang aus einem anderen Grund nicht bearbeiten
+      // (früher erklärter Konflikt, Spesen-Einreicher, ...) — dann ebenfalls an die Admin-Gruppe,
+      // siehe services/eskalationsZiel.js.
+      const sv1Ausschluss = hatKonflikt && !job.freigabe1_eskaliert_von
+        ? ausschlussGrundFuerEskalationsziel(db, job, { stufe: 1, zielId: konto.stellvertreter1_id, meldenderId: req.currentPerson.churchtools_person_id })
+        : null;
+      const eskaliertAnAdmin = hatKonflikt && Boolean(job.freigabe1_eskaliert_von || sv1Ausschluss);
       const strikteFreigeber1Pruefung = getConfigValue(db, 'kontierung_strikte_freigeber1_pruefung') === '1';
       const istEchterFreigeber1 =
         konto.freigeber1_id === req.currentPerson.churchtools_person_id ||
@@ -344,7 +354,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             kommentar: begruendung,
             eskaliertVon: job.freigabe1_eskaliert_von,
           });
-          eskalierenFreigabe1AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+          eskalierenFreigabe1AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: grundMitAusschluss(begruendung, sv1Ausschluss) });
         } else if (hatKonflikt) {
           createFreigabe(db, {
             jobId: job.id,
@@ -443,6 +453,46 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
 
       if (kreditor) {
         const duplikate = findJobsByKreditorUndRechnungsnummer(db, kreditor.id, rechnungsnummer, job.id);
+        // Szenario 2 (Doppelscan, Rechnungsnummer evtl. anders abgetippt) — nur wenn die strengere
+        // Rechnungsnummer-Prüfung nicht schon angeschlagen hat, damit es nur eine Warnung gibt.
+        const doppelrechnungen = duplikate.length > 0
+          ? []
+          : findMoeglicheDoppelrechnungen(db, { job, kreditorId: kreditor.id, betrag: values.betrag, zahlungsziel: values.zahlungsziel });
+        if (doppelrechnungen.length > 0) {
+          const dupJobIds = doppelrechnungen.map((d) => `#${d.id}`).join(', ');
+          const betragText = String(values.betrag).replace(',', '.');
+          createFreigabe(db, {
+            jobId: job.id,
+            personId: req.currentPerson.churchtools_person_id,
+            rolle: 'duplikat_verdacht',
+            zeitpunkt: new Date().toISOString(),
+            ip: req.ip,
+            interessenskonflikt: false,
+            kommentar: `Gleicher Lieferant (${kreditor.name}), Betrag ${betragText} und Zahlungsziel ${values.zahlungsziel} wie Job ${dupJobIds} (Eingang innerhalb von ${DOPPELRECHNUNG_FENSTER_TAGE} Tagen).`,
+            eskaliertVon: null,
+          });
+          const empfaenger = new Set([req.currentPerson.email]);
+          for (const personId of [konto.freigeber1_id, konto.freigeber2_id]) {
+            const person = getPersonById(db, personId);
+            if (person) empfaenger.add(person.email);
+          }
+          for (const email of empfaenger) {
+            await sendNotification(db, mailer, {
+              to: email,
+              typ: 'duplikat-warnung',
+              jobId: job.id,
+              variablen: {
+                jobDateiname: job.dateiname,
+                ...kreditorNameVariablen(kreditor.name),
+                betrag: betragText,
+                zahlungsziel: values.zahlungsziel,
+                tage: DOPPELRECHNUNG_FENSTER_TAGE,
+                dupJobIds,
+                link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+              },
+            });
+          }
+        }
         if (duplikate.length > 0) {
           createFreigabe(db, {
             jobId: job.id,
@@ -486,7 +536,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             variablen: {
               empfaengerName: 'Portal-Admin-Team',
               jobDateiname: job.dateiname,
-              grund: 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.',
+              grund: adminEskalationsText('Eine Rechnung', sv1Ausschluss),
               link: `${config.publicBaseUrl}/kontierung/${job.id}`,
             },
           });
@@ -688,9 +738,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     res.redirect('/pool');
   });
 
-  function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors) {
-    res.status(status).render('kontierung-aufsplitten', { job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors });
+  function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ) {
+    res.status(status).render('kontierung-aufsplitten', { job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ });
   }
+
+  // Eine aufgesplittete Rechnung hat genau einen Typ für alle Teile — eine Mischung aus Rechnung
+  // und Gutschrift innerhalb eines Belegs gibt es nicht. Unbekannte Werte gelten als Rechnung,
+  // wie in der normalen Kontierung.
+  const normalisiereTyp = (typ) => (typ === 'gutschrift' ? 'gutschrift' : 'rechnung');
 
   router.get('/:id/aufsplitten', (req, res) => {
     const job = loadAuthorizedJob(req, res);
@@ -702,10 +757,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     // opened, so a value the person typed there but hasn't saved yet still shows up here instead
     // of falling back to whatever is (or isn't) persisted on the job.
     const queryBetrag = typeof req.query.betrag === 'string' && BETRAG_PATTERN.test(req.query.betrag) ? req.query.betrag : null;
+    // Wie beim Betrag: ein im Kontierungsformular gewählter, noch nicht gespeicherter Typ kommt
+    // als ?typ=... mit und hat Vorrang vor dem gespeicherten.
+    const typ = normalisiereTyp(req.query.typ === 'gutschrift' || req.query.typ === 'rechnung' ? req.query.typ : job.typ);
     renderAufsplittenForm(req, res, 200, job, konten, listKonten(db), queryBetrag || job.betrag || '', [
       { kontoId: '', betrag: '', interessenskonflikt: false },
       { kontoId: '', betrag: '', interessenskonflikt: false },
-    ], '', []);
+    ], '', [], typ);
   });
 
   router.post('/:id/aufsplitten', (req, res, next) => {
@@ -727,6 +785,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const konflikte = [].concat(req.body.teilInteressenskonflikt || []);
       const positionen = [].concat(req.body.teilPosition || []);
       const begruendung = req.body.begruendung || '';
+      const typ = normalisiereTyp(req.body.typ);
       const teileEingabe = kontoIds.map((kontoId, i) => ({
         kontoId,
         betrag: betraege[i] || '',
@@ -778,7 +837,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         }
         const belegEintrag = teilBelegByIndex.get(originalIndex);
         aufgeloesteTeile.push({
-          konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt, position: teil.position, originalIndex,
+          konto, betrag: teil.betrag.replace(',', '.'), interessenskonflikt: teil.interessenskonflikt, position: teil.position, originalIndex, typ,
           beleg: belegEintrag ? { buffer: belegEintrag.file.buffer, mimetype: belegEintrag.mimetype } : null,
         });
       });
@@ -800,7 +859,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       }
 
       if (errors.length > 0) {
-        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors);
+        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors, typ);
       }
 
       // Persisted on the parent even though it's about to be retired: the parent may never have
@@ -816,6 +875,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       db.exec('BEGIN');
       try {
         setJobBetrag(db, job.id, job.betrag);
+        setJobTyp(db, job.id, typ);
         const markiert = markJobAufgesplittet(db, job.id);
         if (!markiert) {
           db.exec('ROLLBACK');

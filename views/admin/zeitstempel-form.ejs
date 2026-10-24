@@ -22,12 +22,71 @@
       <div class="mb-3">
         <label class="form-label" for="tsaPasswort">Passwort (optional)</label>
         <input type="password" class="form-control" id="tsaPasswort" name="tsaPasswort" autocomplete="off">
-        <div class="form-text">Aus Sicherheitsgründen wird ein bereits gespeichertes Passwort hier nie angezeigt. Leer lassen und speichern löscht ein vorhandenes Passwort.</div>
+        <div class="form-text">Aus Sicherheitsgründen wird ein bereits gespeichertes Passwort hier nie angezeigt. Leer lassen, um das gespeicherte Passwort zu behalten.</div>
+        <div class="form-check mt-2">
+          <input class="form-check-input" type="checkbox" id="tsaPasswortEntfernen" name="tsaPasswortEntfernen" value="1">
+          <label class="form-check-label" for="tsaPasswortEntfernen">Gespeichertes Passwort entfernen</label>
+        </div>
       </div>
       <div class="mb-3">
         <label class="form-label" for="warnungAbStunden">Admin-Warnung ab (Stunden)</label>
         <input type="number" min="1" class="form-control" id="warnungAbStunden" name="warnungAbStunden" value="<%= warnungAbStunden %>">
         <div class="form-text">Ab wie vielen Stunden ohne Zeitstempel eine abgeschlossene Rechnung als Warnung im Admin-Dashboard erscheint (nur solange die TSA-URL oben gesetzt ist).</div>
+      </div>
+      <h2 class="h5 mt-4">Audit-Nachweis für die Revision</h2>
+      <p class="text-muted small">Das Audit-Protokoll wird jede Nacht exportiert und mit einem Zeitstempel versehen. Regelmässig geht die Prüfnummer des letzten Pakets per Mail an die Revision; damit kann sie später prüfen, dass das Protokoll nicht verändert wurde. Es werden keine personenbezogenen Daten versendet.</p>
+      <input type="hidden" name="auditFormular" value="1">
+      <% if (empfaengerFehlt) { %>
+        <div class="alert alert-warning">Kein Revisions-Empfänger festgelegt — es wird keine Prüfnummer versendet.</div>
+      <% } %>
+      <% if (adminAdressen.length > 0) { %>
+        <div class="alert alert-warning">Die Adresse <%= adminAdressen.join(', ') %> gehört einer Person mit Admin-Rechten. Für eine unabhängige Prüfung sollte die Revision eine eigene Adresse haben.</div>
+      <% } %>
+      <div class="mb-3">
+        <label class="form-label" for="auditRevisionEmpfaenger">Empfänger der Prüfnummer (Mailadressen, durch Komma getrennt)</label>
+        <textarea class="form-control" id="auditRevisionEmpfaenger" name="auditRevisionEmpfaenger" rows="2"><%= auditRevisionEmpfaenger %></textarea>
+        <div class="form-text">Bei einer Änderung erhalten alte und neue Adressen eine Benachrichtigung.</div>
+      </div>
+      <div class="form-check mb-3">
+        <input type="checkbox" class="form-check-input" id="auditNachweisAktiv" name="auditNachweisAktiv" value="1" <%= auditNachweisAktiv ? 'checked' : '' %>>
+        <label class="form-check-label" for="auditNachweisAktiv">Automatischer Nachweis aktiv (nächtlicher Export und Versand)</label>
+      </div>
+      <div class="row g-2 mb-3">
+        <div class="col-12 col-md-6">
+          <label class="form-label" for="auditPruefnummerRhythmus">Versandrhythmus</label>
+          <select class="form-select" id="auditPruefnummerRhythmus" name="auditPruefnummerRhythmus">
+            <% Object.entries(rhythmen).forEach(([wert, label]) => { %>
+              <option value="<%= wert %>"<%= auditPruefnummerRhythmus === wert ? ' selected' : '' %>><%= label %></option>
+            <% }) %>
+          </select>
+          <div class="form-text">Quartalsweise: Januar, April, Juli, Oktober. Jährlich: Januar.</div>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="auditPruefnummerTag">Versandtag (1–28)</label>
+          <input type="number" min="1" max="28" class="form-control" id="auditPruefnummerTag" name="auditPruefnummerTag" value="<%= auditPruefnummerTag %>">
+        </div>
+      </div>
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="auditExportStunde">Export: Stunde (0–23)</label>
+          <input type="number" min="0" max="23" class="form-control" id="auditExportStunde" name="auditExportStunde" value="<%= auditExportStunde %>">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="auditExportMinute">Export: Minute (0–59)</label>
+          <input type="number" min="0" max="59" class="form-control" id="auditExportMinute" name="auditExportMinute" value="<%= auditExportMinute %>">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="auditPruefnummerStunde">Versand: Stunde (0–23)</label>
+          <input type="number" min="0" max="23" class="form-control" id="auditPruefnummerStunde" name="auditPruefnummerStunde" value="<%= auditPruefnummerStunde %>">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label" for="auditPruefnummerMinute">Versand: Minute (0–59)</label>
+          <input type="number" min="0" max="59" class="form-control" id="auditPruefnummerMinute" name="auditPruefnummerMinute" value="<%= auditPruefnummerMinute %>">
+        </div>
+      </div>
+      <div class="mb-3 col-md-6">
+        <label class="form-label" for="auditZeitstempelAlarmTage">Alarm, wenn ein Paket länger ohne Zeitstempel ist (Tage, 1–30)</label>
+        <input type="number" min="1" max="30" class="form-control" id="auditZeitstempelAlarmTage" name="auditZeitstempelAlarmTage" value="<%= auditZeitstempelAlarmTage %>">
       </div>
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>
@@ -36,5 +95,20 @@
           <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
         </div>
       <% } %>
+    </form>
+
+    <h2 class="h5 mt-4">Stand des Audit-Nachweises</h2>
+    <% if (versandHinweis) { %>
+      <div class="alert alert-<%= versandHinweis.art %>"><%= versandHinweis.text %></div>
+    <% } %>
+    <% if (letztesPaket) { %>
+      <p class="mb-1">Letztes Paket: Nr. <%= letztesPaket.id %> vom <%= letztesPaket.erstellt_am %> (<%= letztesPaket.anzahl %> Ereignisse).</p>
+    <% } else { %>
+      <p class="mb-1">Noch kein Paket erzeugt.</p>
+    <% } %>
+    <p><%= paketeOhneZeitstempel %> Paket<%= paketeOhneZeitstempel === 1 ? '' : 'e' %> noch ohne Zeitstempel.</p>
+    <form method="post" action="/admin/zeitstempel/audit-pruefnummer-senden" onsubmit="return confirm('Prüfnummer des letzten Pakets jetzt an die Revision senden?');">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <button type="submit" class="btn btn-outline-secondary">Prüfnummer jetzt senden</button>
     </form>
 <%- include('../_seite_ende') %>

@@ -37,7 +37,8 @@ function stubMailer() {
   return { sent, async sendMail(mail) { sent.push(mail); } };
 }
 
-function buildApp(db, mailer) {
+function buildApp(db, mailer, extraConfig = {}) {
+  const config = { ...CONFIG, ...extraConfig };
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../views', import.meta.url).pathname);
@@ -51,10 +52,10 @@ function buildApp(db, mailer) {
     next();
   });
   app.use(loadCurrentPerson(db));
-  app.use(loadNavFlags(db, CONFIG));
-  app.use('/freigabe2', requireLogin(), createFreigabe2Router({ db, config: CONFIG, mailer }));
-  app.use('/kontierung', requireLogin(), createKontierungRouter({ db, config: CONFIG, mailer }));
-  app.use('/spesen-freigabe1', requireLogin(), createSpesenFreigabe1Router({ db, config: CONFIG, mailer }));
+  app.use(loadNavFlags(db, config));
+  app.use('/freigabe2', requireLogin(), createFreigabe2Router({ db, config, mailer }));
+  app.use('/kontierung', requireLogin(), createKontierungRouter({ db, config, mailer }));
+  app.use('/spesen-freigabe1', requireLogin(), createSpesenFreigabe1Router({ db, config, mailer }));
   return app;
 }
 
@@ -263,5 +264,131 @@ test('Konfliktmelder, der den Vorgang nach einem Pool-Zyklus wieder hält, kann 
   const res = await request(app).post(`/kontierung/${jobId}/zurueck-in-pool`).set('x-test-person-id', '1').type('form').send({});
   assert.equal(res.status, 302);
   assert.equal(getJobById(db, jobId).status, 'unzugewiesen');
+  db.close();
+});
+
+// Eskalationsziel ausgeschlossen: eine Konfliktmeldung darf nie bei einer Stellvertretung landen,
+// die den Vorgang selbst nicht bearbeiten darf -- sonst bleibt er liegen, bis ein Admin umhängt.
+
+test('Sackgasse Kontierung: Stellvertreter 1 hat früher schon Konflikt erklärt → Eskalation direkt an Admin-Gruppe', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seed(db);
+  const mailer = stubMailer();
+  const app = buildApp(db, mailer);
+  const kreditorId = await kreditor(db);
+  // Nach Pool-Zyklus/Umhängen: freigabe1_eskaliert_von ist leer, der Konflikt von 2 steht nur im Verlauf.
+  const jobId = neuerJob(db, { status: 'zugewiesen', kontoId, zugewiesenAn: '1' });
+  freigabe(db, jobId, '2', 'freigabe1_eskalation');
+
+  const res = await request(app).post(`/kontierung/${jobId}`).set('x-test-person-id', '1').type('form')
+    .send({ ...kontierungsForm(kontoId, kreditorId), interessenskonflikt: 'ja', begruendung: 'Eigene Firma' });
+  assert.equal(res.status, 302);
+  const job = getJobById(db, jobId);
+  assert.equal(job.freigabe1_eskaliert_an_admin, 1);
+  assert.notEqual(job.zugewiesen_an, '2', 'nicht an den gesperrten Stellvertreter 1');
+  assert.match(job.freigabe1_eskalationsgrund, /Eigene Firma — Stellvertretung ausgeschlossen \(hat bereits einen Interessenskonflikt erklärt\)/);
+  const empfaenger = mailer.sent.map((m) => m.to);
+  assert.ok(empfaenger.includes('admin@example.org'));
+  assert.ok(!empfaenger.includes('p2@example.org'));
+  db.close();
+});
+
+test('Sackgasse Aufsplitten: Konflikt auf einem Teil, dessen Stellvertreter 1 früher Konflikt erklärt hat → Admin-Gruppe', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seed(db);
+  const jobId = neuerJob(db, { status: 'zugewiesen', kontoId, zugewiesenAn: '1', extra: { betrag: '100.00' } });
+  freigabe(db, jobId, '2', 'freigabe1_eskalation');
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'sackgasse-'));
+  const pdf = join(dir, 'a.pdf');
+  writeFileSync(pdf, '%PDF-1.4\n');
+  db.prepare('UPDATE jobs SET pdf_pfad = ? WHERE id = ?').run(pdf, jobId);
+  const appMitDir = buildApp(db, stubMailer(), { jobsDir: dir });
+
+  const res = await request(appMitDir).post(`/kontierung/${jobId}/aufsplitten`).set('x-test-person-id', '1').type('form').send({
+    gesamtbetrag: '100.00', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'],
+    teilInteressenskonflikt: ['true', 'false'], begruendung: 'Eigene Firma',
+  });
+  assert.equal(res.status, 302);
+  const kinder = db.prepare('SELECT * FROM jobs WHERE aufgesplittet_von = ? ORDER BY id').all(jobId);
+  const konfliktKind = kinder.find((k) => k.betrag === '60.00');
+  assert.equal(konfliktKind.freigabe1_eskaliert_an_admin, 1);
+  assert.notEqual(konfliktKind.zugewiesen_an, '2');
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('Sackgasse Freigabe 2: Stellvertreter 2 hat Freigabe 1 erteilt → Eskalation direkt an Admin-Gruppe', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seed(db);
+  const mailer = stubMailer();
+  const app = buildApp(db, mailer);
+  const jobId = neuerJob(db, { status: 'freigabe2', kontoId, zugewiesenAn: '4' });
+  freigabe(db, jobId, '4', 'freigeber1');
+
+  const res = await request(app).post(`/freigabe2/${jobId}`).set('x-test-person-id', '3').type('form')
+    .send({ aktion: 'freigeben', interessenskonflikt: 'ja', begruendung: 'Eigene Firma' });
+  assert.equal(res.status, 302);
+  const job = getJobById(db, jobId);
+  assert.equal(job.freigabe2_eskaliert_an_admin, 1);
+  assert.match(job.freigabe2_eskalationsgrund, /Stellvertretung ausgeschlossen \(hat bereits Freigabe 1 erteilt\)/);
+  assert.deepEqual(mailer.sent.map((m) => m.to), ['admin@example.org']);
+  assert.match(mailer.sent[0].text, /Stellvertretung ausgeschlossen ist \(hat bereits Freigabe 1 erteilt\)/);
+  assert.doesNotMatch(mailer.sent[0].text, /auch die Stellvertretung/);
+  db.close();
+});
+
+test('Sackgasse Freigabe 2: Stellvertreter 2 hat auf dieser Stufe früher Konflikt erklärt → Admin-Gruppe', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seed(db);
+  const mailer = stubMailer();
+  const app = buildApp(db, mailer);
+  const jobId = neuerJob(db, { status: 'freigabe2', kontoId, zugewiesenAn: '1' });
+  freigabe(db, jobId, '1', 'freigeber1');
+  freigabe(db, jobId, '4', 'freigabe2_eskalation');
+
+  const res = await request(app).post(`/freigabe2/${jobId}`).set('x-test-person-id', '3').type('form')
+    .send({ aktion: 'freigeben', interessenskonflikt: 'ja', begruendung: 'Eigene Firma' });
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, jobId).freigabe2_eskaliert_an_admin, 1);
+  assert.deepEqual(mailer.sent.map((m) => m.to), ['admin@example.org']);
+  db.close();
+});
+
+test('Sackgasse Spesen-Freigabe 1: Stellvertreter 1 hat die Spesen selbst eingereicht → Admin-Gruppe', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seed(db);
+  const mailer = stubMailer();
+  const app = buildApp(db, mailer);
+  const jobId = neuerJob(db, { status: 'zugewiesen', kontoId, zugewiesenAn: '1', extra: { quelle: 'spesen', eingereicht_von: '2', betrag: '10.00' } });
+
+  const res = await request(app).post(`/spesen-freigabe1/${jobId}`).set('x-test-person-id', '1').type('form')
+    .send({ aktion: 'freigeben', interessenskonflikt: 'ja', begruendung: 'Eigene Firma' });
+  assert.equal(res.status, 302);
+  const job = getJobById(db, jobId);
+  assert.equal(job.freigabe1_eskaliert_an_admin, 1);
+  assert.notEqual(job.zugewiesen_an, '2');
+  assert.match(job.freigabe1_eskalationsgrund, /hat die Spesen selbst eingereicht/);
+  db.close();
+});
+
+test('Sackgasse Spesen: Einreicher ist Freigeber 2, Stellvertreter 2 hat Freigabe 1 erteilt → Freigabe 2 an Admin-Gruppe', async () => {
+  const db = openDatabase(':memory:');
+  seed(db);
+  const mailer = stubMailer();
+  const app = buildApp(db, mailer);
+  // Konto 3001: Freigeber1 5, Freigeber2 6, Stellvertreter2 5.
+  const konto3001 = db.prepare("SELECT id FROM konten WHERE kontonummer = '3001'").get().id;
+  const jobId = neuerJob(db, { status: 'zugewiesen', kontoId: konto3001, zugewiesenAn: '5', extra: { quelle: 'spesen', eingereicht_von: '6', betrag: '10.00' } });
+
+  const res = await request(app).post(`/spesen-freigabe1/${jobId}`).set('x-test-person-id', '5').type('form')
+    .send({ aktion: 'freigeben', interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res.status, 302);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.freigabe2_eskaliert_an_admin, 1, 'Stellvertreter 2 (5) hat Freigabe 1 erteilt und darf nicht Freigabe 2 machen');
+  assert.ok(mailer.sent.map((m) => m.to).includes('admin@example.org'));
   db.close();
 });

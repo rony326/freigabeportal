@@ -108,6 +108,7 @@ export function migrateSecuritySchema(db) {
     personen: 'churchtools_person_id', jobs: 'id', freigaben: 'id',
     export_nachweise: 'id', archiv_quittungen: 'export_id',
     kreditkarten: 'id', kreditkarte_erfasser: 'kreditkarte_id', kk_belege: 'id',
+    altfall_entscheidungen: 'id',
   };
   // Triggers make the event part of the same statement/transaction as its mutation.
   // They are always dropped and recreated: the snapshot freezes the column list at creation time,

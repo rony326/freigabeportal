@@ -836,3 +836,28 @@ test('Phase C routes are gated exactly as wired in the real app', async () => {
 
   db.close();
 });
+
+test('GET /admin zeigt den Hinweis auf fehlenden Revisions-Empfänger, bis einer festgelegt ist', async () => {
+  const config = testConfig();
+  config.churchtools = { ...config.churchtools, clientId: 'client-id', clientSecret: 'client-secret', redirectUri: 'https://portal.example.org/auth/callback' };
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client.intercept({ path: '/oauth/userinfo', method: 'GET' }).reply(200, { id: 2, firstName: 'Admin', lastName: 'Only', email: 'admin@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [{ personId: 2 }] });
+
+  const db = openDatabase(':memory:');
+  setConfigValue(db, 'modul_audit_nachweis_aktiv', '1');
+  const app = createApp({ db, config });
+  const agent = request.agent(app);
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'the-code', state });
+
+  let res = await agent.get('/admin');
+  assert.match(res.text, /kein Revisions-Empfänger festgelegt/);
+  setConfigValue(db, 'audit_revision_empfaenger', 'revision@example.org');
+  res = await agent.get('/admin');
+  assert.doesNotMatch(res.text, /kein Revisions-Empfänger festgelegt/);
+  db.close();
+});

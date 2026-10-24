@@ -28,6 +28,7 @@ import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { fetchCsrfToken } from '../helpers/csrf.js';
 import { stampAndFinalize } from '../../src/services/pdfStamp.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../src/services/splitGruppenExport.js';
+import { bestimmeZahlungsart } from '../../src/services/paymentApproval.js';
 import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { freigabeSnapshotsFuerTest } from '../helpers/freigabeSnapshot.js';
 
@@ -1805,6 +1806,115 @@ test('POST /kontierung/:id/aufsplitten persists teilPosition as rechnungspositio
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('GET /kontierung/:id/aufsplitten offers a Typ choice (Rechnung/Gutschrift), Rechnung preselected by default', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /name="typ"[^>]*value="rechnung"[^>]*checked/);
+  assert.doesNotMatch(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /kontierung/:id/aufsplitten preselects Gutschrift from the typ query param (the not-yet-saved Kontierung-Typ)', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).query({ typ: 'gutschrift' }).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /kontierung/:id/aufsplitten preselects Gutschrift when the job is already saved as Gutschrift', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  db.prepare("UPDATE jobs SET typ = 'gutschrift' WHERE id = ?").run(id);
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten with typ=gutschrift marks every split child and the parent as Gutschrift', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).typ, 'gutschrift');
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) assert.equal(kind.typ, 'gutschrift');
+  // Die Zahlung einer Splitgruppe richtet sich nach dem Elternjob — ohne dessen Typ würde eine
+  // aufgeteilte Gutschrift wie eine zu bezahlende Rechnung exportiert.
+  assert.equal(bestimmeZahlungsart(kinder[0], getJobById(db, id)), 'keine_zahlung');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten without (or with an unknown) typ saves the split children as Rechnung', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ gesamtbetrag: '100.00', typ: 'quatsch', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).typ, 'rechnung');
+  for (const kind of listSplitKinder(db, id)) assert.equal(kind.typ, 'rechnung');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten keeps the Gutschrift selection when the form is re-rendered with errors', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '30.00'] });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
 test('POST /kontierung/:id/aufsplitten rejects a teilPosition with characters the Splitgruppen-Stempel cannot render (e.g. an emoji), nothing persisted', async () => {
   // Ohne diese Prüfung würde die Zeile klaglos angelegt und erst der spätere, asynchrone
   // Gruppen-Merge am WinAnsi-only-Helvetica scheitern -- dauerhaft, weil der Nachhol-Cron-Job
@@ -2831,6 +2941,77 @@ test('POST /kontierung/:id warns when the Rechnungsnummer is already recorded fo
   const mailLog = listMailLog(db).filter((m) => m.typ === 'rechnungsnummer-warnung');
   assert.ok(mailLog.length > 0, 'expected at least one rechnungsnummer-warnung mail to be logged');
   assert.ok(mailer.sent.some((m) => /Doppelte Rechnungsnummer/.test(m.subject)));
+  db.close();
+});
+
+test('POST /kontierung/:id warns about a possible double scan (same Kreditor, Betrag, Zahlungsziel within 14 days, different Rechnungsnummer), without blocking', async () => {
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const bestehenderId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'scan1.pdf', pdfPfad: '/tmp/scan1.pdf' });
+  updateKontierungMetadaten(db, bestehenderId, { absender: 'Muster AG', betrag: '100.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'scan2.pdf', pdfPfad: '/tmp/scan2.pdf' });
+  claimJob(db, id, '1');
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE 1', betrag: '100', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).status, 'freigabe2', 'nur Warnung, kein Stopp');
+  const eintrag = db.prepare("SELECT * FROM freigaben WHERE job_id = ? AND rolle = 'duplikat_verdacht'").get(id);
+  assert.ok(eintrag, 'expected a duplikat_verdacht freigaben row');
+  assert.match(eintrag.kommentar, new RegExp(`#${bestehenderId}`));
+  assert.ok(listMailLog(db).some((m) => m.typ === 'duplikat-warnung'));
+  assert.ok(mailer.sent.some((m) => /Mögliche doppelte Rechnung/.test(m.subject) && new RegExp(`#${bestehenderId}`).test(m.text)));
+  const verlauf = buildAuditLog(db, id);
+  assert.ok(JSON.stringify(verlauf).includes('Mögliche doppelte Rechnung festgestellt'));
+  db.close();
+});
+
+test('POST /kontierung/:id gives no double-scan warning for a monthly invoice with the same amount received more than 14 days earlier', async () => {
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const alt = createJob(db, { eingangAm: '2026-07-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'juli.pdf', pdfPfad: '/tmp/juli.pdf' });
+  updateKontierungMetadaten(db, alt, { absender: 'Muster AG', betrag: '100.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-7', lieferant: 'Muster AG', kreditorId });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'aug.pdf', pdfPfad: '/tmp/aug.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form')
+    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-8', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM freigaben WHERE job_id = ? AND rolle = 'duplikat_verdacht'").get(id).n, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id sends only the Rechnungsnummer warning when both checks would match', async () => {
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const bestehenderId = createJob(db, { eingangAm: '2026-08-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/alt.pdf' });
+  updateKontierungMetadaten(db, bestehenderId, { absender: 'Muster AG', betrag: '100.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form')
+    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM freigaben WHERE job_id = ? AND rolle = 'rechnungsnummer_duplikat'").get(id).n, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM freigaben WHERE job_id = ? AND rolle = 'duplikat_verdacht'").get(id).n, 0);
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'duplikat-warnung').length, 0);
   db.close();
 });
 

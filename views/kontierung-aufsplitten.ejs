@@ -12,6 +12,18 @@
 
     <form method="post" action="/kontierung/<%= job.id %>/aufsplitten" enctype="multipart/form-data" class="col-12">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <div class="mb-3">
+        <span class="form-label d-block">Typ</span>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="typ" id="typRechnung" value="rechnung" <%= typ !== 'gutschrift' ? 'checked' : '' %>>
+          <label class="form-check-label" for="typRechnung">Rechnung</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="typ" id="typGutschrift" value="gutschrift" <%= typ === 'gutschrift' ? 'checked' : '' %>>
+          <label class="form-check-label" for="typGutschrift">Gutschrift</label>
+        </div>
+        <div class="form-text">Gilt für alle Teile gemeinsam.</div>
+      </div>
       <div class="mb-3 col-6 col-md-4">
         <label class="form-label" for="gesamtbetrag">Gesamtbetrag</label>
         <input type="text" inputmode="decimal" class="form-control" id="gesamtbetrag" name="gesamtbetrag" value="<%= gesamtbetrag %>" placeholder="z.B. 200.00" required>

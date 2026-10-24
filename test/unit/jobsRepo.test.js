@@ -7,7 +7,7 @@ import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createKreditor } from '../../src/db/kreditorenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, assignJobToPerson, listPoolRuecklaeufer, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, sendJobBackToGroup, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, listFreigabe2JobsForReminder, markFreigabe2ReminderGesendet, listFreigabe2JobsForEskalation, markFreigabe2EskalationGesendet, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByKreditorUndRechnungsnummer, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben, weiterleitenAnEchtenFreigeber1, markiereJobAlsKkAbrechnung, hebeKkMarkierungAuf, setKkAbrechnungKopfdaten, hatZugewieseneKkAbrechnungFuer } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, assignJobToPerson, listPoolRuecklaeufer, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, sendJobBackToGroup, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, listFreigabe2JobsForReminder, markFreigabe2ReminderGesendet, listFreigabe2JobsForEskalation, markFreigabe2EskalationGesendet, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByKreditorUndRechnungsnummer, findMoeglicheDoppelrechnungen, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben, weiterleitenAnEchtenFreigeber1, markiereJobAlsKkAbrechnung, hebeKkMarkierungAuf, setKkAbrechnungKopfdaten, hatZugewieseneKkAbrechnungFuer } from '../../src/db/jobsRepo.js';
 import { createKreditkarte } from '../../src/db/kreditkartenRepo.js';
 
 function seedKonto(db) {
@@ -2505,5 +2505,69 @@ test('createSplitJob stores typ, beschreibung and kk_eigenbeleg_grund; setKkAbre
   assert.equal(k.rechnungsnummer, 'KK-2026-09');
   assert.equal(k.zahlungsziel, '2026-10-20');
   assert.equal(k.kreditkarte_id, null);
+  db.close();
+});
+
+function doppelJob(db, { eingangAm, kreditorId, betrag = '120.00', zahlungsziel = '2026-11-30', status = null }) {
+  const id = createJob(db, { eingangAm, quelle: 'scanner', absender: null, dateiname: 'd.pdf', pdfPfad: '/tmp/d.pdf' });
+  updateKontierungMetadaten(db, id, { absender: 'a', betrag, zahlungsziel, rechnungsnummer: `RE-${id}`, lieferant: 'Muster AG', kreditorId });
+  if (status) db.prepare('UPDATE jobs SET status = ? WHERE id = ?').run(status, id);
+  return id;
+}
+
+test('findMoeglicheDoppelrechnungen finds a job with same Kreditor, Betrag and Zahlungsziel received within 14 days', () => {
+  const db = openDatabase(':memory:');
+  const kreditorId = seedKreditorMitKonto(db, seedKonto(db));
+  const bestehend = doppelJob(db, { eingangAm: '2026-10-10T08:00:00.000Z', kreditorId });
+  const neu = getJobById(db, doppelJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', kreditorId, betrag: '120.0' }));
+
+  const treffer = findMoeglicheDoppelrechnungen(db, { job: neu, kreditorId, betrag: '120.00', zahlungsziel: '2026-11-30' });
+  assert.deepEqual(treffer.map((j) => j.id), [bestehend], 'Betrag wird numerisch verglichen, nicht als Text');
+  db.close();
+});
+
+test('findMoeglicheDoppelrechnungen ignores jobs received more than 14 days apart (monthly invoices with the same amount)', () => {
+  const db = openDatabase(':memory:');
+  const kreditorId = seedKreditorMitKonto(db, seedKonto(db));
+  doppelJob(db, { eingangAm: '2026-09-20T08:00:00.000Z', kreditorId });
+  const neu = getJobById(db, doppelJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', kreditorId }));
+  assert.deepEqual(findMoeglicheDoppelrechnungen(db, { job: neu, kreditorId, betrag: '120.00', zahlungsziel: '2026-11-30' }), []);
+  db.close();
+});
+
+test('findMoeglicheDoppelrechnungen needs all three: different Betrag, Zahlungsziel or Kreditor is no match', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const kreditorId = seedKreditorMitKonto(db, kontoId);
+  const andererKreditor = createKreditor(db, { name: 'Andere AG', kontoId });
+  doppelJob(db, { eingangAm: '2026-10-19T08:00:00.000Z', kreditorId, betrag: '121.00' });
+  doppelJob(db, { eingangAm: '2026-10-19T08:00:00.000Z', kreditorId, zahlungsziel: '2026-12-01' });
+  doppelJob(db, { eingangAm: '2026-10-19T08:00:00.000Z', kreditorId: andererKreditor });
+  const neu = getJobById(db, doppelJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', kreditorId }));
+  assert.deepEqual(findMoeglicheDoppelrechnungen(db, { job: neu, kreditorId, betrag: '120.00', zahlungsziel: '2026-11-30' }), []);
+  assert.deepEqual(findMoeglicheDoppelrechnungen(db, { job: neu, kreditorId, betrag: '120.00', zahlungsziel: null }), [], 'ohne Zahlungsziel keine Prüfung');
+  db.close();
+});
+
+test('findMoeglicheDoppelrechnungen skips soft-deleted jobs but still matches rejected ones', () => {
+  const db = openDatabase(':memory:');
+  const kreditorId = seedKreditorMitKonto(db, seedKonto(db));
+  doppelJob(db, { eingangAm: '2026-10-19T08:00:00.000Z', kreditorId, status: 'geloescht' });
+  const abgelehnt = doppelJob(db, { eingangAm: '2026-10-19T08:00:00.000Z', kreditorId, status: 'abgelehnt' });
+  const neu = getJobById(db, doppelJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', kreditorId }));
+  assert.deepEqual(findMoeglicheDoppelrechnungen(db, { job: neu, kreditorId, betrag: '120.00', zahlungsziel: '2026-11-30' }).map((j) => j.id), [abgelehnt]);
+  db.close();
+});
+
+test('findMoeglicheDoppelrechnungen ignores the job itself and parts of the same split invoice', () => {
+  const db = openDatabase(':memory:');
+  const kreditorId = seedKreditorMitKonto(db, seedKonto(db));
+  const parentId = doppelJob(db, { eingangAm: '2026-10-19T08:00:00.000Z', kreditorId, betrag: '240.00', status: 'aufgesplittet' });
+  const parent = getJobById(db, parentId);
+  const kindA = createSplitJob(db, parent, { pdfPfad: '/tmp/a.pdf', betrag: '120.00' });
+  const kindB = createSplitJob(db, parent, { pdfPfad: '/tmp/b.pdf', betrag: '120.00' });
+  const kind = getJobById(db, kindB);
+  assert.deepEqual(findMoeglicheDoppelrechnungen(db, { job: kind, kreditorId, betrag: '120.00', zahlungsziel: '2026-11-30' }), []);
+  void kindA;
   db.close();
 });

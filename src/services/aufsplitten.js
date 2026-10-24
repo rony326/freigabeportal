@@ -5,6 +5,7 @@ import { loescheDateienStill } from './kkBelegDatei.js';
 import {
   getJobById, createSplitJob, abschliessenFreigabe1, eskalierenFreigabe1, eskalierenFreigabe1AnAdmin, getEffectiveFreigeber2Id,
 } from '../db/jobsRepo.js';
+import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalationsText } from './eskalationsZiel.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getKreditorById } from '../db/kreditorenRepo.js';
@@ -123,7 +124,12 @@ export function erzeugeTeilJobs(db, { job, teile, konten, person, ip, begruendun
     });
 
     if (teil.interessenskonflikt) {
-      const zeileEskaliertAnAdmin = Boolean(job.freigabe1_eskaliert_von || teil.konto.stellvertreter1_id === personId);
+      // Geprüft gegen den Verlauf der Originalrechnung (job), nicht des frischen Teils: ein dort
+      // erklärter Konflikt gehört weiterhin zur Rechnung.
+      const sv1Ausschluss = job.freigabe1_eskaliert_von
+        ? null
+        : ausschlussGrundFuerEskalationsziel(db, job, { stufe: 1, zielId: teil.konto.stellvertreter1_id, meldenderId: personId });
+      const zeileEskaliertAnAdmin = Boolean(job.freigabe1_eskaliert_von || sv1Ausschluss);
       createFreigabe(db, {
         jobId: kindId,
         personId,
@@ -135,8 +141,8 @@ export function erzeugeTeilJobs(db, { job, teile, konten, person, ip, begruendun
         eskaliertVon: job.freigabe1_eskaliert_von,
       });
       if (zeileEskaliertAnAdmin) {
-        eskalierenFreigabe1AnAdmin(db, kindId, { eskaliertVon: personId, grund: begruendung });
-        ergebnis.eskaliertAnAdmin.push({ id: kindId, konto: teil.konto });
+        eskalierenFreigabe1AnAdmin(db, kindId, { eskaliertVon: personId, grund: grundMitAusschluss(begruendung, sv1Ausschluss) });
+        ergebnis.eskaliertAnAdmin.push({ id: kindId, konto: teil.konto, ausschluss: sv1Ausschluss });
       } else {
         eskalierenFreigabe1(db, kindId, {
           eskaliertVon: personId,
@@ -211,7 +217,7 @@ export async function benachrichtigeNachAufsplitten(db, mailer, config, { job, e
     }
   }
 
-  for (const { id: kindId } of ergebnis.eskaliertAnAdmin) {
+  for (const { id: kindId, ausschluss } of ergebnis.eskaliertAnAdmin) {
     const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
     for (const email of empfaenger) {
       await sendNotification(db, mailer, {
@@ -221,7 +227,7 @@ export async function benachrichtigeNachAufsplitten(db, mailer, config, { job, e
         variablen: {
           empfaengerName: 'Portal-Admin-Team',
           jobDateiname: job.dateiname,
-          grund: 'Eine Rechnung wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.',
+          grund: adminEskalationsText('Eine Rechnung', ausschluss),
           link: `${config.publicBaseUrl}/kontierung/${kindId}`,
         },
       });

@@ -5,11 +5,13 @@ import {
   eskalierenFreigabe1AnAdmin,
   abschliessenFreigabe1,
   eskalierenFreigabe2,
+  eskalierenFreigabe2AnAdmin,
   ablehnenJob,
   getEffectiveFreigeber2Id,
 } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { getSpesenabrechnungById } from '../db/spesenabrechnungenRepo.js';
+import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalationsText } from '../services/eskalationsZiel.js';
 import { createFreigabe, istKonfliktmelder } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
@@ -137,7 +139,12 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
       }
 
       if (hatKonflikt) {
-        const eskaliertAnAdmin = Boolean(job.freigabe1_eskaliert_von || konto.stellvertreter1_id === req.currentPerson.churchtools_person_id);
+        // Stellvertreter 1 ausgeschlossen (gleiche Person, früher erklärter Konflikt, Einreicher) →
+        // Admin-Gruppe statt Sackgasse, siehe services/eskalationsZiel.js.
+        const sv1Ausschluss = job.freigabe1_eskaliert_von
+          ? null
+          : ausschlussGrundFuerEskalationsziel(db, job, { stufe: 1, zielId: konto.stellvertreter1_id, meldenderId: req.currentPerson.churchtools_person_id });
+        const eskaliertAnAdmin = Boolean(job.freigabe1_eskaliert_von || sv1Ausschluss);
         db.exec('BEGIN');
         try {
           createFreigabe(db, {
@@ -151,7 +158,7 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
             eskaliertVon: job.freigabe1_eskaliert_von,
           });
           if (eskaliertAnAdmin) {
-            eskalierenFreigabe1AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+            eskalierenFreigabe1AnAdmin(db, job.id, { eskaliertVon: req.currentPerson.churchtools_person_id, grund: grundMitAusschluss(begruendung, sv1Ausschluss) });
           } else {
             eskalierenFreigabe1(db, job.id, {
               eskaliertVon: req.currentPerson.churchtools_person_id,
@@ -173,7 +180,7 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
               variablen: {
                 empfaengerName: 'Portal-Admin-Team',
                 jobDateiname: job.dateiname,
-                grund: 'Eine Spesen-Position wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.',
+                grund: adminEskalationsText('Eine Spesen-Position', sv1Ausschluss),
                 link: `${config.publicBaseUrl}/spesen-freigabe1/${job.id}`,
               },
             });
@@ -218,7 +225,14 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
         // no valid non-self approver (see freigabe2.js's loadAuthorized submitter check, which is
         // the belt-and-suspenders backstop for this same rule).
         if (job.quelle === 'spesen' && konto.freigeber2_id === job.eingereicht_von) {
-          eskalierenFreigabe2(db, job.id, { eskaliertVon: job.eingereicht_von, grund: 'Selbsteinreichung durch Freigeber2' });
+          // Darf Stellvertreter 2 selbst nicht freigeben (z. B. weil er gerade Freigabe 1 erteilt hat),
+          // geht Freigabe 2 direkt an die Admin-Gruppe.
+          const sv2Ausschluss = ausschlussGrundFuerEskalationsziel(db, job, { stufe: 2, zielId: konto.stellvertreter2_id, meldenderId: job.eingereicht_von });
+          if (sv2Ausschluss) {
+            eskalierenFreigabe2AnAdmin(db, job.id, { eskaliertVon: job.eingereicht_von, grund: grundMitAusschluss('Selbsteinreichung durch Freigeber2', sv2Ausschluss) });
+          } else {
+            eskalierenFreigabe2(db, job.id, { eskaliertVon: job.eingereicht_von, grund: 'Selbsteinreichung durch Freigeber2' });
+          }
         }
         db.exec('COMMIT');
       } catch (err) {

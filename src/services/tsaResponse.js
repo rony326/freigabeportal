@@ -74,8 +74,8 @@ export function freshTimestampRequest(bytes) {
   return new Uint8Array(request.toSchema().toBER(false));
 }
 
-export function validateTimestampBinding(requestBytes, token) {
-  const request = new TimeStampReq({ schema: schema(requestBytes) });
+// Zerlegt ein RFC3161-Token (ContentInfo -> SignedData -> TSTInfo), ohne Signatur oder Bindung zu pruefen.
+export function leseTimestampToken(token) {
   const content = new ContentInfo({ schema: schema(token) });
   if (content.contentType !== '1.2.840.113549.1.7.2') throw new Error('TSA-Antwort ist kein SignedData-Token.');
   const signed = new SignedData({ schema: content.content });
@@ -83,6 +83,12 @@ export function validateTimestampBinding(requestBytes, token) {
     throw new Error('TSA-Antwort enthaelt keine TSTInfo.');
   }
   const info = new TSTInfo({ schema: schema(new Uint8Array(signed.encapContentInfo.eContent.getValue())) });
+  return { signed, info };
+}
+
+export function validateTimestampBinding(requestBytes, token) {
+  const request = new TimeStampReq({ schema: schema(requestBytes) });
+  const { signed, info } = leseTimestampToken(token);
   if (info.version !== 1 || signed.signerInfos.length !== 1 ||
       info.messageImprint.hashAlgorithm.algorithmId !== request.messageImprint.hashAlgorithm.algorithmId ||
       !Buffer.from(info.messageImprint.hashedMessage.getValue()).equals(Buffer.from(request.messageImprint.hashedMessage.getValue()))) {

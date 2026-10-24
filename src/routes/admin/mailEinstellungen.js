@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
 import { runMailDigestJob } from '../../services/cronJobs.js';
+import { meldeAuditNachweisAenderung } from '../../services/auditNachweisJobs.js';
 
 const LOG_LIMIT = 10;
 
@@ -34,6 +35,10 @@ const VORLAGEN_FELDER = [
   ['kkBelegEingegangenText', 'mail_vorlage_kk_beleg_eingegangen_text'],
   ['adminUmzuweisungBetreff', 'mail_vorlage_admin_umzuweisung_betreff'],
   ['adminUmzuweisungText', 'mail_vorlage_admin_umzuweisung_text'],
+  ['duplikatWarnungBetreff', 'mail_vorlage_duplikat_warnung_betreff'],
+  ['duplikatWarnungText', 'mail_vorlage_duplikat_warnung_text'],
+  ['auditPruefnummerBetreff', 'mail_vorlage_audit_pruefnummer_betreff'],
+  ['auditPruefnummerText', 'mail_vorlage_audit_pruefnummer_text'],
 ];
 
 export function createMailEinstellungenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
@@ -62,7 +67,7 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
     });
   });
 
-  router.post('/', csrfProtection, (req, res) => {
+  router.post('/', csrfProtection, async (req, res) => {
     const errors = [];
     const felder = {};
     for (const [feldName] of VORLAGEN_FELDER) {
@@ -96,12 +101,27 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
       });
     }
 
+    const aenderungen = [];
+    if (getConfigValue(db, 'mail_vorlage_audit_pruefnummer_betreff') !== felder.auditPruefnummerBetreff) {
+      aenderungen.push('Betreff der Prüfnummer-Mail wurde geändert');
+    }
+    if (getConfigValue(db, 'mail_vorlage_audit_pruefnummer_text') !== felder.auditPruefnummerText) {
+      aenderungen.push('Text der Prüfnummer-Mail wurde geändert');
+    }
     for (const [feldName, configKey] of VORLAGEN_FELDER) {
       setConfigValue(db, configKey, felder[feldName]);
     }
     setConfigValue(db, 'mail_batching_aktiv', batchingAktiv ? '1' : '0');
     setConfigValue(db, 'mail_batching_stunde', String(batchingStundeNum));
     setConfigValue(db, 'mail_batching_minute', String(batchingMinuteNum));
+    // Mail ist Nebenwirkung: ein Mailfehler macht das Speichern nicht rückgängig.
+    if (aenderungen.length > 0) {
+      try {
+        await meldeAuditNachweisAenderung(db, config, mailer, { aenderungen, person: req.currentPerson });
+      } catch (err) {
+        console.error('Audit-Nachweis: Änderungsmail fehlgeschlagen', err);
+      }
+    }
     res.redirect('/admin/mail-einstellungen?gespeichert=1');
   });
 

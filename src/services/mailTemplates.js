@@ -15,6 +15,8 @@ const TYP_ZU_KEY_INFIX = {
   'kk-beleg-erinnerung': 'kk_beleg_erinnerung',
   'kk-beleg-eingegangen': 'kk_beleg_eingegangen',
   'admin-umzuweisung': 'admin_umzuweisung',
+  'duplikat-warnung': 'duplikat_warnung',
+  'audit-pruefnummer': 'audit_pruefnummer',
 };
 
 export function renderTemplate(vorlage, variablen) {

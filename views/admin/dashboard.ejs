@@ -8,6 +8,11 @@
           <%= zeitstempelUeberfaellig %> abgeschlossene Rechnung<%= zeitstempelUeberfaellig === 1 ? '' : 'en' %> seit über <%= zeitstempelWarnungSchwelle %> Stunde<%= zeitstempelWarnungSchwelle === 1 ? '' : 'n' %> ohne Zeitstempel — <a href="/admin/zeitstempel">TSA-Konfiguration prüfen</a>.
         </div>
       <% } %>
+      <% if (typeof auditRevisionEmpfaengerFehlt !== 'undefined' && auditRevisionEmpfaengerFehlt) { %>
+        <div class="alert alert-warning">
+          Für den Audit-Nachweis ist kein Revisions-Empfänger festgelegt — <a href="/admin/zeitstempel">Empfänger eintragen</a>.
+        </div>
+      <% } %>
     <% } %>
     <div class="row row-cols-1 row-cols-md-3 g-3">
       <% if (adminNav.vorgaenge) { %>

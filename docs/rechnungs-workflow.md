@@ -120,7 +120,7 @@ flowchart TD
     B -- ablehnen --> R["Status: abgelehnt<br/>+ Ablehnungs-Mail (bei Admin-Eskalation an Admin-Gruppe)"]
     B -- kontieren --> C{"Interessenskonflikt<br/>erklärt?"}
     C -- nein --> D["Freigabe 1 erteilt (freigeber1)<br/>Status: freigabe2<br/>+ Mail an Freigeber 2"]
-    C -- ja --> E{"bereits eskaliert ODER<br/>ich bin selbst Stellvertreter1<br/>des gewählten Kontos?"}
+    C -- ja --> E{"bereits eskaliert ODER<br/>Stellvertreter1 ausgeschlossen?<br/>(siehe unten)"}
     E -- nein --> F["eskalierenFreigabe1<br/>zugewiesen_an = Stellvertreter1<br/>Status bleibt zugewiesen<br/>+ Mail an Stellvertreter1"]
     E -- ja --> G["eskalierenFreigabe1AnAdmin<br/>(SYNC-8)<br/>Status bleibt zugewiesen<br/>+ Mail an Admin-Gruppe"]
 ```
@@ -132,9 +132,8 @@ Vorzeichen-/Gegenbuchungslogik. Bei `gutschrift` ist das Zahlungsziel
 optional (eine Gutschrift hat kein Fälligkeitsdatum), und das
 Rechnungsnummer-Feld wird in der UI zu "Gutschriftnummer" umbeschriftet
 (gleiche Spalte). Freigabe 1/2 laufen identisch zur normalen Rechnung, kein
-Shortcut. **Bekannte Lücke**: Aufsplitten (Abschnitt 5) übernimmt `typ`
-nicht an die Teil-Jobs — eine Gutschrift lässt sich aktuell effektiv nicht
-aufsplitten, jeder Teil-Job wird implizit wieder zur Rechnung.
+Shortcut. Auch beim Aufsplitten (Abschnitt 5) wird der Typ gewählt; er gilt
+für alle Teile gemeinsam.
 
 **Strikte Freigeber1-Prüfung (optional, `/admin/module`)**: ist der
 Schalter `kontierung_strikte_freigeber1_pruefung` aktiv, gilt Freigabe 1
@@ -161,8 +160,8 @@ Zusätzlich, unabhängig vom Ausgang: ein optional mit hochgeladener
 `mergeBelegInPdf` (`src/services/belegAnhaengen.js`) als zusätzliche
 Seite(n) in die bestehende Rechnungs-PDF eingefügt — als PDF durch
 Seiten-Kopie, als Bild durch eine neue, bildgrosse Seite. Beim Kontieren
-mit hinterlegtem Kreditor laufen ausserdem zwei unabhängige,
-nicht-blockierende Prüfungen: der IBAN-Abgleich gegen den gescannten
+mit hinterlegtem Kreditor laufen ausserdem drei nicht-blockierende
+Prüfungen: der IBAN-Abgleich gegen den gescannten
 QR-Code (siehe
 [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)) sowie
 ein Duplikat-Check auf **Kreditor + Rechnungsnummer** — stimmt die
@@ -173,7 +172,16 @@ und Freigeber 1+2 des gewählten Kontos sowie die kontierende Person per
 Mail informiert (`typ: 'rechnungsnummer-warnung'`, siehe
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)) —
 die Kontierung wird dadurch nicht blockiert, gleiches Muster wie bei der
-IBAN-Abweichung.
+IBAN-Abweichung. Schlägt diese Prüfung nicht an, folgt ein
+**Doppelscan-Check** (`findMoeglicheDoppelrechnungen`): gleicher Kreditor,
+gleicher Betrag (numerisch) und gleiches Zahlungsziel bei einem Job, der
+höchstens 14 Tage vorher oder nachher eingegangen ist
+(`DOPPELRECHNUNG_FENSTER_TAGE`; das Fenster verhindert Fehlalarme bei
+monatlich gleichen Beträgen). Ohne Zahlungsziel (z. B. Gutschrift) entfällt
+die Prüfung; Teile derselben aufgesplitteten Rechnung zählen nicht. Treffer
+erzeugen einen `freigaben`-Eintrag `duplikat_verdacht` ("Mögliche doppelte
+Rechnung festgestellt") und eine Mail `duplikat-warnung` an dieselben
+Empfänger — ebenfalls ohne Blockade.
 
 **Zurück in den Pool** (`POST /kontierung/:id/zurueck-in-pool`): setzt den
 Job auf `unzugewiesen` zurück und löscht alle Konto-/Eskalations-Felder —
@@ -204,6 +212,19 @@ Admin-Gruppe. Dasselbe gilt bei Freigabe 1: Konfliktmelder (Einträge
 `freigabe1_eskalation` plus `freigabe1_eskaliert_von`) bekommen bei
 `/kontierung/:id` und `/spesen-freigabe1/:id` 403; zurück in den Pool bzw.
 an die Gruppe geben können sie einen Job weiterhin.
+
+**Ausgeschlossene Stellvertretung → Admin-Gruppe**: Bevor eine
+Konfliktmeldung an Stellvertreter 1 bzw. 2 geht, prüft
+`ausschlussGrundFuerEskalationsziel` (`src/services/eskalationsZiel.js`), ob
+diese Person den Vorgang überhaupt bearbeiten dürfte. Ausgeschlossen ist sie,
+wenn sie fehlt, selbst die meldende Person ist, auf dieser Stufe schon einen
+Konflikt erklärt hat (aus `freigaben`, also auch nach Umhängen oder
+Pool-Rückgabe), bei Freigabe 2 schon Freigabe 1 erteilt hat oder die Spesen
+selbst eingereicht hat. Dann geht der Vorgang direkt an die Admin-Gruppe; der
+Ausschlussgrund steht im Eskalationsgrund und in der Admin-Mail. Gilt für
+Kontierung, Aufsplitten (geprüft gegen den Verlauf der Originalrechnung),
+Spesen-Freigabe 1, Freigabe 2 und die Umleitung bei Spesen-Selbsteinreichung
+durch Freigeber 2.
 
 ```mermaid
 flowchart TD
@@ -272,10 +293,15 @@ oben). Details:
 Für Sammelrechnungen/Kreditkartenabrechnungen, die auf mehrere Konten
 verteilt werden müssen (`GET/POST /kontierung/:id/aufsplitten`):
 
-1. Die Person gibt den Gesamtbetrag und mindestens zwei Teile
+1. Die Person wählt den **Typ** (Rechnung/Gutschrift, vorbelegt aus dem
+   Kontierungsformular bzw. dem gespeicherten `typ`) und gibt den
+   Gesamtbetrag und mindestens zwei Teile
    (Konto + Betrag, optional eine Freitext-**Position auf der Rechnung**
    wie "Pos. 3", optional eigener Beleg pro Teil) ein; die Summe der Teile
-   muss dem Gesamtbetrag entsprechen (Toleranz 0.005).
+   muss dem Gesamtbetrag entsprechen (Toleranz 0.005). Der Typ wird auf
+   dem Ursprungs-Job und auf jedem Teil-Job gespeichert — eine Mischung
+   innerhalb eines Belegs gibt es nicht. Der Typ des Ursprungs-Jobs ist
+   massgeblich für die Zahlungsart der Splitgruppe.
 2. Der Ursprungs-Job wird auf `aufgesplittet` gesetzt und bleibt als
    historische Referenz stehen — er selbst gilt nie als freigegeben oder
    abgelehnt.

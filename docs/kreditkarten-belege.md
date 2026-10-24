@@ -565,7 +565,7 @@ die übrigen Belege im selben Lauf.
   Kreditkarten-Abgleich; diese Doku beschreibt bewusst den tatsächlichen
   Code-Stand.
 - **Kein Gutschriften-Typ-Übertrag von aussen** — anders als beim
-  bekannten Aufsplitten-Verhalten entsteht `typ = 'gutschrift'` beim
+  Aufsplitten (ein Typ für alle Teile) entsteht `typ = 'gutschrift'` beim
   Abgleich direkt aus dem Vorzeichen der eingegebenen Zeile, nicht aus
   einem vererbten Eltern-`typ` (der Abrechnungs-Job selbst hat ohnehin nie
   einen `typ`).

@@ -120,7 +120,7 @@ das erste Konto anzulegen oder später Einzelrechte zuzuweisen.
 ### Zeitgesteuerte Jobs — laufen im Node-Prozess selbst
 
 Kein externer Task Scheduler nötig: Solange der Node-Prozess läuft (Infomaniaks
-Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App zwölf
+Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App vierzehn
 Hintergrund-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 
 | Job | Zeitplan | Zweck |
@@ -137,6 +137,8 @@ Hintergrund-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/inde
 | `mail-digest` | täglich, Default 07:00 (Europe/Zürich) | fasst wegen aktivem Batching eingereihte Mails pro Empfänger zu einer täglichen Zusammenfassung zusammen |
 | `sicherheitsalarme` | Intervall, Default alle 30 Min. | Alarm-Mails zu ungeklärten Backup-Löschabsichten |
 | `tsa-crl-aktualisierung` | täglich, Default 04:15 (Europe/Zürich), nur mit `TSA_CRL_AUTO_UPDATE=true` | erneuert die TSA-Sperrlisten (`TSA_CRL_FILE`) aus der validierten TSA-Kette; Alarm-Mail, wenn sie in weniger als 7 Tagen ablaufen |
+| `audit-export` | täglich, Default 03:15 (Europe/Zürich), nur bei aktivem Audit-Nachweis | erzeugt Audit-Pakete und holt RFC3161-Zeitstempel über deren Hash; Alarm-Mail bei Rückstand — siehe [docs/audit-externe-nachweise.md](docs/audit-externe-nachweise.md) |
+| `audit-pruefnummer` | täglich, Default 07:00 (Europe/Zürich), sendet nur am Versandtag | Prüfnummer-Mail an die Revision; Prüfseite `/audit-pruefen` (öffentlich) |
 
 **Admin → Betrieb → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan von acht Jobs
 einstellen (wirkt ab dem nächsten planmässigen Lauf, kein Neustart nötig),
@@ -145,7 +147,7 @@ jeden davon manuell sofort auslösen, und den Verlauf der letzten Läufe
 ausgelöste Läufe landen im selben Verlauf. `datenbank-sicherung` wird unter
 **Admin → Betrieb → Datenbank-Backup**, `mail-digest` unter **Admin → Einstellungen →
 Mail-Einstellungen** eingestellt; `sicherheitsalarme` nur über `admin_config`.
-Details zu allen elf Jobs:
+Details zu allen vierzehn Jobs:
 [docs/geplante-jobs-und-benachrichtigungen.md](docs/geplante-jobs-und-benachrichtigungen.md).
 
 **Verpasste Termine werden nicht nachgeholt:** Nach einem Neustart plant der

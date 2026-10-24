@@ -180,7 +180,7 @@ erDiagram
         int id PK
         int job_id FK "kein enforced FK, siehe unten"
         text person_id FK
-        text rolle "14 mögliche Werte"
+        text rolle "15 mögliche Werte"
         text zeitpunkt
         text ip
         int interessenskonflikt
@@ -354,7 +354,8 @@ Append-only (Trigger gegen `UPDATE`/`DELETE`), höchstens eine Zeile je Job
 Admin → Vorgänge → Altfälle getroffene Entscheidung (`nachbestaetigt`/`nur_archiv`),
 den angezeigten Stand mit Herkunft je Wert (`angezeigte_daten`, JSON), den
 Fingerprint (`stand`), Person, Namen zum Zeitpunkt, Pflichtbegründung und
-Zeitpunkt.
+Zeitpunkt. Jede neue Zeile wird über die zentralen Audit-Trigger zusätzlich
+in `audit_ereignisse` protokolliert.
 
 ### `freigaben`
 Append-only-Protokoll jeder Freigabe-relevanten Aktion (Freigabe 1/2,
@@ -435,6 +436,7 @@ und gehören zur vollständigen Datenbanksicherung.
 | `tsa_evidenz_objekte` | Per SHA-256 deduplizierte DER-Objekte für Zertifikate, Sperrlisten und Zeitstempel-Token; UPDATE/DELETE gesperrt. |
 | `tsa_pruefnachweise` | Unveränderlicher Prüfnachweis je Job, Dokumentart (`einzel`/`gruppe`) und Dokument-Hash, einschliesslich Prüfzeitpunkt und Evidenzverweisen. |
 | `audit_export_pakete` | Unveränderliches lokales Register hashverketteter Audit-Pakete mit Ereignisbereich, Lücken und Vorgängerhash. |
+| `audit_export_zeitstempel` | Unveränderlicher RFC3161-Zeitstempel je Audit-Paket (`paket_nr` PK → `audit_export_pakete.id`, `token`, `gen_time`, `nachweis` JSON inkl. beim Stempeln geprüfter Kette, `erstellt_am`); UPDATE/DELETE gesperrt. Wie das Paketregister nicht in der zentralen Audit-Trigger-Liste. |
 
 Die `jobs`-Spalten `final_datei_hash` und `gruppe_final_datei_hash` binden
 finale Dokumente auch ohne TSA. `zeitstempel_erforderlich` hält die gespeicherte Exportpflicht fest, bei

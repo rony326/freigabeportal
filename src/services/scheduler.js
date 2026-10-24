@@ -2,6 +2,7 @@ import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZe
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { runSicherheitsalarmeJob } from './sicherheitsalarme.js';
 import { runTsaCrlAktualisierungJob } from './tsaCrlUpdate.js';
+import { runAuditExportJob, runAuditPruefnummerJob } from './auditNachweisJobs.js';
 
 const ZEITZONE = 'Europe/Zurich';
 const MINUTE_MS = 60 * 1000;
@@ -106,6 +107,8 @@ export function startScheduler({
     runSicherheitsalarmeJob: sicherheitsalarmeJob = async () => ({ status: 'uebersprungen' }),
     runMailZustellungJob: mailZustellungJob = async () => ({ status: 'uebersprungen' }),
     runTsaCrlAktualisierungJob: tsaCrlJob = async () => ({ status: 'uebersprungen' }),
+    runAuditExportJob: auditExportJob = async () => ({ status: 'uebersprungen' }),
+    runAuditPruefnummerJob: auditPruefnummerJob = async () => ({ status: 'uebersprungen' }),
   } = {
     runSyncPersonenJob,
     runPoolErinnerungenJob,
@@ -119,6 +122,8 @@ export function startScheduler({
     runSicherheitsalarmeJob,
     runMailZustellungJob,
     runTsaCrlAktualisierungJob,
+    runAuditExportJob,
+    runAuditPruefnummerJob,
   },
 }) {
   scheduleDaily(
@@ -215,6 +220,26 @@ export function startScheduler({
     async () => {
       const result = await tsaCrlJob(db, config, mailer);
       if (result.status === 'fehler') console.error('Geplante TSA-Sperrlisten-Erneuerung fehlgeschlagen:', result.error);
+    }
+  );
+
+  // Naechtlicher Audit-Export mit RFC3161-Zeitstempel (services/auditNachweisJobs.js).
+  scheduleDaily(
+    () => zahlOderStandard(getConfigValue(db, 'cron_audit_export_stunde'), 3),
+    () => zahlOderStandard(getConfigValue(db, 'cron_audit_export_minute'), 15),
+    async () => {
+      const result = await auditExportJob(db, config, mailer);
+      if (result.status === 'fehler') console.error('Geplanter audit-export-Lauf fehlgeschlagen:', result.error);
+    }
+  );
+
+  // Taeglicher Lauf; versendet nur am konfigurierten Versandtag (siehe auditNachweisJobs.js).
+  scheduleDaily(
+    () => zahlOderStandard(getConfigValue(db, 'cron_audit_pruefnummer_stunde'), 7),
+    () => zahlOderStandard(getConfigValue(db, 'cron_audit_pruefnummer_minute'), 0),
+    async () => {
+      const result = await auditPruefnummerJob(db, config, mailer);
+      if (result.status === 'fehler') console.error('Geplanter audit-pruefnummer-Lauf fehlgeschlagen:', result.error);
     }
   );
 

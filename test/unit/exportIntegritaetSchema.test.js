@@ -46,3 +46,20 @@ test('an existing database without the new column or table is upgraded without l
   assert.throws(() => db.prepare("INSERT INTO altfall_entscheidungen (job_id, entscheidung, angezeigte_daten, stand, person_id, person_name, begruendung, zeitpunkt) VALUES (?, 'nur_archiv', '{}', 's', '1', 'A B', 'zweite', 'now')").run(id), /UNIQUE/);
   assert.throws(() => db.prepare("INSERT INTO altfall_entscheidungen (job_id, entscheidung, angezeigte_daten, stand, person_id, person_name, begruendung, zeitpunkt) VALUES (?, 'irgendwas', '{}', 's', '1', 'A B', 'x', 'now')").run(id), /CHECK/);
 });
+
+test('an Altfall-Entscheidung is recorded in the central audit log like the rest of the business data', (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  const id = createJob(db, { eingangAm: '2026-09-27T00:00:00Z', quelle: 'scanner', dateiname: 'alt.pdf', pdfPfad: '/tmp/alt.pdf' });
+  upsertPerson(db, { id: '1', vorname: 'A', nachname: 'B', email: 'a@example.org', gruppen: [] });
+  const entscheidungId = Number(db.prepare("INSERT INTO altfall_entscheidungen (job_id, entscheidung, angezeigte_daten, stand, person_id, person_name, begruendung, zeitpunkt) VALUES (?, 'nachbestaetigt', '{}', 's', '1', 'A B', 'Beleg geprüft', 'now')").run(id).lastInsertRowid);
+
+  const event = db.prepare("SELECT aktion, vorher, nachher FROM audit_ereignisse WHERE objekt = 'altfall_entscheidungen' AND objekt_id = ?").get(String(entscheidungId));
+  assert.ok(event, 'the decision must appear in audit_ereignisse');
+  assert.equal(event.aktion, 'INSERT');
+  assert.equal(event.vorher, null);
+  const nachher = JSON.parse(event.nachher);
+  assert.equal(nachher.job_id, id);
+  assert.equal(nachher.entscheidung, 'nachbestaetigt');
+  assert.equal(nachher.begruendung, 'Beleg geprüft');
+});

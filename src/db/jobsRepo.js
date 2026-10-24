@@ -111,6 +111,30 @@ export function findJobsByKreditorUndRechnungsnummer(db, kreditorId, rechnungsnu
     .all(kreditorId, rechnungsnummer, excludeJobId);
 }
 
+// Duplikaterkennung Szenario 2: dieselbe Rechnung zweimal gescannt (andere PDF-Bytes, Rechnungsnummer
+// evtl. unterschiedlich abgetippt). Treffer = gleicher Kreditor, gleicher Betrag (numerisch), gleiches
+// Zahlungsziel, Eingang höchstens `tage` Tage auseinander — das Fenster verhindert Fehlalarme bei
+// Lieferanten, die monatlich denselben Betrag verrechnen. Teile derselben aufgesplitteten Rechnung
+// (Eltern- und Geschwisterjobs) zählen nicht.
+export const DOPPELRECHNUNG_FENSTER_TAGE = 14;
+
+export function findMoeglicheDoppelrechnungen(db, { job, kreditorId, betrag, zahlungsziel, tage = DOPPELRECHNUNG_FENSTER_TAGE }) {
+  const betragZahl = Number(String(betrag ?? '').replace(',', '.'));
+  if (!kreditorId || !zahlungsziel || !betrag || !Number.isFinite(betragZahl) || !job?.eingang_am) return [];
+  const familie = job.aufgesplittet_von ?? job.id;
+  return db
+    .prepare(
+      `SELECT * FROM jobs
+       WHERE kreditor_id = ? AND zahlungsziel = ? AND betrag IS NOT NULL
+         AND abs(CAST(betrag AS REAL) - ?) < 0.005
+         AND abs(julianday(eingang_am) - julianday(?)) <= ?
+         AND status != 'geloescht' AND id != ?
+         AND id != ? AND (aufgesplittet_von IS NULL OR aufgesplittet_von != ?)
+       ORDER BY id`
+    )
+    .all(kreditorId, zahlungsziel, betragZahl, job.eingang_am, tage, job.id, familie, familie);
+}
+
 export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad, dateiHash }) {
   const regel = findMatchingZuweisungsregel(db, absender);
   let kontoId = null;
@@ -256,6 +280,10 @@ export function setKontierung(db, jobId, kontoId) {
 // 'zugewiesen' — so it can no longer serve as a "just save the Betrag first" step for splitting).
 export function setJobBetrag(db, jobId, betrag) {
   db.prepare('UPDATE jobs SET betrag = ? WHERE id = ?').run(betrag || null, jobId);
+}
+
+export function setJobTyp(db, jobId, typ) {
+  db.prepare('UPDATE jobs SET typ = ? WHERE id = ?').run(typ, jobId);
 }
 
 export function updateKontierungMetadaten(db, jobId, { absender, betrag, zahlungsziel, rechnungsnummer, lieferant, kreditorId, typ }) {

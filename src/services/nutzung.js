@@ -14,6 +14,7 @@ const GERAET_ID_MUSTER = /^[0-9a-f]{32}$/;
 const UA_MAX = 500;
 const MELDUNG_MAX = 1000;
 const STACK_MAX = 8000;
+const PFAD_MAX = 500;
 const MELDE_ABSTAND_MS = 60 * 60 * 1000;
 
 let letzteMeldungAm = 0;
@@ -93,12 +94,10 @@ function userAgent(req) {
   return typeof ua === 'string' ? ua.slice(0, UA_MAX) : '';
 }
 
-const PORTAL_PFAD_MAX = 500;
-
 // Nur ein eigener Portal-Pfad (aus einem Formularfeld): "/…", nicht "//", ohne Backslash,
 // Leerzeichen, Query oder Hash, höchstens 500 Zeichen; sonst null.
 export function portalPfad(wert) {
-  if (typeof wert !== 'string' || wert.length > PORTAL_PFAD_MAX) return null;
+  if (typeof wert !== 'string' || wert.length > PFAD_MAX) return null;
   if (!wert.startsWith('/') || wert.startsWith('//')) return null;
   return /[\\\s?#]/.test(wert) ? null : wert;
 }
@@ -114,7 +113,7 @@ export function erfasseSeitenaufruf(db, { req, res, dauerMs }) {
     const kontext = req.nutzung || {};
     const personId = kontext.personId ?? req.currentPerson?.churchtools_person_id;
     if (!personId) return;
-    const pfad = kontext.pfad ?? req.path;
+    const pfad = String(kontext.pfad ?? req.path).slice(0, PFAD_MAX);
     const ua = userAgent(req);
     const { geraetTyp, browser, betriebssystem } = geraetAusUserAgent(ua);
     const geraetId = gueltigeGeraeteId(req);
@@ -162,7 +161,7 @@ export function erfasseFehler(db, { req, err, status }) {
       (request_id, zeitpunkt, person_id, methode, pfad, status, meldung, stack, user_agent, geraet_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       String(requestId), new Date().toISOString(), req.currentPerson?.churchtools_person_id ?? null,
-      String(req.method || '').slice(0, 10), pfadOhneQuery(req), status,
+      String(req.method || '').slice(0, 10), pfadOhneQuery(req).slice(0, PFAD_MAX), status,
       ...meldungUndStack(err),
       userAgent(req) || null, gueltigeGeraeteId(req),
     );

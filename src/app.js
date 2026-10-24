@@ -252,6 +252,12 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
         .status(403)
         .render('error', { message: 'Sicherheitsprüfung fehlgeschlagen (ungültiges oder abgelaufenes Formular). Bitte lade die Seite neu und versuche es erneut.' });
     }
+    if (typeof err.type === 'string' && err.type.startsWith('entity.')) {
+      // Kaputter Anfrage-Inhalt (Body-Parser): Fehler der Anfrage, kein Serverfehler. Erfasst wird
+      // nur mit angemeldeter Person, damit anonyme Anfragen betrieb_fehler nicht füllen können.
+      const fehlerId = req.currentPerson ? erfasseFehler(db, { req, err, status: 400 }).slice(0, 8) : null;
+      return res.status(400).render('error', { message: 'Ungültiger Anfrage-Inhalt.', fehlerId });
+    }
     console.error(err.stack || err);
     // Für das versteckte Seitenfeld im Meldeformular, falls loadNavFlags nicht mehr lief.
     res.locals.currentPath ??= String(req.originalUrl || '').split('?')[0];

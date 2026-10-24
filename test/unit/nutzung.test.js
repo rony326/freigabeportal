@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
-import { geraetAusUserAgent, normalisierePfad, geraeteIdAusCookie, erfasseFehler, portalPfad } from '../../src/services/nutzung.js';
+import { geraetAusUserAgent, normalisierePfad, geraeteIdAusCookie, erfasseFehler, portalPfad, erfasseSeitenaufruf } from '../../src/services/nutzung.js';
 import { withAuditRequest } from '../../src/services/auditContext.js';
 
 const UA = {
@@ -103,4 +103,14 @@ test('portalPfad lässt nur eigene Portal-Pfade durch', () => {
   for (const wert of [undefined, null, 42, '', 'pool', '//evil.org', '/\\evil.org', '/a b', '/a\tb', '/a?x=1', '/a#x', `/${'a'.repeat(500)}`, 'https://evil.org/x', ['/pool']]) {
     assert.equal(portalPfad(wert), null, String(wert));
   }
+});
+
+test('erfasseSeitenaufruf kürzt den Pfad auf 500 Zeichen', () => {
+  const db = openDatabase(':memory:');
+  const req = { method: 'GET', headers: {}, nutzung: { pfad: `/${'a'.repeat(2000)}`, personId: '1' } };
+  erfasseSeitenaufruf(db, { req, res: { statusCode: 200 }, dauerMs: 1 });
+  const row = db.prepare('SELECT pfad, pfad_muster FROM nutzung_seitenaufrufe').get();
+  assert.equal(row.pfad.length, 500);
+  assert.equal(row.pfad_muster.length, 500);
+  db.close();
 });

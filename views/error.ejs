@@ -3,5 +3,19 @@
       <h1 class="seitenkopf-titel">Es ist ein Fehler aufgetreten</h1>
     </div>
     <p class="alert alert-danger"><%= message %></p>
+    <% if (locals.fehlerId) { %>
+      <p class="text-muted">Fehler-ID: <code><%= fehlerId %></code></p>
+      <% if (locals.currentPerson) { %>
+        <form method="post" action="/fehler-melden" class="mb-4">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <input type="hidden" name="fehlerId" value="<%= fehlerId %>">
+          <div class="mb-3">
+            <label class="form-label" for="fehler-beschreibung">Was hast du gerade gemacht? (optional)</label>
+            <textarea class="form-control" id="fehler-beschreibung" name="beschreibung" rows="3" maxlength="2000"></textarea>
+          </div>
+          <button type="submit" class="btn btn-outline-primary">Fehler melden</button>
+        </form>
+      <% } %>
+    <% } %>
     <p><a href="/" class="btn btn-outline-secondary">Zurück zur Startseite</a></p>
 <%- include('_seite_ende') %>

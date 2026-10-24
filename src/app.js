@@ -60,6 +60,8 @@ import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLim
 import { getVersionInfo } from './utils/version.js';
 import { auditContext, auditRequestContext } from './services/auditContext.js';
 import { zugriffsAuditMiddleware, meldeZugriffVerweigert } from './services/zugriffsAudit.js';
+import { nutzungErfassen } from './middleware/nutzungErfassen.js';
+import { erfasseFehler } from './services/nutzung.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -144,6 +146,7 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
     return attachCsrfToken(req, res, next);
   });
   app.use(loadCurrentPerson(db));
+  app.use(nutzungErfassen(db));
   app.use(auditContext);
   app.use(zugriffsAuditMiddleware(db));
   app.use(loadNavFlags(db, config));
@@ -242,7 +245,9 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
         .render('error', { message: 'Sicherheitsprüfung fehlgeschlagen (ungültiges oder abgelaufenes Formular). Bitte lade die Seite neu und versuche es erneut.' });
     }
     console.error(err.stack || err);
-    res.status(500).render('error', { message: 'Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es später erneut.' });
+    // Fehler-ID = Request-ID; angezeigt werden nur die ersten 8 Zeichen, nie der Stack.
+    const fehlerId = erfasseFehler(db, { req, err, status: 500 }).slice(0, 8);
+    res.status(500).render('error', { message: 'Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es später erneut.', fehlerId });
   });
 
   return app;

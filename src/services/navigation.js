@@ -25,6 +25,7 @@ const PORTAL = [
     { label: 'Ferienmodus', href: '/ferienmodus', symbol: '☼', flag: null },
     { label: 'Zeitstempel prüfen', href: '/zeitstempel-pruefen', symbol: '⏱', flag: null },
     { label: 'Problem melden', href: '/fehler-melden', symbol: '!', flag: null },
+    { label: 'Datenschutz', href: '/datenschutz', symbol: '§', flag: null },
   ] },
 ];
 

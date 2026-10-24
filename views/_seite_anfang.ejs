@@ -84,6 +84,7 @@
     </div>
   </div>
 </header>
+<% if (sEingeloggt) { %><%- include('_banner') %><% } %>
 <div class="container-xxl">
 <% if (sNavigation) { %>
 <div class="portal-rahmen<%= sRahmen === 'kompakt' ? ' kompakt' : '' %>">

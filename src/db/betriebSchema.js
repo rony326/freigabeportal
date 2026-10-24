@@ -91,4 +91,14 @@ export function migrateBetriebSchema(db) {
       PRIMARY KEY (banner_id, person_id)
     );
   `);
+
+  // Einmaliger Hinweis auf die Nutzungsdaten; das Marker-Flag verhindert Neuanlage nach Löschen/Deaktivieren.
+  const marker = db.prepare("SELECT 1 FROM admin_config WHERE key = 'betrieb_datenschutz_banner_angelegt'").get();
+  if (!marker) {
+    const jetzt = new Date();
+    const bis = new Date(jetzt.getTime() + 60 * 24 * 3600 * 1000);
+    db.prepare("INSERT INTO banner (art, text, link, von, bis, erstellt_von, erstellt_am, aktiv) VALUES ('info', ?, '/datenschutz', ?, ?, NULL, ?, 1)")
+      .run('Neu: Das Portal speichert Nutzungsdaten zur Wartung, Weiterentwicklung und Sicherheit. Details unter Datenschutz.', jetzt.toISOString(), bis.toISOString(), jetzt.toISOString());
+    db.prepare("INSERT INTO admin_config (key, value) VALUES ('betrieb_datenschutz_banner_angelegt', '1')").run();
+  }
 }

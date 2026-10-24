@@ -44,6 +44,8 @@ import { createPoolPageRouter } from './routes/poolPage.js';
 import { createMeineAbgeschlossenenRouter } from './routes/meineAbgeschlossenen.js';
 import { createMeineSpesenRouter } from './routes/meineSpesen.js';
 import { createFerienmodusRouter } from './routes/ferienmodus.js';
+import { createBannerRouter } from './routes/banner.js';
+import { createDatenschutzRouter } from './routes/datenschutz.js';
 import { createFehlerMeldenRouter } from './routes/fehlerMelden.js';
 import { createDownloadsRouter } from './routes/downloads.js';
 import { createKkAbgleichRouter } from './routes/kkAbgleich.js';
@@ -207,6 +209,8 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   app.use('/meine-abgeschlossenen', sessionLimiter, requireLogin(), createMeineAbgeschlossenenRouter({ db }));
   app.use('/meine-spesen', sessionLimiter, requireLogin(), createMeineSpesenRouter({ db }));
   app.use('/kreditkarte', sessionLimiter, requireLogin(), createKreditkarteRouter({ db, config, csrfProtection }));
+  app.use('/banner', sessionLimiter, requireLogin(), createBannerRouter({ db, config, csrfProtection }));
+  app.use('/datenschutz', sessionLimiter, requireLogin(), createDatenschutzRouter({ db }));
   app.use('/fehler-melden', sessionLimiter, requireLogin(), createFehlerMeldenRouter({ db, config, mailer, csrfProtection }));
   app.use('/ferienmodus', sessionLimiter, requireLogin(), createFerienmodusRouter({ db, csrfProtection }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));

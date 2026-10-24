@@ -78,6 +78,7 @@ const DEFAULTS = {
   mail_vorlage_fehlermeldung_betreff: 'Freigabeportal: Neue Fehlermeldung von %meldendePerson%',
   mail_vorlage_fehlermeldung_text: 'Hallo %empfaengerName%,\n\n%meldendePerson% hat im %portalName% ein Problem gemeldet.\n\nSeite: %seite%\nFehler-ID: %fehlerId%\nBeschreibung: %beschreibung%\n\nZur Meldung: %link%\n\nFreundliche Grüsse\n%portalName%',
   betrieb_kontakt_email: '',
+  datenschutz_text: 'Das Portal speichert Nutzungsdaten, damit es zuverlässig läuft, weiterentwickelt werden kann und sicher bleibt.\n\nWelche Daten: Seitenaufrufe (wer wann welche Seite aufgerufen hat, mit Gerät, Browser und Betriebssystem), Anmeldungen (mit IP-Adresse und Gerät) sowie aufgetretene Fehler. Nicht gespeichert werden Formularinhalte und Suchbegriffe.\n\nZweck: Wartung, Weiterentwicklung und Sicherheit (zum Beispiel Warnung bei Anmeldung von einem neuen Gerät).\n\nAufbewahrung: Seitenaufrufe 90 Tage, Anmeldungen und Fehler 1 Jahr. Danach werden die Daten automatisch gelöscht.\n\nZugriff: Nur Personen mit dem Recht "Betrieb & Nutzung" können diese Daten einsehen.\n\nKontakt bei Fragen: %kontakt%.',
   audit_revision_empfaenger: '',
   modul_audit_nachweis_aktiv: '1',
   audit_pruefnummer_rhythmus: 'monatlich',

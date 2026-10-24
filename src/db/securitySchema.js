@@ -110,6 +110,8 @@ export function migrateSecuritySchema(db) {
     kreditkarten: 'id', kreditkarte_erfasser: 'kreditkarte_id', kk_belege: 'id',
     altfall_entscheidungen: 'id', banner: 'id', betrieb_fehlermeldungen: 'id',
   };
+  // Inhalte, die nach Ablauf der Aufbewahrung nicht im (unveränderlichen) Audit-Log bleiben dürfen.
+  const GESCHWAERZT = { betrieb_fehlermeldungen: ['beschreibung', 'seite', 'user_agent'] };
   // Triggers make the event part of the same statement/transaction as its mutation.
   // They are always dropped and recreated: the snapshot freezes the column list at creation time,
   // so a trigger created before a later ALTER TABLE ADD COLUMN (e.g. jobs.kreditkarte_id) would
@@ -121,11 +123,15 @@ export function migrateSecuritySchema(db) {
     for (const [table, key] of Object.entries(tables)) {
       const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
       function snapshot(prefix) {
-        return `json_object(${columns.flatMap((column) => [
-          `'${column}'`, table === 'admin_config' && column === 'value'
-            ? `CASE WHEN lower(${prefix}.key) GLOB '*pass*' OR lower(${prefix}.key) GLOB '*secret*' OR lower(${prefix}.key) GLOB '*token*' THEN '[redacted]' ELSE ${prefix}.value END`
-            : `${prefix}."${column}"`,
-        ]).join(',')})`;
+        return `json_object(${columns.flatMap((column) => {
+          let wert = `${prefix}."${column}"`;
+          if (table === 'admin_config' && column === 'value') {
+            wert = `CASE WHEN lower(${prefix}.key) GLOB '*pass*' OR lower(${prefix}.key) GLOB '*secret*' OR lower(${prefix}.key) GLOB '*token*' THEN '[redacted]' ELSE ${prefix}.value END`;
+          } else if (GESCHWAERZT[table]?.includes(column)) {
+            wert = `'[redacted]'`;
+          }
+          return [`'${column}'`, wert];
+        }).join(',')})`;
       }
       for (const action of ['INSERT', 'UPDATE', 'DELETE']) {
         const prefix = action === 'DELETE' ? 'OLD' : 'NEW';

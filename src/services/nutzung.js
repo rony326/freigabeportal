@@ -93,6 +93,16 @@ function userAgent(req) {
   return typeof ua === 'string' ? ua.slice(0, UA_MAX) : '';
 }
 
+const PORTAL_PFAD_MAX = 500;
+
+// Nur ein eigener Portal-Pfad (aus einem Formularfeld): "/…", nicht "//", ohne Backslash,
+// Leerzeichen, Query oder Hash, höchstens 500 Zeichen; sonst null.
+export function portalPfad(wert) {
+  if (typeof wert !== 'string' || wert.length > PORTAL_PFAD_MAX) return null;
+  if (!wert.startsWith('/') || wert.startsWith('//')) return null;
+  return /[\\\s?#]/.test(wert) ? null : wert;
+}
+
 function pfadOhneQuery(req) {
   return String(req.originalUrl ?? req.url ?? '').split('?')[0];
 }

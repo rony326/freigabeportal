@@ -13,6 +13,7 @@
     <% if (b.wegklickbar) { %>
       <form method="post" action="/banner/<%= b.id %>/ausblenden" class="m-0">
         <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <input type="hidden" name="zurueck" value="<%= locals.currentPath || '' %>">
         <button type="submit" class="btn-close" aria-label="Ausblenden"></button>
       </form>
     <% } %>

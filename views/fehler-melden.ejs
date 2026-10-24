@@ -11,6 +11,7 @@
           <% if (fehlerText) { %><div class="alert alert-danger"><%= fehlerText %></div><% } %>
           <form method="post" action="/fehler-melden" class="mb-4">
             <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <% if (locals.seite) { %><input type="hidden" name="seite" value="<%= seite %>"><% } %>
             <% if (fehlerId) { %><input type="hidden" name="fehlerId" value="<%= fehlerId %>"><p class="text-muted">Fehler-ID: <code><%= fehlerId %></code></p><% } %>
             <div class="mb-3">
               <label class="form-label" for="beschreibung">Was ist passiert? (optional)</label>

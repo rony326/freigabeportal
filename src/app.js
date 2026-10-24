@@ -211,7 +211,7 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   app.use('/meine-abgeschlossenen', sessionLimiter, requireLogin(), createMeineAbgeschlossenenRouter({ db }));
   app.use('/meine-spesen', sessionLimiter, requireLogin(), createMeineSpesenRouter({ db }));
   app.use('/kreditkarte', sessionLimiter, requireLogin(), createKreditkarteRouter({ db, config, csrfProtection }));
-  app.use('/banner', sessionLimiter, requireLogin(), createBannerRouter({ db, config, csrfProtection }));
+  app.use('/banner', sessionLimiter, requireLogin(), createBannerRouter({ db, csrfProtection }));
   app.use('/datenschutz', sessionLimiter, requireLogin(), createDatenschutzRouter({ db }));
   app.use('/fehler-melden', sessionLimiter, requireLogin(), createFehlerMeldenRouter({ db, config, mailer, csrfProtection }));
   app.use('/ferienmodus', sessionLimiter, requireLogin(), createFerienmodusRouter({ db, csrfProtection }));
@@ -253,6 +253,8 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
         .render('error', { message: 'Sicherheitsprüfung fehlgeschlagen (ungültiges oder abgelaufenes Formular). Bitte lade die Seite neu und versuche es erneut.' });
     }
     console.error(err.stack || err);
+    // Für das versteckte Seitenfeld im Meldeformular, falls loadNavFlags nicht mehr lief.
+    res.locals.currentPath ??= String(req.originalUrl || '').split('?')[0];
     // Fehler-ID = Request-ID; angezeigt werden nur die ersten 8 Zeichen, nie der Stack.
     const fehlerId = erfasseFehler(db, { req, err, status: 500 }).slice(0, 8);
     res.status(500).render('error', { message: 'Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es später erneut.', fehlerId });

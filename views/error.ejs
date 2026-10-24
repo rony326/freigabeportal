@@ -9,6 +9,7 @@
         <form method="post" action="/fehler-melden" class="mb-4">
           <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
           <input type="hidden" name="fehlerId" value="<%= fehlerId %>">
+          <input type="hidden" name="seite" value="<%= locals.currentPath || '' %>">
           <div class="mb-3">
             <label class="form-label" for="fehler-beschreibung">Was hast du gerade gemacht? (optional)</label>
             <textarea class="form-control" id="fehler-beschreibung" name="beschreibung" rows="3" maxlength="2000"></textarea>

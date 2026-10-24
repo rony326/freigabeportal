@@ -51,7 +51,7 @@ test('Banner: Text escaped, Zeilenumbruch erhalten, wegklickbar nur bei Info', a
   db.close();
 });
 
-test('Info ausblenden: Redirect auf Referer-Pfad, danach weg; Wartung -> 400', async () => {
+test('Info ausblenden: Rücksprung auf die Seite (ohne Referer), danach weg; Wartung -> 400', async () => {
   const db = openDatabase(':memory:');
   db.exec('DELETE FROM banner');
   const info = bannerAnlegen(db, 'info', 'Hinweis eins');
@@ -61,10 +61,17 @@ test('Info ausblenden: Redirect auf Referer-Pfad, danach weg; Wartung -> 400', a
   const token = csrf(page.text);
   const bad = await agent.post(`/banner/${wartung}/ausblenden`).type('form').send({ _csrf: token });
   assert.equal(bad.status, 400);
-  const fremd = await agent.post(`/banner/${info}/ausblenden`).set('Referer', 'https://evil.org/x').type('form').send({ _csrf: token });
-  assert.equal(fremd.status, 302);
-  assert.equal(fremd.headers.location, '/pool');
-  const res = await agent.post(`/banner/${info}/ausblenden`).set('Referer', 'http://portal.example.org/ferienmodus?x=1').type('form').send({ _csrf: token });
+  for (const zurueck of ['https://evil.org/x', '//evil.org/x', '/\\evil.org', '/ferienmodus?x=1', undefined]) {
+    const fremd = await agent.post(`/banner/${info}/ausblenden`).type('form').send({ _csrf: token, zurueck });
+    assert.equal(fremd.status, 302);
+    assert.equal(fremd.headers.location, '/pool', String(zurueck));
+    db.exec('DELETE FROM banner_ausgeblendet');
+  }
+  // Wie im Browser: das Formular der Seite trägt den eigenen Pfad im versteckten Feld.
+  const seite = await agent.get('/ferienmodus');
+  const zurueck = seite.text.match(new RegExp(`action="/banner/${info}/ausblenden"[\\s\\S]*?name="zurueck" value="([^"]*)"`))?.[1];
+  assert.equal(zurueck, '/ferienmodus');
+  const res = await agent.post(`/banner/${info}/ausblenden`).type('form').send({ _csrf: csrf(seite.text), zurueck });
   assert.equal(res.headers.location, '/ferienmodus');
   const danach = await agent.get('/pool');
   assert.doesNotMatch(danach.text, /Hinweis eins/);

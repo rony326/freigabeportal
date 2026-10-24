@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
-import { geraetAusUserAgent, normalisierePfad, geraeteIdAusCookie, erfasseFehler } from '../../src/services/nutzung.js';
+import { geraetAusUserAgent, normalisierePfad, geraeteIdAusCookie, erfasseFehler, portalPfad } from '../../src/services/nutzung.js';
 import { withAuditRequest } from '../../src/services/auditContext.js';
 
 const UA = {
@@ -94,4 +94,13 @@ test('erfasseFehler speichert Request-ID, kürzt den Stack und wirft nie', () =>
   const id2 = withAuditRequest('99999999-2222-3333-4444-555555555555', () => erfasseFehler(db, { req, err, status: 500 }));
   assert.equal(id2, '99999999-2222-3333-4444-555555555555');
   db.close();
+});
+
+test('portalPfad lässt nur eigene Portal-Pfade durch', () => {
+  assert.equal(portalPfad('/kontierung/5'), '/kontierung/5');
+  assert.equal(portalPfad('/'), '/');
+  assert.equal(portalPfad(`/${'a'.repeat(499)}`).length, 500);
+  for (const wert of [undefined, null, 42, '', 'pool', '//evil.org', '/\\evil.org', '/a b', '/a\tb', '/a?x=1', '/a#x', `/${'a'.repeat(500)}`, 'https://evil.org/x', ['/pool']]) {
+    assert.equal(portalPfad(wert), null, String(wert));
+  }
 });

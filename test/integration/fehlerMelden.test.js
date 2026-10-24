@@ -69,8 +69,8 @@ test('Meldung mit eigener Fehler-ID verknüpft', async () => {
   const { db, app } = setup();
   fehlerAnlegen(db, REQ_ID, '1');
   const res = await request(app).post('/fehler-melden').set('x-test-person-id', '1')
-    .set('Referer', `${BASE}/kontierung/5?x=geheim`).set('User-Agent', 'TestAgent/1')
-    .type('form').send({ fehlerId: REQ_ID.slice(0, 8), beschreibung: 'Es ging nicht' });
+    .set('User-Agent', 'TestAgent/1')
+    .type('form').send({ fehlerId: REQ_ID.slice(0, 8), beschreibung: 'Es ging nicht', seite: '/kontierung/5' });
   assert.equal(res.status, 200);
   assert.match(res.text, /Danke/);
   const [m] = meldungen(db);
@@ -128,11 +128,21 @@ test('Beschreibung > 2000 → 400, nichts gespeichert', async () => {
   db.close();
 });
 
-test('fremder Referer wird nicht als Seite gespeichert', async () => {
+test('ungültige Seite (fremd, mit Query, //) wird nicht gespeichert', async () => {
   const { db, app } = setup();
-  await request(app).post('/fehler-melden').set('x-test-person-id', '1').set('Referer', 'https://evil.example.com/a').type('form').send({});
-  assert.equal(meldungen(db)[0].seite, null);
+  for (const seite of ['https://evil.example.com/a', '//evil.example.com/a', '/kontierung/5?x=geheim', '/a b']) {
+    await request(app).post('/fehler-melden').set('x-test-person-id', '1').type('form').send({ seite });
+  }
+  assert.deepEqual(meldungen(db).map((m) => m.seite), [null, null, null, null]);
   db.close();
+});
+
+test('GET ?seite= wird als verstecktes Feld übernommen, ungültige verworfen', async () => {
+  const { app } = setup();
+  const res = await request(app).get('/fehler-melden?seite=/meine-spesen').set('x-test-person-id', '1');
+  assert.match(res.text, /name="seite" value="\/meine-spesen"/);
+  const fremd = await request(app).get('/fehler-melden?seite=//evil.org').set('x-test-person-id', '1');
+  assert.doesNotMatch(fremd.text, /name="seite"/);
 });
 
 test('Mail an Berechtigte, nicht an andere', async () => {

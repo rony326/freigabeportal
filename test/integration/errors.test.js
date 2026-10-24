@@ -120,6 +120,8 @@ test('Fehlerseite bietet angemeldeten Personen das Melde-Formular mit CSRF-Token
   assert.match(form[0], /method="post"/);
   assert.match(form[0], /name="_csrf" value="[^"]+"/);
   assert.match(form[0], new RegExp(`name="fehlerId" value="${kurzId}"`));
+  // Seite als verstecktes Feld (Referer wird nie gesendet).
+  assert.match(form[0], /name="seite" value="\/pool"/);
   assert.match(form[0], /<textarea[^>]*name="beschreibung"/);
   assert.match(form[0], /Fehler melden/);
   db.close();

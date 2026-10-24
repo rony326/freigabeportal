@@ -3,23 +3,11 @@ import { listActivePersons, getPersonById } from '../db/personenRepo.js';
 import { personHasPermission } from '../middleware/permissions.js';
 import { sendNotification } from '../services/notify.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
+import { portalPfad } from '../services/nutzung.js';
 
 const MAX_BESCHREIBUNG = 2000;
 // Wie in admin/betrieb.js: UUID-Präfix oder volle UUID.
 const FEHLER_ID_MUSTER = /^[0-9a-f][0-9a-f-]{7,63}$/i;
-
-// Referer-Pfad ohne Query, nur wenn er zum eigenen Portal gehört.
-function seiteAusReferer(req, config) {
-  const referer = req.get('referer');
-  if (!referer || !config.publicBaseUrl) return null;
-  try {
-    const url = new URL(referer);
-    if (url.origin !== new URL(config.publicBaseUrl).origin) return null;
-    return url.pathname.slice(0, 500);
-  } catch {
-    return null;
-  }
-}
 
 // Verknüpfung nur bei genau einem Treffer, der der meldenden Person gehört (oder keiner Person).
 function findeFehlerRequestId(db, fehlerId, personId) {
@@ -37,7 +25,7 @@ export function createFehlerMeldenRouter({ db, config, mailer, csrfProtection = 
 
   router.get('/', (req, res) => {
     const fehlerId = typeof req.query.fehler === 'string' && FEHLER_ID_MUSTER.test(req.query.fehler) ? req.query.fehler.slice(0, 8) : '';
-    res.render('fehler-melden', { gesendet: false, fehlerId, beschreibung: '', fehlerText: null });
+    res.render('fehler-melden', { gesendet: false, fehlerId, beschreibung: '', fehlerText: null, seite: portalPfad(req.query.seite) || '' });
   });
 
   router.post('/', csrfProtection, async (req, res) => {
@@ -45,15 +33,16 @@ export function createFehlerMeldenRouter({ db, config, mailer, csrfProtection = 
     const personId = person.churchtools_person_id;
     const fehlerId = typeof req.body.fehlerId === 'string' ? req.body.fehlerId.trim() : '';
     const beschreibung = typeof req.body.beschreibung === 'string' ? req.body.beschreibung.trim() : '';
+    // Seite kommt aus einem versteckten Feld: Referer wird nie gesendet (Referrer-Policy: no-referrer).
+    const seite = portalPfad(req.body.seite);
 
     if (beschreibung.length > MAX_BESCHREIBUNG) {
       return res.status(400).render('fehler-melden', {
-        gesendet: false, fehlerId, beschreibung, fehlerText: `Die Beschreibung darf höchstens ${MAX_BESCHREIBUNG} Zeichen lang sein.`,
+        gesendet: false, fehlerId, beschreibung, seite: seite || '', fehlerText: `Die Beschreibung darf höchstens ${MAX_BESCHREIBUNG} Zeichen lang sein.`,
       });
     }
 
     const requestId = findeFehlerRequestId(db, fehlerId, personId);
-    const seite = seiteAusReferer(req, config);
     const userAgent = (req.get('user-agent') || '').slice(0, 500) || null;
     const meldungId = db
       .prepare('INSERT INTO betrieb_fehlermeldungen (zeitpunkt, person_id, request_id, beschreibung, seite, user_agent) VALUES (?, ?, ?, ?, ?, ?)')
@@ -78,7 +67,7 @@ export function createFehlerMeldenRouter({ db, config, mailer, csrfProtection = 
       console.error('Fehlermeldung: Benachrichtigung fehlgeschlagen', err);
     }
 
-    res.render('fehler-melden', { gesendet: true, fehlerId: '', beschreibung: '', fehlerText: null });
+    res.render('fehler-melden', { gesendet: true, fehlerId: '', beschreibung: '', fehlerText: null, seite: '' });
   });
 
   return router;

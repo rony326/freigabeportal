@@ -216,7 +216,7 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config, csrfProtection }));
   app.use('/zeitstempel-pruefen', sessionLimiter, requireLogin(), createZeitstempelPruefenRouter({ db, config, csrfProtection }));
 
-  app.use('/auth', publicLimiter, createAuthRouter({ db, config, csrfProtection }));
+  app.use('/auth', publicLimiter, createAuthRouter({ db, config, mailer, csrfProtection }));
   // Oeffentlich fuer die Revision (ohne Portal-Login), nur GET.
   app.use('/audit-pruefen', publicLimiter, createAuditPruefenRouter({ db }));
   app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));

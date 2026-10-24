@@ -1,5 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { currentAuditRequestId } from './auditContext.js';
+import { getConfigValue } from '../db/adminConfigRepo.js';
+import { sendNotification } from './notify.js';
 
 // Nutzungsdaten und Fehler (Betrieb & Nutzung). Grundsätze:
 // - Erfassen darf nie eine Anfrage scheitern lassen: Fehler werden gefangen und höchstens einmal
@@ -158,4 +160,75 @@ export function erfasseFehler(db, { req, err, status }) {
     meldeErfassungsfehler(fehler);
   }
   return String(requestId || randomUUID());
+}
+
+const GRUND_MAX = 100;
+
+// Erfasst einen Anmeldeversuch (Callback); wirft nie. Bei Erfolg: Gerät unbekannt = noch kein Eintrag
+// in nutzung_geraete für (Gerät, Person), und das vor dem Seitenaufruf-Erfassen des Weiterleitungsziels.
+// "Neues Gerät" gilt nur, wenn die Person schon eine erfolgreiche Anmeldung hatte.
+export function erfasseAnmeldung(db, { req, res, personId, erfolg, grund = null }) {
+  const ergebnis = { neuesGeraet: false, ersteAnmeldung: false };
+  try {
+    const geraetId = geraeteIdAusCookie(req, res);
+    const ua = userAgent(req);
+    const jetzt = new Date().toISOString();
+    const person = erfolg && personId ? String(personId) : null;
+    if (person) {
+      ergebnis.ersteAnmeldung = !db.prepare('SELECT 1 FROM nutzung_anmeldungen WHERE person_id = ? AND erfolg = 1 LIMIT 1').get(person);
+      const bekannt = db.prepare('SELECT 1 FROM nutzung_geraete WHERE geraet_id = ? AND person_id = ?').get(geraetId, person);
+      ergebnis.neuesGeraet = !ergebnis.ersteAnmeldung && !bekannt;
+      const { geraetTyp, browser, betriebssystem } = geraetAusUserAgent(ua);
+      db.prepare(`INSERT INTO nutzung_geraete
+        (geraet_id, person_id, erstmals_am, zuletzt_am, user_agent, geraet_typ, browser, betriebssystem)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(geraet_id, person_id) DO UPDATE SET zuletzt_am = excluded.zuletzt_am,
+          user_agent = excluded.user_agent, geraet_typ = excluded.geraet_typ,
+          browser = excluded.browser, betriebssystem = excluded.betriebssystem`).run(
+        geraetId, person, jetzt, jetzt, ua, geraetTyp, browser, betriebssystem,
+      );
+    }
+    db.prepare(`INSERT INTO nutzung_anmeldungen (zeitpunkt, person_id, erfolg, grund, ip, geraet_id, user_agent, neues_geraet)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      jetzt, person, erfolg ? 1 : 0, grund ? String(grund).slice(0, GRUND_MAX) : null,
+      req.ip ? String(req.ip).slice(0, 64) : null, geraetId, ua || null, ergebnis.neuesGeraet ? 1 : 0,
+    );
+  } catch (err) {
+    meldeErfassungsfehler(err);
+  }
+  return ergebnis;
+}
+
+function geraetBeschreibung(ua) {
+  const { geraetTyp, browser, betriebssystem } = geraetAusUserAgent(ua);
+  const typ = { desktop: 'Desktop', handy: 'Handy', tablet: 'Tablet' }[geraetTyp] ?? 'Gerät unbekannt';
+  return `${browser} auf ${betriebssystem} (${typ})`;
+}
+
+function zeitpunktZurich(datum) {
+  const teile = Object.fromEntries(new Intl.DateTimeFormat('de-CH', {
+    timeZone: 'Europe/Zurich', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(datum).map((t) => [t.type, t.value]));
+  return `${teile.day}.${teile.month}.${teile.year} ${teile.hour}:${teile.minute}`;
+}
+
+// Warnmail bei Anmeldung von einem neuen Gerät; wirft nie, damit die Anmeldung nie am Mail scheitert.
+export async function sendeNeuesGeraetMail(db, mailer, { req, person }) {
+  try {
+    if (!person?.email) return;
+    await sendNotification(db, mailer, {
+      to: person.email,
+      typ: 'neues-geraet',
+      jobId: null,
+      variablen: {
+        empfaengerName: `${person.vorname} ${person.nachname}`,
+        zeitpunkt: zeitpunktZurich(new Date()),
+        geraet: geraetBeschreibung(userAgent(req)),
+        ip: req.ip || 'unbekannt',
+        kontakt: getConfigValue(db, 'betrieb_kontakt_email') || 'die Portal-Administration',
+      },
+    });
+  } catch (err) {
+    meldeErfassungsfehler(err);
+  }
 }

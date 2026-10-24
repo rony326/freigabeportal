@@ -2,7 +2,7 @@ const RIGHTS = [
   'konten_verwalten', 'kreditoren_verwalten', 'geplante_jobs_verwalten',
   'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen',
   'pool_zuweisen', 'sync_verwalten', 'workflow_eingreifen', 'kreditkarten_verwalten',
-  'vorgaenge_einsehen',
+  'vorgaenge_einsehen', 'betrieb_einsehen',
 ];
 
 export function migrateSecuritySchema(db) {
@@ -108,7 +108,7 @@ export function migrateSecuritySchema(db) {
     personen: 'churchtools_person_id', jobs: 'id', freigaben: 'id',
     export_nachweise: 'id', archiv_quittungen: 'export_id',
     kreditkarten: 'id', kreditkarte_erfasser: 'kreditkarte_id', kk_belege: 'id',
-    altfall_entscheidungen: 'id',
+    altfall_entscheidungen: 'id', banner: 'id', betrieb_fehlermeldungen: 'id',
   };
   // Triggers make the event part of the same statement/transaction as its mutation.
   // They are always dropped and recreated: the snapshot freezes the column list at creation time,

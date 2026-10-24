@@ -17,6 +17,8 @@ const TYP_ZU_KEY_INFIX = {
   'admin-umzuweisung': 'admin_umzuweisung',
   'duplikat-warnung': 'duplikat_warnung',
   'audit-pruefnummer': 'audit_pruefnummer',
+  'neues-geraet': 'neues_geraet',
+  fehlermeldung: 'fehlermeldung',
 };
 
 export function renderTemplate(vorlage, variablen) {

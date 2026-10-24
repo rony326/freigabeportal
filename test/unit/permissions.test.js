@@ -10,10 +10,10 @@ import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS, personHasPermission, req
 
 const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
 
-test('GRANTABLE_BERECHTIGUNGEN lists exactly the twelve catalog permissions, separating sync reading and writing', () => {
+test('GRANTABLE_BERECHTIGUNGEN lists exactly the thirteen catalog permissions, separating sync reading and writing', () => {
   assert.deepEqual(
     [...GRANTABLE_BERECHTIGUNGEN].sort(),
-    ['abgelehnt_verwalten', 'audit_log_einsehen', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'kreditoren_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'vorgaenge_einsehen', 'workflow_eingreifen']
+    ['abgelehnt_verwalten', 'audit_log_einsehen', 'betrieb_einsehen', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'kreditoren_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'vorgaenge_einsehen', 'workflow_eingreifen']
   );
 });
 
@@ -41,7 +41,7 @@ test('personHasPermission: manager must receive explicit grants for sensitive sy
   const db = openDatabase(':memory:');
   const person = { churchtools_person_id: '1', gruppen: ['30'] };
   for (const permission of GRANTABLE_BERECHTIGUNGEN) {
-    assert.equal(personHasPermission(db, CONFIG, person, permission), !['sync_verwalten', 'workflow_eingreifen'].includes(permission), permission);
+    assert.equal(personHasPermission(db, CONFIG, person, permission), !['sync_verwalten', 'workflow_eingreifen', 'betrieb_einsehen'].includes(permission), permission);
   }
   db.close();
 });

@@ -148,12 +148,13 @@ test('Erfassen scheitert still und meldet höchstens einmal', async (t) => {
   db.close();
 });
 
-function miniApp(db, { angemeldet = true } = {}) {
+function miniApp(db, { angemeldet = true, aktiv = 1 } = {}) {
   const app = express();
   app.use(cookieParser());
   app.use((req, res, next) => {
     req.session = { cookie: { secure: false } };
-    req.currentPerson = angemeldet ? { churchtools_person_id: '9' } : null;
+    // aktiv wie aus der Datenbank (0/1).
+    req.currentPerson = angemeldet ? { churchtools_person_id: '9', aktiv } : null;
     next();
   });
   app.use(nutzungErfassen(db));
@@ -190,5 +191,18 @@ test('Weiterleitungen (z.B. nach Formular-POST) werden nicht erfasst', async () 
   assert.equal(res.status, 302);
   assert.match(res.headers['content-type'], /text\/html/);
   assert.equal(aufrufe(db).length, 0);
+  db.close();
+});
+
+test('inaktive Personen werden nicht erfasst (aktiv 0/1 oder boolean)', async () => {
+  const db = openDatabase(':memory:');
+  for (const aktiv of [0, false, null]) {
+    const res = await request(miniApp(db, { aktiv })).get('/seite');
+    assert.equal(extractCookieValue(res.headers, 'fp_geraet'), null);
+  }
+  assert.equal(aufrufe(db).length, 0);
+  await request(miniApp(db, { aktiv: true })).get('/seite');
+  await request(miniApp(db, { aktiv: 1 })).get('/seite');
+  assert.equal(aufrufe(db).length, 2);
   db.close();
 });

@@ -15,7 +15,8 @@ export function nutzungErfassen(db) {
     try {
       const person = req.currentPerson;
       const pfad = req.path;
-      if (person && person.aktiv !== false && !ausgenommen(pfad)) erfasseBeiEnde(db, req, res, person, pfad);
+      // aktiv kommt aus der Datenbank als 0/1 (oder boolean): inaktive Personen nie erfassen.
+      if (person && person.aktiv && !ausgenommen(pfad)) erfasseBeiEnde(db, req, res, person, pfad);
     } catch { /* Erfassen darf nie stören. */ }
     return next();
   };

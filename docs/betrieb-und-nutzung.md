@@ -15,7 +15,7 @@ Weiterentwicklung und Sicherheit. Entwurf und Begründung:
 | Fehlermeldungen | `betrieb_fehlermeldungen` | von Personen gemeldete Probleme: Beschreibung (max. 2000 Zeichen), Seite, Verknüpfung zum Fehler, Status `offen`/`in_arbeit`/`erledigt`, Notiz |
 | Banner | `banner`, `banner_ausgeblendet` | Mitteilungen und welche Person welches Info-Banner weggeklickt hat |
 
-Seitenaufrufe werden nur für **angemeldete Personen** und nur für Antworten mit
+Seitenaufrufe werden nur für **angemeldete, aktive Personen** und nur für Antworten mit
 `text/html` erfasst (Weiterleitungen zählen nicht). Ausgenommen sind die Präfixe
 `/api/n8n`, `/internal/cron`, `/branding`, `/downloads/` sowie statische Dateien.
 Gespeichert werden **nie** Formularinhalte, Query-Parameter (Suchbegriffe), Beträge,
@@ -38,7 +38,9 @@ Der Job `nutzungsdaten-bereinigung` (täglich 03:45, Europe/Zürich;
 | `banner_ausgeblendet` | sobald das Banner (`bis`) mehr als 365 Tage abgelaufen ist |
 
 Die Banner selbst bleiben bestehen. Das Löschen von Fehlermeldungen schreibt
-Audit-Einträge (Trigger); die Nutzungstabellen sind bewusst nicht im Audit-Log
+Audit-Einträge (Trigger); darin sind `beschreibung`, `seite` und `user_agent` als
+`[redacted]` geschwärzt, damit die Inhalte nicht über die Frist hinaus im unveränderlichen
+Audit-Log bleiben (Einträge vor dieser Änderung sind nicht nachträglich geschwärzt); die Nutzungstabellen sind bewusst nicht im Audit-Log
 (Massendaten). Backups enthalten die Daten bis zu ihrem eigenen Ablauf.
 
 ## Recht `betrieb_einsehen` („Betrieb & Nutzung“)
@@ -52,8 +54,8 @@ Verwalten der Banner. Vergabe: Admin → Stammdaten → Personen.
 
 | Route | Zugriff | Zweck |
 |---|---|---|
-| `GET/POST /fehler-melden` | eingeloggt | Problem melden (CSRF); Link „Problem melden“ in der Seitenleiste, auf der Fehlerseite mit vorbelegter Fehler-ID (`?fehler=…`) |
-| `POST /banner/:id/ausblenden` | eingeloggt | Info-Banner für sich selbst wegklicken |
+| `GET/POST /fehler-melden` | eingeloggt | Problem melden (CSRF); Link „Problem melden“ in der Seitenleiste, auf der Fehlerseite mit vorbelegter Fehler-ID (`?fehler=…`); optional `?seite=/…` |
+| `POST /banner/:id/ausblenden` | eingeloggt | Info-Banner für sich selbst wegklicken; Rücksprung auf den Portal-Pfad im Feld `zurueck`, sonst `/pool` |
 | `GET /datenschutz` | eingeloggt | Datenschutzhinweis |
 | `GET /admin/betrieb` | `betrieb_einsehen` | Übersicht: Geräte-/Browserverteilung, meistgenutzte und langsame Seiten (Median/p90), Fehlerhäufigkeit, aktive Personen; Filter nach Zeitraum und Person |
 | `GET /admin/betrieb/personen/:id` | `betrieb_einsehen` | Anmeldungen (letzte 50), Geräte, letzte 100 Aufrufe einer Person |
@@ -77,9 +79,15 @@ nicht auf den Mailserver.
 
 ## Fehler und „Problem melden“
 
-Jeder 5xx und jede unbehandelte Ausnahme wird mit der Anfrage-ID erfasst. Die Fehlerseite
+Unbehandelte Fehler (Ausnahmen) werden mit der Anfrage-ID erfasst (Pfad auf 500 Zeichen
+gekürzt). Kaputte Anfrage-Inhalte (Body-Parser, `entity.*`) gelten nicht als Serverfehler:
+Antwort 400 „Ungültiger Anfrage-Inhalt.“, erfasst nur mit angemeldeter Person – anonyme
+Anfragen füllen `betrieb_fehler` nicht. Die Fehlerseite
 zeigt nur die **ersten 8 Zeichen** als Fehler-ID, nie einen Stacktrace; gesucht wird per
-Präfix (mindestens 8 Zeichen). Die Meldung (Beschreibung optional) wird gespeichert und
+Präfix (mindestens 8 Zeichen, auch die volle UUID). Die Seite, auf der das Problem auftrat,
+kommt aus einem versteckten Formularfeld `seite` (die Referrer-Policy `no-referrer`
+verhindert den Referer); angenommen wird nur ein Portal-Pfad (`/…`, nicht `//`, ohne
+Backslash, Leerzeichen, Query oder Hash, höchstens 500 Zeichen). Die Meldung (Beschreibung optional) wird gespeichert und
 per Mail `fehlermeldung` an alle Personen mit `betrieb_einsehen` verschickt (immer sofort,
 im Hintergrund, bearbeitbare Vorlage; die Dankesseite wartet nicht auf den Mailserver). Dieselbe Anfrage-ID erscheint im Audit-Log, so lassen sich Fehler,
 Audit-Einträge und Logs zusammenführen.
@@ -96,8 +104,8 @@ Löschen nicht neu angelegt).
 
 ## Datenschutzhinweis und revDSG
 
-`/datenschutz` zeigt den Text aus `datenschutz_text` (Platzhalter `%kontakt%`), im Fuss
-der Seitenleiste verlinkt. Er nennt, welche Daten erfasst werden, den Zweck, die
+`/datenschutz` zeigt den Text aus `datenschutz_text` (Platzhalter `%kontakt%`), in der
+Seitenleiste in der Gruppe „Persönlich“ verlinkt. Er nennt, welche Daten erfasst werden, den Zweck, die
 Aufbewahrung und wer Zugriff hat. Bezug zum Schweizer Datenschutzgesetz (revDSG):
 Information der Betroffenen, Zweckbindung (nur Wartung, Weiterentwicklung, Sicherheit),
 Datensparsamkeit (keine Inhalte, kein Query-String) und begrenzte Aufbewahrung durch den

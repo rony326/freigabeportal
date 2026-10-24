@@ -1,0 +1,23 @@
+<%
+  // Hinweisbanner (nur für angemeldete Personen). Nur Text, escaped; \n bleibt als Zeilenumbruch.
+  const bBanner = locals.banner || [];
+  const bKlasse = { wartung: 'alert-warning', warnung: 'alert-danger', info: 'alert-info' };
+%><% if (bBanner.length) { %>
+<div class="portal-banner container-xxl" role="region" aria-label="Hinweise">
+<% bBanner.forEach(function (b) { %>
+  <div class="alert <%= bKlasse[b.art] || 'alert-info' %> d-flex justify-content-between align-items-start gap-2 mb-2" data-banner-art="<%= b.art %>">
+    <div>
+      <span style="white-space: pre-line"><%= b.text %></span>
+      <% if (b.link) { %> <a href="<%= b.link %>" class="alert-link">Mehr erfahren</a><% } %>
+    </div>
+    <% if (b.wegklickbar) { %>
+      <form method="post" action="/banner/<%= b.id %>/ausblenden" class="m-0">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <input type="hidden" name="zurueck" value="<%= locals.currentPath || '' %>">
+        <button type="submit" class="btn-close" aria-label="Ausblenden"></button>
+      </form>
+    <% } %>
+  </div>
+<% }) %>
+</div>
+<% } %>

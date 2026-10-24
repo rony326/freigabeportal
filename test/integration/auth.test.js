@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
+import { warteBis } from '../helpers/warteBis.js';
 import { openDatabase } from '../../src/db/index.js';
 import { createApp } from '../../src/app.js';
+import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { getPersonById } from '../../src/db/personenRepo.js';
 import { fetchCsrfToken, extractCookieValue } from '../helpers/csrf.js';
 
@@ -245,5 +247,132 @@ test('GET /auth/abgemeldet renders a confirmation page instead of bouncing strai
   // Confirmed against the live instance (life-church.church.tools) by the user: ChurchTools'
   // own logout is a query-param route on the base URL, not a /logout path.
   assert.match(res.text, /https:\/\/ct\.example\.org\/\?q=logout/);
+  db.close();
+});
+
+// --- Anmeldungen und Warnung bei neuem Gerät ---
+function stubMailer({ fail = false } = {}) {
+  const sent = [];
+  return {
+    sent,
+    async sendMail(mail) {
+      if (fail) throw new Error('SMTP nicht erreichbar');
+      sent.push(mail);
+    },
+  };
+}
+
+async function anmelden(agent, config) {
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(200, { access_token: 'tok' });
+  client.intercept({ path: '/oauth/userinfo', method: 'GET' }).reply(200, { id: 7, firstName: 'Max', lastName: 'Muster', email: 'max@example.org' });
+  client.intercept({ path: '/api/groups/10/members', method: 'GET' }).reply(200, { data: [{ personId: 7 }] });
+  client.intercept({ path: '/api/groups/20/members', method: 'GET' }).reply(200, { data: [] });
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  return agent.get('/auth/callback').query({ code: 'the-code', state });
+}
+
+const anmeldungen = (db) => db.prepare('SELECT * FROM nutzung_anmeldungen ORDER BY id').all();
+
+test('erste Anmeldung ohne Mail', async () => {
+  const config = testConfig();
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = stubMailer();
+  const agent = request.agent(createApp({ db, config, mailer }));
+  const res = await anmelden(agent, config);
+  assert.equal(res.status, 302);
+  assert.equal(mailer.sent.length, 0);
+  const zeilen = anmeldungen(db);
+  assert.equal(zeilen.length, 1);
+  assert.equal(zeilen[0].erfolg, 1);
+  assert.equal(zeilen[0].person_id, '7');
+  assert.equal(zeilen[0].neues_geraet, 0);
+  assert.match(zeilen[0].geraet_id, /^[0-9a-f]{32}$/);
+  db.close();
+});
+
+test('zweite Anmeldung vom selben Gerät ohne Mail', async () => {
+  const config = testConfig();
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = stubMailer();
+  const agent = request.agent(createApp({ db, config, mailer }));
+  await anmelden(agent, config);
+  await anmelden(agent, config);
+  assert.equal(mailer.sent.length, 0);
+  const zeilen = anmeldungen(db);
+  assert.equal(zeilen.length, 2);
+  assert.equal(zeilen[1].neues_geraet, 0);
+  assert.equal(zeilen[0].geraet_id, zeilen[1].geraet_id);
+  db.close();
+});
+
+test('Anmeldung ohne Cookie → neues Gerät, Mail mit Hinweis', async () => {
+  const config = testConfig();
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const mailer = stubMailer();
+  const app = createApp({ db, config, mailer });
+  await anmelden(request.agent(app), config);
+  const res = await anmelden(request.agent(app), config);
+  assert.equal(res.status, 302);
+  // Versand im Hintergrund.
+  await warteBis(() => mailer.sent.length > 0);
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'max@example.org');
+  assert.match(mailer.sent[0].text, /Wenn du deine Browserdaten gelöscht oder ein privates Fenster benutzt hast, kann auch das der Grund sein\./);
+  assert.match(mailer.sent[0].text, /die Portal-Administration/);
+  assert.match(mailer.sent[0].text, /\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}/);
+  assert.equal(anmeldungen(db)[1].neues_geraet, 1);
+  db.close();
+});
+
+test('fehlgeschlagener Callback wird erfasst', async () => {
+  const config = testConfig();
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const agent = request.agent(createApp({ db, config, mailer: stubMailer() }));
+  await agent.get('/auth/login');
+  await agent.get('/auth/callback').query({ code: 'x', state: 'falsch' });
+  const client = setupMockChurchTools(config.churchtools.baseUrl);
+  client.intercept({ path: '/oauth/access_token', method: 'POST' }).reply(400, { error: 'invalid_grant' });
+  const loginRes = await agent.get('/auth/login');
+  const state = new URL(loginRes.headers.location).searchParams.get('state');
+  await agent.get('/auth/callback').query({ code: 'x', state });
+  const zeilen = anmeldungen(db);
+  assert.deepEqual(zeilen.map((z) => [z.erfolg, z.grund, z.person_id]), [[0, 'state_ungueltig', null], [0, 'token_fehler', null]]);
+  db.close();
+});
+
+test('Mail-Fehler bricht Login nicht ab', async () => {
+  const config = testConfig();
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const app = createApp({ db, config, mailer: stubMailer({ fail: true }) });
+  await anmelden(request.agent(app), config);
+  const res = await anmelden(request.agent(app), config);
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+  assert.equal(anmeldungen(db)[1].neues_geraet, 1);
+  await warteBis(() => db.prepare("SELECT versuche FROM mail_log WHERE typ = 'neues-geraet'").get()?.versuche >= 1);
+  db.close();
+});
+
+test('Anmeldung wartet nicht auf einen hängenden Mailserver', async () => {
+  const config = testConfig();
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  let freigeben;
+  const haengend = new Promise((resolve) => { freigeben = resolve; });
+  const app = createApp({ db, config, mailer: { sendMail: () => haengend } });
+  await anmelden(request.agent(app), config);
+  const res = await anmelden(request.agent(app), config);
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+  assert.equal(db.prepare("SELECT status FROM mail_log WHERE typ = 'neues-geraet'").get().status, 'eingereiht');
+  freigeben();
+  await warteBis(() => db.prepare("SELECT status FROM mail_log WHERE typ = 'neues-geraet'").get().status === 'versendet');
   db.close();
 });

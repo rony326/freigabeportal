@@ -24,6 +24,8 @@ const PORTAL = [
   { titel: 'Persönlich', punkte: [
     { label: 'Ferienmodus', href: '/ferienmodus', symbol: '☼', flag: null },
     { label: 'Zeitstempel prüfen', href: '/zeitstempel-pruefen', symbol: '⏱', flag: null },
+    { label: 'Problem melden', href: '/fehler-melden', symbol: '!', flag: null },
+    { label: 'Datenschutz', href: '/datenschutz', symbol: '§', flag: null },
   ] },
 ];
 
@@ -53,6 +55,7 @@ const ADMIN = [
     { label: 'Sync-Übersicht', href: '/admin/sync', symbol: '⟳', flag: 'sync' },
     { label: 'Geplante Jobs', href: '/admin/geplante-jobs', symbol: '⚙', flag: 'geplanteJobs' },
     { label: 'Audit-Log', href: '/admin/audit-log', symbol: '☷', flag: 'auditLog' },
+    { label: 'Betrieb & Nutzung', href: '/admin/betrieb', symbol: '◔', flag: 'betrieb' },
   ] },
 ];
 

@@ -14,6 +14,7 @@ export const GRANTABLE_BERECHTIGUNGEN = [
   'sync_verwalten',
   'workflow_eingreifen',
   'vorgaenge_einsehen',
+  'betrieb_einsehen',
 ];
 
 export const BERECHTIGUNG_LABELS = {
@@ -29,6 +30,7 @@ export const BERECHTIGUNG_LABELS = {
   sync_verwalten: 'Sync konfigurieren',
   workflow_eingreifen: 'In laufende Vorgänge eingreifen',
   vorgaenge_einsehen: 'Laufende Vorgänge einsehen',
+  betrieb_einsehen: 'Betrieb & Nutzung',
 };
 
 // Superadmin und Manager bekommen jedes vergebbare Recht über ihr Rollen-Bundle, unabhängig von
@@ -36,7 +38,7 @@ export const BERECHTIGUNG_LABELS = {
 export function personHasPermission(db, config, person, permission) {
   if (!person) return false;
   if (personHasRole(person, config, 'superadmin')) return true;
-  if (personHasRole(person, config, 'manager') && !['sync_verwalten', 'workflow_eingreifen'].includes(permission)) return true;
+  if (personHasRole(person, config, 'manager') && !['sync_verwalten', 'workflow_eingreifen', 'betrieb_einsehen'].includes(permission)) return true;
   return personHasBerechtigung(db, person.churchtools_person_id, permission);
 }
 

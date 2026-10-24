@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { buildAuthorizeUrl, exchangeCodeForToken, fetchPerson, resolveMemberGroupIds } from '../services/churchtools.js';
-import { upsertPerson } from '../db/personenRepo.js';
+import { upsertPerson, getPersonById } from '../db/personenRepo.js';
+import { erfasseAnmeldung, sendeNeuesGeraetMail } from '../services/nutzung.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
 
-export function createAuthRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
+export function createAuthRouter({ db, config, mailer = null, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   router.get('/login', (req, res) => {
@@ -19,12 +20,25 @@ export function createAuthRouter({ db, config, csrfProtection = (req, res, next)
       if (!state || state !== req.session.oauthState) {
         // Weder state noch code werden protokolliert.
         meldeZugriffVerweigert(req, { grund: 'anmeldung_ungueltig', status: 400 });
+        erfasseAnmeldung(db, { req, res, personId: null, erfolg: false, grund: 'state_ungueltig' });
         return res.status(400).render('error', { message: 'Ungültiger Login-Vorgang. Bitte erneut versuchen.' });
       }
       delete req.session.oauthState;
 
-      const token = await exchangeCodeForToken(config.churchtools, code);
-      const profile = await fetchPerson(config.churchtools, token.access_token);
+      let token;
+      try {
+        token = await exchangeCodeForToken(config.churchtools, code);
+      } catch (err) {
+        erfasseAnmeldung(db, { req, res, personId: null, erfolg: false, grund: 'token_fehler' });
+        throw err;
+      }
+      let profile;
+      try {
+        profile = await fetchPerson(config.churchtools, token.access_token);
+      } catch (err) {
+        erfasseAnmeldung(db, { req, res, personId: null, erfolg: false, grund: 'profil_fehler' });
+        throw err;
+      }
       const candidateGroupIds = [config.churchtools.groupIdBuchhaltung, config.churchtools.groupIdAdmin, config.churchtools.groupIdManager].filter(Boolean);
       // AUTH-WIDEN-1: login no longer requires Buchhaltung/Admin membership — Freigeber1/2 and
       // their Stellvertreter are account-based roles (AUTHZ-3) that may not be in either group.
@@ -50,6 +64,12 @@ export function createAuthRouter({ db, config, csrfProtection = (req, res, next)
         gruppen,
         loggedInNow: true,
       });
+
+      const anmeldung = erfasseAnmeldung(db, { req, res, personId: String(profile.id), erfolg: true });
+      if (anmeldung.neuesGeraet && mailer) {
+        // Im Hintergrund und wirft nie: die Anmeldung wartet nicht auf den Mailserver.
+        void sendeNeuesGeraetMail(db, mailer, { req, person: getPersonById(db, String(profile.id)) });
+      }
 
       // /pool is now the dashboard for every logged-in person, not just Buchhaltung/Portal-Admin
       // (see app.js's /pool mount) — every login lands there directly, no landing page in between.

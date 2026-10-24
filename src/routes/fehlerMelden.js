@@ -1,0 +1,77 @@
+import { Router } from 'express';
+import { listActivePersons, getPersonById } from '../db/personenRepo.js';
+import { personHasPermission } from '../middleware/permissions.js';
+import { sendNotification } from '../services/notify.js';
+import { getConfigValue } from '../db/adminConfigRepo.js';
+import { portalPfad } from '../services/nutzung.js';
+
+const MAX_BESCHREIBUNG = 2000;
+// Wie in admin/betrieb.js: UUID-Präfix oder volle UUID.
+const FEHLER_ID_MUSTER = /^[0-9a-f][0-9a-f-]{7,63}$/i;
+
+// Verknüpfung nur bei genau einem Treffer, der der meldenden Person gehört (oder keiner Person).
+function findeFehlerRequestId(db, fehlerId, personId) {
+  if (typeof fehlerId !== 'string' || !FEHLER_ID_MUSTER.test(fehlerId)) return null;
+  const treffer = db
+    .prepare("SELECT request_id, person_id FROM betrieb_fehler WHERE request_id LIKE ? ESCAPE '\\' LIMIT 2")
+    .all(`${fehlerId.toLowerCase()}%`);
+  if (treffer.length !== 1) return null;
+  const { request_id: requestId, person_id: fehlerPerson } = treffer[0];
+  return fehlerPerson == null || fehlerPerson === personId ? requestId : null;
+}
+
+export function createFehlerMeldenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
+  const router = Router();
+
+  router.get('/', (req, res) => {
+    const fehlerId = typeof req.query.fehler === 'string' && FEHLER_ID_MUSTER.test(req.query.fehler) ? req.query.fehler.slice(0, 8) : '';
+    res.render('fehler-melden', { gesendet: false, fehlerId, beschreibung: '', fehlerText: null, seite: portalPfad(req.query.seite) || '' });
+  });
+
+  router.post('/', csrfProtection, (req, res) => {
+    const person = req.currentPerson;
+    const personId = person.churchtools_person_id;
+    const fehlerId = typeof req.body.fehlerId === 'string' ? req.body.fehlerId.trim() : '';
+    const beschreibung = typeof req.body.beschreibung === 'string' ? req.body.beschreibung.trim() : '';
+    // Seite kommt aus einem versteckten Feld: Referer wird nie gesendet (Referrer-Policy: no-referrer).
+    const seite = portalPfad(req.body.seite);
+
+    if (beschreibung.length > MAX_BESCHREIBUNG) {
+      return res.status(400).render('fehler-melden', {
+        gesendet: false, fehlerId, beschreibung, seite: seite || '', fehlerText: `Die Beschreibung darf höchstens ${MAX_BESCHREIBUNG} Zeichen lang sein.`,
+      });
+    }
+
+    const requestId = findeFehlerRequestId(db, fehlerId, personId);
+    const userAgent = (req.get('user-agent') || '').slice(0, 500) || null;
+    const meldungId = db
+      .prepare('INSERT INTO betrieb_fehlermeldungen (zeitpunkt, person_id, request_id, beschreibung, seite, user_agent) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(new Date().toISOString(), personId, requestId, beschreibung || null, seite, userAgent).lastInsertRowid;
+
+    // Mails im Hintergrund: die Dankesseite wartet nie auf den Mailserver und scheitert nie am Mail.
+    void (async () => {
+      try {
+        const variablen = {
+          meldendePerson: `${person.vorname} ${person.nachname}`,
+          seite: seite || 'unbekannt',
+          fehlerId: requestId ? requestId.slice(0, 8) : 'keine',
+          beschreibung: beschreibung || '(keine Beschreibung)',
+          link: `${config.publicBaseUrl}/admin/betrieb/meldungen/${meldungId}`,
+          portalName: getConfigValue(db, 'seiten_titel') || 'Freigabeportal',
+        };
+        const empfaenger = listActivePersons(db)
+          .map((kandidat) => getPersonById(db, kandidat.churchtools_person_id))
+          .filter((voll) => voll?.email && personHasPermission(db, config, voll, 'betrieb_einsehen'));
+        for (const voll of empfaenger) {
+          await sendNotification(db, mailer, { to: voll.email, typ: 'fehlermeldung', jobId: null, variablen });
+        }
+      } catch (err) {
+        console.error('Fehlermeldung: Benachrichtigung fehlgeschlagen', err);
+      }
+    })();
+
+    res.render('fehler-melden', { gesendet: true, fehlerId: '', beschreibung: '', fehlerText: null, seite: '' });
+  });
+
+  return router;
+}

@@ -87,6 +87,20 @@
         <div class="form-text">Variablen: %paketNr%, %pruefnummer%, %vonZeit%, %bisZeit%, %anzahlEreignisse%, %zeitstempelZeit%, %ohneZeitstempel%, %pruefseite%, %link%, %portalName%</div>
       </div>
       <div class="mb-3">
+        <label class="form-label" for="neuesGeraetBetreff">Neues Gerät — Betreff</label>
+        <input type="text" class="form-control" id="neuesGeraetBetreff" name="neuesGeraetBetreff" value="<%= neuesGeraetBetreff %>" required>
+        <label class="form-label mt-2" for="neuesGeraetText">Neues Gerät — Text</label>
+        <textarea class="form-control" id="neuesGeraetText" name="neuesGeraetText" rows="6" required><%= neuesGeraetText %></textarea>
+        <div class="form-text">Variablen: %empfaengerName%, %zeitpunkt%, %geraet%, %ip%, %kontakt%, %portalName%</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="fehlermeldungBetreff">Fehlermeldung — Betreff</label>
+        <input type="text" class="form-control" id="fehlermeldungBetreff" name="fehlermeldungBetreff" value="<%= fehlermeldungBetreff %>" required>
+        <label class="form-label mt-2" for="fehlermeldungText">Fehlermeldung — Text</label>
+        <textarea class="form-control" id="fehlermeldungText" name="fehlermeldungText" rows="6" required><%= fehlermeldungText %></textarea>
+        <div class="form-text">Variablen: %empfaengerName%, %meldendePerson%, %seite%, %fehlerId%, %beschreibung%, %link%, %portalName%</div>
+      </div>
+      <div class="mb-3">
         <label class="form-label" for="digestBetreff">Digest (tägliche Zusammenfassung) — Betreff</label>
         <input type="text" class="form-control" id="digestBetreff" name="digestBetreff" value="<%= digestBetreff %>" required>
         <label class="form-label mt-2" for="digestText">Digest — Text</label>

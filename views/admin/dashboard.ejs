@@ -175,6 +175,16 @@
         </a>
       </div>
       <% } %>
+      <% if (adminNav.betrieb) { %>
+      <div class="col">
+        <a href="/admin/betrieb" class="card text-decoration-none h-100">
+          <div class="card-body">
+            <h2 class="h5 card-title">Betrieb &amp; Nutzung</h2>
+            <p class="card-text text-body-secondary">Nutzung, Fehler, Fehlermeldungen, Banner und Datenschutzhinweis.</p>
+          </div>
+        </a>
+      </div>
+      <% } %>
       <% if (adminNav.backup) { %>
       <div class="col">
         <a href="/admin/backup" class="card text-decoration-none h-100">

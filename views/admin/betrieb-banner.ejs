@@ -1,0 +1,89 @@
+<%- include('../_seite_anfang', { titel: 'Betrieb & Nutzung' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Betrieb &amp; Nutzung</h1>
+    </div>
+<%- include('_betrieb_reiter', { reiter }) %>
+<% const artLabel = { info: 'Info', wartung: 'Wartung', warnung: 'Warnung' };
+   const artFarbe = { info: 'text-bg-info', wartung: 'text-bg-warning', warnung: 'text-bg-danger' };
+   const jetzt = new Date().toISOString(); %>
+    <% if (gespeichert) { %>
+      <div class="alert alert-success alert-dismissible fade show" role="alert">
+        Gespeichert.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schliessen"></button>
+      </div>
+    <% } %>
+    <p class="text-body-secondary">Banner erscheinen oben auf allen Seiten für alle angemeldeten Personen. Info-Banner können weggeklickt werden, Wartung und Warnung bleiben bis zum Ende des Zeitraums stehen.</p>
+
+    <h2 class="h5"><%= formular.id ? `Banner #${formular.id} bearbeiten` : 'Neues Banner' %></h2>
+    <% if (fehler.length) { %>
+      <div class="alert alert-danger"><ul class="mb-0"><% fehler.forEach((f) => { %><li><%= f %></li><% }) %></ul></div>
+    <% } %>
+    <form method="post" action="<%= formular.id ? `/admin/betrieb/banner/${formular.id}` : '/admin/betrieb/banner' %>" class="col-12 col-lg-8 mb-4">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <div class="mb-3">
+        <label class="form-label" for="art">Art</label>
+        <select class="form-select" id="art" name="art">
+          <% ['info', 'wartung', 'warnung'].forEach((a) => { %>
+            <option value="<%= a %>"<%= formular.art === a ? ' selected' : '' %>><%= artLabel[a] %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="text">Text</label>
+        <textarea class="form-control" id="text" name="text" rows="3" maxlength="1000" required><%= formular.text %></textarea>
+        <div class="form-text">Nur Text, Zeilenumbrüche sind erlaubt.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="link">Link (optional)</label>
+        <input type="text" class="form-control" id="link" name="link" value="<%= formular.link %>" placeholder="https://… oder /pfad">
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-sm-6">
+          <label class="form-label" for="von">Von</label>
+          <input type="datetime-local" class="form-control" id="von" name="von" value="<%= formular.von %>" required>
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label" for="bis">Bis</label>
+          <input type="datetime-local" class="form-control" id="bis" name="bis" value="<%= formular.bis %>" required>
+        </div>
+        <div class="form-text">Zeiten in Schweizer Ortszeit.</div>
+      </div>
+      <button type="submit" class="btn btn-primary"><%= formular.id ? 'Speichern' : 'Banner anlegen' %></button>
+      <% if (formular.id) { %><a class="btn btn-link" href="/admin/betrieb/banner">Abbrechen</a><% } %>
+    </form>
+
+    <h2 class="h5">Alle Banner</h2>
+    <% if (banner.length === 0) { %>
+      <p class="text-body-secondary">Noch keine Banner.</p>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Art</th><th>Text</th><th>Zeitraum</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <% banner.forEach((b) => { %>
+              <tr>
+                <td><span class="badge <%= artFarbe[b.art] %>"><%= artLabel[b.art] %></span></td>
+                <td style="white-space: pre-line"><%= b.text %><% if (b.link) { %><br><span class="small text-body-secondary">Link: <%= b.link %></span><% } %></td>
+                <td class="text-nowrap"><%= zeit(b.von) %> – <%= zeit(b.bis) %></td>
+                <td>
+                  <% if (!b.aktiv) { %><span class="badge text-bg-secondary">deaktiviert</span>
+                  <% } else if (b.bis < jetzt) { %><span class="badge text-bg-secondary">abgelaufen</span>
+                  <% } else if (b.von > jetzt) { %><span class="badge text-bg-light">geplant</span>
+                  <% } else { %><span class="badge text-bg-success">sichtbar</span><% } %>
+                </td>
+                <td class="text-nowrap">
+                  <a class="btn btn-outline-secondary btn-sm" href="/admin/betrieb/banner/<%= b.id %>">Bearbeiten</a>
+                  <% if (b.aktiv) { %>
+                    <form method="post" action="/admin/betrieb/banner/<%= b.id %>/deaktivieren" class="d-inline">
+                      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                      <button type="submit" class="btn btn-outline-danger btn-sm">Deaktivieren</button>
+                    </form>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+<%- include('../_seite_ende') %>

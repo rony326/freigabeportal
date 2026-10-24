@@ -1,0 +1,63 @@
+<%- include('../_seite_anfang', { titel: 'Betrieb & Nutzung' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Betrieb &amp; Nutzung</h1>
+    </div>
+<%- include('_betrieb_reiter', { reiter }) %>
+<% if (einzelfehler) { const f = einzelfehler; %>
+    <p><a href="/admin/betrieb/fehler">← Alle Fehler</a></p>
+    <h2 class="h5">Fehler <code><%= f.request_id.slice(0, 8) %></code></h2>
+    <dl class="row">
+      <dt class="col-sm-3">Fehler-ID</dt><dd class="col-sm-9"><code><%= f.request_id %></code></dd>
+      <dt class="col-sm-3">Zeitpunkt</dt><dd class="col-sm-9"><%= zeit(f.zeitpunkt) %></dd>
+      <dt class="col-sm-3">Person</dt><dd class="col-sm-9"><% if (f.person_id) { %><a href="/admin/betrieb/personen/<%= f.person_id %>"><%= name(f.person_id) %></a><% } else { %>—<% } %></dd>
+      <dt class="col-sm-3">Anfrage</dt><dd class="col-sm-9"><%= f.methode %> <code><%= f.pfad %></code></dd>
+      <dt class="col-sm-3">Status</dt><dd class="col-sm-9"><%= f.status %></dd>
+      <dt class="col-sm-3">Meldung</dt><dd class="col-sm-9"><%= f.meldung %></dd>
+      <dt class="col-sm-3">User-Agent</dt><dd class="col-sm-9 small text-break"><%= f.user_agent || '—' %></dd>
+    </dl>
+    <h2 class="h5">Technischer Ablauf</h2>
+    <pre class="border rounded p-2 small" style="white-space:pre-wrap;overflow-wrap:anywhere"><%= f.stack || '(kein Stack erfasst)' %></pre>
+    <h2 class="h5 mt-4">Meldungen zu diesem Fehler</h2>
+    <% if (meldungen.length === 0) { %>
+      <p class="text-body-secondary">Keine Meldungen.</p>
+    <% } else { %>
+      <ul>
+        <% meldungen.forEach((m) => { %>
+          <li><a href="/admin/betrieb/meldungen/<%= m.id %>"><%= zeit(m.zeitpunkt) %></a> — <%= name(m.person_id) %>: <%= m.beschreibung || '(keine Beschreibung)' %></li>
+        <% }) %>
+      </ul>
+    <% } %>
+<% } else { %>
+    <% if (sucheUngueltig) { %>
+      <div class="alert alert-warning">Eine Fehler-ID besteht aus mindestens 8 Zeichen 0–9 und a–f.</div>
+    <% } %>
+    <form method="get" action="/admin/betrieb/fehler" class="filterzeile mb-3">
+      <div class="col-auto">
+        <label class="visually-hidden" for="suche">Fehler-ID</label>
+        <input type="text" class="form-control" id="suche" name="suche" value="<%= suche %>" placeholder="Fehler-ID (mind. 8 Zeichen)">
+      </div>
+      <div class="col-auto"><button type="submit" class="btn btn-outline-primary">Suchen</button></div>
+    </form>
+    <% if (fehler.length === 0) { %>
+      <p class="text-body-secondary">Keine Fehler gefunden.</p>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Zeitpunkt</th><th>Fehler-ID</th><th>Person</th><th>Anfrage</th><th>Status</th><th>Meldung</th></tr></thead>
+          <tbody>
+            <% fehler.forEach((f) => { %>
+              <tr>
+                <td><%= zeit(f.zeitpunkt) %></td>
+                <td><a href="/admin/betrieb/fehler/<%= f.request_id %>"><code><%= f.request_id.slice(0, 8) %></code></a></td>
+                <td><%= name(f.person_id) %></td>
+                <td><%= f.methode %> <code><%= f.pfad %></code></td>
+                <td><%= f.status %></td>
+                <td><%= f.meldung %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+<% } %>
+<%- include('../_seite_ende') %>

@@ -1,0 +1,25 @@
+<%- include('_seite_anfang', { titel: 'Problem melden' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Problem melden</h1>
+    </div>
+    <div class="row justify-content-center">
+      <div class="col-lg-6">
+        <% if (gesendet) { %>
+          <div class="alert alert-success">Danke für deine Meldung. Die Portal-Administration schaut sich das an.</div>
+          <p><a href="/" class="btn btn-outline-secondary">Zurück zur Startseite</a></p>
+        <% } else { %>
+          <% if (fehlerText) { %><div class="alert alert-danger"><%= fehlerText %></div><% } %>
+          <form method="post" action="/fehler-melden" class="mb-4">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <% if (locals.seite) { %><input type="hidden" name="seite" value="<%= seite %>"><% } %>
+            <% if (fehlerId) { %><input type="hidden" name="fehlerId" value="<%= fehlerId %>"><p class="text-muted">Fehler-ID: <code><%= fehlerId %></code></p><% } %>
+            <div class="mb-3">
+              <label class="form-label" for="beschreibung">Was ist passiert? (optional)</label>
+              <textarea class="form-control" id="beschreibung" name="beschreibung" rows="5" maxlength="2000"><%= beschreibung %></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Melden</button>
+          </form>
+        <% } %>
+      </div>
+    </div>
+<%- include('_seite_ende') %>

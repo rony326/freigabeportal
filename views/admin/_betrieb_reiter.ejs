@@ -1,0 +1,14 @@
+<%
+  const bReiter = [
+    ['uebersicht', 'Übersicht', '/admin/betrieb'],
+    ['fehler', 'Fehler', '/admin/betrieb/fehler'],
+    ['meldungen', 'Meldungen', '/admin/betrieb/meldungen'],
+    ['banner', 'Banner', '/admin/betrieb/banner'],
+    ['datenschutz', 'Datenschutz', '/admin/betrieb/datenschutz'],
+  ];
+%>
+    <ul class="nav nav-tabs mb-3">
+      <% bReiter.forEach(([schluessel, label, href]) => { %>
+        <li class="nav-item"><a class="nav-link<%= reiter === schluessel ? ' active' : '' %>" href="<%= href %>"<% if (reiter === schluessel) { %> aria-current="page"<% } %>><%= label %></a></li>
+      <% }) %>
+    </ul>

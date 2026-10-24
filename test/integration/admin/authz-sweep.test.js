@@ -158,6 +158,8 @@ test('the real createApp wiring enforces the superadmin-only hard lock and the m
     { method: 'get', path: '/admin/zeitstempel' },
     // workflow_eingreifen is deliberately not part of the manager bundle.
     { method: 'get', path: '/admin/altfaelle' },
+    // betrieb_einsehen (Personendaten) ebenfalls nicht im Manager-Bundle.
+    { method: 'get', path: '/admin/betrieb' },
   ];
   for (const { method, path } of HART_GESPERRT) {
     const res = await managerAgent[method](path);

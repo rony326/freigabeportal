@@ -39,11 +39,15 @@ import { createModuleRouter } from './routes/admin/module.js';
 import { createMailEinstellungenRouter } from './routes/admin/mailEinstellungen.js';
 import { createAltfaelleRouter } from './routes/admin/altfaelle.js';
 import { createDateiQuarantaeneRouter } from './routes/admin/dateiQuarantaene.js';
+import { createBetriebRouter } from './routes/admin/betrieb.js';
 import { createPoolRouter } from './routes/pool.js';
 import { createPoolPageRouter } from './routes/poolPage.js';
 import { createMeineAbgeschlossenenRouter } from './routes/meineAbgeschlossenen.js';
 import { createMeineSpesenRouter } from './routes/meineSpesen.js';
 import { createFerienmodusRouter } from './routes/ferienmodus.js';
+import { createBannerRouter } from './routes/banner.js';
+import { createDatenschutzRouter } from './routes/datenschutz.js';
+import { createFehlerMeldenRouter } from './routes/fehlerMelden.js';
 import { createDownloadsRouter } from './routes/downloads.js';
 import { createKkAbgleichRouter } from './routes/kkAbgleich.js';
 import { createKontierungRouter } from './routes/kontierung.js';
@@ -60,6 +64,8 @@ import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLim
 import { getVersionInfo } from './utils/version.js';
 import { auditContext, auditRequestContext } from './services/auditContext.js';
 import { zugriffsAuditMiddleware, meldeZugriffVerweigert } from './services/zugriffsAudit.js';
+import { nutzungErfassen } from './middleware/nutzungErfassen.js';
+import { erfasseFehler } from './services/nutzung.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -144,6 +150,7 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
     return attachCsrfToken(req, res, next);
   });
   app.use(loadCurrentPerson(db));
+  app.use(nutzungErfassen(db));
   app.use(auditContext);
   app.use(zugriffsAuditMiddleware(db));
   app.use(loadNavFlags(db, config));
@@ -189,6 +196,7 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   app.use('/admin/mail-einstellungen', requireRole(config, 'superadmin'), createMailEinstellungenRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/altfaelle', requirePermission(db, config, 'workflow_eingreifen'), createAltfaelleRouter({ db, config, csrfProtection }));
   app.use('/admin/dateiquarantaene', requireRole(config, 'superadmin'), createDateiQuarantaeneRouter({ db, config, csrfProtection }));
+  app.use('/admin/betrieb', requirePermission(db, config, 'betrieb_einsehen'), createBetriebRouter({ db, csrfProtection }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/n8n/backup', machineLimiter, requireApiKey({ n8nApiKey: config.backupApiKey }), createN8nBackupRouter({ config }));
@@ -203,6 +211,9 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   app.use('/meine-abgeschlossenen', sessionLimiter, requireLogin(), createMeineAbgeschlossenenRouter({ db }));
   app.use('/meine-spesen', sessionLimiter, requireLogin(), createMeineSpesenRouter({ db }));
   app.use('/kreditkarte', sessionLimiter, requireLogin(), createKreditkarteRouter({ db, config, csrfProtection }));
+  app.use('/banner', sessionLimiter, requireLogin(), createBannerRouter({ db, csrfProtection }));
+  app.use('/datenschutz', sessionLimiter, requireLogin(), createDatenschutzRouter({ db }));
+  app.use('/fehler-melden', sessionLimiter, requireLogin(), createFehlerMeldenRouter({ db, config, mailer, csrfProtection }));
   app.use('/ferienmodus', sessionLimiter, requireLogin(), createFerienmodusRouter({ db, csrfProtection }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKkAbgleichRouter({ db, config, mailer, csrfProtection }));
@@ -213,7 +224,7 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config, csrfProtection }));
   app.use('/zeitstempel-pruefen', sessionLimiter, requireLogin(), createZeitstempelPruefenRouter({ db, config, csrfProtection }));
 
-  app.use('/auth', publicLimiter, createAuthRouter({ db, config, csrfProtection }));
+  app.use('/auth', publicLimiter, createAuthRouter({ db, config, mailer, csrfProtection }));
   // Oeffentlich fuer die Revision (ohne Portal-Login), nur GET.
   app.use('/audit-pruefen', publicLimiter, createAuditPruefenRouter({ db }));
   app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));
@@ -241,8 +252,18 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
         .status(403)
         .render('error', { message: 'Sicherheitsprüfung fehlgeschlagen (ungültiges oder abgelaufenes Formular). Bitte lade die Seite neu und versuche es erneut.' });
     }
+    if (typeof err.type === 'string' && err.type.startsWith('entity.')) {
+      // Kaputter Anfrage-Inhalt (Body-Parser): Fehler der Anfrage, kein Serverfehler. Erfasst wird
+      // nur mit angemeldeter Person, damit anonyme Anfragen betrieb_fehler nicht füllen können.
+      const fehlerId = req.currentPerson ? erfasseFehler(db, { req, err, status: 400 }).slice(0, 8) : null;
+      return res.status(400).render('error', { message: 'Ungültiger Anfrage-Inhalt.', fehlerId });
+    }
     console.error(err.stack || err);
-    res.status(500).render('error', { message: 'Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es später erneut.' });
+    // Für das versteckte Seitenfeld im Meldeformular, falls loadNavFlags nicht mehr lief.
+    res.locals.currentPath ??= String(req.originalUrl || '').split('?')[0];
+    // Fehler-ID = Request-ID; angezeigt werden nur die ersten 8 Zeichen, nie der Stack.
+    const fehlerId = erfasseFehler(db, { req, err, status: 500 }).slice(0, 8);
+    res.status(500).render('error', { message: 'Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es später erneut.', fehlerId });
   });
 
   return app;

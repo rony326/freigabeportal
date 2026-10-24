@@ -3,6 +3,7 @@ import { personHasPermission } from './permissions.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { zeigeKreditkartenBereich } from '../services/kkRechte.js';
 import { bereichFuerPfad, bauePortalGruppen, baueAdminGruppen } from '../services/navigation.js';
+import { aktiveBanner } from '../services/banner.js';
 import { zaehleOffeneAufgaben } from '../services/aufgabenZaehler.js';
 
 export function loadNavFlags(db, config) {
@@ -30,12 +31,14 @@ export function loadNavFlags(db, config) {
       module: res.locals.isSuperadmin,
       kreditkarten: hasPermission('kreditkarten_verwalten'),
       altfaelle: hasPermission('workflow_eingreifen'),
+      betrieb: hasPermission('betrieb_einsehen'),
     };
     // Strip a trailing slash (e.g. "/pool/") so nav highlighting/buttons keyed on an exact
     // path like "/pool" still match — Express routes both with and without it identically.
     res.locals.currentPath = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
     res.locals.kreditkartenModulAktiv = getConfigValue(db, 'modul_kreditkarten_aktiv') === '1';
     res.locals.zeigeKreditkarteNav = Boolean(person) && res.locals.kreditkartenModulAktiv && zeigeKreditkartenBereich(db, person.churchtools_person_id);
+    res.locals.banner = person ? aktiveBanner(db, person.churchtools_person_id) : [];
     if (person) {
       const bereich = bereichFuerPfad(res.locals.currentPath);
       const zeigeAdminReiter = Boolean(res.locals.isSuperadmin || res.locals.isManager || Object.values(res.locals.adminNav).some(Boolean));

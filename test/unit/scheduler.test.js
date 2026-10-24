@@ -382,6 +382,27 @@ test('startScheduler runs the daily audit-export job at the configured time (def
   db.close();
 });
 
+test('startScheduler runs the daily nutzungsdaten-bereinigung job at the configured time (default 03:45)', async (t) => {
+  // 2026-01-15T00:00:00Z is 01:00 in Zurich (CET) -- 03:45 is 2h45m away.
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: new Date('2026-01-15T00:00:00.000Z') });
+  const db = seededDb();
+  let calls = 0;
+  startScheduler({
+    db,
+    config: {},
+    mailer: {},
+    jobs: fakeJobs({ runNutzungsdatenBereinigungJob: async () => { calls += 1; return { status: 'erfolg' }; } }),
+  });
+
+  t.mock.timers.tick(2 * 60 * 60 * 1000 + 44 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 0);
+  t.mock.timers.tick(60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+  db.close();
+});
+
 test('startScheduler runs the daily audit-pruefnummer job at the configured time (default 07:00)', async (t) => {
   // 2026-01-15T00:00:00Z is 01:00 in Zurich (CET) -- 07:00 is 6h away.
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: new Date('2026-01-15T00:00:00.000Z') });

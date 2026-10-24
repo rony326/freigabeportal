@@ -63,6 +63,7 @@ kleinen Bildschirmen. Schlüsseltabelle und Cookie-Logik:
 | Audit-Log | `/admin/audit-log` | Einzelrecht `audit_log_einsehen` |
 | Datenbank-Backup | `/admin/backup` | **nur** `superadmin` |
 | Datei-Quarantäne | `/admin/dateiquarantaene` | **nur** `superadmin` (verwaiste finale Dokumente zurückholen/löschen, Begründung Pflicht) |
+| Betrieb & Nutzung | `/admin/betrieb` (+ `/personen/:id`, `/fehler`, `/fehler/:requestId`, `/meldungen`, `/meldungen/:id`, `/banner`, `/datenschutz`) | Einzelrecht `betrieb_einsehen`; `superadmin` ✓, `manager` ✗ — siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md) |
 | Kreditkarten | `/admin/kreditkarten` | Einzelrecht `kreditkarten_verwalten` |
 | Module | `/admin/module` | **nur** `superadmin` |
 | Mail-Einstellungen | `/admin/mail-einstellungen` | **nur** `superadmin` |
@@ -257,7 +258,7 @@ unveränderlich. Siehe
 
 ## Geplante Jobs (`/admin/geplante-jobs`)
 
-Zeitplan-Konfiguration und manuelles Sofort-Auslösen von acht der vierzehn
+Zeitplan-Konfiguration und manuelles Sofort-Auslösen von acht der fünfzehn
 Hintergrund-Jobs (`datenbank-sicherung` und `mail-digest` haben eigene
 Konfigurationsseiten, siehe oben; `sicherheitsalarme` nur über
 `admin_config`), inklusive ihrer Lauf-Historie — einschließlich des

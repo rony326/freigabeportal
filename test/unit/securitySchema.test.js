@@ -26,6 +26,23 @@ test('audit records historical actor and redacts secret values', (t) => {
   assert.doesNotMatch(JSON.stringify(events), /never-log-this|nor-this/);
 });
 
+test('audit von Fehlermeldungen schwärzt Beschreibung, Seite und User-Agent', (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  const id = db.prepare("INSERT INTO betrieb_fehlermeldungen (zeitpunkt, person_id, beschreibung, seite, user_agent) VALUES ('2026-10-24T10:00:00.000Z', '1', 'Mein Lohn ist geheim', '/spesen/geheim', 'GeheimAgent/1')").run().lastInsertRowid;
+  db.prepare("UPDATE betrieb_fehlermeldungen SET status = 'erledigt', notiz = 'erledigt', bearbeitet_von = '9', bearbeitet_am = '2026-10-25T10:00:00.000Z' WHERE id = ?").run(id);
+  db.prepare('DELETE FROM betrieb_fehlermeldungen WHERE id = ?').run(id);
+  const events = db.prepare("SELECT * FROM audit_ereignisse WHERE objekt = 'betrieb_fehlermeldungen' ORDER BY id").all();
+  assert.deepEqual(events.map((e) => e.aktion), ['INSERT', 'UPDATE', 'DELETE']);
+  assert.doesNotMatch(JSON.stringify(events), /geheim|Geheim/);
+  const nachher = JSON.parse(events[1].nachher);
+  for (const spalte of ['beschreibung', 'seite', 'user_agent']) assert.equal(nachher[spalte], '[redacted]');
+  assert.equal(nachher.status, 'erledigt');
+  assert.equal(nachher.notiz, 'erledigt');
+  assert.equal(nachher.bearbeitet_von, '9');
+  assert.equal(nachher.person_id, '1');
+});
+
 test('audit and business change roll back together; committed events cannot be edited or deleted', (t) => {
   const db = openDatabase(':memory:');
   t.after(() => db.close());

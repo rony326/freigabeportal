@@ -57,6 +57,8 @@ const VALID_BODY = {
   adminUmzuweisungBetreff: 'B14', adminUmzuweisungText: 'T14',
   duplikatWarnungBetreff: 'B15', duplikatWarnungText: 'T15',
   auditPruefnummerBetreff: 'B16', auditPruefnummerText: 'T16',
+  neuesGeraetBetreff: 'B17', neuesGeraetText: 'T17',
+  fehlermeldungBetreff: 'B18', fehlermeldungText: 'T18',
   batchingAktiv: '1',
   batchingStunde: '6',
   batchingMinute: '30',

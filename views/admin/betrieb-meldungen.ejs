@@ -1,0 +1,80 @@
+<%- include('../_seite_anfang', { titel: 'Betrieb & Nutzung' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Betrieb &amp; Nutzung</h1>
+    </div>
+<%- include('_betrieb_reiter', { reiter }) %>
+<% const statusLabel = { offen: 'offen', in_arbeit: 'in Arbeit', erledigt: 'erledigt' };
+   const statusFarbe = { offen: 'text-bg-warning', in_arbeit: 'text-bg-info', erledigt: 'text-bg-success' }; %>
+<% if (meldung) { %>
+    <p><a href="/admin/betrieb/meldungen">← Alle Meldungen</a></p>
+    <h2 class="h5">Meldung #<%= meldung.id %> <span class="badge <%= statusFarbe[meldung.status] %>"><%= statusLabel[meldung.status] %></span></h2>
+    <% if (gespeichert) { %>
+      <div class="alert alert-success alert-dismissible fade show" role="alert">
+        Gespeichert.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schliessen"></button>
+      </div>
+    <% } %>
+    <% if (fehlerText) { %><div class="alert alert-danger"><%= fehlerText %></div><% } %>
+    <dl class="row">
+      <dt class="col-sm-3">Gemeldet</dt><dd class="col-sm-9"><%= zeit(meldung.zeitpunkt) %> von <a href="/admin/betrieb/personen/<%= meldung.person_id %>"><%= name(meldung.person_id) %></a></dd>
+      <dt class="col-sm-3">Seite</dt><dd class="col-sm-9"><% if (meldung.seite) { %><code><%= meldung.seite %></code><% } else { %>—<% } %></dd>
+      <dt class="col-sm-3">Fehler</dt><dd class="col-sm-9"><% if (meldung.request_id) { %><a href="/admin/betrieb/fehler/<%= meldung.request_id %>"><code><%= meldung.request_id.slice(0, 8) %></code></a><% } else { %>nicht verknüpft<% } %></dd>
+      <dt class="col-sm-3">Beschreibung</dt><dd class="col-sm-9" style="white-space: pre-line"><%= meldung.beschreibung || '(keine Beschreibung)' %></dd>
+      <dt class="col-sm-3">User-Agent</dt><dd class="col-sm-9 small text-break"><%= meldung.user_agent || '—' %></dd>
+      <% if (meldung.bearbeitet_am) { %>
+        <dt class="col-sm-3">Zuletzt bearbeitet</dt><dd class="col-sm-9"><%= zeit(meldung.bearbeitet_am) %> von <%= name(meldung.bearbeitet_von) %></dd>
+      <% } %>
+    </dl>
+    <form method="post" action="/admin/betrieb/meldungen/<%= meldung.id %>" class="col-12 col-lg-8">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <div class="mb-3">
+        <label class="form-label" for="status">Status</label>
+        <select class="form-select" id="status" name="status">
+          <% Object.keys(statusLabel).forEach((s) => { %>
+            <option value="<%= s %>"<%= meldung.status === s ? ' selected' : '' %>><%= statusLabel[s] %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="notiz">Notiz</label>
+        <textarea class="form-control" id="notiz" name="notiz" rows="4" maxlength="2000"><%= meldung.notiz || '' %></textarea>
+        <div class="form-text">Nur intern sichtbar. Änderungen werden im Audit-Log festgehalten.</div>
+      </div>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </form>
+<% } else { %>
+    <form method="get" action="/admin/betrieb/meldungen" class="filterzeile mb-3">
+      <div class="col-auto">
+        <label class="visually-hidden" for="status">Status</label>
+        <select class="form-select" id="status" name="status">
+          <option value="">Alle</option>
+          <% Object.keys(statusLabel).forEach((s) => { %>
+            <option value="<%= s %>"<%= status === s ? ' selected' : '' %>><%= statusLabel[s] %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto"><button type="submit" class="btn btn-outline-primary">Filtern</button></div>
+    </form>
+    <% if (meldungen.length === 0) { %>
+      <p class="text-body-secondary">Keine Meldungen.</p>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Gemeldet</th><th>Person</th><th>Status</th><th>Seite</th><th>Fehler</th><th>Beschreibung</th></tr></thead>
+          <tbody>
+            <% meldungen.forEach((m) => { %>
+              <tr>
+                <td><a href="/admin/betrieb/meldungen/<%= m.id %>"><%= zeit(m.zeitpunkt) %></a></td>
+                <td><%= name(m.person_id) %></td>
+                <td><span class="badge <%= statusFarbe[m.status] %>"><%= statusLabel[m.status] %></span></td>
+                <td><% if (m.seite) { %><code><%= m.seite %></code><% } %></td>
+                <td><% if (m.request_id) { %><code><%= m.request_id.slice(0, 8) %></code><% } %></td>
+                <td><%= (m.beschreibung || '').length > 120 ? `${m.beschreibung.slice(0, 120)}…` : (m.beschreibung || '') %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+<% } %>
+<%- include('../_seite_ende') %>

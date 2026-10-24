@@ -28,7 +28,7 @@ export function createFehlerMeldenRouter({ db, config, mailer, csrfProtection = 
     res.render('fehler-melden', { gesendet: false, fehlerId, beschreibung: '', fehlerText: null, seite: portalPfad(req.query.seite) || '' });
   });
 
-  router.post('/', csrfProtection, async (req, res) => {
+  router.post('/', csrfProtection, (req, res) => {
     const person = req.currentPerson;
     const personId = person.churchtools_person_id;
     const fehlerId = typeof req.body.fehlerId === 'string' ? req.body.fehlerId.trim() : '';
@@ -48,24 +48,27 @@ export function createFehlerMeldenRouter({ db, config, mailer, csrfProtection = 
       .prepare('INSERT INTO betrieb_fehlermeldungen (zeitpunkt, person_id, request_id, beschreibung, seite, user_agent) VALUES (?, ?, ?, ?, ?, ?)')
       .run(new Date().toISOString(), personId, requestId, beschreibung || null, seite, userAgent).lastInsertRowid;
 
-    // Mails dürfen die Dankesseite nie verhindern.
-    try {
-      const variablen = {
-        meldendePerson: `${person.vorname} ${person.nachname}`,
-        seite: seite || 'unbekannt',
-        fehlerId: requestId ? requestId.slice(0, 8) : 'keine',
-        beschreibung: beschreibung || '(keine Beschreibung)',
-        link: `${config.publicBaseUrl}/admin/betrieb/meldungen/${meldungId}`,
-        portalName: getConfigValue(db, 'seiten_titel') || 'Freigabeportal',
-      };
-      for (const kandidat of listActivePersons(db)) {
-        const voll = getPersonById(db, kandidat.churchtools_person_id);
-        if (!voll?.email || !personHasPermission(db, config, voll, 'betrieb_einsehen')) continue;
-        await sendNotification(db, mailer, { to: voll.email, typ: 'fehlermeldung', jobId: null, variablen });
+    // Mails im Hintergrund: die Dankesseite wartet nie auf den Mailserver und scheitert nie am Mail.
+    void (async () => {
+      try {
+        const variablen = {
+          meldendePerson: `${person.vorname} ${person.nachname}`,
+          seite: seite || 'unbekannt',
+          fehlerId: requestId ? requestId.slice(0, 8) : 'keine',
+          beschreibung: beschreibung || '(keine Beschreibung)',
+          link: `${config.publicBaseUrl}/admin/betrieb/meldungen/${meldungId}`,
+          portalName: getConfigValue(db, 'seiten_titel') || 'Freigabeportal',
+        };
+        const empfaenger = listActivePersons(db)
+          .map((kandidat) => getPersonById(db, kandidat.churchtools_person_id))
+          .filter((voll) => voll?.email && personHasPermission(db, config, voll, 'betrieb_einsehen'));
+        for (const voll of empfaenger) {
+          await sendNotification(db, mailer, { to: voll.email, typ: 'fehlermeldung', jobId: null, variablen });
+        }
+      } catch (err) {
+        console.error('Fehlermeldung: Benachrichtigung fehlgeschlagen', err);
       }
-    } catch (err) {
-      console.error('Fehlermeldung: Benachrichtigung fehlgeschlagen', err);
-    }
+    })();
 
     res.render('fehler-melden', { gesendet: true, fehlerId: '', beschreibung: '', fehlerText: null, seite: '' });
   });

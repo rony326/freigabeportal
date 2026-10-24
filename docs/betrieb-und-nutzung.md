@@ -72,7 +72,8 @@ noch nie gesehen (nicht bei der allerersten Anmeldung überhaupt). Dann geht die
 kontaktieren soll (`betrieb_kontakt_email`; leer = „die Portal-Administration“). Wer das
 Cookie löscht oder ein privates Fenster nutzt, gilt als neues Gerät – die Mail sagt das.
 Es gibt keine automatische Sperre. Der Mail-Typ ist bearbeitbar (Mail-Einstellungen) und
-wird immer sofort zugestellt.
+wird immer sofort zugestellt – im Hintergrund über die Mail-Outbox, die Anmeldung wartet
+nicht auf den Mailserver.
 
 ## Fehler und „Problem melden“
 
@@ -80,7 +81,7 @@ Jeder 5xx und jede unbehandelte Ausnahme wird mit der Anfrage-ID erfasst. Die Fe
 zeigt nur die **ersten 8 Zeichen** als Fehler-ID, nie einen Stacktrace; gesucht wird per
 Präfix (mindestens 8 Zeichen). Die Meldung (Beschreibung optional) wird gespeichert und
 per Mail `fehlermeldung` an alle Personen mit `betrieb_einsehen` verschickt (immer sofort,
-bearbeitbare Vorlage). Dieselbe Anfrage-ID erscheint im Audit-Log, so lassen sich Fehler,
+im Hintergrund, bearbeitbare Vorlage; die Dankesseite wartet nicht auf den Mailserver). Dieselbe Anfrage-ID erscheint im Audit-Log, so lassen sich Fehler,
 Audit-Einträge und Logs zusammenführen.
 
 ## Banner
@@ -105,8 +106,6 @@ und angepasst werden.
 
 ## Bekannte Grenzen
 
-- Die Neues-Gerät-Mail wird **während der Anmeldung** versandt. Ein hängender Mailserver
-  kann die Anmeldung verzögern, sie aber nie scheitern lassen (Fehler werden gefangen).
 - Für Problemmeldungen gibt es **kein eigenes Rate-Limit**, nur den allgemeinen
   Session-Limiter.
 - Die Übersicht berechnet Median und p90 im Speicher aus den Zeilen; bei der heutigen

@@ -67,8 +67,8 @@ export function createAuthRouter({ db, config, mailer = null, csrfProtection = (
 
       const anmeldung = erfasseAnmeldung(db, { req, res, personId: String(profile.id), erfolg: true });
       if (anmeldung.neuesGeraet && mailer) {
-        // Wirft nie: die Anmeldung scheitert nicht am Mail.
-        await sendeNeuesGeraetMail(db, mailer, { req, person: getPersonById(db, String(profile.id)) });
+        // Im Hintergrund und wirft nie: die Anmeldung wartet nicht auf den Mailserver.
+        void sendeNeuesGeraetMail(db, mailer, { req, person: getPersonById(db, String(profile.id)) });
       }
 
       // /pool is now the dashboard for every logged-in person, not just Buchhaltung/Portal-Admin

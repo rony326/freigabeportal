@@ -8,6 +8,7 @@ import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { createFehlerMeldenRouter } from '../../src/routes/fehlerMelden.js';
+import { warteBis } from '../helpers/warteBis.js';
 
 const BASE = 'https://portal.example.org';
 // Echte Request-IDs sind UUIDs mit Bindestrichen.
@@ -32,14 +33,14 @@ function buildTestApp(db, mailer) {
   return app;
 }
 
-function setup() {
+function setup({ mailer: eigenerMailer } = {}) {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   upsertPerson(db, { id: '1', vorname: 'Eva', nachname: 'Muster', email: 'eva@example.org', gruppen: ['10'], loggedInNow: true });
   upsertPerson(db, { id: '2', vorname: 'Max', nachname: 'Fremd', email: 'max@example.org', gruppen: ['10'], loggedInNow: true });
   upsertPerson(db, { id: '9', vorname: 'Ad', nachname: 'Min', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
   const sent = [];
-  const mailer = { async sendMail(m) { sent.push(m); } };
+  const mailer = eigenerMailer ?? { async sendMail(m) { sent.push(m); } };
   return { db, sent, app: buildTestApp(db, mailer) };
 }
 
@@ -151,9 +152,26 @@ test('Mail an Berechtigte, nicht an andere', async () => {
   const res = await request(app).post('/fehler-melden').set('x-test-person-id', '1').type('form').send({ fehlerId: REQ_ID.slice(0, 8), beschreibung: 'Hilfe' });
   assert.equal(res.status, 200);
   const id = meldungen(db)[0].id;
+  // Versand im Hintergrund.
+  await warteBis(() => sent.length > 0);
   assert.deepEqual(sent.map((m) => m.to), ['admin@example.org']);
   assert.match(sent[0].text, new RegExp(`${BASE}/admin/betrieb/meldungen/${id}`));
   assert.match(sent[0].text, /Eva Muster/);
   assert.match(sent[0].text, /Hilfe/);
+  db.close();
+});
+
+test('Dankesseite wartet nicht auf einen hängenden Mailserver', async () => {
+  let freigeben;
+  const haengend = new Promise((resolve) => { freigeben = resolve; });
+  const { db, app } = setup({ mailer: { sendMail: () => haengend } });
+  const res = await request(app).post('/fehler-melden').set('x-test-person-id', '1').type('form').send({ beschreibung: 'Hilfe' });
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Danke/);
+  // Mail ist in der Outbox eingereiht, die Zustellung läuft noch.
+  assert.deepEqual(db.prepare("SELECT empfaenger, status FROM mail_log WHERE typ = 'fehlermeldung'").all().map((r) => ({ ...r })),
+    [{ empfaenger: 'admin@example.org', status: 'eingereiht' }]);
+  freigeben();
+  await warteBis(() => db.prepare("SELECT status FROM mail_log WHERE typ = 'fehlermeldung'").get().status === 'versendet');
   db.close();
 });

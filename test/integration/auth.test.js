@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
+import { warteBis } from '../helpers/warteBis.js';
 import { openDatabase } from '../../src/db/index.js';
 import { createApp } from '../../src/app.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
@@ -317,6 +318,8 @@ test('Anmeldung ohne Cookie → neues Gerät, Mail mit Hinweis', async () => {
   await anmelden(request.agent(app), config);
   const res = await anmelden(request.agent(app), config);
   assert.equal(res.status, 302);
+  // Versand im Hintergrund.
+  await warteBis(() => mailer.sent.length > 0);
   assert.equal(mailer.sent.length, 1);
   assert.equal(mailer.sent[0].to, 'max@example.org');
   assert.match(mailer.sent[0].text, /Wenn du deine Browserdaten gelöscht oder ein privates Fenster benutzt hast, kann auch das der Grund sein\./);
@@ -353,5 +356,23 @@ test('Mail-Fehler bricht Login nicht ab', async () => {
   assert.equal(res.status, 302);
   assert.equal(res.headers.location, '/pool');
   assert.equal(anmeldungen(db)[1].neues_geraet, 1);
+  await warteBis(() => db.prepare("SELECT versuche FROM mail_log WHERE typ = 'neues-geraet'").get()?.versuche >= 1);
+  db.close();
+});
+
+test('Anmeldung wartet nicht auf einen hängenden Mailserver', async () => {
+  const config = testConfig();
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  let freigeben;
+  const haengend = new Promise((resolve) => { freigeben = resolve; });
+  const app = createApp({ db, config, mailer: { sendMail: () => haengend } });
+  await anmelden(request.agent(app), config);
+  const res = await anmelden(request.agent(app), config);
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+  assert.equal(db.prepare("SELECT status FROM mail_log WHERE typ = 'neues-geraet'").get().status, 'eingereiht');
+  freigeben();
+  await warteBis(() => db.prepare("SELECT status FROM mail_log WHERE typ = 'neues-geraet'").get().status === 'versendet');
   db.close();
 });

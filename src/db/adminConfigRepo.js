@@ -87,6 +87,8 @@ const DEFAULTS = {
   cron_audit_export_minute: '15',
   cron_audit_pruefnummer_stunde: '7',
   cron_audit_pruefnummer_minute: '0',
+  cron_nutzungsdaten_bereinigung_stunde: '3',
+  cron_nutzungsdaten_bereinigung_minute: '45',
   audit_zeitstempel_alarm_tage: '3',
   mail_vorlage_admin_umzuweisung_betreff: 'Freigabeportal: Vorgang durch Administration übergeben',
   mail_vorlage_admin_umzuweisung_text: 'Hallo %empfaengerName%,\n\n%grund%\n\nVorgang: %jobDateiname%\nBemerkung von %adminName%: %bemerkung%\n\n%link%\n\nFreundliche Grüsse\n%portalName%',

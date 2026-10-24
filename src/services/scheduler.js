@@ -3,6 +3,7 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 import { runSicherheitsalarmeJob } from './sicherheitsalarme.js';
 import { runTsaCrlAktualisierungJob } from './tsaCrlUpdate.js';
 import { runAuditExportJob, runAuditPruefnummerJob } from './auditNachweisJobs.js';
+import { runNutzungsdatenBereinigungJob } from './nutzungBereinigung.js';
 
 const ZEITZONE = 'Europe/Zurich';
 const MINUTE_MS = 60 * 1000;
@@ -109,6 +110,7 @@ export function startScheduler({
     runTsaCrlAktualisierungJob: tsaCrlJob = async () => ({ status: 'uebersprungen' }),
     runAuditExportJob: auditExportJob = async () => ({ status: 'uebersprungen' }),
     runAuditPruefnummerJob: auditPruefnummerJob = async () => ({ status: 'uebersprungen' }),
+    runNutzungsdatenBereinigungJob: nutzungBereinigungJob = async () => ({ status: 'uebersprungen' }),
   } = {
     runSyncPersonenJob,
     runPoolErinnerungenJob,
@@ -124,6 +126,7 @@ export function startScheduler({
     runTsaCrlAktualisierungJob,
     runAuditExportJob,
     runAuditPruefnummerJob,
+    runNutzungsdatenBereinigungJob,
   },
 }) {
   scheduleDaily(
@@ -230,6 +233,16 @@ export function startScheduler({
     async () => {
       const result = await auditExportJob(db, config, mailer);
       if (result.status === 'fehler') console.error('Geplanter audit-export-Lauf fehlgeschlagen:', result.error);
+    }
+  );
+
+  // Loescht Nutzungsdaten nach Ablauf der Aufbewahrungsfrist (services/nutzungBereinigung.js).
+  scheduleDaily(
+    () => zahlOderStandard(getConfigValue(db, 'cron_nutzungsdaten_bereinigung_stunde'), 3),
+    () => zahlOderStandard(getConfigValue(db, 'cron_nutzungsdaten_bereinigung_minute'), 45),
+    async () => {
+      const result = await nutzungBereinigungJob(db, config, mailer);
+      if (result.status === 'fehler') console.error('Geplante nutzungsdaten-bereinigung fehlgeschlagen:', result.error);
     }
   );
 

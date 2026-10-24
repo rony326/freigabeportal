@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
-import { aktiveBanner, pruefeBannerEingabe, blendeBannerAus } from '../../src/services/banner.js';
+import { aktiveBanner, pruefeBannerEingabe, blendeBannerAus, zurichLokalZuIso, isoZuZurichLokal } from '../../src/services/banner.js';
 
 function frischeDb() {
   const db = openDatabase(':memory:');
@@ -76,4 +76,26 @@ test('Datenschutz-Banner einmalig geseedet', () => {
     assert.equal(alle().length, 0);
     db.close();
   });
+});
+
+test('aktiveBanner verwirft einen Link, der die Linkregel nicht erfüllt (direkt per SQL eingefügt)', () => {
+  const db = frischeDb();
+  const von = '2026-10-24T00:00:00.000Z';
+  const bis = '2026-10-25T00:00:00.000Z';
+  neu(db, 'warnung', 'boese', von, bis, 1, 'javascript:alert(1)');
+  neu(db, 'wartung', 'gut', von, bis, 1, '/datenschutz');
+  const banner = aktiveBanner(db, '1', JETZT);
+  assert.deepEqual(banner.map((b) => [b.text, b.link]), [['gut', '/datenschutz'], ['boese', null]]);
+  db.close();
+});
+
+test('datetime-local wird als Zürcher Ortszeit gelesen und zurück formatiert', () => {
+  assert.equal(zurichLokalZuIso('2026-10-24T10:00'), '2026-10-24T08:00:00.000Z'); // Sommerzeit
+  assert.equal(zurichLokalZuIso('2026-12-24T10:00'), '2026-12-24T09:00:00.000Z'); // Winterzeit
+  assert.equal(zurichLokalZuIso('kaputt'), '');
+  assert.equal(zurichLokalZuIso(''), '');
+  assert.equal(zurichLokalZuIso('2026-02-30T10:00'), '');
+  assert.equal(isoZuZurichLokal('2026-10-24T08:00:00.000Z'), '2026-10-24T10:00');
+  assert.equal(isoZuZurichLokal('2026-12-24T09:00:00.000Z'), '2026-12-24T10:00');
+  assert.equal(isoZuZurichLokal(null), '');
 });

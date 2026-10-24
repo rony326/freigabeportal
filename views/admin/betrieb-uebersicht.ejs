@@ -1,0 +1,120 @@
+<%- include('../_seite_anfang', { titel: 'Betrieb & Nutzung' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Betrieb &amp; Nutzung</h1>
+    </div>
+<%- include('_betrieb_reiter', { reiter }) %>
+    <form method="get" action="/admin/betrieb" class="filterzeile mb-3">
+      <div class="col-auto">
+        <label class="visually-hidden" for="tage">Zeitraum</label>
+        <select class="form-select" id="tage" name="tage">
+          <% zeitraeume.forEach((t) => { %>
+            <option value="<%= t %>"<%= t === tage ? ' selected' : '' %>>Letzte <%= t %> Tage</option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="visually-hidden" for="person">Person</label>
+        <select class="form-select" id="person" name="person">
+          <option value="">Alle Personen</option>
+          <% personen.forEach((p) => { %>
+            <option value="<%= p.churchtools_person_id %>"<%= personId === p.churchtools_person_id ? ' selected' : '' %>><%= p.vorname %> <%= p.nachname %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto"><button type="submit" class="btn btn-outline-primary">Anzeigen</button></div>
+      <% if (personId) { %>
+        <div class="col-auto align-self-center"><a href="/admin/betrieb/personen/<%= personId %>">Details zu <%= name(personId) %></a></div>
+      <% } %>
+    </form>
+
+    <div class="row row-cols-1 row-cols-md-3 g-3 mb-4">
+      <div class="col"><div class="card h-100"><div class="card-body">
+        <div class="text-body-secondary small">Aktive Personen</div>
+        <div class="fs-3" data-kennzahl="aktivePersonen"><%= daten.aktivePersonen %></div>
+      </div></div></div>
+      <div class="col"><div class="card h-100"><div class="card-body">
+        <div class="text-body-secondary small">Seitenaufrufe</div>
+        <div class="fs-3" data-kennzahl="seitenaufrufe"><%= daten.seitenaufrufe %></div>
+      </div></div></div>
+      <div class="col"><div class="card h-100"><div class="card-body">
+        <div class="text-body-secondary small">Fehler</div>
+        <div class="fs-3" data-kennzahl="fehler"><%= daten.fehlerProTag.reduce((s, f) => s + f.anzahl, 0) %></div>
+      </div></div></div>
+    </div>
+
+    <div class="row g-4 mb-4">
+      <% [['Geräte', daten.geraeteTypen], ['Browser', daten.browser], ['Betriebssysteme', daten.betriebssysteme]].forEach(([titel, liste]) => { %>
+        <div class="col-md-4">
+          <h2 class="h5"><%= titel %></h2>
+          <% if (liste.length === 0) { %>
+            <p class="text-body-secondary">Keine Daten.</p>
+          <% } else { %>
+            <div class="table-responsive">
+              <table class="table table-sm">
+                <tbody>
+                  <% liste.forEach((e) => { %>
+                    <tr><td><%= e.wert %></td><td class="text-end"><%= e.anzahl %></td><td class="text-end text-body-secondary"><%= Math.round(e.anzahl / daten.seitenaufrufe * 100) %> %</td></tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
+        </div>
+      <% }) %>
+    </div>
+
+    <div class="row g-4 mb-4">
+      <div class="col-lg-6">
+        <h2 class="h5">Meistgenutzte Seiten</h2>
+        <% if (daten.topSeiten.length === 0) { %>
+          <p class="text-body-secondary">Keine Daten.</p>
+        <% } else { %>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead><tr><th>Seite</th><th class="text-end">Aufrufe</th><th class="text-end">Median</th></tr></thead>
+              <tbody>
+                <% daten.topSeiten.forEach((s) => { %>
+                  <tr><td><code><%= s.pfadMuster %></code></td><td class="text-end"><%= s.anzahl %></td><td class="text-end"><%= s.medianMs == null ? '—' : `${s.medianMs} ms` %></td></tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+      <div class="col-lg-6">
+        <h2 class="h5">Langsame Seiten</h2>
+        <p class="small text-body-secondary">Nach 90-%-Wert der Antwortzeit, nur Seiten mit mindestens 20 Aufrufen.</p>
+        <% if (daten.langsameSeiten.length === 0) { %>
+          <p class="text-body-secondary">Keine Seite mit genügend Aufrufen.</p>
+        <% } else { %>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead><tr><th>Seite</th><th class="text-end">Aufrufe</th><th class="text-end">Median</th><th class="text-end">90 %</th></tr></thead>
+              <tbody>
+                <% daten.langsameSeiten.forEach((s) => { %>
+                  <tr><td><code><%= s.pfadMuster %></code></td><td class="text-end"><%= s.anzahl %></td><td class="text-end"><%= s.medianMs %> ms</td><td class="text-end"><%= s.p90Ms %> ms</td></tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </div>
+
+    <h2 class="h5">Fehler pro Tag</h2>
+    <% if (daten.fehlerProTag.length === 0) { %>
+      <p class="text-body-secondary">Keine Fehler im Zeitraum.</p>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-sm w-auto">
+          <thead><tr><th>Tag</th><th class="text-end">Fehler</th></tr></thead>
+          <tbody>
+            <% daten.fehlerProTag.forEach((f) => { const [j, m, d] = f.tag.split('-'); %>
+              <tr><td><%= d %>.<%= m %>.<%= j %></td><td class="text-end"><%= f.anzahl %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <p><a href="/admin/betrieb/fehler">Alle Fehler anzeigen</a></p>
+    <% } %>
+<%- include('../_seite_ende') %>

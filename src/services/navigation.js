@@ -55,6 +55,7 @@ const ADMIN = [
     { label: 'Sync-Übersicht', href: '/admin/sync', symbol: '⟳', flag: 'sync' },
     { label: 'Geplante Jobs', href: '/admin/geplante-jobs', symbol: '⚙', flag: 'geplanteJobs' },
     { label: 'Audit-Log', href: '/admin/audit-log', symbol: '☷', flag: 'auditLog' },
+    { label: 'Betrieb & Nutzung', href: '/admin/betrieb', symbol: '◔', flag: 'betrieb' },
   ] },
 ];
 

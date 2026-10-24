@@ -65,9 +65,7 @@ export function createFehlerMeldenRouter({ db, config, mailer, csrfProtection = 
         seite: seite || 'unbekannt',
         fehlerId: requestId ? requestId.slice(0, 8) : 'keine',
         beschreibung: beschreibung || '(keine Beschreibung)',
-        // TODO Task 6: auf Template-Literal-Schreibweise umstellen, sobald die Route
-        // existiert (der mailLinks-Guard erfasst nur diese Schreibweise).
-        link: config.publicBaseUrl + '/admin/betrieb/meldungen/' + meldungId,
+        link: `${config.publicBaseUrl}/admin/betrieb/meldungen/${meldungId}`,
         portalName: getConfigValue(db, 'seiten_titel') || 'Freigabeportal',
       };
       for (const kandidat of listActivePersons(db)) {

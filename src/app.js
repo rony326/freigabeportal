@@ -39,6 +39,7 @@ import { createModuleRouter } from './routes/admin/module.js';
 import { createMailEinstellungenRouter } from './routes/admin/mailEinstellungen.js';
 import { createAltfaelleRouter } from './routes/admin/altfaelle.js';
 import { createDateiQuarantaeneRouter } from './routes/admin/dateiQuarantaene.js';
+import { createBetriebRouter } from './routes/admin/betrieb.js';
 import { createPoolRouter } from './routes/pool.js';
 import { createPoolPageRouter } from './routes/poolPage.js';
 import { createMeineAbgeschlossenenRouter } from './routes/meineAbgeschlossenen.js';
@@ -195,6 +196,7 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   app.use('/admin/mail-einstellungen', requireRole(config, 'superadmin'), createMailEinstellungenRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/altfaelle', requirePermission(db, config, 'workflow_eingreifen'), createAltfaelleRouter({ db, config, csrfProtection }));
   app.use('/admin/dateiquarantaene', requireRole(config, 'superadmin'), createDateiQuarantaeneRouter({ db, config, csrfProtection }));
+  app.use('/admin/betrieb', requirePermission(db, config, 'betrieb_einsehen'), createBetriebRouter({ db, csrfProtection }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/n8n/backup', machineLimiter, requireApiKey({ n8nApiKey: config.backupApiKey }), createN8nBackupRouter({ config }));

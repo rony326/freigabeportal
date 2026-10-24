@@ -1,0 +1,27 @@
+<%- include('../_seite_anfang', { titel: 'Betrieb & Nutzung' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Betrieb &amp; Nutzung</h1>
+    </div>
+<%- include('_betrieb_reiter', { reiter }) %>
+    <p class="text-body-secondary">Dieser Text erscheint auf der Seite <a href="/datenschutz">Datenschutz</a>. Der Platzhalter <code>%kontakt%</code> wird durch die Kontaktadresse ersetzt (leer: "die Portal-Administration"). Die Adresse erscheint auch in der Mail bei Anmeldung von einem neuen Gerät.</p>
+    <% if (gespeichert) { %>
+      <div class="alert alert-success alert-dismissible fade show" role="alert">
+        Gespeichert.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schliessen"></button>
+      </div>
+    <% } %>
+    <% if (fehlerText) { %><div class="alert alert-danger"><%= fehlerText %></div><% } %>
+    <form method="post" action="/admin/betrieb/datenschutz" class="col-12 col-lg-8">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <div class="mb-3">
+        <label class="form-label" for="datenschutzText">Datenschutztext</label>
+        <textarea class="form-control" id="datenschutzText" name="datenschutzText" rows="14" required><%= text %></textarea>
+        <div class="form-text">Nur Text, Zeilenumbrüche sind erlaubt.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="kontaktEmail">Kontaktadresse</label>
+        <input type="text" class="form-control" id="kontaktEmail" name="kontaktEmail" value="<%= kontaktEmail %>" placeholder="z. B. it@example.org">
+      </div>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </form>
+<%- include('../_seite_ende') %>

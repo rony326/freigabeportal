@@ -1,0 +1,89 @@
+<%- include('../_seite_anfang', { titel: 'Betrieb & Nutzung' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Betrieb &amp; Nutzung</h1>
+    </div>
+<%- include('_betrieb_reiter', { reiter }) %>
+    <h2 class="h5"><%= person.vorname %> <%= person.nachname %></h2>
+    <p><a href="/admin/betrieb?person=<%= person.churchtools_person_id %>">Übersicht für diese Person</a></p>
+
+    <h2 class="h5 mt-4">Anmeldungen <span class="text-body-secondary small">(letzte 50)</span></h2>
+    <% if (detail.anmeldungen.length === 0) { %>
+      <p class="text-body-secondary">Keine Anmeldungen erfasst.</p>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead><tr><th>Zeitpunkt</th><th>Ergebnis</th><th>IP-Adresse</th><th>Gerät</th><th>User-Agent</th></tr></thead>
+          <tbody>
+            <% detail.anmeldungen.forEach((a) => { %>
+              <tr>
+                <td><%= zeit(a.zeitpunkt) %></td>
+                <td><% if (a.erfolg) { %><span class="badge text-bg-success">erfolgreich</span><% } else { %><span class="badge text-bg-danger">fehlgeschlagen</span> <%= a.grund || '' %><% } %></td>
+                <td><%= a.ip || '—' %></td>
+                <td><% if (a.neues_geraet) { %><span class="badge text-bg-warning">neues Gerät</span><% } %></td>
+                <td class="small text-break"><%= a.user_agent || '' %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+
+    <h2 class="h5 mt-4">Geräte</h2>
+    <% if (detail.geraete.length === 0) { %>
+      <p class="text-body-secondary">Keine Geräte erfasst.</p>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead><tr><th>Typ</th><th>Browser</th><th>Betriebssystem</th><th>Erstmals</th><th>Zuletzt</th></tr></thead>
+          <tbody>
+            <% detail.geraete.forEach((g) => { %>
+              <tr><td><%= g.geraet_typ || '—' %></td><td><%= g.browser || '—' %></td><td><%= g.betriebssystem || '—' %></td><td><%= zeit(g.erstmals_am) %></td><td><%= zeit(g.zuletzt_am) %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+
+    <h2 class="h5 mt-4">Fehler</h2>
+    <% if (detail.fehler.length === 0) { %>
+      <p class="text-body-secondary">Keine Fehler erfasst.</p>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead><tr><th>Zeitpunkt</th><th>Fehler-ID</th><th>Seite</th><th>Status</th><th>Meldung</th></tr></thead>
+          <tbody>
+            <% detail.fehler.forEach((f) => { %>
+              <tr><td><%= zeit(f.zeitpunkt) %></td><td><a href="/admin/betrieb/fehler/<%= f.request_id %>"><code><%= f.request_id.slice(0, 8) %></code></a></td><td><%= f.methode %> <%= f.pfad %></td><td><%= f.status %></td><td><%= f.meldung %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+
+    <h2 class="h5 mt-4">Fehlermeldungen</h2>
+    <% if (detail.meldungen.length === 0) { %>
+      <p class="text-body-secondary">Keine Meldungen.</p>
+    <% } else { %>
+      <ul>
+        <% detail.meldungen.forEach((m) => { %>
+          <li><a href="/admin/betrieb/meldungen/<%= m.id %>"><%= zeit(m.zeitpunkt) %></a> — <%= m.status %>: <%= m.beschreibung || '(keine Beschreibung)' %></li>
+        <% }) %>
+      </ul>
+    <% } %>
+
+    <h2 class="h5 mt-4">Letzte Seitenaufrufe <span class="text-body-secondary small">(letzte 100)</span></h2>
+    <% if (detail.letzteAufrufe.length === 0) { %>
+      <p class="text-body-secondary">Keine Seitenaufrufe erfasst.</p>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead><tr><th>Zeitpunkt</th><th>Seite</th><th>Status</th><th class="text-end">Dauer</th><th>Gerät</th></tr></thead>
+          <tbody>
+            <% detail.letzteAufrufe.forEach((a) => { %>
+              <tr><td><%= zeit(a.zeitpunkt) %></td><td><code><%= a.pfad %></code></td><td><%= a.status %></td><td class="text-end"><%= a.dauer_ms == null ? '—' : `${a.dauer_ms} ms` %></td><td><%= a.browser || '' %> · <%= a.betriebssystem || '' %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+<%- include('../_seite_ende') %>

@@ -4,8 +4,8 @@ import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { uebersicht, personDetail } from '../../services/nutzungAuswertung.js';
 import { pruefeBannerEingabe, zurichLokalZuIso, isoZuZurichLokal, BANNER_ARTEN } from '../../services/banner.js';
 import { zeitpunktAnzeige } from '../../services/auditLog.js';
-import { randomBytes } from 'node:crypto';
-import { pruefeAlleDienste, DEFAULTS as STATUS_DEFAULTS } from '../../services/statusPruefungen.js';
+import { createHash, randomBytes } from 'node:crypto';
+import { createStatusCache, DEFAULTS as STATUS_DEFAULTS } from '../../services/statusPruefungen.js';
 import { createTsaErreichbarkeit } from '../../services/statusTsa.js';
 
 // Dienste der Statusseite: Schlüssel, Name, Link (adminNav-Flag steuert die Sichtbarkeit).
@@ -96,13 +96,16 @@ function bannerFormular(banner) {
   return { id: banner.id, art: banner.art, text: banner.text, link: banner.link || '', von: isoZuZurichLokal(banner.von), bis: isoZuZurichLokal(banner.bis) };
 }
 
-export function createBetriebRouter({ db, config = {}, tsaErreichbarkeit = createTsaErreichbarkeit(), tsaVersuch, csrfProtection = (req, res, next) => next() }) {
+export function createBetriebRouter({
+  db, config = {}, tsaErreichbarkeit = createTsaErreichbarkeit(), tsaVersuch,
+  statusCache = createStatusCache({ db, config, tsaErreichbarkeit, tsaVersuch }), csrfProtection = (req, res, next) => next(),
+}) {
   const router = Router();
 
-  function zeigeStatus(req, res, { status = 200, werte = null, fehler = [], gespeichert = false, neuerSchluessel = null } = {}) {
-    let tsaErgebnis = null;
-    try { tsaErgebnis = tsaErreichbarkeit(db, config, tsaVersuch ? { versuch: tsaVersuch } : {}); } catch { /* bleibt null */ }
-    const ergebnis = pruefeAlleDienste(db, config, { tsaErgebnis });
+  const schluesselVorhanden = () => /^[0-9a-f]{64}$/.test(getConfigValue(db, 'monitoring_secret') || '');
+
+  function zeigeStatus(req, res, { status = 200, werte = null, fehler = [], gespeichert = false, neuerSchluessel = null, neu = false } = {}) {
+    const ergebnis = statusCache.ergebnis({ neu });
     const nav = res.locals.adminNav || {};
     const dienste = STATUS_DIENSTE.map(([key, name, ziel]) => ({
       key, name, ...ergebnis.dienste[key], link: ziel && nav[ziel[1]] ? ziel[0] : null,
@@ -111,25 +114,30 @@ export function createBetriebRouter({ db, config = {}, tsaErreichbarkeit = creat
     res.status(status).render('admin/betrieb-status', {
       ...basis(db, 'status'), gesamt: ergebnis.status, geprueftAm: ergebnis.geprueft_am, dienste,
       felder: GRENZWERT_FELDER, werte: werte || leseGrenzwerte(db), fehler, gespeichert, neuerSchluessel,
-      schluesselVorhanden: /^[0-9a-f]{64}$/.test(getConfigValue(db, 'monitoring_secret') || ''),
+      schluesselVorhanden: schluesselVorhanden(),
       baseUrl: String(config.publicBaseUrl || '').replace(/\/+$/, '') || 'https://<deine-domain>',
     });
   }
 
-  router.get('/status', (req, res) => zeigeStatus(req, res, { gespeichert: req.query.gespeichert === '1' }));
+  router.get('/status', (req, res) => zeigeStatus(req, res, { gespeichert: req.query.gespeichert === '1', neu: req.query.neu === '1' }));
 
   router.post('/status/grenzwerte', csrfProtection, (req, res) => {
     const { werte, fehler } = pruefeGrenzwerte(req.body);
     if (fehler.length) return zeigeStatus(req, res, { status: 400, werte, fehler });
     for (const [k] of GRENZWERT_FELDER) setConfigValue(db, k, werte[k]);
+    statusCache.leeren();
     res.redirect('/admin/betrieb/status?gespeichert=1');
   });
 
   router.post('/status/schluessel', csrfProtection, (req, res) => {
     const aktion = req.body.aktion;
     if (aktion === 'erzeugen') {
+      if (schluesselVorhanden() && req.body.bestaetigt !== '1') {
+        return zeigeStatus(req, res, { status: 400, fehler: ['Bitte bestätige, dass der bisherige Schlüssel ungültig wird.'] });
+      }
       const schluessel = randomBytes(32).toString('hex');
-      setConfigValue(db, 'monitoring_secret', schluessel);
+      // Nur der SHA-256 wird gespeichert; der Klartext wird genau einmal angezeigt.
+      setConfigValue(db, 'monitoring_secret', createHash('sha256').update(schluessel).digest('hex'));
       return zeigeStatus(req, res, { neuerSchluessel: schluessel });
     }
     if (aktion === 'entfernen') {

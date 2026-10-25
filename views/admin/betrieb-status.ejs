@@ -33,7 +33,7 @@
     <% } %>
 
     <h2 class="h5">Gesamtstatus: <span class="badge <%= klasse[gesamt] %>"><%= text[gesamt] %></span></h2>
-    <p class="text-body-secondary">Geprüft: <%= zeit(geprueftAm) %></p>
+    <p class="text-body-secondary">Geprüft: <%= zeit(geprueftAm) %> (Ergebnis bis zu 30 Sekunden zwischengespeichert) · <a href="/admin/betrieb/status?neu=1">Jetzt neu prüfen</a></p>
     <div class="table-responsive mb-4">
       <table class="table align-middle">
         <thead><tr><th>Dienst</th><th>Status</th><th>Grund</th><th>Seit</th><th></th></tr></thead>
@@ -74,6 +74,12 @@
       <form method="post" action="/admin/betrieb/status/schluessel">
         <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
         <input type="hidden" name="aktion" value="erzeugen">
+        <% if (schluesselVorhanden) { %>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="bestaetigt" value="1" id="schluesselBestaetigt" required>
+            <label class="form-check-label" for="schluesselBestaetigt">Ich weiss, dass der bisherige Schlüssel ungültig wird</label>
+          </div>
+        <% } %>
         <button type="submit" class="btn btn-outline-primary"><%= schluesselVorhanden ? 'Neuen Schlüssel erzeugen (ersetzt den alten)' : 'Neuen Schlüssel erzeugen' %></button>
       </form>
       <% if (schluesselVorhanden) { %>

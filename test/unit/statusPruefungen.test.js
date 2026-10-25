@@ -4,7 +4,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults, setConfigValue } from '../../src/db/adminConfigRepo.js';
 import {
   pruefeAlleDienste, pruefeSicherung, pruefeMailversand, pruefeChurchtools, pruefeZeitstempel,
-  pruefeAuditNachweis, pruefeArchivuebergabe, pruefeSpeicher, pruefeJobs, pruefeSicherheitsalarme, pruefeDatenbank,
+  pruefeAuditNachweis, pruefeArchivuebergabe, pruefeSpeicher, pruefeJobs, pruefeSicherheitsalarme, pruefeDatenbank, createStatusCache,
 } from '../../src/services/statusPruefungen.js';
 
 const H = 3600 * 1000;
@@ -279,4 +279,36 @@ test('grund enthaelt keine Pfade oder URLs', (t) => {
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
   const r = pruefeAlleDienste(db, { ...config, tsaCrlFile: '/geheim/crl.pem' }, ctx({ tsaErgebnis: { erreichbar: false }, statfs: () => { throw new Error('/var/data kaputt'); } }));
   for (const d of Object.values(r.dienste)) assert.doesNotMatch(d.grund, /\/|https?:|\.sqlite|tsa\.example/);
+});
+
+test('Status-Cache: zwei Aufrufe innerhalb 30 s prüfen einmal, danach und mit neu=true erneut', () => {
+  let laeufe = 0;
+  let uhr = T0.getTime();
+  let tsaAufrufe = 0;
+  const cache = createStatusCache({
+    db: {}, config,
+    tsaErreichbarkeit: () => { tsaAufrufe++; return { erreichbar: true }; },
+    pruefe: (db, cfg, { tsaErgebnis }) => { laeufe++; return { status: 'ok', geprueft_am: new Date(uhr).toISOString(), dienste: {}, tsaErgebnis }; },
+    jetzt: () => uhr,
+  });
+  const a = cache.ergebnis();
+  uhr += 29_999;
+  const b = cache.ergebnis();
+  assert.equal(laeufe, 1);
+  assert.equal(tsaAufrufe, 1);
+  assert.equal(a, b);
+  assert.deepEqual(a.tsaErgebnis, { erreichbar: true });
+  cache.ergebnis({ neu: true });
+  assert.equal(laeufe, 2);
+  uhr += 30_000;
+  cache.ergebnis();
+  assert.equal(laeufe, 3);
+  cache.leeren();
+  cache.ergebnis();
+  assert.equal(laeufe, 4);
+});
+
+test('Status-Cache: TSA-Fehler blockiert die Prüfung nicht', () => {
+  const cache = createStatusCache({ db: {}, config, tsaErreichbarkeit: () => { throw new Error('x'); }, pruefe: (db, cfg, o) => ({ status: 'ok', tsa: o.tsaErgebnis }) });
+  assert.equal(cache.ergebnis().tsa, null);
 });

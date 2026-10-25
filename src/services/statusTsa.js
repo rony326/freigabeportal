@@ -16,19 +16,34 @@ export async function tsaTestversuch(tsaConfig) {
 }
 
 // Eigener Zustand pro Instanz (Tests); der Versuch läuft im Hintergrund und wird nie awaited.
+// Jeder Versuch ist ein echter Zeitstempel-Request (höchstens alle 15 min, nur bei Aufruf).
+// Ändert sich die TSA-URL, gilt das alte Ergebnis nicht mehr; ein später eintreffendes
+// Ergebnis für die alte URL wird verworfen (Generation).
 export function createTsaErreichbarkeit() {
-  let letzter = { erreichbar: null, geprueft_am: null };
+  const LEER = { erreichbar: null, geprueft_am: null };
+  let letzter = LEER;
   let laufend = false;
   let letzterStart = null;
+  let url = null;
+  let generation = 0;
   return function tsaErreichbarkeit(db, config, { jetzt = new Date(), versuch = tsaTestversuch } = {}) {
     const tsaConfig = tsaConfigAusDb(db, config);
-    if (!tsaConfig) return { erreichbar: null, geprueft_am: null };
+    if (!tsaConfig) return LEER;
+    if (tsaConfig.url !== url) {
+      url = tsaConfig.url;
+      generation += 1;
+      letzter = LEER;
+      laufend = false;
+      letzterStart = null;
+    }
     if (!laufend && (letzterStart === null || jetzt.getTime() - letzterStart >= INTERVALL_MS)) {
       laufend = true;
       letzterStart = jetzt.getTime();
+      const meine = generation;
       let p;
       try { p = Promise.resolve(versuch(tsaConfig)); } catch (err) { p = Promise.reject(err); }
       p.then(() => true, () => false).then((ok) => {
+        if (meine !== generation) return;
         letzter = { erreichbar: ok, geprueft_am: new Date().toISOString() };
         laufend = false;
       });

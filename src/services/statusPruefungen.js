@@ -222,3 +222,26 @@ export function pruefeAlleDienste(db, config, { jetzt = new Date(), tsaErgebnis 
   }
   return { status, geprueft_am: jetzt.toISOString(), dienste };
 }
+
+export const STATUS_CACHE_TTL_MS = 30 * 1000;
+
+// Gemeinsamer Zwischenspeicher fuer /healthz, Dashboard-Karte und Statusseite (eine Instanz pro App).
+// neu=true umgeht ihn ("Jetzt neu pruefen"); leeren() nach geaenderten Grenzwerten.
+export function createStatusCache({
+  db, config, tsaErreichbarkeit = null, tsaVersuch, ttlMs = STATUS_CACHE_TTL_MS,
+  pruefe = pruefeAlleDienste, jetzt = Date.now,
+} = {}) {
+  let eintrag = null;
+  return {
+    ergebnis({ neu = false } = {}) {
+      const t = jetzt();
+      if (!neu && eintrag && t - eintrag.zeit < ttlMs) return eintrag.wert;
+      let tsaErgebnis = null;
+      try { if (tsaErreichbarkeit) tsaErgebnis = tsaErreichbarkeit(db, config, tsaVersuch ? { versuch: tsaVersuch } : {}); } catch { /* bleibt null */ }
+      const wert = pruefe(db, config, { jetzt: new Date(t), tsaErgebnis });
+      eintrag = { zeit: t, wert };
+      return wert;
+    },
+    leeren() { eintrag = null; },
+  };
+}

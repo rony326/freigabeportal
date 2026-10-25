@@ -11,6 +11,10 @@ import { requirePermission } from '../../../src/middleware/permissions.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createApp } from '../../../src/app.js';
 import { createBetriebRouter } from '../../../src/routes/admin/betrieb.js';
+import { createHash } from 'node:crypto';
+
+const hash = (k) => createHash('sha256').update(k).digest('hex');
+const angezeigt = (html) => html.match(/id="neuerSchluessel">([0-9a-f]{64})</)?.[1];
 
 const DIENSTE_NAMEN = ['Datenbank', 'Sicherung', 'Mailversand', 'ChurchTools', 'Zeitstempel', 'Audit-Nachweis', 'Archivübergabe', 'Speicher', 'Geplante Jobs', 'Sicherheitsalarme'];
 const GUELTIG = {
@@ -94,9 +98,9 @@ test('Schlüssel erzeugen zeigt ihn einmal, danach nie mehr; Audit ohne Klartext
   const { db, app } = setup();
   const res = await request(app).post('/admin/betrieb/status/schluessel').type('form').set('x-test-person-id', '7').send({ aktion: 'erzeugen' });
   assert.equal(res.status, 200);
-  const key = getConfigValue(db, 'monitoring_secret');
+  const key = angezeigt(res.text);
   assert.match(key, /^[0-9a-f]{64}$/);
-  assert.ok(res.text.includes(key));
+  assert.equal(getConfigValue(db, 'monitoring_secret'), hash(key), 'nur der SHA-256 des Schlüssels wird gespeichert');
   assert.match(res.text, /X-Monitoring-Key/);
   assert.match(res.text, /dienste\.sicherung\.status/);
   assert.match(res.text, /https:\/\/portal\.example\.org\/healthz/);
@@ -126,7 +130,7 @@ test('Schlüssel entfernen leert den Wert; unbekannte Aktion → 400', async () 
 test('Schlüssel steuert /healthz im echten createApp: erzeugen → Details, entfernen → Kurzantwort', async () => {
   const { db, app } = setup();
   const res = await request(app).post('/admin/betrieb/status/schluessel').type('form').set('x-test-person-id', '7').send({ aktion: 'erzeugen' });
-  const key = getConfigValue(db, 'monitoring_secret');
+  const key = angezeigt(res.text);
   assert.equal(res.status, 200);
   const vollApp = createApp({
     db,
@@ -138,5 +142,36 @@ test('Schlüssel steuert /healthz im echten createApp: erzeugen → Details, ent
   await request(app).post('/admin/betrieb/status/schluessel').type('form').set('x-test-person-id', '7').send({ aktion: 'entfernen' });
   const ohne = await request(vollApp).get('/healthz').set('X-Monitoring-Key', key);
   assert.equal(ohne.text, '{"status":"ok"}');
+  db.close();
+});
+
+test('Schlüssel neu erzeugen bei vorhandenem Schlüssel nur mit Bestätigung', async () => {
+  const { db, app } = setup();
+  setConfigValue(db, 'monitoring_secret', hash('alt'));
+  const post = (body) => request(app).post('/admin/betrieb/status/schluessel').type('form').set('x-test-person-id', '7').send(body);
+  const seite = await als(app, '7');
+  assert.match(seite.text, /Ich weiss, dass der bisherige Schlüssel ungültig wird/);
+  const ohne = await post({ aktion: 'erzeugen' });
+  assert.equal(ohne.status, 400);
+  assert.match(ohne.text, /bestätige/);
+  assert.equal(getConfigValue(db, 'monitoring_secret'), hash('alt'));
+  const mit = await post({ aktion: 'erzeugen', bestaetigt: '1' });
+  assert.equal(mit.status, 200);
+  const key = angezeigt(mit.text);
+  assert.equal(getConfigValue(db, 'monitoring_secret'), hash(key));
+  db.close();
+});
+
+test('Statusseite: Ergebnis 30 s zwischengespeichert, "Jetzt neu prüfen" umgeht den Cache, Grenzwerte leeren ihn', async () => {
+  const { db, app } = setup();
+  const erste = await als(app, '7');
+  assert.match(erste.text, /href="\/admin\/betrieb\/status\?neu=1"[^>]*>Jetzt neu prüfen/);
+  db.prepare("INSERT INTO sicherheitsalarme (alarm_typ, schluessel, erkannt_am, naechster_versuch_am) VALUES ('backup_loeschung_offen', 'k', ?, ?)").run(new Date().toISOString(), new Date().toISOString());
+  assert.doesNotMatch((await als(app, '7')).text, /offene\(r\) Sicherheitsalarm/);
+  const neu = await request(app).get('/admin/betrieb/status?neu=1').set('x-test-person-id', '7');
+  assert.match(neu.text, /offene\(r\) Sicherheitsalarm/);
+  db.prepare("UPDATE sicherheitsalarme SET status = 'erledigt'").run();
+  await request(app).post('/admin/betrieb/status/grenzwerte').type('form').set('x-test-person-id', '7').send(GUELTIG);
+  assert.doesNotMatch((await als(app, '7')).text, /offene\(r\) Sicherheitsalarm/);
   db.close();
 });

@@ -296,7 +296,9 @@ test('throws a German-message Error (not a raw TypeError) for a PDF that loads l
 test('throws a German-message Error (not a raw pdf-lib WinAnsi error) when stamp text contains non-WinAnsi characters', async () => {
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const stampData = sampleStampData();
-  stampData.freigeber2.kommentar = '😀 nicht darstellbar';
+  // Freitext (Kommentare, Namen, Titel) wird per winAnsiSicher entschärft; strukturierte Felder wie
+  // die Konto-Bezeichnung nicht -- dort bleibt der deutsche Fehler der Weg.
+  stampData.konto.bezeichnung = '😀 nicht darstellbar';
 
   await assert.rejects(
     () => stampAndFinalize(pdf, stampData),
@@ -309,15 +311,16 @@ test('throws a German-message Error (not a raw pdf-lib WinAnsi error) when stamp
   );
 });
 
-test('throws a German-message Error when a Verlauf entry contains non-WinAnsi characters', async () => {
+test('a Verlauf/Freigabe Kommentar with non-WinAnsi characters (previously a stamping error) now stamps with "?"', async () => {
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const stampData = sampleStampData();
   stampData.verlauf[0].kommentar = '😀 nicht darstellbar';
+  stampData.freigeber2.kommentar = 'Привет';
 
-  await assert.rejects(
-    () => stampAndFinalize(pdf, stampData),
-    /PDF konnte nicht gestempelt werden/
-  );
+  const stamped = await stampAndFinalize(pdf, stampData);
+  const text = extractedText(stamped, 1);
+  assert.match(text, /Kommentar: \? nicht darstellbar/);
+  assert.match(text, /Kommentar: \?\?\?\?\?\?/);
 });
 
 function samplePosition(overrides = {}) {

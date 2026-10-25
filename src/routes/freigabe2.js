@@ -22,6 +22,7 @@ import { kkHinweisFuerJob } from '../services/kkStempel.js';
 import { writeFinalDocument } from '../services/finalDocument.js';
 import { tsaTrustOptions } from '../services/tsaTrust.js';
 import { kommentarBereich } from './kommentare.js';
+import { listeKommentare } from '../services/kommentare.js';
 
 export function createFreigabe2Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -395,6 +396,9 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           }),
           { rolleLabel: 'Freigabe 2', ...freigeber2Eintrag },
         ],
+        // Alle Kommentare des Vorgangs (chronologisch) im Abschnitt "Rückfragen und Kommentare";
+        // nach Freigabe 2 sind keine neuen mehr möglich, der Stand auf dem PDF ist also vollständig.
+        kommentare: listeKommentare(db, job.id).map((k) => ({ zeitpunkt: k.erstellt_am, verfasser: k.verfasser_name, text: k.text })),
       };
 
       const pdfBuffer = readFileSync(job.pdf_pfad);

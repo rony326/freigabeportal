@@ -12,6 +12,7 @@ import { speichereTsaNachweis } from './tsaNachweis.js';
 import { writeFinalDocument } from './finalDocument.js';
 import { tsaTrustOptions } from './tsaTrust.js';
 import { bereiteGruppenSnapshotVor, getAltfallEntscheidung } from './exportSnapshot.js';
+import { listeKommentare } from './kommentare.js';
 
 // mergeBelegFuerJob (Aufsplitten time, kontierung.js) always inserts Beleg pages directly
 // after the invoice pages, before any later stamping -- so with a known Beleg page count
@@ -32,6 +33,11 @@ async function haengeBelegSeitenAn(gruppenDoc, kindBytes, basisSeitenzahl, beleg
   const belegIndices = kindDoc.getPageIndices().slice(basisSeitenzahl, basisSeitenzahl + belegSeitenzahl);
   const copiedPages = await gruppenDoc.copyPages(kindDoc, belegIndices);
   copiedPages.forEach((page) => gruppenDoc.addPage(page));
+}
+
+// Kommentare (Task Kommentare an Rechnungen) für die Stempelseite; unveränderlich, darum live gelesen.
+function kommentareFuerStempel(db, jobId) {
+  return listeKommentare(db, jobId).map((k) => ({ zeitpunkt: k.erstellt_am, verfasser: k.verfasser_name, text: k.text }));
 }
 
 function groupState(db, parentJobId) {
@@ -113,6 +119,8 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
         kkHinweis: position.kkHinweis,
         freigeber1: position.freigeber1,
         freigeber2: position.freigeber2,
+        jobId: position.job_id,
+        kommentare: kommentareFuerStempel(db, position.job_id),
       });
       const praefix = `Konto ${position.konto_kontonummer}${position.position ? ` (Pos. ${position.position})` : ''}`;
       for (const eintrag of position.verlauf) {
@@ -123,7 +131,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
     verlauf.sort((a, b) => (a.zeitpunkt < b.zeitpunkt ? -1 : a.zeitpunkt > b.zeitpunkt ? 1 : 0));
 
     const gruppenPdfMitBelegen = Buffer.from(await gruppenDoc.save());
-    let gestempelt = await stampGruppenDokument(gruppenPdfMitBelegen, { jobId: parent.id, positionen, verlauf, ...(config.testmodus ? { testmodus: true } : {}) });
+    let gestempelt = await stampGruppenDokument(gruppenPdfMitBelegen, { jobId: parent.id, positionen, verlauf, kommentare: kommentareFuerStempel(db, parent.id), ...(config.testmodus ? { testmodus: true } : {}) });
 
     let zeitstempelGesetztAm = null;
     let zeitstempelDateiHash = null;

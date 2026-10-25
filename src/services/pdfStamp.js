@@ -11,11 +11,53 @@ function formatZeitpunkt(isoUtc) {
   return new Date(isoUtc).toLocaleString('de-CH', { timeZone: 'Europe/Zurich', dateStyle: 'medium', timeStyle: 'short' });
 }
 
+// Kommentarzeilen: TT.MM.JJJJ HH:MM (Europe/Zurich), per formatToParts unabhängig von den
+// installierten Intl-Locale-Daten -- gleiches Format wie zeitpunktAnzeige (auditLog.js).
+function formatKommentarZeitpunkt(iso) {
+  const datum = new Date(iso);
+  if (!iso || Number.isNaN(datum.getTime())) return String(iso ?? '');
+  const teile = Object.fromEntries(new Intl.DateTimeFormat('de-CH', {
+    timeZone: 'Europe/Zurich', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(datum).map((t) => [t.type, t.value]));
+  return `${teile.day}.${teile.month}.${teile.year} ${teile.hour}:${teile.minute}`;
+}
+
+// Was Helvetica (WinAnsiEncoding) in pdf-lib darstellen kann: druckbares ASCII, Latin-1 ab NBSP
+// und die cp1252-Zusatzzeichen (€, Gedankenstriche, typografische Anführungszeichen, ...).
+const WINANSI_ZUSATZ = new Set([
+  0x152, 0x153, 0x160, 0x161, 0x178, 0x17d, 0x17e, 0x192, 0x2c6, 0x2dc, 0x2013, 0x2014, 0x2018, 0x2019,
+  0x201a, 0x201c, 0x201d, 0x201e, 0x2020, 0x2021, 0x2022, 0x2026, 0x2030, 0x2039, 0x203a, 0x20ac, 0x2122,
+]);
+
+function istWinAnsi(codePoint) {
+  return (codePoint >= 0x20 && codePoint <= 0x7e) || (codePoint >= 0xa0 && codePoint <= 0xff) || WINANSI_ZUSATZ.has(codePoint);
+}
+
+// Macht beliebigen Text stempelbar: Zeilenumbrüche (\r\n, \r) werden zu \n vereinheitlicht und
+// bleiben erhalten, Tabs werden zu Leerzeichen, alles andere, was die Standardschrift nicht
+// kodieren kann (Emoji, Kyrillisch, Steuerzeichen, ...), wird zu "?" -- ein Zeichen pro
+// Codepoint. NFC zuerst, damit zerlegte Umlaute (a + U+0308) als "ä" erhalten bleiben.
+export function winAnsiSicher(text) {
+  const normalisiert = String(text ?? '').normalize('NFC').replace(/\r\n?/g, '\n').replace(/\t/g, ' ');
+  let ergebnis = '';
+  for (const zeichen of normalisiert) {
+    const cp = zeichen.codePointAt(0);
+    ergebnis += zeichen === '\n' || istWinAnsi(cp) ? zeichen : '?';
+  }
+  return ergebnis;
+}
+
+// Für einzeilige Felder (Namen, Titel, Verlauf-Kommentar): Umbrüche werden zu Leerzeichen, weil
+// drawText() keinen Zeilenumbruch kodieren kann.
+function einzeilig(text) {
+  return winAnsiSicher(text).replace(/\n/g, ' ');
+}
+
 // Greedily wraps `text` into lines that each fit within `maxWidth` at `size` for `font`, so
 // long free-text fields (rejection reasons, comments) never render partially or fully outside
 // the page's MediaBox — pdf-lib's drawText() does not wrap or clip on its own.
 function wrapLine(font, text, size, maxWidth) {
-  const words = text.split(' ');
+  const words = text.split(' ').flatMap((word) => zerlegeLangesWort(font, word, size, maxWidth));
   const lines = [];
   let current = '';
   for (const word of words) {
@@ -31,6 +73,24 @@ function wrapLine(font, text, size, maxWidth) {
   return lines;
 }
 
+// Ein einzelnes Wort, das breiter als die Zeile ist (z. B. eine lange URL oder 2000 Zeichen ohne
+// Leerzeichen), wird hart in zeilenbreite Stücke zerlegt -- sonst liefe es rechts aus der Seite.
+function zerlegeLangesWort(font, word, size, maxWidth) {
+  if (font.widthOfTextAtSize(word, size) <= maxWidth) return [word];
+  const teile = [];
+  let current = '';
+  for (const zeichen of word) {
+    if (current && font.widthOfTextAtSize(current + zeichen, size) > maxWidth) {
+      teile.push(current);
+      current = zeichen;
+    } else {
+      current += zeichen;
+    }
+  }
+  if (current) teile.push(current);
+  return teile;
+}
+
 // Draws a heading plus the Freigabe's fields starting at `startY`, and returns the y position
 // right after the last drawn line — the caller stacks blocks by feeding that back in as the
 // next block's startY, rather than relying on fixed, unrelated-to-content offsets.
@@ -40,13 +100,13 @@ function drawFreigabeBlock(page, font, heading, freigabe, startY, maxWidth) {
   y -= BLOCK_HEADING_GAP;
 
   const lines = [
-    `${freigabe.name} (${freigabe.identitaet})`,
+    `${einzeilig(freigabe.name)} (${freigabe.identitaet})`,
     `Zeitpunkt: ${formatZeitpunkt(freigabe.zeitpunkt)}`,
     `IP: ${freigabe.ip}`,
     `Interessenskonflikt: ${freigabe.interessenskonflikt ? 'Ja' : 'Nein'}`,
   ];
   if (freigabe.kommentar) {
-    lines.push(`Kommentar: ${freigabe.kommentar}`);
+    lines.push(`Kommentar: ${einzeilig(freigabe.kommentar)}`);
   }
   for (const line of lines) {
     for (const wrapped of wrapLine(font, line, 10, maxWidth)) {
@@ -59,35 +119,82 @@ function drawFreigabeBlock(page, font, heading, freigabe, startY, maxWidth) {
 
 function verlaufEntryLines(entry) {
   const lines = [
-    `${formatZeitpunkt(entry.zeitpunkt)} — ${entry.rolleLabel} — ${entry.name} (${entry.identitaet})${entry.interessenskonflikt ? ' [Interessenskonflikt]' : ''}`,
+    `${formatZeitpunkt(entry.zeitpunkt)} — ${entry.rolleLabel} — ${einzeilig(entry.name)} (${entry.identitaet})${entry.interessenskonflikt ? ' [Interessenskonflikt]' : ''}`,
   ];
   if (entry.kommentar) {
-    lines.push(`   Kommentar: ${entry.kommentar}`);
+    lines.push(`   Kommentar: ${einzeilig(entry.kommentar)}`);
   }
   return lines;
 }
 
-// Draws the Verlauf heading and every entry starting at (page, startY), overflowing onto freshly
-// appended same-size pages whenever a line would fall below VERLAUF_BOTTOM_MARGIN.
-function drawVerlauf(doc, font, verlauf, page, startY, pageWidth, pageHeight) {
-  const maxWidth = pageWidth - PAGE_MARGIN;
-  const allLines = verlauf.flatMap((entry) =>
-    verlaufEntryLines(entry).flatMap((line) => wrapLine(font, line, 9, maxWidth))
-  );
-
+// Draws a section heading and its lines starting at (page, startY), overflowing onto freshly
+// appended same-size pages (with "<Titel> (Fortsetzung)") whenever a line would fall below
+// VERLAUF_BOTTOM_MARGIN. Each line is { text, x, font }; returns where drawing stopped so a
+// following section can continue right below.
+function drawAbschnitt(doc, font, titel, lines, page, startY, pageWidth, pageHeight) {
   let currentPage = page;
   let y = startY;
-  currentPage.drawText('Verlauf', { x: 60, y: y + 20, size: 12, font, color: rgb(0, 0, 0) });
+  currentPage.drawText(titel, { x: 60, y: y + 20, size: 12, font, color: rgb(0, 0, 0) });
 
-  for (const line of allLines) {
+  for (const line of lines) {
     if (y < VERLAUF_BOTTOM_MARGIN) {
       currentPage = doc.addPage([pageWidth, pageHeight]);
       y = pageHeight - 50;
-      currentPage.drawText('Verlauf (Fortsetzung)', { x: 60, y: y + 20, size: 12, font, color: rgb(0, 0, 0) });
+      currentPage.drawText(`${titel} (Fortsetzung)`, { x: 60, y: y + 20, size: 12, font, color: rgb(0, 0, 0) });
     }
-    currentPage.drawText(line, { x: 60, y, size: 9, font, color: rgb(0, 0, 0) });
+    if (line.text) currentPage.drawText(line.text, { x: line.x ?? 60, y, size: 9, font: line.font ?? font, color: rgb(0, 0, 0) });
     y -= VERLAUF_LINE_HEIGHT;
   }
+  return { page: currentPage, y };
+}
+
+function drawVerlauf(doc, font, verlauf, page, startY, pageWidth, pageHeight) {
+  const maxWidth = pageWidth - PAGE_MARGIN;
+  const allLines = verlauf.flatMap((entry) =>
+    verlaufEntryLines(entry).flatMap((line) => wrapLine(font, line, 9, maxWidth).map((text) => ({ text })))
+  );
+  return drawAbschnitt(doc, font, 'Verlauf', allLines, page, startY, pageWidth, pageHeight);
+}
+
+export const KOMMENTAR_ABSCHNITT_TITEL = 'Rückfragen und Kommentare';
+const KOMMENTAR_EINZUG = 12;
+
+// Je Kommentar eine Kopfzeile "<TT.MM.JJJJ HH:MM> — <Verfasser>:", darunter der Text (eingerückt,
+// Zeilenumbrüche des Originals bleiben eigene Zeilen), dann eine Leerzeile.
+function kommentarZeilen(font, kommentare, maxWidth) {
+  const zeilen = [];
+  for (const kommentar of kommentare) {
+    const kopf = `${formatKommentarZeitpunkt(kommentar.zeitpunkt)} — ${einzeilig(kommentar.verfasser)}:`;
+    for (const text of wrapLine(font, kopf, 9, maxWidth)) zeilen.push({ text });
+    for (const absatz of winAnsiSicher(kommentar.text).split('\n')) {
+      const umbrochen = wrapLine(font, absatz, 9, maxWidth - KOMMENTAR_EINZUG);
+      if (umbrochen.length === 0) zeilen.push({ text: '' });
+      for (const text of umbrochen) zeilen.push({ text, x: 60 + KOMMENTAR_EINZUG });
+    }
+    zeilen.push({ text: '' });
+  }
+  return zeilen;
+}
+
+// Abschnitt "Rückfragen und Kommentare" direkt unter dem Verlauf; ohne Kommentare kein Abschnitt
+// (und damit keine zusätzliche Seite). `gruppen` = [{ untertitel, kommentare }].
+function drawKommentare(doc, font, boldFont, gruppen, fortsetzung, pageWidth, pageHeight) {
+  const maxWidth = pageWidth - PAGE_MARGIN;
+  const zeilen = [];
+  for (const { untertitel, kommentare } of gruppen) {
+    if (!kommentare?.length) continue;
+    if (untertitel) for (const text of wrapLine(boldFont, einzeilig(untertitel), 9, maxWidth)) zeilen.push({ text, font: boldFont });
+    zeilen.push(...kommentarZeilen(font, kommentare, maxWidth));
+  }
+  if (zeilen.length === 0) return;
+  let { page, y } = fortsetzung;
+  y -= BLOCK_GAP;
+  // Titel (y + 20) plus mindestens eine Zeile müssen noch auf die Seite passen.
+  if (y < VERLAUF_BOTTOM_MARGIN + VERLAUF_LINE_HEIGHT) {
+    page = doc.addPage([pageWidth, pageHeight]);
+    y = pageHeight - 50;
+  }
+  drawAbschnitt(doc, font, KOMMENTAR_ABSCHNITT_TITEL, zeilen, page, y, pageWidth, pageHeight);
 }
 
 // Nur in der Test-Instanz (config.testmodus): Stempelseiten der Spielwiese sehen sonst aus wie eine
@@ -153,14 +260,14 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
     // Konto line above, since Titel/Verwendungszweck are what identify the document (a Spesen
     // position has no separate Rechnungsnummer/Lieferant to serve that purpose).
     if (stampData.titel) {
-      for (const line of wrapLine(boldFont, `Titel: ${stampData.titel}`, 14, maxWidth)) {
+      for (const line of wrapLine(boldFont, `Titel: ${einzeilig(stampData.titel)}`, 14, maxWidth)) {
         stampPage.drawText(line, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });
         y -= 18;
       }
       y -= 12;
     }
     if (stampData.verwendungszweck) {
-      for (const line of wrapLine(boldFont, `Verwendungszweck: ${stampData.verwendungszweck}`, 14, maxWidth)) {
+      for (const line of wrapLine(boldFont, `Verwendungszweck: ${einzeilig(stampData.verwendungszweck)}`, 14, maxWidth)) {
         stampPage.drawText(line, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });
         y -= 18;
       }
@@ -197,7 +304,8 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
     y -= BLOCK_GAP;
     y = drawFreigabeBlock(stampPage, font, 'Freigabe 2', stampData.freigeber2, y, maxWidth);
     y -= BLOCK_GAP;
-    drawVerlauf(doc, font, stampData.verlauf, stampPage, y, width, height);
+    const nachVerlauf = drawVerlauf(doc, font, stampData.verlauf, stampPage, y, width, height);
+    drawKommentare(doc, font, boldFont, [{ kommentare: stampData.kommentare }], nachVerlauf, width, height);
 
     return Buffer.from(await doc.save());
   } catch {
@@ -278,7 +386,15 @@ export async function stampGruppenDokument(pdfBuffer, gruppenData) {
       stampPage = doc.addPage([width, height]);
       y = height - 50;
     }
-    drawVerlauf(doc, font, gruppenData.verlauf, stampPage, y, width, height);
+    const nachVerlauf = drawVerlauf(doc, font, gruppenData.verlauf, stampPage, y, width, height);
+    // Je Teil ein Untertitel; Kommentare am Gesamtbeleg (Elternjob) zuerst.
+    drawKommentare(doc, font, boldFont, [
+      { untertitel: `Gesamtbeleg — Job-ID ${gruppenData.jobId}`, kommentare: gruppenData.kommentare },
+      ...gruppenData.positionen.map((position, index) => ({
+        untertitel: `Position ${index + 1}${position.position ? ` (${position.position})` : ''} — Konto ${position.kontoNummer} — Job-ID ${position.jobId}`,
+        kommentare: position.kommentare,
+      })),
+    ], nachVerlauf, width, height);
 
     return Buffer.from(await doc.save());
   } catch {

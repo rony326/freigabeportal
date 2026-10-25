@@ -469,3 +469,29 @@ for (const phase of ['before-commit', 'after-commit']) {
     }
   });
 }
+
+test('das gemeinsame Gruppen-PDF enthält die Kommentare je Teil (und am Gesamtbeleg)', async (t) => {
+  const { extrahierePdfText } = await import('../../src/services/pdfText.js');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'splitgruppe-kommentare-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const { parentId, kindIds } = await seedGruppe(db, dir, { anzahlKinder: 3, gestempelt: true });
+  const kommentar = db.prepare('INSERT INTO kommentare (job_id, person_id, text, erwaehnt, erstellt_am) VALUES (?, ?, ?, ?, ?)');
+  kommentar.run(parentId, '2', 'Rechnung bitte aufteilen.', '[]', '2026-07-31T10:00:00.000Z');
+  kommentar.run(kindIds[0], '1', 'Teil eins geprüft.', '[]', '2026-08-01T08:10:00.000Z');
+  kommentar.run(kindIds[2], '2', 'Teil drei: Rückfrage 😀', '[]', '2026-08-01T08:20:00.000Z');
+
+  const ergebnis = await pruefeUndFinalisiereSplitGruppe(db, parentId);
+  assert.equal(ergebnis.status, 'exportiert');
+  const text = extrahierePdfText(readFileSync(getJobById(db, parentId).gruppe_pdf_pfad));
+  assert.match(text, /Rückfragen und Kommentare/);
+  assert.match(text, new RegExp(`Gesamtbeleg — Job-ID ${parentId}`));
+  assert.match(text, /31\.07\.2026 12:00 — Erika Beispiel:/);
+  assert.match(text, /Rechnung bitte aufteilen\./);
+  assert.match(text, new RegExp(`Position 1 \\(Pos\\. 1\\) — Konto 6500 — Job-ID ${kindIds[0]}`));
+  assert.match(text, /01\.08\.2026 10:10 — Max Muster:/);
+  assert.match(text, /Teil eins geprüft\./);
+  assert.doesNotMatch(text, new RegExp(`Job-ID ${kindIds[1]}\\b`), 'Teil ohne Kommentare ohne Untertitel');
+  assert.match(text, new RegExp(`Position 3 \\(Pos\\. 3\\) — Konto 6500 — Job-ID ${kindIds[2]}`));
+  assert.match(text, /Teil drei: Rückfrage \?/);
+});

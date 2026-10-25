@@ -1717,3 +1717,101 @@ test('the Ablehnungs-Mail also reaches the zugewiesenen person\'s active Stellve
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
+
+function seedKommentar(db, jobId, personId, text, erstelltAm) {
+  db.prepare('INSERT INTO kommentare (job_id, person_id, text, erwaehnt, erstellt_am) VALUES (?, ?, ?, ?, ?)').run(jobId, personId, text, '[]', erstelltAm);
+}
+
+test('Kommentar → Freigabe 2 → gespeichertes PDF enthält den Kommentar, DB-Hash passt zur Datei, Zeitstempel-Prüfung ok', async (t) => {
+  const { createHash } = await import('node:crypto');
+  const { extrahierePdfText } = await import('../../src/services/pdfText.js');
+  const { verifyZeitstempel } = await import('../../src/services/zeitstempel.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-kommentare-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const pdfPfad = join(dir, 'a.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Rechnung Seite 1']));
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  seedKommentar(db, id, '1', 'Bitte den Lieferschein prüfen 😀', '2026-08-15T08:40:00.000Z');
+  seedKommentar(db, id, '3', 'Geprüft,\nalles in Ordnung.', '2026-08-15T09:05:00.000Z');
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
+
+  const res = await request(buildTestApp(db)).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res.status, 302);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'abgeschlossen');
+
+  const bytes = readFileSync(job.pdf_pfad);
+  const text = extrahierePdfText(bytes);
+  assert.match(text, /Rückfragen und Kommentare/);
+  assert.match(text, /15\.08\.2026 10:40 — Person1 Muster:/);
+  assert.match(text, /Bitte den Lieferschein prüfen \?/);
+  assert.match(text, /15\.08\.2026 11:05 — Person3 Muster:/);
+  assert.match(text, /Geprüft,\s*\n\s*alles in Ordnung\./);
+
+  assert.equal(job.zeitstempel_datei_hash, createHash('sha256').update(bytes).digest('hex'), 'DB-Hash passt zum gespeicherten PDF');
+  const pruefung = await verifyZeitstempel(bytes, job.zeitstempel_datei_hash);
+  assert.equal(pruefung.vorhanden, true);
+  assert.equal(pruefung.gueltig, true, 'Zeitstempel deckt das Dokument samt Kommentarseite ab');
+  assert.equal(pruefung.hashUebereinstimmung, true);
+  assert.equal(JSON.parse(job.freigabe_snapshot).stampData.kommentare.length, 2, 'Kommentare sind Teil des eingefrorenen Stempel-Snapshots');
+});
+
+test('Freigabe 2 ohne Kommentare druckt keinen Kommentar-Abschnitt', async (t) => {
+  const { extrahierePdfText } = await import('../../src/services/pdfText.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-ohne-kommentare-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const pdfPfad = join(dir, 'a.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Rechnung Seite 1']));
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  const res = await request(buildTestApp(db)).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res.status, 302);
+  const bytes = readFileSync(getJobById(db, id).pdf_pfad);
+  assert.doesNotMatch(extrahierePdfText(bytes), /Rückfragen und Kommentare/);
+  assert.equal(mupdf.Document.openDocument(bytes, 'application/pdf').countPages(), 2);
+});
+
+test('Spesen-Position: Kommentare erscheinen auf dem finalen PDF', async (t) => {
+  const { extrahierePdfText } = await import('../../src/services/pdfText.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-spesen-kommentare-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const pdfPfad = join(dir, 'beleg.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Taxiquittung']));
+  for (const [id, vorname, nachname] of [['1', 'Frei', 'Geber1'], ['2', 'Stell', 'Vertreter1'], ['3', 'Frei', 'Geber2'], ['4', 'Stell', 'Vertreter2'], ['5', 'Ein', 'Reicher']]) {
+    upsertPerson(db, { id, vorname, nachname, email: `p${id}@example.org`, gruppen: [] });
+  }
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '5', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: 'Reise' });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '5', kontoId, betrag: '61.75', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'beleg.pdf', pdfPfad, thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  createFreigabe(db, { jobId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-31T08:10:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  seedKommentar(db, jobId, '1', 'Quittung ist schwer lesbar.', '2026-08-31T08:20:00.000Z');
+  seedKommentar(db, jobId, '5', 'Original liegt im Fach.', '2026-08-31T08:25:00.000Z');
+
+  const churchtoolsConfig = { baseUrl: 'https://ct.example.org', syncServiceToken: 'sync-token', customFieldIban: 'iban_1', customFieldKontoinhaber: 'kontoinhaber' };
+  const client = setupMockChurchTools(churchtoolsConfig.baseUrl);
+  client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(200, { data: { id: 5, iban_1: 'CH9300762011623852957', kontoinhaber: 'Ein Reicher' } }).times(2);
+  const app = buildTestApp(db, { churchtoolsConfig });
+  const review = await request(app).post(`/freigabe2/${jobId}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein' });
+  const stand = review.text.match(/name="zahlungsdaten_stand" value="([a-f0-9]+)"/)[1];
+  const res = await request(app).post(`/freigabe2/${jobId}`).set('x-test-person-id', '3').type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '', zahlungsdaten_bestaetigt: 'ja', zahlungsdaten_stand: stand });
+  assert.equal(res.status, 302);
+  const text = extrahierePdfText(readFileSync(getJobById(db, jobId).pdf_pfad));
+  assert.match(text, /Rückfragen und Kommentare/);
+  assert.match(text, /31\.08\.2026 10:20 — Frei Geber1:/);
+  assert.match(text, /Quittung ist schwer lesbar\./);
+  assert.match(text, /31\.08\.2026 10:25 — Ein Reicher:/);
+  assert.match(text, /Original liegt im Fach\./);
+});

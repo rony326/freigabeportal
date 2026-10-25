@@ -24,6 +24,13 @@ Gesamtstatus `warnung`: Externe Monitore auf `status` bleiben bis zum Abschluss
 der Einrichtung gelb. Wer das nicht möchte, überwacht die einzelnen Dienste
 (`dienste.<schluessel>.status`) statt des Gesamtstatus.
 
+Sobald zum ersten Mal alle Pflichtschritte erledigt sind, hält das Portal den
+Zeitpunkt einmalig fest (`admin_config.einrichtung_abgeschlossen_am`). Ab dann
+meldet `einrichtung` dauerhaft
+`{ "status": "ok", "aktiv": false, "grund": "Einrichtung abgeschlossen am TT.MM.JJJJ" }`,
+auch wenn ein Schritt später wieder offen ist (z. B. weil alte Mail-Protokolle
+gelöscht wurden). Echte Betriebsprobleme melden die übrigen Dienste.
+
 ## Dienste und Grenzwerte
 
 Schlüssel und Standardwerte stehen in `src/services/statusPruefungen.js`
@@ -43,7 +50,7 @@ Admin → Zeitstempel eingestellt.
 | `speicher` | freier Speicherplatz des Dateisystems, auf dem die Datenbank liegt (keine Quoten des Hostings) | weniger als `status_speicher_warnung_prozent` (15 %) frei | weniger als `status_speicher_fehler_prozent` (5 %) frei |
 | `jobs` | letzter Lauf jedes geplanten Jobs der letzten 7 Tage | mindestens ein Job zuletzt fehlgeschlagen | — |
 | `sicherheitsalarme` | offene Sicherheitsalarme | — | mindestens ein offener Alarm |
-| `einrichtung` | offene Pflichtschritte des Einrichtungsassistenten (`/admin/ersteinrichtung`) | mindestens ein Pflichtschritt offen (Grund nennt die Anzahl) | — |
+| `einrichtung` | offene Pflichtschritte des Einrichtungsassistenten (`/admin/ersteinrichtung`); nach dem ersten Abschluss dauerhaft `ok` und inaktiv | mindestens ein Pflichtschritt offen, solange die Einrichtung noch nie abgeschlossen war (Grund nennt die Anzahl) | — |
 
 `audit_nachweis` ist nur aktiv, wenn das Modul Audit-Nachweis eingeschaltet ist,
 `zeitstempel` nur mit konfigurierter TSA-URL; sonst `aktiv: false`.

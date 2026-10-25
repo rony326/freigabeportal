@@ -178,7 +178,9 @@ laut Lastenheft zwingend für das Portal.
 
 ### Go-Live-Checkliste (nach dem ersten Deploy)
 
-1. `GET /healthz` → `{ "status": "ok" }`.
+1. `GET /healthz` → `{ "status": "ok" }`. Mit Header `X-Monitoring-Key`
+   (Schlüssel unter `/admin/betrieb/status`) liefert er den Status aller
+   Dienste, siehe [docs/statusseite-und-monitoring.md](docs/statusseite-und-monitoring.md).
 2. Login-Roundtrip als der vorab in ChurchTools zur Superadmin-Gruppe
    hinzugefügten Person; `/admin` muss erreichbar sein.
 3. Ein erstes Konto unter `/admin/konten` anlegen (Freigeber 1/2 samt

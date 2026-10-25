@@ -1,5 +1,5 @@
 import nodeFs from 'node:fs';
-import { resolve, dirname, sep } from 'node:path';
+import { resolve, dirname, basename, sep } from 'node:path';
 import { fetchGroup, fetchGroupMemberIds } from './churchtools.js';
 import { sendRenderedMail } from './notify.js';
 import { runSyncPersonenJob, runPoolErinnerungenJob, runMailZustellungJob } from './cronJobs.js';
@@ -30,14 +30,36 @@ function beschreibbar(fs, pfad) {
   }
 }
 
+// Symlinks auflösen: vom tiefsten vorhandenen Vorfahren aus, der Rest wird unverändert angehängt.
+function echterPfad(fs, pfad) {
+  const rest = [];
+  let aktuell = pfad;
+  while (!fs.existsSync(aktuell)) {
+    const eltern = dirname(aktuell);
+    if (eltern === aktuell) return pfad;
+    rest.unshift(basename(aktuell));
+    aktuell = eltern;
+  }
+  try {
+    return resolve((fs.realpathSync || nodeFs.realpathSync)(aktuell), ...rest);
+  } catch {
+    return pfad;
+  }
+}
+
 function pruefeSpeicher(config, anwendungsVerzeichnis, fs, { name, feld, datei }) {
   const wert = config[feld];
   if (!wert) return { name, status: 'fehlt', hinweis: 'Nicht eingestellt.' };
-  const pfad = resolve(wert);
-  if (!beschreibbar(fs, datei ? dirname(pfad) : pfad)) {
+  const roh = resolve(wert);
+  const zuPruefen = datei ? dirname(roh) : roh;
+  if (fs.existsSync(zuPruefen) && !fs.statSync(zuPruefen).isDirectory()) {
+    return { name, status: 'ungültig', hinweis: 'Der Speicherort ist kein Verzeichnis.' };
+  }
+  if (!beschreibbar(fs, zuPruefen)) {
     return { name, status: 'ungültig', hinweis: 'Der Speicherort ist nicht beschreibbar.' };
   }
-  const app = resolve(anwendungsVerzeichnis);
+  const pfad = echterPfad(fs, roh);
+  const app = echterPfad(fs, resolve(anwendungsVerzeichnis));
   if (pfad === app || pfad.startsWith(app.endsWith(sep) ? app : app + sep)) {
     return { name, status: 'warnung', hinweis: 'Liegt im Anwendungsverzeichnis und wird beim nächsten Deploy überschrieben. Bitte ein Verzeichnis ausserhalb verwenden.' };
   }
@@ -71,21 +93,25 @@ export function pruefeTechnik(config, { anwendungsVerzeichnis = process.cwd(), f
   return pruefungen;
 }
 
-export async function testeChurchtools(config) {
+export async function testeChurchtools(config, { timeoutMs = 10000 } = {}) {
   const ct = config.churchtools;
   const token = ct.syncServiceToken;
   const rollen = [['Buchhaltung', ct.groupIdBuchhaltung], ['Admin', ct.groupIdAdmin], ['Manager', ct.groupIdManager]].filter(([, id]) => id);
   try {
     const gruppen = [];
     for (const [rolle, id] of rollen) {
-      const gruppe = await fetchGroup(ct, token, id);
-      const mitglieder = (await fetchGroupMemberIds(ct, token, id)).length;
+      // Jede Anfrage bricht nach dem Zeitlimit ab, damit die Seite nie hängen bleibt.
+      const gruppe = await fetchGroup(ct, token, id, { signal: AbortSignal.timeout(timeoutMs) });
+      const mitglieder = (await fetchGroupMemberIds(ct, token, id, { signal: AbortSignal.timeout(timeoutMs) })).length;
       gruppen.push({ rolle, id: String(id), name: gruppe.name, mitglieder });
     }
     return { ok: true, gruppen };
   } catch (err) {
     // Meldung bewusst fest formuliert: Fehlertexte könnten Adressen oder Zugangsdaten enthalten.
-    const meldung = err.status === 401 || err.status === 403
+    const zeitlimit = err.name === 'TimeoutError' || err.name === 'AbortError' || err.cause?.name === 'TimeoutError';
+    const meldung = zeitlimit
+      ? 'ChurchTools antwortet nicht'
+      : err.status === 401 || err.status === 403
       ? 'ChurchTools lehnt den Zugang ab. Bitte den Dienst-Token prüfen.'
       : err.status === 404
         ? 'Eine der Gruppen wurde in ChurchTools nicht gefunden. Bitte die Gruppen-IDs prüfen.'
@@ -106,9 +132,9 @@ export async function sendeTestmail(db, mailer, { person }) {
     typ: 'testmail',
     jobId: null,
   });
-  return res.status === 'versendet'
-    ? { status: 'versendet', meldung: 'Die Testmail wurde verschickt.' }
-    : { status: res.status, meldung: 'Die Testmail konnte nicht zugestellt werden. Bitte die Mail-Einstellungen prüfen.' };
+  if (res.status === 'versendet') return { status: 'versendet', meldung: 'Die Testmail wurde verschickt.' };
+  if (res.status === 'eingereiht') return { status: 'eingereiht', meldung: 'Die Testmail konnte noch nicht zugestellt werden, das Portal versucht es erneut.' };
+  return { status: res.status, meldung: 'Die Testmail konnte nicht zugestellt werden. Bitte die Mail-Einstellungen prüfen.' };
 }
 
 const KERNJOBS = {

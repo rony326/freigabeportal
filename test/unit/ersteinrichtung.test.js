@@ -146,13 +146,12 @@ test('module/mailvorlagen von Hand; nicht-manuelle IDs abgelehnt', (t) => {
   assert.throws(() => markiereSchritt(db, 'unbekannt', true));
 });
 
-test('jobs: alle Kernjobs gelaufen', (t) => {
+test('jobs: Sync und Pool-Erinnerungen gelaufen (mail-zustellung nicht nötig)', (t) => {
   const db = neu(t);
   const cron = (j) => db.prepare("INSERT INTO cron_log (job, gestartet_am, beendet_am, status) VALUES (?, ?, ?, 'erfolg')").run(j, JETZT.toISOString(), JETZT.toISOString());
   db.prepare('INSERT INTO sync_log (gestartet_am, status) VALUES (?, ?)').run(JETZT.toISOString(), 'erfolg');
-  cron('pool-erinnerungen');
   assert.equal(ok(stand(db), 'jobs'), false);
-  cron('mail-zustellung');
+  cron('pool-erinnerungen');
   assert.equal(ok(stand(db), 'jobs'), true);
 });
 

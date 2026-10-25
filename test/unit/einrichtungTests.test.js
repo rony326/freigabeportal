@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
@@ -193,4 +193,45 @@ test('Migration: bestehende DB ohne testmail wird erweitert, Daten und Index ble
   assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'mail_log_zustellung_idx'").get());
   db.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('pruefeTechnik: Symlink in das Anwendungsverzeichnis ergibt Warnung', (t) => {
+  const dir = temp(t);
+  mkdirSync(app(dir), { recursive: true });
+  symlinkSync(app(dir), join(dir, 'daten-link'));
+  const erg = pruefeTechnik(configFuer(dir, { jobsDir: join(dir, 'daten-link', 'jobs') }), { anwendungsVerzeichnis: app(dir) });
+  assert.equal(nach(erg, 'Speicherort Belege').status, 'warnung');
+});
+
+test('pruefeTechnik: Anwendungsverzeichnis als Symlink wird aufgelöst', (t) => {
+  const dir = temp(t);
+  mkdirSync(join(dir, 'echt'), { recursive: true });
+  symlinkSync(join(dir, 'echt'), app(dir));
+  const erg = pruefeTechnik(configFuer(dir, { jobsDir: join(dir, 'echt', 'jobs') }), { anwendungsVerzeichnis: app(dir) });
+  assert.equal(nach(erg, 'Speicherort Belege').status, 'warnung');
+});
+
+test('pruefeTechnik: vorhandener Pfad, der kein Verzeichnis ist, ist ungültig', (t) => {
+  const dir = temp(t);
+  writeFileSync(join(dir, 'datei'), 'x');
+  const erg = pruefeTechnik(configFuer(dir, { jobsDir: join(dir, 'datei') }), { anwendungsVerzeichnis: app(dir) });
+  assert.equal(nach(erg, 'Speicherort Belege').status, 'ungültig');
+  assert.match(nach(erg, 'Speicherort Belege').hinweis, /kein Verzeichnis/);
+});
+
+test('testeChurchtools: Zeitlimit ergibt feste Meldung', async () => {
+  ctMock().intercept({ path: /\/api\/groups\/.*/ }).reply(200, { data: { id: 1, name: 'x' } }).delay(500).persist();
+  const erg = await testeChurchtools(configFuer('/x'), { timeoutMs: 50 });
+  assert.equal(erg.ok, false);
+  assert.equal(erg.meldung, 'ChurchTools antwortet nicht');
+});
+
+test('sendeTestmail: eingereiht ergibt Wiederholungs-Meldung', async (t) => {
+  const db = dbMitPerson(t);
+  const erg = await sendeTestmail(db, stubMailer(true), { person: { email: 'a@example.org' } });
+  if (erg.status === 'eingereiht') {
+    assert.equal(erg.meldung, 'Die Testmail konnte noch nicht zugestellt werden, das Portal versucht es erneut.');
+  } else {
+    assert.fail(`unerwarteter Status ${erg.status}`);
+  }
 });

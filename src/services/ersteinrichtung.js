@@ -20,8 +20,6 @@ export const SCHRITTE = [
   { id: 'jobs', titel: 'Geplante Jobs prüfen', beschreibung: 'Die wichtigsten automatischen Aufgaben sollen mindestens einmal gelaufen sein.', pflicht: false, link: '/admin/geplante-jobs', manuell: false },
 ];
 
-const KERN_JOBS = ['pool-erinnerungen', 'mail-zustellung'];
-
 const hat = (db, sql, ...args) => Boolean(db.prepare(sql).get(...args));
 const cfg = (db, key) => (getConfigValue(db, key) || '').trim();
 
@@ -67,9 +65,10 @@ function messe(id, db, config, jetzt, technik) {
     case 'mailvorlagen': return { erledigt: cfg(db, `einrichtung_markiert_${id}`) === '1' };
     case 'monitoring': return { erledigt: cfg(db, 'monitoring_secret') !== '' };
     case 'jobs': {
+      // mail-zustellung protokolliert nur Läufe mit fälligen Mails und taugt nicht als Nachweis.
       const sync = hat(db, 'SELECT 1 FROM sync_log LIMIT 1');
-      const kern = KERN_JOBS.every((j) => hat(db, "SELECT 1 FROM cron_log WHERE job = ? AND status != 'laufend' LIMIT 1", j));
-      return { erledigt: sync && kern };
+      const pool = hat(db, "SELECT 1 FROM cron_log WHERE job = 'pool-erinnerungen' AND status != 'laufend' LIMIT 1");
+      return { erledigt: sync && pool };
     }
     default: return { erledigt: false };
   }

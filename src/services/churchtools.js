@@ -71,16 +71,16 @@ export function extractCustomFieldValue(person, fieldKey) {
   return getrimmt || null;
 }
 
-export async function fetchGroup(config, loginToken, groupId) {
+export async function fetchGroup(config, loginToken, groupId, { signal } = {}) {
   const url = new URL(`/api/groups/${groupId}`, config.baseUrl);
-  const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` } });
+  const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` }, signal });
   const data = await parseOrThrow(response, 'Gruppenabruf');
   return { id: String(data.data.id), name: data.data.name };
 }
 
-export async function fetchGroupMemberIds(config, loginToken, groupId) {
+export async function fetchGroupMemberIds(config, loginToken, groupId, { signal } = {}) {
   const url = new URL(`/api/groups/${groupId}/members`, config.baseUrl);
-  const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` } });
+  const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` }, signal });
   const data = await parseOrThrow(response, 'Gruppenabfrage');
   return data.data.map((member) => String(member.personId));
 }

@@ -40,6 +40,8 @@ import { createMailEinstellungenRouter } from './routes/admin/mailEinstellungen.
 import { createAltfaelleRouter } from './routes/admin/altfaelle.js';
 import { createDateiQuarantaeneRouter } from './routes/admin/dateiQuarantaene.js';
 import { createHealthzRouter } from './routes/healthz.js';
+import { createTsaErreichbarkeit } from './services/statusTsa.js';
+import { pruefeAlleDienste } from './services/statusPruefungen.js';
 import { createBetriebRouter } from './routes/admin/betrieb.js';
 import { createPoolRouter } from './routes/pool.js';
 import { createPoolPageRouter } from './routes/poolPage.js';
@@ -73,6 +75,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // `mailer` is injectable for tests (a stub instead of the SMTP-backed default).
 export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuch = undefined }) {
   const app = express();
+  const tsaErreichbarkeit = createTsaErreichbarkeit();
   app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
   app.set('views', join(__dirname, '..', 'views'));
@@ -115,7 +118,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     next();
   });
   // Frueh gemountet: kein Session-Cookie, kein CSRF, eigener Limiter (120/min/IP).
-  app.use('/healthz', createHealthzRouter({ db, config, tsaVersuch }));
+  app.use('/healthz', createHealthzRouter({ db, config, tsaVersuch, tsaErreichbarkeit }));
   app.use(auditRequestContext);
   app.use(express.static(join(__dirname, '..', 'public')));
   app.use(loadBranding(db));
@@ -169,7 +172,15 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.get('/admin', (req, res) => {
     const zeitstempelWarnungSchwelle = Number(getConfigValue(db, 'zeitstempel_warnung_ab_stunden'));
     const tsaAktiv = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
+    // Gesamtstatus für die Betrieb-Karte; ein Fehler hier darf das Dashboard nie verhindern.
+    let betriebStatus = null;
+    if (res.locals.adminNav?.betrieb) {
+      try {
+        betriebStatus = pruefeAlleDienste(db, config, { tsaErgebnis: tsaErreichbarkeit(db, config, tsaVersuch ? { versuch: tsaVersuch } : {}) }).status;
+      } catch { /* Karte ohne Status */ }
+    }
     res.render('admin/dashboard', {
+      betriebStatus,
       zeitstempelUeberfaellig: tsaAktiv ? countZeitstempelUeberfaellig(db, zeitstempelWarnungSchwelle) : 0,
       zeitstempelWarnungSchwelle,
       // Hinweis nur für Superadmins, nur solange der automatische Nachweis aktiv ist.
@@ -199,7 +210,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/admin/mail-einstellungen', requireRole(config, 'superadmin'), createMailEinstellungenRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/altfaelle', requirePermission(db, config, 'workflow_eingreifen'), createAltfaelleRouter({ db, config, csrfProtection }));
   app.use('/admin/dateiquarantaene', requireRole(config, 'superadmin'), createDateiQuarantaeneRouter({ db, config, csrfProtection }));
-  app.use('/admin/betrieb', requirePermission(db, config, 'betrieb_einsehen'), createBetriebRouter({ db, csrfProtection }));
+  app.use('/admin/betrieb', requirePermission(db, config, 'betrieb_einsehen'), createBetriebRouter({ db, config, tsaErreichbarkeit, tsaVersuch, csrfProtection }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/n8n/backup', machineLimiter, requireApiKey({ n8nApiKey: config.backupApiKey }), createN8nBackupRouter({ config }));

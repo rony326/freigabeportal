@@ -13,7 +13,7 @@ const RANG = { ok: 0, warnung: 1, fehler: 2 };
 const NICHT_EINGERICHTET = () => ({ status: 'ok', aktiv: false, grund: 'nicht eingerichtet' });
 
 // Grenzwert aus admin_config; ungueltige oder fehlende Werte fallen auf den Standard zurueck.
-const DEFAULTS = {
+export const DEFAULTS = {
   status_sicherung_warnung_stunden: 26,
   status_sicherung_fehler_stunden: 50,
   status_mail_wartezeit_fehler_minuten: 60,

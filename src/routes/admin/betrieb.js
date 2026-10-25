@@ -4,6 +4,62 @@ import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { uebersicht, personDetail } from '../../services/nutzungAuswertung.js';
 import { pruefeBannerEingabe, zurichLokalZuIso, isoZuZurichLokal, BANNER_ARTEN } from '../../services/banner.js';
 import { zeitpunktAnzeige } from '../../services/auditLog.js';
+import { randomBytes } from 'node:crypto';
+import { pruefeAlleDienste, DEFAULTS as STATUS_DEFAULTS } from '../../services/statusPruefungen.js';
+import { createTsaErreichbarkeit } from '../../services/statusTsa.js';
+
+// Dienste der Statusseite: Schlüssel, Name, Link (adminNav-Flag steuert die Sichtbarkeit).
+const STATUS_DIENSTE = [
+  ['datenbank', 'Datenbank', null],
+  ['sicherung', 'Sicherung', ['/admin/backup', 'backup']],
+  ['mailversand', 'Mailversand', ['/admin/mails', 'mails']],
+  ['churchtools', 'ChurchTools', ['/admin/sync', 'sync']],
+  ['zeitstempel', 'Zeitstempel', ['/admin/zeitstempel', 'zeitstempel']],
+  ['audit_nachweis', 'Audit-Nachweis', ['/admin/zeitstempel', 'zeitstempel']],
+  ['archivuebergabe', 'Archivübergabe', ['/admin/vorgaenge', 'vorgaenge']],
+  ['speicher', 'Speicher', null],
+  ['jobs', 'Geplante Jobs', ['/admin/geplante-jobs', 'geplanteJobs']],
+  ['sicherheitsalarme', 'Sicherheitsalarme', ['/admin/backup', 'backup']],
+];
+// Grenzwert-Felder: Schlüssel, Beschriftung, Einheit
+const GRENZWERT_FELDER = [
+  ['status_sicherung_warnung_stunden', 'Sicherung: Warnung nach', 'Stunden'],
+  ['status_sicherung_fehler_stunden', 'Sicherung: Fehler nach', 'Stunden'],
+  ['status_mail_wartezeit_fehler_minuten', 'Mailversand: Fehler bei Wartezeit über', 'Minuten'],
+  ['status_churchtools_warnung_stunden', 'ChurchTools: Warnung nach', 'Stunden'],
+  ['status_churchtools_fehler_stunden', 'ChurchTools: Fehler nach', 'Stunden'],
+  ['status_zeitstempel_crl_warnung_tage', 'Zeitstempel: Warnung vor Ablauf der Sperrliste', 'Tage'],
+  ['status_archiv_warnung_stunden', 'Archivübergabe: Warnung nach', 'Stunden'],
+  ['status_archiv_fehler_tage', 'Archivübergabe: Fehler nach', 'Tage'],
+  ['status_speicher_warnung_prozent', 'Speicher: Warnung unter', '% frei'],
+  ['status_speicher_fehler_prozent', 'Speicher: Fehler unter', '% frei'],
+];
+
+function leseGrenzwerte(db) {
+  return Object.fromEntries(GRENZWERT_FELDER.map(([k]) => {
+    const roh = getConfigValue(db, k);
+    return [k, roh !== null && roh !== '' ? String(roh) : String(STATUS_DEFAULTS[k])];
+  }));
+}
+
+// Alle zehn Werte müssen ganze Zahlen > 0 sein; Fehlergrenze nie vor der Warnungsgrenze.
+function pruefeGrenzwerte(body) {
+  const werte = {};
+  const fehler = [];
+  for (const [k, label] of GRENZWERT_FELDER) {
+    const roh = typeof body[k] === 'string' ? body[k].trim() : '';
+    werte[k] = roh;
+    if (!/^\d{1,6}$/.test(roh) || Number(roh) <= 0) fehler.push(`${label}: bitte eine ganze Zahl grösser als 0 angeben.`);
+  }
+  if (fehler.length) return { werte, fehler };
+  const n = (k) => Number(werte[k]);
+  if (n('status_sicherung_fehler_stunden') < n('status_sicherung_warnung_stunden')) fehler.push('Sicherung: Die Fehlergrenze darf nicht unter der Warnungsgrenze liegen.');
+  if (n('status_churchtools_fehler_stunden') < n('status_churchtools_warnung_stunden')) fehler.push('ChurchTools: Die Fehlergrenze darf nicht unter der Warnungsgrenze liegen.');
+  if (n('status_archiv_fehler_tage') * 24 < n('status_archiv_warnung_stunden')) fehler.push('Archivübergabe: Die Fehlergrenze darf nicht unter der Warnungsgrenze liegen.');
+  if (n('status_speicher_fehler_prozent') > n('status_speicher_warnung_prozent')) fehler.push('Speicher: Die Fehlergrenze muss gleich oder unter der Warnungsgrenze liegen.');
+  if (n('status_speicher_warnung_prozent') > 100) fehler.push('Speicher: Prozentwerte höchstens 100.');
+  return { werte, fehler };
+}
 
 const ZEITRAEUME = [7, 30, 90];
 const STANDARD_TAGE = 30;
@@ -40,8 +96,48 @@ function bannerFormular(banner) {
   return { id: banner.id, art: banner.art, text: banner.text, link: banner.link || '', von: isoZuZurichLokal(banner.von), bis: isoZuZurichLokal(banner.bis) };
 }
 
-export function createBetriebRouter({ db, csrfProtection = (req, res, next) => next() }) {
+export function createBetriebRouter({ db, config = {}, tsaErreichbarkeit = createTsaErreichbarkeit(), tsaVersuch, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
+
+  function zeigeStatus(req, res, { status = 200, werte = null, fehler = [], gespeichert = false, neuerSchluessel = null } = {}) {
+    let tsaErgebnis = null;
+    try { tsaErgebnis = tsaErreichbarkeit(db, config, tsaVersuch ? { versuch: tsaVersuch } : {}); } catch { /* bleibt null */ }
+    const ergebnis = pruefeAlleDienste(db, config, { tsaErgebnis });
+    const nav = res.locals.adminNav || {};
+    const dienste = STATUS_DIENSTE.map(([key, name, ziel]) => ({
+      key, name, ...ergebnis.dienste[key], link: ziel && nav[ziel[1]] ? ziel[0] : null,
+    }));
+    if (neuerSchluessel) res.set('Cache-Control', 'no-store');
+    res.status(status).render('admin/betrieb-status', {
+      ...basis(db, 'status'), gesamt: ergebnis.status, geprueftAm: ergebnis.geprueft_am, dienste,
+      felder: GRENZWERT_FELDER, werte: werte || leseGrenzwerte(db), fehler, gespeichert, neuerSchluessel,
+      schluesselVorhanden: /^[0-9a-f]{64}$/.test(getConfigValue(db, 'monitoring_secret') || ''),
+      baseUrl: config.publicBaseUrl || '',
+    });
+  }
+
+  router.get('/status', (req, res) => zeigeStatus(req, res, { gespeichert: req.query.gespeichert === '1' }));
+
+  router.post('/status/grenzwerte', csrfProtection, (req, res) => {
+    const { werte, fehler } = pruefeGrenzwerte(req.body);
+    if (fehler.length) return zeigeStatus(req, res, { status: 400, werte, fehler });
+    for (const [k] of GRENZWERT_FELDER) setConfigValue(db, k, werte[k]);
+    res.redirect('/admin/betrieb/status?gespeichert=1');
+  });
+
+  router.post('/status/schluessel', csrfProtection, (req, res) => {
+    const aktion = req.body.aktion;
+    if (aktion === 'erzeugen') {
+      const schluessel = randomBytes(32).toString('hex');
+      setConfigValue(db, 'monitoring_secret', schluessel);
+      return zeigeStatus(req, res, { neuerSchluessel: schluessel });
+    }
+    if (aktion === 'entfernen') {
+      setConfigValue(db, 'monitoring_secret', '');
+      return res.redirect('/admin/betrieb/status?gespeichert=1');
+    }
+    return zeigeStatus(req, res, { status: 400, fehler: ['Unbekannte Aktion.'] });
+  });
 
   router.get('/', (req, res) => {
     const tage = ZEITRAEUME.includes(Number(req.query.tage)) ? Number(req.query.tage) : STANDARD_TAGE;

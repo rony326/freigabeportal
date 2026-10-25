@@ -181,6 +181,9 @@
           <div class="card-body">
             <h2 class="h5 card-title">Betrieb &amp; Nutzung</h2>
             <p class="card-text text-body-secondary">Nutzung, Fehler, Fehlermeldungen, Banner und Datenschutzhinweis.</p>
+            <% if (typeof betriebStatus !== 'undefined' && betriebStatus) { %>
+              <p class="card-text mb-0"><span class="badge <%= betriebStatus === 'ok' ? 'text-bg-success' : betriebStatus === 'warnung' ? 'text-bg-warning' : 'text-bg-danger' %>">Status: <%= betriebStatus === 'ok' ? 'in Ordnung' : betriebStatus === 'warnung' ? 'Warnung' : 'Fehler' %></span></p>
+            <% } %>
           </div>
         </a>
       </div>

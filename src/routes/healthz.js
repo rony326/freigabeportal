@@ -11,9 +11,8 @@ const paketVersion = () => {
   try { return JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version; } catch { return 'unbekannt'; }
 };
 
-export function createHealthzRouter({ db, config, versionFn = paketVersion, tsaVersuch } = {}) {
+export function createHealthzRouter({ db, config, versionFn = paketVersion, tsaVersuch, tsaErreichbarkeit = createTsaErreichbarkeit() } = {}) {
   const router = Router();
-  const tsaErreichbarkeit = createTsaErreichbarkeit();
   router.get('/', createPublicRateLimiter({ windowMs: 60_000, limit: 120 }), (req, res) => {
     let secret = '';
     try { secret = getConfigValue(db, 'monitoring_secret') || ''; } catch { /* DB-Fehler unten */ }

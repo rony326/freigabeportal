@@ -1,0 +1,87 @@
+<%- include('../_seite_anfang', { titel: 'Betrieb & Nutzung' }) %>
+<%
+  const klasse = { ok: 'text-bg-success', warnung: 'text-bg-warning', fehler: 'text-bg-danger' };
+  const text = { ok: 'In Ordnung', warnung: 'Warnung', fehler: 'Fehler' };
+%>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Betrieb &amp; Nutzung</h1>
+    </div>
+<%- include('_betrieb_reiter', { reiter }) %>
+    <% if (gespeichert) { %>
+      <div class="alert alert-success alert-dismissible fade show" role="alert">
+        Gespeichert.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schliessen"></button>
+      </div>
+    <% } %>
+    <% if (fehler.length) { %>
+      <div class="alert alert-danger"><ul class="mb-0"><% fehler.forEach((f) => { %><li><%= f %></li><% }) %></ul></div>
+    <% } %>
+    <% if (neuerSchluessel) { %>
+      <div class="alert alert-warning">
+        <h2 class="h5">Neuer Überwachungsschlüssel</h2>
+        <p>Kopiere den Schlüssel jetzt. Er wird nur dieses eine Mal angezeigt und ist danach nicht mehr abrufbar.</p>
+        <p><code class="user-select-all text-break" id="neuerSchluessel"><%= neuerSchluessel %></code></p>
+        <p class="mb-1"><strong>Beispiel für Uptime Kuma</strong></p>
+        <ul class="mb-0">
+          <li>Monitor-Typ: <code>HTTP(s) - Json Query</code></li>
+          <li>URL: <code class="text-break"><%= baseUrl %>/healthz</code></li>
+          <li>Headers (JSON): <code class="text-break">{"X-Monitoring-Key": "<%= neuerSchluessel %>"}</code></li>
+          <li>Json Query: <code>dienste.sicherung.status</code></li>
+          <li>Erwarteter Wert: <code>ok</code></li>
+        </ul>
+      </div>
+    <% } %>
+
+    <h2 class="h5">Gesamtstatus: <span class="badge <%= klasse[gesamt] %>"><%= text[gesamt] %></span></h2>
+    <p class="text-body-secondary">Geprüft: <%= zeit(geprueftAm) %></p>
+    <div class="table-responsive mb-4">
+      <table class="table align-middle">
+        <thead><tr><th>Dienst</th><th>Status</th><th>Grund</th><th>Seit</th><th></th></tr></thead>
+        <tbody>
+          <% dienste.forEach((d) => { %>
+            <tr>
+              <td><%= d.name %></td>
+              <td><span class="badge <%= klasse[d.status] %>"><%= text[d.status] %></span></td>
+              <td><%= d.grund %></td>
+              <td><%= d.seit ? zeit(d.seit) : '—' %></td>
+              <td><% if (d.link) { %><a href="<%= d.link %>">Öffnen</a><% } %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="h5">Grenzwerte</h2>
+    <form method="post" action="/admin/betrieb/status/grenzwerte" class="mb-4">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <div class="row g-3">
+        <% felder.forEach(([key, label, einheit]) => { %>
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="<%= key %>"><%= label %></label>
+            <div class="input-group">
+              <input type="number" min="1" step="1" class="form-control" id="<%= key %>" name="<%= key %>" value="<%= werte[key] %>" required>
+              <span class="input-group-text"><%= einheit %></span>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+      <button type="submit" class="btn btn-primary mt-3">Grenzwerte speichern</button>
+    </form>
+
+    <h2 class="h5">Überwachungsschlüssel</h2>
+    <p>Für Uptime Kuma o. ä.: Mit dem Schlüssel liefert <code>/healthz</code> den Status aller Dienste. Aktuell: <strong><%= schluesselVorhanden ? 'eingerichtet' : 'nicht eingerichtet' %></strong>.</p>
+    <div class="d-flex flex-wrap gap-2 mb-4">
+      <form method="post" action="/admin/betrieb/status/schluessel">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <input type="hidden" name="aktion" value="erzeugen">
+        <button type="submit" class="btn btn-outline-primary"><%= schluesselVorhanden ? 'Neuen Schlüssel erzeugen (ersetzt den alten)' : 'Neuen Schlüssel erzeugen' %></button>
+      </form>
+      <% if (schluesselVorhanden) { %>
+        <form method="post" action="/admin/betrieb/status/schluessel">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <input type="hidden" name="aktion" value="entfernen">
+          <button type="submit" class="btn btn-outline-danger">Schlüssel entfernen</button>
+        </form>
+      <% } %>
+    </div>
+<%- include('../_seite_ende') %>

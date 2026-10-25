@@ -73,6 +73,8 @@ export function pruefeDatenbank(db) {
 export function pruefeSicherung(db, config, ctx = {}) {
   const erfolg = db.prepare("SELECT beendet_am FROM cron_log WHERE job = 'datenbank-sicherung' AND status = 'erfolg' ORDER BY id DESC LIMIT 1").get();
   const letzter = db.prepare("SELECT status FROM cron_log WHERE job = 'datenbank-sicherung' AND status != 'laufend' ORDER BY id DESC LIMIT 1").get();
+  // Fehlgeschlagener letzter Lauf ist immer Fehler, auch ohne bisherigen Erfolg.
+  if (letzter?.status === 'fehler') return { status: 'fehler', grund: 'Letzte Sicherung fehlgeschlagen', ...(erfolg?.beendet_am ? { seit: erfolg.beendet_am } : {}) };
   return pruefeLetzterErfolg(db, ctx, {
     letzterErfolg: erfolg?.beendet_am, letzterLauf: letzter?.status, name: 'Sicherung',
     warnH: grenze(db, 'status_sicherung_warnung_stunden'), fehlerH: grenze(db, 'status_sicherung_fehler_stunden'),
@@ -142,7 +144,13 @@ export function pruefeAuditNachweis(db, config, ctx = {}) {
 
 export function pruefeArchivuebergabe(db, config, ctx = {}) {
   const jetzt = jetztMs(ctx);
-  const row = db.prepare("SELECT COUNT(*) AS n, MIN(abgeschlossen_am) AS aelteste FROM jobs WHERE status = 'abgeschlossen' AND aufgesplittet_von IS NULL AND abgeschlossen_am IS NOT NULL").get();
+  // Einzelbelege (abgeschlossen) und fertige Splitgruppen (Elternjob 'aufgesplittet', noch nicht abgeholt).
+  // Bereit-Zeitpunkt der Gruppe: Gruppen-Zeitstempel, sonst letzter Abschluss eines Kindes.
+  const row = db.prepare(`SELECT COUNT(*) AS n, MIN(bereit) AS aelteste FROM (
+    SELECT abgeschlossen_am AS bereit FROM jobs WHERE status = 'abgeschlossen' AND aufgesplittet_von IS NULL AND abgeschlossen_am IS NOT NULL
+    UNION ALL
+    SELECT COALESCE(p.gruppe_zeitstempel_gesetzt_am, (SELECT MAX(c.abgeschlossen_am) FROM jobs c WHERE c.aufgesplittet_von = p.id), p.eingang_am) AS bereit
+    FROM jobs p WHERE p.status = 'aufgesplittet' AND p.aufgesplittet_von IS NULL AND p.gruppe_pdf_pfad IS NOT NULL AND p.gruppe_abgeholt_am IS NULL)`).get();
   if (!row.n) return { status: 'ok', grund: 'nichts offen' };
   const alter = jetzt - zeit(row.aelteste);
   let status = 'ok';

@@ -42,12 +42,30 @@ test('Sicherung: Grenzwerte 26 h / 50 h', (t) => {
   assert.equal(r.seit, vor(26 * H));
 });
 
-test('Sicherung: letzter Lauf fehlgeschlagen nach Erfolg gibt Warnung', (t) => {
+test('Sicherung: letzter Lauf fehlgeschlagen ohne bisherigen Erfolg ist Fehler', (t) => {
+  const db = setup(t);
+  cron(db, 'datenbank-sicherung', 'fehler', vor(1 * H));
+  const r = pruefeSicherung(db, config, ctx());
+  assert.equal(r.status, 'fehler');
+  assert.equal(r.grund, 'Letzte Sicherung fehlgeschlagen');
+});
+
+test('Archivuebergabe: wartende Splitgruppen zaehlen', (t) => {
+  const db = setup(t);
+  db.prepare("INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad, status, gruppe_pdf_pfad, gruppe_zeitstempel_gesetzt_am) VALUES (?, 'scanner', 'g.pdf', '/x', 'aufgesplittet', '/g', ?)")
+    .run(vor(10 * 24 * H), vor(3 * 24 * H));
+  const r = pruefeArchivuebergabe(db, config, ctx());
+  assert.equal(r.status, 'warnung');
+  db.prepare("UPDATE jobs SET gruppe_abgeholt_am = ?").run(vor(H));
+  assert.equal(pruefeArchivuebergabe(db, config, ctx()).status, 'ok');
+});
+
+test('Sicherung: letzter Lauf fehlgeschlagen nach Erfolg gibt Fehler', (t) => {
   const db = setup(t);
   cron(db, 'datenbank-sicherung', 'erfolg', vor(2 * H));
   cron(db, 'datenbank-sicherung', 'fehler', vor(1 * H));
   const r = pruefeSicherung(db, config, ctx());
-  assert.equal(r.status, 'warnung');
+  assert.equal(r.status, 'fehler');
   assert.equal(r.seit, vor(2 * H));
 });
 

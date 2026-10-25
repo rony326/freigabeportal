@@ -48,8 +48,8 @@ export async function sendRenderedMail(db, mailer, { to, subject, text, typ, job
   }
 }
 
-function renderBenachrichtigung(db, typ, variablen) {
-  const vorlage = getVorlage(db, typ);
+// `vorlage` optional: eine bereits gewählte Vorlage { betreff, text } statt der aus admin_config.
+export function renderBenachrichtigung(db, typ, variablen, vorlage = getVorlage(db, typ)) {
   const portalName = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
   const alleVariablen = { ...variablen, portalName };
   return { subject: renderTemplate(vorlage.betreff, alleVariablen), text: renderTemplate(vorlage.text, alleVariablen) };
@@ -59,8 +59,9 @@ function renderBenachrichtigung(db, typ, variablen) {
 // template cannot be rendered -- meant for callers that enqueue inside the same transaction as
 // their own business marker (cronJobs.js reminders) and deliver afterwards via stelleEintraegeZu.
 // Returns { id, status } with status 'eingereiht' or 'geplant' (batching).
-export function reiheBenachrichtigungEin(db, { to, typ, jobId, variablen = {} }) {
-  const { subject, text } = renderBenachrichtigung(db, typ, variablen);
+// `gerendert` optional: bereits gerenderte { subject, text } (der Aufrufer hat Vorlagenfehler selbst behandelt).
+export function reiheBenachrichtigungEin(db, { to, typ, jobId, variablen = {}, gerendert = null }) {
+  const { subject, text } = gerendert ?? renderBenachrichtigung(db, typ, variablen);
   const geplant = getConfigValue(db, 'mail_batching_aktiv') === '1' && !IMMER_SOFORT_TYPEN.has(typ);
   // Batching aktiv: nur einreihen, kein SMTP-Call -- runMailDigestJob sammelt diese Zeile später
   // ein und verschickt sie als Teil der Digest-Mail des Empfängers.

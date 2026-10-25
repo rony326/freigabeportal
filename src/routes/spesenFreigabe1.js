@@ -17,6 +17,7 @@ import { getPersonById } from '../db/personenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { sendNotification, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from '../services/notify.js';
 import { buildAuditLog } from '../services/auditLog.js';
+import { kommentarBereich } from './kommentare.js';
 
 export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -73,6 +74,7 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
       values,
       errors,
       auditLog: buildAuditLog(db, job.id),
+      kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/spesen-freigabe1/${job.id}`),
     });
   }
 

@@ -11,6 +11,7 @@ import { listLaufendeVorgaenge, beschreibeVorgang, STATUS_LABEL } from '../../se
 import { LAUFENDE_STATUS, ermittleZustaendigkeit, standToken } from '../../services/vorgangZustaendigkeit.js';
 import { listUmhaengenZiele, umhaengeVorgang, istUmhaengbar, MIN_BEMERKUNG_LAENGE } from '../../services/vorgangUmhaengen.js';
 import { ermittleStriktesWeiterleitungsZiel } from '../../services/kontierungZugriff.js';
+import { kommentarBereich } from '../kommentare.js';
 
 const NICHT_LAUFEND = 'Dieser Vorgang existiert nicht oder ist nicht (mehr) in Bearbeitung.';
 
@@ -56,6 +57,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
       errors,
       werte: { zielId: '', bemerkung: '', ...werte },
       umgehaengt,
+      kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/admin/vorgaenge/${job.id}`),
     });
   }
 

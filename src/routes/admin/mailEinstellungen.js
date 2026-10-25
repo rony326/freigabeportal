@@ -43,6 +43,8 @@ const VORLAGEN_FELDER = [
   ['neuesGeraetText', 'mail_vorlage_neues_geraet_text'],
   ['fehlermeldungBetreff', 'mail_vorlage_fehlermeldung_betreff'],
   ['fehlermeldungText', 'mail_vorlage_fehlermeldung_text'],
+  ['kommentarBetreff', 'mail_vorlage_kommentar_betreff'],
+  ['kommentarText', 'mail_vorlage_kommentar_text'],
 ];
 
 export function createMailEinstellungenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {

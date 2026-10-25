@@ -21,6 +21,7 @@ import { pruefeUndFinalisiereSplitGruppe } from '../services/splitGruppenExport.
 import { kkHinweisFuerJob } from '../services/kkStempel.js';
 import { writeFinalDocument } from '../services/finalDocument.js';
 import { tsaTrustOptions } from '../services/tsaTrust.js';
+import { kommentarBereich } from './kommentare.js';
 
 export function createFreigabe2Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -127,6 +128,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       paymentReview,
       auditLog: buildAuditLog(db, job.id),
       kkHinweis: kkHinweisFuerJob(db, job),
+      kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/freigabe2/${job.id}`),
     });
   }
 

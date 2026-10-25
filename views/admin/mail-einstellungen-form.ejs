@@ -101,6 +101,13 @@
         <div class="form-text">Variablen: %empfaengerName%, %meldendePerson%, %seite%, %fehlerId%, %beschreibung%, %link%, %portalName%</div>
       </div>
       <div class="mb-3">
+        <label class="form-label" for="kommentarBetreff">Kommentar — Betreff</label>
+        <input type="text" class="form-control" id="kommentarBetreff" name="kommentarBetreff" value="<%= kommentarBetreff %>" required>
+        <label class="form-label mt-2" for="kommentarText">Kommentar — Text</label>
+        <textarea class="form-control" id="kommentarText" name="kommentarText" rows="8" required><%= kommentarText %></textarea>
+        <div class="form-text">Variablen: %empfaengerName%, %verfasserName%, %kommentarText%, %jobId%, %jobDateiname%, %link%, %portalName%</div>
+      </div>
+      <div class="mb-3">
         <label class="form-label" for="digestBetreff">Digest (tägliche Zusammenfassung) — Betreff</label>
         <input type="text" class="form-control" id="digestBetreff" name="digestBetreff" value="<%= digestBetreff %>" required>
         <label class="form-label mt-2" for="digestText">Digest — Text</label>

@@ -62,6 +62,7 @@ import { createSpesenFreigabe1Router } from './routes/spesenFreigabe1.js';
 import { createFreigabe2Router } from './routes/freigabe2.js';
 import { createAblehnungRouter } from './routes/ablehnung.js';
 import { createZeitstempelPruefenRouter } from './routes/zeitstempelPruefen.js';
+import { createKommentareRouter } from './routes/kommentare.js';
 import { createAuditPruefenRouter } from './routes/auditPruefen.js';
 import { createKreditkarteRouter } from './routes/kreditkarte.js';
 import { createMailerOrFallback } from './services/mailer.js';
@@ -291,6 +292,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer, csrfProtection }));
   app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config, csrfProtection }));
   app.use('/zeitstempel-pruefen', sessionLimiter, requireLogin(), createZeitstempelPruefenRouter({ db, config, csrfProtection }));
+  app.use('/kommentare', sessionLimiter, requireLogin(), createKommentareRouter({ db, config, mailer, csrfProtection }));
 
   if (!testmodus) app.use('/auth', publicLimiter, createAuthRouter({ db, config, mailer, csrfProtection }));
   // Oeffentlich fuer die Revision (ohne Portal-Login), nur GET.

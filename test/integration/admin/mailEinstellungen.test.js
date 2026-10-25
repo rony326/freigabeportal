@@ -59,6 +59,7 @@ const VALID_BODY = {
   auditPruefnummerBetreff: 'B16', auditPruefnummerText: 'T16',
   neuesGeraetBetreff: 'B17', neuesGeraetText: 'T17',
   fehlermeldungBetreff: 'B18', fehlermeldungText: 'T18',
+  kommentarBetreff: 'B19', kommentarText: 'T19',
   batchingAktiv: '1',
   batchingStunde: '6',
   batchingMinute: '30',
@@ -129,6 +130,8 @@ test('POST /admin/mail-einstellungen persists the freigabe2 template fields', as
   assert.equal(getConfigValue(db, 'mail_vorlage_kk_beleg_erinnerung_text'), 'T12');
   assert.equal(getConfigValue(db, 'mail_vorlage_kk_beleg_eingegangen_betreff'), 'B13');
   assert.equal(getConfigValue(db, 'mail_vorlage_kk_beleg_eingegangen_text'), 'T13');
+  assert.equal(getConfigValue(db, 'mail_vorlage_kommentar_betreff'), 'B19');
+  assert.equal(getConfigValue(db, 'mail_vorlage_kommentar_text'), 'T19');
   db.close();
 });
 

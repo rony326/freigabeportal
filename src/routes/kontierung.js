@@ -40,6 +40,7 @@ import { isValidIban } from '../services/ibanUtils.js';
 import { ladeKontierbarenJob, ermittleStriktesWeiterleitungsZiel, ladeKontenFuerJob as ladeKontenFuerJobService } from '../services/kontierungZugriff.js';
 import { markiereAlsKkAbrechnung } from '../services/kkMarkierung.js';
 import { kkHinweisFuerJob } from '../services/kkStempel.js';
+import { kommentarBereich } from './kommentare.js';
 import {
   POSITION_PATTERN,
   mergeBelegFuerJob,
@@ -127,6 +128,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       qrInfo,
       errors: [],
       auditLog: buildAuditLog(db, job.id),
+      kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/kontierung/${job.id}`),
     });
   });
 

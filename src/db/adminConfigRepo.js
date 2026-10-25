@@ -121,6 +121,11 @@ export function seedDefaults(db) {
   }
 }
 
+// Werkseinstellung eines Schlüssels (z. B. Rückfall für eine gelöschte Mail-Vorlage).
+export function getDefaultConfigValue(key) {
+  return Object.prototype.hasOwnProperty.call(DEFAULTS, key) ? DEFAULTS[key] : null;
+}
+
 export function getConfigValue(db, key) {
   const row = db.prepare('SELECT value FROM admin_config WHERE key = ?').get(key);
   return row ? row.value : null;

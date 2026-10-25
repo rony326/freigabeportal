@@ -11,4 +11,5 @@
       <button type="submit" class="btn btn-primary">Überarbeiten</button>
     </form>
     <%- include('_audit_log') %>
+    <% if (locals.kommentarBereich) { %><%- include('_kommentare', kommentarBereich) %><% } %>
 <%- include('_seite_ende') %>

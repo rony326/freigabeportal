@@ -4,6 +4,7 @@ import { getPersonById } from '../db/personenRepo.js';
 import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
+import { kommentarBereich } from './kommentare.js';
 
 export function createAblehnungRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -41,7 +42,13 @@ export function createAblehnungRouter({ db, config, csrfProtection = (req, res, 
     if (!job) return;
     const abgelehntVonPerson = getPersonById(db, job.abgelehnt_von);
     const ablehnung = listFreigabenByJob(db, job.id).findLast((f) => f.rolle === 'ablehnung');
-    res.render('abgelehnt', { job, abgelehntVonPerson, ablehnung, auditLog: buildAuditLog(db, job.id) });
+    res.render('abgelehnt', {
+      job,
+      abgelehntVonPerson,
+      ablehnung,
+      auditLog: buildAuditLog(db, job.id),
+      kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/abgelehnt/${job.id}`),
+    });
   });
 
   router.post('/:id/ueberarbeiten', csrfProtection, (req, res) => {

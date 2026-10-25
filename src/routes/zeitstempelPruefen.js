@@ -6,6 +6,7 @@ import { getJobById } from '../db/jobsRepo.js';
 import { canViewJobPdf } from '../services/jobAuthorization.js';
 import { verifyZeitstempel } from '../services/zeitstempel.js';
 import { jobDocument } from '../services/jobDocument.js';
+import { kommentarBereich } from './kommentare.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
@@ -22,6 +23,9 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
       if (!job || !canViewJobPdf(db, config, req.currentPerson, job)) {
         return res.status(403).render('error', { message: 'Kein Zugriff auf diesen Job.' });
       }
+      // Kommentarbereich auch für abgeschlossene Vorgänge (dann nur lesend) und Mail-Links mit
+      // #kommentare für Beteiligte ohne Arbeitsseite (z. B. die Spesen-Einreicherin).
+      const kommentare = kommentarBereich(db, config, req.currentPerson, job, `/zeitstempel-pruefen?jobId=${job.id}`);
       if (!job.pdf_pfad || !existsSync(job.pdf_pfad)) {
         // n8n deletes the local PDF once a job is abgeholt — but zeitstempel_datei_hash survives
         // in the DB regardless, so verification is still possible via the plain upload form
@@ -34,10 +38,11 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
           job: null,
           hinweis:
             'Die Originaldatei liegt im Portal nicht mehr vor (bereits abgeholt/archiviert). Lade die archivierte Kopie hoch, um sie zu prüfen — die Job-ID ist bereits eingetragen.',
+          kommentarBereich: kommentare,
         });
       }
       const ergebnis = await verifyZeitstempel(readFileSync(job.pdf_pfad), job.zeitstempel_datei_hash);
-      res.render('zeitstempel-pruefen', { ergebnis, errors: [], jobId, job });
+      res.render('zeitstempel-pruefen', { ergebnis, errors: [], jobId, job, kommentarBereich: kommentare });
     } catch (err) {
       next(err);
     }

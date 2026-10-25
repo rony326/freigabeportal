@@ -407,11 +407,69 @@ test('Erwähnungen: NFD, NBSP, Zeilenumbruch, mehrfacher Leerraum, Längenänder
 
 test('Kommentar und Mails in einer Transaktion: scheitert das Einreihen, bleibt nichts gespeichert', async () => {
   const { db, jobId, job, p } = setup();
-  db.prepare("DELETE FROM admin_config WHERE key = 'mail_vorlage_kommentar_text'").run();
-  await assert.rejects(erfasseKommentar(db, CONFIG, stubMailer(), { job: job(), person: p('3'), text: 'Hallo' }));
+  db.exec("CREATE TEMP TRIGGER mail_log_kaputt BEFORE INSERT ON mail_log BEGIN SELECT RAISE(ABORT, 'Platte voll'); END");
+  await assert.rejects(erfasseKommentar(db, CONFIG, stubMailer(), { job: job(), person: p('3'), text: 'Hallo' }), /Platte voll/);
   assert.equal(listeKommentare(db, jobId).length, 0);
+  db.exec('DROP TRIGGER mail_log_kaputt');
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM mail_log WHERE typ = 'kommentar'").get().n, 0);
   assert.equal(db.isTransaction, false);
+  db.close();
+});
+
+test('Ruling 2: gelöschte Vorlage kommentar → Rückfall auf die Werkseinstellung, Kommentar und Mail bleiben', async () => {
+  const { db, jobId, job, p } = setup();
+  db.prepare("DELETE FROM admin_config WHERE key IN ('mail_vorlage_kommentar_text', 'mail_vorlage_kommentar_betreff')").run();
+  const mailer = stubMailer();
+  const r = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('3'), text: 'Hallo' });
+  assert.equal(r.ok, true);
+  await r.zustellung;
+  assert.equal(listeKommentare(db, jobId).length, 1);
+  const zeilen = db.prepare("SELECT betreff, text FROM mail_log WHERE typ = 'kommentar'").all();
+  assert.ok(zeilen.length > 0);
+  assert.match(zeilen[0].betreff, /Neuer Kommentar zu rechnung\.pdf/);
+  assert.match(zeilen[0].text, /Clara Zwei hat einen Kommentar/);
+  db.close();
+});
+
+test('Ruling 2: Rendern scheitert trotz Rückfall → Kommentar bleibt, Fehler geloggt, Mail als fehlgeschlagen erfasst', async () => {
+  const { db, jobId, job, p } = setup();
+  const kaputt = { ...job(), dateiname: { toString() { throw new Error('Vorlage kaputt'); } } };
+  const fehler = [];
+  const original = console.error;
+  console.error = (...args) => fehler.push(args);
+  let r;
+  try {
+    r = await erfasseKommentar(db, CONFIG, stubMailer(), { job: kaputt, person: p('3'), text: 'Hallo' });
+    await r.zustellung;
+  } finally {
+    console.error = original;
+  }
+  assert.equal(r.ok, true);
+  assert.equal(listeKommentare(db, jobId).length, 1);
+  assert.ok(fehler.some((a) => String(a[0]).includes('Vorlage konnte nicht gerendert werden')));
+  const zeilen = db.prepare("SELECT status, fehler_details FROM mail_log WHERE typ = 'kommentar'").all();
+  assert.ok(zeilen.length > 0);
+  assert.ok(zeilen.every((z) => z.status === 'fehlgeschlagen' && /Vorlage kaputt/.test(z.fehler_details)));
+  db.close();
+});
+
+test('N2: scheitert ROLLBACK TO, wird der ursprüngliche Fehler geworfen', async () => {
+  const { db, job, p } = setup();
+  db.exec("CREATE TEMP TRIGGER mail_log_kaputt BEFORE INSERT ON mail_log BEGIN SELECT RAISE(ABORT, 'Platte voll'); END");
+  const exec = db.exec.bind(db);
+  db.exec = (sql) => {
+    if (String(sql).startsWith('ROLLBACK TO')) throw new Error('Rollback kaputt');
+    return exec(sql);
+  };
+  const original = console.error;
+  console.error = () => {};
+  try {
+    await assert.rejects(erfasseKommentar(db, CONFIG, stubMailer(), { job: job(), person: p('3'), text: 'Hallo' }), /Platte voll/);
+  } finally {
+    console.error = original;
+    db.exec = exec;
+  }
+  try { exec('ROLLBACK'); } catch { /* evtl. keine offene Transaktion */ }
   db.close();
 });
 

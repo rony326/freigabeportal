@@ -73,4 +73,5 @@
         <p class="mt-3"><a href="/zeitstempel-pruefen">Weitere Datei prüfen</a></p>
       <% } %>
     <% } %>
+    <% if (locals.kommentarBereich) { %><%- include('_kommentare', kommentarBereich) %><% } %>
 <%- include('_seite_ende') %>

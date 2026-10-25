@@ -157,6 +157,7 @@
           </div>
         </div>
         <%- include('_audit_log') %>
+        <% if (locals.kommentarBereich) { %><%- include('_kommentare', kommentarBereich) %><% } %>
       </div>
     </div>
 

@@ -8,7 +8,10 @@ import { personHasPermission } from '../middleware/permissions.js';
 import { canViewJobPdf } from './jobAuthorization.js';
 import { ermittleZustaendigkeit } from './vorgangZustaendigkeit.js';
 import { getAktivenVertreter } from './vertretung.js';
-import { reiheBenachrichtigungEin } from './notify.js';
+import { reiheBenachrichtigungEin, renderBenachrichtigung } from './notify.js';
+import { getVorlage } from './mailTemplates.js';
+import { getDefaultConfigValue } from '../db/adminConfigRepo.js';
+import { logMailAttempt } from '../db/mailLogRepo.js';
 import { stelleEintraegeZu } from './mailZustellung.js';
 
 export const KOMMENTAR_GESCHLOSSEN_STATUS = ['abgeschlossen', 'abgeholt', 'archiviert', 'geloescht'];
@@ -177,10 +180,53 @@ function linkFuer(db, config, person, job, verantwortlich) {
   return `${link}#kommentare`;
 }
 
+// Vorlage `kommentar`; fehlt ein Teil (gelöscht/leer), gilt die Werkseinstellung (Ruling 2): ein
+// kaputtes Admin-Setup darf keinen Kommentar verlieren.
+function kommentarVorlage(db) {
+  const v = getVorlage(db, 'kommentar');
+  const oder = (wert, key) => (typeof wert === 'string' && wert.trim() ? wert : getDefaultConfigValue(key));
+  return {
+    betreff: oder(v.betreff, 'mail_vorlage_kommentar_betreff'),
+    text: oder(v.text, 'mail_vorlage_kommentar_text'),
+  };
+}
+
+// Rendert die Mail für einen Empfänger. Scheitert das trotz Rückfall, bleibt der Kommentar stehen:
+// Fehler loggen (wie sendNotification) und den Versuch als 'fehlgeschlagen' in mail_log festhalten.
+function rendereKommentarMail(db, vorlage, { to, jobId, variablen }) {
+  try {
+    return renderBenachrichtigung(db, 'kommentar', variablen, vorlage);
+  } catch (err) {
+    console.error('erfasseKommentar: Mail-Vorlage konnte nicht gerendert werden, Kommentar bleibt gespeichert', err);
+    try {
+      logMailAttempt(db, {
+        typ: 'kommentar',
+        jobId,
+        empfaenger: to,
+        betreff: '(Vorlage konnte nicht gerendert werden)',
+        text: '(Vorlage konnte nicht gerendert werden)',
+        status: 'fehlgeschlagen',
+        fehlerDetails: err.message,
+      });
+    } catch (logErr) {
+      console.error('erfasseKommentar: logMailAttempt nach Vorlagenfehler gescheitert', logErr);
+    }
+    return null;
+  }
+}
+
 // Validiert, speichert den Kommentar und reiht die Mails in EINER Transaktion ein (kein Kommentar →
 // keine Mail; keine Mail ohne Kommentar). Die SMTP-Zustellung läuft danach im Hintergrund und
 // blockiert die Anfrage nicht; scheitert sie, wiederholt der mail-zustellung-Job die eingereihten
 // Zeilen. `zustellung` ist das Promise dieser Zustellung (für Tests; Routen müssen es nicht abwarten).
+// Ein Vorlagenfehler verhindert nur die betroffene Mail, nie den Kommentar (Ruling 2); scheitert das
+// Speichern oder Einreihen selbst (DB), wird alles zurückgerollt und der Fehler geworfen.
+//
+// NICHT innerhalb einer Transaktion des Aufrufers aufrufen (N1): der SAVEPOINT funktioniert zwar
+// geschachtelt, aber die Hintergrund-Zustellung startet direkt nach RELEASE — also bevor der
+// Aufrufer COMMIT/ROLLBACK macht. Ein späteres ROLLBACK des Aufrufers würde Kommentar und mail_log-
+// Zeilen verwerfen, während die Mails schon unterwegs sind. Die Route /kommentare ruft die Funktion
+// deshalb ausserhalb jeder Transaktion auf.
 export async function erfasseKommentar(db, config, mailer, { job, person, text, jetzt = new Date() }) {
   const sauber = String(text ?? '').normalize('NFC').trim();
   const fehler = [];
@@ -219,19 +265,23 @@ export async function erfasseKommentar(db, config, mailer, { job, person, text, 
         .run(job.id, person.churchtools_person_id, sauber, JSON.stringify(ids), jetzt.toISOString()).lastInsertRowid
     );
     const verfasserName = name(person);
+    const vorlage = kommentarVorlage(db);
     for (const { person: empfaenger, link } of ermittleEmpfaenger(db, config, job, { schreiberId: person.churchtools_person_id, erwaehntIds: ids })) {
       if (!empfaenger.email) continue;
-      eintraege.push(reiheBenachrichtigungEin(db, {
-        to: empfaenger.email,
-        typ: 'kommentar',
-        jobId: job.id,
-        variablen: { empfaengerName: name(empfaenger), verfasserName, kommentarText: sauber, jobId: job.id, jobDateiname: job.dateiname, link },
-      }));
+      const variablen = { empfaengerName: name(empfaenger), verfasserName, kommentarText: sauber, jobId: job.id, jobDateiname: job.dateiname, link };
+      const gerendert = rendereKommentarMail(db, vorlage, { to: empfaenger.email, jobId: job.id, variablen });
+      if (!gerendert) continue;
+      eintraege.push(reiheBenachrichtigungEin(db, { to: empfaenger.email, typ: 'kommentar', jobId: job.id, variablen, gerendert }));
     }
     db.exec('RELEASE kommentar_erfassen');
   } catch (err) {
-    db.exec('ROLLBACK TO kommentar_erfassen');
-    db.exec('RELEASE kommentar_erfassen');
+    // N2: scheitert das Zurückrollen selbst, bleibt der ursprüngliche Fehler der geworfene.
+    try {
+      db.exec('ROLLBACK TO kommentar_erfassen');
+      db.exec('RELEASE kommentar_erfassen');
+    } catch (rollbackErr) {
+      console.error('erfasseKommentar: ROLLBACK TO kommentar_erfassen gescheitert', rollbackErr);
+    }
     throw err;
   }
   const zustellung = stelleEintraegeZu(db, mailer, eintraege).catch((err) => {

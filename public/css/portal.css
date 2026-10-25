@@ -354,3 +354,8 @@
 .testmodus-band-person { display: flex; gap: .5rem; align-items: center; flex: 1 1 14rem; max-width: 28rem; }
 .testmodus-mailtext { white-space: pre-wrap; overflow-wrap: anywhere; }
 .testmodus-band-person .form-select { min-width: 0; background-color: #fff; color: #000; border-color: #000; }
+
+/* Kommentare: Text wie eingegeben (Zeilenumbrüche), lange Wörter brechen am Handy um. */
+.kommentar-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.kommentar-erwaehnen { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.kommentar-erwaehnen .form-select { flex: 1 1 12rem; min-width: 0; width: auto; }

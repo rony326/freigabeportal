@@ -1,0 +1,26 @@
+<%- include('_seite_anfang', { titel: 'Kommentar nicht gespeichert' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Kommentar nicht gespeichert</h1>
+    </div>
+    <div class="alert alert-danger" role="alert">
+      <ul class="mb-0"><% fehler.forEach((f) => { %><li><%= f %></li><% }) %></ul>
+    </div>
+    <% if (darfKommentieren) { %>
+      <form method="post" action="/kommentare/<%= jobId %>" class="col-12 col-lg-8">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <input type="hidden" name="zurueck" value="<%= zurueck %>">
+        <div class="mb-3">
+          <label class="form-label" for="kommentar-text">Kommentar</label>
+          <textarea class="form-control" id="kommentar-text" name="text" rows="5" maxlength="<%= maxLaenge %>" required><%= text %></textarea>
+          <div class="form-text">Mit „@Vorname Nachname“ holst du gezielt eine Person dazu. Kommentare können nicht geändert werden.</div>
+        </div>
+        <button type="submit" class="btn btn-primary">Erneut senden</button>
+      </form>
+    <% } else if (text) { %>
+      <div class="mb-3 col-12 col-lg-8">
+        <label class="form-label" for="kommentar-text">Dein Text (zum Kopieren)</label>
+        <textarea class="form-control" id="kommentar-text" rows="5" readonly><%= text %></textarea>
+      </div>
+    <% } %>
+    <p class="mt-3"><a href="<%= zurueckLink %>" class="btn btn-outline-secondary">Zurück zum Vorgang</a></p>
+<%- include('_seite_ende') %>

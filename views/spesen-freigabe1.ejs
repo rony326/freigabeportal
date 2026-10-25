@@ -50,6 +50,7 @@
         </div>
 
         <%- include('_audit_log', { auditLog }) %>
+        <% if (locals.kommentarBereich) { %><%- include('_kommentare', kommentarBereich) %><% } %>
       </div>
     </div>
 

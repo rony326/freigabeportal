@@ -1,0 +1,56 @@
+<%# Kommentarbereich eines Vorgangs. Locals: kommentare, darfKommentieren, erwaehnbar, jobId, zurueck,
+    maxLaenge (aus kommentarBereich() in src/routes/kommentare.js); csrfToken aus res.locals. %>
+<section class="card mt-3" id="kommentare" aria-labelledby="kommentare-titel">
+  <div class="card-body">
+    <h2 class="h5" id="kommentare-titel">Rückfragen und Kommentare</h2>
+    <% if (kommentare.length === 0) { %>
+      <p class="text-body-secondary">Noch keine Kommentare.</p>
+    <% } else { %>
+      <ul class="list-group list-group-flush mb-3">
+        <% kommentare.forEach((k) => { %>
+          <li class="list-group-item px-0">
+            <div class="small text-body-secondary"><strong class="text-body"><%= k.verfasser_name %></strong> · <%- include('_zeitpunkt', { wert: k.erstellt_am }) %></div>
+            <div class="kommentar-text"><%= k.text %></div>
+          </li>
+        <% }) %>
+      </ul>
+    <% } %>
+    <% if (darfKommentieren) { %>
+      <form method="post" action="/kommentare/<%= jobId %>" class="kommentar-form">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <input type="hidden" name="zurueck" value="<%= zurueck %>">
+        <div class="mb-2">
+          <label class="form-label" for="kommentar-text-<%= jobId %>">Neuer Kommentar</label>
+          <textarea class="form-control" id="kommentar-text-<%= jobId %>" name="text" rows="3" maxlength="<%= maxLaenge %>" required></textarea>
+          <div class="form-text">Mit „@Vorname Nachname“ holst du gezielt eine Person dazu. Kommentare können nicht geändert werden — Korrekturen bitte als Nachtrag.</div>
+        </div>
+        <% if (erwaehnbar.length > 0) { %>
+          <div class="kommentar-erwaehnen mb-2">
+            <label class="form-label mb-0" for="kommentar-erwaehnen-<%= jobId %>">Person erwähnen</label>
+            <select class="form-select form-select-sm" id="kommentar-erwaehnen-<%= jobId %>" data-kommentar-ziel="kommentar-text-<%= jobId %>">
+              <option value="">— auswählen —</option>
+              <% erwaehnbar.forEach((p) => { %><option value="<%= p.name %>"><%= p.name %></option><% }) %>
+            </select>
+          </div>
+        <% } %>
+        <button type="submit" class="btn btn-outline-primary btn-sm">Kommentar senden</button>
+      </form>
+      <script>
+        (function () {
+          var auswahl = document.getElementById('kommentar-erwaehnen-<%= jobId %>');
+          if (!auswahl) return;
+          auswahl.addEventListener('change', function () {
+            var feld = document.getElementById(auswahl.dataset.kommentarZiel);
+            if (!feld || !auswahl.value) return;
+            var vorher = feld.value && !/\s$/.test(feld.value) ? ' ' : '';
+            feld.value += vorher + '@' + auswahl.value + ' ';
+            auswahl.value = '';
+            feld.focus();
+          });
+        })();
+      </script>
+    <% } else { %>
+      <p class="text-body-secondary mb-0">Abgeschlossen — keine neuen Kommentare. Kommentare können nicht geändert werden.</p>
+    <% } %>
+  </div>
+</section>

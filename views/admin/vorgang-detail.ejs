@@ -82,4 +82,5 @@
     <% } else if (vorgang.status === 'abgelehnt' && vorgang.art === 'spesen') { %>
       <p class="text-body-secondary mt-4">Abgelehnte Spesen-Positionen können nicht umgehängt werden, weil es für sie keinen Überarbeiten-Weg gibt.</p>
     <% } %>
+    <% if (locals.kommentarBereich) { %><%- include('../_kommentare', kommentarBereich) %><% } %>
 <%- include('../_seite_ende') %>

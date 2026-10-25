@@ -45,7 +45,7 @@
   <div class="container-xxl testmodus-band-zeile">
     <strong class="testmodus-band-text">Testmodus — nichts hier ist echt</strong>
     <form method="post" action="/admin/testmodus/person" class="testmodus-band-person">
-      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <input type="hidden" name="_csrf" value="<%= locals.testmodusEchterCsrfToken || '' %>">
       <label for="testmodus-person" class="visually-hidden">Als Beispielperson handeln</label>
       <select id="testmodus-person" name="personId" class="form-select form-select-sm">
         <% testmodus.beispielpersonen.forEach((bp) => { %>
@@ -55,7 +55,7 @@
       <button type="submit" class="btn btn-sm btn-dark">Wechseln</button>
     </form>
     <form method="post" action="/admin/testmodus/aus">
-      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <input type="hidden" name="_csrf" value="<%= locals.testmodusEchterCsrfToken || '' %>">
       <button type="submit" class="btn btn-sm btn-dark">Testmodus beenden</button>
     </form>
   </div>

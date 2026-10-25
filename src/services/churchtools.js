@@ -17,7 +17,16 @@ async function parseOrThrow(response, label) {
   return response.json();
 }
 
+// Test-Instanz: nie ein Aufruf nach aussen (config.testmodus kommt aus der Test-Konfiguration).
+function sperreImTestmodus(config) {
+  if (config?.testmodus) throw Object.assign(new Error('ChurchTools ist im Testmodus deaktiviert.'), { testmodus: true });
+}
+
+// Beispiel-Zahlungsdaten (Muster-IBAN), damit Spesen im Testmodus freigegeben werden können.
+export const TESTMODUS_IBAN = 'CH9300762011623852957';
+
 export async function exchangeCodeForToken(config, code) {
+  sperreImTestmodus(config);
   const url = new URL('/oauth/access_token', config.baseUrl);
   const response = await fetch(url, {
     method: 'POST',
@@ -34,6 +43,7 @@ export async function exchangeCodeForToken(config, code) {
 }
 
 export async function fetchPerson(config, accessToken) {
+  sperreImTestmodus(config);
   // OAuth2 access tokens are only valid against the dedicated /oauth/* endpoints (authorize,
   // access_token, userinfo) — not the general /api/* REST surface, which returns 403 for a
   // Bearer-token request. /oauth/userinfo also returns the profile as a flat object, unlike
@@ -52,6 +62,12 @@ export async function fetchPerson(config, accessToken) {
 // interchangeable and must never share a header-building helper without being explicit about
 // which scheme applies.
 export async function fetchPersonById(config, loginToken, personId) {
+  if (config?.testmodus) {
+    const daten = { id: personId };
+    if (config.customFieldIban) daten[config.customFieldIban] = TESTMODUS_IBAN;
+    if (config.customFieldKontoinhaber) daten[config.customFieldKontoinhaber] = 'Beispielperson';
+    return daten;
+  }
   const url = new URL(`/api/persons/${personId}`, config.baseUrl);
   const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` } });
   const data = await parseOrThrow(response, 'Personenabruf');
@@ -72,6 +88,7 @@ export function extractCustomFieldValue(person, fieldKey) {
 }
 
 export async function fetchGroup(config, loginToken, groupId, { signal } = {}) {
+  sperreImTestmodus(config);
   const url = new URL(`/api/groups/${groupId}`, config.baseUrl);
   const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` }, signal });
   const data = await parseOrThrow(response, 'Gruppenabruf');
@@ -79,6 +96,7 @@ export async function fetchGroup(config, loginToken, groupId, { signal } = {}) {
 }
 
 export async function fetchGroupMemberIds(config, loginToken, groupId, { signal } = {}) {
+  sperreImTestmodus(config);
   const url = new URL(`/api/groups/${groupId}/members`, config.baseUrl);
   const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` }, signal });
   const data = await parseOrThrow(response, 'Gruppenabfrage');

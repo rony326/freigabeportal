@@ -136,6 +136,7 @@ export function pruefeTechnik(config, { anwendungsVerzeichnis = ANWENDUNGSVERZEI
 }
 
 export async function testeChurchtools(config, { timeoutMs = 10000 } = {}) {
+  if (config.testmodus) return { ok: false, meldung: 'Im Testmodus deaktiviert.' };
   const ct = config.churchtools;
   const token = ct.syncServiceToken;
   const rollen = [['Buchhaltung', ct.groupIdBuchhaltung], ['Admin', ct.groupIdAdmin], ['Manager', ct.groupIdManager]].filter(([, id]) => id);

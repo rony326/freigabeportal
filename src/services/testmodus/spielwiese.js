@@ -1,5 +1,6 @@
 import { existsSync, rmSync, mkdirSync, cpSync } from 'node:fs';
 import { join, basename } from 'node:path';
+import { createHmac } from 'node:crypto';
 import { openDatabase } from '../../db/index.js';
 import { seedDefaults } from '../../db/adminConfigRepo.js';
 import { spieleBeispieldatenEin } from './beispieldaten.js';
@@ -10,6 +11,7 @@ export function testmodusPfade(config) {
     dbPath: `${config.dbPath}.testmodus.db`,
     jobsDir: `${config.jobsDir}-testmodus`,
     brandingDir: `${config.brandingDir}-testmodus`,
+    backupDir: `${config.dbPath}.testmodus-backups`,
   };
 }
 
@@ -23,11 +25,36 @@ export function kopierbareEinstellung(key) {
   return !GEHEIM.test(key) && !NICHT_KOPIEREN.has(key) && !key.startsWith('einrichtung_');
 }
 
+// Eigenes Geheimnis je Zweck: Signaturen und CSRF-Tokens der Test-Instanz gelten nie in der echten App.
+function ableiten(geheimnis, zweck) {
+  return createHmac('sha256', String(geheimnis ?? '')).update(`testmodus:${zweck}`).digest('hex');
+}
+
+// TSA-Zugang bleibt in der Spiel-DB immer leer, egal welcher Schreibweg ihn setzt.
+const TSA_SCHLUESSEL = "('zeitstempel_tsa_url', 'zeitstempel_tsa_user', 'zeitstempel_tsa_passwort')";
+function sichereSpielDb(db) {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS testmodus_kein_tsa_insert AFTER INSERT ON admin_config
+      WHEN NEW.key IN ${TSA_SCHLUESSEL} AND NEW.value IS NOT ''
+      BEGIN UPDATE admin_config SET value = '' WHERE key = NEW.key; END;
+    CREATE TRIGGER IF NOT EXISTS testmodus_kein_tsa_update AFTER UPDATE ON admin_config
+      WHEN NEW.key IN ${TSA_SCHLUESSEL} AND NEW.value IS NOT ''
+      BEGIN UPDATE admin_config SET value = '' WHERE key = NEW.key; END;
+    UPDATE admin_config SET value = '' WHERE key IN ${TSA_SCHLUESSEL} AND value IS NOT '';
+  `);
+}
+
 function baueTestConfig(config) {
   const pfade = testmodusPfade(config);
   return {
     ...config,
     ...pfade,
+    testmodus: true,
+    sessionSecret: ableiten(config.sessionSecret, 'sitzung'),
+    downloadSigningSecret: ableiten(config.downloadSigningSecret, 'download'),
+    backupKeyringFile: null,
+    tsaCrlFile: null,
+    tsaCrlAutoUpdate: false,
     n8nApiKey: null,
     backupApiKey: null,
     cronSecret: null,
@@ -35,6 +62,8 @@ function baueTestConfig(config) {
     churchtools: {
       ...config.churchtools,
       baseUrl: 'https://testmodus.invalid',
+      testmodus: true,
+      clientSecret: null,
       syncServiceToken: null,
       groupIdAdmin: 'test-admin',
       groupIdBuchhaltung: 'test-buchhaltung',
@@ -47,6 +76,7 @@ function loescheDateien(pfade) {
   for (const suffix of ['', '-wal', '-shm', '-journal']) rmSync(`${pfade.dbPath}${suffix}`, { force: true });
   rmSync(pfade.jobsDir, { recursive: true, force: true });
   rmSync(pfade.brandingDir, { recursive: true, force: true });
+  rmSync(pfade.backupDir, { recursive: true, force: true });
 }
 
 function oeffneVorhandene(pfade) {
@@ -68,13 +98,17 @@ export async function erstelleSpielwiese(echteDb, config, { neu = false } = {}) 
   const testConfig = baueTestConfig(config);
   if (!neu) {
     const vorhanden = oeffneVorhandene(pfade);
-    if (vorhanden) return { db: vorhanden, config: testConfig };
+    if (vorhanden) {
+      sichereSpielDb(vorhanden);
+      return { db: vorhanden, config: testConfig };
+    }
   }
   loescheDateien(pfade);
   mkdirSync(pfade.jobsDir, { recursive: true });
   mkdirSync(pfade.brandingDir, { recursive: true });
   const db = openDatabase(pfade.dbPath);
   seedDefaults(db);
+  sichereSpielDb(db);
   const ins = db.prepare('INSERT INTO admin_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
   for (const row of echteDb.prepare('SELECT key, value FROM admin_config').all()) {
     if (kopierbareEinstellung(row.key)) ins.run(row.key, row.value);

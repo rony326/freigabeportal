@@ -14,7 +14,8 @@ export function createCsrfProtection(config) {
   const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     getSecret: () => config.sessionSecret,
     getSessionIdentifier: (req) => req.session.id,
-    cookieName: 'csrf-token',
+    // Test-Instanz: eigenes Cookie (und abgeleitetes Geheimnis aus der Test-Konfiguration).
+    cookieName: config.testmodus ? 'csrf-token-testmodus' : 'csrf-token',
     cookieOptions: {
       sameSite: 'lax',
       path: '/',

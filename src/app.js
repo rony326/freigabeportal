@@ -218,6 +218,9 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/admin/eskalation', requireRole(config, 'superadmin'), createEskalationRouter({ db, csrfProtection }));
   app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config, csrfProtection }));
   app.use('/admin/ersteinrichtung', requireRole(config, 'superadmin'), createErsteinrichtungRouter({ db, config, mailer, statusCache, csrfProtection }));
+  // Test-Instanz: TSA-Zugang nicht speicherbar (die Spiel-DB hält ihn ohnehin leer), keine Backups.
+  const imTestmodusGesperrt = (message) => (req, res) => res.status(403).render('error', { message });
+  if (testmodus) app.post('/admin/zeitstempel', imTestmodusGesperrt('Der Zeitstempeldienst ist im Testmodus deaktiviert.'));
   app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/personen', requireAnyRole(config, ['superadmin', 'manager']), createPersonenRouter({ db, config, csrfProtection }));
   app.use('/admin/mails', requirePermission(db, config, 'mails_einsehen'), createMailsRouter({ db, mailer, csrfProtection }));
@@ -226,7 +229,8 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/admin/vorgaenge', requirePermission(db, config, 'vorgaenge_einsehen'), createVorgaengeRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/audit-log', requirePermission(db, config, 'audit_log_einsehen'), createAuditLogRouter({ db }));
   app.use('/admin/geplante-jobs', requirePermission(db, config, 'geplante_jobs_verwalten'), createGeplanteJobsRouter({ db, config, mailer, csrfProtection }));
-  app.use('/admin/backup', requireRole(config, 'superadmin'), createBackupRouter({ db, config, csrfProtection }));
+  if (testmodus) app.use('/admin/backup', imTestmodusGesperrt('Backups sind im Testmodus nicht verfügbar.'));
+  else app.use('/admin/backup', requireRole(config, 'superadmin'), createBackupRouter({ db, config, csrfProtection }));
   app.use('/admin/module', requireRole(config, 'superadmin'), createModuleRouter({ db, csrfProtection }));
   app.use('/admin/mail-einstellungen', requireRole(config, 'superadmin'), createMailEinstellungenRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/altfaelle', requirePermission(db, config, 'workflow_eingreifen'), createAltfaelleRouter({ db, config, csrfProtection }));

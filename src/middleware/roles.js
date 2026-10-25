@@ -30,15 +30,18 @@ export function loadCurrentPerson(db) {
   };
 }
 
-// Test-Instanz: Person = gewählte Beispielperson aus der Spiel-DB, nur IDs test-*; sonst 403.
+// Test-Instanz: Person = gewählte Beispielperson aus der Spiel-DB, nur bekannte Beispiel-IDs; sonst 403.
 export function loadBeispielperson(db) {
   const beispielpersonen = BEISPIELPERSONEN.map((p) => ({ id: p.id, name: `${p.vorname} ${p.nachname}`, rolle: p.rolle }));
+  const erlaubt = new Set(beispielpersonen.map((p) => p.id));
   return (req, res, next) => {
     const id = req.session?.testmodus?.personId;
-    const person = typeof id === 'string' && id.startsWith('test-') ? getPersonById(db, id) : null;
+    const person = erlaubt.has(id) ? getPersonById(db, id) : null;
     req.currentPerson = person;
     res.locals.currentPerson = person;
     res.locals.testmodus = { person, beispielpersonen };
+    // Die Band-Formulare gehen an die echte App: Token von dort (setzt die Weiche), sonst leer.
+    res.locals.testmodusEchterCsrfToken = req.testmodusEchterCsrfToken || '';
     if (!person) return res.status(403).render('error', { message: 'Im Testmodus kannst du nur als Beispielperson handeln.' });
     next();
   };

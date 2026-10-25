@@ -120,6 +120,7 @@ async function benachrichtigeSyncFehler(db, config, mailer, meldung) {
 export const runSyncPersonenJob = auditedJob('sync-personen', runSyncPersonenJobInternal);
 
 async function runSyncPersonenJobInternal(db, config, mailer) {
+  if (config.testmodus) return { status: 'uebersprungen', meldung: 'Im Testmodus deaktiviert' };
   if (hasRecentRunningSync(db)) {
     return { status: 'uebersprungen', meldung: 'Ein Sync-Lauf ist bereits aktiv' };
   }
@@ -470,6 +471,7 @@ async function runZeitstempelNachholenJobInternal(db, config) {
 export const runDatenbankSicherungJob = auditedJob('datenbank-sicherung', runDatenbankSicherungJobInternal);
 
 function runDatenbankSicherungJobInternal(db, config) {
+  if (config.testmodus) return { status: 'uebersprungen', meldung: 'Im Testmodus deaktiviert' };
   if (hasRecentRunningCronLauf(db, 'datenbank-sicherung')) {
     return { status: 'uebersprungen', meldung: 'Ein Backup-Lauf ist bereits aktiv' };
   }

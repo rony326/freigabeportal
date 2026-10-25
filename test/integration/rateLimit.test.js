@@ -26,7 +26,7 @@ function testConfig() {
   };
 }
 
-test('GET /healthz is never rate-limited, even after many rapid requests', async () => {
+test('GET /healthz tolerates many rapid requests (own limiter 120/min)', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });
   for (let i = 0; i < 50; i++) {

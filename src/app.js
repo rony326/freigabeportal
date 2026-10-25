@@ -39,6 +39,7 @@ import { createModuleRouter } from './routes/admin/module.js';
 import { createMailEinstellungenRouter } from './routes/admin/mailEinstellungen.js';
 import { createAltfaelleRouter } from './routes/admin/altfaelle.js';
 import { createDateiQuarantaeneRouter } from './routes/admin/dateiQuarantaene.js';
+import { createHealthzRouter } from './routes/healthz.js';
 import { createBetriebRouter } from './routes/admin/betrieb.js';
 import { createPoolRouter } from './routes/pool.js';
 import { createPoolPageRouter } from './routes/poolPage.js';
@@ -70,7 +71,7 @@ import { erfasseFehler } from './services/nutzung.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // `mailer` is injectable for tests (a stub instead of the SMTP-backed default).
-export function createApp({ db, config, mailer: injectedMailer = null }) {
+export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuch = undefined }) {
   const app = express();
   app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
@@ -113,6 +114,8 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
     );
     next();
   });
+  // Frueh gemountet: kein Session-Cookie, kein CSRF, eigener Limiter (120/min/IP).
+  app.use('/healthz', createHealthzRouter({ db, config, tsaVersuch }));
   app.use(auditRequestContext);
   app.use(express.static(join(__dirname, '..', 'public')));
   app.use(loadBranding(db));
@@ -228,8 +231,6 @@ export function createApp({ db, config, mailer: injectedMailer = null }) {
   // Oeffentlich fuer die Revision (ohne Portal-Login), nur GET.
   app.use('/audit-pruefen', publicLimiter, createAuditPruefenRouter({ db }));
   app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));
-
-  app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
 
   // No standalone landing page: every visit to "/" goes straight to the dashboard (/pool) for a
   // logged-in person, or to login for an anonymous one.

@@ -7,7 +7,7 @@
       <tbody>
         <% jobs.forEach((job) => { %>
           <tr id="abgeschlossen-row-<%= job.id %>">
-            <td><%= job.dateiname %></td>
+            <td><%= job.dateiname %> <%- include('_kommentar_marke', { jobId: job.id }) %></td>
             <td><%= job.status %></td>
             <td>
               <% if (job.zeitstempel_gesetzt_am) { %>

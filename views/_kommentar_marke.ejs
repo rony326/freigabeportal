@@ -1,0 +1,9 @@
+<% /* Kommentar-Marke für Vorgangslisten (Tabellenzeile und Kachel): Sprechblase + Anzahl, bei
+     ungelesenen fremden Kommentaren ein kleines Badge "neu". Parameter: jobId. Die Daten liefert die
+     Route als kommentarInfo (Map jobId → { anzahl, neu }, Objekt auch erlaubt); fehlt sie, bleibt die
+     Marke leer. Bootstrap Icons sind nicht eingebunden → Textsymbol. */
+   const _infoQuelle = locals.kommentarInfo;
+   const _info = !_infoQuelle ? null : (typeof _infoQuelle.get === 'function' ? _infoQuelle.get(Number(jobId)) : _infoQuelle[jobId]);
+   const _anzahl = _info ? Number(_info.anzahl) || 0 : 0;
+   const _neu = _info ? Number(_info.neu) || 0 : 0; %>
+<% if (_anzahl > 0) { %><span class="kommentar-marke text-nowrap small text-body-secondary" role="img" aria-label="<%= _anzahl %> Kommentare, davon <%= _neu %> neu"><span aria-hidden="true">💬 <%= _anzahl %></span><% if (_neu > 0) { %> <span class="badge text-bg-primary" aria-hidden="true">neu</span><% } %></span><% } %>

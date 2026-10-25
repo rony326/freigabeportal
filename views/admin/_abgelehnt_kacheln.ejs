@@ -3,7 +3,7 @@
   <% jobs.forEach((job) => { %>
     <div class="col">
       <div class="kachel d-flex flex-column gap-2" id="abgelehnt-kachel-<%= job.id %>">
-        <div class="fw-semibold text-break"><%= job.lieferant || job.dateiname %></div>
+        <div class="fw-semibold text-break"><%= job.lieferant || job.dateiname %> <%- include('../_kommentar_marke', { jobId: job.id }) %></div>
         <dl class="kachel-angaben small mb-0">
           <dt>Dateiname</dt><dd class="text-break"><%= job.dateiname %></dd>
           <dt>Lieferant</dt><dd><%= job.lieferant || '—' %></dd>

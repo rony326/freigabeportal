@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { listSpesenForEinreicher } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
+import { kommentarInfo } from '../services/kommentare.js';
 
 export function createMeineSpesenRouter({ db }) {
   const router = Router();
@@ -11,7 +12,7 @@ export function createMeineSpesenRouter({ db }) {
       ...job,
       kontonummer: job.konto_id ? (getKontoById(db, job.konto_id)?.kontonummer ?? null) : null,
     }));
-    res.render('meine-spesen', { jobs });
+    res.render('meine-spesen', { jobs, kommentarInfo: kommentarInfo(db, jobs.map((j) => j.id), personId) });
   });
 
   return router;

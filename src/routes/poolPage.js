@@ -22,6 +22,7 @@ import { createFreigabe } from '../db/freigabenRepo.js';
 import { sendNotificationMitVertretung } from '../services/notify.js';
 import { markiereAlsKkAbrechnung } from '../services/kkMarkierung.js';
 import { personName } from '../services/auditLog.js';
+import { kommentarInfo } from '../services/kommentare.js';
 
 export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -46,7 +47,7 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
     const zeigtPool = personHasRole(req.currentPerson, config, 'buchhaltung') || personHasRole(req.currentPerson, config, 'superadmin');
     const istSuperadmin = personHasRole(req.currentPerson, config, 'superadmin');
     const kannZuweisen = personHasPermission(db, config, req.currentPerson, 'pool_zuweisen');
-    res.render('pool', {
+    const daten = {
       poolJobs: zeigtPool ? enrich(listPoolJobs(db)) : [],
       kkKarten: zeigtPool && getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
       ruecklaeufer: kannZuweisen ? enrich(listPoolRuecklaeufer(db)) : [],
@@ -59,7 +60,11 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
       adminEskalierteKontierungen: istSuperadmin ? enrich(listAdminEskalierteKontierungen(db)) : [],
       adminEskalierteFreigaben: istSuperadmin ? enrich(listAdminEskalierteFreigaben(db)) : [],
       adminEskalierteSpesenFreigaben: istSuperadmin ? enrich(listAdminEskalierteSpesenFreigaben(db)) : [],
-    });
+    };
+    // Eine Abfrage für alle Listen der Seite (Anzahl/neu je Vorgang).
+    const listen = [daten.poolJobs, daten.ruecklaeufer, daten.meineKontierungen, daten.meineSpesenFreigaben, daten.meineFreigaben, daten.meineAbgelehnten, daten.adminEskalierteKontierungen, daten.adminEskalierteFreigaben, daten.adminEskalierteSpesenFreigaben];
+    daten.kommentarInfo = kommentarInfo(db, listen.flat().map((j) => j.id), personId);
+    res.render('pool', daten);
   });
 
   router.post('/:id/zuweisen', requirePermission(db, config, 'pool_zuweisen'), csrfProtection, async (req, res, next) => {

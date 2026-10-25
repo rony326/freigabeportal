@@ -25,7 +25,7 @@
           <tbody>
             <% jobs.forEach((job) => { %>
               <tr>
-                <td><%= job.dateiname %></td>
+                <td><%= job.dateiname %> <%- include('../_kommentar_marke', { jobId: job.id }) %></td>
                 <td><%= job.lieferant || '—' %></td>
                 <td><%= job.ablehnungsgrund %></td>
                 <td><%= job.abgelehntVonPerson ? `${job.abgelehntVonPerson.vorname} ${job.abgelehntVonPerson.nachname}` : 'Unbekannt' %></td>

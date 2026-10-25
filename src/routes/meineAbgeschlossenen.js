@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { listAbgeschlossenJobsForPerson } from '../db/jobsRepo.js';
+import { kommentarInfo } from '../services/kommentare.js';
 
 export function createMeineAbgeschlossenenRouter({ db }) {
   const router = Router();
@@ -11,6 +12,7 @@ export function createMeineAbgeschlossenenRouter({ db }) {
 
     res.render('meine-abgeschlossenen', {
       jobs,
+      kommentarInfo: kommentarInfo(db, jobs.map((j) => j.id), personId),
       gesamtAnzahl,
       seite,
       proSeite,

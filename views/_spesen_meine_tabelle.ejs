@@ -10,7 +10,7 @@
             <td><%- include('_zeitpunkt', { wert: job.eingang_am }) %></td>
             <td><%= job.kontonummer || '—' %></td>
             <td><%= job.betrag %></td>
-            <td><%= job.beschreibung %></td>
+            <td><%= job.beschreibung %> <%- include('_kommentar_marke', { jobId: job.id }) %></td>
             <td>
               <%= job.status %>
               <% if (job.status === 'abgelehnt' && job.ablehnungsgrund) { %>

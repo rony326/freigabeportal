@@ -10,7 +10,7 @@
         <% } else { %>
           <div class="thumbnail-placeholder kachel-vorschau-leer text-muted small">Keine Vorschau</div>
         <% } %>
-        <div class="fw-semibold text-break"><%= job.lieferant || job.absender || '—' %></div>
+        <div class="fw-semibold text-break"><%= job.lieferant || job.absender || '—' %> <%- include('_kommentar_marke', { jobId: job.id }) %></div>
         <dl class="kachel-angaben small mb-0">
           <% if (job.lieferant && job.absender) { %>
             <dt>Absender</dt><dd class="text-break"><%= job.absender %></dd>

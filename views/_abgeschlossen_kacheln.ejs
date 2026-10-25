@@ -3,7 +3,7 @@
   <% jobs.forEach((job) => { %>
     <div class="col">
       <div class="kachel d-flex flex-column gap-2" id="abgeschlossen-kachel-<%= job.id %>">
-        <div class="fw-semibold text-break"><%= job.dateiname %></div>
+        <div class="fw-semibold text-break"><%= job.dateiname %> <%- include('_kommentar_marke', { jobId: job.id }) %></div>
         <dl class="kachel-angaben small mb-0">
           <dt>Status</dt><dd><span class="badge text-bg-secondary"><%= job.status %></span></dd>
           <dt>Zeitstempel</dt><dd><%= job.zeitstempel_gesetzt_am ? `✓ gesetzt am ${job.zeitstempel_gesetzt_am}` : (locals.testmodus ? 'im Testmodus übersprungen' : 'ausstehend') %></dd>

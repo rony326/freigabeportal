@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getJobById, listAlleAbgelehntenJobs, loeschenJob } from '../../db/jobsRepo.js';
 import { getPersonById } from '../../db/personenRepo.js';
 import { logJobLoeschung } from '../../db/jobLoeschungenRepo.js';
+import { kommentarInfo } from '../../services/kommentare.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../services/splitGruppenExport.js';
 
 export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
@@ -12,7 +13,7 @@ export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, 
       ...job,
       abgelehntVonPerson: getPersonById(db, job.abgelehnt_von),
     }));
-    res.render('admin/abgelehnt-liste', { jobs, gespeichert: req.query.gespeichert === '1' });
+    res.render('admin/abgelehnt-liste', { jobs, kommentarInfo: kommentarInfo(db, jobs.map((j) => j.id), req.currentPerson.churchtools_person_id), gespeichert: req.query.gespeichert === '1' });
   });
 
   router.get('/:id', (req, res) => {

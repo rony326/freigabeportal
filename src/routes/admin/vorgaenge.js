@@ -12,6 +12,7 @@ import { LAUFENDE_STATUS, ermittleZustaendigkeit, standToken } from '../../servi
 import { listUmhaengenZiele, umhaengeVorgang, istUmhaengbar, MIN_BEMERKUNG_LAENGE } from '../../services/vorgangUmhaengen.js';
 import { ermittleStriktesWeiterleitungsZiel } from '../../services/kontierungZugriff.js';
 import { kommentarBereich } from '../kommentare.js';
+import { kommentarInfo } from '../../services/kommentare.js';
 
 const NICHT_LAUFEND = 'Dieser Vorgang existiert nicht oder ist nicht (mehr) in Bearbeitung.';
 
@@ -72,8 +73,10 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     const personen = [...new Map(alle.filter((v) => v.zustaendig.personId).map((v) => [v.zustaendig.personId, v.zustaendig.name])).entries()]
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+    const vorgaenge = listLaufendeVorgaenge(db, filter);
     res.render('admin/vorgaenge-liste', {
-      vorgaenge: listLaufendeVorgaenge(db, filter),
+      vorgaenge,
+      kommentarInfo: kommentarInfo(db, vorgaenge.map((v) => v.id), req.currentPerson.churchtools_person_id),
       filter,
       personen,
       statusLabel: STATUS_LABEL,

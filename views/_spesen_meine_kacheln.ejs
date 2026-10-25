@@ -3,7 +3,7 @@
   <% jobs.forEach((job) => { %>
     <div class="col">
       <div class="kachel d-flex flex-column gap-2" id="spesen-meine-kachel-<%= job.id %>">
-        <div class="fw-semibold text-break"><%= job.beschreibung %></div>
+        <div class="fw-semibold text-break"><%= job.beschreibung %> <%- include('_kommentar_marke', { jobId: job.id }) %></div>
         <div class="kachel-betrag"><%= job.betrag %></div>
         <dl class="kachel-angaben small mb-0">
           <dt>Eingereicht am</dt><dd><%- include('_zeitpunkt', { wert: job.eingang_am }) %></dd>

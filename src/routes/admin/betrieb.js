@@ -112,7 +112,7 @@ export function createBetriebRouter({ db, config = {}, tsaErreichbarkeit = creat
       ...basis(db, 'status'), gesamt: ergebnis.status, geprueftAm: ergebnis.geprueft_am, dienste,
       felder: GRENZWERT_FELDER, werte: werte || leseGrenzwerte(db), fehler, gespeichert, neuerSchluessel,
       schluesselVorhanden: /^[0-9a-f]{64}$/.test(getConfigValue(db, 'monitoring_secret') || ''),
-      baseUrl: config.publicBaseUrl || '',
+      baseUrl: String(config.publicBaseUrl || '').replace(/\/+$/, '') || 'https://<deine-domain>',
     });
   }
 

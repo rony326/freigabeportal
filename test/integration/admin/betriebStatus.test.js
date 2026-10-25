@@ -9,6 +9,7 @@ import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungen
 import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { requirePermission } from '../../../src/middleware/permissions.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
+import { createApp } from '../../../src/app.js';
 import { createBetriebRouter } from '../../../src/routes/admin/betrieb.js';
 
 const DIENSTE_NAMEN = ['Datenbank', 'Sicherung', 'Mailversand', 'ChurchTools', 'Zeitstempel', 'Audit-Nachweis', 'Archivübergabe', 'Speicher', 'Geplante Jobs', 'Sicherheitsalarme'];
@@ -105,6 +106,9 @@ test('Schlüssel erzeugen zeigt ihn einmal, danach nie mehr; Audit ohne Klartext
   assert.match(danach.text, /eingerichtet/);
   const audit = JSON.stringify(db.prepare('SELECT * FROM audit_ereignisse').all());
   assert.ok(!audit.includes(key), 'Klartextschlüssel im Audit-Log');
+  const zeilen = db.prepare('SELECT * FROM audit_ereignisse').all().filter((z) => JSON.stringify(z).includes('monitoring_secret'));
+  assert.ok(zeilen.length >= 1, 'kein Audit-Eintrag zu monitoring_secret');
+  assert.ok(zeilen.some((z) => JSON.stringify(z).includes('[redacted]')), 'Wert nicht als [redacted] protokolliert');
   db.close();
 });
 
@@ -116,5 +120,23 @@ test('Schlüssel entfernen leert den Wert; unbekannte Aktion → 400', async () 
   assert.equal(getConfigValue(db, 'monitoring_secret'), 'ab'.repeat(32));
   assert.equal((await post('entfernen')).status, 302);
   assert.equal(getConfigValue(db, 'monitoring_secret'), '');
+  db.close();
+});
+
+test('Schlüssel steuert /healthz im echten createApp: erzeugen → Details, entfernen → Kurzantwort', async () => {
+  const { db, app } = setup();
+  const res = await request(app).post('/admin/betrieb/status/schluessel').type('form').set('x-test-person-id', '7').send({ aktion: 'erzeugen' });
+  const key = getConfigValue(db, 'monitoring_secret');
+  assert.equal(res.status, 200);
+  const vollApp = createApp({
+    db,
+    config: { sessionSecret: 'test-secret', env: 'test', churchtools: { baseUrl: 'https://ct.example.org', groupIdBuchhaltung: '10', groupIdAdmin: '20' }, n8nApiKey: 'k', downloadSigningSecret: 's', jobsDir: '/tmp/freigabeportal-status-test-jobs' },
+  });
+  const mit = await request(vollApp).get('/healthz').set('X-Monitoring-Key', key);
+  assert.equal(mit.status, 200);
+  assert.ok(mit.body.dienste && mit.body.dienste.datenbank, 'Details fehlen');
+  await request(app).post('/admin/betrieb/status/schluessel').type('form').set('x-test-person-id', '7').send({ aktion: 'entfernen' });
+  const ohne = await request(vollApp).get('/healthz').set('X-Monitoring-Key', key);
+  assert.equal(ohne.text, '{"status":"ok"}');
   db.close();
 });

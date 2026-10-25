@@ -72,7 +72,10 @@ ohne dass im echten Betrieb etwas passiert.
    `secret`, `token`, `pass`, `key` enthält, sowie ausser `monitoring_secret`; Branding-Dateien
    werden kopiert.
 7. **Statusseite/Monitoring** berücksichtigen den Testmodus nicht (beziehen sich nur auf den echten
-   Betrieb).
+   Betrieb). `/admin/betrieb/status` und `/healthz` laufen immer in der echten App: Die
+   Testmodus-Weiche darf diese beiden Pfade nicht an die Test-Instanz weiterleiten, auch nicht
+   bei einer Sitzung mit eingeschaltetem Testmodus (`/healthz` ist ohnehin vor Sitzung und Weiche
+   gemountet).
 8. **Responsive**, Band auch am Handy sichtbar.
 
 ## Einschränkungen

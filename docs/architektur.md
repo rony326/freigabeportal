@@ -119,7 +119,7 @@ und Zugriffskontrolle — siehe
 | `/audit-pruefen` | public (`publicLimiter`) | offen, nur lesend | Prüfseite des Audit-Nachweises für die Revision, siehe [audit-externe-nachweise.md](audit-externe-nachweise.md) |
 | `/auth` | public | offen | ChurchTools-OAuth2-Login/-Logout |
 | `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen von acht Hintergrund-Jobs (nicht: `datenbank-sicherung`, `mail-digest`, `sicherheitsalarme`) |
-| `/healthz` | keiner / `X-Monitoring-Key` | offen; Details nur mit Schlüssel | `{status:"ok"}`, mit Schlüssel Dienststatus, siehe [statusseite-und-monitoring.md](statusseite-und-monitoring.md) |
+| `/healthz` | eigener (120/min/IP) | offen; Details nur mit `X-Monitoring-Key` | `{status:"ok"}`, mit Schlüssel Dienststatus (30 s zwischengespeichert, gemeinsam mit Statusseite und Dashboard), siehe [statusseite-und-monitoring.md](statusseite-und-monitoring.md) |
 | `/` | public | — | leitet auf `/pool` (eingeloggt) oder `/auth/login` (anonym) weiter |
 
 ## Sicherheitsmechanismen (Auszug)

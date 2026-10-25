@@ -29,21 +29,34 @@ Admin → Zeitstempel eingestellt.
 |---|---|---|---|
 | `datenbank` | Abfrage `SELECT 1` | — | nicht erreichbar |
 | `sicherung` | letzte erfolgreiche Datenbank-Sicherung | älter als `status_sicherung_warnung_stunden` (26 h) | älter als `status_sicherung_fehler_stunden` (50 h), noch nie erfolgreich oder letzte Sicherung fehlgeschlagen |
-| `mailversand` | Mail-Warteschlange | Fehlversuche in den letzten 24 h (fest) | Mails warten länger als `status_mail_wartezeit_fehler_minuten` (60 min) |
+| `mailversand` | Mail-Warteschlange | Fehlversuche in den letzten 24 h (fest): endgültig fehlgeschlagen, wiederholt (auch wenn später versendet) oder mit Fehlerdetails, einschliesslich Sammelmail-Wiederholungen | Mails warten länger als `status_mail_wartezeit_fehler_minuten` (60 min) |
 | `churchtools` | letzter erfolgreicher Personen-Abgleich | älter als `status_churchtools_warnung_stunden` (26 h) oder letzter Lauf fehlgeschlagen | älter als `status_churchtools_fehler_stunden` (50 h) oder noch nie erfolgreich |
 | `zeitstempel` | TSA-Erreichbarkeit, Sperrliste (CRL), Belege ohne Zeitstempel | Sperrliste läuft in weniger als `status_zeitstempel_crl_warnung_tage` (7 Tage) ab oder ist nicht lesbar; Belege überfällig (`zeitstempel_warnung_ab_stunden`) | Zeitstempeldienst nicht erreichbar oder Sperrliste abgelaufen |
 | `audit_nachweis` | Audit-Pakete ohne Zeitstempel | Pakete ohne Zeitstempel | älter als `audit_zeitstempel_alarm_tage` (3 Tage) |
-| `archivuebergabe` | abgeschlossene Belege, die noch nicht ins Archiv übergeben sind | älter als `status_archiv_warnung_stunden` (48 h) | älter als `status_archiv_fehler_tage` (7 Tage) |
-| `speicher` | freier Speicherplatz der Datenbank-Partition | weniger als `status_speicher_warnung_prozent` (15 %) frei | weniger als `status_speicher_fehler_prozent` (5 %) frei |
-| `jobs` | letzter Lauf jedes geplanten Jobs | mindestens ein Job zuletzt fehlgeschlagen | — |
+| `archivuebergabe` | abgeschlossene Belege, die noch nicht abgeholt sind (inkl. gesperrter Belege, die nicht abgeholt werden können) | älter als `status_archiv_warnung_stunden` (48 h) | älter als `status_archiv_fehler_tage` (7 Tage) |
+| `speicher` | freier Speicherplatz des Dateisystems, auf dem die Datenbank liegt (keine Quoten des Hostings) | weniger als `status_speicher_warnung_prozent` (15 %) frei | weniger als `status_speicher_fehler_prozent` (5 %) frei |
+| `jobs` | letzter Lauf jedes geplanten Jobs der letzten 7 Tage | mindestens ein Job zuletzt fehlgeschlagen | — |
 | `sicherheitsalarme` | offene Sicherheitsalarme | — | mindestens ein offener Alarm |
 
 `audit_nachweis` ist nur aktiv, wenn das Modul Audit-Nachweis eingeschaltet ist,
 `zeitstempel` nur mit konfigurierter TSA-URL; sonst `aktiv: false`.
 
-Die Erreichbarkeit der TSA wird höchstens alle 15 Minuten im Hintergrund
-getestet; das Ergebnis liegt im Speicher. `/healthz` löst selbst keinen
-TSA-Versuch aus und bleibt dadurch schnell.
+Ein Job, der seit mehr als 7 Tagen keinen Lauf protokolliert hat, zählt bei
+`jobs` nicht mehr (auch kein alter Fehlschlag).
+
+Die Erreichbarkeit der TSA wird nicht von selbst geprüft, sondern durch einen
+Aufruf (Statusseite, Dashboard-Karte, `/healthz` mit Schlüssel) angestossen,
+höchstens alle 15 Minuten. Der Versuch läuft im Hintergrund und wird nicht
+abgewartet; die Antwort enthält das zuletzt bekannte Ergebnis (beim ersten
+Aufruf noch keines). Jeder Versuch ist ein echter Zeitstempel-Antrag bei der
+TSA, bei einem Monitor im 60-s-Takt also bis zu etwa 96 pro Tag. Wird die
+TSA-URL geändert, verwirft das Portal das alte Ergebnis und testet die neue URL
+beim nächsten Aufruf.
+
+Das Gesamtergebnis aller Prüfungen wird 30 Sekunden zwischengespeichert, gemeinsam
+für `/healthz`, die Dashboard-Karte und die Statusseite. Auf der Statusseite
+umgeht „Jetzt neu prüfen“ den Zwischenspeicher; nach dem Speichern der
+Grenzwerte wird er geleert.
 
 Beim Speichern prüft die Seite die Grenzwerte: ganze Zahlen grösser als 0.
 Warnung darf nicht über Fehler liegen (Sicherung, ChurchTools). Bei der
@@ -84,12 +97,19 @@ einen eigenen Limiter von 120 Anfragen pro Minute und IP.
 
 ## Überwachungsschlüssel
 
-Konfigurationswert `monitoring_secret` (64 Hex-Zeichen). Leer = Details aus.
-Auf der Statusseite lässt sich der Schlüssel erzeugen (bzw. erneuern) und
-entfernen. Ein neuer Schlüssel wird **nur einmal** angezeigt; danach ist er
-nicht mehr abrufbar. Der Vergleich erfolgt zeitkonstant (`timingSafeEqual`).
-Im Audit-Log erscheint der Wert als `[redacted]`. Nach dem Erneuern muss der
-Schlüssel in Uptime Kuma nachgetragen werden.
+Im Konfigurationswert `monitoring_secret` steht nur der SHA-256 des Schlüssels
+(64 Hex-Zeichen), nie der Schlüssel selbst. Leer = Details aus. Auf der
+Statusseite lässt sich der Schlüssel erzeugen (bzw. erneuern) und entfernen.
+Ist bereits ein Schlüssel eingerichtet, verlangt das Erneuern die Bestätigung
+„Ich weiss, dass der bisherige Schlüssel ungültig wird“. Ein neuer Schlüssel
+wird **nur einmal** angezeigt; danach ist er nicht mehr abrufbar. Geprüft wird
+SHA-256 des Headers gegen den gespeicherten Hash, zeitkonstant
+(`timingSafeEqual`). Im Audit-Log erscheint der Wert als `[redacted]`. Nach dem
+Erneuern muss der Schlüssel in Uptime Kuma nachgetragen werden.
+
+Schlüssel, die vor der Umstellung auf den Hash erzeugt wurden (Klartext in
+`monitoring_secret`), funktionieren nicht mehr und müssen neu erzeugt werden;
+ein gespeicherter Wert wird immer als Hash gelesen.
 
 ## Uptime Kuma einrichten
 

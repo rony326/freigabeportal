@@ -959,6 +959,59 @@ function migrateTestmailTyp(db) {
   db.exec('CREATE INDEX IF NOT EXISTS mail_log_zustellung_idx ON mail_log(status, naechster_versuch_am)');
 }
 
+// Kommentare an Rechnungen: neuer Mail-Typ 'kommentar'. Gleiches Rebuild-Muster wie
+// migrateTestmailTyp, läuft danach und vor migrateSecuritySchema.
+function migrateKommentarMailTyp(db) {
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'mail_log',
+    marker: "'kommentar'",
+    createSql: `CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('eingereiht', 'versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL,
+      eingereiht_am TEXT,
+      versuche INTEGER NOT NULL DEFAULT 0,
+      naechster_versuch_am TEXT,
+      sperre_token TEXT,
+      sperre_bis TEXT,
+      versendet_am TEXT
+    )`,
+    spalten: ['id', 'typ', 'job_id', 'empfaenger', 'betreff', 'text', 'status', 'fehler_details', 'versucht_am', 'eingereiht_am', 'versuche', 'naechster_versuch_am', 'sperre_token', 'sperre_bis', 'versendet_am'],
+  });
+  db.exec('CREATE INDEX IF NOT EXISTS mail_log_zustellung_idx ON mail_log(status, naechster_versuch_am)');
+}
+
+// Kommentare an Rechnungen (docs/superpowers/specs/2026-10-25-kommentare-design.md). kommentare ist
+// append-only (Trigger) und bekommt in migrateSecuritySchema die zentralen Audit-Trigger;
+// kommentar_gelesen ist reiner Lesestand pro Person und darf überschrieben werden.
+function migrateKommentareSchema(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS kommentare (
+    id INTEGER PRIMARY KEY,
+    job_id INTEGER NOT NULL REFERENCES jobs(id),
+    person_id TEXT NOT NULL,
+    text TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 2000),
+    erwaehnt TEXT NOT NULL DEFAULT '[]',
+    erstellt_am TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS kommentare_job_idx ON kommentare(job_id);
+  CREATE TRIGGER IF NOT EXISTS kommentare_no_update BEFORE UPDATE ON kommentare
+  BEGIN SELECT RAISE(ABORT, 'kommentare ist unveraenderlich'); END;
+  CREATE TRIGGER IF NOT EXISTS kommentare_no_delete BEFORE DELETE ON kommentare
+  BEGIN SELECT RAISE(ABORT, 'kommentare ist unveraenderlich'); END;
+  CREATE TABLE IF NOT EXISTS kommentar_gelesen (
+    job_id INTEGER NOT NULL REFERENCES jobs(id),
+    person_id TEXT NOT NULL,
+    zuletzt_am TEXT NOT NULL,
+    PRIMARY KEY (job_id, person_id)
+  );`);
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -994,6 +1047,8 @@ export function openDatabase(dbPath) {
   migrateAuditPruefnummerMailTyp(db);
   migrateBetriebMailTypen(db);
   migrateTestmailTyp(db);
+  migrateKommentarMailTyp(db);
+  migrateKommentareSchema(db);
   migrateBetriebSchema(db);
   // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)
   // verwerfen die Trigger der alten Tabelle, und migrateSecuritySchema legt die Audit-Trigger mit

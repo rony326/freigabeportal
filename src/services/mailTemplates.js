@@ -19,6 +19,7 @@ const TYP_ZU_KEY_INFIX = {
   'audit-pruefnummer': 'audit_pruefnummer',
   'neues-geraet': 'neues_geraet',
   fehlermeldung: 'fehlermeldung',
+  kommentar: 'kommentar',
 };
 
 export function renderTemplate(vorlage, variablen) {

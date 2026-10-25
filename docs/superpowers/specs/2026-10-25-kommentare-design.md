@@ -20,7 +20,6 @@ entschieden wurde. Neu hängt die Rückfrage direkt an der Rechnung (bzw. Spesen
 ## Nicht-Ziele
 
 - Keine Anhänge an Kommentaren.
-- Keine Kommentare auf dem gestempelten finalen PDF (siehe Calls).
 - Kein Chat/Live-Update.
 
 ## Anti-Ziele
@@ -39,12 +38,19 @@ entschieden wurde. Neu hängt die Rückfrage direkt an der Rechnung (bzw. Spesen
    die Rechnung sehen dürfen).
 4. Unveränderlich, Nachtrag möglich.
 5. Abgeschlossene Rechnungen: Kommentare sichtbar, keine neuen.
+6. Kommentare erscheinen **auch auf dem PDF** (im gestempelten Verlauf).
 
 ## Entscheidungen des Entwurfs (meine Calls)
 
-1. **Nicht auf dem PDF**: Kommentare erscheinen im Portal und im Audit-Log/-Export, nicht im
-   gestempelten Verlauf des finalen PDFs (archivierte Dokumente und Zeitstempel-Ablauf bleiben
-   unverändert).
+1. **Auf dem PDF**: Beim Erstellen des finalen PDFs (Freigabe 2, `stampAndFinalize` in
+   `src/services/pdfStamp.js`) erscheinen alle Kommentare des Vorgangs in einem eigenen Abschnitt
+   "Rückfragen und Kommentare" der Verlaufsseite(n), chronologisch mit Verfasser und Zeitpunkt
+   (Europe/Zurich). Bei Splitgruppen enthält das gemeinsame Gruppen-PDF die Kommentare je Teil.
+   Weil nach der Freigabe keine neuen Kommentare möglich sind, ist der Stand auf dem PDF
+   vollständig. Der Stempel-Font kann nur WinAnsi (Helvetica): nicht darstellbare Zeichen (Emoji,
+   fremde Schriften) werden beim Stempeln durch `?` ersetzt — im Portal bleibt der Originaltext;
+   lange Kommentare umbrechen und laufen auf Folgeseiten weiter. Bereits archivierte PDFs werden
+   nicht nachträglich geändert.
 2. **Sichtbarkeit** nutzt die bestehenden Prüfungen (`canViewJobPdf` / jobAuthorization bzw. die
    Zugriffsregeln der jeweiligen Seite); eine zentrale Funktion `darfKommentieren(db, config,
    person, job)` und `darfKommentareSehen(...)`.
@@ -75,6 +81,7 @@ entschieden wurde. Neu hängt die Rückfrage direkt an der Rechnung (bzw. Spesen
 - Darstellung im Seitenlayout, Eingabehilfe für `@Name`.
 - Datenmodell im Detail (z. B. `kommentare(id, job_id, person_id, text, erwaehnt JSON, zeitpunkt)`
   plus `kommentar_gelesen(job_id, person_id, zuletzt_am)`).
-- Tests: Sichtbarkeit/Berechtigung pro Rolle, `@Name` nur Berechtigte, keine Mail an die
+- Tests: Kommentare auf dem finalen PDF (Einzel- und Gruppen-PDF, Umbruch, Emoji → `?`, Hash/
+  Zeitstempel-Ablauf unverändert gültig), Sichtbarkeit/Berechtigung pro Rolle, `@Name` nur Berechtigte, keine Mail an die
   schreibende Person, unveränderlich (Trigger), abgeschlossen = keine neuen, "neu"-Markierung,
   XSS im Text.

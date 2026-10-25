@@ -25,8 +25,9 @@ alles führen und zeigen, was noch fehlt.
    Freigebenden · Kreditoren · Zeitstempeldienst · Mailvorlagen (optional) · Module ·
    Backup (eine Sicherung auslösen und prüfen) · Monitoring-Schlüssel · Kontaktadresse und
    Datenschutztext · erster ChurchTools-Abgleich.
-4. **Go-Live-Prüfung** am Schluss: ersetzt die Go-Live-Checkliste im README (Cron-Läufe einmal
-   auslösen, Testmail zugestellt, Sicherung vorhanden, Statusseite ohne Fehler).
+4. **Go-Live-Prüfung** am Schluss als Hilfe zur Go-Live-Checkliste im README (Cron-Läufe einmal
+   auslösen, Testmail zugestellt, Sicherung vorhanden, Statusseite ohne Fehler). Die README-Liste
+   bleibt unverändert die massgebliche Anleitung (Nutzerentscheid).
 
 ## Nicht-Ziele
 
@@ -48,6 +49,7 @@ alles führen und zeigen, was noch fehlt.
 1. Auch **andere Personen** sollen einrichten können.
 2. Technische Zugangsdaten **bleiben beim Hoster**; der Assistent **prüft** sie und erklärt; alles
    andere wird im Portal Schritt für Schritt erledigt.
+3. Der Assistent ist eine **Hilfe**; die Go-Live-Checkliste im README wird **nicht ersetzt**.
 
 ## Entscheidungen des Entwurfs (meine Calls)
 
@@ -87,6 +89,7 @@ alles führen und zeigen, was noch fehlt.
 - Darstellung (Schrittliste mit Status, je Schritt Erklärung + Aktion).
 - Genaue Texte (verständlich, ohne Fachjargon; Hoster-Hinweise allgemein, Infomaniak als
   Beispiel).
-- README: Go-Live-Checkliste durch Verweis auf den Assistenten ersetzen.
+- README: Go-Live-Checkliste bleibt bestehen; nur ein kurzer Hinweis, dass der Assistent im Portal
+  dabei hilft.
 - Tests: Erledigt-Messung pro Schritt, keine Geheimnisse in der Antwort, nur Superadmin, Dashboard-
   Hinweis und "später", Statusdienst `einrichtung`.

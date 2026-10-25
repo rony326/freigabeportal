@@ -21,13 +21,14 @@ Dasselbe gilt für `speicher`, wenn der freie Platz nicht ermittelt werden kann
 ## Dienste und Grenzwerte
 
 Schlüssel und Standardwerte stehen in `src/services/statusPruefungen.js`
-(`DEFAULTS`); die Grenzwerte sind auf der Statusseite änderbar
-(Konfigurationsschlüssel `status_*`).
+(`DEFAULTS`). Auf der Statusseite änderbar sind nur die `status_*`-Grenzwerte;
+`zeitstempel_warnung_ab_stunden` und `audit_zeitstempel_alarm_tage` werden unter
+Admin → Zeitstempel eingestellt.
 
 | Schlüssel | Prüft | Warnung | Fehler |
 |---|---|---|---|
 | `datenbank` | Abfrage `SELECT 1` | — | nicht erreichbar |
-| `sicherung` | letzte erfolgreiche Datenbank-Sicherung | älter als `status_sicherung_warnung_stunden` (26 h) oder letzter Lauf fehlgeschlagen | älter als `status_sicherung_fehler_stunden` (50 h), noch nie erfolgreich oder letzte Sicherung fehlgeschlagen |
+| `sicherung` | letzte erfolgreiche Datenbank-Sicherung | älter als `status_sicherung_warnung_stunden` (26 h) | älter als `status_sicherung_fehler_stunden` (50 h), noch nie erfolgreich oder letzte Sicherung fehlgeschlagen |
 | `mailversand` | Mail-Warteschlange | Fehlversuche in den letzten 24 h (fest) | Mails warten länger als `status_mail_wartezeit_fehler_minuten` (60 min) |
 | `churchtools` | letzter erfolgreicher Personen-Abgleich | älter als `status_churchtools_warnung_stunden` (26 h) oder letzter Lauf fehlgeschlagen | älter als `status_churchtools_fehler_stunden` (50 h) oder noch nie erfolgreich |
 | `zeitstempel` | TSA-Erreichbarkeit, Sperrliste (CRL), Belege ohne Zeitstempel | Sperrliste läuft in weniger als `status_zeitstempel_crl_warnung_tage` (7 Tage) ab oder ist nicht lesbar; Belege überfällig (`zeitstempel_warnung_ab_stunden`) | Zeitstempeldienst nicht erreichbar oder Sperrliste abgelaufen |
@@ -44,9 +45,11 @@ Die Erreichbarkeit der TSA wird höchstens alle 15 Minuten im Hintergrund
 getestet; das Ergebnis liegt im Speicher. `/healthz` löst selbst keinen
 TSA-Versuch aus und bleibt dadurch schnell.
 
-Beim Speichern prüft die Seite die Grenzwerte: ganze Zahlen grösser als 0,
-Warnung kleiner oder gleich Fehler, bei Speicher muss der Fehler-Prozentwert
-unter dem Warn-Prozentwert liegen.
+Beim Speichern prüft die Seite die Grenzwerte: ganze Zahlen grösser als 0.
+Warnung darf nicht über Fehler liegen (Sicherung, ChurchTools). Bei der
+Archivübergabe muss Fehler-Tage × 24 mindestens der Warn-Stunden-Grenze
+entsprechen. Beim Speicher darf der Fehler-Prozentwert nicht über dem
+Warn-Prozentwert liegen (gleich ist erlaubt), höchstens 100.
 
 ## `GET /healthz`
 

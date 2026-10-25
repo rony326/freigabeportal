@@ -14,7 +14,7 @@ import { ansichtWahl } from './middleware/ansicht.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { createN8nBackupRouter } from './routes/n8n/backup.js';
 import { createN8nKkBelegeRouter } from './routes/n8n/kkBelege.js';
-import { loadCurrentPerson, requireRole, requireAnyRole, requireLogin } from './middleware/roles.js';
+import { loadCurrentPerson, loadBeispielperson, requireRole, requireAnyRole, requireLogin } from './middleware/roles.js';
 import { requireAdminAreaAccess, requirePermission } from './middleware/permissions.js';
 import { loadNavFlags } from './middleware/nav.js';
 import { loadBranding } from './middleware/branding.js';
@@ -65,6 +65,7 @@ import { createZeitstempelPruefenRouter } from './routes/zeitstempelPruefen.js';
 import { createAuditPruefenRouter } from './routes/auditPruefen.js';
 import { createKreditkarteRouter } from './routes/kreditkarte.js';
 import { createMailerOrFallback } from './services/mailer.js';
+import { createTestMailer } from './services/testmodus/testMailer.js';
 import { zeitpunktAnzeige } from './services/auditLog.js';
 import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
 import { getVersionInfo } from './utils/version.js';
@@ -76,10 +77,12 @@ import { erfasseFehler } from './services/nutzung.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // `mailer` is injectable for tests (a stub instead of the SMTP-backed default).
-export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuch = undefined }) {
+// `testmodus`: Test-Instanz auf der Spiel-DB — ohne Sitzung (kommt von der echten App), ohne
+// Login und /healthz, ohne TSA-Probe, Mailer = Test-Mailer; Person = gewählte Beispielperson.
+export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuch = undefined, testmodus = false }) {
   const app = express();
   // Eine TSA-Probe und ein Status-Cache (30 s) fuer /healthz, Dashboard und Statusseite.
-  const statusCache = createStatusCache({ db, config, tsaErreichbarkeit: createTsaErreichbarkeit(), tsaVersuch });
+  const statusCache = createStatusCache({ db, config, tsaErreichbarkeit: testmodus ? null : createTsaErreichbarkeit(), tsaVersuch });
   app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
   app.set('views', join(__dirname, '..', 'views'));
@@ -122,13 +125,13 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     next();
   });
   // Frueh gemountet: kein Session-Cookie, kein CSRF, eigener Limiter (120/min/IP).
-  app.use('/healthz', createHealthzRouter({ db, config, statusCache }));
+  if (!testmodus) app.use('/healthz', createHealthzRouter({ db, config, statusCache }));
   app.use(auditRequestContext);
   app.use(express.static(join(__dirname, '..', 'public')));
   app.use(loadBranding(db));
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
-  app.use(
+  if (!testmodus) app.use(
     session({
       store: new SqliteSessionStore(db),
       secret: config.sessionSecret,
@@ -159,13 +162,13 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     if (req.path.startsWith('/api/n8n/') || req.path.startsWith('/internal/cron')) return next();
     return attachCsrfToken(req, res, next);
   });
-  app.use(loadCurrentPerson(db));
+  app.use(testmodus ? loadBeispielperson(db) : loadCurrentPerson(db));
   app.use(nutzungErfassen(db));
   app.use(auditContext);
   app.use(zugriffsAuditMiddleware(db));
   app.use(loadNavFlags(db, config));
 
-  const mailer = injectedMailer ?? createMailerOrFallback(config.smtp);
+  const mailer = injectedMailer ?? (testmodus ? createTestMailer() : createMailerOrFallback(config.smtp));
 
   const publicLimiter = createPublicRateLimiter();
   const sessionLimiter = createSessionRateLimiter();
@@ -256,7 +259,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config, csrfProtection }));
   app.use('/zeitstempel-pruefen', sessionLimiter, requireLogin(), createZeitstempelPruefenRouter({ db, config, csrfProtection }));
 
-  app.use('/auth', publicLimiter, createAuthRouter({ db, config, mailer, csrfProtection }));
+  if (!testmodus) app.use('/auth', publicLimiter, createAuthRouter({ db, config, mailer, csrfProtection }));
   // Oeffentlich fuer die Revision (ohne Portal-Login), nur GET.
   app.use('/audit-pruefen', publicLimiter, createAuditPruefenRouter({ db }));
   app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));

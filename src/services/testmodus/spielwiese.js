@@ -16,6 +16,7 @@ export function testmodusPfade(config) {
 const GEHEIM = /secret|token|pass|key/i;
 const NICHT_KOPIEREN = new Set([
   'zeitstempel_tsa_url', 'zeitstempel_tsa_user', 'zeitstempel_tsa_passwort', 'monitoring_secret',
+  'testmodus_bereit',
 ]);
 
 export function kopierbareEinstellung(key) {

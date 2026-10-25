@@ -346,3 +346,10 @@
   font-size: 1.25rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* Testmodus-Band: schwarz auf gelb, klebt oben, bricht am Handy um. */
+.testmodus-band { position: sticky; top: 0; z-index: 1060; background: #ffd400; color: #000; border-bottom: 3px solid #000; }
+.testmodus-band-zeile { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding-top: .4rem; padding-bottom: .4rem; }
+.testmodus-band-text { font-size: 1rem; margin-right: auto; }
+.testmodus-band-person { display: flex; gap: .5rem; align-items: center; flex: 1 1 14rem; max-width: 28rem; }
+.testmodus-band-person .form-select { min-width: 0; background-color: #fff; color: #000; border-color: #000; }

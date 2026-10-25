@@ -40,6 +40,27 @@
 <% if (sRahmen === 'ohne') { %>
 <main class="container-xxl py-3">
 <% } else { %>
+<% if (locals.testmodus) { %>
+<div class="testmodus-band" role="region" aria-label="Testmodus">
+  <div class="container-xxl testmodus-band-zeile">
+    <strong class="testmodus-band-text">Testmodus — nichts hier ist echt</strong>
+    <form method="post" action="/admin/testmodus/person" class="testmodus-band-person">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <label for="testmodus-person" class="visually-hidden">Als Beispielperson handeln</label>
+      <select id="testmodus-person" name="personId" class="form-select form-select-sm">
+        <% testmodus.beispielpersonen.forEach((bp) => { %>
+          <option value="<%= bp.id %>"<%= testmodus.person && testmodus.person.churchtools_person_id === bp.id ? ' selected' : '' %>><%= bp.name %> (<%= bp.rolle %>)</option>
+        <% }) %>
+      </select>
+      <button type="submit" class="btn btn-sm btn-dark">Wechseln</button>
+    </form>
+    <form method="post" action="/admin/testmodus/aus">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <button type="submit" class="btn btn-sm btn-dark">Testmodus beenden</button>
+    </form>
+  </div>
+</div>
+<% } %>
 <header class="portal-kopf border-bottom mb-3">
   <div class="container-xxl portal-kopf-zeile">
     <div class="portal-kopf-links d-flex align-items-center gap-2">

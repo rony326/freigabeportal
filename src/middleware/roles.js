@@ -1,5 +1,6 @@
 import { getPersonById } from '../db/personenRepo.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
+import { BEISPIELPERSONEN } from '../services/testmodus/beispieldaten.js';
 
 // Protokolliert (fail-safe) und verweigert. Die Entscheidung ist bereits gefallen, bevor hier
 // irgendetwas protokolliert wird; ein Protokollfehler aendert weder Status noch Antwort.
@@ -25,6 +26,20 @@ export function loadCurrentPerson(db) {
     // pattern) so views can render a logout link without every route handler needing to pass
     // it through explicitly.
     res.locals.currentPerson = req.currentPerson;
+    next();
+  };
+}
+
+// Test-Instanz: Person = gewählte Beispielperson aus der Spiel-DB, nur IDs test-*; sonst 403.
+export function loadBeispielperson(db) {
+  const beispielpersonen = BEISPIELPERSONEN.map((p) => ({ id: p.id, name: `${p.vorname} ${p.nachname}`, rolle: p.rolle }));
+  return (req, res, next) => {
+    const id = req.session?.testmodus?.personId;
+    const person = typeof id === 'string' && id.startsWith('test-') ? getPersonById(db, id) : null;
+    req.currentPerson = person;
+    res.locals.currentPerson = person;
+    res.locals.testmodus = { person, beispielpersonen };
+    if (!person) return res.status(403).render('error', { message: 'Im Testmodus kannst du nur als Beispielperson handeln.' });
     next();
   };
 }

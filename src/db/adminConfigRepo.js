@@ -99,6 +99,16 @@ const DEFAULTS = {
   cron_sicherheitsalarme_intervall_minuten: '30',
   cron_mail_zustellung_intervall_minuten: '5',
   mail_zustellung_max_versuche: '8',
+  status_sicherung_warnung_stunden: '26',
+  status_sicherung_fehler_stunden: '50',
+  status_mail_wartezeit_fehler_minuten: '60',
+  status_churchtools_warnung_stunden: '26',
+  status_churchtools_fehler_stunden: '50',
+  status_zeitstempel_crl_warnung_tage: '7',
+  status_archiv_warnung_stunden: '48',
+  status_archiv_fehler_tage: '7',
+  status_speicher_warnung_prozent: '15',
+  status_speicher_fehler_prozent: '5',
 };
 
 export function seedDefaults(db) {

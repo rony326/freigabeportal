@@ -15,6 +15,10 @@ import { createApp } from '../../src/app.js';
 import { createTestMailer } from '../../src/services/testmodus/testMailer.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
+import { buildSolidPng } from '../helpers/imageFixture.js';
+import { readFileSync, readdirSync } from 'node:fs';
+import { setConfigValue } from '../../src/db/adminConfigRepo.js';
+import { HINWEIS_ROLLE, HINWEIS_SPIELWIESE } from '../../src/middleware/testmodusWeiche.js';
 
 const ADMIN = { id: 1, vorname: 'Echt', nachname: 'Admin', email: 'admin@example.org', gruppen: ['10', '20'] };
 const MANAGER = { id: 2, vorname: 'Echt', nachname: 'Manager', email: 'manager@example.org', gruppen: ['30'] };
@@ -295,9 +299,15 @@ test('Verliert die Person die Admin-Rolle, löscht die Weiche das Flag und liefe
   const pool = await admin.get('/pool');
   assert.ok(!pool.text.includes(BAND));
   assert.ok(pool.text.includes('Echter Lieferant'));
-  // Rolle zurück: Flag bleibt gelöscht.
+  assert.ok(pool.text.includes(HINWEIS_ROLLE), 'einmaliger Hinweis');
+  const audit = testmodusAudit(u.echteDb);
+  assert.deepEqual(audit.map((a) => a.aktion), ['eingeschaltet', 'ausgeschaltet']);
+  assert.equal(JSON.parse(audit[1].nachher).anlass, 'rolle_verloren');
+  // Rolle zurück: Flag bleibt gelöscht, Hinweis nur einmal.
   upsertPerson(u.echteDb, { id: '1', vorname: 'Echt', nachname: 'Admin', email: 'admin@example.org', gruppen: ['10', '20'] });
-  assert.ok(!(await admin.get('/pool')).text.includes(BAND));
+  const danach = await admin.get('/pool');
+  assert.ok(!danach.text.includes(BAND));
+  assert.ok(!danach.text.includes(HINWEIS_ROLLE));
   await u.aufraeumen();
 });
 
@@ -310,6 +320,8 @@ test('Zurücksetzen: im Testmodus nur mit Bestätigung; stellt die Spielwiese ne
   const token = seitenCsrf((await admin.get('/pool')).text);
   assert.equal((await admin.post(`/api/pool/${job.id}/beanspruchen`).set('x-csrf-token', token)).status, 200);
 
+  const restVorher = Number((await admin.get('/pool')).headers['ratelimit-remaining']);
+  assert.ok(restVorher > 0);
   let seite = await admin.get('/admin/testmodus');
   const ohne = await admin.post('/admin/testmodus/zuruecksetzen').type('form').send({ _csrf: csrf(seite.text, '/admin/testmodus/zuruecksetzen') });
   assert.equal(ohne.status, 400);
@@ -326,6 +338,8 @@ test('Zurücksetzen: im Testmodus nur mit Bestätigung; stellt die Spielwiese ne
   const pool = await admin.get('/pool');
   assert.ok(pool.text.includes(BAND));
   assert.ok(pool.text.includes('Angemeldet als Dora Beispiel'));
+  // Die neue Test-Instanz nutzt dieselben Rate-Limiter (keine neuen MemoryStores je Zurücksetzen).
+  assert.ok(Number(pool.headers['ratelimit-remaining']) < restVorher, 'Limiter-Zähler läuft über das Zurücksetzen weiter');
   assert.deepEqual(testmodusAudit(u.echteDb).map((a) => a.aktion), ['eingeschaltet', 'zurueckgesetzt']);
 
   // Ohne Testmodus: ohne Bestätigung erlaubt.
@@ -363,5 +377,151 @@ test('Navigation: "Testmodus" unter Admin → Betrieb nur für Superadmin/Manage
   const res = await bh.get('/admin/mails');
   assert.equal(res.status, 200);
   assert.doesNotMatch(res.text, /href="\/admin\/testmodus"/);
+  await u.aufraeumen();
+});
+
+test('Spielwiese fällt im laufenden Testmodus aus: echte App, einmaliger Hinweis, Audit im echten Log', async () => {
+  const u = await umgebung();
+  const admin = await anmelden(u, ADMIN);
+  await einschalten(admin);
+  assert.ok((await admin.get('/pool')).text.includes(BAND));
+  u.steuerung.hole = () => Promise.reject(new Error('Spielwiese kaputt'));
+  const pool = await admin.get('/pool');
+  assert.equal(pool.status, 200);
+  assert.ok(!pool.text.includes(BAND));
+  assert.ok(pool.text.includes('Echter Lieferant'));
+  assert.ok(pool.text.includes(HINWEIS_SPIELWIESE));
+  const audit = testmodusAudit(u.echteDb);
+  assert.deepEqual(audit.map((a) => [a.aktion, a.person_id]), [['eingeschaltet', '1'], ['ausgeschaltet', '1']]);
+  assert.equal(JSON.parse(audit[1].nachher).anlass, 'spielwiese_fehler');
+  assert.ok(!(await admin.get('/pool')).text.includes(HINWEIS_SPIELWIESE), 'Hinweis nur einmal');
+  await u.aufraeumen();
+});
+
+const binaer = (res, cb) => { const teile = []; res.on('data', (d) => teile.push(d)); res.on('end', () => cb(null, Buffer.concat(teile))); };
+
+test('Branding im Testmodus: hochgeladenes Logo kommt aus der Spielwiese, eine echte Sitzung sieht das echte Logo', async () => {
+  const u = await umgebung();
+  const echtesLogo = buildSolidPng(2, 2);
+  const echterPfad = join(u.config.brandingDir, 'logo.png');
+  writeFileSync(echterPfad, echtesLogo);
+  setConfigValue(u.echteDb, 'branding_logo_pfad', echterPfad);
+  setConfigValue(u.echteDb, 'branding_logo_mimetype', 'image/png');
+  const admin = await anmelden(u, ADMIN);
+  await einschalten(admin);
+  const form = await admin.get('/admin/erscheinungsbild');
+  assert.equal(form.status, 200);
+  assert.ok(form.text.includes(BAND));
+  const testLogo = buildSolidPng(3, 3);
+  const up = await admin.post('/admin/erscheinungsbild')
+    .field('_csrf', seitenCsrf(form.text))
+    .field('primaryColor', '#2f4858').field('secondaryColor', '#4d7ea8').field('themeDefault', 'system').field('logoAusrichtung', 'links')
+    .attach('logo', testLogo, { filename: 'logo.png', contentType: 'image/png' });
+  assert.equal(up.status, 302, up.text?.slice(0, 300));
+
+  const imTest = await admin.get('/branding/logo').buffer(true).parse(binaer);
+  assert.equal(imTest.status, 200);
+  assert.ok(Buffer.from(imTest.body).equals(testLogo), 'Testmodus liefert das Spielwiesen-Logo');
+  const zweite = await anmelden(u, ZWEITER_ADMIN);
+  const echt = await zweite.get('/branding/logo').buffer(true).parse(binaer);
+  assert.equal(echt.status, 200);
+  assert.ok(Buffer.from(echt.body).equals(echtesLogo), 'echte Sitzung liefert das echte Logo');
+  assert.ok(readFileSync(echterPfad).equals(echtesLogo), 'echte Datei unverändert');
+  assert.equal(u.echteDb.prepare("SELECT value FROM admin_config WHERE key = 'branding_logo_pfad'").get().value, echterPfad);
+  await u.aufraeumen();
+});
+
+test('Maschinenrouten mit Testmodus-Sitzung: /api/n8n und /internal/cron laufen in der echten App, die Spiel-DB bleibt unberührt', async () => {
+  const u = await umgebung();
+  const admin = await anmelden(u, ADMIN);
+  await einschalten(admin);
+  const sandbox = (await u.steuerung.hole()).db;
+  const zaehle = (db) => ['jobs', 'audit_ereignisse', 'mail_log', 'cron_log'].map((t) => {
+    try { return db.prepare(`SELECT COUNT(*) c FROM ${t}`).get().c; } catch { return null; }
+  });
+  const sandboxVorher = zaehle(sandbox);
+  const echtJobs = () => u.echteDb.prepare('SELECT COUNT(*) c FROM jobs').get().c;
+  const jobsVorher = echtJobs();
+
+  const ohneKey = await admin.post('/api/n8n/jobs');
+  assert.equal(ohneKey.status, 401);
+  assert.ok(!String(ohneKey.text).includes(BAND));
+  const ohneSecret = await admin.post('/internal/cron/pool-erinnerungen');
+  assert.equal(ohneSecret.status, 401);
+  // Die Verweigerungen landen im echten Zugriffs-Audit, nicht in der Spielwiese.
+  assert.ok(u.echteDb.prepare("SELECT COUNT(*) c FROM audit_ereignisse WHERE objekt = 'zugriff'").get().c >= 2);
+
+  const pdf = await buildPdfFixture(['Maschinen-Eingang Testmodus']);
+  const mitKey = await admin.post('/api/n8n/jobs').set('X-API-Key', u.config.n8nApiKey)
+    .field('quelle', 'scanner').field('dateiname', 'maschine.pdf').attach('pdf', pdf, 'maschine.pdf');
+  assert.ok([200, 201].includes(mitKey.status), `n8n: ${mitKey.status} ${mitKey.text}`);
+  assert.equal(echtJobs(), jobsVorher + 1);
+  const audVorher = u.echteDb.prepare("SELECT COUNT(*) c FROM audit_ereignisse WHERE objekt = 'hintergrundlauf'").get().c;
+  const mitSecret = await admin.post('/internal/cron/pool-erinnerungen').set('X-Cron-Secret', u.config.cronSecret);
+  assert.ok(mitSecret.status < 500, `cron: ${mitSecret.status}`);
+  assert.ok(u.echteDb.prepare("SELECT COUNT(*) c FROM audit_ereignisse WHERE objekt = 'hintergrundlauf'").get().c > audVorher);
+
+  assert.deepEqual(zaehle(sandbox), sandboxVorher, 'Spiel-DB unverändert');
+  // Testmodus bleibt an.
+  assert.ok((await admin.get('/pool')).text.includes(BAND));
+  await u.aufraeumen();
+});
+
+const ERLAUBTE_ECHT_FORMULARE = new Set(['/admin/testmodus/person', '/admin/testmodus/aus', '/auth/logout']);
+
+test('Sweep (statisch): testmodusEchterCsrfToken kommt nur in den Band- und Abmelde-Formularen von _seite_anfang vor', () => {
+  const viewsDir = new URL('../../views', import.meta.url).pathname;
+  const dateien = [viewsDir, join(viewsDir, 'admin')].flatMap((d) => readdirSync(d).filter((f) => f.endsWith('.ejs')).map((f) => join(d, f)));
+  for (const datei of dateien) {
+    const inhalt = readFileSync(datei, 'utf8');
+    if (!datei.endsWith('/_seite_anfang.ejs')) {
+      assert.ok(!inhalt.includes('testmodusEchterCsrfToken'), `${datei} verwendet das echte Token`);
+      continue;
+    }
+    const formulare = inhalt.match(/<form\b[\s\S]*?<\/form>/g) || [];
+    let treffer = 0;
+    for (const f of formulare) {
+      if (!f.includes('testmodusEchterCsrfToken')) continue;
+      treffer += 1;
+      assert.ok(ERLAUBTE_ECHT_FORMULARE.has(f.match(/action="([^"]+)"/)[1]), `echtes Token in Formular ${f.slice(0, 80)}`);
+    }
+    assert.equal(treffer, 3);
+    assert.equal(inhalt.split('testmodusEchterCsrfToken').length - 1, 3, 'kein Gebrauch ausserhalb der drei Formulare');
+  }
+});
+
+test('Sweep (gerendert): auf Seiten der Test-Instanz steht das echte Token nur in Band- und Abmelde-Formularen', async () => {
+  const u = await umgebung();
+  const admin = await anmelden(u, ADMIN);
+  await einschalten(admin);
+  const sandbox = (await u.steuerung.hole()).db;
+  const annaJob = sandbox.prepare("SELECT id FROM jobs WHERE dateiname = 'Rechnung bei Anna.pdf'").get().id;
+  const seiten = {
+    'test-4': ['/pool', '/admin', '/admin/module', '/admin/erscheinungsbild', '/admin/konten', '/admin/mail-einstellungen', '/admin/vorgaenge', '/meine-spesen', '/spesen/neu', '/ferienmodus', '/fehler-melden', '/gibt-es-nicht'],
+    'test-1': ['/pool', `/kontierung/${annaJob}`, '/admin'],
+  };
+  let geprueft = 0;
+  for (const [personId, pfade] of Object.entries(seiten)) {
+    const start = await admin.get('/pool');
+    await admin.post('/admin/testmodus/person').type('form').send({ _csrf: csrf(start.text, '/admin/testmodus/person'), personId });
+    for (const pfad of pfade) {
+      const res = await admin.get(pfad);
+      assert.ok(res.text.includes(BAND), `${pfad} (${personId}) ist eine Seite der Test-Instanz`);
+      const echt = csrf(res.text, '/admin/testmodus/aus');
+      assert.ok(echt.length > 10);
+      const formulare = res.text.match(/<form\b[\s\S]*?<\/form>/g) || [];
+      let inErlaubten = 0;
+      for (const f of formulare) {
+        if (!f.includes(echt)) continue;
+        const action = f.match(/action="([^"]+)"/)?.[1];
+        assert.ok(ERLAUBTE_ECHT_FORMULARE.has(action), `${pfad} (${personId}): echtes Token in Formular ${action}`);
+        inErlaubten += 1;
+      }
+      assert.equal(res.text.split(echt).length - 1, inErlaubten, `${pfad} (${personId}): echtes Token ausserhalb der erlaubten Formulare`);
+      assert.equal(inErlaubten, 3, `${pfad} (${personId}): Band + Abmelden`);
+      geprueft += 1;
+    }
+  }
+  assert.equal(geprueft, 15);
   await u.aufraeumen();
 });

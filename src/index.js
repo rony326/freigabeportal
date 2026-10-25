@@ -27,7 +27,12 @@ try {
   });
   server.once('error', (err) => { console.error(err.message); process.exit(1); });
   function shutdown() {
-    server.close(() => process.exit(0));
+    // Spiel-DB des Testmodus vor dem Beenden schliessen (die echte DB schliesst der exit-Handler).
+    server.close(() => {
+      Promise.resolve(app.get('testmodusSteuerung')?.schliessen())
+        .catch((err) => console.error('Testmodus-Spielwiese konnte nicht geschlossen werden:', err.message))
+        .finally(() => process.exit(0));
+    });
     server.closeIdleConnections();
     setTimeout(() => process.exit(1), 30000).unref();
   }

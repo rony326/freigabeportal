@@ -82,7 +82,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // `mailer` is injectable for tests (a stub instead of the SMTP-backed default).
 // `testmodus`: Test-Instanz auf der Spiel-DB — ohne Sitzung (kommt von der echten App), ohne
 // Login und /healthz, ohne TSA-Probe, Mailer = Test-Mailer; Person = gewählte Beispielperson.
-export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuch = undefined, testmodus = false }) {
+// `limiter`: von aussen gereichte Rate-Limiter (die echte App gibt der Test-Instanz einen festen
+// Satz, damit ein Zurücksetzen keine neuen MemoryStore-Timer und alten App-Graphen zurücklässt).
+export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuch = undefined, testmodus = false, limiter = null }) {
   const app = express();
   // Eine TSA-Probe und ein Status-Cache (30 s) fuer /healthz, Dashboard und Statusseite.
   const statusCache = createStatusCache({ db, config, tsaErreichbarkeit: testmodus ? null : createTsaErreichbarkeit(), tsaVersuch });
@@ -168,12 +170,19 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use(testmodus ? loadBeispielperson(db) : loadCurrentPerson(db));
   // Echte App: Test-Instanz lazy im Speicher; die Weiche steht direkt nach der Person und vor
   // Nutzung/Audit, damit Testmodus-Anfragen (auch 401/403) im echten Betrieb nichts hinterlassen.
+  let testLimiter = null;
   const testmodusSteuerung = testmodus ? null : createTestmodusSteuerung({
-    echteDb: db, config, baueTestApp: (sp) => createApp({ db: sp.db, config: sp.config, testmodus: true }),
+    echteDb: db,
+    config,
+    baueTestApp: (sp) => {
+      testLimiter ??= { publicLimiter: createPublicRateLimiter(), sessionLimiter: createSessionRateLimiter(), machineLimiter: createMachineRateLimiter() };
+      return createApp({ db: sp.db, config: sp.config, testmodus: true, limiter: testLimiter });
+    },
   });
   if (testmodusSteuerung) {
     app.set('testmodusSteuerung', testmodusSteuerung);
     app.use(testmodusWeiche({
+      db,
       config,
       holeTestApp: async () => (await testmodusSteuerung.hole()).app,
       echterCsrfToken: (req, res) => res.locals.csrfToken ?? generateCsrfToken(req, res),
@@ -186,9 +195,9 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
 
   const mailer = injectedMailer ?? (testmodus ? createTestMailer() : createMailerOrFallback(config.smtp));
 
-  const publicLimiter = createPublicRateLimiter();
-  const sessionLimiter = createSessionRateLimiter();
-  const machineLimiter = createMachineRateLimiter();
+  const publicLimiter = limiter?.publicLimiter ?? createPublicRateLimiter();
+  const sessionLimiter = limiter?.sessionLimiter ?? createSessionRateLimiter();
+  const machineLimiter = limiter?.machineLimiter ?? createMachineRateLimiter();
 
   app.use('/branding', publicLimiter, createBrandingRouter({ db }));
   app.use('/admin', sessionLimiter, requireAdminAreaAccess(db, config));

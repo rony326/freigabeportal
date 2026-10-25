@@ -107,6 +107,9 @@
   </div>
 </header>
 <% if (sEingeloggt) { %><%- include('_banner') %><% } %>
+<% if (locals.testmodusHinweis) { %>
+<div class="container-xxl"><div class="alert alert-warning" role="alert"><%= testmodusHinweis %></div></div>
+<% } %>
 <div class="container-xxl">
 <% if (sNavigation) { %>
 <div class="portal-rahmen<%= sRahmen === 'kompakt' ? ' kompakt' : '' %>">

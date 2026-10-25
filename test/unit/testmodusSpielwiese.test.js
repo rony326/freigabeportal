@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, existsSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { mkdtempSync, existsSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
@@ -110,4 +110,40 @@ test('echte DB unverändert, entferneSpielwiese räumt auf', async () => {
   assert.equal(existsSync(p.jobsDir), false);
   assert.equal(existsSync(p.brandingDir), false);
   db.close();
+});
+
+test('Logo-Pfade zeigen in die Kopie, echtes Logo bleibt', async () => {
+  const { config, db } = umgebung();
+  setConfigValue(db, 'branding_logo_pfad', join(config.brandingDir, 'logo.png'));
+  setConfigValue(db, 'branding_logo_mimetype', 'image/png');
+  setConfigValue(db, 'branding_logo_dunkel_pfad', join(config.brandingDir, 'fehlt.png'));
+  setConfigValue(db, 'branding_logo_dunkel_mimetype', 'image/png');
+  const sp = await erstelleSpielwiese(db, config);
+  const pfad = getConfigValue(sp.db, 'branding_logo_pfad');
+  assert.ok(pfad.startsWith(`${config.brandingDir}-testmodus`));
+  unlinkSync(pfad);
+  assert.ok(existsSync(join(config.brandingDir, 'logo.png')));
+  assert.equal(getConfigValue(sp.db, 'branding_logo_dunkel_pfad'), null);
+  assert.equal(getConfigValue(sp.db, 'branding_logo_dunkel_mimetype'), null);
+  sp.db.close(); db.close();
+});
+
+test('kein SMTP, :memory: abgelehnt', async () => {
+  const { config, db } = umgebung();
+  const sp = await erstelleSpielwiese(db, config);
+  assert.equal(sp.config.smtp, null);
+  sp.db.close(); db.close();
+  assert.throws(() => testmodusPfade({ dbPath: ':memory:' }), /Datei-Datenbank/);
+});
+
+test('unvollständige Spielwiese (ohne Bereit-Marker) wird neu erstellt', async () => {
+  const { config, db } = umgebung();
+  let sp = await erstelleSpielwiese(db, config);
+  sp.db.prepare("DELETE FROM admin_config WHERE key = 'testmodus_bereit'").run();
+  sp.db.prepare("INSERT INTO kreditoren (name, aktiv) VALUES ('Rest', 1)").run();
+  sp.db.close();
+  sp = await erstelleSpielwiese(db, config);
+  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 2);
+  assert.equal(getConfigValue(sp.db, 'testmodus_bereit'), '1');
+  sp.db.close(); db.close();
 });

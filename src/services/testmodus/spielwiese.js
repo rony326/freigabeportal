@@ -1,9 +1,11 @@
 import { existsSync, rmSync, mkdirSync, cpSync } from 'node:fs';
+import { join, basename } from 'node:path';
 import { openDatabase } from '../../db/index.js';
 import { seedDefaults } from '../../db/adminConfigRepo.js';
 import { spieleBeispieldatenEin } from './beispieldaten.js';
 
 export function testmodusPfade(config) {
+  if (!config.dbPath || config.dbPath === ':memory:') throw new Error('Der Testmodus braucht eine Datei-Datenbank (kein :memory:).');
   return {
     dbPath: `${config.dbPath}.testmodus.db`,
     jobsDir: `${config.jobsDir}-testmodus`,
@@ -28,6 +30,7 @@ function baueTestConfig(config) {
     n8nApiKey: null,
     backupApiKey: null,
     cronSecret: null,
+    smtp: null,
     churchtools: {
       ...config.churchtools,
       baseUrl: 'https://testmodus.invalid',
@@ -50,7 +53,8 @@ function oeffneVorhandene(pfade) {
   let db;
   try {
     db = openDatabase(pfade.dbPath);
-    db.prepare('SELECT COUNT(*) FROM personen').get();
+    const bereit = db.prepare("SELECT value FROM admin_config WHERE key = 'testmodus_bereit'").get();
+    if (bereit?.value !== '1') throw new Error('unvollständig');
     return db;
   } catch {
     try { db?.close(); } catch { /* ignorieren */ }
@@ -77,7 +81,17 @@ export async function erstelleSpielwiese(echteDb, config, { neu = false } = {}) 
   if (config.brandingDir && existsSync(config.brandingDir)) {
     cpSync(config.brandingDir, pfade.brandingDir, { recursive: true });
   }
+  // Logo-Pfade auf die Kopie umbiegen, sonst würde der Testmodus echte Dateien anfassen.
+  const cfg = (k) => db.prepare('SELECT value FROM admin_config WHERE key = ?').get(k)?.value;
+  for (const [pfadKey, mimeKey] of [['branding_logo_pfad', 'branding_logo_mimetype'], ['branding_logo_dunkel_pfad', 'branding_logo_dunkel_mimetype']]) {
+    const alt = cfg(pfadKey);
+    if (!alt) continue;
+    const neuPfad = join(pfade.brandingDir, basename(alt));
+    if (existsSync(neuPfad)) ins.run(pfadKey, neuPfad);
+    else db.prepare('DELETE FROM admin_config WHERE key IN (?, ?)').run(pfadKey, mimeKey);
+  }
   await spieleBeispieldatenEin(db, testConfig);
+  ins.run('testmodus_bereit', '1');
   return { db, config: testConfig };
 }
 

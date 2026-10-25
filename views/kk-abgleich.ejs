@@ -89,6 +89,7 @@
           </form>
         </details>
         <%- include('_audit_log') %>
+        <% if (locals.kommentarBereich) { %><%- include('_kommentare', { ...kommentarBereich, ungespeichertesFormular: 'kk-abgleich-form' }) %><% } %>
       </div>
     </div>
 

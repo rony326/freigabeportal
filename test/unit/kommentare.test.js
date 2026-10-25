@@ -485,3 +485,29 @@ test('SMTP-Fehler: Kommentar gespeichert, Mail bleibt zur Wiederholung eingereih
   assert.notEqual(zeilen[0].status, 'versendet');
   db.close();
 });
+
+test('Sichtbarkeits-Prädikat (vorgeladen) = darfKommentareSehen je Person, über Status, Vertretung, Rollen und Rechte', () => {
+  const { db, jobId, job, p } = setup();
+  upsertPerson(db, { id: '11', vorname: 'Mia', nachname: 'Manager', email: 'p11@example.org', gruppen: ['30'], loggedInNow: true });
+  upsertPerson(db, { id: '12', vorname: 'Bea', nachname: 'Buch', email: 'p12@example.org', gruppen: ['10'], loggedInNow: true });
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '8' });
+  setFerienmodus(db, '3', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
+  db.prepare("UPDATE jobs SET eingereicht_von = '9' WHERE id = ?").run(jobId);
+  const ids = db.prepare('SELECT churchtools_person_id AS id FROM personen WHERE aktiv = 1').all().map((r) => r.id);
+  const varianten = [
+    {},
+    { status: 'freigabe2' },
+    { status: 'freigabe2', freigabe2_eskaliert_von: '3' },
+    { status: 'freigabe2', freigabe2_umgeleitet_an: '5' },
+    { status: 'unzugewiesen', zugewiesen_an: null },
+    { status: 'abgeschlossen' },
+    { konto_id: null },
+  ];
+  for (const v of varianten) {
+    const j = { ...job(), ...v };
+    const erwartet = ids.filter((id) => darfKommentareSehen(db, CONFIG, p(id), j)).sort();
+    const ist = erwaehnbarePersonen(db, CONFIG, j).map((e) => e.id).sort();
+    assert.deepEqual(ist, erwartet, JSON.stringify(v));
+  }
+  db.close();
+});

@@ -1,5 +1,8 @@
 <%# Kommentarbereich eines Vorgangs. Locals: kommentare, darfKommentieren, erwaehnbar, jobId, zurueck,
-    maxLaenge (aus kommentarBereich() in src/routes/kommentare.js); csrfToken aus res.locals. %>
+    maxLaenge (aus kommentarBereich() in src/routes/kommentare.js); csrfToken aus res.locals.
+    Optional ungespeichertesFormular: id eines Arbeitsformulars der Seite (Kontierung, KK-Abgleich).
+    Wurde darin etwas geändert, fragt das Absenden des Kommentars nach (die Seite lädt neu, die
+    ungespeicherten Angaben gingen sonst verloren). %>
 <section class="card mt-3" id="kommentare" aria-labelledby="kommentare-titel">
   <div class="card-body">
     <h2 class="h5" id="kommentare-titel">Rückfragen und Kommentare</h2>
@@ -16,7 +19,7 @@
       </ul>
     <% } %>
     <% if (darfKommentieren) { %>
-      <form method="post" action="/kommentare/<%= jobId %>" class="kommentar-form">
+      <form method="post" action="/kommentare/<%= jobId %>" class="kommentar-form" id="kommentar-form-<%= jobId %>"<% if (locals.ungespeichertesFormular) { %> data-ungespeichert-warnung="<%= ungespeichertesFormular %>"<% } %>>
         <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
         <input type="hidden" name="zurueck" value="<%= zurueck %>">
         <div class="mb-2">
@@ -36,6 +39,21 @@
         <button type="submit" class="btn btn-outline-primary btn-sm">Kommentar senden</button>
       </form>
       <script>
+        (function () {
+          var kommentarForm = document.getElementById('kommentar-form-<%= jobId %>');
+          var arbeitsId = kommentarForm && kommentarForm.dataset.ungespeichertWarnung;
+          var arbeitsForm = arbeitsId && document.getElementById(arbeitsId);
+          if (arbeitsForm) {
+            var geaendert = false;
+            var markiere = function () { geaendert = true; };
+            arbeitsForm.addEventListener('input', markiere);
+            arbeitsForm.addEventListener('change', markiere);
+            arbeitsForm.addEventListener('submit', function () { geaendert = false; });
+            kommentarForm.addEventListener('submit', function (e) {
+              if (geaendert && !window.confirm('Ungespeicherte Angaben in diesem Formular gehen verloren. Trotzdem Kommentar senden?')) e.preventDefault();
+            });
+          }
+        })();
         (function () {
           var auswahl = document.getElementById('kommentar-erwaehnen-<%= jobId %>');
           if (!auswahl) return;

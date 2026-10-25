@@ -12,11 +12,13 @@ import {
 import { erfasseFehler } from '../services/nutzung.js';
 
 // Erlaubte Rücksprungziele: nur die Seiten mit Kommentarbereich, mit ihren tatsächlichen
-// Mount-Pfaden aus src/app.js (Ablehnung hängt unter /abgelehnt). Ganze Pfade per Regex statt
+// Mount-Pfaden aus src/app.js (Ablehnung hängt unter /abgelehnt, der KK-Abgleich unter
+// /kontierung/:id/kk-abgleich). Ganze Pfade per Regex statt
 // Präfixvergleich: so passen weder "//evil", "/\evil", kodierte Varianten noch "../" oder
 // Zusatz-Query. Alles andere → Startseite.
 const ZURUECK_MUSTER = [
   /^\/kontierung\/\d+$/,
+  /^\/kontierung\/\d+\/kk-abgleich$/,
   /^\/freigabe2\/\d+$/,
   /^\/abgelehnt\/\d+$/,
   /^\/spesen-freigabe1\/\d+$/,

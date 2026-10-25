@@ -12,7 +12,9 @@ import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, setKontierung, abschliessenFreigabe1, ablehnenJob, createSpesenPosition } from '../../src/db/jobsRepo.js';
+import { createJob, claimJob, setKontierung, abschliessenFreigabe1, ablehnenJob, createSpesenPosition, markiereJobAlsKkAbrechnung } from '../../src/db/jobsRepo.js';
+import { createKreditkarte } from '../../src/db/kreditkartenRepo.js';
+import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
@@ -91,6 +93,12 @@ function umgebung() {
   db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(fertig);
   db.prepare("INSERT INTO kommentare (job_id, person_id, text, erwaehnt, erstellt_am) VALUES (?, '3', 'Alter Kommentar', '[]', '2026-10-21T09:00:00.000Z')").run(fertig);
 
+  setConfigValue(db, 'modul_kreditkarten_aktiv', '1');
+  const karteId = createKreditkarte(db, { bezeichnung: 'Visa Jugend', verantwortlichId: '1', erfassungOffen: true });
+  const kk = neuerJob('kk.pdf');
+  markiereJobAlsKkAbrechnung(db, kk, { kreditkarteId: karteId, verantwortlichId: '1', ausStatus: 'unzugewiesen' });
+  setKontierung(db, kk, kontoId);
+
   const mailer = { sent: [], async sendMail(m) { this.sent.push(m); } };
   const app = createApp({ db, config, mailer });
   const aussen = express();
@@ -106,7 +114,7 @@ function umgebung() {
     db.close();
     rmSync(dir, { recursive: true, force: true });
   };
-  return { db, mailer, als, jobA, fremd, f2, abg, spesen, fertig, aufraeumen };
+  return { db, mailer, als, jobA, fremd, f2, abg, spesen, fertig, kk, aufraeumen };
 }
 
 const kommentare = (db, jobId) => db.prepare('SELECT * FROM kommentare WHERE job_id = ? ORDER BY id').all(jobId);
@@ -364,4 +372,42 @@ test('Review Focus 5: Testmodus – Kommentar nur in der Spiel-DB und im Test-Po
   sp.db.close();
   echteDb.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('Kontierung: Warnung vor ungespeicherten Kontierungsangaben beim Absenden eines Kommentars', async () => {
+  const u = umgebung();
+  const res = await u.als('1').get(`/kontierung/${u.jobA}`);
+  assert.match(res.text, /<form method="post" action="\/kommentare\/\d+" class="kommentar-form" id="kommentar-form-\d+" data-ungespeichert-warnung="kontierung-form">/);
+  assert.match(res.text, /<form id="kontierung-form"/);
+  assert.match(res.text, /dataset\.ungespeichertWarnung/);
+  assert.match(res.text, /window\.confirm\('Ungespeicherte Angaben/);
+  // Seiten ohne Arbeitsformular bekommen den Haken nicht.
+  const vorgang = await u.als('7').get(`/admin/vorgaenge/${u.jobA}`);
+  assert.doesNotMatch(vorgang.text, /data-ungespeichert-warnung/);
+  await u.aufraeumen();
+});
+
+test('KK-Abgleich: Kommentarbereich, Rücksprung dorthin, Mail-Link der verantwortlichen Person', async () => {
+  const u = umgebung();
+  const pfad = `/kontierung/${u.kk}/kk-abgleich`;
+  const clara = u.als('3');
+  const res = await poste(clara, `/zeitstempel-pruefen?jobId=${u.kk}`, u.kk, { text: 'Frage zur Abrechnung', zurueck: `/zeitstempel-pruefen?jobId=${u.kk}` });
+  assert.equal(res.status, 302);
+  const mail = kommentarMails(u.db).find((m) => m.empfaenger === 'p1@example.org');
+  assert.match(mail.text, new RegExp(`/kontierung/${u.kk}/kk-abgleich#kommentare`));
+
+  const anna = u.als('1');
+  const seite = await anna.get(pfad);
+  assert.equal(seite.status, 200);
+  assert.match(seite.text, /id="kommentare"/);
+  assert.ok(seite.text.includes('Frage zur Abrechnung'));
+  assert.match(seite.text, /data-ungespeichert-warnung="kk-abgleich-form"/);
+  assert.ok(u.db.prepare('SELECT 1 FROM kommentar_gelesen WHERE job_id = ? AND person_id = ?').get(u.kk, '1'));
+  const antwort = await poste(anna, pfad, u.kk, { text: 'Antwort', zurueck: pfad });
+  assert.equal(antwort.headers.location, `${pfad}#kommentare`);
+  // Fremde Person: Seite verweigert, kein Gelesen-Eintrag.
+  const emil = await u.als('5').get(pfad);
+  assert.equal(emil.status, 403);
+  assert.ok(!u.db.prepare("SELECT 1 FROM kommentar_gelesen WHERE job_id = ? AND person_id = '5'").get(u.kk));
+  await u.aufraeumen();
 });

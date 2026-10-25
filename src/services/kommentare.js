@@ -28,16 +28,53 @@ export function darfKommentieren(db, config, person, job) {
   return darfKommentareSehen(db, config, person, job) && !KOMMENTAR_GESCHLOSSEN_STATUS.includes(job.status);
 }
 
+// Alle aktiven Personen in EINER Abfrage (gleiche Form wie getPersonById).
 function aktivePersonen(db) {
   return db
-    .prepare('SELECT churchtools_person_id FROM personen WHERE aktiv = 1')
+    .prepare('SELECT * FROM personen WHERE aktiv = 1')
     .all()
-    .map((r) => getPersonById(db, r.churchtools_person_id));
+    .map((row) => ({ ...row, gruppen: JSON.parse(row.gruppen), aktiv: Boolean(row.aktiv), ct_person_unresolved: Boolean(row.ct_person_unresolved) }));
+}
+
+// Wie darfKommentareSehen, aber für viele Personen eines Vorgangs: Konto, Vertretungen und
+// Rechte-Inhaber werden einmal vorab geladen, danach prüft das Prädikat nur noch im Speicher.
+// Spiegelt canViewJobPdf (jobAuthorization.js) und personHasPermission('vorgaenge_einsehen')
+// exakt; der Unit-Test "Sichtbarkeits-Prädikat = darfKommentareSehen" hält beides gleich.
+function sichtbarkeitFuer(db, config, job) {
+  const gruppe = (key) => (config.churchtools?.[key] ? String(config.churchtools[key]) : null);
+  const admin = gruppe('groupIdAdmin');
+  const buchhaltung = gruppe('groupIdBuchhaltung');
+  const manager = gruppe('groupIdManager');
+  const inGruppe = (p, g) => Boolean(g) && p.gruppen.includes(g);
+  const ueberRolle = new Set();
+  if (job.status !== 'unzugewiesen') {
+    const mitVertretung = (id) => {
+      if (!id) return;
+      ueberRolle.add(id);
+      const vertreter = getAktivenVertreter(db, id);
+      if (vertreter) ueberRolle.add(vertreter);
+    };
+    mitVertretung(job.zugewiesen_an);
+    if (job.eingereicht_von) ueberRolle.add(job.eingereicht_von);
+    const konto = job.konto_id ? getKontoById(db, job.konto_id) : null;
+    if (konto) mitVertretung(getEffectiveFreigeber2Id(job, konto));
+  }
+  const mitRecht = new Set(
+    db.prepare("SELECT person_id FROM person_berechtigungen WHERE berechtigung = 'vorgaenge_einsehen'").all().map((r) => r.person_id)
+  );
+  return (p) => {
+    if (!p || p.aktiv === false) return false;
+    if (inGruppe(p, admin) || inGruppe(p, manager)) return true;
+    if (mitRecht.has(p.churchtools_person_id)) return true;
+    if (job.status === 'unzugewiesen') return inGruppe(p, buchhaltung);
+    return ueberRolle.has(p.churchtools_person_id);
+  };
 }
 
 export function erwaehnbarePersonen(db, config, job) {
+  const sieht = sichtbarkeitFuer(db, config, job);
   return aktivePersonen(db)
-    .filter((p) => darfKommentareSehen(db, config, p, job))
+    .filter(sieht)
     .map((p) => ({ id: p.churchtools_person_id, name: name(p) }))
     .sort((a, b) => a.name.localeCompare(b.name, 'de'));
 }
@@ -158,7 +195,9 @@ function workflowLink(config, job) {
   if (job.status === 'unzugewiesen') return `${basis}/pool`;
   if (job.status === 'freigabe2') return `${basis}/freigabe2/${job.id}`;
   if (job.status === 'abgelehnt') return `${basis}/abgelehnt/${job.id}`;
-  return job.quelle === 'spesen' ? `${basis}/spesen-freigabe1/${job.id}` : `${basis}/kontierung/${job.id}`;
+  if (job.quelle === 'spesen') return `${basis}/spesen-freigabe1/${job.id}`;
+  // KK-Abrechnungen bearbeitet man im Abgleich (/kontierung/:id leitet dorthin um).
+  return job.kreditkarte_id ? `${basis}/kontierung/${job.id}/kk-abgleich` : `${basis}/kontierung/${job.id}`;
 }
 
 // Sieht die Person den Vorgang über eine eigene Rolle (canViewJobPdf ohne den Superadmin-Freipass)?
@@ -244,7 +283,7 @@ export async function erfasseKommentar(db, config, mailer, { job, person, text, 
   // Ein Durchgang gegen alle aktiven Personen (längster Name gewinnt), danach Einordnung: von einer
   // gleichnamigen Gruppe gelten die sichtbaren als gemeint; ist keine sichtbar → Fehler mit Namen.
   const alle = aktivePersonen(db);
-  const sichtbar = new Set(alle.filter((p) => darfKommentareSehen(db, config, p, job)).map((p) => p.churchtools_person_id));
+  const sichtbar = new Set(alle.filter(sichtbarkeitFuer(db, config, job)).map((p) => p.churchtools_person_id));
   const { treffer, unbekannt } = parseErwaehnungen(sauber, alle.map((p) => ({ id: p.churchtools_person_id, name: name(p) })));
   const ids = [];
   for (const t of treffer) {

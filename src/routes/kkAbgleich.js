@@ -19,6 +19,7 @@ import { bereiteTeilDateienVor, erzeugeTeilJobs, benachrichtigeNachAufsplitten, 
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
 import { extrahierePdfText } from '../services/pdfText.js';
 import { analysiereText, LEERE_ANALYSE, berechneVorschlaege } from '../services/kkTextAnalyse.js';
+import { kommentarBereich } from './kommentare.js';
 
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 const MAX_ZEILEN = 100;
@@ -94,6 +95,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
       zeilen,
       errors,
       auditLog: buildAuditLog(db, job.id),
+      kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/kontierung/${job.id}/kk-abgleich`),
     });
   }
 

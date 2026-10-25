@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
-import { upsertPerson, getPersonById, setFerienmodus } from '../../src/db/personenRepo.js';
+import { upsertPerson, getPersonById, setFerienmodus, deactivatePerson } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
 import { createJob, claimJob, setKontierung, getJobById } from '../../src/db/jobsRepo.js';
 import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
@@ -199,6 +199,7 @@ test('erfasseKommentar: speichert, mailt Beteiligte genau einmal, nie den Schrei
   const mailer = stubMailer();
   const r = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('3'), text: '  Ist das @Anna Beispiel recht?\nZweite Zeile  ' });
   assert.equal(r.ok, true);
+  await r.zustellung;
   const liste = listeKommentare(db, jobId);
   assert.equal(liste.length, 1);
   assert.equal(liste[0].text, 'Ist das @Anna Beispiel recht?\nZweite Zeile');
@@ -215,6 +216,7 @@ test('erfasseKommentar: speichert, mailt Beteiligte genau einmal, nie den Schrei
   mailer.sent.length = 0;
   const r2 = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: 'Ja, passt.' });
   assert.equal(r2.ok, true);
+  await r2.zustellung;
   assert.deepEqual(mailer.sent.map((m) => m.to), ['p3@example.org']);
   assert.deepEqual(listeKommentare(db, jobId).map((k) => k.text), ['Ist das @Anna Beispiel recht?\nZweite Zeile', 'Ja, passt.']);
   db.close();
@@ -223,10 +225,10 @@ test('erfasseKommentar: speichert, mailt Beteiligte genau einmal, nie den Schrei
 test('erfasseKommentar: Admin ohne Rolle nur bei Erwähnung', async () => {
   const { db, job, p } = setup();
   const mailer = stubMailer();
-  await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: 'Ohne Erwähnung' });
+  await (await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: 'Ohne Erwähnung' })).zustellung;
   assert.ok(!mailer.sent.some((m) => m.to === 'p6@example.org' || m.to === 'p7@example.org'));
   mailer.sent.length = 0;
-  await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: '@Fritz Admin bitte schauen' });
+  await (await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: '@Fritz Admin bitte schauen' })).zustellung;
   assert.ok(mailer.sent.some((m) => m.to === 'p6@example.org'));
   assert.ok(!mailer.sent.some((m) => m.to === 'p7@example.org'));
   db.close();
@@ -240,7 +242,9 @@ test('erfasseKommentar: Fehlerfälle', async () => {
     assert.equal(r.ok, false, JSON.stringify(text.slice(0, 5)));
     assert.ok(r.fehler.length >= 1);
   }
-  assert.equal((await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: 'a'.repeat(2000) })).ok, true);
+  const lang = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: 'a'.repeat(2000) });
+  assert.equal(lang.ok, true);
+  await lang.zustellung;
   const unbekannt = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: '@Unbekannt hallo' });
   assert.equal(unbekannt.ok, false);
   assert.match(unbekannt.fehler.join(' '), /Unbekannt/);
@@ -260,18 +264,166 @@ test('kommentarInfo zählt neu vor/nach markiereGelesen', async () => {
   const { db, jobId, job, p } = setup();
   const mailer = stubMailer();
   const andererId = createJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
-  await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('3'), text: 'Eins', jetzt: new Date('2026-10-25T08:00:00.000Z') });
-  await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: 'Zwei', jetzt: new Date('2026-10-25T08:01:00.000Z') });
+  await (await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('3'), text: 'Eins', jetzt: new Date('2026-10-25T08:00:00.000Z') })).zustellung;
+  await (await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: 'Zwei', jetzt: new Date('2026-10-25T08:01:00.000Z') })).zustellung;
   let info = kommentarInfo(db, [jobId, andererId], '1');
   assert.deepEqual(info.get(jobId), { anzahl: 2, neu: 1 });
   assert.equal(info.has(andererId), false);
   markiereGelesen(db, jobId, '1', new Date('2026-10-25T08:02:00.000Z'));
   assert.deepEqual(kommentarInfo(db, [jobId], '1').get(jobId), { anzahl: 2, neu: 0 });
-  await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('3'), text: 'Drei', jetzt: new Date('2026-10-25T08:03:00.000Z') });
+  await (await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('3'), text: 'Drei', jetzt: new Date('2026-10-25T08:03:00.000Z') })).zustellung;
   assert.deepEqual(kommentarInfo(db, [jobId], '1').get(jobId), { anzahl: 3, neu: 1 });
   markiereGelesen(db, jobId, '1', new Date('2026-10-25T08:04:00.000Z'));
   assert.deepEqual(kommentarInfo(db, [jobId], '1').get(jobId), { anzahl: 3, neu: 0 });
   assert.deepEqual(kommentarInfo(db, [jobId], '3').get(jobId), { anzahl: 3, neu: 1 });
   assert.equal(kommentarInfo(db, [], '1').size, 0);
+  db.close();
+});
+
+// --- Fix-Runde 1 ---
+
+function weitere(db, eintraege) {
+  for (const [id, vorname, nachname, gruppen] of eintraege) {
+    upsertPerson(db, { id, vorname, nachname, email: `p${id}@example.org`, gruppen, loggedInNow: true });
+  }
+}
+
+async function kommentiere(db, mailer, job, person, text) {
+  const r = await erfasseKommentar(db, CONFIG, mailer, { job, person, text });
+  assert.equal(r.ok, true, JSON.stringify(r.fehler));
+  await r.zustellung;
+  return r;
+}
+
+const mailAn = (mailer, id) => mailer.sent.filter((m) => m.to === `p${id}@example.org`);
+
+test('freigabe2 mit Stellvertretung als Freigeber 1: Rückfrage von F2 erreicht die Person, die kontiert hat', async () => {
+  const { db, jobId, job, p } = setup();
+  db.prepare("UPDATE jobs SET zugewiesen_an = '2', status = 'freigabe2' WHERE id = ?").run(jobId);
+  assert.deepEqual(beteiligte(db, CONFIG, job(), { schreiberId: '3' }), ['2']);
+  const mailer = stubMailer();
+  await kommentiere(db, mailer, job(), p('3'), 'Warum dieses Konto?');
+  assert.deepEqual(mailer.sent.map((m) => m.to), ['p2@example.org']);
+  assert.match(mailer.sent[0].text, new RegExp(`/zeitstempel-pruefen\\?jobId=${jobId}#kommentare`));
+  // Antwort von 2: F2 ist jetzt zuständig und bekommt die Freigabe-2-Seite.
+  mailer.sent.length = 0;
+  await kommentiere(db, mailer, job(), p('2'), 'Weil Unterhalt.');
+  assert.deepEqual(mailer.sent.map((m) => m.to), ['p3@example.org']);
+  assert.match(mailer.sent[0].text, new RegExp(`/freigabe2/${jobId}#kommentare`));
+  db.close();
+});
+
+test('Links je Empfänger: zuständig, nur Vorgänge-Recht, sonst Zeitstempel-Prüfseite', async () => {
+  const { db, jobId, job, p } = setup();
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '8' });
+  const mailer = stubMailer();
+  await kommentiere(db, mailer, job(), p('6'), '@Gina Einsicht und @Clara Zwei, bitte ansehen');
+  const link = (id) => mailAn(mailer, id).map((m) => m.text.match(/https:\/\/\S+/)[0]);
+  assert.deepEqual(link('1'), [`https://portal.example.org/kontierung/${jobId}#kommentare`]);
+  assert.deepEqual(link('8'), [`https://portal.example.org/kontierung/${jobId}#kommentare`], 'Vertretung der zuständigen Person');
+  assert.deepEqual(link('3'), [`https://portal.example.org/zeitstempel-pruefen?jobId=${jobId}#kommentare`], 'F2 vor seiner Phase');
+  assert.deepEqual(link('7'), [`https://portal.example.org/admin/vorgaenge/${jobId}#kommentare`], 'nur Vorgänge-Recht');
+  assert.equal(mailAn(mailer, '6').length, 0, 'nie an den Schreiber');
+  for (const id of ['1', '8', '3', '7']) assert.equal(mailAn(mailer, id).length, 1, `genau eine Mail an ${id}`);
+  db.close();
+});
+
+test('Links Spesen: Prüfperson auf spesen-freigabe1, Einreicherin auf die Zeitstempel-Prüfseite', async () => {
+  const { db, p } = setup();
+  const spesenId = createJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', quelle: 'spesen', absender: null, dateiname: 's.pdf', pdfPfad: '/tmp/s.pdf' });
+  db.prepare("UPDATE jobs SET eingereicht_von = '9', status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(spesenId);
+  const mailer = stubMailer();
+  await kommentiere(db, mailer, getJobById(db, spesenId), p('9'), 'Beleg ist nachgereicht.');
+  assert.match(mailAn(mailer, '1')[0].text, new RegExp(`/spesen-freigabe1/${spesenId}#kommentare`));
+  mailer.sent.length = 0;
+  await kommentiere(db, mailer, getJobById(db, spesenId), p('1'), 'Danke.');
+  assert.match(mailAn(mailer, '9')[0].text, new RegExp(`/zeitstempel-pruefen\\?jobId=${spesenId}#kommentare`));
+  db.close();
+});
+
+test('Eskalation an die Admins: Admin-Gruppe gilt als zuständig und wird ohne Erwähnung benachrichtigt', async () => {
+  const { db, jobId, job, p } = setup();
+  db.prepare("UPDATE jobs SET status = 'freigabe2', freigabe2_eskaliert_an_admin = 1 WHERE id = ?").run(jobId);
+  const mailer = stubMailer();
+  await kommentiere(db, mailer, job(), p('1'), 'Ist die Eskalation angekommen?');
+  assert.equal(mailAn(mailer, '6').length, 1);
+  assert.match(mailAn(mailer, '6')[0].text, new RegExp(`/freigabe2/${jobId}#kommentare`));
+  assert.equal(mailAn(mailer, '7').length, 0, 'Vorgänge-Recht allein macht nicht zuständig');
+  db.close();
+});
+
+test('Manager ohne ausdrückliches vorgaenge_einsehen sieht und kommentiert', async () => {
+  const { db, job, jobId, p } = setup();
+  weitere(db, [['11', 'Mia', 'Manager', ['30']]]);
+  assert.equal(darfKommentareSehen(db, CONFIG, p('11'), job()), true);
+  assert.equal(darfKommentieren(db, CONFIG, p('11'), job()), true);
+  assert.ok(erwaehnbarePersonen(db, CONFIG, job()).some((x) => x.id === '11'));
+  const mailer = stubMailer();
+  await kommentiere(db, mailer, job(), p('1'), '@Mia Manager kurz drüberschauen');
+  assert.match(mailAn(mailer, '11')[0].text, new RegExp(`/admin/vorgaenge/${jobId}#kommentare`));
+  db.close();
+});
+
+test('Gleichnamige Kandidaten: sichtbare Person gilt als gemeint, längerer unsichtbarer Name wird gemeldet', async () => {
+  const { db, job, p } = setup();
+  weitere(db, [['12', 'Anna', 'Beispiel', []], ['13', 'Hans Peter', 'Muster', []], ['14', 'Hans', 'Peter', []]]);
+  setBerechtigungenForPerson(db, '14', ['vorgaenge_einsehen']);
+  assert.deepEqual(findeErwaehnungen('@Anna Beispiel', [{ id: '1', name: 'Anna Beispiel' }, { id: '12', name: 'Anna Beispiel' }]).ids, ['1', '12']);
+  const mailer = stubMailer();
+  const r = await kommentiere(db, mailer, job(), p('3'), '@Anna Beispiel bitte');
+  assert.deepEqual(JSON.parse(db.prepare('SELECT erwaehnt FROM kommentare WHERE id = ?').get(r.id).erwaehnt), ['1']);
+  assert.equal(mailAn(mailer, '12').length, 0);
+  const kollision = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('3'), text: '@Hans Peter Muster bitte prüfen' });
+  assert.equal(kollision.ok, false);
+  assert.match(kollision.fehler.join(' '), /Hans Peter Muster darf diesen Vorgang nicht sehen/);
+  const kurz = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('3'), text: '@Hans Peter bitte prüfen' });
+  assert.equal(kurz.ok, true);
+  await kurz.zustellung;
+  db.close();
+});
+
+test('Inaktive Personen: sehen nichts und bekommen keine Mail', async () => {
+  const { db, job, p } = setup();
+  deactivatePerson(db, '3');
+  assert.equal(darfKommentareSehen(db, CONFIG, p('3'), job()), false);
+  assert.ok(!erwaehnbarePersonen(db, CONFIG, job()).some((x) => x.id === '3'));
+  const mailer = stubMailer();
+  await kommentiere(db, mailer, job(), p('1'), 'Hallo zusammen');
+  assert.equal(mailAn(mailer, '3').length, 0);
+  const erwaehnt = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: '@Clara Zwei?' });
+  assert.equal(erwaehnt.ok, false);
+  db.close();
+});
+
+test('Erwähnungen: NFD, NBSP, Zeilenumbruch, mehrfacher Leerraum, Längenänderung beim Kleinschreiben', () => {
+  const k = [{ id: '20', name: 'Jürg Müller' }, { id: '21', name: 'Clara Zwei' }];
+  assert.deepEqual(findeErwaehnungen('@Jürg Müller bitte', k).ids, ['20']);
+  assert.deepEqual(findeErwaehnungen('@Jürg Müller', k).ids, ['20']);
+  assert.deepEqual(findeErwaehnungen('@Jürg\nMüller', k).ids, ['20']);
+  assert.deepEqual(findeErwaehnungen('@jürg   MÜLLER.', k).ids, ['20']);
+  assert.deepEqual(findeErwaehnungen('İİİ @Clara Zwei', k), { ids: ['21'], unbekannt: [] });
+  assert.deepEqual(findeErwaehnungen('@Jürg', k), { ids: [], unbekannt: ['Jürg'] });
+});
+
+test('Kommentar und Mails in einer Transaktion: scheitert das Einreihen, bleibt nichts gespeichert', async () => {
+  const { db, jobId, job, p } = setup();
+  db.prepare("DELETE FROM admin_config WHERE key = 'mail_vorlage_kommentar_text'").run();
+  await assert.rejects(erfasseKommentar(db, CONFIG, stubMailer(), { job: job(), person: p('3'), text: 'Hallo' }));
+  assert.equal(listeKommentare(db, jobId).length, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM mail_log WHERE typ = 'kommentar'").get().n, 0);
+  assert.equal(db.isTransaction, false);
+  db.close();
+});
+
+test('SMTP-Fehler: Kommentar gespeichert, Mail bleibt zur Wiederholung eingereiht', async () => {
+  const { db, jobId, job, p } = setup();
+  const mailer = { async sendMail() { throw new Error('SMTP down'); } };
+  const r = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('3'), text: 'Hallo' });
+  assert.equal(r.ok, true);
+  await r.zustellung;
+  assert.equal(listeKommentare(db, jobId).length, 1);
+  const zeilen = db.prepare("SELECT status FROM mail_log WHERE typ = 'kommentar'").all();
+  assert.equal(zeilen.length, 1);
+  assert.notEqual(zeilen[0].status, 'versendet');
   db.close();
 });

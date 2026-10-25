@@ -3,12 +3,13 @@
 // inkl. Superadmin-/Manager-Bundle über personHasPermission). Niemand sonst, auch nicht über @Name.
 import { getKontoById } from '../db/kontenRepo.js';
 import { getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
-import { getPersonById } from '../db/personenRepo.js';
+import { getPersonById, listActivePersonsInGroup } from '../db/personenRepo.js';
 import { personHasPermission } from '../middleware/permissions.js';
 import { canViewJobPdf } from './jobAuthorization.js';
 import { ermittleZustaendigkeit } from './vorgangZustaendigkeit.js';
-import { getAktivenVertreter, istAktiveVertretungFuer } from './vertretung.js';
-import { sendNotification } from './notify.js';
+import { getAktivenVertreter } from './vertretung.js';
+import { reiheBenachrichtigungEin } from './notify.js';
+import { stelleEintraegeZu } from './mailZustellung.js';
 
 export const KOMMENTAR_GESCHLOSSEN_STATUS = ['abgeschlossen', 'abgeholt', 'archiviert', 'geloescht'];
 export const KOMMENTAR_MAX_LAENGE = 2000;
@@ -39,69 +40,114 @@ export function erwaehnbarePersonen(db, config, job) {
 }
 
 const WORTZEICHEN = /[\p{L}\p{N}_-]/u;
+const escapeRegex = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const nameSchluessel = (n) => String(n).normalize('NFC').trim().split(/\s+/).join(' ').toLocaleLowerCase('de');
+
+// Interner Parser: je "@"-Erwähnung die Gruppe gleichnamiger Kandidaten (längster Name gewinnt).
+// Text und Namen werden NFC-normalisiert; zwischen den Namensteilen passt jede Folge von Leerraum
+// (auch NBSP/Zeilenumbruch). Gross/klein über das Regex-Flag `i` (Unicode), also ohne Index-
+// Verschiebung durch eine kleingeschriebene Kopie des Textes.
+function parseErwaehnungen(text, kandidaten) {
+  const muster = kandidaten
+    .map((k) => {
+      const teile = String(k.name).normalize('NFC').trim().split(/\s+/).filter(Boolean);
+      return {
+        id: k.id,
+        name: teile.join(' '),
+        schluessel: nameSchluessel(k.name),
+        re: new RegExp(`^${teile.map(escapeRegex).join('\\s+')}(?![\\p{L}\\p{N}_-])`, 'iu'),
+      };
+    })
+    .filter((m) => m.name)
+    .sort((x, y) => y.name.length - x.name.length);
+  const treffer = [];
+  const unbekannt = [];
+  const s = String(text ?? '').normalize('NFC');
+  for (let i = s.indexOf('@'); i !== -1; i = s.indexOf('@', i + 1)) {
+    if (i > 0 && WORTZEICHEN.test(s[i - 1])) continue;
+    const rest = s.slice(i + 1);
+    const erster = muster.find((m) => m.re.test(rest));
+    if (erster) {
+      const ids = muster.filter((m) => m.schluessel === erster.schluessel && m.re.test(rest)).map((m) => m.id);
+      if (!treffer.some((t) => t.schluessel === erster.schluessel)) treffer.push({ name: erster.name, schluessel: erster.schluessel, ids });
+      continue;
+    }
+    const m = rest.match(/^[\p{L}\p{N}_-]+(?:[ \t ]+\p{Lu}[\p{L}\p{N}_-]*)?/u);
+    if (m) {
+      const wort = m[0].replace(/\s+/g, ' ');
+      if (!unbekannt.includes(wort)) unbekannt.push(wort);
+    }
+  }
+  return { treffer, unbekannt };
+}
 
 // Erkennt "@Vorname Nachname" (gross/klein egal, längster passender Name gewinnt, danach muss eine
 // Wortgrenze folgen). Ein "@" mitten in einem Wort (E-Mail-Adresse) ist keine Erwähnung. Ein "@"
 // ohne passenden Kandidaten landet mit dem folgenden Wort (bzw. zwei, wenn das zweite gross
 // beginnt) in `unbekannt`. Gleichnamige Kandidaten liefern alle ihre IDs.
 export function findeErwaehnungen(text, kandidaten) {
-  const sortiert = [...kandidaten].sort((a, b) => b.name.length - a.name.length);
+  const { treffer, unbekannt } = parseErwaehnungen(text, kandidaten);
   const ids = [];
-  const unbekannt = [];
-  const s = String(text ?? '');
-  const klein = s.toLocaleLowerCase('de');
-  for (let i = s.indexOf('@'); i !== -1; i = s.indexOf('@', i + 1)) {
-    if (i > 0 && WORTZEICHEN.test(s[i - 1])) continue;
-    const rest = klein.slice(i + 1);
-    let laenge = 0;
-    for (const k of sortiert) {
-      const kName = k.name.toLocaleLowerCase('de');
-      if (laenge && kName.length < laenge) break;
-      if (rest.startsWith(kName) && !WORTZEICHEN.test(rest.charAt(kName.length))) {
-        laenge = kName.length;
-        if (!ids.includes(k.id)) ids.push(k.id);
-      }
-    }
-    if (!laenge) {
-      const m = s.slice(i + 1).match(/^[\p{L}\p{N}_-]+(?:[ \t]+\p{Lu}[\p{L}\p{N}_-]*)?/u);
-      if (m && !unbekannt.includes(m[0])) unbekannt.push(m[0]);
-    }
-  }
+  for (const t of treffer) for (const id of t.ids) if (!ids.includes(id)) ids.push(id);
   return { ids, unbekannt };
 }
 
-// Spec Entscheidung 3. Rollenbasierte Kandidaten: zuständige Person (+ aktive Vertretung),
-// Freigeber 1 und effektiver Freigeber 2 des Kontos (je + aktive Vertretung), einreichende Person,
-// frühere Kommentierende; dazu die Erwähnten. Admins ohne Rolle kommen damit nur über @Name (oder
-// als frühere Kommentierende) hinein. Gefiltert auf darfKommentareSehen, ohne Schreiber, eindeutig.
-export function beteiligte(db, config, job, { schreiberId, erwaehntIds = [] } = {}) {
-  const kandidaten = [];
+// Wer muss jetzt handeln? Zuständige Person samt aktiver Vertretung; bei einer Eskalation an die
+// Admin-Gruppe deren aktive Mitglieder (nur Superadmins dürfen dann Kontierung/Freigabe 2 öffnen,
+// siehe kontierungZugriff.js / freigabe2.js).
+function aktuellVerantwortlich(db, config, job) {
+  const ids = new Set();
+  const zustaendig = ermittleZustaendigkeit(db, job);
+  if (zustaendig.art === 'person' && zustaendig.personId) {
+    ids.add(zustaendig.personId);
+    const vertreter = getAktivenVertreter(db, zustaendig.personId);
+    if (vertreter) ids.add(vertreter);
+  } else if (zustaendig.art === 'admin' && config.churchtools?.groupIdAdmin) {
+    for (const p of listActivePersonsInGroup(db, config.churchtools.groupIdAdmin)) ids.add(p.churchtools_person_id);
+  }
+  return ids;
+}
+
+function ermittleEmpfaenger(db, config, job, { schreiberId, erwaehntIds = [] } = {}) {
+  const verantwortlich = aktuellVerantwortlich(db, config, job);
+  const kandidaten = [...verantwortlich];
   const mitVertretung = (id) => {
     if (!id) return;
     kandidaten.push(id);
     const vertreter = getAktivenVertreter(db, id);
     if (vertreter) kandidaten.push(vertreter);
   };
-  const zustaendig = ermittleZustaendigkeit(db, job);
-  if (zustaendig.art === 'person') mitVertretung(zustaendig.personId);
+  mitVertretung(job.zugewiesen_an);
   const konto = job.konto_id ? getKontoById(db, job.konto_id) : null;
   if (konto) {
     mitVertretung(konto.freigeber1_id);
     mitVertretung(getEffectiveFreigeber2Id(job, konto));
   }
   if (job.eingereicht_von) kandidaten.push(job.eingereicht_von);
-  for (const r of db.prepare('SELECT DISTINCT person_id FROM kommentare WHERE job_id = ? ORDER BY id').all(job.id)) {
+  for (const r of db.prepare('SELECT person_id FROM kommentare WHERE job_id = ? GROUP BY person_id ORDER BY MIN(id)').all(job.id)) {
     kandidaten.push(r.person_id);
   }
   kandidaten.push(...erwaehntIds);
 
   const ergebnis = [];
+  const gesehen = new Set();
   for (const id of kandidaten) {
-    if (!id || id === schreiberId || ergebnis.includes(id)) continue;
+    if (!id || id === schreiberId || gesehen.has(id)) continue;
+    gesehen.add(id);
     const person = getPersonById(db, id);
-    if (person && darfKommentareSehen(db, config, person, job)) ergebnis.push(id);
+    if (person && darfKommentareSehen(db, config, person, job)) {
+      ergebnis.push({ person, link: linkFuer(db, config, person, job, verantwortlich) });
+    }
   }
   return ergebnis;
+}
+
+// Spec Entscheidung 3 plus Rulings: zuständige Person bzw. bei Admin-Eskalation die Admin-Gruppe
+// (je + aktive Vertretung), job.zugewiesen_an (Freigeber 1 des Vorgangs) + Vertretung, Freigeber 1
+// und effektiver Freigeber 2 des Kontos (je + Vertretung), einreichende Person, frühere
+// Kommentierende, Erwähnte. Gefiltert auf darfKommentareSehen, ohne Schreiber, eindeutig.
+export function beteiligte(db, config, job, optionen = {}) {
+  return ermittleEmpfaenger(db, config, job, optionen).map((e) => e.person.churchtools_person_id);
 }
 
 function workflowLink(config, job) {
@@ -112,27 +158,31 @@ function workflowLink(config, job) {
   return job.quelle === 'spesen' ? `${basis}/spesen-freigabe1/${job.id}` : `${basis}/kontierung/${job.id}`;
 }
 
-// Link je Empfänger: wer am Vorgang arbeitet (oder ihn nur über die Arbeitsseite sehen darf, z.B.
-// Buchhaltung im Pool), bekommt den Link der Arbeitsseite; wer ihn nur über das Admin-Recht sieht,
-// die Vorgang-Detailseite.
-function linkFuer(db, config, empfaenger, job) {
-  const nurAdmin = personHasPermission(db, config, empfaenger, 'vorgaenge_einsehen') && !istArbeitsbeteiligt(db, empfaenger, job);
-  if (nurAdmin || !canViewJobPdf(db, config, empfaenger, job)) return `${config.publicBaseUrl}/admin/vorgaenge/${job.id}`;
-  return workflowLink(config, job);
+// Sieht die Person den Vorgang über eine eigene Rolle (canViewJobPdf ohne den Superadmin-Freipass)?
+function siehtUeberRolle(db, config, person, job) {
+  const adminGruppe = config.churchtools?.groupIdAdmin ? String(config.churchtools.groupIdAdmin) : null;
+  const ohneAdmin = adminGruppe ? { ...person, gruppen: (person.gruppen || []).filter((g) => String(g) !== adminGruppe) } : person;
+  return canViewJobPdf(db, config, ohneAdmin, job);
 }
 
-function istArbeitsbeteiligt(db, person, job) {
-  const id = person.churchtools_person_id;
-  if (job.zugewiesen_an === id || istAktiveVertretungFuer(db, id, job.zugewiesen_an)) return true;
-  if (job.eingereicht_von === id) return true;
-  const konto = job.konto_id ? getKontoById(db, job.konto_id) : null;
-  if (!konto) return false;
-  const f2 = getEffectiveFreigeber2Id(job, konto);
-  return f2 === id || istAktiveVertretungFuer(db, id, f2);
+// Ruling Fix-Runde 1: aktuell zuständig → Arbeitsseite; nur über das Vorgänge-Recht sichtbar →
+// Admin-Vorgang-Detail; sonst (F1 nach Übergabe, F2 vor seiner Phase, Einreicher, frühere
+// Kommentierende mit Rolle) → /zeitstempel-pruefen?jobId=… (canViewJobPdf-geschützt).
+function linkFuer(db, config, person, job, verantwortlich) {
+  const basis = config.publicBaseUrl;
+  let link;
+  if (verantwortlich.has(person.churchtools_person_id)) link = workflowLink(config, job);
+  else if (siehtUeberRolle(db, config, person, job)) link = `${basis}/zeitstempel-pruefen?jobId=${job.id}`;
+  else link = `${basis}/admin/vorgaenge/${job.id}`;
+  return `${link}#kommentare`;
 }
 
+// Validiert, speichert den Kommentar und reiht die Mails in EINER Transaktion ein (kein Kommentar →
+// keine Mail; keine Mail ohne Kommentar). Die SMTP-Zustellung läuft danach im Hintergrund und
+// blockiert die Anfrage nicht; scheitert sie, wiederholt der mail-zustellung-Job die eingereihten
+// Zeilen. `zustellung` ist das Promise dieser Zustellung (für Tests; Routen müssen es nicht abwarten).
 export async function erfasseKommentar(db, config, mailer, { job, person, text, jetzt = new Date() }) {
-  const sauber = String(text ?? '').trim();
+  const sauber = String(text ?? '').normalize('NFC').trim();
   const fehler = [];
   if (!darfKommentieren(db, config, person, job)) {
     return {
@@ -145,48 +195,49 @@ export async function erfasseKommentar(db, config, mailer, { job, person, text, 
   if (sauber.length < 1) fehler.push('Bitte einen Kommentar eingeben.');
   if (sauber.length > KOMMENTAR_MAX_LAENGE) fehler.push(`Der Kommentar ist zu lang (höchstens ${KOMMENTAR_MAX_LAENGE} Zeichen).`);
 
-  const sichtbar = erwaehnbarePersonen(db, config, job);
-  const { ids, unbekannt } = findeErwaehnungen(sauber, sichtbar);
-  if (unbekannt.length) {
-    // Zweiter Durchgang gegen alle aktiven Personen, nur um "gibt es nicht" von "darf nicht sehen"
-    // zu unterscheiden. Gleichnamige sichtbare Personen gelten als gemeint, nicht als Fehler.
-    const sichtbareNamen = new Set(sichtbar.map((p) => p.name.toLocaleLowerCase('de')));
-    const alle = aktivePersonen(db).map((p) => ({ id: p.churchtools_person_id, name: name(p) }));
-    const zweiter = findeErwaehnungen(sauber, alle);
-    const gesperrt = alle.filter((p) => zweiter.ids.includes(p.id) && !sichtbareNamen.has(p.name.toLocaleLowerCase('de')));
-    for (const p of new Map(gesperrt.map((x) => [x.name, x])).values()) {
-      fehler.push(`${p.name} darf diesen Vorgang nicht sehen und kann nicht erwähnt werden.`);
-    }
-    for (const u of zweiter.unbekannt) fehler.push(`Unbekannte Person: @${u}`);
-    if (!fehler.length) for (const u of unbekannt) fehler.push(`Unbekannte Person: @${u}`);
+  // Ein Durchgang gegen alle aktiven Personen (längster Name gewinnt), danach Einordnung: von einer
+  // gleichnamigen Gruppe gelten die sichtbaren als gemeint; ist keine sichtbar → Fehler mit Namen.
+  const alle = aktivePersonen(db);
+  const sichtbar = new Set(alle.filter((p) => darfKommentareSehen(db, config, p, job)).map((p) => p.churchtools_person_id));
+  const { treffer, unbekannt } = parseErwaehnungen(sauber, alle.map((p) => ({ id: p.churchtools_person_id, name: name(p) })));
+  const ids = [];
+  for (const t of treffer) {
+    const erlaubt = t.ids.filter((id) => sichtbar.has(id));
+    if (!erlaubt.length) fehler.push(`${t.name} darf diesen Vorgang nicht sehen und kann nicht erwähnt werden.`);
+    for (const id of erlaubt) if (!ids.includes(id)) ids.push(id);
   }
+  for (const u of unbekannt) fehler.push(`Unbekannte Person: @${u}`);
   if (fehler.length) return { ok: false, fehler };
 
-  const id = Number(
-    db
-      .prepare('INSERT INTO kommentare (job_id, person_id, text, erwaehnt, erstellt_am) VALUES (?, ?, ?, ?, ?)')
-      .run(job.id, person.churchtools_person_id, sauber, JSON.stringify(ids), jetzt.toISOString()).lastInsertRowid
-  );
-
-  const verfasserName = name(person);
-  for (const empfaengerId of beteiligte(db, config, job, { schreiberId: person.churchtools_person_id, erwaehntIds: ids })) {
-    const empfaenger = getPersonById(db, empfaengerId);
-    if (!empfaenger?.email) continue;
-    await sendNotification(db, mailer, {
-      to: empfaenger.email,
-      typ: 'kommentar',
-      jobId: job.id,
-      variablen: {
-        empfaengerName: name(empfaenger),
-        verfasserName,
-        kommentarText: sauber,
+  let id;
+  const eintraege = [];
+  db.exec('SAVEPOINT kommentar_erfassen');
+  try {
+    id = Number(
+      db
+        .prepare('INSERT INTO kommentare (job_id, person_id, text, erwaehnt, erstellt_am) VALUES (?, ?, ?, ?, ?)')
+        .run(job.id, person.churchtools_person_id, sauber, JSON.stringify(ids), jetzt.toISOString()).lastInsertRowid
+    );
+    const verfasserName = name(person);
+    for (const { person: empfaenger, link } of ermittleEmpfaenger(db, config, job, { schreiberId: person.churchtools_person_id, erwaehntIds: ids })) {
+      if (!empfaenger.email) continue;
+      eintraege.push(reiheBenachrichtigungEin(db, {
+        to: empfaenger.email,
+        typ: 'kommentar',
         jobId: job.id,
-        jobDateiname: job.dateiname,
-        link: linkFuer(db, config, empfaenger, job),
-      },
-    });
+        variablen: { empfaengerName: name(empfaenger), verfasserName, kommentarText: sauber, jobId: job.id, jobDateiname: job.dateiname, link },
+      }));
+    }
+    db.exec('RELEASE kommentar_erfassen');
+  } catch (err) {
+    db.exec('ROLLBACK TO kommentar_erfassen');
+    db.exec('RELEASE kommentar_erfassen');
+    throw err;
   }
-  return { ok: true, id };
+  const zustellung = stelleEintraegeZu(db, mailer, eintraege).catch((err) => {
+    console.error('erfasseKommentar: Zustellung fehlgeschlagen, mail-zustellung wiederholt', err);
+  });
+  return { ok: true, id, zustellung };
 }
 
 export function listeKommentare(db, jobId) {

@@ -277,8 +277,8 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // section itself stays restricted inside pool.ejs (gated on isBuchhaltung/isSuperadmin from
   // loadNavFlags) — only the route-level gate widens, not who can see the company-wide pool.
   app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config, mailer, csrfProtection }));
-  app.use('/meine-abgeschlossenen', sessionLimiter, requireLogin(), createMeineAbgeschlossenenRouter({ db }));
-  app.use('/meine-spesen', sessionLimiter, requireLogin(), createMeineSpesenRouter({ db }));
+  app.use('/meine-abgeschlossenen', sessionLimiter, requireLogin(), createMeineAbgeschlossenenRouter({ db, config }));
+  app.use('/meine-spesen', sessionLimiter, requireLogin(), createMeineSpesenRouter({ db, config }));
   app.use('/kreditkarte', sessionLimiter, requireLogin(), createKreditkarteRouter({ db, config, csrfProtection }));
   app.use('/banner', sessionLimiter, requireLogin(), createBannerRouter({ db, csrfProtection }));
   app.use('/datenschutz', sessionLimiter, requireLogin(), createDatenschutzRouter({ db }));

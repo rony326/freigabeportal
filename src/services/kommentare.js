@@ -2,7 +2,7 @@
 // Sichtbarkeit = canViewJobPdf ODER das Recht, das /admin/vorgaenge schützt (vorgaenge_einsehen,
 // inkl. Superadmin-/Manager-Bundle über personHasPermission). Niemand sonst, auch nicht über @Name.
 import { getKontoById } from '../db/kontenRepo.js';
-import { getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
+import { getEffectiveFreigeber2Id, getJobById } from '../db/jobsRepo.js';
 import { getPersonById, listActivePersonsInGroup } from '../db/personenRepo.js';
 import { personHasPermission } from '../middleware/permissions.js';
 import { canViewJobPdf } from './jobAuthorization.js';
@@ -357,6 +357,18 @@ export function kommentarInfo(db, jobIds, personId) {
     )
     .all(personId, personId, JSON.stringify(ids));
   for (const r of rows) info.set(r.job_id, { anzahl: r.anzahl, neu: r.neu });
+  return info;
+}
+
+// Wie kommentarInfo, aber nur für Vorgänge, deren Kommentare die Person sehen darf (darfKommentareSehen).
+// Eine Abfrage für die Zählung; die Sichtprüfung läuft nur für Vorgänge MIT Kommentaren und entfällt
+// ganz, wenn die Person ohnehin alles sieht (vorgaenge_einsehen).
+export function kommentarInfoFuer(db, config, person, jobIds) {
+  const info = kommentarInfo(db, jobIds, person.churchtools_person_id);
+  if (!info.size || personHasPermission(db, config, person, 'vorgaenge_einsehen')) return info;
+  for (const id of [...info.keys()]) {
+    if (!darfKommentareSehen(db, config, person, getJobById(db, id))) info.delete(id);
+  }
   return info;
 }
 

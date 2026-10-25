@@ -1,9 +1,9 @@
 <% /* Kommentar-Marke für Vorgangslisten (Tabellenzeile und Kachel): Sprechblase + Anzahl, bei
      ungelesenen fremden Kommentaren ein kleines Badge "neu". Parameter: jobId. Die Daten liefert die
      Route als kommentarInfo (Map jobId → { anzahl, neu }, Objekt auch erlaubt); fehlt sie, bleibt die
-     Marke leer. Bootstrap Icons sind nicht eingebunden → Textsymbol. */
+     Marke leer. Bootstrap Icons sind nicht eingebunden → kleines Inline-SVG (currentColor). */
    const _infoQuelle = locals.kommentarInfo;
    const _info = !_infoQuelle ? null : (typeof _infoQuelle.get === 'function' ? _infoQuelle.get(Number(jobId)) : _infoQuelle[jobId]);
    const _anzahl = _info ? Number(_info.anzahl) || 0 : 0;
    const _neu = _info ? Number(_info.neu) || 0 : 0; %>
-<% if (_anzahl > 0) { %><span class="kommentar-marke text-nowrap small text-body-secondary" role="img" aria-label="<%= _anzahl %> Kommentare, davon <%= _neu %> neu"><span aria-hidden="true">💬 <%= _anzahl %></span><% if (_neu > 0) { %> <span class="badge text-bg-primary" aria-hidden="true">neu</span><% } %></span><% } %>
+<% if (_anzahl > 0) { %><span class="kommentar-marke text-nowrap small text-body-secondary" role="img" aria-label="<%= _anzahl %> <%= _anzahl === 1 ? 'Kommentar' : 'Kommentare' %>, davon <%= _neu %> neu"><span aria-hidden="true"><svg class="align-text-bottom" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" focusable="false"><path d="M2 2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2v3l3.5-3H14a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H2z"/></svg> <%= _anzahl %></span><% if (_neu > 0) { %> <span class="badge text-bg-primary" aria-hidden="true">neu</span><% } %></span><% } %>

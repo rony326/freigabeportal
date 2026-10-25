@@ -22,7 +22,7 @@ import { createFreigabe } from '../db/freigabenRepo.js';
 import { sendNotificationMitVertretung } from '../services/notify.js';
 import { markiereAlsKkAbrechnung } from '../services/kkMarkierung.js';
 import { personName } from '../services/auditLog.js';
-import { kommentarInfo } from '../services/kommentare.js';
+import { kommentarInfoFuer } from '../services/kommentare.js';
 
 export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -63,7 +63,7 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
     };
     // Eine Abfrage für alle Listen der Seite (Anzahl/neu je Vorgang).
     const listen = [daten.poolJobs, daten.ruecklaeufer, daten.meineKontierungen, daten.meineSpesenFreigaben, daten.meineFreigaben, daten.meineAbgelehnten, daten.adminEskalierteKontierungen, daten.adminEskalierteFreigaben, daten.adminEskalierteSpesenFreigaben];
-    daten.kommentarInfo = kommentarInfo(db, listen.flat().map((j) => j.id), personId);
+    daten.kommentarInfo = kommentarInfoFuer(db, config, req.currentPerson, listen.flat().map((j) => j.id));
     res.render('pool', daten);
   });
 

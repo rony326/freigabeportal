@@ -35,6 +35,7 @@ const PERSONEN = [
   ['4', 'Dora', 'Vier', []],
   ['6', 'Fritz', 'Admin', ['20']],
   ['7', 'Gina', 'Einsicht', []],
+  ['8', 'Hans', 'Rechte', []],
   ['9', 'Ida', 'Spesen', []],
 ];
 
@@ -47,6 +48,7 @@ function umgebung() {
     upsertPerson(db, { id, vorname, nachname, email: `p${id}@example.org`, gruppen, loggedInNow: true });
   }
   setBerechtigungenForPerson(db, '7', ['vorgaenge_einsehen']);
+  setBerechtigungenForPerson(db, '8', ['abgelehnt_verwalten', 'pool_zuweisen']);
   const konto = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
   const zugewiesen = (name) => {
     const id = createJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: name, pdfPfad: join(dir, name) });
@@ -68,6 +70,9 @@ function umgebung() {
   });
   const kommentar = (jobId, personId, zeit) =>
     db.prepare("INSERT INTO kommentare (job_id, person_id, text, erwaehnt, erstellt_am) VALUES (?, ?, 'Text', '[]', ?)").run(jobId, personId, zeit);
+  const rueck = createJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rueck.pdf', pdfPfad: join(dir, 'rueck.pdf') });
+  db.prepare("UPDATE jobs SET pool_rueckgesendet_bemerkung = 'zurück', pool_rueckgesendet_von = '1', pool_rueckgesendet_am = '2026-10-21T08:00:00.000Z' WHERE id = ?").run(rueck);
+  kommentar(rueck, '3', '2026-10-22T10:00:00.000Z');
   kommentar(mitKommentar, '3', '2026-10-22T08:00:00.000Z');
   kommentar(mitKommentar, '3', '2026-10-22T09:00:00.000Z');
   kommentar(mitKommentar, '1', '2026-10-22T10:00:00.000Z'); // eigener Kommentar von Anna
@@ -85,7 +90,7 @@ function umgebung() {
   });
   const als = (personId) => request.agent(aussen).set('x-test-person-id', personId);
   const aufraeumen = () => { db.close(); rmSync(dir, { recursive: true, force: true }); };
-  return { db, als, mitKommentar, ohne, eigen, fertig, spesen, aufraeumen };
+  return { db, als, rueck, mitKommentar, ohne, eigen, fertig, spesen, aufraeumen };
 }
 
 // Ausschnitt einer Tabellenzeile bzw. Kachel anhand ihrer id.
@@ -108,7 +113,7 @@ test('Aufgaben (Pool-Seite): Tabelle und Kacheln zeigen Anzahl und "neu" (eigene
   }
   for (const teil of [`row-${u.eigen}`, `kachel-${u.eigen}`]) {
     const a = ausschnitt(res.text, `[a-zA-Z-]*${teil}`);
-    assert.match(a, /aria-label="1 Kommentare, davon 0 neu"/, teil);
+    assert.match(a, /aria-label="1 Kommentar, davon 0 neu"/, teil);
     assert.doesNotMatch(a, />neu</, teil);
   }
   for (const teil of [`row-${u.ohne}`, `kachel-${u.ohne}`]) {
@@ -133,7 +138,7 @@ test('Meine Spesen: Tabelle und Kacheln zeigen die Marke', async () => {
   const res = await u.als('9').get('/meine-spesen');
   assert.equal(res.status, 200);
   for (const teil of [`spesen-meine-row-${u.spesen}`, `spesen-meine-kachel-${u.spesen}`]) {
-    assert.match(ausschnitt(res.text, teil), /aria-label="1 Kommentare, davon 1 neu"/, teil);
+    assert.match(ausschnitt(res.text, teil), /aria-label="1 Kommentar, davon 1 neu"/, teil);
   }
   u.aufraeumen();
 });
@@ -143,7 +148,7 @@ test('Meine abgeschlossenen: Tabelle und Kacheln zeigen die Marke', async () => 
   const res = await u.als('1').get('/meine-abgeschlossenen');
   assert.equal(res.status, 200);
   for (const teil of [`abgeschlossen-row-${u.fertig}`, `abgeschlossen-kachel-${u.fertig}`]) {
-    assert.match(ausschnitt(res.text, teil), /aria-label="1 Kommentare, davon 1 neu"/, teil);
+    assert.match(ausschnitt(res.text, teil), /aria-label="1 Kommentar, davon 1 neu"/, teil);
   }
   u.aufraeumen();
 });
@@ -178,4 +183,34 @@ test('Partials ohne kommentarInfo stürzen nicht ab', async () => {
     const html = await ejs.renderFile(new URL(`../../views/${v}.ejs`, import.meta.url).pathname, { jobs: [job], testmodus: false, csrfToken: 't' }, { views: [new URL('../../views', import.meta.url).pathname] });
     assert.doesNotMatch(html, /kommentar-marke/);
   }
+});
+
+test('Admin abgelehnt: ohne Sichtrecht auf den Vorgang keine Marke (nur abgelehnt_verwalten)', async () => {
+  const u = umgebung();
+  const res = await u.als('8').get('/admin/abgelehnt');
+  assert.equal(res.status, 200);
+  assert.ok(res.text.includes(`/admin/abgelehnt/${u.eigen}`), 'Vorgang ist in der Liste');
+  assert.doesNotMatch(res.text, /kommentar-marke/);
+  u.aufraeumen();
+});
+
+test('Pool Rückläufer: pool_zuweisen ohne Sichtrecht sieht keine Marke, Buchhaltung/Superadmin schon', async () => {
+  const u = umgebung();
+  const res = await u.als('8').get('/pool');
+  assert.equal(res.status, 200);
+  assert.ok(res.text.includes('rueck.pdf') || res.text.includes(`row-${u.rueck}`), 'Rückläufer ist in der Liste');
+  assert.doesNotMatch(res.text, /kommentar-marke/);
+  const admin = await u.als('6').get('/pool');
+  assert.match(admin.text, /1 Kommentar, davon 1 neu/);
+  u.aufraeumen();
+});
+
+test('Marke: Singular/Plural im aria-label, SVG statt Emoji', async () => {
+  const u = umgebung();
+  const res = await u.als('1').get('/pool');
+  assert.match(res.text, /aria-label="3 Kommentare, davon 2 neu"/);
+  assert.match(res.text, /aria-label="1 Kommentar, davon 0 neu"/);
+  assert.match(res.text, /kommentar-marke[^]*?<svg/);
+  assert.doesNotMatch(res.text, /💬/);
+  u.aufraeumen();
 });

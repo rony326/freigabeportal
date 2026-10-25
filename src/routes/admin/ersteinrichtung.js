@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { currentAuditActor } from '../../services/auditContext.js';
+import { zeitpunktAnzeige } from '../../services/auditLog.js';
 import { einrichtungsStand, markiereSchritt, setzeOhneZeitstempel, SCHRITTE } from '../../services/ersteinrichtung.js';
 import { pruefeTechnik, testeChurchtools, sendeTestmail, loeseKernjobsAus } from '../../services/einrichtungTests.js';
 
@@ -17,8 +18,16 @@ function schreibeAudit(db, aktion, nachher) {
 
 export function createErsteinrichtungRouter({ db, config, mailer, statusCache = null, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
-  // Letzte Testergebnisse nur im Speicher dieser App-Instanz (kein Geheimnis darin).
-  const letzte = {};
+  // Letzte Testergebnisse nur im Speicher dieser App-Instanz (kein Geheimnis darin),
+  // je Person getrennt: pro churchtools_person_id ein eigener Satz.
+  const letzteJePerson = new Map();
+  const merke = (req, art, ergebnis) => {
+    const id = String(req.currentPerson.churchtools_person_id);
+    const p = req.currentPerson;
+    const satz = letzteJePerson.get(id) || {};
+    satz[art] = { ...ergebnis, von: `${p.vorname || ''} ${p.nachname || ''}`.trim(), zeit: new Date().toISOString() };
+    letzteJePerson.set(id, satz);
+  };
   const zurueck = (res, id) => {
     statusCache?.leeren();
     res.redirect(`/admin/ersteinrichtung#schritt-${id}`);
@@ -29,7 +38,7 @@ export function createErsteinrichtungRouter({ db, config, mailer, statusCache = 
     const technik = pruefeTechnik(config);
     const stand = einrichtungsStand(db, config, { technik });
     res.render('admin/ersteinrichtung', {
-      stand, technik, letzte, kernjobs: KERNJOBS, jobNamen: JOB_NAMEN,
+      stand, technik, letzte: letzteJePerson.get(String(req.currentPerson.churchtools_person_id)) || {}, zeitAnzeige: zeitpunktAnzeige, kernjobs: KERNJOBS, jobNamen: JOB_NAMEN,
       ohneZeitstempel: getConfigValue(db, 'einrichtung_ohne_zeitstempel') === '1',
       markiert: Object.fromEntries(SCHRITTE.filter((s) => s.manuell).map((s) => [s.id, getConfigValue(db, `einrichtung_markiert_${s.id}`) === '1'])),
       hatEmail: Boolean((req.currentPerson?.email || '').trim()),
@@ -44,21 +53,21 @@ export function createErsteinrichtungRouter({ db, config, mailer, statusCache = 
 
   router.post('/churchtools-test', csrfProtection, async (req, res) => {
     const ergebnis = await testeChurchtools(config);
-    letzte.churchtools = { ...ergebnis, zeit: new Date().toISOString() };
+    merke(req, 'churchtools', ergebnis);
     schreibeAudit(db, 'test_churchtools', { ok: ergebnis.ok });
     zurueck(res, 'churchtools');
   });
 
   router.post('/testmail', csrfProtection, async (req, res) => {
     const ergebnis = await sendeTestmail(db, mailer, { person: req.currentPerson });
-    letzte.testmail = { ...ergebnis, zeit: new Date().toISOString() };
+    merke(req, 'testmail', ergebnis);
     schreibeAudit(db, 'test_testmail', { status: ergebnis.status });
     zurueck(res, 'mail');
   });
 
   router.post('/jobs', csrfProtection, async (req, res) => {
     const ergebnis = await loeseKernjobsAus(db, config, mailer, KERNJOBS);
-    letzte.jobs = { ergebnis, zeit: new Date().toISOString() };
+    merke(req, 'jobs', { ergebnis });
     schreibeAudit(db, 'test_jobs', { jobs: ergebnis });
     zurueck(res, 'jobs');
   });

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../../src/db/index.js';
@@ -212,4 +212,47 @@ test('Statusdienst einrichtung: warnung mit Anzahl, bei Abschluss ok', async (t)
   assert.equal(offen.status, 'warnung');
   assert.match(offen.grund, /\d+ von 8 Pflichtschritten offen/);
   assert.doesNotMatch(offen.grund, /\/|https?:/);
+});
+
+test('Ergebnisse sind pro Person getrennt und nennen Person und Zeit', async (t) => {
+  const s = setup(t);
+  const { agent: a1 } = await admin(s);
+  const { agent: a2 } = await admin(s, { email: 'zweite@example.org' });
+  await post(a1, '/testmail');
+  const eigene = await a1.get('/admin/ersteinrichtung');
+  assert.match(eigene.text, /Die Testmail wurde verschickt/);
+  assert.match(eigene.text, /von Vor Name, \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}/);
+  const fremde = await a2.get('/admin/ersteinrichtung');
+  assert.doesNotMatch(fremde.text, /Die Testmail wurde verschickt/);
+});
+
+test('Dashboard-Hinweis verschwindet, sobald alle Pflichtschritte erledigt sind', async (t) => {
+  const s = setup(t);
+  const { agent } = await admin(s);
+  const { db, config } = s;
+  config.publicBaseUrl = 'https://portal.example.org';
+  // Technik: die von der Prüfung geforderten Verzeichnisse anlegen (wie in der Betriebsumgebung).
+  for (const d of [config.jobsDir, config.brandingDir, config.backupDir]) mkdirSync(d, { recursive: true });
+  const jetzt = new Date().toISOString();
+  db.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email, gruppen, aktiv) VALUES ('901', 'A', 'B', 'a@x.ch', '[\"20\"]', 1)").run();
+  db.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email, gruppen, aktiv) VALUES ('902', 'C', 'D', 'c@x.ch', '[]', 1)").run();
+  db.prepare("INSERT INTO sync_log (gestartet_am, beendet_am, status) VALUES (?, ?, 'erfolg')").run(jetzt, jetzt);
+  db.prepare("INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am) VALUES ('testmail', NULL, 'a@x.ch', 'B', 'T', 'versendet', ?)").run(jetzt);
+  db.prepare("INSERT INTO konten (kontonummer, bezeichnung, freigeber1_id, stellvertreter1_id, freigeber2_id, stellvertreter2_id, aktiv) VALUES ('1000', 'K', '901', '901', '902', '902', 1)").run();
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  db.prepare('INSERT INTO cron_log (job, gestartet_am, beendet_am, status) VALUES (?, ?, ?, ?)').run('datenbank-sicherung', jetzt, jetzt, 'erfolg');
+  setConfigValue(db, 'betrieb_kontakt_email', 'it@x.ch');
+  const dash = await agent.get('/admin');
+  assert.doesNotMatch(dash.text, /Pflichtschritten erledigt/);
+});
+
+test('POST als Manager ist 403 (spaeter, jobs)', async (t) => {
+  const s = setup(t);
+  const { agent: a } = await admin(s);
+  const token = await fetchCsrfToken(a, '/admin/ersteinrichtung');
+  const { agent: m } = await loginAs(s, { gruppen: ['30'] });
+  for (const pfad of ['/spaeter', '/jobs']) {
+    const res = await m.post(`/admin/ersteinrichtung${pfad}`).type('form').send({ _csrf: token });
+    assert.equal(res.status, 403, pfad);
+  }
 });

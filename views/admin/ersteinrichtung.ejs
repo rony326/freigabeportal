@@ -50,9 +50,10 @@
                   <ul class="mb-0">
                     <% letzte.churchtools.gruppen.forEach((g) => { %><li><%= g.rolle %>: <%= g.name %> (<%= g.mitglieder %> Mitglied<%= g.mitglieder === 1 ? '' : 'er' %>)</li><% }) %>
                   </ul>
+                  <small class="text-muted d-block">von <%= letzte.churchtools.von %>, <%= zeitAnzeige(letzte.churchtools.zeit) %></small>
                 </div>
               <% } else { %>
-                <div class="alert alert-danger py-2"><%= letzte.churchtools.meldung %></div>
+                <div class="alert alert-danger py-2"><%= letzte.churchtools.meldung %><small class="text-muted d-block">von <%= letzte.churchtools.von %>, <%= zeitAnzeige(letzte.churchtools.zeit) %></small></div>
               <% } %>
             <% } %>
             <form method="post" action="/admin/ersteinrichtung/churchtools-test" class="d-inline">
@@ -63,7 +64,7 @@
 
           <% if (s.id === 'mail') { %>
             <% if (letzte.testmail) { %>
-              <div class="alert <%= letzte.testmail.status === 'versendet' ? 'alert-success' : 'alert-warning' %> py-2"><%= letzte.testmail.meldung %></div>
+              <div class="alert <%= letzte.testmail.status === 'versendet' ? 'alert-success' : 'alert-warning' %> py-2"><%= letzte.testmail.meldung %><small class="text-muted d-block">von <%= letzte.testmail.von %>, <%= zeitAnzeige(letzte.testmail.zeit) %></small></div>
             <% } %>
             <% if (!hatEmail) { %><p class="text-muted small">Für dein Konto ist keine E-Mail-Adresse hinterlegt, die Testmail kann nicht an dich gehen.</p><% } %>
             <form method="post" action="/admin/ersteinrichtung/testmail" class="d-inline">
@@ -101,6 +102,7 @@
                   <li class="list-group-item"><strong><%= jobNamen[e.job] || e.job %></strong> (<%= e.job %>): <%= e.status %></li>
                 <% }) %>
               </ul>
+              <p class="mb-3"><small class="text-muted d-block">von <%= letzte.jobs.von %>, <%= zeitAnzeige(letzte.jobs.zeit) %></small></p>
             <% } %>
             <form method="post" action="/admin/ersteinrichtung/jobs" class="d-inline">
               <input type="hidden" name="_csrf" value="<%= csrf %>">

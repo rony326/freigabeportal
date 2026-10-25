@@ -68,6 +68,7 @@ kleinen Bildschirmen. Schlüsseltabelle und Cookie-Logik:
 | Module | `/admin/module` | **nur** `superadmin` |
 | Ersteinrichtung | `/admin/ersteinrichtung` | **nur** `superadmin`; geführter Assistent mit 14 Schritten (8 Pflicht), technische Prüfung, ChurchTools-Test, Testmail, Kernjobs auslösen; Hinweis auf dem Admin-Dashboard ("später" blendet ihn 7 Tage aus); Statusdienst `einrichtung` |
 | Mail-Einstellungen | `/admin/mail-einstellungen` | **nur** `superadmin` |
+| Testmodus | `/admin/testmodus` | `superadmin` oder `manager`; Spielwiese zum gefahrlosen Ausprobieren, siehe [testmodus.md](testmodus.md) |
 
 Die Seite **Laufende Vorgänge** zeigt alle Vorgänge in `unzugewiesen`, `zugewiesen`, `freigabe2` und `abgelehnt`; mit `workflow_eingreifen` lassen sie sich umhängen. Details: [rechnungs-workflow.md](rechnungs-workflow.md#8-admin-eingriff-laufende-vorgänge-umhängen).
 
@@ -276,6 +277,14 @@ gehören auch der eigene An/Aus-Schalter und die Tage-Schwelle für
 Kreditkartenbelege gelöscht werden (`kk_beleg_verworfen_loeschen_tage`,
 Default 90 Tage). Details:
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md).
+
+## Testmodus (`/admin/testmodus`)
+
+Schaltet die Spielwiese ein oder aus, setzt sie zurück und zeigt die fünf
+Beispielpersonen. Im Testmodus laufen alle Seiten ausser den echten Pfaden
+(`/auth`, `/healthz`, `/admin/testmodus`, `/admin/betrieb/status`,
+`/api/n8n`, `/internal`) in einer abgeschotteten Kopie; Backup-Seite und
+Zeitstempel-Einstellungen sind dort gesperrt. Details: [testmodus.md](testmodus.md).
 
 ## Audit-Log (`/admin/audit-log`)
 

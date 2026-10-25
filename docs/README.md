@@ -35,6 +35,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [kreditoren-statt-debitoren.md](kreditoren-statt-debitoren.md) | Fachliche Korrektur der Bezeichnung, Migration, Kompatibilität, Deployment-Schritte |
 | [audit-paket-haertung-2026-09-29.md](audit-paket-haertung-2026-09-29.md) | Zugriffsverweigerungen, Datei-Quarantäne, Sicherheitsalarme, TSA-Evidenz |
 | [betrieb-und-nutzung.md](betrieb-und-nutzung.md) | Nutzungsdaten, Fehlererfassung und „Problem melden“, Neues-Gerät-Mail, Banner, Datenschutzhinweis, Aufbewahrungsfristen, Recht `betrieb_einsehen` |
+| [testmodus.md](testmodus.md) | Testmodus (Spielwiese) für Superadmin und Manager: Beispieldaten, Abschottung, Test-Postfach, Zurücksetzen |
 | [statusseite-und-monitoring.md](statusseite-und-monitoring.md) | Statusseite `/admin/betrieb/status`, Dienste und Grenzwerte, `/healthz` mit Überwachungsschlüssel, Uptime-Kuma-Anleitung |
 | [audit-externe-nachweise.md](audit-externe-nachweise.md) | Bedrohungsmodell und lokale Grundlage für externe Audit-Nachweise |
 

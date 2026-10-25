@@ -91,6 +91,20 @@ Danach entscheidet jeder Router-Mount selbst über Rate-Limiting
 und Zugriffskontrolle — siehe
 [auth-und-rechte.md](auth-und-rechte.md).
 
+### Testmodus: Weiche und Test-Instanz
+
+Direkt nach `loadCurrentPerson` (und vor Nutzungserfassung und Audit) hängt die
+**Weiche** (`src/middleware/testmodusWeiche.js`). Hat die Sitzung das Flag
+`session.testmodus` und ist die Person ein aktiver Superadmin oder Manager,
+geht die Anfrage an eine zweite Express-App, die **Test-Instanz**. Diese wird
+von `createApp({ testmodus: true })` auf der Spiel-DB gebaut, lazy beim ersten
+Bedarf und beim Zurücksetzen neu (`src/services/testmodus/steuerung.js`).
+Die Test-Instanz hat keine Sitzung, kein `/auth`, kein `/healthz`, einen
+Test-Mailer, eine Beispielperson statt `loadCurrentPerson` und eigene
+Geheimnisse. Die Pfade `/auth`, `/healthz`, `/admin/testmodus`,
+`/admin/betrieb/status`, `/api/n8n` und `/internal` bleiben immer in der echten
+App. Siehe [testmodus.md](testmodus.md).
+
 ## Router-Übersicht
 
 | Mount | Rate-Limiter | Zugriff | Zweck |
@@ -117,6 +131,8 @@ und Zugriffskontrolle — siehe
 | `/banner` | session | eingeloggt | Info-Banner ausblenden (`POST /banner/:id/ausblenden`) |
 | `/datenschutz` | session | eingeloggt | Datenschutzhinweis zu den Nutzungsdaten |
 | `/audit-pruefen` | public (`publicLimiter`) | offen, nur lesend | Prüfseite des Audit-Nachweises für die Revision, siehe [audit-externe-nachweise.md](audit-externe-nachweise.md) |
+| `/admin/testmodus` | session | `superadmin` oder `manager` | Testmodus ein/aus, Zurücksetzen, Personenwechsel |
+| `/testmodus` (nur Test-Instanz) | session | eingeloggt (Beispielperson) | Test-Postfach (`/postfach`) und Jobs (`POST /jobs`) |
 | `/auth` | public | offen | ChurchTools-OAuth2-Login/-Logout |
 | `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen von acht Hintergrund-Jobs (nicht: `datenbank-sicherung`, `mail-digest`, `sicherheitsalarme`) |
 | `/healthz` | eigener (120/min/IP) | offen; Details nur mit `X-Monitoring-Key` | `{status:"ok"}`, mit Schlüssel Dienststatus (30 s zwischengespeichert, gemeinsam mit Statusseite und Dashboard), siehe [statusseite-und-monitoring.md](statusseite-und-monitoring.md) |

@@ -66,6 +66,14 @@ Groessere Datenbestaende benoetigen einen separat getesteten Streaming-/Wartungs
 die Limits nicht ungeprueft anheben. Ein Fehler wird als fehlgeschlagener Backup-Lauf
 protokolliert; bestehende Sicherungen werden dadurch nicht ersetzt.
 
+## Testmodus
+
+Die Spielwiese des Testmodus (`<dbPath>.testmodus.db`, `<jobsDir>-testmodus`,
+`<brandingDir>-testmodus`) ist **nicht Teil der Sicherung** und wird nie
+wiederhergestellt. Im Testmodus ist `/admin/backup` gesperrt, der Sicherungsjob
+wird übersprungen und die Test-Instanz hat weder Schlüsselbund noch
+Backup-Schlüssel. Siehe [testmodus.md](testmodus.md).
+
 ## Verbleibende Grenzen
 
 SHA-256 im selben ZIP erkennt Inkonsistenzen, aber beweist nicht die Herkunft.

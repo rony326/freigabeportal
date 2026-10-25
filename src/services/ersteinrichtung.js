@@ -47,7 +47,7 @@ function messe(id, db, config, jetzt, technik) {
     }
     case 'rollen': return { erledigt: superadminVorhanden(db, config) };
     case 'churchtools': {
-      const r = db.prepare('SELECT status FROM sync_log ORDER BY id DESC LIMIT 1').get();
+      const r = db.prepare('SELECT status FROM sync_log WHERE beendet_am IS NOT NULL ORDER BY id DESC LIMIT 1').get();
       return { erledigt: r?.status === 'erfolg' };
     }
     case 'mail': return { erledigt: mailErledigt(db) };
@@ -56,8 +56,8 @@ function messe(id, db, config, jetzt, technik) {
     case 'zeitstempel':
       return { erledigt: cfg(db, 'zeitstempel_tsa_url') !== '' || cfg(db, 'einrichtung_ohne_zeitstempel') === '1' };
     case 'sicherung': {
-      const ok = db.prepare("SELECT status, beendet_am FROM cron_log WHERE job = 'datenbank-sicherung' ORDER BY id DESC LIMIT 1").get();
-      const t = ok?.status === 'erfolg' && ok.beendet_am ? new Date(ok.beendet_am).getTime() : NaN;
+      const ok = db.prepare("SELECT beendet_am FROM cron_log WHERE job = 'datenbank-sicherung' AND status = 'erfolg' ORDER BY id DESC LIMIT 1").get();
+      const t = ok?.beendet_am ? new Date(ok.beendet_am).getTime() : NaN;
       return { erledigt: Number.isFinite(t) && jetzt.getTime() - t < TAGE_7_MS };
     }
     case 'kontakt': return { erledigt: cfg(db, 'betrieb_kontakt_email') !== '' };

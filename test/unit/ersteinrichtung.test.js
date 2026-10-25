@@ -59,10 +59,12 @@ test('rollen: nur aktiver Superadmin zählt', (t) => {
 test('churchtools: letzter sync_log-Eintrag muss erfolg sein', (t) => {
   const db = neu(t);
   assert.equal(ok(stand(db), 'churchtools'), false);
-  const ins = (st) => db.prepare('INSERT INTO sync_log (gestartet_am, status) VALUES (?, ?)').run(JETZT.toISOString(), st);
+  const ins = (st) => db.prepare('INSERT INTO sync_log (gestartet_am, beendet_am, status) VALUES (?, ?, ?)').run(JETZT.toISOString(), JETZT.toISOString(), st);
   ins('erfolg');
   assert.equal(ok(stand(db), 'churchtools'), true);
   ins('fehler');
+  assert.equal(ok(stand(db), 'churchtools'), false);
+  db.prepare("INSERT INTO sync_log (gestartet_am, status) VALUES (?, 'erfolg')").run(JETZT.toISOString());
   assert.equal(ok(stand(db), 'churchtools'), false);
 });
 
@@ -108,7 +110,8 @@ test('sicherung: erfolg jünger als 7 Tage, sonst offen', (t) => {
   ins('erfolg', '2026-10-20T12:00:00Z');
   assert.equal(ok(stand(db), 'sicherung'), true);
   ins('fehler', '2026-10-25T03:00:00Z');
-  assert.equal(ok(stand(db), 'sicherung'), false);
+  ins('laufend', '2026-10-25T04:00:00Z');
+  assert.equal(ok(stand(db), 'sicherung'), true);
 });
 
 test('kontakt, branding, monitoring aus admin_config', (t) => {

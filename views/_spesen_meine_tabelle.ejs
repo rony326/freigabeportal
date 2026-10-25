@@ -22,7 +22,7 @@
                 <% if (job.zeitstempel_gesetzt_am) { %>
                   ✓ gesetzt am <%= job.zeitstempel_gesetzt_am %>
                 <% } else { %>
-                  ausstehend
+                  <%= locals.testmodus ? 'im Testmodus übersprungen' : 'ausstehend' %>
                 <% } %>
               <% } else { %>
                 —

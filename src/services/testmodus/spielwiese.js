@@ -1,18 +1,39 @@
 import { existsSync, rmSync, mkdirSync, cpSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join, basename, resolve, relative, isAbsolute } from 'node:path';
 import { createHmac } from 'node:crypto';
 import { openDatabase } from '../../db/index.js';
 import { seedDefaults } from '../../db/adminConfigRepo.js';
 import { spieleBeispieldatenEin } from './beispieldaten.js';
 
+// Absolut und ohne Schrägstrich am Ende: aus JOBS_DIR=/data/jobs/ würde sonst /data/jobs/-testmodus,
+// also ein Verzeichnis IN den echten Belegen (und damit in jeder echten Sicherung).
+function normalisiert(pfad, name) {
+  if (!pfad) throw new Error(`Der Testmodus braucht ${name}.`);
+  return resolve(String(pfad)).replace(/(?<=.)[\\/]+$/, '');
+}
+
+const liegtIn = (innen, aussen) => {
+  const rel = relative(aussen, innen);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+};
+
 export function testmodusPfade(config) {
   if (!config.dbPath || config.dbPath === ':memory:') throw new Error('Der Testmodus braucht eine Datei-Datenbank (kein :memory:).');
-  return {
-    dbPath: `${config.dbPath}.testmodus.db`,
-    jobsDir: `${config.jobsDir}-testmodus`,
-    brandingDir: `${config.brandingDir}-testmodus`,
-    backupDir: `${config.dbPath}.testmodus-backups`,
+  const dbPath = normalisiert(config.dbPath, 'DB_PATH');
+  const jobsDir = normalisiert(config.jobsDir, 'JOBS_DIR');
+  const brandingDir = normalisiert(config.brandingDir, 'BRANDING_DIR');
+  const pfade = {
+    dbPath: `${dbPath}.testmodus.db`,
+    jobsDir: `${jobsDir}-testmodus`,
+    brandingDir: `${brandingDir}-testmodus`,
+    backupDir: `${dbPath}.testmodus-backups`,
   };
+  for (const abgeleitet of Object.values(pfade)) {
+    for (const echt of [jobsDir, brandingDir]) {
+      if (liegtIn(abgeleitet, echt)) throw new Error(`Testmodus-Pfad ${abgeleitet} läge im echten Verzeichnis ${echt}.`);
+    }
+  }
+  return pfade;
 }
 
 const GEHEIM = /secret|token|pass|key/i;
@@ -99,6 +120,8 @@ export async function erstelleSpielwiese(echteDb, config, { neu = false } = {}) 
   if (!neu) {
     const vorhanden = oeffneVorhandene(pfade);
     if (vorhanden) {
+      // Nach einem App-Update fehlen sonst neue Standardwerte (ON CONFLICT DO NOTHING: eigene Werte bleiben).
+      seedDefaults(vorhanden);
       sichereSpielDb(vorhanden);
       return { db: vorhanden, config: testConfig };
     }

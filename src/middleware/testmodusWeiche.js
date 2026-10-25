@@ -4,7 +4,10 @@ import { schreibeTestmodusAudit } from '../routes/admin/testmodus.js';
 // Pfade, die auch mit eingeschaltetem Testmodus immer in der echten App laufen.
 // Statische Dateien (/css, /js, /vendor …) brauchen keinen Eintrag: express.static läuft vor der
 // Weiche. /branding fehlt bewusst: im Testmodus kommt das Logo aus der Branding-Kopie der Spielwiese.
-export const ECHTE_PFADE = ['/auth', '/healthz', '/admin/testmodus', '/admin/betrieb/status', '/api/n8n', '/internal'];
+// /audit-pruefen ist die öffentliche Prüfung echter Revisionspakete und antwortet immer echt.
+// /zeitstempel-pruefen bleibt bewusst in der Spielwiese: es prüft Belege per Job-ID, und die Links
+// dorthin kommen von Seiten der Spielwiese (Spiel-IDs); die Seite trägt das Band.
+export const ECHTE_PFADE = ['/auth', '/healthz', '/admin/testmodus', '/admin/betrieb/status', '/audit-pruefen', '/api/n8n', '/internal'];
 
 export const HINWEIS_ROLLE = 'Der Testmodus wurde beendet, weil du keine Admin-Rolle (Superadmin oder Manager) mehr hast.';
 export const HINWEIS_SPIELWIESE = 'Der Testmodus wurde beendet, weil die Spielwiese nicht verfügbar ist. Du arbeitest wieder im echten Portal.';
@@ -55,7 +58,11 @@ export function testmodusWeiche({ db, config, holeTestApp, echterCsrfToken }) {
       zeigeHinweis(req, res);
       return next();
     }
-    if (istEchterPfad(req.path)) return next();
+    if (istEchterPfad(req.path)) {
+      // Kein Band auf echten Seiten: stattdessen ein Hinweis, dass hier Änderungen echt wirken.
+      res.locals.testmodusEchteSeite = true;
+      return next();
+    }
     let token;
     try {
       token = echterCsrfToken(req, res);
@@ -69,7 +76,14 @@ export function testmodusWeiche({ db, config, holeTestApp, echterCsrfToken }) {
         // Nichts aus der echten App (Person, Branding, Token) in die Views der Test-Instanz tragen.
         res.locals = Object.create(null);
         req.currentPerson = null;
-        testApp(req, res, next);
+        // Eigener Abschluss statt des next() der echten App: was aus der Test-Instanz entweicht,
+        // erreicht weder die echten Routen noch den echten Fehler-Handler (betrieb_fehler).
+        testApp(req, res, (err) => {
+          if (err) console.error('Testmodus: Fehler aus der Test-Instanz:', err?.stack || err);
+          if (res.headersSent) return;
+          res.status(err ? 500 : 404).type('text/plain; charset=utf-8')
+            .send(err ? 'Testmodus: Es ist ein unerwarteter Fehler aufgetreten.' : 'Testmodus: Seite nicht gefunden.');
+        });
       }, (err) => {
         // Spielwiese nicht verfügbar: Testmodus aus, echte App weiter.
         console.error('Testmodus: Test-Instanz nicht verfügbar:', err?.message || err);

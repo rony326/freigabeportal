@@ -525,3 +525,100 @@ test('Sweep (gerendert): auf Seiten der Test-Instanz steht das echte Token nur i
   assert.equal(geprueft, 15);
   await u.aufraeumen();
 });
+
+const ECHTE_SEITE = 'Testmodus ist an – diese Seite gehört zum echten Betrieb';
+
+test('Echte Seiten bei eingeschaltetem Testmodus zeigen den Hinweis, ohne Testmodus nicht', async () => {
+  const u = await umgebung();
+  const admin = await anmelden(u, ADMIN);
+  for (const pfad of ['/admin/testmodus', '/admin/betrieb/status']) {
+    const res = await admin.get(pfad);
+    assert.equal(res.status, 200);
+    assert.ok(!res.text.includes(ECHTE_SEITE), `${pfad} ohne Testmodus`);
+  }
+  await einschalten(admin);
+  for (const pfad of ['/admin/testmodus', '/admin/betrieb/status']) {
+    const res = await admin.get(pfad);
+    assert.equal(res.status, 200);
+    assert.ok(res.text.includes(ECHTE_SEITE), `${pfad} mit Testmodus: Hinweis`);
+    assert.ok(!res.text.includes(BAND), `${pfad}: kein Band`);
+  }
+  // Seiten der Spielwiese tragen das Band, nicht den Hinweis.
+  const pool = await admin.get('/pool');
+  assert.ok(pool.text.includes(BAND));
+  assert.ok(!pool.text.includes(ECHTE_SEITE));
+  await u.aufraeumen();
+});
+
+test('/audit-pruefen läuft im Testmodus in der echten App (mit Hinweis); /zeitstempel-pruefen bleibt in der Spielwiese (mit Band)', async () => {
+  const u = await umgebung();
+  const admin = await anmelden(u, ADMIN);
+  await einschalten(admin);
+  const sandbox = (await u.steuerung.hole()).db;
+  const zugriffe = () => sandbox.prepare('SELECT COUNT(*) c FROM audit_ereignisse').get().c;
+  const vorher = zugriffe();
+  const audit = await admin.get('/audit-pruefen');
+  assert.equal(audit.status, 200);
+  assert.ok(audit.text.includes(ECHTE_SEITE));
+  assert.ok(!audit.text.includes(BAND));
+  assert.equal(zugriffe(), vorher, 'Spielwiese nicht berührt');
+  const zs = await admin.get('/zeitstempel-pruefen');
+  assert.equal(zs.status, 200);
+  assert.ok(zs.text.includes(BAND));
+  assert.ok(!zs.text.includes(ECHTE_SEITE));
+  await u.aufraeumen();
+});
+
+test('Fehler, der aus der Test-Instanz entweicht, bleibt dort: 500 ohne echten betrieb_fehler und ohne echte Seite', async () => {
+  const u = await umgebung();
+  const admin = await anmelden(u, ADMIN);
+  await einschalten(admin);
+  const fehlerVorher = u.echteDb.prepare('SELECT COUNT(*) c FROM betrieb_fehler').get().c;
+  const original = u.steuerung.hole;
+  const fehlerOriginal = console.error;
+  console.error = () => {};
+  try {
+    u.steuerung.hole = () => Promise.resolve({ app: (req, res, next) => next(new Error('entwichen')) });
+    const res = await admin.get('/pool');
+    assert.equal(res.status, 500);
+    assert.ok(!res.text.includes('Angemeldet als Echt Admin'));
+    assert.ok(!res.text.includes('Echter Lieferant'));
+    u.steuerung.hole = () => Promise.resolve({ app: (req, res, next) => next() });
+    const leer = await admin.get('/pool');
+    assert.equal(leer.status, 404);
+    assert.ok(!leer.text.includes('Echter Lieferant'));
+  } finally {
+    console.error = fehlerOriginal;
+    u.steuerung.hole = original;
+  }
+  assert.equal(u.echteDb.prepare('SELECT COUNT(*) c FROM betrieb_fehler').get().c, fehlerVorher);
+  // Testmodus bleibt an.
+  assert.ok((await admin.get('/pool')).text.includes(BAND));
+  await u.aufraeumen();
+});
+
+test('Admin-Startseite der Spielwiese zeigt keinen Ersteinrichtungs-Hinweis; die echte zeigt ihn', async () => {
+  const u = await umgebung();
+  const admin = await anmelden(u, ADMIN);
+  assert.match((await admin.get('/admin')).text, /Ersteinrichtung: \d+ von \d+ Pflichtschritten/);
+  await einschalten(admin);
+  const res = await admin.get('/admin');
+  assert.equal(res.status, 200);
+  assert.ok(res.text.includes(BAND));
+  assert.doesNotMatch(res.text, /Pflichtschritten erledigt/);
+  await u.aufraeumen();
+});
+
+test('Echte App ohne je eingeschalteten Testmodus legt keine Spielwiesen-Dateien an', async () => {
+  const u = await umgebung();
+  const admin = await anmelden(u, ADMIN);
+  for (const pfad of ['/pool', '/admin', '/admin/testmodus', '/admin/betrieb/status', '/meine-spesen', '/audit-pruefen', '/gibt-es-nicht']) {
+    await admin.get(pfad);
+  }
+  const bh = await anmelden(u, BUCHHALTUNG);
+  await bh.get('/pool');
+  const eintraege = readdirSync(u.dir);
+  assert.deepEqual(eintraege.filter((e) => e.includes('testmodus')), [], `Dateien: ${eintraege.join(', ')}`);
+  assert.deepEqual(readdirSync(u.config.jobsDir).filter((e) => e.includes('testmodus')), []);
+  await u.aufraeumen();
+});

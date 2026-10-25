@@ -213,9 +213,10 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
       } catch { /* Karte ohne Status */ }
     }
     // Hinweis auf die Ersteinrichtung: nur Superadmin, solange Pflichtschritte offen und nicht verschoben;
-    // nach dem ersten Abschluss nie mehr.
+    // nach dem ersten Abschluss nie mehr. Nie in der Test-Instanz: deren Pflichtschritte (TSA, Sync,
+    // Sicherung) sind dort gesperrt und liessen sich nie abschliessen.
     let einrichtungHinweis = null;
-    if (res.locals.isSuperadmin === true && !einrichtungAbgeschlossenAm(db)) {
+    if (!testmodus && res.locals.isSuperadmin === true && !einrichtungAbgeschlossenAm(db)) {
       try {
         const bis = Date.parse(getConfigValue(db, `einrichtung_spaeter_bis_${req.currentPerson.churchtools_person_id}`) || '');
         if (!(bis > Date.now())) {

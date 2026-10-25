@@ -120,3 +120,36 @@ test('in der echten App gibt es /testmodus/* nicht (404)', async () => {
   assert.equal((await u.agent.post('/testmodus/jobs').type('form').send({})).status, 404);
   u.aufraeumen();
 });
+
+test('fehlgeschlagener Job: Ursache im Ergebnis und im Log', async () => {
+  const u = await umgebung();
+  const { TESTMODUS_JOBS } = await import('../../src/routes/testmodusInstanz.js');
+  const original = TESTMODUS_JOBS[0].fn;
+  const fehlerOriginal = console.error;
+  const geloggt = [];
+  console.error = (...a) => geloggt.push(a.join(' '));
+  TESTMODUS_JOBS[0].fn = async () => { throw new Error('Spiel-DB gesperrt <x>'); };
+  try {
+    const token = csrfAus((await u.agent.get('/testmodus/postfach')).text);
+    const res = await u.agent.post('/testmodus/jobs').type('form').send({ _csrf: token });
+    assert.equal(res.status, 302);
+    const seite = await u.agent.get(res.headers.location);
+    assert.match(seite.text, /Pool-Erinnerungen: fehlgeschlagen \(Spiel-DB gesperrt &lt;x&gt;\)/);
+    assert.ok(geloggt.some((z) => z.includes('Pool-Erinnerungen') && z.includes('Spiel-DB gesperrt')));
+  } finally {
+    TESTMODUS_JOBS[0].fn = original;
+    console.error = fehlerOriginal;
+  }
+  u.aufraeumen();
+});
+
+test('Postfach-Mailtext nutzt die CSS-Klasse statt Inline-Style', async () => {
+  const u = await umgebung();
+  u.db.prepare("INSERT INTO mail_log (typ, empfaenger, betreff, text, status, versucht_am) VALUES ('zuweisung', 'ben@beispiel.invalid', 'B', 'T', 'versendet', '2026-01-01')").run();
+  const res = await u.agent.get('/testmodus/postfach');
+  assert.match(res.text, /<pre class="[^"]*testmodus-mailtext/);
+  assert.doesNotMatch(res.text, /<pre[^>]*style=/);
+  const css = (await import('node:fs')).readFileSync(new URL('../../public/css/portal.css', import.meta.url), 'utf8');
+  assert.match(css, /\.testmodus-mailtext\s*\{[^}]*white-space:\s*pre-wrap/);
+  u.aufraeumen();
+});

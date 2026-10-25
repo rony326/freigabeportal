@@ -1,0 +1,4 @@
+<%# Nur in der Test-Instanz (locals.testmodus): Belege der Spielwiese sind keine echten Freigaben. %>
+<% if (locals.testmodus) { %>
+  <div class="alert alert-danger testmodus-marke" role="note"><strong>TESTMODUS – keine echte Freigabe</strong> · Zeitstempel: im Testmodus übersprungen</div>
+<% } %>

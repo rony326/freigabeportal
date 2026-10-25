@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PDFDocument, PageSizes } from 'pdf-lib';
 import * as mupdf from 'mupdf';
-import { stampAndFinalize, stampGruppenDokument } from '../../src/services/pdfStamp.js';
+import { stampAndFinalize, stampGruppenDokument, TESTMODUS_MARKE } from '../../src/services/pdfStamp.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 
 const [A4_BREITE, A4_HOEHE] = PageSizes.A4;
@@ -456,4 +456,26 @@ test('stampGruppenDokument marks a Gutschrift position as "Betrag: 11.50 (Gutsch
   assert.match(allText, /Betrag: 11\.50 \(Gutschrift\)/);
   assert.match(allText, /Betrag: 30\.00/);
   assert.doesNotMatch(allText, /Betrag: 30\.00 \(Gutschrift\)/);
+});
+
+test('Testmodus: Stempelseite trägt die Marke "TESTMODUS – keine echte Freigabe" ganz oben; ohne Flag nicht', async () => {
+  assert.equal(TESTMODUS_MARKE, 'TESTMODUS – keine echte Freigabe');
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const echt = await stampAndFinalize(pdf, sampleStampData());
+  const echtText = extractedText(echt, 1);
+  assert.doesNotMatch(echtText, /TESTMODUS/);
+  const test = await stampAndFinalize(pdf, { ...sampleStampData(), testmodus: true });
+  const text = extractedText(test, 1);
+  assert.ok(text.includes(TESTMODUS_MARKE), text);
+  assert.match(text, /Zeitstempel: im Testmodus übersprungen/);
+  assert.ok(text.indexOf(TESTMODUS_MARKE) < text.indexOf('Job-ID'), 'Marke vor der Job-ID');
+  assert.equal((await PDFDocument.load(test)).getPageCount(), (await PDFDocument.load(echt)).getPageCount());
+});
+
+test('Testmodus: Gruppen-Stempelseite trägt die Marke; ohne Flag nicht', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const daten = { jobId: 7, positionen: [samplePosition()], verlauf: [] };
+  assert.doesNotMatch(extractedText(await stampGruppenDokument(pdf, daten), 1), /TESTMODUS/);
+  const text = extractedText(await stampGruppenDokument(pdf, { ...daten, testmodus: true }), 1);
+  assert.ok(text.includes(TESTMODUS_MARKE), text);
 });

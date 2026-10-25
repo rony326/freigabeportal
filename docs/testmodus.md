@@ -23,11 +23,17 @@ unter Betrieb.
 
 - **Einschalten:** Knopf „Testmodus einschalten“. Beim ersten Mal wird die
   Spielwiese aufgebaut, danach landet man im Pool, als Beispielperson Dora
-  Beispiel (Admin). Gelingt der Aufbau nicht, bleibt der Testmodus aus und die
+  Beispiel (Admin). Auch ein Manager handelt dort als Dora, also als
+  Superadmin der Spielwiese, und sieht damit Kopien von Einstellungen, die
+  im echten Portal nur Superadmins sehen (ohne Geheimnisse, siehe unten). Gelingt der Aufbau nicht, bleibt der Testmodus aus und die
   Seite zeigt eine Fehlermeldung (503). Der echte Betrieb ist nie betroffen.
-- **Im Testmodus:** Ein gelbes Band oben auf jeder Seite zeigt „Testmodus — nichts hier
-  ist echt“. Im Band wählt man die Beispielperson, öffnet das Test-Postfach,
-  löst die Jobs aus oder beendet den Testmodus.
+- **Im Testmodus:** Ein gelbes Band oben auf jeder Seite der Spielwiese zeigt
+  „Testmodus — nichts hier ist echt“. Im Band wählt man die Beispielperson,
+  öffnet das Test-Postfach, löst die Jobs aus oder beendet den Testmodus.
+  Die Seiten, die immer zur echten App gehören (siehe „Was immer in der echten
+  App bleibt“, zum Beispiel `/admin/testmodus` oder `/admin/betrieb/status`),
+  haben kein Band. Sie zeigen stattdessen den Hinweis „Testmodus ist an – diese
+  Seite gehört zum echten Betrieb; Änderungen hier wirken echt.“
 - **Ausschalten:** „Testmodus beenden“ im Band oder auf der Seite
   `/admin/testmodus`. Auch beim Abmelden wird der Testmodus beendet.
 
@@ -71,7 +77,13 @@ Alle Einstellungen der echten App (Eskalationszeiten, Mail-Vorlagen, Module,
 Erscheinungsbild und so weiter) werden beim Aufbau **kopiert**. Nicht kopiert
 werden Geheimnisse (alles mit `secret`, `token`, `pass` oder `key` im Namen),
 die Zeitstempel-Zugangsdaten, der Überwachungsschlüssel und die
-Ersteinrichtungs-Daten.
+Ersteinrichtungs-Daten. Der Hinweis „Ersteinrichtung offen“ auf der
+Admin-Startseite erscheint in der Spielwiese nie, denn deren Pflichtschritte
+(Zeitstempel, Sync, Sicherung) sind dort gesperrt.
+
+Kopiert werden auch Empfänger-Einstellungen wie `sicherheitsalarm_empfaenger`
+oder `audit_revision_empfaenger`. Darum können im Test-Postfach **echte
+Mailadressen** als Empfänger stehen. Versendet wird trotzdem nichts.
 
 ## Test-Postfach und Jobs
 
@@ -84,6 +96,14 @@ Hintergrund-Jobs gegen die Spielwiese aus: Pool-Erinnerungen,
 Freigabe-2-Erinnerungen, Mail-Sammelversand und Mailzustellung. So sieht man,
 wann welche Erinnerung welche Mail erzeugt. Sync, Backup, Zeitstempel und n8n
 gehören nicht dazu.
+
+Links in den Mails des Test-Postfachs (zum Beispiel `/kontierung/<id>`) zeigen
+auf Belege der Spielwiese. Sie ergeben nur Sinn, solange der Testmodus an ist.
+Nach dem Ausschalten öffnet derselbe Link den echten Beleg mit dieser Nummer,
+sofern es ihn gibt (mit den normalen Zugriffsprüfungen der echten App).
+
+Schlägt ein Job fehl, steht die Fehlermeldung im Ergebnis über dem Postfach und
+im Server-Log.
 
 ## Zurücksetzen
 
@@ -104,7 +124,7 @@ enden. Wenn mehrere Personen gleichzeitig testen, vorher kurz absprechen.
 | ChurchTools | Kein Login, kein Sync, kein Verbindungstest (er meldet „Im Testmodus deaktiviert“). Für Spesen-Freigaben liefert die Spielwiese Beispiel-Zahlungsdaten (IBAN `CH9300762011623852957`, Kontoinhaber „Beispielperson“). |
 | n8n, Cron | `/api/n8n/*` und `/internal/*` laufen immer in der echten App (siehe unten). Die Test-Instanz hat dafür keine Schlüssel. |
 | Paperless, Bexio | Es findet keine Übergabe statt. |
-| Zeitstempel (TSA) | Zugangsdaten sind in der Spielwiese immer leer (Datenbank-Trigger). Die Seite `/admin/zeitstempel` ist gesperrt, und es gibt keine Anfragen an eine TSA. |
+| Zeitstempel (TSA) | Zugangsdaten sind in der Spielwiese immer leer (Datenbank-Trigger). Die Seite `/admin/zeitstempel` lässt sich ansehen, aber nicht speichern (Formular gesperrt, `POST /admin/zeitstempel` gibt 403). Es gibt keine Anfragen an eine TSA. Freigegebene Belege bekommen auf der Stempelseite des PDFs die Marke „TESTMODUS – keine echte Freigabe · Zeitstempel: im Testmodus übersprungen“. Dieselbe Marke steht auf der Prüfseite des Belegs (`/zeitstempel-pruefen?jobId=…`) und auf der Prüfbescheinigung. In den Listen steht beim Zeitstempel „im Testmodus übersprungen“. |
 | Backup | Die Seite `/admin/backup` ist gesperrt (403). Der Datenbank-Sicherungsjob wird übersprungen, ohne Schlüsselbund. |
 | Geheimnisse | Die Spielwiese leitet ein eigenes Sitzungs-/CSRF-Geheimnis und ein eigenes Download-Geheimnis ab. CSRF-Tokens und signierte Download-Links der Spielwiese gelten nie in der echten App und umgekehrt. Das CSRF-Cookie heisst `csrf-token-testmodus`. |
 | Nutzung, Audit | Anfragen im Testmodus erscheinen nicht in den Nutzungsdaten oder im Audit-Log der echten App. |
@@ -118,12 +138,19 @@ Auch bei eingeschaltetem Testmodus gehen diese Pfade nie an die Spielwiese
 - `/healthz`
 - `/admin/testmodus` (die Steuerseite selbst)
 - `/admin/betrieb/status` (Statusseite)
+- `/audit-pruefen` (öffentliche Prüfung echter Revisionspakete)
 - `/api/n8n` (Maschinen-Schnittstelle)
 - `/internal` (Cron)
 
 Statische Dateien (`/css`, `/js`, `/vendor`) werden vor der Weiche ausgeliefert.
 `/branding` geht an die Spielwiese: das Logo stammt aus deren Kopie.
 `/api/pool` gehört ebenfalls zur Spielwiese, damit „Beanspruchen“ nur dort wirkt.
+`/zeitstempel-pruefen` gehört bewusst zur Spielwiese (mit Band): die Seite prüft
+Belege per Job-ID, und die Links dorthin kommen von Seiten der Spielwiese.
+
+Fehler, die aus der Test-Instanz entweichen, bleiben dort: die Weiche antwortet
+selbst mit 500 (oder 404), ohne die echten Routen oder den echten Fehler-Handler
+(`betrieb_fehler`) zu erreichen.
 
 ## Wo die Dateien liegen
 
@@ -137,12 +164,25 @@ Alles liegt neben den echten Daten, mit dem Zusatz `testmodus`
 | Kopie der Logos | `<brandingDir>-testmodus` |
 | Backup-Ordner der Spielwiese (bleibt leer) | `<dbPath>.testmodus-backups` |
 
+Die Pfade werden vorher absolut gemacht und ohne Schrägstrich am Ende
+geschrieben: `JOBS_DIR=/data/jobs/` ergibt `/data/jobs-testmodus`, nie ein
+Verzeichnis in den echten Belegen. Läge ein abgeleiteter Pfad trotzdem in einem
+echten Verzeichnis, lässt sich der Testmodus nicht einschalten.
+
 Mit `:memory:` als Datenbank lässt sich der Testmodus nicht einschalten.
+Solange niemand den Testmodus einschaltet, legt die echte App keine dieser
+Dateien an.
 
 **Die Spielwiese ist nicht Teil der Sicherung.** Die Datenbank-Sicherung
 (`/admin/backup`) sichert nur die echte Datenbank. Die Spielwiese darf
 jederzeit gelöscht werden und wird beim nächsten Einschalten oder Zurücksetzen
 neu erzeugt.
+
+**Die Spielwiese überdauert Neustarts und Updates.** Beim nächsten Einschalten
+wird die vorhandene Spielwiese wieder geöffnet, bis jemand sie zurücksetzt.
+Neue Standardwerte aus einem Update werden dabei ergänzt; bestehende Werte der
+Spielwiese bleiben. Wer nach einem Update den frischesten Stand der echten
+Einstellungen will, setzt die Spielwiese zurück.
 
 ## Bewährte Einstellungen übernehmen
 

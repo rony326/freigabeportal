@@ -357,6 +357,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         kommentar: begruendung || null,
       };
       const stampData = {
+        // Test-Instanz: Marke "TESTMODUS – keine echte Freigabe" auf der Stempelseite.
+        ...(config.testmodus ? { testmodus: true } : {}),
         jobId: job.id,
         konto: { nummer: konto.kontonummer, bezeichnung: konto.bezeichnung },
         titel,

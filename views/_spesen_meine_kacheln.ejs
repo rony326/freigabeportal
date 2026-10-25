@@ -18,7 +18,7 @@
           <dt>Zeitstempel</dt>
           <dd>
             <% if (['abgeschlossen', 'abgeholt', 'archiviert'].includes(job.status)) { %>
-              <%= job.zeitstempel_gesetzt_am ? `✓ gesetzt am ${job.zeitstempel_gesetzt_am}` : 'ausstehend' %>
+              <%= job.zeitstempel_gesetzt_am ? `✓ gesetzt am ${job.zeitstempel_gesetzt_am}` : (locals.testmodus ? 'im Testmodus übersprungen' : 'ausstehend') %>
             <% } else { %>—<% } %>
           </dd>
         </dl>

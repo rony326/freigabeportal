@@ -102,8 +102,11 @@ Bedarf und beim Zurücksetzen neu (`src/services/testmodus/steuerung.js`).
 Die Test-Instanz hat keine Sitzung, kein `/auth`, kein `/healthz`, einen
 Test-Mailer, eine Beispielperson statt `loadCurrentPerson` und eigene
 Geheimnisse. Die Pfade `/auth`, `/healthz`, `/admin/testmodus`,
-`/admin/betrieb/status`, `/api/n8n` und `/internal` bleiben immer in der echten
-App. Siehe [testmodus.md](testmodus.md).
+`/admin/betrieb/status`, `/audit-pruefen`, `/api/n8n` und `/internal` bleiben
+immer in der echten App; deren Seiten zeigen bei eingeschaltetem Testmodus einen
+Hinweis statt des Bands. Die Test-Instanz wird mit einem eigenen Abschluss statt
+des `next` der echten App aufgerufen: was aus ihr entweicht, beantwortet die
+Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
 
 ## Router-Übersicht
 

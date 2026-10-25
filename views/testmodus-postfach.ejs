@@ -26,7 +26,7 @@
               <small class="text-muted"><%= m.versucht_am %></small>
             </div>
             <div class="small text-muted text-break">An: <%= m.empfaenger %> · <%= m.typ %> · <%= m.status %></div>
-            <pre class="mb-0 mt-2" style="white-space: pre-wrap; overflow-wrap: anywhere;"><%= m.text %></pre>
+            <pre class="mb-0 mt-2 testmodus-mailtext"><%= m.text %></pre>
           </article>
         <% }) %>
       </div>

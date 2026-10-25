@@ -90,6 +90,17 @@ function drawVerlauf(doc, font, verlauf, page, startY, pageWidth, pageHeight) {
   }
 }
 
+// Nur in der Test-Instanz (config.testmodus): Stempelseiten der Spielwiese sehen sonst aus wie eine
+// echte Freigabe. Die echte App setzt das Flag nie, ihre Stempelseite bleibt unverändert.
+export const TESTMODUS_MARKE = 'TESTMODUS – keine echte Freigabe';
+
+function zeichneTestmodusMarke(page, boldFont, font, y) {
+  const rot = rgb(0.75, 0, 0);
+  page.drawText(TESTMODUS_MARKE, { x: 60, y, size: 18, font: boldFont, color: rot });
+  page.drawText('Zeitstempel: im Testmodus übersprungen', { x: 60, y: y - 18, size: 11, font, color: rot });
+  return y - 44;
+}
+
 // Appends one new page to the PDF itself — carrying both Freigaben (top) and the full audit-log
 // Verlauf (below, continuing onto further appended pages if it doesn't fit) — instead of relying
 // on a blank "Visum" page n8n pre-merged into the document before upload. The stamped page is
@@ -126,6 +137,7 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
 
     const stampPage = doc.addPage([width, height]);
     let y = height - 50;
+    if (stampData.testmodus === true) y = zeichneTestmodusMarke(stampPage, boldFont, font, y);
     if (stampData.jobId != null) {
       stampPage.drawText(`Job-ID: ${stampData.jobId}`, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });
       y -= 30;
@@ -223,6 +235,7 @@ export async function stampGruppenDokument(pdfBuffer, gruppenData) {
 
     let stampPage = doc.addPage([width, height]);
     let y = height - 50;
+    if (gruppenData.testmodus === true) y = zeichneTestmodusMarke(stampPage, boldFont, font, y);
     if (gruppenData.jobId != null) {
       stampPage.drawText(`Splitgruppe — Job-ID: ${gruppenData.jobId}`, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });
       y -= 30;

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, existsSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults, setConfigValue, getConfigValue } from '../../src/db/adminConfigRepo.js';
 import { erstelleSpielwiese, entferneSpielwiese, testmodusPfade } from '../../src/services/testmodus/spielwiese.js';
@@ -146,4 +146,42 @@ test('unvollständige Spielwiese (ohne Bereit-Marker) wird neu erstellt', async 
   assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 2);
   assert.equal(getConfigValue(sp.db, 'testmodus_bereit'), '1');
   sp.db.close(); db.close();
+});
+
+test('vorhandene Spielwiese erhält beim Wiederöffnen fehlende Standardwerte (App-Update), eigene Werte bleiben', async () => {
+  const { config, db } = umgebung();
+  let sp = await erstelleSpielwiese(db, config);
+  sp.db.prepare("DELETE FROM admin_config WHERE key IN ('kk_beleg_erinnerung_tage', 'mail_vorlage_kk_abrechnung_zugewiesen_betreff')").run();
+  setConfigValue(sp.db, 'footer_text', 'In der Spielwiese geändert');
+  sp.db.prepare("INSERT INTO kreditoren (name, aktiv) VALUES ('Eigener', 1)").run();
+  sp.db.close();
+  sp = await erstelleSpielwiese(db, config);
+  assert.equal(getConfigValue(sp.db, 'kk_beleg_erinnerung_tage'), '45');
+  assert.equal(getConfigValue(sp.db, 'mail_vorlage_kk_abrechnung_zugewiesen_betreff'), 'Freigabeportal: Kreditkartenabrechnung zum Abgleich');
+  assert.equal(getConfigValue(sp.db, 'footer_text'), 'In der Spielwiese geändert');
+  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 3, 'wiedergeöffnet, nicht neu erstellt');
+  sp.db.close(); db.close();
+});
+
+test('Pfade mit Schrägstrich am Ende: Spielwiese liegt neben, nie in den echten Verzeichnissen', async () => {
+  const { dir, config, db } = umgebung();
+  const mitSlash = { ...config, jobsDir: `${config.jobsDir}/`, brandingDir: `${config.brandingDir}//`, dbPath: config.dbPath };
+  const p = testmodusPfade(mitSlash);
+  assert.equal(p.jobsDir, join(dir, 'jobs-testmodus'));
+  assert.equal(p.brandingDir, join(dir, 'branding-testmodus'));
+  assert.equal(p.dbPath, `${config.dbPath}.testmodus.db`);
+  const sp = await erstelleSpielwiese(db, mitSlash);
+  assert.ok(existsSync(join(dir, 'jobs-testmodus')));
+  assert.ok(existsSync(join(dir, 'branding-testmodus', 'logo.png')));
+  assert.deepEqual(readdirSync(config.brandingDir), ['logo.png'], 'nichts im echten Branding-Verzeichnis');
+  assert.equal(existsSync(config.jobsDir) && readdirSync(config.jobsDir).length > 0, false, 'nichts im echten Belegverzeichnis');
+  sp.db.close(); db.close();
+});
+
+test('relative Pfade werden absolut aufgelöst', () => {
+  const p = testmodusPfade({ dbPath: 'data/portal.sqlite', jobsDir: './data/jobs/', brandingDir: 'data/branding' });
+  assert.equal(p.jobsDir, resolve('data/jobs-testmodus'));
+  assert.equal(p.brandingDir, resolve('data/branding-testmodus'));
+  assert.equal(p.dbPath, resolve('data/portal.sqlite.testmodus.db'));
+  assert.equal(p.backupDir, resolve('data/portal.sqlite.testmodus-backups'));
 });

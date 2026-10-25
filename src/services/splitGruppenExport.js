@@ -123,7 +123,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
     verlauf.sort((a, b) => (a.zeitpunkt < b.zeitpunkt ? -1 : a.zeitpunkt > b.zeitpunkt ? 1 : 0));
 
     const gruppenPdfMitBelegen = Buffer.from(await gruppenDoc.save());
-    let gestempelt = await stampGruppenDokument(gruppenPdfMitBelegen, { jobId: parent.id, positionen, verlauf });
+    let gestempelt = await stampGruppenDokument(gruppenPdfMitBelegen, { jobId: parent.id, positionen, verlauf, ...(config.testmodus ? { testmodus: true } : {}) });
 
     let zeitstempelGesetztAm = null;
     let zeitstempelDateiHash = null;

@@ -38,6 +38,9 @@
 </head>
 <body>
 <% if (sRahmen === 'ohne') { %>
+<% if (locals.testmodusEchteSeite) { %>
+<div class="container-xxl"><div class="alert alert-warning testmodus-echt-hinweis" role="status">Testmodus ist an – diese Seite gehört zum echten Betrieb; Änderungen hier wirken echt. <a href="/pool">Zurück in den Testmodus</a></div></div>
+<% } %>
 <main class="container-xxl py-3">
 <% } else { %>
 <% if (locals.testmodus) { %>
@@ -112,6 +115,9 @@
   </div>
 </header>
 <% if (sEingeloggt) { %><%- include('_banner') %><% } %>
+<% if (locals.testmodusEchteSeite) { %>
+<div class="container-xxl"><div class="alert alert-warning testmodus-echt-hinweis" role="status">Testmodus ist an – diese Seite gehört zum echten Betrieb; Änderungen hier wirken echt. <a href="/pool">Zurück in den Testmodus</a></div></div>
+<% } %>
 <% if (locals.testmodusHinweis) { %>
 <div class="container-xxl"><div class="alert alert-warning" role="alert"><%= testmodusHinweis %></div></div>
 <% } %>

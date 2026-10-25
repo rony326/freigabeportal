@@ -6,7 +6,7 @@
         <div class="fw-semibold text-break"><%= job.dateiname %></div>
         <dl class="kachel-angaben small mb-0">
           <dt>Status</dt><dd><span class="badge text-bg-secondary"><%= job.status %></span></dd>
-          <dt>Zeitstempel</dt><dd><%= job.zeitstempel_gesetzt_am ? `✓ gesetzt am ${job.zeitstempel_gesetzt_am}` : 'ausstehend' %></dd>
+          <dt>Zeitstempel</dt><dd><%= job.zeitstempel_gesetzt_am ? `✓ gesetzt am ${job.zeitstempel_gesetzt_am}` : (locals.testmodus ? 'im Testmodus übersprungen' : 'ausstehend') %></dd>
         </dl>
         <div class="mt-auto d-flex flex-wrap gap-1"><%- include('_zeitstempel_aktion', { job }) %></div>
       </div>

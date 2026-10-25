@@ -15,6 +15,8 @@ import { createApp } from '../../src/app.js';
 import { buildSignedDownloadUrl } from '../../src/services/downloadUrl.js';
 import { erstelleSpielwiese } from '../../src/services/testmodus/spielwiese.js';
 import { createTestMailer } from '../../src/services/testmodus/testMailer.js';
+import { extrahierePdfText } from '../../src/services/pdfText.js';
+import { readFileSync } from 'node:fs';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 
 // Jeder ausgehende fetch/undici-Aufruf wird festgehalten und scheitert (kein Netz).
@@ -166,6 +168,10 @@ test('Band-Formulare tragen das Token der echten App, nie das der Test-Instanz',
   u.weiche.echterToken = 'echtes-token-123';
   res = await u.agent.get('/pool');
   assert.deepEqual(band(res.text).match(/name="_csrf" value="[^"]*"/g), ['name="_csrf" value="echtes-token-123"', 'name="_csrf" value="echtes-token-123"']);
+  // Das Jobs-Formular im Band trägt das Token der Test-Instanz, nie das echte.
+  const jobsForm = res.text.match(/<form[^>]*action="\/testmodus\/jobs"[\s\S]*?<\/form>/)[0];
+  assert.match(jobsForm, /name="_csrf" value="[^"]+"/);
+  assert.ok(!jobsForm.includes('echtes-token-123'), 'Jobs-Formular ohne echtes Token');
   // Die Seitenformulare behalten das Token der Test-Instanz.
   assert.ok(res.text.slice(res.text.indexOf('<header')).match(/name="_csrf" value="(?!echtes-token-123)[^"]+"/));
   u.aufraeumen();
@@ -350,4 +356,27 @@ test('ChurchTools-Personenabruf liefert im Testmodus Beispiel-Zahlungsdaten ohne
   assert.equal(person.kontoinhaber, 'Beispielperson');
   await assert.rejects(fetchGroup(ct, null, 'test-admin'), /Testmodus/);
   assert.deepEqual(netzVersuche, []);
+});
+
+test('Freigabe in der Spielwiese: Stempelseite und Belegdetail tragen "TESTMODUS – keine echte Freigabe"', async () => {
+  const u = await umgebung();
+  const jobId = await rundreise(u);
+  const job = u.db.prepare('SELECT pdf_pfad, zeitstempel_gesetzt_am FROM jobs WHERE id = ?').get(jobId);
+  assert.equal(job.zeitstempel_gesetzt_am, null);
+  const text = extrahierePdfText(readFileSync(job.pdf_pfad));
+  assert.ok(text.includes('TESTMODUS – keine echte Freigabe'), 'Marke im finalen PDF');
+  assert.match(text, /Zeitstempel: im Testmodus übersprungen/);
+  u.sitzung.testmodus = { personId: 'test-4' };
+  const detail = await u.agent.get(`/zeitstempel-pruefen?jobId=${jobId}`);
+  assert.equal(detail.status, 200);
+  assert.match(detail.text, /TESTMODUS – keine echte Freigabe/);
+  assert.match(detail.text, /im Testmodus übersprungen/);
+  const zertifikat = await u.agent.get(`/zeitstempel-pruefen/zertifikat?jobId=${jobId}`);
+  assert.equal(zertifikat.status, 200);
+  assert.match(zertifikat.text, /class="bescheinigung[\s\S]*TESTMODUS – keine echte Freigabe/);
+  // Gegenprobe echte App: keine Marke auf denselben Seiten.
+  u.sitzung.testmodus = null;
+  const echt = await u.agent.get(`/zeitstempel-pruefen?jobId=${u.echterJob}`);
+  assert.doesNotMatch(echt.text, /TESTMODUS/);
+  u.aufraeumen();
 });

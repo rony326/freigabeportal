@@ -54,6 +54,11 @@
       </select>
       <button type="submit" class="btn btn-sm btn-dark">Wechseln</button>
     </form>
+    <a href="/testmodus/postfach" class="btn btn-sm btn-dark">Test-Postfach</a>
+    <form method="post" action="/testmodus/jobs">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <button type="submit" class="btn btn-sm btn-dark">Jobs auslösen</button>
+    </form>
     <form method="post" action="/admin/testmodus/aus">
       <input type="hidden" name="_csrf" value="<%= locals.testmodusEchterCsrfToken || '' %>">
       <button type="submit" class="btn btn-sm btn-dark">Testmodus beenden</button>

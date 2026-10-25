@@ -1,0 +1,34 @@
+<%- include('_seite_anfang', { titel: 'Test-Postfach' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Test-Postfach</h1>
+    </div>
+    <p class="text-muted">Hier landen alle Mails der Spielwiese. Es wird nichts wirklich versendet.</p>
+    <% if (ergebnis) { %>
+      <div class="alert alert-success" role="status">
+        Jobs ausgeführt:
+        <ul class="mb-0">
+          <% ergebnis.forEach((z) => { %><li><%= z %></li><% }) %>
+        </ul>
+      </div>
+    <% } %>
+    <form method="post" action="/testmodus/jobs" class="mb-3">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <button type="submit" class="btn btn-primary">Jobs auslösen</button>
+    </form>
+    <% if (mails.length === 0) { %>
+      <p>Noch keine Mails in der Spielwiese.</p>
+    <% } else { %>
+      <div class="list-group">
+        <% mails.forEach((m) => { %>
+          <article class="list-group-item" id="mail-<%= m.id %>">
+            <div class="d-flex flex-wrap gap-2 justify-content-between">
+              <strong class="text-break"><%= m.betreff %></strong>
+              <small class="text-muted"><%= m.versucht_am %></small>
+            </div>
+            <div class="small text-muted text-break">An: <%= m.empfaenger %> · <%= m.typ %> · <%= m.status %></div>
+            <pre class="mb-0 mt-2" style="white-space: pre-wrap; overflow-wrap: anywhere;"><%= m.text %></pre>
+          </article>
+        <% }) %>
+      </div>
+    <% } %>
+<%- include('_seite_ende') %>

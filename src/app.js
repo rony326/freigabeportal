@@ -69,6 +69,7 @@ import { createTestMailer } from './services/testmodus/testMailer.js';
 import { createTestmodusSteuerung } from './services/testmodus/steuerung.js';
 import { testmodusWeiche } from './middleware/testmodusWeiche.js';
 import { createTestmodusRouter } from './routes/admin/testmodus.js';
+import { createTestmodusInstanzRouter } from './routes/testmodusInstanz.js';
 import { zeitpunktAnzeige } from './services/auditLog.js';
 import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
 import { getVersionInfo } from './utils/version.js';
@@ -260,6 +261,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/admin/mail-einstellungen', requireRole(config, 'superadmin'), createMailEinstellungenRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/altfaelle', requirePermission(db, config, 'workflow_eingreifen'), createAltfaelleRouter({ db, config, csrfProtection }));
   app.use('/admin/dateiquarantaene', requireRole(config, 'superadmin'), createDateiQuarantaeneRouter({ db, config, csrfProtection }));
+  if (testmodus) app.use('/testmodus', sessionLimiter, requireLogin(), createTestmodusInstanzRouter({ db, config, mailer, csrfProtection }));
   if (testmodusSteuerung) app.use('/admin/testmodus', requireAnyRole(config, ['superadmin', 'manager']), createTestmodusRouter({ db, steuerung: testmodusSteuerung, csrfProtection }));
   app.use('/admin/betrieb', requirePermission(db, config, 'betrieb_einsehen'), createBetriebRouter({ db, config, statusCache, csrfProtection }));
 

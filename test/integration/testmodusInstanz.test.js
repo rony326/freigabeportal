@@ -158,7 +158,8 @@ test('/pool zeigt Beispielrechnungen und das Band als Anna', async () => {
 
 test('Band-Formulare tragen das Token der echten App, nie das der Test-Instanz', async () => {
   const u = await umgebung();
-  const band = (text) => text.slice(text.indexOf('class="testmodus-band"'), text.indexOf('<header'));
+  // Das Jobs-Formular im Band gehört zur Test-Instanz (eigenes Token) und wird hier ausgeklammert.
+  const band = (text) => text.slice(text.indexOf('class="testmodus-band"'), text.indexOf('<header')).replace(/<form[^>]*action="\/testmodus\/jobs"[\s\S]*?<\/form>/, '');
   // Ohne Token von der Weiche: leer (Task 3 setzt req.testmodusEchterCsrfToken).
   let res = await u.agent.get('/pool');
   assert.deepEqual(band(res.text).match(/name="_csrf" value="[^"]*"/g), ['name="_csrf" value=""', 'name="_csrf" value=""']);

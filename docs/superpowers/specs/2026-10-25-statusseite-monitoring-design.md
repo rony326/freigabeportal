@@ -16,9 +16,9 @@ Im Portal selbst soll eine Statusseite dieselben Ampeln zeigen.
 1. **Statusseite** `Admin → Betrieb & Nutzung → Status` mit einer Ampel pro Dienst (ok / Warnung
    / Fehler), Grund, Zeitpunkt der letzten Prüfung und Link zur passenden Admin-Seite.
 2. **Monitoring-Endpunkt** für Uptime Kuma:
-   - `GET /health` ohne Schlüssel: nur `{"status":"ok"}` (200) bzw. 503, wenn die Datenbank nicht
-     antwortet. Keine Details.
-   - `GET /health` mit gültigem Schlüssel im Header `X-Monitoring-Key`: zusätzlich Gesamtstatus
+   - Der **bestehende** Endpunkt `GET /healthz` bleibt ohne Schlüssel unverändert (`{"status":"ok"}`),
+     liefert aber 503, wenn die Datenbank nicht antwortet. Keine Details.
+   - `GET /healthz` mit gültigem Schlüssel im Header `X-Monitoring-Key`: zusätzlich Gesamtstatus
      und ein Feld pro Dienst (Format unten).
 3. **Grenzwerte** pro Dienst mit Standardwerten, auf der Statusseite einstellbar.
 
@@ -92,7 +92,7 @@ Im Portal selbst soll eine Statusseite dieselben Ampeln zeigen.
    `mail_log` (Warteschlange, Fehlversuche), TSA-Sperrlistendatei und `audit_export_zeitstempel`,
    `jobs` mit Status `abgeschlossen` ohne Abholung (Archivübergabe), `sicherheitsalarme`,
    `fs.statfs` auf dem Datenverzeichnis (Speicher).
-6. **Rate-Limit**: `/health` mit dem bestehenden `publicLimiter`, aber so konfiguriert, dass ein
+6. **Rate-Limit**: `/healthz` mit dem bestehenden `publicLimiter`, aber so konfiguriert, dass ein
    Abfrageintervall von 20 s pro Dienst-Monitor (10 Monitore) nicht blockiert wird — eigener
    Limiter z. B. 120 Anfragen pro Minute pro IP.
 7. **Grenzwerte** als `admin_config`-Schlüssel `status_<dienst>_<warnung|fehler>_…` mit den

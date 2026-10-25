@@ -56,6 +56,7 @@ test('Archivuebergabe: wartende Splitgruppen zaehlen', (t) => {
     .run(vor(10 * 24 * H), vor(3 * 24 * H));
   const r = pruefeArchivuebergabe(db, config, ctx());
   assert.equal(r.status, 'warnung');
+  assert.equal(r.grund, '1 Beleg(e) zu lange nicht abgeholt (inkl. gesperrter Belege)');
   db.prepare("UPDATE jobs SET gruppe_abgeholt_am = ?").run(vor(H));
   assert.equal(pruefeArchivuebergabe(db, config, ctx()).status, 'ok');
 });
@@ -85,6 +86,28 @@ test('Mailversand: Fehlversuche 24 h warnen, wartende Mails ueber Grenze fehlerh
   assert.equal(pruefeMailversand(db, config, ctx()).status, 'warnung');
   ins('eingereiht', vor(61 * 60000), vor(61 * 60000));
   assert.equal(pruefeMailversand(db, config, ctx()).status, 'fehler');
+});
+
+test('Mailversand: Wiederholungen in 24 h warnen (eingereiht, versendet, Sammelmail)', (t) => {
+  const ins = (db, status, versuche, fehler, versucht = vor(H)) => db.prepare(
+    "INSERT INTO mail_log (typ, empfaenger, betreff, text, status, versucht_am, eingereiht_am, versuche, fehler_details) VALUES ('zuweisung', 'a@b.ch', 's', 't', ?, ?, ?, ?, ?)"
+  ).run(status, versucht, versucht, versuche, fehler);
+  const a = setup(t);
+  ins(a, 'versendet', 1, null);
+  ins(a, 'geplant', 0, null);
+  assert.equal(pruefeMailversand(a, config, ctx()).status, 'ok');
+  ins(a, 'eingereiht', 2, 'SMTP weg (Versuch 2 von 5)');
+  const r = pruefeMailversand(a, config, ctx());
+  assert.equal(r.status, 'warnung');
+  assert.match(r.grund, /Fehlversuch/);
+  const b = setup(t);
+  ins(b, 'versendet', 2, null);
+  assert.equal(pruefeMailversand(b, config, ctx()).status, 'warnung');
+  const c = setup(t);
+  ins(c, 'versendet', 3, null, vor(25 * H));
+  assert.equal(pruefeMailversand(c, config, ctx()).status, 'ok');
+  ins(c, 'geplant', 1, 'SMTP weg (Versuch 1 von 5)');
+  assert.equal(pruefeMailversand(c, config, ctx()).status, 'warnung');
 });
 
 test('ChurchTools: Grenzwerte 26 h / 50 h, Fehlschlag nach Erfolg warnt', (t) => {
@@ -177,6 +200,17 @@ test('Jobs: letzter Lauf je Job, Fehler warnt mit Jobname', (t) => {
   assert.doesNotMatch(r.grund, /pdf-bereinigung/);
 });
 
+test('Jobs: Einträge älter als 7 Tage zählen nicht mehr', (t) => {
+  const db = setup(t);
+  cron(db, 'pool-erinnerungen', 'fehler', vor(7 * 24 * H + 1000));
+  assert.equal(pruefeJobs(db, config, ctx()).status, 'ok');
+  cron(db, 'pdf-bereinigung', 'fehler', vor(7 * 24 * H - 1000));
+  const r = pruefeJobs(db, config, ctx());
+  assert.equal(r.status, 'warnung');
+  assert.match(r.grund, /pdf-bereinigung/);
+  assert.doesNotMatch(r.grund, /pool-erinnerungen/);
+});
+
 test('Sicherheitsalarme: offen ist Fehler, erledigt nicht', (t) => {
   const db = setup(t);
   const al = (status) => db.prepare("INSERT INTO sicherheitsalarme (alarm_typ, schluessel, erkannt_am, status, naechster_versuch_am) VALUES ('backup_loeschung_offen', ?, ?, ?, ?)").run(String(Math.random()), vor(H), status, vor(H));
@@ -228,6 +262,16 @@ test('Gesamtstatus ist der schlechteste Dienst, alle Schluessel vorhanden', (t) 
   db.prepare("INSERT INTO sicherheitsalarme (alarm_typ, schluessel, erkannt_am, naechster_versuch_am) VALUES ('backup_loeschung_offen', 'k', ?, ?)").run(vor(H), vor(H));
   r = pruefeAlleDienste(db, config, ctx());
   assert.equal(r.status, 'fehler');
+});
+
+test('Prüfung wirft: Dienst "Prüfung fehlgeschlagen" als Fehler, übrige laufen weiter', (t) => {
+  const db = setup(t);
+  db.exec('DROP TABLE sicherheitsalarme');
+  const r = pruefeAlleDienste(db, config, ctx());
+  assert.deepEqual(r.dienste.sicherheitsalarme, { status: 'fehler', grund: 'Prüfung fehlgeschlagen' });
+  assert.equal(r.status, 'fehler');
+  assert.equal(r.dienste.datenbank.status, 'ok');
+  assert.equal(r.dienste.speicher.status, 'ok');
 });
 
 test('grund enthaelt keine Pfade oder URLs', (t) => {

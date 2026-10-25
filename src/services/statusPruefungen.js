@@ -88,8 +88,11 @@ export function pruefeMailversand(db, config, ctx = {}) {
   // 'geplant' (Sammelmail) zaehlt nie als wartend.
   const wartend = db.prepare("SELECT COUNT(*) AS n FROM mail_log WHERE status = 'eingereiht' AND eingereiht_am < ?").get(wartegrenze).n;
   if (wartend > 0) return { status: 'fehler', grund: `${wartend} Mail(s) warten zu lange auf den Versand` };
-  const fehl = db.prepare("SELECT COUNT(*) AS n FROM mail_log WHERE status = 'fehlgeschlagen' AND versucht_am >= ?").get(fensterStart).n;
-  if (fehl > 0) return { status: 'warnung', grund: `${fehl} Mail(s) in den letzten 24 Stunden fehlgeschlagen` };
+  // Fehlversuch: endgueltig fehlgeschlagen, wiederholt (auch spaeter versendet) oder mit Fehlerdetails,
+  // einschliesslich Sammelmail-Wiederholungen ('geplant' mit versuche > 0).
+  const fehl = db.prepare(`SELECT COUNT(*) AS n FROM mail_log WHERE versucht_am >= ?
+    AND (status = 'fehlgeschlagen' OR versuche > 1 OR fehler_details IS NOT NULL OR (status = 'geplant' AND versuche > 0))`).get(fensterStart).n;
+  if (fehl > 0) return { status: 'warnung', grund: `${fehl} Mail(s) mit Fehlversuch in den letzten 24 Stunden` };
   const letzte = db.prepare("SELECT versendet_am FROM mail_log WHERE status = 'versendet' AND versendet_am IS NOT NULL ORDER BY id DESC LIMIT 1").get();
   return { status: 'ok', grund: 'keine Störungen', ...(letzte ? { seit: letzte.versendet_am } : {}) };
 }
@@ -144,6 +147,7 @@ export function pruefeAuditNachweis(db, config, ctx = {}) {
 
 export function pruefeArchivuebergabe(db, config, ctx = {}) {
   const jetzt = jetztMs(ctx);
+  // Gesperrte (nicht abholbare) Belege zaehlen mit, daher der Hinweis im Grund.
   // Einzelbelege (abgeschlossen) und fertige Splitgruppen (Elternjob 'aufgesplittet', noch nicht abgeholt).
   // Bereit-Zeitpunkt der Gruppe: Gruppen-Zeitstempel, sonst letzter Abschluss eines Kindes.
   const row = db.prepare(`SELECT COUNT(*) AS n, MIN(bereit) AS aelteste FROM (
@@ -156,7 +160,7 @@ export function pruefeArchivuebergabe(db, config, ctx = {}) {
   let status = 'ok';
   if (alter > grenze(db, 'status_archiv_fehler_tage') * TAG) status = 'fehler';
   else if (alter > grenze(db, 'status_archiv_warnung_stunden') * H) status = 'warnung';
-  return { status, grund: status === 'ok' ? `${row.n} Beleg(e) zur Übergabe bereit` : `${row.n} Beleg(e) zu lange nicht übergeben`, seit: row.aelteste };
+  return { status, grund: status === 'ok' ? `${row.n} Beleg(e) noch nicht abgeholt (inkl. gesperrter Belege)` : `${row.n} Beleg(e) zu lange nicht abgeholt (inkl. gesperrter Belege)`, seit: row.aelteste };
 }
 
 export function pruefeSpeicher(db, config, ctx = {}) {
@@ -174,9 +178,14 @@ export function pruefeSpeicher(db, config, ctx = {}) {
   return { status: 'ok', grund: `${gerundet} % Speicher frei` };
 }
 
-export function pruefeJobs(db) {
+const JOBS_FENSTER_MS = 7 * TAG;
+
+// Letzter abgeschlossener Lauf je Job; wer seit 7 Tagen nichts protokolliert hat, zaehlt nicht mehr.
+export function pruefeJobs(db, config, ctx = {}) {
+  const ab = new Date(jetztMs(ctx) - JOBS_FENSTER_MS).toISOString();
   const rows = db.prepare(`SELECT c.job, c.status FROM cron_log c
-    WHERE c.id = (SELECT MAX(id) FROM cron_log WHERE job = c.job AND status != 'laufend') ORDER BY c.job`).all();
+    WHERE c.id = (SELECT MAX(id) FROM cron_log WHERE job = c.job AND status != 'laufend')
+      AND COALESCE(c.beendet_am, c.gestartet_am) >= ? ORDER BY c.job`).all(ab);
   const kaputt = rows.filter((r) => r.status === 'fehler').map((r) => r.job);
   if (kaputt.length) return { status: 'warnung', grund: `Letzter Lauf fehlgeschlagen: ${kaputt.join(', ')}` };
   return { status: 'ok', grund: 'alle Läufe erfolgreich' };

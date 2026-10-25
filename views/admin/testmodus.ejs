@@ -1,0 +1,59 @@
+<%- include('../_seite_anfang', { titel: 'Testmodus' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Testmodus</h1>
+    </div>
+    <% if (fehler) { %>
+      <div class="alert alert-danger" role="alert"><%= fehler %></div>
+    <% } %>
+    <% if (zurueckgesetzt) { %>
+      <div class="alert alert-success" role="status">Die Spielwiese wurde zurückgesetzt.</div>
+    <% } %>
+    <p class="text-muted">Im Testmodus arbeitest du in einer getrennten Spielwiese mit Beispieldaten und einer Kopie der aktuellen Einstellungen (ohne Geheimnisse). Nichts wirkt nach aussen: keine echten Mails, kein ChurchTools, kein n8n, keine Zeitstempel, keine Backups. Der Testmodus gilt nur für deine Sitzung und endet beim Abmelden. Bewährte Einstellungen überträgst du von Hand in den echten Betrieb.</p>
+
+    <h2 class="h5 mt-3">Status</h2>
+    <% if (an) { %>
+      <div class="alert alert-warning" role="status">
+        Testmodus ist eingeschaltet<% if (person) { %> — du handelst als <strong><%= person.name %></strong> (<%= person.rolle %>)<% } %>.
+      </div>
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <a href="/pool" class="btn btn-outline-secondary">Zur Spielwiese</a>
+        <form method="post" action="/admin/testmodus/aus" class="d-inline">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <button type="submit" class="btn btn-primary">Testmodus beenden</button>
+        </form>
+      </div>
+      <form method="post" action="/admin/testmodus/person" class="row g-2 align-items-end col-12 col-md-8 col-lg-6 mb-3">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <div class="col">
+          <label class="form-label" for="personId">Als Beispielperson handeln</label>
+          <select id="personId" name="personId" class="form-select">
+            <% personen.forEach((p) => { %>
+              <option value="<%= p.id %>"<%= person && person.id === p.id ? ' selected' : '' %>><%= p.name %> (<%= p.rolle %>)</option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-outline-secondary">Wechseln</button>
+        </div>
+      </form>
+    <% } else { %>
+      <p>Der Testmodus ist ausgeschaltet. Beim Einschalten handelst du zuerst als Dora Beispiel (Admin) und kannst oben im Band die Beispielperson wechseln.</p>
+      <form method="post" action="/admin/testmodus/ein" class="mb-3">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <button type="submit" class="btn btn-primary">Testmodus einschalten</button>
+      </form>
+    <% } %>
+
+    <h2 class="h5 mt-4">Spielwiese zurücksetzen</h2>
+    <p class="text-muted">Stellt Beispieldaten und die Kopie der Einstellungen neu her. Alle Änderungen und Uploads im Testmodus gehen verloren — für alle Admins, die gerade im Testmodus sind.</p>
+    <form method="post" action="/admin/testmodus/zuruecksetzen" class="col-12 col-md-8 col-lg-6">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <% if (an) { %>
+        <div class="form-check mb-2">
+          <input type="checkbox" class="form-check-input" id="bestaetigt" name="bestaetigt" value="1">
+          <label class="form-check-label" for="bestaetigt">Ja, die Spielwiese jetzt zurücksetzen</label>
+        </div>
+      <% } %>
+      <button type="submit" class="btn btn-outline-danger">Spielwiese zurücksetzen</button>
+    </form>
+<%- include('../_seite_ende') %>

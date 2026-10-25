@@ -34,7 +34,7 @@ const ZWEITE_SEGMENTE = {
   admin: new Set([
     'konten', 'kreditoren', 'debitoren', 'kreditkarten', 'eskalation', 'erscheinungsbild', 'zeitstempel',
     'personen', 'mails', 'sync', 'abgelehnt', 'audit-log', 'geplante-jobs', 'backup', 'module',
-    'mail-einstellungen', 'altfaelle', 'dateiquarantaene',
+    'mail-einstellungen', 'altfaelle', 'dateiquarantaene', 'testmodus',
   ]),
   api: new Set(['n8n', 'pool']),
   internal: new Set(['cron']),

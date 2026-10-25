@@ -33,6 +33,7 @@ export function loadNavFlags(db, config) {
       kreditkarten: hasPermission('kreditkarten_verwalten'),
       altfaelle: hasPermission('workflow_eingreifen'),
       betrieb: hasPermission('betrieb_einsehen'),
+      testmodus: res.locals.isSuperadmin || res.locals.isManager,
     };
     // Strip a trailing slash (e.g. "/pool/") so nav highlighting/buttons keyed on an exact
     // path like "/pool" still match — Express routes both with and without it identically.

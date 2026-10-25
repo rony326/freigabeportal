@@ -4,6 +4,7 @@ import { buildAuthorizeUrl, exchangeCodeForToken, fetchPerson, resolveMemberGrou
 import { upsertPerson, getPersonById } from '../db/personenRepo.js';
 import { erfasseAnmeldung, sendeNeuesGeraetMail } from '../services/nutzung.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
+import { schreibeTestmodusAudit } from './admin/testmodus.js';
 
 export function createAuthRouter({ db, config, mailer = null, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -90,6 +91,11 @@ export function createAuthRouter({ db, config, mailer = null, csrfProtection = (
   });
 
   router.post('/logout', csrfProtection, (req, res, next) => {
+    // Abmelden beendet den Testmodus (im echten Audit-Log vermerkt).
+    if (req.session.testmodus) {
+      delete req.session.testmodus;
+      if (req.currentPerson) schreibeTestmodusAudit(db, req.currentPerson, 'ausgeschaltet', { anlass: 'abmelden' });
+    }
     req.session.destroy((err) => {
       if (err) return next(err);
       // Redirecting straight to '/' used to immediately bounce an anonymous visitor to

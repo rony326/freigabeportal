@@ -57,6 +57,7 @@ const ADMIN = [
     { label: 'Geplante Jobs', href: '/admin/geplante-jobs', symbol: '⚙', flag: 'geplanteJobs' },
     { label: 'Audit-Log', href: '/admin/audit-log', symbol: '☷', flag: 'auditLog' },
     { label: 'Betrieb & Nutzung', href: '/admin/betrieb', symbol: '◔', flag: 'betrieb' },
+    { label: 'Testmodus', href: '/admin/testmodus', symbol: '⚗', flag: 'testmodus' },
   ] },
 ];
 

@@ -32,5 +32,5 @@ export function createCsrfProtection(config) {
     next();
   }
 
-  return { attachCsrfToken, csrfProtection: doubleCsrfProtection };
+  return { attachCsrfToken, csrfProtection: doubleCsrfProtection, generateCsrfToken };
 }

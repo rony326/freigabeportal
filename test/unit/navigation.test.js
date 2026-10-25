@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { bereichFuerPfad, istAktiv, bauePortalGruppen, baueAdminGruppen } from '../../src/services/navigation.js';
 
-const ADMIN_KEYS = ['vorgaenge', 'konten', 'kreditoren', 'eskalation', 'mailEinstellungen', 'erscheinungsbild', 'zeitstempel', 'personen', 'mails', 'sync', 'geplanteJobs', 'abgelehnt', 'auditLog', 'backup', 'module', 'ersteinrichtung', 'kreditkarten', 'altfaelle', 'betrieb'];
+const ADMIN_KEYS = ['vorgaenge', 'konten', 'kreditoren', 'eskalation', 'mailEinstellungen', 'erscheinungsbild', 'zeitstempel', 'personen', 'mails', 'sync', 'geplanteJobs', 'abgelehnt', 'auditLog', 'backup', 'module', 'ersteinrichtung', 'kreditkarten', 'altfaelle', 'betrieb', 'testmodus'];
 const adminNav = (fn) => Object.fromEntries(ADMIN_KEYS.map((k) => [k, fn(k)]));
 const portal = (o = {}) => bauePortalGruppen({ pfad: '/pool', spesenModulAktiv: true, zeigeKreditkarteNav: true, offeneAufgaben: 0, ...o });
 const finde = (gruppen, label) => gruppen.flatMap((g) => g.punkte).find((p) => p.label === label);
@@ -20,7 +20,7 @@ test('Admin-Gruppen in Reihenfolge Vorgänge, Stammdaten, Einstellungen, Betrieb
     ['Laufende Vorgänge', 'Abgelehnte Rechnungen', 'Altfälle'],
     ['Konten', 'Kreditoren', 'Kreditkarten', 'Personen'],
     ['Eskalationszeiten', 'Mail-Einstellungen', 'Erscheinungsbild', 'Module', 'Zeitstempel', 'Ersteinrichtung'],
-    ['Datenbank-Backup', 'Datei-Quarantäne', 'Mail-Protokoll', 'Sync-Übersicht', 'Geplante Jobs', 'Audit-Log', 'Betrieb & Nutzung'],
+    ['Datenbank-Backup', 'Datei-Quarantäne', 'Mail-Protokoll', 'Sync-Übersicht', 'Geplante Jobs', 'Audit-Log', 'Betrieb & Nutzung', 'Testmodus'],
   ]);
   assert.ok(gruppen.flatMap((g) => g.punkte).every((p) => p.symbol && !p.aktiv));
 });

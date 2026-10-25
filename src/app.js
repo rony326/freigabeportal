@@ -66,6 +66,9 @@ import { createAuditPruefenRouter } from './routes/auditPruefen.js';
 import { createKreditkarteRouter } from './routes/kreditkarte.js';
 import { createMailerOrFallback } from './services/mailer.js';
 import { createTestMailer } from './services/testmodus/testMailer.js';
+import { createTestmodusSteuerung } from './services/testmodus/steuerung.js';
+import { testmodusWeiche } from './middleware/testmodusWeiche.js';
+import { createTestmodusRouter } from './routes/admin/testmodus.js';
 import { zeitpunktAnzeige } from './services/auditLog.js';
 import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
 import { getVersionInfo } from './utils/version.js';
@@ -152,7 +155,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // before the CSRF middleware, which reads/writes its own separate, non-session cookie.
   app.use(cookieParser());
   app.use(ansichtWahl());
-  const { attachCsrfToken, csrfProtection } = createCsrfProtection(config);
+  const { attachCsrfToken, csrfProtection, generateCsrfToken } = createCsrfProtection(config);
   app.use((req, res, next) => {
     // /api/n8n/* and /internal/cron/* are machine routes authenticated via X-API-Key /
     // X-Cron-Secret headers, never session cookies — they send no CSRF cookie or token and must
@@ -163,6 +166,19 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     return attachCsrfToken(req, res, next);
   });
   app.use(testmodus ? loadBeispielperson(db) : loadCurrentPerson(db));
+  // Echte App: Test-Instanz lazy im Speicher; die Weiche steht direkt nach der Person und vor
+  // Nutzung/Audit, damit Testmodus-Anfragen (auch 401/403) im echten Betrieb nichts hinterlassen.
+  const testmodusSteuerung = testmodus ? null : createTestmodusSteuerung({
+    echteDb: db, config, baueTestApp: (sp) => createApp({ db: sp.db, config: sp.config, testmodus: true }),
+  });
+  if (testmodusSteuerung) {
+    app.set('testmodusSteuerung', testmodusSteuerung);
+    app.use(testmodusWeiche({
+      config,
+      holeTestApp: async () => (await testmodusSteuerung.hole()).app,
+      echterCsrfToken: (req, res) => res.locals.csrfToken ?? generateCsrfToken(req, res),
+    }));
+  }
   app.use(nutzungErfassen(db));
   app.use(auditContext);
   app.use(zugriffsAuditMiddleware(db));
@@ -235,6 +251,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/admin/mail-einstellungen', requireRole(config, 'superadmin'), createMailEinstellungenRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/altfaelle', requirePermission(db, config, 'workflow_eingreifen'), createAltfaelleRouter({ db, config, csrfProtection }));
   app.use('/admin/dateiquarantaene', requireRole(config, 'superadmin'), createDateiQuarantaeneRouter({ db, config, csrfProtection }));
+  if (testmodusSteuerung) app.use('/admin/testmodus', requireAnyRole(config, ['superadmin', 'manager']), createTestmodusRouter({ db, steuerung: testmodusSteuerung, csrfProtection }));
   app.use('/admin/betrieb', requirePermission(db, config, 'betrieb_einsehen'), createBetriebRouter({ db, config, statusCache, csrfProtection }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));

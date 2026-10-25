@@ -109,6 +109,7 @@ const DEFAULTS = {
   status_archiv_fehler_tage: '7',
   status_speicher_warnung_prozent: '15',
   status_speicher_fehler_prozent: '5',
+  einrichtung_ohne_zeitstempel: '0',
 };
 
 export function seedDefaults(db) {

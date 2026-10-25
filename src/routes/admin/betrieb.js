@@ -20,6 +20,7 @@ const STATUS_DIENSTE = [
   ['speicher', 'Speicher', null],
   ['jobs', 'Geplante Jobs', ['/admin/geplante-jobs', 'geplanteJobs']],
   ['sicherheitsalarme', 'Sicherheitsalarme', ['/admin/backup', 'backup']],
+  ['einrichtung', 'Ersteinrichtung', ['/admin/ersteinrichtung', 'ersteinrichtung']],
 ];
 // Grenzwert-Felder: Schlüssel, Beschriftung, Einheit
 const GRENZWERT_FELDER = [

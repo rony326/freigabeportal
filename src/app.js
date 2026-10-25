@@ -26,6 +26,9 @@ import { createEskalationRouter } from './routes/admin/eskalation.js';
 import { createErscheinungsbildRouter } from './routes/admin/erscheinungsbild.js';
 import { countZeitstempelUeberfaellig } from './db/jobsRepo.js';
 import { getConfigValue } from './db/adminConfigRepo.js';
+import { createErsteinrichtungRouter } from './routes/admin/ersteinrichtung.js';
+import { einrichtungsStand } from './services/ersteinrichtung.js';
+import { pruefeTechnik } from './services/einrichtungTests.js';
 import { createZeitstempelAdminRouter } from './routes/admin/zeitstempel.js';
 import { createPersonenRouter } from './routes/admin/personen.js';
 import { createMailsRouter } from './routes/admin/mails.js';
@@ -180,7 +183,19 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
         betriebStatus = statusCache.ergebnis().status;
       } catch { /* Karte ohne Status */ }
     }
+    // Hinweis auf die Ersteinrichtung: nur Superadmin, solange Pflichtschritte offen und nicht verschoben.
+    let einrichtungHinweis = null;
+    if (res.locals.isSuperadmin === true) {
+      try {
+        const bis = Date.parse(getConfigValue(db, `einrichtung_spaeter_bis_${req.currentPerson.churchtools_person_id}`) || '');
+        if (!(bis > Date.now())) {
+          const { pflichtOffen, pflichtGesamt } = einrichtungsStand(db, config, { technik: pruefeTechnik(config) });
+          if (pflichtOffen > 0) einrichtungHinweis = { erledigt: pflichtGesamt - pflichtOffen, gesamt: pflichtGesamt };
+        }
+      } catch { /* Dashboard ohne Hinweis */ }
+    }
     res.render('admin/dashboard', {
+      einrichtungHinweis,
       betriebStatus,
       zeitstempelUeberfaellig: tsaAktiv ? countZeitstempelUeberfaellig(db, zeitstempelWarnungSchwelle) : 0,
       zeitstempelWarnungSchwelle,
@@ -198,6 +213,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/admin/kreditkarten', requirePermission(db, config, 'kreditkarten_verwalten'), createKreditkartenAdminRouter({ db, csrfProtection }));
   app.use('/admin/eskalation', requireRole(config, 'superadmin'), createEskalationRouter({ db, csrfProtection }));
   app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config, csrfProtection }));
+  app.use('/admin/ersteinrichtung', requireRole(config, 'superadmin'), createErsteinrichtungRouter({ db, config, mailer, statusCache, csrfProtection }));
   app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/personen', requireAnyRole(config, ['superadmin', 'manager']), createPersonenRouter({ db, config, csrfProtection }));
   app.use('/admin/mails', requirePermission(db, config, 'mails_einsehen'), createMailsRouter({ db, mailer, csrfProtection }));

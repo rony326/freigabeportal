@@ -4,7 +4,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults, setConfigValue } from '../../src/db/adminConfigRepo.js';
 import {
   pruefeAlleDienste, pruefeSicherung, pruefeMailversand, pruefeChurchtools, pruefeZeitstempel,
-  pruefeAuditNachweis, pruefeArchivuebergabe, pruefeSpeicher, pruefeJobs, pruefeSicherheitsalarme, pruefeDatenbank, createStatusCache,
+  pruefeAuditNachweis, pruefeArchivuebergabe, pruefeSpeicher, pruefeJobs, pruefeSicherheitsalarme, pruefeDatenbank, pruefeEinrichtung, createStatusCache,
 } from '../../src/services/statusPruefungen.js';
 
 const H = 3600 * 1000;
@@ -254,8 +254,10 @@ test('Gesamtstatus ist der schlechteste Dienst, alle Schluessel vorhanden', (t) 
   cron(db, 'datenbank-sicherung', 'erfolg', vor(1 * H));
   db.prepare("INSERT INTO sync_log (gestartet_am, beendet_am, status) VALUES (?, ?, 'erfolg')").run(vor(H), vor(H));
   let r = pruefeAlleDienste(db, config, ctx());
-  assert.deepEqual(Object.keys(r.dienste), ['datenbank', 'sicherung', 'mailversand', 'churchtools', 'zeitstempel', 'audit_nachweis', 'archivuebergabe', 'speicher', 'jobs', 'sicherheitsalarme']);
-  assert.equal(r.status, 'ok');
+  assert.deepEqual(Object.keys(r.dienste), ['datenbank', 'sicherung', 'mailversand', 'churchtools', 'zeitstempel', 'audit_nachweis', 'archivuebergabe', 'speicher', 'jobs', 'sicherheitsalarme', 'einrichtung']);
+  // Frische Installation: nur die Ersteinrichtung warnt, alle übrigen Dienste sind in Ordnung.
+  assert.equal(r.status, 'warnung');
+  assert.deepEqual(Object.entries(r.dienste).filter(([, d]) => d.status !== 'ok').map(([k]) => k), ['einrichtung']);
   assert.equal(r.geprueft_am, T0.toISOString());
   cron(db, 'pdf-bereinigung', 'fehler', vor(H));
   assert.equal(pruefeAlleDienste(db, config, ctx()).status, 'warnung');
@@ -311,4 +313,23 @@ test('Status-Cache: zwei Aufrufe innerhalb 30 s prüfen einmal, danach und mit n
 test('Status-Cache: TSA-Fehler blockiert die Prüfung nicht', () => {
   const cache = createStatusCache({ db: {}, config, tsaErreichbarkeit: () => { throw new Error('x'); }, pruefe: (db, cfg, o) => ({ status: 'ok', tsa: o.tsaErgebnis }) });
   assert.equal(cache.ergebnis().tsa, null);
+});
+
+test('Einrichtung: offene Pflichtschritte warnen mit Anzahl, alle erledigt ist ok', (t) => {
+  const db = setup(t);
+  const cfg = { ...config, churchtools: { groupIdAdmin: '20' } };
+  const offen = pruefeEinrichtung(db, cfg, ctx({ technik: [] }));
+  assert.equal(offen.status, 'warnung');
+  assert.match(offen.grund, /^\d+ von 8 Pflichtschritten offen$/);
+
+  db.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email, gruppen, aktiv) VALUES ('1', 'A', 'B', 'a@x.ch', '[\"20\"]', 1)").run();
+  db.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email, gruppen, aktiv) VALUES ('2', 'C', 'D', 'c@x.ch', '[]', 1)").run();
+  db.prepare("INSERT INTO sync_log (gestartet_am, beendet_am, status) VALUES (?, ?, 'erfolg')").run(vor(H), vor(H));
+  db.prepare("INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am) VALUES ('testmail', NULL, 'a@x.ch', 'B', 'T', 'versendet', ?)").run(vor(H));
+  db.prepare("INSERT INTO konten (kontonummer, bezeichnung, freigeber1_id, stellvertreter1_id, freigeber2_id, stellvertreter2_id, aktiv) VALUES ('1000', 'K', '1', '1', '2', '2', 1)").run();
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  cron(db, 'datenbank-sicherung', 'erfolg', vor(H));
+  setConfigValue(db, 'betrieb_kontakt_email', 'it@x.ch');
+  const fertig = pruefeEinrichtung(db, cfg, ctx({ technik: [] }));
+  assert.deepEqual(fertig, { status: 'ok', grund: 'alle Pflichtschritte erledigt' });
 });

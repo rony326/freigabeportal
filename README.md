@@ -178,6 +178,9 @@ laut Lastenheft zwingend für das Portal.
 
 ### Go-Live-Checkliste (nach dem ersten Deploy)
 
+Als Superadmin führt dich zusätzlich der Assistent unter `/admin/ersteinrichtung`
+Schritt für Schritt durch die Einrichtung.
+
 1. `GET /healthz` → `{ "status": "ok" }`. Mit Header `X-Monitoring-Key`
    (Schlüssel unter `/admin/betrieb/status`) liefert er den Status aller
    Dienste, siehe [docs/statusseite-und-monitoring.md](docs/statusseite-und-monitoring.md).

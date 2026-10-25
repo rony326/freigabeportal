@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 const hash = (k) => createHash('sha256').update(k).digest('hex');
 const angezeigt = (html) => html.match(/id="neuerSchluessel">([0-9a-f]{64})</)?.[1];
 
-const DIENSTE_NAMEN = ['Datenbank', 'Sicherung', 'Mailversand', 'ChurchTools', 'Zeitstempel', 'Audit-Nachweis', 'Archivübergabe', 'Speicher', 'Geplante Jobs', 'Sicherheitsalarme'];
+const DIENSTE_NAMEN = ['Datenbank', 'Sicherung', 'Mailversand', 'ChurchTools', 'Zeitstempel', 'Audit-Nachweis', 'Archivübergabe', 'Speicher', 'Geplante Jobs', 'Sicherheitsalarme', 'Ersteinrichtung'];
 const GUELTIG = {
   status_sicherung_warnung_stunden: '26', status_sicherung_fehler_stunden: '50', status_mail_wartezeit_fehler_minuten: '60',
   status_churchtools_warnung_stunden: '26', status_churchtools_fehler_stunden: '50', status_zeitstempel_crl_warnung_tage: '7',

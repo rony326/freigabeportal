@@ -1,0 +1,116 @@
+<%- include('../_seite_anfang', { titel: 'Ersteinrichtung' }) %>
+<%
+  const statusText = { ok: 'in Ordnung', warnung: 'Warnung', fehlt: 'fehlt', 'ungültig': 'ungültig' };
+  const statusKlasse = { ok: 'text-bg-success', warnung: 'text-bg-warning', fehlt: 'text-bg-danger', 'ungültig': 'text-bg-danger' };
+  const erledigt = stand.pflichtGesamt - stand.pflichtOffen;
+  const prozent = stand.pflichtGesamt ? Math.round((erledigt / stand.pflichtGesamt) * 100) : 100;
+  const csrf = locals.csrfToken || '';
+%>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Ersteinrichtung</h1>
+    </div>
+    <p class="text-muted">Dieser Assistent führt dich Schritt für Schritt durch die Einrichtung des Portals. Pflichtschritte sind nötig, damit das Portal im Alltag sicher läuft; optionale Schritte kannst du später nachholen.</p>
+    <div class="mb-4">
+      <p class="mb-1 fw-semibold"><%= erledigt %> von <%= stand.pflichtGesamt %> Pflichtschritten erledigt</p>
+      <div class="progress" role="progressbar" aria-label="Fortschritt Pflichtschritte" aria-valuenow="<%= prozent %>" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" style="width: <%= prozent %>%"></div>
+      </div>
+    </div>
+    <div class="d-grid gap-3">
+    <% stand.schritte.forEach((s, i) => { %>
+      <section class="card" id="schritt-<%= s.id %>">
+        <div class="card-body">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <h2 class="h5 mb-0 me-auto"><%= i + 1 %>. <%= s.titel %></h2>
+            <span class="badge <%= s.pflicht ? 'text-bg-dark' : 'text-bg-secondary' %>"><%= s.pflicht ? 'Pflicht' : 'Optional' %></span>
+            <span class="badge <%= s.erledigt ? 'text-bg-success' : 'text-bg-warning' %>"><%= s.erledigt ? 'Erledigt' : 'Offen' %></span>
+          </div>
+          <p class="mb-2"><%= s.beschreibung %></p>
+          <% if (s.hinweis && !s.erledigt) { %><p class="text-muted small mb-2"><%= s.hinweis %></p><% } %>
+
+          <% if (s.id === 'grundlagen') { %>
+            <ul class="list-group mb-3">
+              <% technik.forEach((p) => { %>
+                <li class="list-group-item d-flex flex-wrap gap-2 align-items-start">
+                  <span class="badge <%= statusKlasse[p.status] || 'text-bg-secondary' %>"><%= statusText[p.status] || p.status %></span>
+                  <span class="flex-grow-1" style="min-width: 12rem"><strong><%= p.name %></strong><br><span class="text-muted small"><%= p.hinweis %></span></span>
+                </li>
+              <% }) %>
+            </ul>
+            <form method="post" action="/admin/ersteinrichtung/technik" class="d-inline">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button type="submit" class="btn btn-outline-primary btn-sm">Prüfung erneut ausführen</button>
+            </form>
+          <% } %>
+
+          <% if (s.id === 'churchtools') { %>
+            <% if (letzte.churchtools) { %>
+              <% if (letzte.churchtools.ok) { %>
+                <div class="alert alert-success py-2">ChurchTools ist erreichbar. Gefundene Gruppen:
+                  <ul class="mb-0">
+                    <% letzte.churchtools.gruppen.forEach((g) => { %><li><%= g.rolle %>: <%= g.name %> (<%= g.mitglieder %> Mitglied<%= g.mitglieder === 1 ? '' : 'er' %>)</li><% }) %>
+                  </ul>
+                </div>
+              <% } else { %>
+                <div class="alert alert-danger py-2"><%= letzte.churchtools.meldung %></div>
+              <% } %>
+            <% } %>
+            <form method="post" action="/admin/ersteinrichtung/churchtools-test" class="d-inline">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button type="submit" class="btn btn-outline-primary btn-sm">Verbindung testen</button>
+            </form>
+          <% } %>
+
+          <% if (s.id === 'mail') { %>
+            <% if (letzte.testmail) { %>
+              <div class="alert <%= letzte.testmail.status === 'versendet' ? 'alert-success' : 'alert-warning' %> py-2"><%= letzte.testmail.meldung %></div>
+            <% } %>
+            <% if (!hatEmail) { %><p class="text-muted small">Für dein Konto ist keine E-Mail-Adresse hinterlegt, die Testmail kann nicht an dich gehen.</p><% } %>
+            <form method="post" action="/admin/ersteinrichtung/testmail" class="d-inline">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button type="submit" class="btn btn-outline-primary btn-sm">Testmail an mich senden</button>
+            </form>
+          <% } %>
+
+          <% if (s.id === 'zeitstempel') { %>
+            <form method="post" action="/admin/ersteinrichtung/ohne-zeitstempel" class="d-inline">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <input type="hidden" name="wert" value="<%= ohneZeitstempel ? '0' : '1' %>">
+              <% if (ohneZeitstempel) { %>
+                <p class="text-muted small mb-2">Du hast bewusst auf einen Zeitstempel verzichtet.</p>
+                <button type="submit" class="btn btn-outline-secondary btn-sm">Verzicht zurücknehmen</button>
+              <% } else { %>
+                <button type="submit" class="btn btn-outline-secondary btn-sm">Bewusst darauf verzichten</button>
+              <% } %>
+            </form>
+          <% } %>
+
+          <% if (s.id === 'module' || s.id === 'mailvorlagen') { %>
+            <form method="post" action="/admin/ersteinrichtung/markieren" class="d-inline">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <input type="hidden" name="id" value="<%= s.id %>">
+              <input type="hidden" name="wert" value="<%= markiert[s.id] ? '0' : '1' %>">
+              <button type="submit" class="btn btn-outline-secondary btn-sm"><%= markiert[s.id] ? 'Markierung entfernen' : 'Als geprüft markieren' %></button>
+            </form>
+          <% } %>
+
+          <% if (s.id === 'jobs') { %>
+            <% if (letzte.jobs) { %>
+              <ul class="list-group mb-3">
+                <% letzte.jobs.ergebnis.forEach((e) => { %>
+                  <li class="list-group-item"><strong><%= jobNamen[e.job] || e.job %></strong> (<%= e.job %>): <%= e.status %></li>
+                <% }) %>
+              </ul>
+            <% } %>
+            <form method="post" action="/admin/ersteinrichtung/jobs" class="d-inline">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button type="submit" class="btn btn-outline-primary btn-sm">Jetzt einmal ausführen</button>
+            </form>
+          <% } %>
+
+          <a href="<%= s.link %>" class="btn btn-link btn-sm">Zur Seite</a>
+        </div>
+      </section>
+    <% }) %>
+    </div>
+<%- include('../_seite_ende') %>

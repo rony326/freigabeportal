@@ -14,7 +14,7 @@ import { createTsaErreichbarkeit } from '../../src/services/statusTsa.js';
 const hash = (k) => createHash('sha256').update(k).digest('hex');
 
 const KEY = 'ab'.repeat(32);
-const DIENSTE = ['datenbank', 'sicherung', 'mailversand', 'churchtools', 'zeitstempel', 'audit_nachweis', 'archivuebergabe', 'speicher', 'jobs', 'sicherheitsalarme'];
+const DIENSTE = ['datenbank', 'sicherung', 'mailversand', 'churchtools', 'zeitstempel', 'audit_nachweis', 'archivuebergabe', 'speicher', 'jobs', 'sicherheitsalarme', 'einrichtung'];
 
 function config() {
   return {

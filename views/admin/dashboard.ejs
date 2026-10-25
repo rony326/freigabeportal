@@ -2,6 +2,16 @@
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Admin</h1>
     </div>
+    <% if (typeof einrichtungHinweis !== 'undefined' && einrichtungHinweis) { %>
+      <div class="alert alert-info d-flex flex-wrap align-items-center gap-2">
+        <span class="me-auto">Ersteinrichtung: <%= einrichtungHinweis.erledigt %> von <%= einrichtungHinweis.gesamt %> Pflichtschritten erledigt.</span>
+        <a href="/admin/ersteinrichtung" class="btn btn-sm btn-primary">Weiter einrichten</a>
+        <form method="post" action="/admin/ersteinrichtung/spaeter" class="m-0">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <button type="submit" class="btn btn-sm btn-outline-secondary">Später</button>
+        </form>
+      </div>
+    <% } %>
     <% if (adminNav.zeitstempel) { %>
       <% if (typeof zeitstempelUeberfaellig !== 'undefined' && zeitstempelUeberfaellig > 0) { %>
         <div class="alert alert-danger">

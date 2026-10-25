@@ -4,6 +4,8 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 import { countZeitstempelUeberfaellig } from '../db/jobsRepo.js';
 import { loadTsaCrls } from './tsaRevocation.js';
 import { listPaketeOhneZeitstempel } from './auditNachweisJobs.js';
+import { einrichtungsStand } from './ersteinrichtung.js';
+import { pruefeTechnik } from './einrichtungTests.js';
 
 const MIN = 60 * 1000;
 const H = 60 * MIN;
@@ -197,6 +199,14 @@ export function pruefeSicherheitsalarme(db) {
   return { status: 'ok', grund: 'keine offenen Alarme' };
 }
 
+// Offene Pflichtschritte der Ersteinrichtung: nur eine Warnung, nie ein Fehler.
+export function pruefeEinrichtung(db, config, ctx = {}) {
+  const technik = ctx.technik ?? pruefeTechnik(config);
+  const { pflichtOffen, pflichtGesamt } = einrichtungsStand(db, config, { jetzt: ctx.jetzt ?? new Date(), technik });
+  if (pflichtOffen === 0) return { status: 'ok', grund: 'alle Pflichtschritte erledigt' };
+  return { status: 'warnung', grund: `${pflichtOffen} von ${pflichtGesamt} Pflichtschritten offen` };
+}
+
 const PRUEFUNGEN = [
   ['datenbank', pruefeDatenbank],
   ['sicherung', pruefeSicherung],
@@ -208,6 +218,7 @@ const PRUEFUNGEN = [
   ['speicher', pruefeSpeicher],
   ['jobs', pruefeJobs],
   ['sicherheitsalarme', pruefeSicherheitsalarme],
+  ['einrichtung', pruefeEinrichtung],
 ];
 
 export function pruefeAlleDienste(db, config, { jetzt = new Date(), tsaErgebnis = null, statfs = fs.statfsSync, ladeCrls } = {}) {

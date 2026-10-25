@@ -47,6 +47,7 @@ const ADMIN = [
     { label: 'Erscheinungsbild', href: '/admin/erscheinungsbild', symbol: '◐', flag: 'erscheinungsbild' },
     { label: 'Module', href: '/admin/module', symbol: '❖', flag: 'module' },
     { label: 'Zeitstempel', href: '/admin/zeitstempel', symbol: '⏱', flag: 'zeitstempel' },
+    { label: 'Ersteinrichtung', href: '/admin/ersteinrichtung', symbol: '✔', flag: 'ersteinrichtung' },
   ] },
   { titel: 'Betrieb', punkte: [
     { label: 'Datenbank-Backup', href: '/admin/backup', symbol: '⛁', flag: 'backup' },

@@ -29,6 +29,7 @@ export function loadNavFlags(db, config) {
       auditLog: hasPermission('audit_log_einsehen'),
       backup: res.locals.isSuperadmin,
       module: res.locals.isSuperadmin,
+      ersteinrichtung: res.locals.isSuperadmin,
       kreditkarten: hasPermission('kreditkarten_verwalten'),
       altfaelle: hasPermission('workflow_eingreifen'),
       betrieb: hasPermission('betrieb_einsehen'),

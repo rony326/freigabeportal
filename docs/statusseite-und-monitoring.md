@@ -37,6 +37,7 @@ Admin → Zeitstempel eingestellt.
 | `speicher` | freier Speicherplatz des Dateisystems, auf dem die Datenbank liegt (keine Quoten des Hostings) | weniger als `status_speicher_warnung_prozent` (15 %) frei | weniger als `status_speicher_fehler_prozent` (5 %) frei |
 | `jobs` | letzter Lauf jedes geplanten Jobs der letzten 7 Tage | mindestens ein Job zuletzt fehlgeschlagen | — |
 | `sicherheitsalarme` | offene Sicherheitsalarme | — | mindestens ein offener Alarm |
+| `einrichtung` | offene Pflichtschritte des Einrichtungsassistenten (`/admin/ersteinrichtung`) | mindestens ein Pflichtschritt offen (Grund nennt die Anzahl) | — |
 
 `audit_nachweis` ist nur aktiv, wenn das Modul Audit-Nachweis eingeschaltet ist,
 `zeitstempel` nur mit konfigurierter TSA-URL; sonst `aktiv: false`.
@@ -87,7 +88,7 @@ Mit gültigem Header `X-Monitoring-Key: <schluessel>` das volle JSON:
 }
 ```
 
-(Gekürzt; die Antwort enthält alle zehn Dienste.) Das Feld `grund` ist deutsch
+(Gekürzt; die Antwort enthält alle elf Dienste.) Das Feld `grund` ist deutsch
 und kurz und enthält keine Personen-, Rechnungs- oder Konfigurationswerte.
 
 HTTP-Status: 200; 503 nur, wenn die Datenbank nicht erreichbar ist (ohne

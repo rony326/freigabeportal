@@ -71,6 +71,13 @@ export function extractCustomFieldValue(person, fieldKey) {
   return getrimmt || null;
 }
 
+export async function fetchGroup(config, loginToken, groupId) {
+  const url = new URL(`/api/groups/${groupId}`, config.baseUrl);
+  const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` } });
+  const data = await parseOrThrow(response, 'Gruppenabruf');
+  return { id: String(data.data.id), name: data.data.name };
+}
+
 export async function fetchGroupMemberIds(config, loginToken, groupId) {
   const url = new URL(`/api/groups/${groupId}/members`, config.baseUrl);
   const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` } });

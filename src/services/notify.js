@@ -19,7 +19,7 @@ export const FREIGABE2_AN_ADMIN_GRUND =
 // eingereicht hat, soll sofort den Ergänzen-Link bekommen statt bis zum nächsten Digest zu warten.
 // admin-umzuweisung: ein Admin hat einen laufenden Vorgang umgehängt -- die neue Person soll sofort
 // handeln können, die bisherige sofort wissen, dass sie nichts mehr tun muss.
-const IMMER_SOFORT_TYPEN = new Set(['sync-fehler', 'iban-warnung', 'kk-beleg-eingegangen', 'admin-umzuweisung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung']);
+const IMMER_SOFORT_TYPEN = new Set(['sync-fehler', 'iban-warnung', 'kk-beleg-eingegangen', 'admin-umzuweisung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail']);
 
 // The low-level "enqueue and try now" primitive for an already-rendered mail. /admin/mails'
 // "erneut versenden" replays an already-rendered mail_log row verbatim through here and must

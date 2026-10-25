@@ -68,10 +68,9 @@ test('churchtools: letzter sync_log-Eintrag muss erfolg sein', (t) => {
   assert.equal(ok(stand(db), 'churchtools'), false);
 });
 
-test('mail: false ohne testmail-Zeile; true-Pfad (CHECK für testmail kommt in Task 2) mit abgeschalteter Prüfung', (t) => {
+test('mail: false ohne testmail-Zeile, true bei versendeter', (t) => {
   const db = neu(t);
   assert.equal(mailErledigt(db), false);
-  db.exec('PRAGMA ignore_check_constraints = ON');
   const ins = (st) => db.prepare("INSERT INTO mail_log (typ, empfaenger, betreff, text, status, versucht_am) VALUES ('testmail', 'a@b.ch', 's', 't', ?, ?)").run(st, JETZT.toISOString());
   ins('fehlgeschlagen');
   assert.equal(ok(stand(db), 'mail'), false);

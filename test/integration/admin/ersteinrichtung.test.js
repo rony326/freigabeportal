@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { openDatabase } from '../../../src/db/index.js';
 import { getConfigValue, setConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
@@ -11,6 +11,8 @@ import { createApp } from '../../../src/app.js';
 import { setupMockChurchTools } from '../../helpers/mockChurchTools.js';
 import { fetchCsrfToken } from '../../helpers/csrf.js';
 import { pruefeAlleDienste } from '../../../src/services/statusPruefungen.js';
+import { einrichtungsStand } from '../../../src/services/ersteinrichtung.js';
+import { pruefeTechnik } from '../../../src/services/einrichtungTests.js';
 
 const GEHEIM = ['sync-token-geheim', 'client-secret-geheim', 'smtp-passwort-geheim'];
 
@@ -31,10 +33,14 @@ function setup(t) {
     },
     cronSecret: 'cron-secret', n8nApiKey: 'n8n-key', downloadSigningSecret: 'download-secret',
     smtp: { host: 'smtp.example.org', port: 587, user: 'user', pass: GEHEIM[2], from: 'portal@example.org' },
+    backupKeyringFile: join(dir, 'keyring.json'),
   };
+  writeFileSync(config.backupKeyringFile, JSON.stringify({ version: 1, activeKeyId: 'k1', keys: [{ id: 'k1', keyHex: 'cd'.repeat(32) }] }), { mode: 0o600 });
+  chmodSync(config.backupKeyringFile, 0o600);
   const gesendet = [];
   const mailer = { async sendMail(m) { gesendet.push(m); } };
-  const app = createApp({ db, config, mailer });
+  // TSA-Probe gelingt immer (kein Netz im Test).
+  const app = createApp({ db, config, mailer, tsaVersuch: async () => {} });
   const ct = setupMockChurchTools(config.churchtools.baseUrl);
   t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
   return { db, config, app, ct, gesendet };
@@ -145,7 +151,10 @@ test('Jobs auslösen: Audit-Eintrag, Ergebnis je Job', async (t) => {
   assert.equal(audit(s.db, 'test_jobs').length, 1);
   assert.ok(s.db.prepare("SELECT 1 FROM cron_log WHERE job = 'pool-erinnerungen'").get());
   const seite = await agent.get('/admin/ersteinrichtung');
-  assert.match(seite.text, /sync-personen/);
+  for (const name of ['Personen-Abgleich', 'Erinnerungen', 'Mailzustellung']) assert.match(seite.text, new RegExp(`<strong>${name}</strong>: `), name);
+  assert.match(seite.text, /<strong>Personen-Abgleich<\/strong>: fehlgeschlagen/);
+  assert.match(seite.text, /<strong>Mailzustellung<\/strong>: nichts zu tun/);
+  assert.doesNotMatch(seite.text, /\((sync-personen|pool-erinnerungen|mail-zustellung)\)/);
 });
 
 test('markieren: nur manuelle Schritte, Audit über admin_config', async (t) => {
@@ -226,33 +235,116 @@ test('Ergebnisse sind pro Person getrennt und nennen Person und Zeit', async (t)
   assert.doesNotMatch(fremde.text, /Die Testmail wurde verschickt/);
 });
 
-test('Dashboard-Hinweis verschwindet, sobald alle Pflichtschritte erledigt sind', async (t) => {
-  const s = setup(t);
-  const { agent } = await admin(s);
-  const { db, config } = s;
+// Alle Pflichtschritte erledigen, wie in der Betriebsumgebung.
+function alleSchritteErledigen({ db, config }) {
   config.publicBaseUrl = 'https://portal.example.org';
-  // Technik: die von der Prüfung geforderten Verzeichnisse anlegen (wie in der Betriebsumgebung).
+  config.tsaTrustAnchorsFile = join(dirname(config.dbPath), 'tsa-anker.pem');
+  writeFileSync(config.tsaTrustAnchorsFile, 'anker');
+  config.tsaTrustAnchorsSha256 = 'a'.repeat(64);
   for (const d of [config.jobsDir, config.brandingDir, config.backupDir]) mkdirSync(d, { recursive: true });
   const jetzt = new Date().toISOString();
-  db.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email, gruppen, aktiv) VALUES ('901', 'A', 'B', 'a@x.ch', '[\"20\"]', 1)").run();
-  db.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email, gruppen, aktiv) VALUES ('902', 'C', 'D', 'c@x.ch', '[]', 1)").run();
+  db.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email, gruppen, aktiv) VALUES ('901', 'Anna', 'Admin', 'anna@x.ch', '[\"20\"]', 1)").run();
+  db.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email, gruppen, aktiv) VALUES ('902', 'Max', 'Manager', 'max@x.ch', '[\"30\"]', 1)").run();
   db.prepare("INSERT INTO sync_log (gestartet_am, beendet_am, status) VALUES (?, ?, 'erfolg')").run(jetzt, jetzt);
-  db.prepare("INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am) VALUES ('testmail', NULL, 'a@x.ch', 'B', 'T', 'versendet', ?)").run(jetzt);
+  db.prepare("INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am) VALUES ('testmail', NULL, 'anna@x.ch', 'B', 'T', 'versendet', ?)").run(jetzt);
   db.prepare("INSERT INTO konten (kontonummer, bezeichnung, freigeber1_id, stellvertreter1_id, freigeber2_id, stellvertreter2_id, aktiv) VALUES ('1000', 'K', '901', '901', '902', '902', 1)").run();
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
   db.prepare('INSERT INTO cron_log (job, gestartet_am, beendet_am, status) VALUES (?, ?, ?, ?)').run('datenbank-sicherung', jetzt, jetzt, 'erfolg');
   setConfigValue(db, 'betrieb_kontakt_email', 'it@x.ch');
+}
+
+test('Dashboard-Hinweis verschwindet, sobald alle Pflichtschritte erledigt sind', async (t) => {
+  const s = setup(t);
+  const { agent } = await admin(s);
+  alleSchritteErledigen(s);
+  // Positivkontrolle: wirklich alle Pflichtschritte erledigt (nicht nur ausgeblendet).
+  const stand = einrichtungsStand(s.db, s.config, { technik: pruefeTechnik(s.config) });
+  assert.deepEqual(stand.schritte.filter((x) => x.pflicht && !x.erledigt).map((x) => x.id), []);
+  assert.equal(stand.pflichtOffen, 0);
   const dash = await agent.get('/admin');
+  assert.equal(dash.status, 200);
   assert.doesNotMatch(dash.text, /Pflichtschritten erledigt/);
+});
+
+test('Abschluss: Statusdienst ok und Hinweis bleibt aus, auch wenn die Testmail-Zeile später fehlt', async (t) => {
+  const s = setup(t);
+  const { agent } = await admin(s);
+  assert.match((await agent.get('/admin')).text, /Pflichtschritten erledigt/);
+  assert.equal(getConfigValue(s.db, 'einrichtung_abgeschlossen_am'), null);
+  alleSchritteErledigen(s);
+  // Abschluss wird beim ersten Messen ohne offene Pflichtschritte festgehalten (hier über das Dashboard).
+  assert.doesNotMatch((await agent.get('/admin')).text, /Pflichtschritten erledigt/);
+  const am = getConfigValue(s.db, 'einrichtung_abgeschlossen_am');
+  assert.ok(am && Number.isFinite(Date.parse(am)), 'Abschluss festgehalten');
+  const datum = new Intl.DateTimeFormat('de-CH', { timeZone: 'Europe/Zurich', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(am));
+  let dienst = pruefeAlleDienste(s.db, s.config).dienste.einrichtung;
+  assert.deepEqual(dienst, { status: 'ok', aktiv: false, grund: `Einrichtung abgeschlossen am ${datum}` });
+
+  s.db.prepare("DELETE FROM mail_log WHERE typ = 'testmail'").run();
+  assert.equal(einrichtungsStand(s.db, s.config, { technik: pruefeTechnik(s.config) }).pflichtOffen, 1);
+  dienst = pruefeAlleDienste(s.db, s.config).dienste.einrichtung;
+  assert.equal(dienst.status, 'ok');
+  assert.equal(dienst.aktiv, false);
+  assert.doesNotMatch((await agent.get('/admin')).text, /Pflichtschritten erledigt/);
+  assert.equal(getConfigValue(s.db, 'einrichtung_abgeschlossen_am'), am);
+
+  // Assistent: Banner mit Datum, Schritt mail zeigt den echten (offenen) Stand, keine Go-Live-Prüfung.
+  const seite = await agent.get('/admin/ersteinrichtung');
+  assert.match(seite.text, new RegExp(`Einrichtung abgeschlossen am ${datum.replace(/\./g, '\\.')}`));
+  const mailKarte = seite.text.slice(seite.text.indexOf('id="schritt-mail"'), seite.text.indexOf('id="schritt-konten"'));
+  assert.match(mailKarte, />Offen</);
+  assert.doesNotMatch(seite.text, /Go-Live-Prüfung/);
+});
+
+test('Go-Live-Prüfung: erst nach allen Pflichtschritten, mit Status, Testmail, Sicherung und README-Hinweis', async (t) => {
+  const s = setup(t);
+  const { agent } = await admin(s);
+  assert.doesNotMatch((await agent.get('/admin/ersteinrichtung')).text, /Go-Live-Prüfung/);
+  alleSchritteErledigen(s);
+  const seite = await agent.get('/admin/ersteinrichtung');
+  assert.match(seite.text, /id="go-live"/);
+  assert.match(seite.text, /Go-Live-Prüfung/);
+  assert.match(seite.text, /Die Statusseite meldet keinen Fehler/);
+  assert.match(seite.text, /Eine Testmail wurde zugestellt/);
+  assert.match(seite.text, /Eine aktuelle Sicherung ist vorhanden/);
+  assert.match(seite.text, /Go-Live-Checkliste/);
+  const goLive = seite.text.slice(seite.text.indexOf('id="go-live"'));
+  assert.doesNotMatch(goLive, /text-bg-danger/);
+});
+
+test('Schritt rollen: nennt Superadmins und Manager ohne E-Mail, Rollen kommen aus ChurchTools', async (t) => {
+  const s = setup(t);
+  const { agent } = await admin(s);
+  alleSchritteErledigen(s);
+  const seite = await agent.get('/admin/ersteinrichtung');
+  const karte = seite.text.slice(seite.text.indexOf('id="schritt-rollen"'), seite.text.indexOf('id="schritt-churchtools"'));
+  assert.match(karte, /Superadmins:<\/strong>[^<]*Anna Admin/);
+  assert.match(karte, /Manager:<\/strong>[^<]*Max Manager/);
+  assert.match(karte, /Die Rollen werden in ChurchTools über die Gruppenmitgliedschaft vergeben, nicht im Portal\./);
+  assert.ok(!karte.includes('anna@x.ch') && !karte.includes('max@x.ch'));
+});
+
+test('Schritt mail verweist auf die Zeile Mailserver der technischen Grundlagen', async (t) => {
+  const s = setup(t);
+  const { agent } = await admin(s);
+  const seite = await agent.get('/admin/ersteinrichtung');
+  assert.match(seite.text, /id="technik-mailserver"/);
+  const mailKarte = seite.text.slice(seite.text.indexOf('id="schritt-mail"'), seite.text.indexOf('id="schritt-konten"'));
+  assert.match(mailKarte, /href="\/admin\/ersteinrichtung#technik-mailserver"/);
+  assert.doesNotMatch(mailKarte, /href="\/admin\/mail-einstellungen"/);
+  for (const g of GEHEIM) assert.ok(!seite.text.includes(g));
+  assert.ok(!seite.text.includes('smtp.example.org'));
 });
 
 test('POST als Manager ist 403 (spaeter, jobs)', async (t) => {
   const s = setup(t);
-  const { agent: a } = await admin(s);
-  const token = await fetchCsrfToken(a, '/admin/ersteinrichtung');
   const { agent: m } = await loginAs(s, { gruppen: ['30'] });
+  // Eigener, gültiger CSRF-Token des Managers: die 403 kommt von der Rollenprüfung, nicht von CSRF.
+  const token = await fetchCsrfToken(m, '/admin');
   for (const pfad of ['/spaeter', '/jobs']) {
     const res = await m.post(`/admin/ersteinrichtung${pfad}`).type('form').send({ _csrf: token });
     assert.equal(res.status, 403, pfad);
   }
+  assert.equal(audit(s.db, 'test_jobs').length, 0);
+  assert.equal(s.db.prepare("SELECT COUNT(*) AS n FROM admin_config WHERE key LIKE 'einrichtung_spaeter_bis_%'").get().n, 0);
 });

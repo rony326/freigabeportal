@@ -4,8 +4,8 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 import { countZeitstempelUeberfaellig } from '../db/jobsRepo.js';
 import { loadTsaCrls } from './tsaRevocation.js';
 import { listPaketeOhneZeitstempel } from './auditNachweisJobs.js';
-import { einrichtungsStand } from './ersteinrichtung.js';
-import { pruefeTechnik } from './einrichtungTests.js';
+import { einrichtungsStand, einrichtungAbgeschlossenAm, datumAnzeige } from './ersteinrichtung.js';
+import { pruefeTechnik, ANWENDUNGSVERZEICHNIS } from './einrichtungTests.js';
 
 const MIN = 60 * 1000;
 const H = 60 * MIN;
@@ -200,11 +200,16 @@ export function pruefeSicherheitsalarme(db) {
 }
 
 // Offene Pflichtschritte der Ersteinrichtung: nur eine Warnung, nie ein Fehler.
+// Nach dem ersten Abschluss (einmalig festgehalten) ist der Dienst dauerhaft ok und inaktiv.
 export function pruefeEinrichtung(db, config, ctx = {}) {
-  const technik = ctx.technik ?? pruefeTechnik(config);
-  const { pflichtOffen, pflichtGesamt } = einrichtungsStand(db, config, { jetzt: ctx.jetzt ?? new Date(), technik });
-  if (pflichtOffen === 0) return { status: 'ok', grund: 'alle Pflichtschritte erledigt' };
-  return { status: 'warnung', grund: `${pflichtOffen} von ${pflichtGesamt} Pflichtschritten offen` };
+  let am = einrichtungAbgeschlossenAm(db);
+  if (!am) {
+    const technik = ctx.technik ?? pruefeTechnik(config, { anwendungsVerzeichnis: ANWENDUNGSVERZEICHNIS });
+    const stand = einrichtungsStand(db, config, { jetzt: ctx.jetzt ?? new Date(), technik, tsaErgebnis: ctx.tsaErgebnis });
+    if (stand.pflichtOffen > 0) return { status: 'warnung', grund: `${stand.pflichtOffen} von ${stand.pflichtGesamt} Pflichtschritten offen` };
+    am = stand.abgeschlossenAm;
+  }
+  return { status: 'ok', aktiv: false, grund: `Einrichtung abgeschlossen am ${datumAnzeige(am)}` };
 }
 
 const PRUEFUNGEN = [
@@ -243,13 +248,16 @@ export function createStatusCache({
   pruefe = pruefeAlleDienste, jetzt = Date.now,
 } = {}) {
   let eintrag = null;
+  // Zwischengespeichertes Ergebnis der TSA-Probe (startet höchstens alle 15 min einen Versuch im Hintergrund).
+  const tsaErgebnis = () => {
+    try { return tsaErreichbarkeit ? tsaErreichbarkeit(db, config, tsaVersuch ? { versuch: tsaVersuch } : {}) : null; } catch { return null; }
+  };
   return {
+    tsaErgebnis,
     ergebnis({ neu = false } = {}) {
       const t = jetzt();
       if (!neu && eintrag && t - eintrag.zeit < ttlMs) return eintrag.wert;
-      let tsaErgebnis = null;
-      try { if (tsaErreichbarkeit) tsaErgebnis = tsaErreichbarkeit(db, config, tsaVersuch ? { versuch: tsaVersuch } : {}); } catch { /* bleibt null */ }
-      const wert = pruefe(db, config, { jetzt: new Date(t), tsaErgebnis });
+      const wert = pruefe(db, config, { jetzt: new Date(t), tsaErgebnis: tsaErgebnis() });
       eintrag = { zeit: t, wert };
       return wert;
     },

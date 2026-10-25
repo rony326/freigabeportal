@@ -27,7 +27,7 @@ import { createErscheinungsbildRouter } from './routes/admin/erscheinungsbild.js
 import { countZeitstempelUeberfaellig } from './db/jobsRepo.js';
 import { getConfigValue } from './db/adminConfigRepo.js';
 import { createErsteinrichtungRouter } from './routes/admin/ersteinrichtung.js';
-import { einrichtungsStand } from './services/ersteinrichtung.js';
+import { einrichtungsStand, einrichtungAbgeschlossenAm } from './services/ersteinrichtung.js';
 import { pruefeTechnik } from './services/einrichtungTests.js';
 import { createZeitstempelAdminRouter } from './routes/admin/zeitstempel.js';
 import { createPersonenRouter } from './routes/admin/personen.js';
@@ -183,13 +183,14 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
         betriebStatus = statusCache.ergebnis().status;
       } catch { /* Karte ohne Status */ }
     }
-    // Hinweis auf die Ersteinrichtung: nur Superadmin, solange Pflichtschritte offen und nicht verschoben.
+    // Hinweis auf die Ersteinrichtung: nur Superadmin, solange Pflichtschritte offen und nicht verschoben;
+    // nach dem ersten Abschluss nie mehr.
     let einrichtungHinweis = null;
-    if (res.locals.isSuperadmin === true) {
+    if (res.locals.isSuperadmin === true && !einrichtungAbgeschlossenAm(db)) {
       try {
         const bis = Date.parse(getConfigValue(db, `einrichtung_spaeter_bis_${req.currentPerson.churchtools_person_id}`) || '');
         if (!(bis > Date.now())) {
-          const { pflichtOffen, pflichtGesamt } = einrichtungsStand(db, config, { technik: pruefeTechnik(config) });
+          const { pflichtOffen, pflichtGesamt } = einrichtungsStand(db, config, { technik: pruefeTechnik(config), tsaErgebnis: statusCache.tsaErgebnis() });
           if (pflichtOffen > 0) einrichtungHinweis = { erledigt: pflichtGesamt - pflichtOffen, gesamt: pflichtGesamt };
         }
       } catch { /* Dashboard ohne Hinweis */ }

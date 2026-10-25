@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
-import { seedDefaults, setConfigValue } from '../../src/db/adminConfigRepo.js';
+import { seedDefaults, setConfigValue, getConfigValue } from '../../src/db/adminConfigRepo.js';
 import {
   pruefeAlleDienste, pruefeSicherung, pruefeMailversand, pruefeChurchtools, pruefeZeitstempel,
   pruefeAuditNachweis, pruefeArchivuebergabe, pruefeSpeicher, pruefeJobs, pruefeSicherheitsalarme, pruefeDatenbank, pruefeEinrichtung, createStatusCache,
@@ -315,9 +315,9 @@ test('Status-Cache: TSA-Fehler blockiert die Prüfung nicht', () => {
   assert.equal(cache.ergebnis().tsa, null);
 });
 
-test('Einrichtung: offene Pflichtschritte warnen mit Anzahl, alle erledigt ist ok', (t) => {
+test('Einrichtung: offene Pflichtschritte warnen mit Anzahl, Abschluss wird festgehalten und bleibt ok', (t) => {
   const db = setup(t);
-  const cfg = { ...config, churchtools: { groupIdAdmin: '20' } };
+  const cfg = { ...config, churchtools: { groupIdAdmin: '20' }, tsaTrustAnchorsFile: '/etc/tsa.pem', tsaTrustAnchorsSha256: 'a'.repeat(64) };
   const offen = pruefeEinrichtung(db, cfg, ctx({ technik: [] }));
   assert.equal(offen.status, 'warnung');
   assert.match(offen.grund, /^\d+ von 8 Pflichtschritten offen$/);
@@ -330,6 +330,21 @@ test('Einrichtung: offene Pflichtschritte warnen mit Anzahl, alle erledigt ist o
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
   cron(db, 'datenbank-sicherung', 'erfolg', vor(H));
   setConfigValue(db, 'betrieb_kontakt_email', 'it@x.ch');
+  // Zeitstempeldienst gemeldet nicht erreichbar: Schritt zeitstempel bleibt offen.
+  assert.equal(pruefeEinrichtung(db, cfg, ctx({ technik: [], tsaErgebnis: { erreichbar: false } })).grund, '1 von 8 Pflichtschritten offen');
+  assert.equal(getConfigValue(db, 'einrichtung_abgeschlossen_am'), null);
   const fertig = pruefeEinrichtung(db, cfg, ctx({ technik: [] }));
-  assert.deepEqual(fertig, { status: 'ok', grund: 'alle Pflichtschritte erledigt' });
+  assert.deepEqual(fertig, { status: 'ok', aktiv: false, grund: 'Einrichtung abgeschlossen am 25.10.2026' });
+  assert.equal(getConfigValue(db, 'einrichtung_abgeschlossen_am'), T0.toISOString());
+  // Später wieder offener Schritt ändert nichts mehr am Statusdienst.
+  db.prepare("DELETE FROM mail_log WHERE typ = 'testmail'").run();
+  const spaeter = pruefeEinrichtung(db, cfg, ctx({ jetzt: new Date('2026-11-03T08:00:00Z'), technik: [] }));
+  assert.deepEqual(spaeter, { status: 'ok', aktiv: false, grund: 'Einrichtung abgeschlossen am 25.10.2026' });
+});
+
+test('Status-Cache: tsaErgebnis() liefert die zwischengespeicherte TSA-Erreichbarkeit', () => {
+  const cache = createStatusCache({ db: {}, config, tsaErreichbarkeit: () => ({ erreichbar: false }), pruefe: () => ({ status: 'ok' }) });
+  assert.deepEqual(cache.tsaErgebnis(), { erreichbar: false });
+  assert.equal(createStatusCache({ db: {}, config, pruefe: () => ({ status: 'ok' }) }).tsaErgebnis(), null);
+  assert.equal(createStatusCache({ db: {}, config, tsaErreichbarkeit: () => { throw new Error('x'); }, pruefe: () => ({}) }).tsaErgebnis(), null);
 });

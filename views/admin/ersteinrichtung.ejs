@@ -9,6 +9,9 @@
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Ersteinrichtung</h1>
     </div>
+    <% if (abgeschlossenAm) { %>
+      <div class="alert alert-success" role="status">Einrichtung abgeschlossen am <%= abgeschlossenAm %>. Die Schritte unten zeigen weiterhin den aktuellen Stand.</div>
+    <% } %>
     <p class="text-muted">Dieser Assistent führt dich Schritt für Schritt durch die Einrichtung des Portals. Pflichtschritte sind nötig, damit das Portal im Alltag sicher läuft; optionale Schritte kannst du später nachholen.</p>
     <div class="mb-4">
       <p class="mb-1 fw-semibold"><%= erledigt %> von <%= stand.pflichtGesamt %> Pflichtschritten erledigt</p>
@@ -31,7 +34,7 @@
           <% if (s.id === 'grundlagen') { %>
             <ul class="list-group mb-3">
               <% technik.forEach((p) => { %>
-                <li class="list-group-item d-flex flex-wrap gap-2 align-items-start">
+                <li class="list-group-item d-flex flex-wrap gap-2 align-items-start"<% if (p.anker) { %> id="technik-<%= p.anker %>"<% } %>>
                   <span class="badge <%= statusKlasse[p.status] || 'text-bg-secondary' %>"><%= statusText[p.status] || p.status %></span>
                   <span class="flex-grow-1" style="min-width: 12rem"><strong><%= p.name %></strong><br><span class="text-muted small"><%= p.hinweis %></span></span>
                 </li>
@@ -41,6 +44,14 @@
               <input type="hidden" name="_csrf" value="<%= csrf %>">
               <button type="submit" class="btn btn-outline-primary btn-sm">Prüfung erneut ausführen</button>
             </form>
+          <% } %>
+
+          <% if (s.id === 'rollen' && s.rollenPersonen) { %>
+            <p class="mb-1"><strong>Superadmins:</strong> <%= s.rollenPersonen.admin.length ? s.rollenPersonen.admin.join(', ') : 'noch niemand' %></p>
+            <% if (s.rollenPersonen.manager) { %>
+              <p class="mb-1"><strong>Manager:</strong> <%= s.rollenPersonen.manager.length ? s.rollenPersonen.manager.join(', ') : 'noch niemand' %></p>
+            <% } %>
+            <p class="text-muted small mb-2">Die Rollen werden in ChurchTools über die Gruppenmitgliedschaft vergeben, nicht im Portal.</p>
           <% } %>
 
           <% if (s.id === 'churchtools') { %>
@@ -99,7 +110,7 @@
             <% if (letzte.jobs) { %>
               <ul class="list-group mb-3">
                 <% letzte.jobs.ergebnis.forEach((e) => { %>
-                  <li class="list-group-item"><strong><%= jobNamen[e.job] || e.job %></strong> (<%= e.job %>): <%= e.status %></li>
+                  <li class="list-group-item"><strong><%= jobNamen[e.job] || e.job %></strong>: <%= jobStatusText(e.status) %></li>
                 <% }) %>
               </ul>
               <p class="mb-3"><small class="text-muted d-block">von <%= letzte.jobs.von %>, <%= zeitAnzeige(letzte.jobs.zeit) %></small></p>
@@ -110,9 +121,34 @@
             </form>
           <% } %>
 
-          <a href="<%= s.link %>" class="btn btn-link btn-sm">Zur Seite</a>
+          <a href="<%= s.link %>" class="btn btn-link btn-sm"><%= s.linkText || 'Zur Seite' %></a>
         </div>
       </section>
     <% }) %>
     </div>
+    <% if (goLive) { %>
+      <section class="card mt-4" id="go-live">
+        <div class="card-body">
+          <h2 class="h5">Go-Live-Prüfung</h2>
+          <p>Alle Pflichtschritte sind erledigt. Prüfe vor dem Start im Alltag noch diese Punkte:</p>
+          <%
+            const punkte = [
+              [goLive.statusOhneFehler, 'Die Statusseite meldet keinen Fehler.', '/admin/betrieb/status'],
+              [goLive.testmail, 'Eine Testmail wurde zugestellt.', '#schritt-mail'],
+              [goLive.sicherung, 'Eine aktuelle Sicherung ist vorhanden.', '/admin/backup'],
+            ];
+          %>
+          <ul class="list-group mb-3">
+            <% punkte.forEach(([ok, text, link]) => { %>
+              <li class="list-group-item d-flex flex-wrap gap-2 align-items-center">
+                <span class="badge <%= ok === true ? 'text-bg-success' : ok === false ? 'text-bg-danger' : 'text-bg-secondary' %>"><%= ok === true ? 'in Ordnung' : ok === false ? 'offen' : 'unbekannt' %></span>
+                <span class="flex-grow-1"><%= text %></span>
+                <a href="<%= link %>" class="btn btn-link btn-sm">Ansehen</a>
+              </li>
+            <% }) %>
+          </ul>
+          <p class="mb-0">Danach die Go-Live-Checkliste im README durchgehen<% if (goLive.readmeUrl) { %>: <a href="<%= goLive.readmeUrl %>" target="_blank" rel="noopener noreferrer">Go-Live-Checkliste öffnen</a><% } else { %> (Datei README.md, Abschnitt „Go-Live-Checkliste“)<% } %>.</p>
+        </div>
+      </section>
+    <% } %>
 <%- include('../_seite_ende') %>

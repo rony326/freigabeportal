@@ -18,6 +18,12 @@ keinen Alarm auslösen, nur weil ein optionales Modul nicht genutzt wird.
 Dasselbe gilt für `speicher`, wenn der freie Platz nicht ermittelt werden kann
 (`nicht prüfbar`).
 
+Der Dienst `einrichtung` meldet `warnung`, solange Pflichtschritte der
+[Ersteinrichtung](ersteinrichtung.md) offen sind. Damit ist auch der
+Gesamtstatus `warnung`: Externe Monitore auf `status` bleiben bis zum Abschluss
+der Einrichtung gelb. Wer das nicht möchte, überwacht die einzelnen Dienste
+(`dienste.<schluessel>.status`) statt des Gesamtstatus.
+
 ## Dienste und Grenzwerte
 
 Schlüssel und Standardwerte stehen in `src/services/statusPruefungen.js`

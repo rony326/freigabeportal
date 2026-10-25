@@ -194,6 +194,11 @@ deaktiviert**):
 
 Gedacht als Sammelstelle für künftige, ebenfalls unabhängig einführbare Module.
 
+## Ersteinrichtung (`/admin/ersteinrichtung`)
+
+Nur Superadmin. Geführter Assistent mit 14 Schritten (8 Pflicht), technischer Prüfung, ChurchTools-Test, Testmail und
+Auslösen der Kernjobs; Hinweis auf dem Dashboard, den "später" 7 Tage ausblendet. Details: [ersteinrichtung.md](ersteinrichtung.md).
+
 ## Mail-Einstellungen (`/admin/mail-einstellungen`)
 
 Editierbare Betreff-/Text-Vorlagen (`%variable%`-Platzhalter) für alle

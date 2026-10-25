@@ -25,6 +25,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md) | Snapshot-gebundener Export, Zahlungsbestätigung je Belegart, Altfälle ohne Freigabenachweis |
 | [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md) | Swiss-QR-Bill-Erkennung und IBAN-Abgleich gegen hinterlegte Lieferanten-IBANs |
 | [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md) | RFC3161-Zeitstempel, Nachhol-Mechanismus, Verifikations- und Zertifikatsseite |
+| [ersteinrichtung.md](ersteinrichtung.md) | Geführter Einrichtungsassistent `/admin/ersteinrichtung`: 14 Schritte, Messregeln, Tests, Dashboard-Hinweis, Statusdienst `einrichtung` |
 | [admin-bereich.md](admin-bereich.md) | Alle Admin-Seiten mit den jeweils benötigten Rechten |
 | [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md) | Die fünfzehn automatischen Hintergrund-Jobs, persistente Mailzustellung mit Wiederholung, Eskalationslogik, Verhalten nach Neustart |
 | [personen-sync.md](personen-sync.md) | Nächtlicher ChurchTools-Personen-/Gruppen-Sync: Zugangsmodell (Gruppenaustritt vs. entzogener Zugang vs. Ausfall), Schutzmechanismen, "stalled jobs" |

@@ -54,9 +54,14 @@ const DEFAULTS = {
   mail_vorlage_iban_warnung_text: 'Bei der Kontierung von "%jobDateiname%" (Lieferant: %kreditorName%) weicht die im QR-Code gefundene IBAN (%tatsaechlicheIban%) von der hinterlegten IBAN ab.\n\nBitte prüfen: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_rechnungsnummer_warnung_betreff: 'Freigabeportal: Doppelte Rechnungsnummer festgestellt',
   mail_vorlage_rechnungsnummer_warnung_text: 'Bei der Kontierung von "%jobDateiname%" (Lieferant: %kreditorName%) wurde die Rechnungsnummer "%rechnungsnummer%" bereits bei einem anderen Job erfasst (%dupJobIds%).\n\nBitte prüfen: %link%\n\nFreundliche Grüsse\n%portalName%',
-  mail_vorlage_digest_betreff: 'Freigabeportal: Tägliche Zusammenfassung (%anzahl% Ereignisse)',
-  mail_vorlage_digest_text: 'Hallo %empfaengerName%,\n\nfolgende Ereignisse warten auf dich:\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
+  mail_vorlage_digest_betreff: 'Freigabeportal: %zusammenfassung% Zusammenfassung (%anzahl% Ereignisse)',
+  mail_vorlage_digest_text: 'Hallo %empfaengerName%,\n\n%zusammenfassung% Zusammenfassung (Einstellung ändern: %einstellungenLink%)\n\nFolgende Ereignisse warten auf dich:\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
+  // Abgelöst durch mail_standard_benachrichtigung (wird nicht mehr gelesen, Schlüssel bleibt).
   mail_batching_aktiv: '0',
+  // Persönliche Bündelung: Standard für Personen ohne eigene Wahl; Wochentag des wöchentlichen
+  // Digests (1 = Montag … 7 = Sonntag). Uhrzeit: mail_batching_stunde/-minute.
+  mail_standard_benachrichtigung: 'sofort',
+  mail_digest_wochentag: '1',
   mail_batching_stunde: '7',
   mail_batching_minute: '0',
   mail_vorlage_kk_abrechnung_zugewiesen_betreff: 'Freigabeportal: Kreditkartenabrechnung zum Abgleich',

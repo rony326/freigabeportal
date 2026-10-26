@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS personen (
   ferienmodus_bis TEXT,
   ferienmodus_stellvertreter_id TEXT REFERENCES personen(churchtools_person_id),
   deaktiviert_am TEXT,
-  deaktivierungsgrund TEXT
+  deaktivierungsgrund TEXT,
+  benachrichtigung TEXT
 );
 
 -- Additive Einzelrechte pro Person, unabhängig von der ChurchTools-Rolle (superadmin/manager).

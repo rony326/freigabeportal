@@ -171,9 +171,9 @@ test('wachsender Abstand und begrenzte Versuche: danach fehlgeschlagen und keine
 test('gescheiterter Digest bleibt geplant und wird vom Wiederholungsjob als Digest zugestellt', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
-  setConfigValue(db, 'mail_batching_aktiv', '1');
+  setConfigValue(db, 'mail_standard_benachrichtigung', 'taeglich');
   for (const n of [1, 2]) {
-    await sendNotification(db, mailer(), { to: 'a@example.org', typ: 'reminder', jobId: null, variablen: { jobDateiname: `r${n}.pdf`, stunden: 1, link: 'l' } });
+    await sendNotification(db, mailer(), { to: 'a@example.org', typ: 'zuweisung', jobId: null, variablen: { empfaengerName: 'A', jobDateiname: `r${n}.pdf`, grund: 'G', link: 'l' } });
   }
   assert.ok(listMailLog(db).every((m) => m.status === 'geplant'));
 

@@ -13,6 +13,7 @@ import { migrateDateiQuarantaeneSchema } from './dateiQuarantaeneSchema.js';
 import { migrateSicherheitsalarmSchema } from './sicherheitsalarmSchema.js';
 import { migrateTsaNachweisSchema } from './tsaNachweisSchema.js';
 import { migrateAuditExportSchema } from './auditExportSchema.js';
+import { getDefaultConfigValue } from './adminConfigRepo.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -74,6 +75,8 @@ const PERSONEN_TABLE_MIGRATIONS = [
   // Personen-Sync (services/sync.js): wann und warum der Portalzugang entzogen wurde.
   { column: 'deaktiviert_am', ddl: 'ALTER TABLE personen ADD COLUMN deaktiviert_am TEXT' },
   { column: 'deaktivierungsgrund', ddl: 'ALTER TABLE personen ADD COLUMN deaktivierungsgrund TEXT' },
+  // Persönliche Bündelung (services/benachrichtigung.js): 'sofort'|'taeglich'|'woechentlich', NULL = Standard.
+  { column: 'benachrichtigung', ddl: 'ALTER TABLE personen ADD COLUMN benachrichtigung TEXT' },
 ];
 
 function migratePersonenTable(db) {
@@ -1012,6 +1015,27 @@ function migrateKommentareSchema(db) {
   );`);
 }
 
+// Persönliche Benachrichtigungen: der globale Schalter mail_batching_aktiv wird zum Standard
+// mail_standard_benachrichtigung (einmalig: nur wenn der neue Schlüssel fehlt), und die Digest-
+// Vorlage wird auf den neuen Standard gehoben, sofern sie noch exakt dem alten entspricht.
+const ALTE_DIGEST_VORLAGE = {
+  mail_vorlage_digest_betreff: 'Freigabeportal: Tägliche Zusammenfassung (%anzahl% Ereignisse)',
+  mail_vorlage_digest_text: 'Hallo %empfaengerName%,\n\nfolgende Ereignisse warten auf dich:\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
+};
+
+function migrateBenachrichtigungEinstellung(db) {
+  const wert = (key) => db.prepare('SELECT value FROM admin_config WHERE key = ?').get(key)?.value ?? null;
+  if (wert('mail_standard_benachrichtigung') === null) {
+    const standard = wert('mail_batching_aktiv') === '1' ? 'taeglich' : 'sofort';
+    db.prepare('INSERT INTO admin_config (key, value) VALUES (?, ?)').run('mail_standard_benachrichtigung', standard);
+  }
+  for (const [key, alt] of Object.entries(ALTE_DIGEST_VORLAGE)) {
+    if (wert(key) === alt) {
+      db.prepare('UPDATE admin_config SET value = ? WHERE key = ?').run(getDefaultConfigValue(key), key);
+    }
+  }
+}
+
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -1049,6 +1073,7 @@ export function openDatabase(dbPath) {
   migrateTestmailTyp(db);
   migrateKommentarMailTyp(db);
   migrateKommentareSchema(db);
+  migrateBenachrichtigungEinstellung(db);
   migrateBetriebSchema(db);
   // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)
   // verwerfen die Trigger der alten Tabelle, und migrateSecuritySchema legt die Audit-Trigger mit

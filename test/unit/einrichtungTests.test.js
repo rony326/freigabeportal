@@ -150,7 +150,7 @@ test('sendeTestmail: protokolliert testmail, sofort und fester Text', async (t) 
 
 test('sendeTestmail: Batching ändert nichts (immer sofort)', async (t) => {
   const db = dbMitPerson(t);
-  db.prepare("INSERT OR REPLACE INTO admin_config (key, value) VALUES ('mail_batching_aktiv', '1')").run();
+  db.prepare("INSERT OR REPLACE INTO admin_config (key, value) VALUES ('mail_standard_benachrichtigung', 'taeglich')").run();
   const erg = await sendeTestmail(db, stubMailer(), { person: { email: 'a@example.org' } });
   assert.equal(erg.status, 'versendet');
 });

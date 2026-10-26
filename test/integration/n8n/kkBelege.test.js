@@ -21,7 +21,7 @@ function setup({ modul = '1' } = {}) {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   setConfigValue(db, 'modul_kreditkarten_aktiv', modul);
-  setConfigValue(db, 'mail_batching_aktiv', '1'); // proves kk-beleg-eingegangen bypasses batching
+  setConfigValue(db, 'mail_standard_benachrichtigung', 'taeglich'); // proves kk-beleg-eingegangen bypasses batching
   upsertPerson(db, { id: '1', vorname: 'Ver', nachname: 'Antwortlich', email: 'v@example.org', gruppen: [] });
   upsertPerson(db, { id: '2', vorname: 'Anna', nachname: 'Kauf', email: 'Anna.Kauf@example.org', gruppen: [] });
   const karte = createKreditkarte(db, { bezeichnung: 'Visa Zu', verantwortlichId: '1', erfassungOffen: false });

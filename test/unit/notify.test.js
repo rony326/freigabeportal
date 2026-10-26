@@ -102,7 +102,7 @@ test('sendNotification renders the configured template and sends immediately whe
 test('sendNotification queues a geplant row instead of sending when batching is active', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
-  setConfigValue(db, 'mail_batching_aktiv', '1');
+  setConfigValue(db, 'mail_standard_benachrichtigung', 'taeglich');
   const mailer = createStubMailer();
   await sendNotification(db, mailer, {
     to: 'x@example.org',
@@ -123,7 +123,7 @@ test('sendNotification queues a geplant row instead of sending when batching is 
 test('sendNotification ignores the batching switch for sync-fehler and always sends immediately', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
-  setConfigValue(db, 'mail_batching_aktiv', '1');
+  setConfigValue(db, 'mail_standard_benachrichtigung', 'taeglich');
   const mailer = createStubMailer();
   await sendNotification(db, mailer, {
     to: 'a@example.org',
@@ -139,7 +139,7 @@ test('sendNotification ignores the batching switch for sync-fehler and always se
 test('sendNotification ignores the batching switch for iban-warnung and always sends immediately', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
-  setConfigValue(db, 'mail_batching_aktiv', '1');
+  setConfigValue(db, 'mail_standard_benachrichtigung', 'taeglich');
   const mailer = createStubMailer();
   await sendNotification(db, mailer, {
     to: 'a@example.org',
@@ -309,7 +309,7 @@ test('sendNotificationMitVertretung also sends to the active Stellvertreter, wit
 test('admin-umzuweisung wird auch bei aktivem Batching sofort eingereiht', () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
-  setConfigValue(db, 'mail_batching_aktiv', '1');
+  setConfigValue(db, 'mail_standard_benachrichtigung', 'taeglich');
   const eintrag = reiheBenachrichtigungEin(db, {
     to: 'x@example.org', typ: 'admin-umzuweisung', jobId: null,
     variablen: { empfaengerName: 'X', grund: 'G', jobDateiname: 'a.pdf', adminName: 'A', bemerkung: 'B', link: 'L' },

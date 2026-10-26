@@ -42,6 +42,7 @@ import {
 import { getKontoById } from '../db/kontenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { pruneMailLogOlderThan, listGeplantMailsGruppiertNachEmpfaenger } from '../db/mailLogRepo.js';
+import { benachrichtigungFuer, istDigestFaellig, digestWochentag } from './benachrichtigung.js';
 import { sendNotification, resolveEmpfaenger, reiheBenachrichtigungEin, reiheBenachrichtigungMitVertretungEin } from './notify.js';
 import {
   bilanzHatFehler,
@@ -553,37 +554,53 @@ async function runSplitGruppenNachholenJobInternal(db, config) {
   }
 }
 
-// Sammelt alle wegen aktivem Batching (admin_config['mail_batching_aktiv']) eingereihten, aber
-// noch nicht versendeten mail_log-Zeilen (status = 'geplant') pro Empfänger und verschickt dafür
-// eine einzige Digest-Mail. Die Zeilen werden je Empfänger beansprucht (services/mailZustellung.js),
-// damit parallele Läufe nichts doppelt versenden. Scheitert der Versand, bleiben die Zeilen
-// 'geplant' und der Job mail-zustellung wiederholt den Digest mit wachsendem Abstand; erst nach
-// ausgeschöpften Versuchen werden sie 'fehlgeschlagen'.
+// Sammelt die 'geplant'-Zeilen (Empfänger bündelt täglich oder wöchentlich, siehe
+// services/benachrichtigung.js) pro Empfänger und verschickt dafür eine einzige Digest-Mail. Der
+// Lauf findet täglich statt; ob ein Empfänger heute dran ist, entscheidet seine AKTUELLE Wahl
+// (täglich: jeden Tag; wöchentlich: nur am Wochentag mail_digest_wochentag, Zürcher Datum; wer auf
+// sofort gewechselt hat, bekommt sein Geplantes beim nächsten Lauf). Nicht fällige Empfänger werden
+// zurückgestellt -- ausser Zeilen, deren Zustellung schon begonnen hat (versuche > 0): eine
+// Wiederholung wartet nie auf die nächste Woche. Die Zeilen werden je Empfänger beansprucht
+// (services/mailZustellung.js), damit parallele Läufe nichts doppelt versenden. Scheitert der
+// Versand, bleiben die Zeilen 'geplant' und der Job mail-zustellung wiederholt den Digest mit
+// wachsendem Abstand; erst nach ausgeschöpften Versuchen werden sie 'fehlgeschlagen'.
 export const runMailDigestJob = auditedJob('mail-digest', runMailDigestJobInternal);
 
-async function runMailDigestJobInternal(db, config, mailer) {
+async function runMailDigestJobInternal(db, config, mailer, { jetzt = new Date() } = {}) {
   if (hasRecentRunningCronLauf(db, 'mail-digest')) {
     return { status: 'uebersprungen', versendet: 0, empfaenger: 0, meldung: 'Ein Mail-Digest-Lauf ist bereits aktiv' };
   }
 
   const laufId = startCronLauf(db, 'mail-digest');
   try {
-    const gruppen = listGeplantMailsGruppiertNachEmpfaenger(db);
+    const alleGruppen = listGeplantMailsGruppiertNachEmpfaenger(db);
+    const wochentag = digestWochentag(db);
+    const gruppen = new Map();
+    let zurueckgestellt = 0;
+    for (const [empfaenger, zeilen] of alleGruppen) {
+      if (istDigestFaellig(benachrichtigungFuer(db, empfaenger), jetzt, wochentag)) {
+        gruppen.set(empfaenger, zeilen);
+        continue;
+      }
+      const begonnen = zeilen.filter((z) => z.versuche > 0);
+      if (begonnen.length) gruppen.set(empfaenger, begonnen);
+      if (begonnen.length < zeilen.length) zurueckgestellt += 1;
+    }
 
     // Die Digest-Vorlage wird einmal VOR der Empfänger-Schleife geladen und eigens abgesichert:
     // schlägt das Rendern hier fehl (fehlender/kaputter admin_config-Key), betrifft das JEDEN
-    // Empfänger gleichermassen und würde sich bei jedem Lauf wiederholen. Deshalb alle aktuell
-    // wartenden Zeilen sofort sichtbar auf 'fehlgeschlagen' setzen, damit sie einzeln über
+    // Empfänger gleichermassen und würde sich bei jedem Lauf wiederholen. Deshalb alle heute
+    // fälligen Zeilen sofort sichtbar auf 'fehlgeschlagen' setzen, damit sie einzeln über
     // /admin/mails' "erneut versenden" wiederholt werden können.
     let vorlage;
     try {
       vorlage = ladeDigestVorlage(db);
     } catch (err) {
-      const jetzt = new Date().toISOString();
+      const zeitpunkt = new Date().toISOString();
       const zeilen = [...gruppen.values()].flat();
       markiereDigestZeilenFehlgeschlagen(db, zeilen, `Digest-Vorlage konnte nicht gerendert werden: ${err.message}`);
       finishCronLauf(db, laufId, {
-        beendetAm: jetzt,
+        beendetAm: zeitpunkt,
         status: 'fehler',
         details: `Digest-Vorlage konnte nicht gerendert werden: ${err.message}. ${zeilen.length} wartende(s) Mail-Log-Zeile(n) auf fehlgeschlagen gesetzt.`,
       });
@@ -601,14 +618,15 @@ async function runMailDigestJobInternal(db, config, mailer) {
     }
 
     const fehler = fehlgeschlagen + wiederholung > 0;
-    const details = `Digest-Mails versendet: ${versendet}, zur Wiederholung eingereiht: ${wiederholung}, endgültig fehlgeschlagen: ${fehlgeschlagen}, Empfänger insgesamt: ${gruppen.size}`;
+    const details = `Digest-Mails versendet: ${versendet}, zur Wiederholung eingereiht: ${wiederholung}, endgültig fehlgeschlagen: ${fehlgeschlagen}, bis zum Wochentag zurückgestellt: ${zurueckgestellt}, Empfänger insgesamt: ${alleGruppen.size}`;
     finishCronLauf(db, laufId, { beendetAm: new Date().toISOString(), status: fehler ? 'fehler' : 'erfolg', details });
     return {
       status: fehler ? 'fehler' : 'erfolg',
       versendet,
       wiederholung,
       fehlgeschlagen,
-      empfaenger: gruppen.size,
+      zurueckgestellt,
+      empfaenger: alleGruppen.size,
       ...(fehler ? { error: details } : {}),
     };
   } catch (err) {

@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { getVorlage, renderTemplate } from './mailTemplates.js';
+import { benachrichtigungFuer } from './benachrichtigung.js';
 
 // Persistente Zustellung aller Benachrichtigungen über mail_log (Outbox-Muster).
 //
 // Status einer mail_log-Zeile:
 //   'eingereiht'     dauerhaft gespeichert, wartet auf den (ersten oder nächsten) SMTP-Versuch
-//   'geplant'        dauerhaft gespeichert, wartet auf den Digest (Batching aktiv)
+//   'geplant'        dauerhaft gespeichert, wartet auf den Digest (Empfänger bündelt täglich/wöchentlich)
 //   'versendet'      der SMTP-Server hat die Nachricht angenommen
 //   'fehlgeschlagen' endgültig: Wiederholungen ausgeschöpft oder nicht zustellbar (z.B. Vorlage
 //                    nicht renderbar) -- nur noch manuell über /admin/mails wiederholbar
@@ -191,6 +192,9 @@ export async function stelleDigestZu(db, config, mailer, { empfaenger, ids, vorl
     anzahl: zeilen.length,
     eintraege: zeilen.map((z) => (z.job_id != null ? `- ${z.betreff} (Job #${z.job_id})` : `- ${z.betreff}`)).join('\n'),
     link: `${config.publicBaseUrl}/pool`,
+    // Aktuelle Wahl des Empfängers (auch bei Wiederholungen): "Wöchentliche" nur bei wöchentlich.
+    zusammenfassung: benachrichtigungFuer(db, empfaenger) === 'woechentlich' ? 'Wöchentliche' : 'Tägliche',
+    einstellungenLink: `${config.publicBaseUrl}/meine-benachrichtigungen`,
     portalName: getConfigValue(db, 'seiten_titel') || 'Freigabeportal',
   };
   let fehler = null;

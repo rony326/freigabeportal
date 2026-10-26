@@ -4,6 +4,7 @@ import { getVorlage, renderTemplate } from './mailTemplates.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { getAktivenVertreter } from './vertretung.js';
 import { reiheMailEin, stelleMailZu } from './mailZustellung.js';
+import { benachrichtigungFuer } from './benachrichtigung.js';
 
 const GRUPPE_BUCHHALTUNG_TOKEN = 'gruppe:buchhaltung';
 const GRUPPE_ADMIN_TOKEN = 'gruppe:admin';
@@ -13,13 +14,19 @@ const GRUPPE_ADMIN_TOKEN = 'gruppe:admin';
 export const FREIGABE2_AN_ADMIN_GRUND =
   'Eine Rechnung wartet auf Freigabe 2 und wurde an die Portal-Admin-Gruppe übergeben, da die zuständige Freigabe-2-Person für diese Rechnung bereits einen Interessenskonflikt erklärt hat.';
 
-// sync-fehler (ChurchTools-Ausfall) und iban-warnung (Betrugsverdacht) sind betriebs-/
-// sicherheitskritisch und ignorieren den globalen Batching-Schalter -- sie warten nie auf den
-// nächsten Digest-Lauf. kk-beleg-eingegangen kommt dazu: die Person, die per Mail einen Beleg
-// eingereicht hat, soll sofort den Ergänzen-Link bekommen statt bis zum nächsten Digest zu warten.
-// admin-umzuweisung: ein Admin hat einen laufenden Vorgang umgehängt -- die neue Person soll sofort
-// handeln können, die bisherige sofort wissen, dass sie nichts mehr tun muss.
-const IMMER_SOFORT_TYPEN = new Set(['sync-fehler', 'iban-warnung', 'kk-beleg-eingegangen', 'admin-umzuweisung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail']);
+// Typen, die nie auf den Digest warten -- unabhängig von der persönlichen Bündelung
+// (services/benachrichtigung.js). sync-fehler (ChurchTools-Ausfall) und iban-warnung
+// (Betrugsverdacht) sind betriebs-/sicherheitskritisch. kk-beleg-eingegangen: die Person, die per
+// Mail einen Beleg eingereicht hat, soll sofort den Ergänzen-Link bekommen. admin-umzuweisung: ein
+// Admin hat einen laufenden Vorgang umgehängt -- die neue Person soll sofort handeln können, die
+// bisherige sofort wissen, dass sie nichts mehr tun muss. Erinnerungen und Eskalationen (reminder,
+// eskalation, freigabe2-*, kk-beleg-erinnerung) sind zeitkritisch und dürfen nie eine Woche
+// warten; sicherheitsalarm, duplikat-warnung und rechnungsnummer-warnung sind Warnungen.
+export const IMMER_SOFORT_TYPEN = new Set([
+  'sync-fehler', 'iban-warnung', 'kk-beleg-eingegangen', 'admin-umzuweisung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail',
+  'reminder', 'eskalation', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-beleg-erinnerung',
+  'sicherheitsalarm', 'duplikat-warnung', 'rechnungsnummer-warnung',
+]);
 
 // The low-level "enqueue and try now" primitive for an already-rendered mail. /admin/mails'
 // "erneut versenden" replays an already-rendered mail_log row verbatim through here and must
@@ -62,9 +69,9 @@ export function renderBenachrichtigung(db, typ, variablen, vorlage = getVorlage(
 // `gerendert` optional: bereits gerenderte { subject, text } (der Aufrufer hat Vorlagenfehler selbst behandelt).
 export function reiheBenachrichtigungEin(db, { to, typ, jobId, variablen = {}, gerendert = null }) {
   const { subject, text } = gerendert ?? renderBenachrichtigung(db, typ, variablen);
-  const geplant = getConfigValue(db, 'mail_batching_aktiv') === '1' && !IMMER_SOFORT_TYPEN.has(typ);
-  // Batching aktiv: nur einreihen, kein SMTP-Call -- runMailDigestJob sammelt diese Zeile später
-  // ein und verschickt sie als Teil der Digest-Mail des Empfängers.
+  const geplant = !IMMER_SOFORT_TYPEN.has(typ) && benachrichtigungFuer(db, to) !== 'sofort';
+  // Empfänger bündelt (täglich/wöchentlich): nur einreihen, kein SMTP-Call -- runMailDigestJob
+  // sammelt diese Zeile später ein und verschickt sie als Teil der Digest-Mail des Empfängers.
   const id = reiheMailEin(db, { typ, jobId, empfaenger: to, betreff: subject, text, geplant });
   return { id, status: geplant ? 'geplant' : 'eingereiht' };
 }

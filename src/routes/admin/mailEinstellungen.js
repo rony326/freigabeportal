@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
 import { runMailDigestJob } from '../../services/cronJobs.js';
+import { standardBenachrichtigung } from '../../services/benachrichtigung.js';
 import { meldeAuditNachweisAenderung } from '../../services/auditNachweisJobs.js';
 
 const LOG_LIMIT = 10;
@@ -57,7 +58,7 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
     }
     return {
       ...felder,
-      batchingAktiv: getConfigValue(db, 'mail_batching_aktiv') === '1',
+      batchingAktiv: standardBenachrichtigung(db) !== 'sofort',
       batchingStunde: getConfigValue(db, 'mail_batching_stunde'),
       batchingMinute: getConfigValue(db, 'mail_batching_minute'),
       digestLog: listRecentCronLog(db, 'mail-digest', LOG_LIMIT),
@@ -118,6 +119,9 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
       setConfigValue(db, configKey, felder[feldName]);
     }
     setConfigValue(db, 'mail_batching_aktiv', batchingAktiv ? '1' : '0');
+    // Übergang bis zur Standard-Auswahl: Schalter an → täglich (wöchentlich bleibt), aus → sofort.
+    if (!batchingAktiv) setConfigValue(db, 'mail_standard_benachrichtigung', 'sofort');
+    else if (standardBenachrichtigung(db) === 'sofort') setConfigValue(db, 'mail_standard_benachrichtigung', 'taeglich');
     setConfigValue(db, 'mail_batching_stunde', String(batchingStundeNum));
     setConfigValue(db, 'mail_batching_minute', String(batchingMinuteNum));
     // Mail ist Nebenwirkung: ein Mailfehler macht das Speichern nicht rückgängig.

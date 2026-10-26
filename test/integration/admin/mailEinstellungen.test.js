@@ -110,6 +110,7 @@ test('POST /admin/mail-einstellungen saves all 8 templates and the batching conf
   assert.equal(getConfigValue(db, 'mail_vorlage_zuweisung_betreff'), 'B1');
   assert.equal(getConfigValue(db, 'mail_vorlage_digest_text'), 'T8');
   assert.equal(getConfigValue(db, 'mail_batching_aktiv'), '1');
+  assert.equal(getConfigValue(db, 'mail_standard_benachrichtigung'), 'taeglich', 'Übergang: Schalter an → Standard täglich');
   assert.equal(getConfigValue(db, 'mail_batching_stunde'), '6');
   assert.equal(getConfigValue(db, 'mail_batching_minute'), '30');
   db.close();
@@ -156,9 +157,11 @@ test('POST /admin/mail-einstellungen with batchingAktiv absent (checkbox uncheck
   const app = buildTestApp(db);
   const body = { ...VALID_BODY };
   delete body.batchingAktiv;
+  setConfigValue(db, 'mail_standard_benachrichtigung', 'woechentlich');
   const res = await request(app).post('/admin/mail-einstellungen').set('x-test-person-id', '99').type('form').send(body);
   assert.equal(res.status, 302);
   assert.equal(getConfigValue(db, 'mail_batching_aktiv'), '0');
+  assert.equal(getConfigValue(db, 'mail_standard_benachrichtigung'), 'sofort', 'Übergang: Schalter aus → Standard sofort');
   db.close();
 });
 

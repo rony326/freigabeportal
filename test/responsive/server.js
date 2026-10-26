@@ -108,6 +108,9 @@ export async function starteResponsiveServer({ port = 0 } = {}) {
     downloadSigningSecret: 'responsive-download-secret',
     churchtools: { baseUrl: 'https://echt.invalid', clientId: 'id', groupIdAdmin: '1', groupIdBuchhaltung: '2' },
   };
+  // Rückfallebene: auch bei hartem Abbruch (process.exit) bleibt kein Temp-Verzeichnis liegen.
+  const entferneDir = () => rmSync(dir, { recursive: true, force: true });
+  process.once('exit', entferneDir);
   for (const d of [config.jobsDir, config.brandingDir, config.backupDir]) mkdirSync(d, { recursive: true });
   const echteDb = openDatabase(config.dbPath);
   seedDefaults(echteDb);
@@ -143,16 +146,21 @@ export async function starteResponsiveServer({ port = 0 } = {}) {
     const s = huelle.listen(port, '127.0.0.1', () => resolve(s));
   });
   const url = `http://127.0.0.1:${server.address().port}`;
+  let gestoppt = false;
   return {
     url,
     ids,
     db: sp.db,
     mailer,
     async stop() {
+      if (gestoppt) return;
+      gestoppt = true;
+      server.closeAllConnections?.();
       await new Promise((resolve) => server.close(resolve));
-      sp.db.close();
-      echteDb.close();
-      rmSync(dir, { recursive: true, force: true });
+      try { sp.db.close(); } catch { /* schon zu */ }
+      try { echteDb.close(); } catch { /* schon zu */ }
+      entferneDir();
+      process.removeListener('exit', entferneDir);
     },
   };
 }

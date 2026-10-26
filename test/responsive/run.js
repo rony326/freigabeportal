@@ -1,10 +1,11 @@
 // Responsive-Browsertest: jede Seite aus seiten.js in 360/768/1024/1280 px.
 // Prüft: seitliches Scrollen (ueberlauf), Touch-Ziele < 44 px (touch, nur Touch-Breiten), Menü
-// unter 992 px (menue), Testmodus-Band höchstens 30 % hoch und Inhalt erreichbar (band),
-// HTTP-Status bzw. Ladefehler (status).
+// unter 992 px (menue), Testmodus-Band höchstens 30 % hoch und Inhalt erreichbar (band).
 // Aufruf: npm run test:responsive [-- --seite=<Teil des Namens> --breite=360]
 // Ausgabe: eine Zeile je Verstoss "Breite Seite Art Selektor Masse", danach Zusammenfassung.
-// Exit-Code 1 bei Verstössen. Screenshots der betroffenen Seiten nach test-results/responsive/.
+// Exit-Codes: 0 alles gut, 1 Verstösse, 2 Test selbst gescheitert (Browser/Server startet nicht,
+// Seite lädt nicht oder falscher HTTP-Status, Filter passt auf nichts) — getrennt ausgegeben.
+// Screenshots der betroffenen Seiten nach test-results/responsive/.
 import { chromium } from 'playwright';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -69,13 +70,14 @@ function pruefeImBrowser({ minTouch, touch, bandMaxAnteil }) {
   };
 
   // 1. Seitliches Scrollen. Tabellen in .table-responsive (bzw. jedes Element in einem eigenen
-  // Scroll-Rahmen) zählen nicht: ihr Rahmen schneidet sie ab.
+  // Scroll-Rahmen mit overflow-x auto/scroll) zählen nicht: nur ihr Rahmen scrollt.
   const scrollBreite = document.documentElement.scrollWidth;
   if (scrollBreite > vw + 1) {
     const inScrollRahmen = (el) => {
       for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        // Nur echte Scroll-Rahmen (z. B. .table-responsive); overflow hidden schneidet nur ab.
         const ox = getComputedStyle(p).overflowX;
-        if (ox !== 'visible' && ox !== 'clip') return true;
+        if (ox === 'auto' || ox === 'scroll') return true;
       }
       return false;
     };
@@ -164,7 +166,9 @@ async function pruefeMenue(page) {
 }
 
 async function sendeFehlerzustand(page, fz) {
-  const antwort = page.waitForResponse((r) => r.request().method() === 'POST' && r.request().resourceType() === 'document', { timeout: 15000 });
+  // Auf die vollständig geladene Antwortseite warten (nicht nur auf die Antwort: sonst läuft die
+  // Prüfung noch im alten oder halb aufgebauten Dokument und findet nichts).
+  const navigation = page.waitForNavigation({ waitUntil: 'load', timeout: 15000 });
   const ok = await page.evaluate(({ formular, felder, knopf }) => {
     const form = document.querySelector(formular);
     if (!form) return false;
@@ -189,8 +193,8 @@ async function sendeFehlerzustand(page, fz) {
     return true;
   }, fz);
   if (!ok) throw new Error(`Formular ${fz.formular} nicht gefunden`);
-  const res = await antwort;
-  await page.waitForLoadState('load');
+  const res = await navigation;
+  if (!res || res.request().method() !== 'POST') throw new Error(`Formular ${fz.formular}: keine POST-Antwort`);
   return res.status();
 }
 
@@ -202,19 +206,22 @@ async function pruefeSeite(browser, server, seite, b) {
     deviceScaleFactor: 1,
     locale: 'de-CH',
   });
+  // Kein Netz für den Browser: alles ausser dem lokalen Server wird abgebrochen.
+  await context.route((url) => !url.href.startsWith(`${server.url}/`), (route) => route.abort());
   const page = await context.newPage();
   page.on('dialog', (d) => d.accept().catch(() => {}));
   const verstoesse = [];
+  const fehler = []; // Infrastruktur/Laden (falscher HTTP-Status, Zeitüberschreitung …): Exit 2
   try {
     const pfad = pfadFuer(seite, server.ids);
     const res = await page.goto(server.url + pfad, { waitUntil: 'load', timeout: 30000 });
     let status = res ? res.status() : 0;
     if (seite.fehlerzustand) {
-      if (status !== 200) verstoesse.push({ art: 'status', selektor: pfad, masse: `Formularseite HTTP ${status}` });
+      if (status !== 200) fehler.push(`${pfad}: Formularseite HTTP ${status}`);
       status = await sendeFehlerzustand(page, seite.fehlerzustand);
     }
     const erwartet = seite.status ?? 200;
-    if (status !== erwartet) verstoesse.push({ art: 'status', selektor: pfad, masse: `HTTP ${status} statt ${erwartet}` });
+    if (status !== erwartet) fehler.push(`${pfad}: HTTP ${status} statt ${erwartet}`);
     await page.waitForTimeout(50);
     verstoesse.push(...await page.evaluate(pruefeImBrowser, { minTouch: MIN_TOUCH, touch: b.hasTouch, bandMaxAnteil: BAND_MAX_ANTEIL }));
     if (b.breite < MENUE_BIS) verstoesse.push(...await pruefeMenue(page));
@@ -223,11 +230,14 @@ async function pruefeSeite(browser, server, seite, b) {
       await page.screenshot({ path: join(SCREENSHOT_DIR, `${b.breite}-${slug(seite.name)}.png`), fullPage: true }).catch(() => {});
     }
   } catch (err) {
-    verstoesse.push({ art: 'status', selektor: seite.pfad, masse: `Fehler: ${String(err.message).split('\n')[0].slice(0, 120)}` });
+    fehler.push(`${seite.pfad}: ${String(err.message).split('\n')[0].slice(0, 160)}`);
   } finally {
-    await context.close();
+    await context.close().catch(() => {});
   }
-  return verstoesse.map((v) => ({ ...v, breite: b.breite, seite: seite.name }));
+  return {
+    verstoesse: verstoesse.map((v) => ({ ...v, breite: b.breite, seite: seite.name })),
+    fehler: fehler.map((text) => `${b.breite}  ${seite.name}  ${text}`),
+  };
 }
 
 // Gleiche Verstösse (gleiche Art, Selektor, Masse) auf einer Seite zu einer Zeile zusammenfassen.
@@ -243,7 +253,7 @@ function zusammenfassen(verstoesse) {
 }
 
 function tabelle(verstoesse, breiten) {
-  const arten = ['ueberlauf', 'touch', 'menue', 'band', 'status'];
+  const arten = ['ueberlauf', 'touch', 'menue', 'band'];
   const zeilen = [['Art', ...breiten.map((b) => String(b.breite)), 'Summe']];
   for (const art of arten) {
     const proBreite = breiten.map((b) => verstoesse.filter((v) => v.art === art && v.breite === b.breite).length);
@@ -255,27 +265,60 @@ function tabelle(verstoesse, breiten) {
   return zeilen.map((z) => z.map((c, i) => (i === 0 ? c.padEnd(breite[i]) : c.padStart(breite[i]))).join('  ')).join('\n');
 }
 
+// Aufräumen auch bei Abbruch (Ctrl-C, kill): Browser schliessen, Server und Temp-Verzeichnis weg.
+let aufraeumen = async () => {};
+for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+  process.once(signal, async () => {
+    console.error(`\nAbbruch (${signal}) — räume auf …`);
+    await aufraeumen().catch(() => {});
+    process.exit(code);
+  });
+}
+
+function abbruch(meldung) {
+  console.error(meldung);
+  process.exitCode = 2;
+}
+
 async function main() {
+  if (filterBreite !== null && !BREITEN.some((b) => b.breite === filterBreite)) {
+    return abbruch(`--breite=${arg('breite')} gibt es nicht. Gültig: ${BREITEN.map((b) => b.breite).join(', ')}.`);
+  }
   const seiten = SEITEN.filter((s) => !filterSeite || s.name.toLowerCase().includes(filterSeite.toLowerCase()));
   const breiten = BREITEN.filter((b) => !filterBreite || b.breite === filterBreite);
+  if (!seiten.length) {
+    return abbruch(`--seite=${filterSeite} passt auf keine Seite. Beispiele: ${SEITEN.slice(0, 8).map((s) => `"${s.name}"`).join(', ')} … (alle in test/responsive/seiten.js).`);
+  }
   rmSync(SCREENSHOT_DIR, { recursive: true, force: true });
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
-  const server = await starteResponsiveServer();
-  const browser = await chromium.launch();
   const auftraege = breiten.flatMap((b) => seiten.map((s) => ({ s, b })));
   const alle = [];
+  const fehler = [];
   const start = Date.now();
+  let server = null;
+  let browser = null;
+  aufraeumen = async () => {
+    const b = browser;
+    const sv = server;
+    browser = null;
+    server = null;
+    if (b) await b.close().catch(() => {});
+    if (sv) await sv.stop();
+  };
   try {
+    server = await starteResponsiveServer();
+    browser = await chromium.launch();
     let naechster = 0;
     await Promise.all(Array.from({ length: PARALLEL }, async () => {
-      while (naechster < auftraege.length) {
+      while (naechster < auftraege.length && browser) {
         const { s, b } = auftraege[naechster++];
-        alle.push(...await pruefeSeite(browser, server, s, b));
+        const ergebnis = await pruefeSeite(browser, server, s, b);
+        alle.push(...ergebnis.verstoesse);
+        fehler.push(...ergebnis.fehler);
       }
     }));
   } finally {
-    await browser.close();
-    await server.stop();
+    await aufraeumen();
   }
 
   const reihenfolge = (v) => [breiten.findIndex((b) => b.breite === v.breite), seiten.findIndex((s) => s.name === v.seite)];
@@ -296,10 +339,17 @@ async function main() {
     console.log(`\nMeiste Verstösse: ${top.map(([s, n]) => `${s} ${n}`).join(', ')}`);
     console.log(`Screenshots: ${SCREENSHOT_DIR}`);
   }
+  if (fehler.length) {
+    console.error(`\n${fehler.length} Seiten liessen sich nicht prüfen (Infrastruktur/Laden, keine Verstösse):`);
+    for (const f of fehler.sort()) console.error(`  ${f}`);
+    process.exitCode = 2;
+    return;
+  }
   process.exitCode = alle.length ? 1 : 0;
 }
 
 main().catch((err) => {
+  // z. B. Browser startet nicht (fehlende Systembibliotheken): Server ist im finally bereits gestoppt.
   console.error(err);
   process.exitCode = 2;
 });

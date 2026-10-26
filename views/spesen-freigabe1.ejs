@@ -2,11 +2,9 @@
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Spesen-Freigabe 1: <%= job.dateiname %></h1>
     </div>
-    <div class="row g-3">
-      <div class="col-lg-7">
-        <iframe id="spesen-freigabe1-preview-frame" class="pdf-preview" style="width:100%;height:80vh" data-preview-url="<%= previewUrl %>"></iframe>
-      </div>
-      <div class="col-lg-5">
+    <div class="row g-3 beleg-umschalter" data-beleg-umschalter data-refresh-url="/downloads/<%= job.id %>/refresh-url">
+      <%- include('_beleg_umschalter', { jobId: job.id, pdfUrl: `/downloads/${job.id}/oeffnen`, thumbnailUrl: job.thumbnail_pfad ? `/downloads/${job.id}/thumbnail` : null, refreshUrl: `/downloads/${job.id}/refresh-url`, previewUrl, frameId: 'spesen-freigabe1-preview-frame', spalte: 'col-lg-7', hoehe: '80vh' }) %>
+      <div class="col-lg-5 beleg-umschalter-formular">
         <% if (job.freigabe1_eskaliert_von) { %>
           <p class="text-muted">Hinweis: dir zugewiesen — <%= job.freigabe1_eskalationsgrund %></p>
         <% } %>
@@ -54,11 +52,4 @@
       </div>
     </div>
 
-  <script>
-    (function () {
-      var frame = document.getElementById('spesen-freigabe1-preview-frame');
-      var absoluteUrl = new URL(frame.dataset.previewUrl, window.location.origin).href;
-      frame.src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(absoluteUrl);
-    })();
-  </script>
 <%- include('_seite_ende') %>

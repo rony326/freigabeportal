@@ -461,3 +461,55 @@ test('GET /downloads/:jobId falls back to the Elternjob\'s own original PDF once
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
+
+// "PDF öffnen" (Handy/Tablet, views/_beleg_umschalter.ejs): stabiler Link im Markup, der beim Klick
+// mit der Session neu autorisiert und auf eine frisch signierte URL umleitet — so steht keine
+// langlebige signierte URL im DOM und ein lange offenes Formular öffnet trotzdem das PDF.
+test('GET /downloads/:jobId/oeffnen returns 401 without a session', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const { id } = seedJobWithFile(db, dir);
+  const res = await request(buildTestAppWithSession(db, testConfig())).get(`/downloads/${id}/oeffnen`);
+  assert.equal(res.status, 401);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/oeffnen redirects the assigned person to a fresh, valid signed URL serving the PDF', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  upsertPerson(db, { id: '1', vorname: 'Kon', nachname: 'Tierer', email: 'k@example.org', gruppen: [], loggedInNow: true });
+  const { id } = seedJobWithFile(db, dir);
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(id);
+  const app = buildTestAppWithSession(db, config);
+
+  const res = await request(app).get(`/downloads/${id}/oeffnen`).set('x-test-person-id', '1');
+  assert.equal(res.status, 302);
+  assert.ok(res.headers.location.startsWith(`/downloads/${id}?`));
+  assert.equal(res.headers['cache-control'], 'no-store');
+  const url = new URL(res.headers.location, 'http://localhost');
+  assert.ok(verifySignedDownload(config, id, url.searchParams.get('expires'), url.searchParams.get('signature')));
+  const pdfRes = await request(app).get(res.headers.location);
+  assert.equal(pdfRes.status, 200);
+  assert.ok(Buffer.from(pdfRes.body).equals(PDF_BYTES));
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('GET /downloads/:jobId/oeffnen returns 403 for a person the job is not assigned to, 404 for an unknown job', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  upsertPerson(db, { id: '1', vorname: 'Kon', nachname: 'Tierer', email: 'k@example.org', gruppen: [], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'An', nachname: 'Dere', email: 'a@example.org', gruppen: [], loggedInNow: true });
+  const { id } = seedJobWithFile(db, dir);
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(id);
+  const app = buildTestAppWithSession(db, testConfig());
+  const fremd = await request(app).get(`/downloads/${id}/oeffnen`).set('x-test-person-id', '2');
+  assert.equal(fremd.status, 403);
+  assert.equal(fremd.headers.location, undefined);
+  const unbekannt = await request(app).get('/downloads/999999/oeffnen').set('x-test-person-id', '1');
+  assert.equal(unbekannt.status, 404);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});

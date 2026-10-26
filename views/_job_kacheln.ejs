@@ -6,7 +6,7 @@
     <div class="col">
       <div class="kachel d-flex flex-column gap-2" id="<%= idPrefix %>-kachel-<%= job.id %>" data-job-container>
         <% if (job.thumbnail_pfad) { %>
-          <img class="thumbnail-preview pdf-preview kachel-vorschau rounded" src="/downloads/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau">
+          <a href="/downloads/<%= job.id %>/oeffnen" target="_blank" rel="noopener" class="thumbnail-link d-block" aria-label="PDF öffnen: <%= job.dateiname %>"><img class="thumbnail-preview pdf-preview kachel-vorschau rounded" src="/downloads/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau"></a>
         <% } else { %>
           <div class="thumbnail-placeholder kachel-vorschau-leer text-muted small">Keine Vorschau</div>
         <% } %>

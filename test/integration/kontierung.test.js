@@ -181,7 +181,8 @@ test('GET /kontierung/:id embeds the preview through the PDF.js viewer, not a ra
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
   assert.match(res.text, /id="kontierung-preview-frame" data-preview-url="\/downloads\/\d+\?expires=\d+&amp;signature=[0-9a-f]{64}"/);
-  assert.match(res.text, /'\/vendor\/pdfjs\/web\/viewer\.html\?file=' \+ encodeURIComponent\(absoluteUrl\)/);
+  // Der PDF.js-Aufruf steht in public/js/belegUmschalter.js (geprüft in belegUmschalter.test.js).
+  assert.match(res.text, /<script src="\/js\/belegUmschalter\.js" defer><\/script>/);
   assert.match(res.text, /id="preview-refresh-btn"/);
   assert.match(res.text, new RegExp(`/downloads/${id}/refresh-url`));
   db.close();

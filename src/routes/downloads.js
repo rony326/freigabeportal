@@ -35,6 +35,23 @@ export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITE
     res.json({ url: buildSignedDownloadUrl(config, jobId, PDF_PREVIEW_TTL_SECONDS) });
   });
 
+  // "PDF öffnen" on phones/tablets (views/_beleg_umschalter.ejs, pool thumbnails): a stable link
+  // in the markup instead of a signed URL that expires while the page is open. Same
+  // re-authorization as refresh-url, then a redirect to a freshly signed URL — works without JS
+  // and opens in a new tab (target=_blank) without tripping popup blockers.
+  router.get('/:jobId/oeffnen', sessionLimiter, requireLogin(), (req, res) => {
+    const jobId = Number(req.params.jobId);
+    const job = getJobById(db, jobId);
+    if (!job) {
+      return res.status(404).json({ error: 'Job nicht gefunden.' });
+    }
+    if (!canViewJobPdf(db, config, req.currentPerson, job)) {
+      return res.status(403).json({ error: 'Kein Zugriff auf diesen Job.' });
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.redirect(302, buildSignedDownloadUrl(config, jobId, PDF_PREVIEW_TTL_SECONDS));
+  });
+
   // Same authorization as /:jobId/refresh-url — any session that may see this job's PDF may
   // also see its thumbnail (dashboard table, Pool section included). Session-authenticated,
   // unlike the PDF stream below (which uses a signed URL so n8n can fetch it without a session).

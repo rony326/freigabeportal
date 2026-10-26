@@ -380,9 +380,10 @@ test('PDF-Seiten: PDF und Formular füllen ab lg die ganze Zeile (keine Zentrier
     const inhalt = readFileSync(join(viewsDir, name), 'utf8');
     assert.doesNotMatch(inhalt, /justify-content-center/, `${name}: zentrierte Zeile lässt Breite leer`);
     assert.doesNotMatch(inhalt, /col-xl-\d/, `${name}: eigene xl-Spaltenbreite lässt Breite leer`);
-    const pdf = inhalt.match(/<div class="col-lg-(\d+)">\s*<iframe[^\n]*pdf-preview/);
+    // PDF-Spalte über das Partial _beleg_umschalter (spalte: 'col-lg-N'), Formularspalte danach.
+    const pdf = inhalt.match(/include\('_beleg_umschalter', \{[^\n]*?spalte: 'col-lg-(\d+)'/);
     assert.ok(pdf, `${name}: PDF-Spalte fehlt`);
-    const formular = inhalt.slice(pdf.index + pdf[0].length).match(/<div class="col-lg-(\d+)">/);
+    const formular = inhalt.slice(pdf.index + pdf[0].length).match(/<div class="col-lg-(\d+) beleg-umschalter-formular">/);
     assert.ok(formular, `${name}: Formularspalte fehlt`);
     assert.equal(Number(pdf[1]) + Number(formular[1]), 12, `${name}: PDF + Formular ≠ 12 Spalten`);
   }

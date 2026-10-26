@@ -1,0 +1,40 @@
+<%
+  // Belegspalte der PDF-Seiten (Responsive-Durchgang, Ziel 5). Aufruf innerhalb einer
+  // <div class="row … beleg-umschalter" data-beleg-umschalter data-refresh-url="…">, deren
+  // Formularspalte die Klasse beleg-umschalter-formular trägt:
+  //   include('_beleg_umschalter', { jobId, pdfUrl, thumbnailUrl, refreshUrl, previewUrl, frameId, spalte, einbetten, hoehe })
+  //   pdfUrl       stabiler Link "PDF öffnen" (/downloads/:id/oeffnen, leitet auf frisch signierte URL um)
+  //   thumbnailUrl /downloads/:id/thumbnail oder null (dann Platzhalter)
+  //   previewUrl   signierte Vorschau-URL fürs eingebettete PDF (nur ab 992 px, per Skript geladen)
+  //   einbetten    false: kein eingebettetes PDF (Aufsplitten hatte nie eines; dann spalte 'col-12 d-lg-none')
+  // Ab 992 px wie bisher (eingebettetes PDF neben dem Formular). Darunter Umschalter
+  // "Beleg / Formular" und statt des PDFs Vorschaubild + "PDF öffnen" (iOS scrollt eingebettete
+  // PDFs nicht zuverlässig). Ohne JS bleiben die Knöpfe verborgen und beide Bereiche sichtbar.
+  const bEinbetten = locals.einbetten !== false;
+  const bSpalte = locals.spalte || 'col-lg-7';
+%>
+      <div class="col-12 d-lg-none beleg-umschalter-knoepfe" hidden>
+        <div class="btn-group w-100" role="group" aria-label="Ansicht wählen">
+          <button type="button" class="btn btn-outline-primary" data-beleg-ansicht="beleg" aria-pressed="false" aria-controls="beleg-umschalter-beleg">Beleg</button>
+          <button type="button" class="btn btn-outline-primary active" data-beleg-ansicht="formular" aria-pressed="true">Formular</button>
+        </div>
+      </div>
+      <div class="<%= bSpalte %> beleg-umschalter-beleg" id="beleg-umschalter-beleg">
+        <% if (bEinbetten) { %>
+        <div class="d-none d-lg-block">
+          <iframe id="<%= frameId %>" data-preview-url="<%= previewUrl %>" src="" class="w-100 rounded pdf-preview" style="height:<%= locals.hoehe || '85vh' %>" title="Beleg"></iframe>
+        </div>
+        <% } %>
+        <div class="d-lg-none beleg-umschalter-vorschau mb-3">
+          <% if (thumbnailUrl) { %>
+            <a href="<%= pdfUrl %>" target="_blank" rel="noopener" aria-label="PDF öffnen (Vorschaubild)"><img src="<%= thumbnailUrl %>" alt="Vorschau des Belegs" class="beleg-umschalter-bild rounded border" loading="lazy"></a>
+            <div class="beleg-umschalter-leer text-muted small" hidden>Keine Vorschau verfügbar</div>
+          <% } else { %>
+            <div class="beleg-umschalter-leer text-muted small">Keine Vorschau verfügbar</div>
+          <% } %>
+          <div class="mt-2">
+            <a class="btn btn-primary" href="<%= pdfUrl %>" target="_blank" rel="noopener">PDF öffnen</a>
+          </div>
+        </div>
+      </div>
+      <script src="/js/belegUmschalter.js" defer></script>

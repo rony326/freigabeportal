@@ -130,6 +130,10 @@
 .portal-label {
   flex-grow: 1;
   min-width: 0;
+  /* Lange Wörter (fett beim aktiven Punkt, z. B. "Benachrichtigungen") trennen statt über den
+     Rand der 210-px-Leiste zu ragen. Wirkt nur, wo das Wort sonst nicht passt. */
+  hyphens: auto;
+  overflow-wrap: anywhere;
 }
 .portal-zaehler {
   background: var(--brand-primary);
@@ -377,8 +381,14 @@
   .btn-lg {
     --bs-btn-padding-y: max(.25rem, calc(22px - .75em - 1px));
     min-width: 44px;
+    /* min-width ersetzt in Flex-Zeilen das automatische Minimum (Textbreite): ohne flex-shrink:0
+       würde ein Knopf schmaler als sein Text gedrückt ("Wechseln" im Testmodus-Band). Die
+       Zeilen umbrechen stattdessen (flex-wrap). */
+    flex-shrink: 0;
   }
-  .btn-close {
+  .btn-close,
+  .offcanvas-header .btn-close,
+  .modal-header .btn-close {
     padding: calc((44px - 1em) / 2);
   }
   .form-control,
@@ -389,6 +399,14 @@
   }
   .form-control[type="color"] {
     min-width: 44px;
+  }
+  /* Dateiauswahl: der Knopf "Datei wählen" füllt die 44 px hohe Zeile, Text mittig. */
+  .form-control[type="file"] {
+    padding-block: calc(22px - .75em - 1px);
+  }
+  .form-control[type="file"]::file-selector-button {
+    padding-block: calc(22px - .75em - 1px);
+    margin-block: calc(-1 * (22px - .75em - 1px));
   }
   .page-link {
     min-width: 44px;
@@ -404,13 +422,27 @@
     display: flex;
     align-items: center;
   }
-  /* Checkbox/Radio: die ganze Zeile inkl. Beschriftung ist die Klickfläche. */
+  /* Checkbox/Radio: die ganze Zeile inkl. Beschriftung ist die Klickfläche. Weitere Kinder
+     (z. B. .form-text als Hinweis) stehen eingerückt in voller Breite darunter. */
   .form-check {
     min-height: 44px;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: .5rem;
+    gap: 0 .5rem;
     padding-left: 0;
+  }
+  .form-check > :not(.form-check-input):not(.form-check-label) {
+    flex: 0 0 100%;
+    padding-left: calc(1.25em + .5rem);
+  }
+  /* Häkchen im Label (z. B. Aufsplitten "Konflikt"): Abstand wie bei Geschwistern. */
+  .form-check-label:has(> .form-check-input) {
+    gap: .5rem;
+  }
+  /* Spalte im Raster behält ihr Rasterpolster (sonst klebt das Häkchen am Kartenrand). */
+  .row > .form-check {
+    padding-left: calc(var(--bs-gutter-x) * .5);
   }
   .form-check .form-check-input {
     float: none;
@@ -420,7 +452,8 @@
     height: 1.25em;
   }
   .form-check .form-check-label {
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    min-width: 0;
     min-height: 44px;
     display: flex;
     align-items: center;

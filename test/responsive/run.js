@@ -1,6 +1,8 @@
 // Responsive-Browsertest: jede Seite aus seiten.js in 360/768/1024/1280 px.
-// Prüft: seitliches Scrollen (ueberlauf), Touch-Ziele < 44 px (touch, nur Touch-Breiten), Menü
-// unter 992 px (menue), Testmodus-Band höchstens 30 % hoch und Inhalt erreichbar (band).
+// Prüft: seitliches Scrollen (ueberlauf), Touch-Ziele < 44 px (touch, nur Touch-Breiten, inkl.
+// Reiter und Seitenleisten-Punkte — unter 992 px im geöffneten Menü), Knopf-/Menütext passt in
+// seinen Kasten (text), Bedienelemente überdecken sich nicht (ueberlappung), Menü unter 992 px
+// (menue), Testmodus-Band höchstens 30 % hoch und Inhalt erreichbar (band).
 // Aufruf: npm run test:responsive [-- --seite=<Teil des Namens> --breite=360]
 // Ausgabe: eine Zeile je Verstoss "Breite Seite Art Selektor Masse", danach Zusammenfassung.
 // Exit-Codes: 0 alles gut, 1 Verstösse, 2 Test selbst gescheitert (Browser/Server startet nicht,
@@ -36,8 +38,11 @@ function pfadFuer(seite, ids) {
 }
 
 // Läuft im Browser: sammelt Verstösse gegen Überlauf, Touch-Ziele und Band-Höhe.
-function pruefeImBrowser({ minTouch, touch, bandMaxAnteil }) {
+// wurzel: nur Elemente darin prüfen (geöffnetes Menü), dann ohne Überlauf und Band.
+function pruefeImBrowser({ minTouch, touch, bandMaxAnteil, wurzel = null }) {
   const verstoesse = [];
+  const bereich = wurzel ? document.querySelector(wurzel) : document;
+  if (!bereich) return verstoesse;
   const vw = document.documentElement.clientWidth;
   const vh = window.innerHeight;
   const masse = (r) => `${Math.round(r.width)}×${Math.round(r.height)}`;
@@ -72,7 +77,7 @@ function pruefeImBrowser({ minTouch, touch, bandMaxAnteil }) {
   // 1. Seitliches Scrollen. Tabellen in .table-responsive (bzw. jedes Element in einem eigenen
   // Scroll-Rahmen mit overflow-x auto/scroll) zählen nicht: nur ihr Rahmen scrollt.
   const scrollBreite = document.documentElement.scrollWidth;
-  if (scrollBreite > vw + 1) {
+  if (!wurzel && scrollBreite > vw + 1) {
     const inScrollRahmen = (el) => {
       for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
         // Nur echte Scroll-Rahmen (z. B. .table-responsive); overflow hidden schneidet nur ab.
@@ -102,11 +107,12 @@ function pruefeImBrowser({ minTouch, touch, bandMaxAnteil }) {
     }
   }
 
+  const ZIELE = 'a.btn, button, input:not([type=hidden]), select, textarea, .form-check-input, .nav-link, .portal-punkt, .dropdown-item';
+  const sichtbareZiele = [...bereich.querySelectorAll(ZIELE)].filter(sichtbar);
+
   // 2. Touch-Ziele (nur Touch-Breiten).
   if (touch) {
-    const ziele = document.querySelectorAll('a.btn, button, input:not([type=hidden]), select, textarea, .form-check-input');
-    for (const el of ziele) {
-      if (!sichtbar(el)) continue;
+    for (const el of sichtbareZiele) {
       let r = el.getBoundingClientRect();
       let box = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
       // Checkbox/Radio: das zugehörige Label vergrössert die Klickfläche.
@@ -126,7 +132,42 @@ function pruefeImBrowser({ minTouch, touch, bandMaxAnteil }) {
     }
   }
 
-  // 3. Testmodus-Band höchstens 30 % des Bildschirms, Inhalt bleibt erreichbar.
+  // 3. Text passt: Knopf- und Menütext ragt nicht über den Rand seines Kastens hinaus (abgeschnitten
+  // oder in den Nachbarn hinein). Gemessen wird der Inhalt selbst (Range), nicht scrollWidth: Text,
+  // der nur ins Innenpolster ragt, ist noch ganz im Kasten sichtbar.
+  for (const el of sichtbareZiele) {
+    if (!el.matches('a.btn, button, .nav-link, .portal-punkt, .dropdown-item')) continue;
+    const bereichText = document.createRange();
+    bereichText.selectNodeContents(el);
+    const t = bereichText.getBoundingClientRect();
+    if (t.width < 1 || t.height < 1) continue;
+    const r = el.getBoundingClientRect();
+    if (t.left < r.left - 1 || t.right > r.right + 1 || t.top < r.top - 1 || t.bottom > r.bottom + 1) {
+      markiere(el);
+      verstoesse.push({ art: 'text', selektor: selektor(el), masse: `Inhalt ${Math.round(t.width)}×${Math.round(t.height)} ragt aus Kasten ${masse(r)}` });
+    }
+  }
+
+  // 4. Überlappung: zwei Bedienelemente (keines im anderen) überdecken sich um mehr als 1 px in
+  // beiden Richtungen. Knopfgruppen/Eingabegruppen teilen sich nur den 1-px-Rand.
+  const kaesten = sichtbareZiele.map((el) => ({ el, r: el.getBoundingClientRect() }));
+  for (let i = 0; i < kaesten.length; i += 1) {
+    for (let j = i + 1; j < kaesten.length; j += 1) {
+      const a = kaesten[i];
+      const b = kaesten[j];
+      if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+      const x = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+      const y = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+      if (x > 1 && y > 1) {
+        markiere(a.el);
+        markiere(b.el);
+        verstoesse.push({ art: 'ueberlappung', selektor: `${selektor(a.el)} ⟷ ${selektor(b.el)}`, masse: `${Math.round(x)}×${Math.round(y)}` });
+      }
+    }
+  }
+  if (wurzel) return verstoesse;
+
+  // 5. Testmodus-Band höchstens 30 % des Bildschirms, Inhalt bleibt erreichbar.
   const band = document.querySelector('.testmodus-band');
   if (band) {
     const r = band.getBoundingClientRect();
@@ -142,7 +183,7 @@ function pruefeImBrowser({ minTouch, touch, bandMaxAnteil }) {
   return verstoesse;
 }
 
-async function pruefeMenue(page) {
+async function pruefeMenue(page, optionen) {
   const hatLeiste = await page.locator('#portal-seitenleiste').count();
   if (!hatLeiste) return []; // Seiten ohne Rahmen (z. B. Aufsplitten im Modal) haben kein Menü
   const knopf = page.locator('#seitenleiste-toggle');
@@ -157,9 +198,12 @@ async function pruefeMenue(page) {
       const r = leiste.getBoundingClientRect();
       return r.width > 0 && r.right > 0 && r.left < document.documentElement.clientWidth && getComputedStyle(leiste).visibility !== 'hidden';
     }, null, { timeout: 3000 });
+    // Menüpunkte im geöffneten Menü messen (Touch-Grösse, Text, Überlappung); Einblenden abwarten.
+    await page.waitForFunction(() => !document.querySelector('#portal-seitenleiste.showing'), null, { timeout: 3000 }).catch(() => {});
+    const imMenue = await page.evaluate(pruefeImBrowser, { ...optionen, wurzel: '#portal-seitenleiste' });
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.querySelector('#portal-seitenleiste')?.classList.contains('show'), null, { timeout: 3000 }).catch(() => {});
-    return [];
+    return imMenue;
   } catch (err) {
     return [{ art: 'menue', selektor: '#portal-seitenleiste', masse: `öffnet nicht (${String(err.message).split('\n')[0].slice(0, 80)})` }];
   }
@@ -223,11 +267,16 @@ async function pruefeSeite(browser, server, seite, b) {
     const erwartet = seite.status ?? 200;
     if (status !== erwartet) fehler.push(`${pfad}: HTTP ${status} statt ${erwartet}`);
     await page.waitForTimeout(50);
-    verstoesse.push(...await page.evaluate(pruefeImBrowser, { minTouch: MIN_TOUCH, touch: b.hasTouch, bandMaxAnteil: BAND_MAX_ANTEIL }));
-    if (b.breite < MENUE_BIS) verstoesse.push(...await pruefeMenue(page));
+    const optionen = { minTouch: MIN_TOUCH, touch: b.hasTouch, bandMaxAnteil: BAND_MAX_ANTEIL };
+    verstoesse.push(...await page.evaluate(pruefeImBrowser, optionen));
+    if (b.breite < MENUE_BIS) verstoesse.push(...await pruefeMenue(page, optionen));
     if (verstoesse.length) {
       await page.addStyleTag({ content: '[data-responsive-verstoss]{outline:3px solid #e00 !important;outline-offset:-1px}' }).catch(() => {});
-      await page.screenshot({ path: join(SCREENSHOT_DIR, `${b.breite}-${slug(seite.name)}.png`), fullPage: true }).catch(() => {});
+      // fullPage verliert bei isMobile/hasTouch die (pointer: coarse)-Emulation während der Aufnahme
+      // (zeigt dann Desktop-Grössen): stattdessen das Fenster auf Seitenhöhe ziehen.
+      const hoehe = await page.evaluate(() => document.documentElement.scrollHeight).catch(() => b.hoehe);
+      await page.setViewportSize({ width: b.breite, height: Math.min(Math.max(hoehe, b.hoehe), 16000) }).catch(() => {});
+      await page.screenshot({ path: join(SCREENSHOT_DIR, `${b.breite}-${slug(seite.name)}.png`) }).catch(() => {});
     }
   } catch (err) {
     fehler.push(`${seite.pfad}: ${String(err.message).split('\n')[0].slice(0, 160)}`);
@@ -253,7 +302,7 @@ function zusammenfassen(verstoesse) {
 }
 
 function tabelle(verstoesse, breiten) {
-  const arten = ['ueberlauf', 'touch', 'menue', 'band'];
+  const arten = ['ueberlauf', 'touch', 'text', 'ueberlappung', 'menue', 'band'];
   const zeilen = [['Art', ...breiten.map((b) => String(b.breite)), 'Summe']];
   for (const art of arten) {
     const proBreite = breiten.map((b) => verstoesse.filter((v) => v.art === art && v.breite === b.breite).length);

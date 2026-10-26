@@ -10,7 +10,7 @@
     <div class="bescheinigung col-12 col-lg-8">
       <%- include('_testmodus_marke') %>
       <div class="d-flex align-items-center gap-2 mb-3">
-        <% if (branding.hasLogo) { %><img src="/branding/logo" alt="Logo" height="40"><% } %>
+        <% if (branding.hasLogo) { %><img src="<%= branding.logoUrl || '/branding/logo' %>" alt="Logo" height="40"><% } %>
         <strong><%= branding.seitenTitel %></strong>
       </div>
       <%# Nur im Druck: der Ausdruck dient als Nachweis, der Titel gehört in den umrandeten Kasten.

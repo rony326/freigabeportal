@@ -42,7 +42,7 @@
     <% if (ergebnis && !['kein_paket', 'unbekannt'].includes(ergebnis.status)) { %>
       <div class="bescheinigung col-12 col-lg-8">
         <div class="d-flex align-items-center gap-2 mb-3">
-          <% if (branding.hasLogo) { %><img src="/branding/logo" alt="Logo" height="40"><% } %>
+          <% if (branding.hasLogo) { %><img src="<%= branding.logoUrl || '/branding/logo' %>" alt="Logo" height="40"><% } %>
           <strong><%= branding.seitenTitel %></strong>
         </div>
         <p class="bescheinigung-titel h1 d-none d-print-block">Prüfbericht Audit-Nachweis</p>

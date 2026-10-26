@@ -3,7 +3,8 @@ import express from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
+import { existsSync, statSync } from 'node:fs';
 import { SqliteSessionStore } from './db/sessionStore.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createCronRouter } from './routes/cron.js';
@@ -154,7 +155,20 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // Frueh gemountet: kein Session-Cookie, kein CSRF, eigener Limiter (120/min/IP).
   if (!testmodus) app.use('/healthz', createHealthzRouter({ db, config, statusCache }));
   app.use(auditRequestContext);
-  app.use(express.static(join(__dirname, '..', 'public')));
+  const publicDir = join(__dirname, '..', 'public');
+  // Rückmeldung Live-Portal: der Browser holte "/js/portal.js/" (Schrägstrich angehängt) und bekam
+  // die HTML-404 — Skript verweigert (MIME text/html). Keine Seite verweist so darauf; hängt ein
+  // Proxy, Lesezeichen oder eine alte Seite den Schrägstrich an, führt eine 301 zur echten Datei.
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    const m = /^(\/(?:js|css|vendor)\/[^?]*?\.[a-z0-9]+)\/+$/i.exec(req.path);
+    if (!m) return next();
+    const ziel = resolve(publicDir, `.${m[1]}`);
+    if (!ziel.startsWith(publicDir + sep) || !existsSync(ziel) || !statSync(ziel).isFile()) return next();
+    const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+    return res.redirect(301, m[1] + query);
+  });
+  app.use(express.static(publicDir));
   app.use(loadBranding(db));
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
@@ -221,7 +235,11 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   const sessionLimiter = limiter?.sessionLimiter ?? createSessionRateLimiter();
   const machineLimiter = limiter?.machineLimiter ?? createMachineRateLimiter();
 
-  app.use('/branding', publicLimiter, createBrandingRouter({ db }));
+  // Ohne Limiter, wie die statischen Dateien: das Logo hängt an jeder Seite (bis zu zwei Bilder je
+  // Aufruf). Am öffentlichen Limiter teilte es sich dessen IP-Zähler mit /, /auth und /audit-pruefen
+  // und lief nach wenigen Dutzend Seitenaufrufen in 429. Das Ausliefern ist billig (Datei + ETag/304,
+  // versionierte URLs werden vom Browser gecacht, siehe routes/branding.js).
+  app.use('/branding', createBrandingRouter({ db }));
   app.use('/admin', sessionLimiter, requireAdminAreaAccess(db, config));
   app.get('/admin', (req, res) => {
     const zeitstempelWarnungSchwelle = Number(getConfigValue(db, 'zeitstempel_warnung_ab_stunden'));

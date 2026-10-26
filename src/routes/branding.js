@@ -1,19 +1,31 @@
 import { Router } from 'express';
-import { createReadStream, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { getConfigValue } from '../db/adminConfigRepo.js';
+
+// Versionierte Abrufe (?v=… aus loadBranding, ändert sich mit jeder neuen Logo-Datei) darf der
+// Browser einen Tag lang ohne Rückfrage verwenden; ohne Version nur nach Revalidierung (ETag /
+// Last-Modified → 304), damit ein neu hochgeladenes Logo sofort sichtbar ist.
+const CACHE_VERSIONIERT = 'private, max-age=86400';
+const CACHE_OHNE_VERSION = 'private, no-cache';
 
 export function createBrandingRouter({ db }) {
   const router = Router();
 
   function liefereLogo(pfadKey, mimetypeKey) {
-    return (req, res) => {
+    return (req, res, next) => {
       const pfad = getConfigValue(db, pfadKey);
       const mimetype = getConfigValue(db, mimetypeKey);
       if (!pfad || !mimetype || !existsSync(pfad)) {
         return res.status(404).end();
       }
       res.type(mimetype);
-      createReadStream(pfad).pipe(res);
+      // sendFile setzt ETag und Last-Modified und beantwortet If-None-Match/If-Modified-Since mit 304.
+      res.sendFile(pfad, {
+        cacheControl: false,
+        headers: { 'Cache-Control': req.query.v ? CACHE_VERSIONIERT : CACHE_OHNE_VERSION, 'Content-Type': mimetype },
+      }, (err) => {
+        if (err && !res.headersSent) next(err);
+      });
     };
   }
 

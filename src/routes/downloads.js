@@ -13,8 +13,7 @@ const GENERIC_DENIAL = { error: 'Link ungültig oder abgelaufen.' };
 // person, generous budget) alongside the rest of the logged-in app. The bare PDF stream at
 // GET /:jobId is the opposite — unauthenticated, reached only via a short-lived signed URL — and
 // stays on the IP-keyed public tier. Before this split, all three shared one IP-keyed budget, so a
-// dashboard with more than a handful of rows could exhaust it (and the /branding/logo route that
-// also lives on the public tier) after only a few page reloads.
+// dashboard with more than a handful of rows could exhaust it after only a few page reloads.
 const NOOP_LIMITER = (req, res, next) => next();
 
 export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITER, publicLimiter = NOOP_LIMITER }) {

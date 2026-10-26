@@ -1,4 +1,17 @@
+import { statSync } from 'node:fs';
 import { getConfigValue } from '../db/adminConfigRepo.js';
+
+// Logo-URL mit Versionsparameter aus der Änderungszeit der Datei: der Browser darf das Logo lange
+// cachen (siehe routes/branding.js) und holt nach einem neuen Upload trotzdem sofort das neue.
+// Fehlt die Datei, bleibt die URL unversioniert (die Route antwortet dann 404).
+function logoUrl(basis, pfad) {
+  if (!pfad) return basis;
+  try {
+    return `${basis}?v=${Math.floor(statSync(pfad).mtimeMs).toString(36)}`;
+  } catch {
+    return basis;
+  }
+}
 
 function parseThemeCookie(cookieHeader) {
   if (!cookieHeader) return null;
@@ -39,6 +52,8 @@ export function loadBranding(db) {
       secondaryColor,
       hasLogo: Boolean(logoPfad) && Boolean(logoMimetype),
       hasLogoDunkel: Boolean(logoDunkelPfad) && Boolean(logoDunkelMimetype),
+      logoUrl: logoUrl('/branding/logo', logoPfad),
+      logoDunkelUrl: logoUrl('/branding/logo-dunkel', logoDunkelPfad),
       logoAusrichtung,
       themeAttr,
       footerText,

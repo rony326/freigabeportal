@@ -453,7 +453,7 @@ test('GET /zeitstempel-pruefen/zertifikat?jobId= renders the Prüfbescheinigung 
   assert.match(res.text, /Muster AG/);
   assert.match(res.text, new RegExp(hash));
   assert.match(res.text, /window\.print\(\)/);
-  assert.doesNotMatch(res.text, /<img src="\/branding\/logo"/, 'no logo configured for this test app — must not render a broken/empty logo tag');
+  assert.doesNotMatch(res.text, /<img src="\/branding\/logo/, 'no logo configured for this test app — must not render a broken/empty logo tag');
   // Ausdruck als Nachweis: der Titel muss im umrandeten Kasten stehen (nur im Druck sichtbar),
   // der Seitenkopf darüber wird beim Drucken ausgeblendet. Weiterhin genau ein <h1 auf der Seite.
   const kasten = res.text.slice(res.text.indexOf('<div class="bescheinigung'));
@@ -484,7 +484,7 @@ test('GET /zeitstempel-pruefen/zertifikat?jobId= shows the branding logo and Org
   const app = buildTestApp(db, { hasLogo: true, seitenTitel: 'Muster-Gemeinde' });
   const res = await request(app).get(`/zeitstempel-pruefen/zertifikat?jobId=${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<img src="\/branding\/logo"/);
+  assert.match(res.text, /<img src="\/branding\/logo(\?v=[a-z0-9]+)?"/);
   assert.match(res.text, /Muster-Gemeinde/);
 
   rmSync(dir, { recursive: true, force: true });

@@ -494,8 +494,8 @@ test('dunkles Logo: Upload wird gespeichert, unter /branding/logo-dunkel ausgeli
   assert.ok(hellRes.body.equals(hell), 'helles Logo darf durch den Upload des dunklen nicht ersetzt werden');
 
   const seite = await request(app).get('/admin/erscheinungsbild').set('x-test-person-id', '99');
-  assert.match(seite.text, /<img src="\/branding\/logo" alt="Aktuelles Logo hell"/);
-  assert.match(seite.text, /<img src="\/branding\/logo-dunkel" alt="Aktuelles Logo dunkel"/);
+  assert.match(seite.text, /<img src="\/branding\/logo(\?v=[a-z0-9]+)?" alt="Aktuelles Logo hell"/);
+  assert.match(seite.text, /<img src="\/branding\/logo-dunkel(\?v=[a-z0-9]+)?" alt="Aktuelles Logo dunkel"/);
   assert.match(seite.text, /name="logoDunkelEntfernen"/);
   db.close();
   rmSync(brandingDir, { recursive: true, force: true });

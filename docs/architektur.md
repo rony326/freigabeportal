@@ -123,7 +123,7 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
 | `/pool` | session | eingeloggt | Dashboard für jede aktive Person (nur offene Aufgaben) |
 | `/meine-abgeschlossenen` | session | eingeloggt | eigene abgeschlossene Rechnungen, paginiert |
 | `/meine-spesen` | session | eingeloggt | eigene Spesen-Einreichungen über alle Stati, siehe [spesen-einreichung.md](spesen-einreichung.md) |
-| `/downloads` | eigene (session bzw. public je Route) | siehe [n8n-schnittstelle.md](n8n-schnittstelle.md) | signierte PDF-/Thumbnail-Auslieferung |
+| `/downloads` | eigene (session bzw. public je Route) | siehe [n8n-schnittstelle.md](n8n-schnittstelle.md) | signierte PDF-/Thumbnail-Auslieferung: `GET /:jobId?expires&signature` (public, signiert), `GET /:jobId/thumbnail` (eingeloggt, Vorschaubild), `GET /:jobId/refresh-url` (eingeloggt, frisch signierte Vorschau-URL als JSON), `GET /:jobId/oeffnen` (eingeloggt, 302 auf frisch signierte URL — Knopf "PDF öffnen") |
 | `/kontierung` | session | eingeloggt + Job-Autorisierung | Kontierung, Aufsplitten, Kreditkarten-Abgleich |
 | `/spesen` | session | eingeloggt | Spesen-Einreichung (Formular + Speichern) |
 | `/spesen-freigabe1` | session | eingeloggt + Job-Autorisierung | Freigabe 1 für Spesen-Positionen (review-only) |
@@ -163,3 +163,39 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
 - **Magic-Byte-Prüfung** statt Vertrauen auf den deklarierten
   Content-Type bei jedem Datei-Upload (Rechnungs-PDF, Beleg-Anhang,
   Branding-Logo).
+
+## Oberfläche: Layout und Responsive
+
+Alle Seiten nutzen das gemeinsame Gerüst `views/_seite_anfang.ejs` /
+`_seitenleiste.ejs` / `_seite_ende.ejs` mit Bootstrap 5 und
+`public/css/portal.css` (kein Build-Schritt, kein Sass). Breakpoints wie
+Bootstrap:
+
+| Breite | Verhalten |
+|---|---|
+| unter 576 px (Handy) | Kopfzeile zweizeilig (Menü, Titel, Knöpfe; darunter Reiter Portal/Admin), Testmodus-Band scrollt mit statt oben zu kleben, `.stapel-tabelle` (z. B. Admin → Personen) zeigt jede Zeile als Karte (bis 768 px) |
+| 576 / 768 px | Feldgruppen zweispaltig ab 576 (`col-12 col-sm-6`); 768–991 px Tablet-Stufe: Formulare auf mittlere Breite begrenzt |
+| unter 992 px | Seitenleiste als Offcanvas hinter dem Menüknopf ☰; Listen standardmässig als Kacheln; PDF-Seiten mit Umschalter "Beleg / Formular" |
+| ab 992 px | Seitenleiste fest links, PDF eingebettet neben dem Formular |
+| ab 1200 px | Desktop-Darstellung wie vor dem Responsive-Durchgang (z. B. Aufsplitten-Zeilen als Tabelle statt Karten) |
+
+- **Touch-Ziele** (`@media (pointer: coarse)` in `portal.css`): auf
+  Touch-Geräten sind Knöpfe, Felder, Auswahllisten, Menüpunkte, Reiter und
+  Checkbox-/Radio-Zeilen mindestens 44 × 44 px. Mit Maus (`pointer: fine`)
+  bleibt alles unverändert — auch auf breiten Bildschirmen entscheidet das
+  Eingabegerät, nicht die Breite.
+- **Beleg / Formular** (`views/_beleg_umschalter.ejs`,
+  `public/js/belegUmschalter.js`) auf Kontierung, Aufsplitten, KK-Abgleich,
+  Freigabe 2 und Spesen-Freigabe 1: unter 992 px zeigen zwei Knöpfe
+  entweder das Formular (vorgewählt) oder den Beleg. Statt eingebettetem PDF
+  (iOS scrollt es nicht zuverlässig) gibt es das Vorschaubild
+  (`/downloads/:jobId/thumbnail`) und den Knopf "PDF öffnen" →
+  `GET /downloads/:jobId/oeffnen` (neuer Tab, leitet auf eine frisch
+  signierte URL um). Das iframe lädt unter 992 px gar nicht; ab 992 px wie
+  bisher mit "Vorschau neu laden" (`/downloads/:jobId/refresh-url`). Im
+  Kontierungs-Modal eingebettet zeigt Aufsplitten keinen Umschalter. Ohne
+  JavaScript stehen Beleg und Formular untereinander. Im Pool öffnet das
+  Vorschaubild unter 992 px das PDF im neuen Tab, ab 992 px den Dialog.
+- **Prüfung**: `npm run test:responsive` (Playwright, nicht Teil von
+  `npm test`) besucht jede Seite in 360/768/1024/1280 px, siehe README
+  "Responsive testen".

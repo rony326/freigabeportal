@@ -23,6 +23,74 @@ in [`docs/`](docs/README.md).
 3. `npm test` — gesamte Test-Suite; benoetigt das `openssl`-CLI fuer den lokalen Test-TSA
 4. `npm run dev` — Entwicklungsserver mit Autoreload
 
+## Responsive testen
+
+`npm run test:responsive` öffnet jede Seite aus `test/responsive/seiten.js`
+in einem echten Browser (Chromium über Playwright) in vier Breiten — 360
+(Handy, Touch), 768 und 1024 (Tablet, Touch), 1280 (Desktop, Maus) — und
+meldet Layout-Verstösse. Die App läuft dafür als Test-Instanz auf den
+Testmodus-Beispieldaten in einem temporären Verzeichnis, ohne Netz. Der
+Test ist **nicht** Teil von `npm test`.
+
+**Installation** (einmalig):
+
+```bash
+npm ci
+npx playwright install --with-deps chromium
+```
+
+Playwright ist exakt auf `1.63.0` gepinnt; diese Version braucht die
+Chromium-Revision **1243** (`npx playwright install` holt genau diese).
+Ohne `--with-deps` (keine Root-Rechte) müssen die Systembibliotheken
+anderweitig vorhanden sein, z. B. über `LD_LIBRARY_PATH`.
+
+**Ausführen:**
+
+```bash
+npm run test:responsive                                 # alle Seiten, alle Breiten (~1 Min)
+npm run test:responsive -- --seite=kontierung           # nur Seiten, deren Name das enthält
+npm run test:responsive -- --seite=Personen --breite=360
+```
+
+`--seite` filtert nach Teil des Namens (Gross-/Kleinschreibung egal),
+`--breite` nach genau einer der vier Breiten. Ein Filter, der auf nichts
+passt, ist ein Fehler (Exit 2).
+
+**Ausgabe:** eine Zeile je Verstoss (`Breite  Seite  Art  Selektor  Masse`),
+danach eine Tabelle Art × Breite. Arten:
+
+| Art | Bedeutung |
+|---|---|
+| `ueberlauf` | Seite scrollt seitlich (Tabellen in `.table-responsive` ausgenommen); gemeldet wird das verursachende Element |
+| `touch` | Bedienelement auf Touch-Breiten kleiner als 44 × 44 px (Checkbox/Radio inkl. Label) |
+| `text` | Knopf-, Reiter- oder Menütext ragt aus seinem Kasten |
+| `ueberlappung` | zwei Bedienelemente überdecken sich |
+| `menue` | unter 992 px fehlt der Menüknopf oder die Seitenleiste öffnet nicht (im geöffneten Menü werden touch/text/ueberlappung mitgeprüft) |
+| `band` | Testmodus-Band höher als 30 % des Bildschirms oder Inhalt nicht erreichbar |
+| `iframe` | PDF-Seiten (`pdf: true`): unter 992 px wurde der PDF-Viewer oder das signierte PDF geladen, bzw. ab 992 px ist das eingebettete PDF nicht geladen |
+
+Screenshots der betroffenen Seiten (Verstösse rot umrandet) landen in
+`test-results/responsive/` als `<breite>-<seite>.png`.
+
+**Exit-Codes:** `0` keine Verstösse, `1` Verstösse, `2` der Test selbst ist
+gescheitert (Browser/Server startet nicht, Seite lädt nicht oder liefert
+einen anderen HTTP-Status, Filter passt auf nichts). Gibt es Ladefehler
+*und* Verstösse, ist der Exit-Code 2; beide werden ausgegeben.
+
+**Seite hinzufügen:** in `test/responsive/seiten.js` einen Eintrag in
+`SEITEN` ergänzen, z. B.
+`{ name: 'Admin Verträge', view: 'admin/vertraege-liste', pfad: '/admin/vertraege' }`.
+Optionen: `als: 'test-1'` (andere Beispielperson als Dora/Superadmin),
+`status` (erwarteter HTTP-Status), `fehlerzustand` (Formular ohne
+Browser-Prüfung absenden, um die Seite mit Fehlermeldungen zu prüfen),
+`pdf: true` (Beleg/Formular-Seite). Braucht die Seite Daten, die die
+Beispieldaten nicht haben, diese in `test/responsive/server.js`
+(`ergaenzeDaten`) anlegen und die ID für `{platzhalter}` im Pfad
+zurückgeben. Jede Seiten-View muss in `SEITEN` vorkommen oder in
+`AUSGENOMMEN` begründet sein — `npm test` prüft das
+(`test/unit/responsiveSeitenliste.test.js`). Layout-Regeln:
+[docs/architektur.md](docs/architektur.md#oberfläche-layout-und-responsive).
+
 ## Deployment (Infomaniak Node.js-Hosting)
 
 **Backup-Konfiguration:** Neue Sicherungen verlangen einen separat gesicherten

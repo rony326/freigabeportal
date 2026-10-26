@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Länge begrenzen, bevor das Muster läuft: so bleibt die Prüfung auch bei sehr langer Eingabe schnell.
+const EMAIL_MAX_LAENGE = 320;
 // Both group tokens are accepted here (not just "gruppe:buchhaltung") because this validator is
 // shared with the /admin/sync route, whose "Sync-Fehler-Empfänger" field defaults to
 // "gruppe:admin" — see adminConfigRepo's seeded default and notify.js's resolveEmpfaenger, which
@@ -18,8 +20,8 @@ export function validateEmpfaengerListe(value, label, errors) {
     return;
   }
   for (const zeile of zeilen) {
-    if (!GRUPPE_TOKENS.includes(zeile) && !EMAIL_PATTERN.test(zeile)) {
-      errors.push(`${label}: "${zeile}" ist weder eine gültige E-Mail-Adresse noch "${GRUPPE_TOKENS.join('"/"')}".`);
+    if (!GRUPPE_TOKENS.includes(zeile) && !(zeile.length <= EMAIL_MAX_LAENGE && EMAIL_PATTERN.test(zeile))) {
+      errors.push(`${label}: "${zeile.length > 80 ? `${zeile.slice(0, 80)}…` : zeile}" ist weder eine gültige E-Mail-Adresse noch "${GRUPPE_TOKENS.join('"/"')}".`);
     }
   }
 }

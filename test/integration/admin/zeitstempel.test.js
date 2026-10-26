@@ -387,3 +387,29 @@ test('Empfänger ersetzen und abschalten im selben POST → "abgeschaltet"-Mail 
   assert.deepEqual(mailsAbgeschaltet.map((m) => m.to).sort(), ['alt@example.org', 'neu@example.org']);
   assert.match(mailsAbgeschaltet[0].text, /aktiv → abgeschaltet/);
 });
+
+test('http:// TSA-URL wird mit Zugangsdaten abgelehnt, ohne Zugangsdaten erlaubt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const post = (body) => request(app).post('/admin/zeitstempel').set('x-test-person-id', '99').type('form').send({ warnungAbStunden: '24', ...body });
+
+  let res = await post({ tsaUrl: 'http://tsa.example.org/tsr', tsaUser: 'u', tsaPasswort: 'geheim' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /https:\/\/-Adresse/);
+  assert.equal(getConfigValue(db, 'zeitstempel_tsa_url'), '');
+
+  res = await post({ tsaUrl: 'http://tsa.example.org/tsr' });
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'zeitstempel_tsa_url'), 'http://tsa.example.org/tsr');
+
+  res = await post({ tsaUrl: 'https://tsa.example.org/tsr', tsaUser: 'u', tsaPasswort: 'geheim' });
+  assert.equal(res.status, 302);
+  // gespeichertes Passwort + http:// bleibt verboten, ausser es wird entfernt
+  res = await post({ tsaUrl: 'http://tsa.example.org/tsr' });
+  assert.equal(res.status, 400);
+  res = await post({ tsaUrl: 'http://tsa.example.org/tsr', tsaPasswortEntfernen: '1' });
+  assert.equal(res.status, 302);
+  db.close();
+});

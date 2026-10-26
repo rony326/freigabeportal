@@ -19,7 +19,7 @@ Ausfallsicherheit.
 Code**. Die zwei als „hoch“ eingestuften Funde (eine Lücke, mit der ein
 unangemeldeter Besucher das Portal zum Absturz hätte bringen können, und eine
 veraltete Node-Version) sind im Code behoben bzw. als Aufgabe an dich
-übergeben. Vier mittlere, vier niedrige und mehrere Hinweis-Funde wurden behoben. Alles Weitere
+übergeben. Vier mittlere und drei niedrige Funde wurden behoben (ein weiterer niedriger war in master schon früher behoben), dazu mehrere Hinweise. Zwei kleine Nachträge aus der Schlussprüfung sind ebenfalls behoben (N-01, N-02, siehe Abschnitt 3). Alles Weitere
 ist unten aufgelistet. Die Zugriffskontrolle (niemand sieht fremde Vorgänge)
 und die Maschinenschnittstellen erwiesen sich als solide.
 
@@ -65,7 +65,7 @@ und die Maschinenschnittstellen erwiesen sich als solide.
 
 ## 3. Funde
 
-Legende Status: **behoben** (im Code korrigiert, mit Test) · **vom Nutzer zu
+Legende Status: **behoben** (im Code bzw. in den Abhängigkeiten korrigiert; mit Test oder per `npm audit` bestätigt) · **vom Nutzer zu
 erledigen** · **Vorschlag** (später sinnvoll) · **akzeptiert** (bewusst so).
 „Live“ = betraf das Live-Portal, „master“ = betraf den aktuellen Code.
 
@@ -73,7 +73,7 @@ erledigen** · **Vorschlag** (später sinnvoll) · **akzeptiert** (bewusst so).
 
 | ID | Beschreibung | Ziel | Wo | Status |
 |---|---|---|---|---|
-| CVE-01 | Eine einzige präparierte Anfrage ohne Anmeldung konnte das Portal beenden (Fehler im Baustein „body-parser“). | Verfügbarkeit | live + master (live wahrscheinlich, nicht getestet) | **behoben** durch Aktualisierung auf body-parser 1.20.9. Lokal liess sich der Absturz mit dem alten Stand nicht nachstellen; ein Wächter-Test bleibt trotzdem aktiv. |
+| CVE-01 | Eine einzige präparierte Anfrage ohne Anmeldung konnte das Portal beenden (Fehler im Baustein „body-parser“). | Verfügbarkeit | live + master (live wahrscheinlich, nicht getestet) | **behoben** durch Aktualisierung auf body-parser 1.20.9 (per `npm audit` bestätigt). Lokal liess sich der Absturz mit dem alten Stand nicht nachstellen; ein Wächter-Test bleibt trotzdem aktiv. |
 | NODE-01 | Node.js 22.23.4 schliesst 10 Sicherheitslücken (u. a. im Brotli-Decoder). Das Portal erreicht sie nur über Antworten von ChurchTools/Zeitstempeldienst, also nur bei einer kompromittierten Gegenstelle. | Vertraulichkeit/Verfügbarkeit | live | **teils behoben**: Mindestversion im Code auf 22.23.4 angehoben. **Vom Nutzer zu erledigen**: Version im Infomaniak-Manager (Checkliste N1). |
 
 ### Mittel
@@ -101,6 +101,9 @@ erledigen** · **Vorschlag** (später sinnvoll) · **akzeptiert** (bewusst so).
 | A4-02 | Ein vergessener Fehlerfang in einer asynchronen Seite hätte das ganze Portal beenden können. Alle 43 Handler fingen intern ab, es war also nur latent. | **behoben**: alle Handler laufen über einen Schutz-Wrapper, ein Test prüft das automatisch für künftige Seiten; zusätzlich ein Prozess-Wächter, der sauber protokolliert und neu starten lässt. Ein Auto-Neustart auf Infomaniak wird vorausgesetzt (O2). |
 | AUS-07 | Kein COOP/CORP-Header (zusätzliche Abschottung). | **behoben**. |
 | AUS-09 | Gzip-Absturz live nicht getestet. | Erledigt durch CVE-01. |
+| A4-03 | Wächtertest für den gzip-Absturz (lokaler Nachstellversuch, siehe CVE-01). | **behoben** über CVE-01; der Wächtertest bleibt aktiv. |
+| N-01 | Eine `http://`-Adresse des Zeitstempeldienstes wurde auch dann angenommen, wenn Benutzername/Passwort gesetzt sind; die Zugangsdaten wären unverschlüsselt gelaufen. | **behoben** (mit Test): Mit Zugangsdaten ist nur `https://` erlaubt, ohne Zugangsdaten bleibt `http://` möglich (manche öffentlichen Dienste bieten nichts anderes). |
+| N-02 | Die Prüfung von Mailadressen (Eskalation, Absender-Muster) konnte bei sehr langer Eingabe den Server kurz blockieren (nur für angemeldete Admins erreichbar). | **behoben** (mit Test): Eingabe wird vor der Prüfung auf 320 Zeichen begrenzt; 100 kB werden in unter 100 ms abgelehnt. |
 | NODE-02 | Mindestversion in `package.json` zu niedrig (`>=22.13.0`). | **behoben** (`>=22.23.4`). |
 | CVE-03 bis CVE-07 | Meldungen zu multer, proxy-addr, ip-address, brace-expansion, undici. Keine war erreichbar (keine asynchronen Datei-Filter, kein Subnetz-Proxy, Test-/Entwicklungs-Bausteine). | **behoben** vorsorglich durch Aktualisierung; `npm audit` meldet 0. |
 | AUS-06 | Live-Portal ist ein älterer Stand. | Erledigt durch das Aufspielen; Nachprüfung (Abschnitt 7). |
@@ -174,6 +177,7 @@ Repository) liegt:
 - [ ] `N8N_API_KEY` – schützt die n8n-Schnittstelle.
 - [ ] `BACKUP_API_KEY` (optional) – falls gesetzt, muss er sich von `N8N_API_KEY` unterscheiden.
 - [ ] `SMTP_PASS` (zusammen mit `SMTP_USER`) – Mail-Zugang; Länge liegt beim Mail-Anbieter, bei Verdacht erneuern.
+- [ ] TSA-Zugang (Benutzername und Passwort, im Portal unter Zeitstempel verwaltet) – nur falls der Zeitstempeldienst einen verlangt; dann nur mit `https://`-Adresse.
 - [ ] Überwachungsschlüssel (`monitoring_secret`, im Portal verwaltet) – wird für Uptime Kuma gebraucht (O7).
 - [ ] Pfad der Backup-Schlüsseldatei (`BACKUP_KEYRING_FILE`, falls verwendet) – Datei sicher und getrennt vom Backup aufbewahren; ohne sie sind verschlüsselte Backups nicht lesbar (siehe `docs/backup-verschluesselung.md`).
 
@@ -181,10 +185,11 @@ Repository) liegt:
 einem Screenshot stand oder noch ein Entwicklungswert ist. `SESSION_SECRET`
 und `DOWNLOAD_SIGNING_SECRET` können ohne Datenverlust gewechselt werden
 (Folge: alle müssen sich neu anmelden, alte Download-Links verfallen).
-`N8N_API_KEY`, `CRON_SECRET` und `CT_SYNC_SERVICE_TOKEN` müssen gleichzeitig in
-n8n bzw. ChurchTools nachgeführt werden.
+`N8N_API_KEY`, `BACKUP_API_KEY` und `CRON_SECRET` müssen gleichzeitig in n8n,
+`CT_SYNC_SERVICE_TOKEN` und `CT_CLIENT_SECRET` gleichzeitig in ChurchTools
+nachgeführt werden.
 
-Das sind **10** Punkte.
+Das sind **11** Punkte.
 
 ## 6. Vorschläge für später
 

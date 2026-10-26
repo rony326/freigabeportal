@@ -251,3 +251,16 @@ test('POST /admin/eskalation rejects an invalid IBAN-Abweichungs-Empfänger valu
   assert.match(res.text, /IBAN-Abweichungs-Empfänger/);
   db.close();
 });
+
+test('validateEmpfaengerListe prüft eine 100-kB-Zeile schnell und lehnt sie ab', async () => {
+  const { validateEmpfaengerListe } = await import('../../../src/routes/admin/eskalation.js');
+  const errors = [];
+  const t0 = performance.now();
+  validateEmpfaengerListe(`${'a'.repeat(100_000)}@${'b'.repeat(1000)}.`, 'Ziel', errors);
+  assert.ok(performance.now() - t0 < 100);
+  assert.equal(errors.length, 1);
+  assert.ok(errors[0].length < 500);
+  const ok = [];
+  validateEmpfaengerListe('a@b.ch\ngruppe:admin', 'Ziel', ok);
+  assert.deepEqual(ok, []);
+});

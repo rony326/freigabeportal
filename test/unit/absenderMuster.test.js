@@ -13,3 +13,11 @@ test('isValidAbsenderMuster rejects bare TLDs, malformed domains and addresses',
     assert.equal(isValidAbsenderMuster(muster), false, muster);
   }
 });
+
+test('isValidAbsenderMuster bleibt bei sehr langer Eingabe schnell', () => {
+  const lang = `${'a'.repeat(100_000)}@${'b.'.repeat(10)}`;
+  const t0 = performance.now();
+  assert.equal(isValidAbsenderMuster(lang), false);
+  assert.equal(isValidAbsenderMuster('a'.repeat(100_000)), false);
+  assert.ok(performance.now() - t0 < 100);
+});

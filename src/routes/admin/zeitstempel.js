@@ -84,6 +84,12 @@ export function createZeitstempelAdminRouter({ db, config = null, mailer = null,
     if (trimmedUrl && !URL_PATTERN.test(trimmedUrl)) {
       errors.push('TSA-URL muss leer sein (Funktion deaktiviert) oder mit http:// oder https:// beginnen.');
     }
+    // Zugangsdaten (neu eingegeben oder schon gespeichert, ohne Entfernen) nie unverschlüsselt senden.
+    const passwortBleibt = req.body.tsaPasswortEntfernen !== '1'
+      && (Boolean(tsaPasswort) || Boolean(getConfigValue(db, 'zeitstempel_tsa_passwort')));
+    if (/^http:\/\//i.test(trimmedUrl) && (trimmedUser || passwortBleibt)) {
+      errors.push('Mit Benutzername oder Passwort ist nur eine https://-Adresse erlaubt, sonst würden die Zugangsdaten unverschlüsselt übertragen. Ohne Zugangsdaten ist http:// weiterhin möglich.');
+    }
     if (!/^[1-9][0-9]*$/.test(trimmedWarnung)) {
       errors.push('Warnschwelle (Stunden) muss eine ganze Zahl grösser als 0 sein.');
     }

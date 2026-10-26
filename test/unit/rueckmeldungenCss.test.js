@@ -21,3 +21,9 @@ test('jede einzeilige Erfolgsmeldung neben einem Knopf trägt alert-kompakt', ()
     }
   }
 });
+
+test('farbig hinterlegte Tabellenzeilen: gedämpfte Schrift, Links und Umriss-Knopf aus der Zeilenschrift', () => {
+  assert.match(css, /\.table > tbody > tr\[class\*="table-"\] \{\s*--bs-secondary-color: color-mix\(in srgb, var\(--bs-table-color\) 72%, transparent\);/);
+  assert.match(css, /\.table > tbody > tr\[class\*="table-"\] \.btn-outline-primary \{\s*--bs-btn-color: var\(--bs-table-color\);/);
+  assert.match(css, /\.table > tbody > tr\[class\*="table-"\] a:not\(\.btn\) \{/);
+});

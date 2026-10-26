@@ -416,6 +416,30 @@
 .benachrichtigung-option input { width: 1.25rem; height: 1.25rem; margin: 0; flex: none; }
 .benachrichtigung-option label { flex: 1; min-height: 44px; display: flex; align-items: center; margin: 0; cursor: pointer; }
 
+/* Farbig hinterlegte Tabellenzeilen (Admin → Laufende Vorgänge: .table-warning überfällig,
+   .table-danger hängt). Bootstrap färbt diese Zeilen in beiden Farbschemata hell (#fff3cd/#f8d7da,
+   schwarze Schrift); gedämpfte Schrift (.text-body-secondary "noch offen", .beleg-nr), Links und der
+   Umriss-Knopf "Umhängen" folgen aber dem Farbschema — im Dunkelmodus hellgrau auf Hellgelb (1.1:1,
+   der Knopf wirkte deaktiviert). In diesen Zeilen leiten sie sich aus der Zeilenschrift ab. */
+.table > tbody > tr[class*="table-"] {
+  --bs-secondary-color: color-mix(in srgb, var(--bs-table-color) 72%, transparent);
+}
+.table > tbody > tr[class*="table-"] a:not(.btn) {
+  color: color-mix(in srgb, var(--brand-primary) 55%, var(--bs-table-color));
+}
+.table > tbody > tr[class*="table-"] .btn-outline-primary {
+  --bs-btn-color: var(--bs-table-color);
+  --bs-btn-border-color: var(--bs-table-color);
+  --bs-btn-hover-color: var(--bs-table-bg);
+  --bs-btn-hover-bg: var(--bs-table-color);
+  --bs-btn-hover-border-color: var(--bs-table-color);
+  --bs-btn-active-color: var(--bs-table-bg);
+  --bs-btn-active-bg: var(--bs-table-color);
+  --bs-btn-active-border-color: var(--bs-table-color);
+  --bs-btn-disabled-color: var(--bs-table-color);
+  --bs-btn-disabled-border-color: var(--bs-table-color);
+}
+
 /* Kompakte Erfolgsmeldung neben dem Speichern-Knopf ("Gespeichert."): eine Zeile (py-1). Bootstraps
    .alert-dismissible setzt das ✕ absolut oben rechts mit 1.25rem Polster — höher als die Meldung
    selbst, das ✕ hing darunter heraus. Hier steht es im Fluss (Flex-Zeile, mittig) und die Meldung

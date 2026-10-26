@@ -4,6 +4,7 @@ import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { createJob } from '../../src/db/jobsRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
+import { upsertPerson } from '../../src/db/personenRepo.js';
 
 // Task 3 / Integrität: die unveränderlichen Nachweis-Tabellen müssen UPDATE und DELETE auf
 // Datenbankebene wirklich blockieren (nicht nur protokollieren), und die einmal gesetzten
@@ -76,8 +77,9 @@ test('jobs: eine gesetzte Zeitstempelpflicht lässt sich nicht wieder aufheben',
 // protokolliert, nicht abgewiesen. Über die App ist das heute nicht erreichbar (freigabenRepo
 // kennt nur INSERT/SELECT, grep findet kein UPDATE/DELETE), daher Defense-in-Depth-Lücke.
 // Task 5 ergänzt die beiden Trigger (wie kommentare_no_update/_no_delete) und entfernt skip.
-test('freigaben sollte wie jede andere Nachweis-Tabelle append-only sein (FUND T3-INT-1)', { skip: 'FUND T3-INT-1: freigaben hat keine Blockier-Trigger; Behebung in Task 5' }, () => {
+test('freigaben sollte wie jede andere Nachweis-Tabelle append-only sein (FUND T3-INT-1)', () => {
   const db = frischeDb();
+  upsertPerson(db, { id: 'p1', vorname: 'Test', nachname: 'Person', email: 'p1@example.org', gruppen: [] });
   const jid = createJob(db, { eingangAm: new Date().toISOString(), quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', dateiHash: 'h1' });
   createFreigabe(db, { jobId: jid, personId: 'p1', rolle: 'freigeber1', zeitpunkt: new Date().toISOString(), ip: '::1', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
   blockiert(db, "UPDATE freigaben SET person_id = 'p2' WHERE job_id = ?", jid);

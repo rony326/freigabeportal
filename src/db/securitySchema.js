@@ -102,6 +102,17 @@ export function migrateSecuritySchema(db) {
     }
   }
 
+  // FUND T3-INT-1: `freigaben` sind die Vier-Augen-Nachweise (wer Freigabe 1/2 erteilt hat,
+  // Interessenskonflikt, IP, Zeitpunkt) und müssen wie jede andere Nachweis-Tabelle append-only
+  // sein. Der App-Pfad schreibt sie nur per INSERT/SELECT (freigabenRepo), eine UPDATE/DELETE war
+  // bisher aber nur protokolliert, nicht abgewiesen. IF NOT EXISTS, damit die Migration die Trigger
+  // auch auf bestehenden Datenbanken anlegt; läuft bei jedem Start. Die AFTER-Audit-Trigger auf
+  // freigaben bleiben für den legitimen INSERT erhalten (BEFORE-ABORT greift nur bei UPDATE/DELETE).
+  for (const action of ['UPDATE', 'DELETE']) {
+    db.exec(`CREATE TRIGGER IF NOT EXISTS freigaben_no_${action} BEFORE ${action} ON freigaben
+      BEGIN SELECT RAISE(ABORT, 'freigaben ist unveraenderlich'); END;`);
+  }
+
   const tables = {
     person_berechtigungen: 'person_id', konten: 'id', kreditoren: 'id',
     kreditor_ibans: 'id', zuweisungsregeln: 'id', admin_config: 'key',

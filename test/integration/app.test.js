@@ -205,6 +205,18 @@ test('every response carries the baseline security headers', async () => {
   // not a style preference, do not "harden" it back to DENY.
   assert.equal(res.headers['x-frame-options'], 'SAMEORIGIN');
   assert.equal(res.headers['referrer-policy'], 'no-referrer');
+  // AUS-03: kein Technologie-Fingerprint.
+  assert.equal(res.headers['x-powered-by'], undefined);
+  // AUS-02: Browser-Funktionen, die das Portal nie nutzt, ausdrücklich gesperrt.
+  assert.equal(res.headers['permissions-policy'], 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  // AUS-07: COOP/CORP same-origin (die eigene same-origin-PDF/Thumbnail-Einbettung bleibt erlaubt).
+  assert.equal(res.headers['cross-origin-opener-policy'], 'same-origin');
+  assert.equal(res.headers['cross-origin-resource-policy'], 'same-origin');
+  // AUS-01: HSTS nur auf einer HTTPS-Anfrage — im lokalen HTTP-Dev (hier: keine X-Forwarded-Proto)
+  // darf der Header fehlen, sonst wird der Browser dauerhaft auf HTTPS festgelegt.
+  assert.equal(res.headers['strict-transport-security'], undefined);
+  const httpsRes = await request(app).get('/healthz').set('X-Forwarded-Proto', 'https');
+  assert.equal(httpsRes.headers['strict-transport-security'], 'max-age=31536000; includeSubDomains');
   assert.match(res.headers['content-security-policy'], /default-src 'self'/);
   assert.match(res.headers['content-security-policy'], /frame-ancestors 'self'/);
   // data: only for images (Bootstrap's data-URI SVG icons); nothing else widened.

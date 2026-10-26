@@ -89,6 +89,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Satz, damit ein Zurücksetzen keine neuen MemoryStore-Timer und alten App-Graphen zurücklässt).
 export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuch = undefined, testmodus = false, limiter = null }) {
   const app = express();
+  // AUS-03: kein `X-Powered-By: Express`-Header — verrät sonst die eingesetzte Technik (Fingerprint).
+  app.disable('x-powered-by');
   // Eine TSA-Probe und ein Status-Cache (30 s) fuer /healthz, Dashboard und Statusseite.
   const statusCache = createStatusCache({ db, config, tsaErreichbarkeit: testmodus ? null : createTsaErreichbarkeit(), tsaVersuch });
   app.set('trust proxy', 1);
@@ -113,6 +115,21 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     // clicked inside a rendered invoice PDF could leak a live, still-valid download URL to a
     // third party via the Referer header.
     res.setHeader('Referrer-Policy', 'no-referrer');
+    // AUS-01 Strict-Transport-Security: nur auf einer HTTPS-Anfrage setzen (req.secure wertet
+    // hinter `trust proxy` = 1 das X-Forwarded-Proto des Infomaniak-Proxys aus). Im lokalen
+    // HTTP-Dev bleibt der Header weg, damit der Browser dort nicht dauerhaft auf HTTPS festgelegt
+    // wird. max-age 1 Jahr, inklusive Subdomains.
+    if (req.secure) {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    // AUS-02 Permissions-Policy: das Portal nutzt keine dieser Browser-Funktionen — Kamera,
+    // Mikrofon, Standort, Zahlungs- und USB-Schnittstelle ausdrücklich für alle Herkünfte sperren.
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+    // AUS-07 COOP/CORP (Defense-in-depth): das Portal bettet nur eigene Ressourcen (PDF-Vorschau,
+    // Thumbnails) same-origin ein und bindet keine fremden Seiten ein. `same-origin` für beide
+    // kappt Cross-Origin-Zugriffe, ohne die eigene same-origin-Einbettung zu brechen.
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     // Content-Security-Policy: defense-in-depth backstop, not the primary XSS defense — every EJS
     // view was audited to only ever use auto-escaping `<%= %>` on user-controlled data. `<%- %>`
     // (raw output) is used for `include()`s and for two view-local helpers that concatenate

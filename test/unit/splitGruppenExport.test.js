@@ -495,3 +495,32 @@ test('das gemeinsame Gruppen-PDF enthält die Kommentare je Teil (und am Gesamtb
   assert.match(text, new RegExp(`Position 3 \\(Pos\\. 3\\) — Konto 6500 — Job-ID ${kindIds[2]}`));
   assert.match(text, /Teil drei: Rückfrage \?/);
 });
+
+test('geht während der Gruppenfinalisierung ein Kommentar ein, wird nichts festgeschrieben; der nächste Lauf druckt ihn', async (t) => {
+  const { extrahierePdfText } = await import('../../src/services/pdfText.js');
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'splitgruppe-kommentar-race-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const { parentId } = await seedGruppe(db, dir, { anzahlKinder: 2, gestempelt: true });
+  const dateienVorher = readdirSync(dir).sort();
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, (opts) => {
+    db.prepare('INSERT INTO kommentare (job_id, person_id, text, erwaehnt, erstellt_am) VALUES (?, ?, ?, ?, ?)')
+      .run(parentId, '2', 'Später Hinweis zur Gesamtrechnung.', '[]', '2026-08-02T10:00:00.000Z');
+    return signedTsaResponse(opts);
+  }, { headers: { 'content-type': 'application/timestamp-reply' } });
+
+  const ergebnis = await pruefeUndFinalisiereSplitGruppe(db, parentId);
+  assert.equal(ergebnis.status, 'fehler');
+  const parent = getJobById(db, parentId);
+  assert.equal(parent.gruppe_pdf_pfad, null);
+  assert.equal(parent.gruppe_zeitstempel_gesetzt_am, null);
+  assert.deepEqual(readdirSync(dir).sort(), dateienVorher, 'kein liegengebliebenes Gruppendokument');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tsa_pruefnachweise WHERE job_id = ?").get(parentId).n, 0);
+
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
+  const zweiter = await pruefeUndFinalisiereSplitGruppe(db, parentId);
+  assert.equal(zweiter.status, 'exportiert');
+  assert.match(extrahierePdfText(readFileSync(getJobById(db, parentId).gruppe_pdf_pfad)), /Später Hinweis zur Gesamtrechnung\./);
+});

@@ -40,6 +40,12 @@ function kommentareFuerStempel(db, jobId) {
   return listeKommentare(db, jobId).map((k) => ({ zeitpunkt: k.erstellt_am, verfasser: k.verfasser_name, text: k.text }));
 }
 
+// Stand aller Kommentare der Gruppe (Elternjob + Teile): ändert er sich während Stempeln/TSA,
+// wird nicht festgeschrieben -- der Nachhol-Job stempelt dann mit dem neuen Kommentar neu.
+function kommentarStandGruppe(db, jobIds) {
+  return jobIds.map((id) => { const liste = listeKommentare(db, id); return `${id}:${liste.length}:${liste.at(-1)?.id ?? 0}`; }).join('|');
+}
+
 function groupState(db, parentJobId) {
   const completeness = pruefeSplitGruppenVollstaendigkeit(db, parentJobId);
   return {
@@ -100,6 +106,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
     const basisSeitenzahl = basisDoc.getPageCount();
     const gruppenDoc = await PDFDocument.load(basisBuffer);
 
+    const kommentarStand = kommentarStandGruppe(db, [parent.id, ...kinder.map((kind) => kind.id)]);
     const positionen = [];
     const verlauf = [];
     // Stempelseite und Export entstehen aus demselben eingefrorenen Gruppen-Snapshot: Konto, Betrag,
@@ -159,6 +166,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
       if (JSON.stringify(groupState(db, parent.id)) !== JSON.stringify(state) ||
           getConfigValue(db, 'zeitstempel_tsa_url') !== tsaUrl ||
           !readFileSync(parent.pdf_pfad).equals(basisBuffer) ||
+          kommentarStandGruppe(db, [parent.id, ...kinder.map((kind) => kind.id)]) !== kommentarStand ||
           kinder.some((kind, index) => !readFileSync(kind.pdf_pfad).equals(kindBuffers[index]))) {
         throw new Error('Gruppenstand oder Quelldateien wurden waehrend der Finalisierung geaendert.');
       }

@@ -359,6 +359,11 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         interessenskonflikt: false,
         kommentar: begruendung || null,
       };
+      // Stand der gestempelten Kommentare: geht während Stempeln/TSA ein neuer ein, wird nicht
+      // abgeschlossen (sonst fehlte er auf dem archivierten PDF und wäre ungelesen).
+      const stampKommentare = listeKommentare(db, job.id);
+      const kommentarStand = (liste) => `${liste.length}:${liste.at(-1)?.id ?? 0}`;
+      const stampKommentarStand = kommentarStand(stampKommentare);
       const stampData = {
         // Test-Instanz: Marke "TESTMODUS – keine echte Freigabe" auf der Stempelseite.
         ...(config.testmodus ? { testmodus: true } : {}),
@@ -398,7 +403,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         ],
         // Alle Kommentare des Vorgangs (chronologisch) im Abschnitt "Rückfragen und Kommentare";
         // nach Freigabe 2 sind keine neuen mehr möglich, der Stand auf dem PDF ist also vollständig.
-        kommentare: listeKommentare(db, job.id).map((k) => ({ zeitpunkt: k.erstellt_am, verfasser: k.verfasser_name, text: k.text })),
+        kommentare: stampKommentare.map((k) => ({ zeitpunkt: k.erstellt_am, verfasser: k.verfasser_name, text: k.text })),
       };
 
       const pdfBuffer = readFileSync(job.pdf_pfad);
@@ -454,6 +459,13 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           db.exec('ROLLBACK');
           unlinkSync(tmpPfad);
           return res.status(409).render('error', { message: 'Die Zahlungsdaten oder deren Pruefung haben sich inzwischen geaendert. Bitte erneut pruefen.' });
+        }
+        if (kommentarStand(listeKommentare(db, job.id)) !== stampKommentarStand) {
+          db.exec('ROLLBACK');
+          unlinkSync(tmpPfad);
+          return renderForm(req, res, 409, result, { interessenskonflikt, begruendung }, [
+            'Während der Freigabe ist ein neuer Kommentar eingegangen. Bitte lesen und erneut freigeben.',
+          ], zahlungPflichtig ? zahlungsReview(job, konto, zahlung, req.currentPerson.churchtools_person_id) : null);
         }
         createFreigabe(db, {
           jobId: job.id,

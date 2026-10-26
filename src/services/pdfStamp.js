@@ -33,16 +33,19 @@ function istWinAnsi(codePoint) {
   return (codePoint >= 0x20 && codePoint <= 0x7e) || (codePoint >= 0xa0 && codePoint <= 0xff) || WINANSI_ZUSATZ.has(codePoint);
 }
 
+const GRAPHEME = new Intl.Segmenter('de', { granularity: 'grapheme' });
+
 // Macht beliebigen Text stempelbar: Zeilenumbrüche (\r\n, \r) werden zu \n vereinheitlicht und
 // bleiben erhalten, Tabs werden zu Leerzeichen, alles andere, was die Standardschrift nicht
-// kodieren kann (Emoji, Kyrillisch, Steuerzeichen, ...), wird zu "?" -- ein Zeichen pro
-// Codepoint. NFC zuerst, damit zerlegte Umlaute (a + U+0308) als "ä" erhalten bleiben.
+// kodieren kann (Emoji, Kyrillisch, Steuerzeichen, ...), wird zu "?" -- ein "?" pro sichtbarem
+// Zeichen (Graphem), also auch bei ZWJ-Emoji, Flaggen und Variantenselektoren nur eins.
+// NFC zuerst, damit zerlegte Umlaute (a + U+0308) als "ä" erhalten bleiben.
 export function winAnsiSicher(text) {
   const normalisiert = String(text ?? '').normalize('NFC').replace(/\r\n?/g, '\n').replace(/\t/g, ' ');
   let ergebnis = '';
-  for (const zeichen of normalisiert) {
-    const cp = zeichen.codePointAt(0);
-    ergebnis += zeichen === '\n' || istWinAnsi(cp) ? zeichen : '?';
+  for (const { segment } of GRAPHEME.segment(normalisiert)) {
+    const darstellbar = segment === '\n' || [...segment].every((zeichen) => istWinAnsi(zeichen.codePointAt(0)));
+    ergebnis += darstellbar ? segment : '?';
   }
   return ergebnis;
 }
@@ -129,15 +132,16 @@ function verlaufEntryLines(entry) {
 
 // Draws a section heading and its lines starting at (page, startY), overflowing onto freshly
 // appended same-size pages (with "<Titel> (Fortsetzung)") whenever a line would fall below
-// VERLAUF_BOTTOM_MARGIN. Each line is { text, x, font }; returns where drawing stopped so a
-// following section can continue right below.
+// VERLAUF_BOTTOM_MARGIN. Each line is { text, x, font, halte }; `halte` = so viele folgende Zeilen
+// müssen noch mit auf die Seite (Überschrift/Kopfzeile nie allein am Seitenende). Returns where
+// drawing stopped so a following section can continue right below.
 function drawAbschnitt(doc, font, titel, lines, page, startY, pageWidth, pageHeight) {
   let currentPage = page;
   let y = startY;
   currentPage.drawText(titel, { x: 60, y: y + 20, size: 12, font, color: rgb(0, 0, 0) });
 
   for (const line of lines) {
-    if (y < VERLAUF_BOTTOM_MARGIN) {
+    if (y - (line.halte ?? 0) * VERLAUF_LINE_HEIGHT < VERLAUF_BOTTOM_MARGIN) {
       currentPage = doc.addPage([pageWidth, pageHeight]);
       y = pageHeight - 50;
       currentPage.drawText(`${titel} (Fortsetzung)`, { x: 60, y: y + 20, size: 12, font, color: rgb(0, 0, 0) });
@@ -159,13 +163,21 @@ function drawVerlauf(doc, font, verlauf, page, startY, pageWidth, pageHeight) {
 export const KOMMENTAR_ABSCHNITT_TITEL = 'Rückfragen und Kommentare';
 const KOMMENTAR_EINZUG = 12;
 
+// Markiert die erste von `anzahl` zusammengehörigen Zeilen so, dass sie samt den übrigen und
+// `danach` weiteren Zeilen auf derselben Seite beginnt.
+function halteZusammen(zeilen, danach) {
+  if (zeilen.length) zeilen[0] = { ...zeilen[0], halte: zeilen.length - 1 + danach };
+  return zeilen;
+}
+
 // Je Kommentar eine Kopfzeile "<TT.MM.JJJJ HH:MM> — <Verfasser>:", darunter der Text (eingerückt,
-// Zeilenumbrüche des Originals bleiben eigene Zeilen), dann eine Leerzeile.
+// Zeilenumbrüche des Originals bleiben eigene Zeilen), dann eine Leerzeile. Die Kopfzeile steht
+// immer mit der ersten Textzeile auf derselben Seite.
 function kommentarZeilen(font, kommentare, maxWidth) {
   const zeilen = [];
   for (const kommentar of kommentare) {
     const kopf = `${formatKommentarZeitpunkt(kommentar.zeitpunkt)} — ${einzeilig(kommentar.verfasser)}:`;
-    for (const text of wrapLine(font, kopf, 9, maxWidth)) zeilen.push({ text });
+    zeilen.push(...halteZusammen(wrapLine(font, kopf, 9, maxWidth).map((text) => ({ text })), 1));
     for (const absatz of winAnsiSicher(kommentar.text).split('\n')) {
       const umbrochen = wrapLine(font, absatz, 9, maxWidth - KOMMENTAR_EINZUG);
       if (umbrochen.length === 0) zeilen.push({ text: '' });
@@ -183,14 +195,20 @@ function drawKommentare(doc, font, boldFont, gruppen, fortsetzung, pageWidth, pa
   const zeilen = [];
   for (const { untertitel, kommentare } of gruppen) {
     if (!kommentare?.length) continue;
-    if (untertitel) for (const text of wrapLine(boldFont, einzeilig(untertitel), 9, maxWidth)) zeilen.push({ text, font: boldFont });
-    zeilen.push(...kommentarZeilen(font, kommentare, maxWidth));
+    const kommentarTeil = kommentarZeilen(font, kommentare, maxWidth);
+    if (untertitel) {
+      // Untertitel samt Kopfzeile(n) und erster Textzeile des ersten Kommentars zusammenhalten.
+      const kopfUndErsteZeile = (kommentarTeil[0].halte ?? 0) + 1;
+      zeilen.push(...halteZusammen(wrapLine(boldFont, einzeilig(untertitel), 9, maxWidth).map((text) => ({ text, font: boldFont })), kopfUndErsteZeile));
+    }
+    zeilen.push(...kommentarTeil);
   }
   if (zeilen.length === 0) return;
   let { page, y } = fortsetzung;
   y -= BLOCK_GAP;
-  // Titel (y + 20) plus mindestens eine Zeile müssen noch auf die Seite passen.
-  if (y < VERLAUF_BOTTOM_MARGIN + VERLAUF_LINE_HEIGHT) {
+  // Titel (y + 20) plus der erste zusammengehörige Zeilenblock müssen noch auf die Seite passen --
+  // sonst stünde der Titel allein am Seitenende.
+  if (y - (zeilen[0].halte ?? 0) * VERLAUF_LINE_HEIGHT < VERLAUF_BOTTOM_MARGIN + VERLAUF_LINE_HEIGHT) {
     page = doc.addPage([pageWidth, pageHeight]);
     y = pageHeight - 50;
   }

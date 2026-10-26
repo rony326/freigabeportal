@@ -1815,3 +1815,48 @@ test('Spesen-Position: Kommentare erscheinen auf dem finalen PDF', async (t) => 
   assert.match(text, /31\.08\.2026 10:25 — Ein Reicher:/);
   assert.match(text, /Original liegt im Fach\./);
 });
+
+test('geht während Stempeln/TSA ein neuer Kommentar ein, wird nicht abgeschlossen: 409, nichts geschrieben, erneute Freigabe druckt ihn', async (t) => {
+  const { readdirSync } = await import('node:fs');
+  const { extrahierePdfText } = await import('../../src/services/pdfText.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-kommentar-race-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const pdfPfad = join(dir, 'a.pdf');
+  const original = await buildPdfFixture(['Rechnung Seite 1']);
+  writeFileSync(pdfPfad, original);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  seedKommentar(db, id, '1', 'Erste Rückfrage.', '2026-08-15T08:40:00.000Z');
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
+  const client = setupMockTsa('https://tsa.example.org/tsr');
+  // Der Kommentar trifft genau im Fenster zwischen Stempeln und Abschluss-Transaktion ein.
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, (opts) => {
+    seedKommentar(db, id, '1', 'Halt, bitte noch nicht freigeben!', '2026-08-15T09:01:00.000Z');
+    return signedTsaResponse(opts);
+  }, { headers: { 'content-type': 'application/timestamp-reply' } });
+  const app = buildTestApp(db);
+
+  const res = await request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res.status, 409);
+  assert.match(res.text, /Während der Freigabe ist ein neuer Kommentar eingegangen\. Bitte lesen und erneut freigeben\./);
+  assert.match(res.text, /Halt, bitte noch nicht freigeben!/, 'die Seite zeigt den neuen Kommentar');
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.pdf_pfad, pdfPfad);
+  assert.equal(job.zeitstempel_gesetzt_am, null);
+  assert.equal(job.freigabe_snapshot, null);
+  assert.deepEqual(readFileSync(pdfPfad), original, 'Quelldokument unverändert');
+  assert.deepEqual(readdirSync(dir), ['a.pdf'], 'kein liegengebliebenes final-*.pdf');
+  assert.equal(listFreigabenByJob(db, id).filter((f) => f.rolle === 'freigeber2').length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM tsa_pruefnachweise WHERE job_id = ?').get(id).n, 0, 'kein TSA-Nachweis gespeichert');
+
+  client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
+  const erneut = await request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(erneut.status, 302);
+  const fertig = getJobById(db, id);
+  assert.equal(fertig.status, 'abgeschlossen');
+  const text = extrahierePdfText(readFileSync(fertig.pdf_pfad));
+  assert.match(text, /Erste Rückfrage\./);
+  assert.match(text, /Halt, bitte noch nicht freigeben!/);
+});

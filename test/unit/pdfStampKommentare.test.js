@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PDFDocument } from 'pdf-lib';
+import * as mupdf from 'mupdf';
 import { stampAndFinalize, stampGruppenDokument, winAnsiSicher } from '../../src/services/pdfStamp.js';
 import { extrahierePdfText } from '../../src/services/pdfText.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
@@ -25,6 +26,21 @@ const seiten = async (bytes) => (await PDFDocument.load(bytes)).getPageCount();
 // mupdf trennt Wörter, die über eine Zeile hinausgehen, nicht -- für Vergleiche Zeilenumbrüche entfernen.
 const ohneUmbrueche = (text) => text.replace(/\s+/g, '');
 
+function seitenTexte(bytes) {
+  const doc = mupdf.Document.openDocument(bytes, 'application/pdf');
+  try {
+    return Array.from({ length: doc.countPages() }, (_, i) => {
+      const page = doc.loadPage(i);
+      try { return page.toStructuredText().asText(); } finally { page.destroy(); }
+    });
+  } finally {
+    doc.destroy();
+  }
+}
+
+const letzteZeile = (seitenText) => seitenText.split('\n').map((z) => z.trim()).filter(Boolean).at(-1);
+const KOPFZEILE = /^\d\d\.\d\d\.\d{4} \d\d:\d\d — .*:$/;
+
 test('winAnsiSicher erhält Umlaute, ß, € und typografische Zeichen, ersetzt den Rest durch ?', () => {
   assert.equal(winAnsiSicher('Grüße äöü ÄÖÜ ß 12 € – „gut“ …'), 'Grüße äöü ÄÖÜ ß 12 € – „gut“ …');
   assert.equal(winAnsiSicher('ok 😀 Привет'), 'ok ? ??????');
@@ -32,6 +48,14 @@ test('winAnsiSicher erhält Umlaute, ß, € und typografische Zeichen, ersetzt 
   assert.equal(winAnsiSicher('Zeile 1\r\nZeile 2\rZeile 3\nZeile 4'), 'Zeile 1\nZeile 2\nZeile 3\nZeile 4');
   assert.equal(winAnsiSicher('Müller'), 'Müller', 'zerlegte Umlaute werden per NFC zusammengesetzt');
   assert.equal(winAnsiSicher(null), '');
+});
+
+test('winAnsiSicher ersetzt ein sichtbares Emoji (ZWJ-Folge, Flagge, Variantenselektor) durch genau ein ?', () => {
+  assert.equal(winAnsiSicher('a 👨‍👩‍👧 b'), 'a ? b');
+  assert.equal(winAnsiSicher('❤️'), '?');
+  assert.equal(winAnsiSicher('🇨🇭!'), '?!');
+  assert.equal(winAnsiSicher('👍🏽 ok'), '? ok', 'Hautton-Modifikator gehört zum Emoji');
+  assert.equal(winAnsiSicher('Zeile\r\nZwei'), 'Zeile\nZwei', 'CRLF bleibt ein Zeilenumbruch');
 });
 
 test('stampAndFinalize druckt den Abschnitt "Rückfragen und Kommentare" mit Zeitpunkt, Verfasser und Text', async () => {
@@ -87,7 +111,12 @@ test('ein Wort mit 2000 Zeichen wird hart umbrochen und vollständig gedruckt', 
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
   const wort = Array.from({ length: 2000 }, (_, i) => String.fromCharCode(65 + (i % 26))).join('');
   const stamped = await stampAndFinalize(pdf, stampData({ kommentare: [kommentar(wort)] }));
-  assert.ok(ohneUmbrueche(extrahierePdfText(stamped)).includes(wort), 'kein Zeichen des langen Worts fehlt');
+  const text = extrahierePdfText(stamped);
+  assert.ok(ohneUmbrueche(text).includes(wort), 'kein Zeichen des langen Worts fehlt');
+  const wortZeilen = text.split('\n').map((z) => z.trim()).filter((z) => /^[A-Z]{20,}$/.test(z));
+  assert.ok(wortZeilen.length > 10, `hart in viele Zeilen umbrochen (${wortZeilen.length})`);
+  // Helvetica 9pt, ~483pt Zeilenbreite: breite Grossbuchstaben passen höchstens ~80 pro Zeile.
+  for (const z of wortZeilen) assert.ok(z.length <= 90, `keine Zeile breiter als die Seite (${z.length} Zeichen)`);
 });
 
 test('30 lange Kommentare laufen auf Folgeseiten weiter, kein Text fehlt', async () => {
@@ -113,13 +142,47 @@ test('ohne Kommentare kein Abschnitt und gleiche Seitenzahl wie vorher', async (
   assert.doesNotMatch(extrahierePdfText(leer), /Rückfragen und Kommentare/);
 });
 
-test('Abschnitt beginnt auf einer neuen Seite, wenn der Verlauf die Seite füllt', async () => {
+const verlaufMit = (n) => Array.from({ length: n }, (_, i) => ({ rolleLabel: `Schritt ${i}`, ...freigeber('Max Muster') }));
+
+test('Abschnitt beginnt auf einer neuen Seite (+1 Seite), wenn der Verlauf die Seite füllt', async () => {
   const pdf = await buildPdfFixture(['Rechnung Seite 1']);
-  const verlauf = Array.from({ length: 36 }, (_, i) => ({ rolleLabel: `Schritt ${i}`, ...freigeber('Max Muster') }));
-  const stamped = await stampAndFinalize(pdf, stampData({ verlauf, kommentare: [kommentar('Am Ende angehängt.')] }));
-  const text = extrahierePdfText(stamped);
-  assert.match(text, /Schritt 35/);
-  assert.match(text, /Am Ende angehängt\./);
+  // Grösster Verlauf, der gerade noch auf die Stempelseite passt (n passt, n + 1 nicht).
+  let n = 1;
+  while (await seiten(await stampAndFinalize(pdf, stampData({ verlauf: verlaufMit(n + 1) }))) === 2) n++;
+  const ohne = await stampAndFinalize(pdf, stampData({ verlauf: verlaufMit(n) }));
+  const mit = await stampAndFinalize(pdf, stampData({ verlauf: verlaufMit(n), kommentare: [kommentar('Am Ende angehängt.')] }));
+  assert.equal(await seiten(ohne), 2);
+  assert.equal(await seiten(mit), 3, 'genau eine zusätzliche Seite');
+  const texte = seitenTexte(mit);
+  assert.match(texte[1], new RegExp(`Schritt ${n - 1}`));
+  assert.doesNotMatch(texte[1], /Rückfragen und Kommentare/, 'kein verwaister Titel am Ende der Stempelseite');
+  assert.match(texte[2], /^\s*Rückfragen und Kommentare\s*\n/, 'Abschnitt beginnt oben auf der neuen Seite');
+  assert.doesNotMatch(texte[2], /Fortsetzung/);
+  assert.match(texte[2], /Am Ende angehängt\./);
+});
+
+test('Kopfzeile und Untertitel stehen nie allein am Seitenende', async () => {
+  const pdf = await buildPdfFixture(['Rechnung Seite 1']);
+  const kommentare = Array.from({ length: 3 }, (_, i) => kommentar(`Text ${i}`));
+  let gepruefteUmbrueche = 0;
+  // Verschiedene Verlauf-Längen schieben die Kommentare über alle Positionen am Seitenende.
+  for (let n = 20; n <= 40; n++) {
+    const einzel = await stampAndFinalize(pdf, stampData({ verlauf: verlaufMit(n), kommentare }));
+    const gruppe = await stampGruppenDokument(pdf, {
+      jobId: 7, verlauf: verlaufMit(n), positionen: [position({ jobId: 8, kommentare: kommentare.slice(0, 1) }), position({ jobId: 9, kommentare: kommentare.slice(1) })],
+    });
+    for (const bytes of [einzel, gruppe]) {
+      const texte = seitenTexte(bytes);
+      for (const seite of texte.slice(0, -1)) {
+        gepruefteUmbrueche++;
+        const zeile = letzteZeile(seite);
+        assert.doesNotMatch(zeile, KOPFZEILE, `Kopfzeile verwaist (Verlauf ${n})`);
+        assert.doesNotMatch(zeile, /— Job-ID \d+$/, `Untertitel verwaist (Verlauf ${n})`);
+        assert.notEqual(zeile, 'Rückfragen und Kommentare', `Titel verwaist (Verlauf ${n})`);
+      }
+    }
+  }
+  assert.ok(gepruefteUmbrueche > 0);
 });
 
 function position(overrides = {}) {

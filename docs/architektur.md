@@ -148,7 +148,9 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
   `X-Frame-Options: SAMEORIGIN` (nicht `DENY`, weil PDF-Vorschauen als
   same-origin `<iframe>` eingebettet werden), `Referrer-Policy: no-referrer`
   (signierte Download-URLs tragen ihre Signatur in der Query-String),
-  restriktive `Content-Security-Policy`.
+  restriktive `Content-Security-Policy` (`img-src 'self' data:` — `data:`
+  nur für Bilder, weil Bootstraps Symbole wie Schliessen-✕, Auswahlpfeil und
+  Häkchen als data-URI-SVG im CSS stecken).
 - **Signierte, zeitlich begrenzte Download-URLs** (`src/services/downloadUrl.js`):
   HMAC-SHA256 über `jobId.expires`, zeitkonstanter Vergleich
   (`crypto.timingSafeEqual`). Nutzt niemand die Session, sondern eine
@@ -173,9 +175,10 @@ Bootstrap:
 
 | Breite | Verhalten |
 |---|---|
-| unter 576 px (Handy) | Kopfzeile zweizeilig (Menü, Titel, Knöpfe; darunter Reiter Portal/Admin), Testmodus-Band scrollt mit statt oben zu kleben, `.stapel-tabelle` (z. B. Admin → Personen) zeigt jede Zeile als Karte (bis 768 px) |
+| unter 576 px (Handy) | Kopfzeile zweizeilig (Menü, Titel, Knöpfe; darunter Reiter Portal/Admin — ohne Admin-Reiter entfällt die zweite Zeile), Testmodus-Band scrollt mit statt oben zu kleben, Filterzeilen einspaltig |
 | 576 / 768 px | Feldgruppen zweispaltig ab 576 (`col-12 col-sm-6`); 768–991 px Tablet-Stufe: Formulare auf mittlere Breite begrenzt |
-| unter 992 px | Seitenleiste als Offcanvas hinter dem Menüknopf ☰; Listen standardmässig als Kacheln; PDF-Seiten mit Umschalter "Beleg / Formular" |
+| unter 992 px | Seitenleiste als Offcanvas hinter dem Menüknopf ☰; Listen standardmässig als Kacheln; PDF-Seiten mit Umschalter "Beleg / Formular" (Vorschaubild spaltenbreit, höchstens 420 px) |
+| unter 1200 px | `.stapel-tabelle` (Admin → Personen, Betrieb → Status) zeigt jede Zeile als Karte (`data-label` als Beschriftung; Einzelrechte zwei-, ab 768 px dreispaltig); Aufsplitten-Zeilen als Karten |
 | ab 992 px | Seitenleiste fest links, PDF eingebettet neben dem Formular |
 | ab 1200 px | Desktop-Darstellung wie vor dem Responsive-Durchgang (z. B. Aufsplitten-Zeilen als Tabelle statt Karten) |
 

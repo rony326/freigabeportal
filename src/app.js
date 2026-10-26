@@ -124,10 +124,12 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     // because several views use inline <script> blocks and style="" attributes without nonces; a
     // future refactor to nonce-based CSP could drop it. Still meaningfully restricts where a future injection could
     // load resources from or exfiltrate to, and blocks base-tag/form-action hijacking outright.
+    // img-src allows data: (images only) because Bootstrap's CSS ships its icons as data-URI SVGs
+    // (close X, select arrow, check marks); without it those icons are invisible at every width.
     res.setHeader(
       'Content-Security-Policy',
       "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
-        "img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; " +
+        "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; " +
         "form-action 'self'; frame-ancestors 'self'"
     );
     next();

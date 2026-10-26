@@ -43,7 +43,7 @@
               <label class="form-label small">Beleg</label>
               <input type="file" class="form-control position-beleg-input" accept="application/pdf,image/png,image/jpeg" required>
             </div>
-            <div class="col-md-2 col-xl-1 d-flex align-items-end">
+            <div class="col-md-2 col-xl-1 d-flex align-items-end position-entfernen">
               <button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button>
             </div>
           </div>
@@ -101,7 +101,7 @@
             '<input type="text" class="form-control" name="posBeschreibung"></div>' +
             '<div class="col-md-4 col-xl-2"><label class="form-label small">Beleg</label>' +
             '<input type="file" class="form-control position-beleg-input" accept="application/pdf,image/png,image/jpeg" required></div>' +
-            '<div class="col-md-2 col-xl-1 d-flex align-items-end"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
+            '<div class="col-md-2 col-xl-1 d-flex align-items-end position-entfernen"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
           var container = document.getElementById('positionen-container');
           if (container) container.appendChild(zeile);
           zeileEntfernenBinden(zeile);

@@ -34,17 +34,18 @@
 
     <h2 class="h5">Gesamtstatus: <span class="badge <%= klasse[gesamt] %>"><%= text[gesamt] %></span></h2>
     <p class="text-body-secondary">Geprüft: <%= zeit(geprueftAm) %> (Ergebnis bis zu 30 Sekunden zwischengespeichert) · <a href="/admin/betrieb/status?neu=1">Jetzt neu prüfen</a></p>
+    <%# Unter 1200 px stapelt portal.css (.stapel-tabelle) jede Zeile als Karte; Beschriftung aus data-label. %>
     <div class="table-responsive mb-4">
-      <table class="table align-middle">
+      <table class="table align-middle stapel-tabelle">
         <thead><tr><th>Dienst</th><th>Status</th><th>Grund</th><th>Seit</th><th></th></tr></thead>
         <tbody>
           <% dienste.forEach((d) => { %>
             <tr>
-              <td><%= d.name %></td>
-              <td><span class="badge <%= klasse[d.status] %>"><%= text[d.status] %></span></td>
-              <td><%= d.grund %></td>
-              <td><%= d.seit ? zeit(d.seit) : '—' %></td>
-              <td><% if (d.link) { %><a href="<%= d.link %>">Öffnen</a><% } %></td>
+              <td class="stapel-titel"><%= d.name %></td>
+              <td data-label="Status"><span class="badge <%= klasse[d.status] %>"><%= text[d.status] %></span></td>
+              <td data-label="Grund"><%= d.grund %></td>
+              <td data-label="Seit"><%= d.seit ? zeit(d.seit) : '—' %></td>
+              <td<%= d.link ? '' : ' class="stapel-leer"' %>><% if (d.link) { %><a href="<%= d.link %>">Öffnen</a><% } %></td>
             </tr>
           <% }) %>
         </tbody>

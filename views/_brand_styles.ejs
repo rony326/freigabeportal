@@ -85,6 +85,24 @@
     --bs-btn-active-bg: #ced4da;
     --bs-btn-active-border-color: #ced4da;
   }
+  /* .btn-outline-primary (Beleg/Formular-Umschalter, "Speichern" bei Personen) uses the brand
+     color as text — a dark brand (default #2f4858) on the near-black dark background is about
+     1.6:1. In dark mode, unpressed text/border are the brand color mixed with 70 % white (always
+     ≥ 8:1 against #1a1a1a, whatever the brand); hover/active keep the brand background + white. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="hell"]) .btn-outline-primary {
+      --bs-btn-color: color-mix(in srgb, var(--brand-primary) 30%, #fff);
+      --bs-btn-border-color: color-mix(in srgb, var(--brand-primary) 30%, #fff);
+      --bs-btn-disabled-color: color-mix(in srgb, var(--brand-primary) 30%, #fff);
+      --bs-btn-disabled-border-color: color-mix(in srgb, var(--brand-primary) 30%, #fff);
+    }
+  }
+  :root[data-theme="dunkel"] .btn-outline-primary {
+    --bs-btn-color: color-mix(in srgb, var(--brand-primary) 30%, #fff);
+    --bs-btn-border-color: color-mix(in srgb, var(--brand-primary) 30%, #fff);
+    --bs-btn-disabled-color: color-mix(in srgb, var(--brand-primary) 30%, #fff);
+    --bs-btn-disabled-border-color: color-mix(in srgb, var(--brand-primary) 30%, #fff);
+  }
 </style>
 <style>
   /* Scoped to only render alongside the menu itself: an anonymous visitor gets no menu at all,

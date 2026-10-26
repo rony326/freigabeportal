@@ -83,7 +83,7 @@
         <% } %>
       </div>
       <% if (sNavigation) { %>
-        <nav class="portal-reiter nav nav-underline" aria-label="Bereiche">
+        <nav class="portal-reiter nav nav-underline<%= sNavigation.zeigeAdminReiter ? '' : ' portal-reiter-einzeln' %>" aria-label="Bereiche">
           <a class="nav-link<%= sAdminBereich ? '' : ' active' %>" href="/pool"<% if (!sAdminBereich) { %> aria-current="page"<% } %>>Portal</a>
           <% if (sNavigation.zeigeAdminReiter) { %>
             <a class="nav-link<%= sAdminBereich ? ' active' : '' %>" href="/admin"<% if (sAdminBereich) { %> aria-current="page"<% } %>>Admin</a>

@@ -14,6 +14,10 @@
 // - status: erwarteter HTTP-Status (Standard 200; bei fehlerzustand der Status der Antwortseite).
 // - pdf: true für Seiten mit Beleg/Formular-Umschalter: unter 992 px darf weder der PDF.js-Viewer
 //   noch das signierte PDF geladen werden, ab 992 px muss das eingebettete PDF (iframe) geladen sein.
+// - modal: { knopf, modal, iframe? } nach den Seitenprüfungen den Dialog über seinen Knopf öffnen,
+//   im offenen Dialog Touch/Text/Überlappung prüfen, ob der Schliessen-Knopf frei liegt (nicht vom
+//   Testmodus-Band verdeckt) und — mit iframe — im Dokument des iframes alle Seitenprüfungen
+//   (seitliches Scrollen, Touch …) und dass dort kein Beleg/Formular-Umschalter sichtbar ist.
 //
 // Neue Seite: Eintrag ergänzen; braucht sie Daten, die die Testmodus-Beispieldaten nicht haben,
 // diese in server.js (ergaenzeDaten) anlegen und die ID in `ids` zurückgeben.
@@ -32,6 +36,10 @@ export const SEITEN = [
     fehlerzustand: { formular: '#kontierung-form', knopf: 'button[name="aktion"][value="kontieren"]', felder: { kontoId: '', betrag: 'kein-betrag', zahlungsziel: '' } },
   },
   { name: 'Aufsplitten', view: 'kontierung-aufsplitten', pfad: '/kontierung/{anna}/aufsplitten', als: 'test-1', pdf: true },
+  {
+    name: 'Aufsplitten im Modal', view: 'kontierung', pfad: '/kontierung/{anna}', als: 'test-1',
+    modal: { knopf: '[data-bs-target="#aufsplitten-modal"]', modal: '#aufsplitten-modal', iframe: '#aufsplitten-frame' },
+  },
   { name: 'KK-Abgleich', view: 'kk-abgleich', pfad: '/kontierung/{kkAbrechnung}/kk-abgleich', als: 'test-1', pdf: true },
   { name: 'Freigabe 2', view: 'freigabe2', pfad: '/freigabe2/{freigabe2}', als: 'test-2', pdf: true },
   { name: 'Spesen-Freigabe 1', view: 'spesen-freigabe1', pfad: '/spesen-freigabe1/{spesen}', als: 'test-1', pdf: true },

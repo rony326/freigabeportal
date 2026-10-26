@@ -207,6 +207,10 @@ test('every response carries the baseline security headers', async () => {
   assert.equal(res.headers['referrer-policy'], 'no-referrer');
   assert.match(res.headers['content-security-policy'], /default-src 'self'/);
   assert.match(res.headers['content-security-policy'], /frame-ancestors 'self'/);
+  // data: only for images (Bootstrap's data-URI SVG icons); nothing else widened.
+  const img = res.headers['content-security-policy'].split(';').map((d) => d.trim()).find((d) => d.startsWith('img-src'));
+  assert.equal(img, "img-src 'self' data:");
+  assert.equal(res.headers['content-security-policy'].match(/data:/g).length, 1);
   db.close();
 });
 
@@ -239,6 +243,8 @@ test('Navigation marks Aufgaben (sidebar) and Portal (tab) as current on /pool f
   assert.match(seitenleiste[0], /href="\/pool" aria-current="page"/);
   assert.match(res.text, /<nav class="portal-reiter[\s\S]*?href="\/pool" aria-current="page">Portal</);
   assert.doesNotMatch(res.text, /href="\/admin"/);
+  // Nur ein Reiter: am Handy keine eigene Kopfzeile dafür (portal.css blendet ihn dort aus).
+  assert.match(res.text, /<nav class="portal-reiter nav nav-underline portal-reiter-einzeln"/);
   db.close();
 });
 
@@ -270,6 +276,7 @@ test('Hauptmenü shows both Aufgaben and Admin entries for a Portal-Admin, Admin
   assert.ok(reiter, 'Reiter fehlen');
   assert.match(reiter[0], /<a [^>]*href="\/pool"[^>]*>Portal<\/a>/);
   assert.match(reiter[0], /<a [^>]*href="\/admin"[^>]*aria-current="page"[^>]*>Admin<\/a>/);
+  assert.doesNotMatch(reiter[0], /portal-reiter-einzeln/);
   db.close();
 });
 

@@ -4,7 +4,8 @@
 // seinen Kasten (text), Bedienelemente überdecken sich nicht (ueberlappung), Menü unter 992 px
 // (menue), Testmodus-Band höchstens 30 % hoch und Inhalt erreichbar (band), PDF-Seiten mit
 // Beleg/Formular-Umschalter (pdf: true in seiten.js) laden unter 992 px weder PDF.js-Viewer noch
-// signiertes PDF, ab 992 px ist das eingebettete PDF geladen (iframe).
+// signiertes PDF, ab 992 px ist das eingebettete PDF geladen (iframe). Dialoge (modal: in seiten.js)
+// werden über ihren Knopf geöffnet und samt iframe-Dokument geprüft (modal).
 // Aufruf: npm run test:responsive [-- --seite=<Teil des Namens> --breite=360]
 // Ausgabe: eine Zeile je Verstoss "Breite Seite Art Selektor Masse", danach Zusammenfassung.
 // Exit-Codes: 0 alles gut, 1 Verstösse, 2 Test selbst gescheitert (Browser/Server startet nicht,
@@ -234,6 +235,51 @@ async function pruefePdf(page, b, pdfAnfragen) {
   return [{ art: 'iframe', selektor: 'iframe.pdf-preview', masse: `src nicht gesetzt ab ${MENUE_BIS} px ("${src.slice(0, 40)}")` }];
 }
 
+// Dialog (seite.modal): über den Knopf öffnen, dann im offenen Dialog Touch/Text/Überlappung, ob
+// der Schliessen-Knopf frei liegt (z. B. nicht unter dem Testmodus-Band) und — mit iframe — das
+// iframe-Dokument wie eine eigene Seite prüfen, ohne Beleg/Formular-Umschalter (eingebettet).
+async function pruefeModal(page, m, optionen) {
+  const verstoesse = [];
+  try {
+    await page.locator(m.knopf).first().click({ timeout: 3000 });
+    await page.waitForFunction((sel) => {
+      const el = document.querySelector(sel);
+      // Eingeblendet: .show gesetzt und die Fade-Animation fertig (sonst misst man den Zwischenstand).
+      return el && el.classList.contains('show') && getComputedStyle(el).opacity === '1'
+        && getComputedStyle(el.querySelector('.modal-dialog') || el).transform === 'none';
+    }, m.modal, { timeout: 5000 });
+  } catch (err) {
+    return [{ art: 'modal', selektor: m.modal, masse: `öffnet nicht (${String(err.message).split('\n')[0].slice(0, 80)})` }];
+  }
+  verstoesse.push(...await page.evaluate(pruefeImBrowser, { ...optionen, wurzel: m.modal }));
+  const frei = await page.evaluate((sel) => {
+    const knopf = document.querySelector(`${sel} .modal-header .btn-close`);
+    if (!knopf) return null;
+    const r = knopf.getBoundingClientRect();
+    const oben = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return oben && (oben === knopf || knopf.contains(oben)) ? '' : `verdeckt von ${oben ? oben.tagName.toLowerCase() + (oben.className ? `.${String(oben.className).split(' ')[0]}` : '') : 'nichts'}`;
+  }, m.modal);
+  if (frei) verstoesse.push({ art: 'modal', selektor: `${m.modal} .btn-close`, masse: frei });
+  if (m.iframe) {
+    try {
+      const handle = await page.waitForSelector(`${m.iframe}[src]:not([src=""])`, { timeout: 5000 });
+      const frame = await handle.contentFrame();
+      await frame.waitForLoadState('load', { timeout: 15000 });
+      await frame.waitForSelector('main', { timeout: 15000 });
+      await page.waitForTimeout(100);
+      verstoesse.push(...(await frame.evaluate(pruefeImBrowser, optionen)).map((v) => ({ ...v, selektor: `iframe ${v.selektor}` })));
+      const umschalter = await frame.evaluate(() => {
+        const k = document.querySelector('.beleg-umschalter-knoepfe');
+        return Boolean(k && k.checkVisibility({ checkVisibilityCSS: true }) && k.getBoundingClientRect().height > 1);
+      });
+      if (umschalter) verstoesse.push({ art: 'modal', selektor: 'iframe .beleg-umschalter-knoepfe', masse: 'Umschalter im eingebetteten Dokument sichtbar' });
+    } catch (err) {
+      verstoesse.push({ art: 'modal', selektor: m.iframe, masse: `lädt nicht (${String(err.message).split('\n')[0].slice(0, 80)})` });
+    }
+  }
+  return verstoesse;
+}
+
 async function sendeFehlerzustand(page, fz) {
   // Auf die vollständig geladene Antwortseite warten (nicht nur auf die Antwort: sonst läuft die
   // Prüfung noch im alten oder halb aufgebauten Dokument und findet nichts).
@@ -314,6 +360,7 @@ async function pruefeSeite(browser, server, seite, b) {
     verstoesse.push(...await page.evaluate(pruefeImBrowser, optionen));
     if (b.breite < MENUE_BIS) verstoesse.push(...await pruefeMenue(page, optionen));
     if (seite.pdf) verstoesse.push(...await pruefePdf(page, b, pdfAnfragen));
+    if (seite.modal) verstoesse.push(...await pruefeModal(page, seite.modal, optionen));
     if (verstoesse.length) {
       await page.addStyleTag({ content: '[data-responsive-verstoss]{outline:3px solid #e00 !important;outline-offset:-1px}' }).catch(() => {});
       // fullPage verliert bei isMobile/hasTouch die (pointer: coarse)-Emulation während der Aufnahme
@@ -346,7 +393,7 @@ function zusammenfassen(verstoesse) {
 }
 
 function tabelle(verstoesse, breiten) {
-  const arten = ['ueberlauf', 'touch', 'text', 'ueberlappung', 'menue', 'band', 'iframe'];
+  const arten = ['ueberlauf', 'touch', 'text', 'ueberlappung', 'menue', 'band', 'iframe', 'modal'];
   const zeilen = [['Art', ...breiten.map((b) => String(b.breite)), 'Summe']];
   for (const art of arten) {
     const proBreite = breiten.map((b) => verstoesse.filter((v) => v.art === art && v.breite === b.breite).length);

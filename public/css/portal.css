@@ -48,7 +48,7 @@
 }
 
 /* Handy (unter 576 px): Menüknopf, Titel/Logo und die Knöpfe rechts teilen sich die erste Zeile,
-   die Reiter Portal/Admin stehen in einer eigenen zweiten Zeile. Sonst bleibt neben den
+   die Reiter Portal/Admin stehen in einer eigenen zweiten Zeile (ohne Admin-Reiter entfällt sie). Sonst bleibt neben den
    44-px-Touch-Knöpfen kein Platz für den Titel (er würde ganz weggekürzt). */
 @media (max-width: 575.98px) {
   .portal-kopf-zeile {
@@ -71,6 +71,10 @@
   .portal-reiter {
     grid-area: reiter;
     margin-left: 0;
+  }
+  /* Ohne Admin-Reiter gäbe es nur "Portal" (= die Seitenleiste im Menü): keine eigene Zeile dafür. */
+  .portal-reiter.portal-reiter-einzeln {
+    display: none;
   }
 }
 
@@ -257,6 +261,12 @@
 .filterzeile > .form-check {
   padding-bottom: .375rem;
 }
+/* Handy: jedes Feld (Auswahl/Eingabe) eine eigene volle Zeile statt zwei halbe nebeneinander. */
+@media (max-width: 575.98px) {
+  .filterzeile > :has(> .form-select, > .form-control) {
+    flex: 1 1 100%;
+  }
+}
 
 /* ---------- Prüfbescheinigung (views/zeitstempel-zertifikat.ejs) ---------- */
 .bescheinigung {
@@ -381,8 +391,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Testmodus-Band: schwarz auf gelb, klebt oben, bricht am Handy um. */
-.testmodus-band { position: sticky; top: 0; z-index: 1060; background: #ffd400; color: #000; border-bottom: 3px solid #000; }
+/* Testmodus-Band: schwarz auf gelb, klebt oben, bricht am Handy um. z-index 1035: über
+   Bootstrap sticky/fixed (1020/1030), aber unter Offcanvas (1040/1045) und Modal (1050/1055) —
+   sonst verdeckt das ab 768 px zweizeilige Band Kopf und Schliessen-Knopf offener Dialoge. */
+.testmodus-band { position: sticky; top: 0; z-index: 1035; background: #ffd400; color: #000; border-bottom: 3px solid #000; }
 /* Handy: das umgebrochene Band ist gut ein Viertel des Bildschirms hoch. Es steht weiterhin oben
    auf jeder Seite, scrollt aber mit weg, statt beim Lesen dauernd ein Viertel zu verdecken. */
 @media (max-width: 575.98px) {
@@ -518,11 +530,12 @@
   text-overflow: ellipsis;
 }
 
-/* ---------- Responsive: Tabellen als Karten (Handy) ----------
-   .stapel-tabelle (z. B. Admin Personen): unter 768 px wird jede Zeile eine Karte. .stapel-titel
-   ist die Kartenüberschrift, andere Zellen zeigen ihre Spaltenbeschriftung (data-label) davor,
-   .stapel-block darüber; .stapel-leer (nichts anzuzeigen) entfällt. Ab 768 px unveränderte Tabelle. */
-@media (max-width: 767.98px) {
+/* ---------- Responsive: Tabellen als Karten (Handy und Tablet) ----------
+   .stapel-tabelle (Admin Personen, Betrieb Status): unter 1200 px wird jede Zeile eine Karte.
+   .stapel-titel ist die Kartenüberschrift, andere Zellen zeigen ihre Spaltenbeschriftung
+   (data-label) davor, .stapel-block darüber; .stapel-leer (nichts anzuzeigen) entfällt.
+   Ab 1200 px unveränderte Tabelle (auf Tablets wären Zeilen mit 13 Häkchen ~1000 px hoch). */
+@media (max-width: 1199.98px) {
   .stapel-tabelle thead {
     display: none;
   }
@@ -563,7 +576,7 @@
   .stapel-tabelle td.stapel-leer {
     display: none;
   }
-  /* Einzelrechte: zwei Häkchen je Zeile statt einer langen Spalte. */
+  /* Einzelrechte: zwei (ab 768 px drei) Häkchen je Zeile statt einer langen Spalte. */
   .personen-rechte {
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -579,6 +592,11 @@
     margin-top: .25rem;
   }
 }
+@media (min-width: 768px) and (max-width: 1199.98px) {
+  .personen-rechte {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 
 /* ---------- Responsive: Tablet-Stufe (768–991 px) ----------
    Die Seitenleiste ist hier ein Aufklapp-Menü, der Inhalt hat die volle Breite (720–960 px).
@@ -592,6 +610,15 @@
   }
   .portal-inhalt > p {
     max-width: 80ch;
+  }
+}
+
+/* Spesen neu: die Spalte mit "Entfernen" ist so hoch wie die Zeile, damit der Knopf
+   (align-items-end) auf Höhe der Felder steht statt auf Höhe der Beschriftungen. Ab 1200 px
+   unverändert. */
+@media (max-width: 1199.98px) {
+  .position-entfernen {
+    align-self: stretch;
   }
 }
 
@@ -660,4 +687,13 @@
 }
 .beleg-umschalter-leer[hidden] {
   display: none;
+}
+/* Unter 992 px (nur dort ist das Vorschaubild zu sehen): so breit wie die Spalte, höchstens
+   420 px, statt 200 px klein neben leerem Platz. Steht nach den Grundregeln, damit es gewinnt. */
+@media (max-width: 991.98px) {
+  .beleg-umschalter-bild,
+  .beleg-umschalter-leer {
+    width: 100%;
+    max-width: 420px;
+  }
 }

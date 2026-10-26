@@ -220,6 +220,7 @@
 }
 .filterzeile > * {
   flex: 0 0 auto;
+  max-width: 100%;
 }
 .filterzeile > .form-check {
   padding-bottom: .375rem;
@@ -364,3 +365,132 @@
 .benachrichtigung-option { min-height: 44px; display: flex; align-items: center; gap: .75rem; padding: .5rem .75rem; border: 1px solid var(--bs-border-color, #dee2e6); border-radius: .5rem; margin-bottom: .5rem; cursor: pointer; }
 .benachrichtigung-option input { width: 1.25rem; height: 1.25rem; margin: 0; flex: none; }
 .benachrichtigung-option label { flex: 1; min-height: 44px; display: flex; align-items: center; margin: 0; cursor: pointer; }
+
+/* ---------- Responsive: Touch-Ziele ----------
+   Auf Touch-Geräten (Finger statt Maus) sind Bedienelemente mindestens 44 × 44 px gross.
+   Mit Maus (pointer: fine) bleibt alles wie bisher. Höhe über das Polster statt min-height,
+   damit der Text in Knöpfen mittig bleibt (line-height 1.5 + 2 px Rand). */
+@media (pointer: coarse) {
+  .btn,
+  .btn-sm,
+  .btn-group-sm > .btn,
+  .btn-lg {
+    --bs-btn-padding-y: max(.25rem, calc(22px - .75em - 1px));
+    min-width: 44px;
+  }
+  .btn-close {
+    padding: calc((44px - 1em) / 2);
+  }
+  .form-control,
+  .form-control-sm,
+  .form-select,
+  .form-select-sm {
+    min-height: 44px;
+  }
+  .form-control[type="color"] {
+    min-width: 44px;
+  }
+  .page-link {
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .nav-link,
+  .portal-punkt,
+  .dropdown-item {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+  /* Checkbox/Radio: die ganze Zeile inkl. Beschriftung ist die Klickfläche. */
+  .form-check {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding-left: 0;
+  }
+  .form-check .form-check-input {
+    float: none;
+    flex: none;
+    margin: 0;
+    width: 1.25em;
+    height: 1.25em;
+  }
+  .form-check .form-check-label {
+    flex: 1 1 auto;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  .form-check-inline {
+    display: inline-flex;
+    margin-right: 1.25rem;
+  }
+  .form-switch {
+    padding-left: 0;
+  }
+  .form-switch .form-check-input {
+    width: 2.25em;
+  }
+}
+
+/* ---------- Responsive: kein seitliches Scrollen ----------
+   Lange Wörter ohne Leerzeichen (Dateinamen, Fehlermeldungen, Beschreibungen) brechen in Listen
+   und Definitionslisten um; Auswahllisten mit langen Optionen werden nie breiter als ihr Platz.
+   Tabellen bleiben aussen vor: sie scrollen in ihrem eigenen Rahmen (.table-responsive). */
+.portal-inhalt dd,
+.portal-inhalt li {
+  overflow-wrap: anywhere;
+}
+.form-select {
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Responsive: Tablet-Stufe (768–991 px) ----------
+   Die Seitenleiste ist hier ein Aufklapp-Menü, der Inhalt hat die volle Breite (720–960 px).
+   Formulare, die erst ab lg schmaler werden (col-12 col-lg-8/6), würden sonst über die ganze
+   Breite gestreckt: sie bekommen hier eine mittlere Breite. Mehrspaltige Feldgruppen sind ab
+   576 px zweispaltig (col-12 col-sm-6 …) und bleiben es. Fliesstext bleibt lesbar breit. */
+@media (min-width: 768px) and (max-width: 991.98px) {
+  .portal-inhalt .col-12.col-lg-8:not([class*="col-md-"]),
+  .portal-inhalt .col-12.col-lg-6:not([class*="col-md-"]) {
+    width: 83.33333333%;
+  }
+  .portal-inhalt > p {
+    max-width: 80ch;
+  }
+}
+
+/* Aufsplitten / Positionszeilen: Beschriftungen nur bei Kartenansicht (unter 1200 px) sichtbar,
+   darüber stehen die Zeilen wie bisher als Tabelle mit Platzhaltern. */
+.zeile-beschriftung {
+  display: block;
+  font-size: .875em;
+  margin-bottom: .25rem;
+}
+@media (min-width: 1200px) {
+  .zeile-beschriftung {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+}
+@media (max-width: 1199.98px) {
+  .teil-zeile {
+    margin-inline: 0;
+    padding: .75rem .25rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+  }
+}

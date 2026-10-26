@@ -13,11 +13,11 @@
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <h2 class="h5 mt-3">ChurchTools-Personen-Sync</h2>
       <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="syncPersonenStunde">Stunde (0–23)</label>
           <input type="number" min="0" max="23" class="form-control" id="syncPersonenStunde" name="syncPersonenStunde" value="<%= cronSyncPersonenStunde %>" required>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="syncPersonenMinute">Minute (0–59)</label>
           <input type="number" min="0" max="59" class="form-control" id="syncPersonenMinute" name="syncPersonenMinute" value="<%= cronSyncPersonenMinute %>" required>
         </div>
@@ -25,7 +25,7 @@
 
       <h2 class="h5 mt-3">Pool-Erinnerungen &amp; Eskalation</h2>
       <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="poolErinnerungenIntervallMinuten">Intervall (Minuten)</label>
           <input type="number" min="1" class="form-control" id="poolErinnerungenIntervallMinuten" name="poolErinnerungenIntervallMinuten" value="<%= cronPoolErinnerungenIntervallMinuten %>" required>
         </div>
@@ -34,7 +34,7 @@
 
       <h2 class="h5 mt-3">Zeitstempel-Nachholen</h2>
       <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="zeitstempelNachholenIntervallMinuten">Intervall (Minuten)</label>
           <input type="number" min="1" class="form-control" id="zeitstempelNachholenIntervallMinuten" name="zeitstempelNachholenIntervallMinuten" value="<%= cronZeitstempelNachholenIntervallMinuten %>" required>
         </div>
@@ -43,7 +43,7 @@
 
       <h2 class="h5 mt-3">Splitgruppen-Nachholen</h2>
       <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="splitGruppenNachholenIntervallMinuten">Intervall (Minuten)</label>
           <input type="number" min="1" class="form-control" id="splitGruppenNachholenIntervallMinuten" name="splitGruppenNachholenIntervallMinuten" value="<%= cronSplitGruppenNachholenIntervallMinuten %>" required>
         </div>
@@ -52,7 +52,7 @@
 
       <h2 class="h5 mt-3">Freigabe2-Erinnerungen</h2>
       <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="freigabe2ErinnerungenIntervallMinuten">Intervall (Minuten)</label>
           <input type="number" min="1" class="form-control" id="freigabe2ErinnerungenIntervallMinuten" name="freigabe2ErinnerungenIntervallMinuten" value="<%= cronFreigabe2ErinnerungenIntervallMinuten %>" required>
         </div>
@@ -61,7 +61,7 @@
 
       <h2 class="h5 mt-3">Mail-Zustellung (Wiederholungen)</h2>
       <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="mailZustellungIntervallMinuten">Intervall (Minuten)</label>
           <input type="number" min="1" max="1440" class="form-control" id="mailZustellungIntervallMinuten" name="mailZustellungIntervallMinuten" value="<%= cronMailZustellungIntervallMinuten %>" required>
         </div>
@@ -74,15 +74,15 @@
         <label class="form-check-label" for="kkBelegErinnerungenAktiv">Erinnerungen für seit langem offene Kreditkartenbelege/-abrechnungen aktiv</label>
       </div>
       <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="kkBelegErinnerungTage">Schwelle (Tage)</label>
           <input type="number" min="1" max="365" class="form-control" id="kkBelegErinnerungTage" name="kkBelegErinnerungTage" value="<%= kkBelegErinnerungTage %>" required>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="kkBelegErinnerungenStunde">Stunde (0–23)</label>
           <input type="number" min="0" max="23" class="form-control" id="kkBelegErinnerungenStunde" name="kkBelegErinnerungenStunde" value="<%= cronKkBelegErinnerungenStunde %>" required>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="kkBelegErinnerungenMinute">Minute (0–59)</label>
           <input type="number" min="0" max="59" class="form-control" id="kkBelegErinnerungenMinute" name="kkBelegErinnerungenMinute" value="<%= cronKkBelegErinnerungenMinute %>" required>
         </div>
@@ -90,15 +90,15 @@
 
       <h2 class="h5 mt-3">PDF-Bereinigung &amp; Mail-Log-Retention</h2>
       <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="pdfBereinigungStunde">Stunde (0–23)</label>
           <input type="number" min="0" max="23" class="form-control" id="pdfBereinigungStunde" name="pdfBereinigungStunde" value="<%= cronPdfBereinigungStunde %>" required>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="pdfBereinigungMinute">Minute (0–59)</label>
           <input type="number" min="0" max="59" class="form-control" id="pdfBereinigungMinute" name="pdfBereinigungMinute" value="<%= cronPdfBereinigungMinute %>" required>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-sm-6 col-md-3">
           <label class="form-label" for="kkBelegVerworfenLoeschenTage">Verworfene Kreditkartenbelege löschen nach (Tagen)</label>
           <input type="number" min="1" max="3650" class="form-control" id="kkBelegVerworfenLoeschenTage" name="kkBelegVerworfenLoeschenTage" value="<%= kkBelegVerworfenLoeschenTage %>" required>
         </div>

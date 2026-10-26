@@ -18,7 +18,7 @@
       <div id="positionen-container">
         <% values.positionen.forEach((pos) => { %>
           <div class="row g-2 mb-3 pb-3 border-bottom align-items-start position-zeile">
-            <div class="col-md-3">
+            <div class="col-md-6 col-xl-3">
               <label class="form-label small">Konto</label>
               <select class="form-select" name="posKontoId">
                 <option value="">— Konto wählen —</option>
@@ -27,23 +27,23 @@
                 <% }) %>
               </select>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3 col-xl-2">
               <label class="form-label small">Betrag</label>
               <input type="text" inputmode="decimal" class="form-control" name="posBetrag" value="<%= pos.betrag || '' %>" placeholder="z.B. 61.75">
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3 col-xl-2">
               <label class="form-label small">Auslage-Datum</label>
               <input type="date" class="form-control" name="posAuslageDatum" value="<%= pos.auslageDatum || '' %>">
             </div>
-            <div class="col-md-2">
+            <div class="col-md-6 col-xl-2">
               <label class="form-label small">Verwendungszweck</label>
               <input type="text" class="form-control" name="posBeschreibung" value="<%= pos.beschreibung || '' %>">
             </div>
-            <div class="col-md-2">
+            <div class="col-md-4 col-xl-2">
               <label class="form-label small">Beleg</label>
               <input type="file" class="form-control position-beleg-input" accept="application/pdf,image/png,image/jpeg" required>
             </div>
-            <div class="col-md-1 d-flex align-items-end">
+            <div class="col-md-2 col-xl-1 d-flex align-items-end">
               <button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button>
             </div>
           </div>
@@ -91,17 +91,17 @@
           var zeile = document.createElement('div');
           zeile.className = 'row g-2 mb-3 pb-3 border-bottom align-items-start position-zeile';
           zeile.innerHTML =
-            '<div class="col-md-3"><label class="form-label small">Konto</label>' +
+            '<div class="col-md-6 col-xl-3"><label class="form-label small">Konto</label>' +
             '<select class="form-select" name="posKontoId">' + kontoOptionsHtml + '</select></div>' +
-            '<div class="col-md-2"><label class="form-label small">Betrag</label>' +
+            '<div class="col-md-3 col-xl-2"><label class="form-label small">Betrag</label>' +
             '<input type="text" inputmode="decimal" class="form-control" name="posBetrag" placeholder="z.B. 61.75"></div>' +
-            '<div class="col-md-2"><label class="form-label small">Auslage-Datum</label>' +
+            '<div class="col-md-3 col-xl-2"><label class="form-label small">Auslage-Datum</label>' +
             '<input type="date" class="form-control" name="posAuslageDatum"></div>' +
-            '<div class="col-md-2"><label class="form-label small">Verwendungszweck</label>' +
+            '<div class="col-md-6 col-xl-2"><label class="form-label small">Verwendungszweck</label>' +
             '<input type="text" class="form-control" name="posBeschreibung"></div>' +
-            '<div class="col-md-2"><label class="form-label small">Beleg</label>' +
+            '<div class="col-md-4 col-xl-2"><label class="form-label small">Beleg</label>' +
             '<input type="file" class="form-control position-beleg-input" accept="application/pdf,image/png,image/jpeg" required></div>' +
-            '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
+            '<div class="col-md-2 col-xl-1 d-flex align-items-end"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
           var container = document.getElementById('positionen-container');
           if (container) container.appendChild(zeile);
           zeileEntfernenBinden(zeile);

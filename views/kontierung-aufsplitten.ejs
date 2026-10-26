@@ -24,7 +24,7 @@
         </div>
         <div class="form-text">Gilt für alle Teile gemeinsam.</div>
       </div>
-      <div class="mb-3 col-6 col-md-4">
+      <div class="mb-3 col-12 col-sm-6 col-md-4">
         <label class="form-label" for="gesamtbetrag">Gesamtbetrag</label>
         <input type="text" inputmode="decimal" class="form-control" id="gesamtbetrag" name="gesamtbetrag" value="<%= gesamtbetrag %>" placeholder="z.B. 200.00" required>
         <div class="form-text">Die Teilbeträge unten müssen exakt diese Summe ergeben.</div>
@@ -32,26 +32,28 @@
       <div id="teile-container">
         <% teile.forEach((teil) => { %>
           <div class="row g-2 mb-3 pb-3 border-bottom align-items-center teil-zeile">
-            <div class="col-5">
+            <div class="col-12 col-md-6 col-xl-5">
+              <label class="d-block mb-0"><span class="zeile-beschriftung">Konto</span>
               <select class="form-select" name="teilKontoId">
                 <option value="">— Konto wählen —</option>
                 <% alleKonten.forEach((k) => { %>
                   <option value="<%= k.id %>" <%= String(k.id) === teil.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
                 <% }) %>
-              </select>
+              </select></label>
             </div>
-            <div class="col-3">
-              <input type="text" inputmode="decimal" class="form-control" name="teilBetrag" value="<%= teil.betrag %>" placeholder="Teilbetrag, z.B. 61.75">
+            <div class="col-6 col-md-3 col-xl-3">
+              <label class="d-block mb-0"><span class="zeile-beschriftung">Teilbetrag</span>
+              <input type="text" inputmode="decimal" class="form-control" name="teilBetrag" value="<%= teil.betrag %>" placeholder="Teilbetrag, z.B. 61.75"></label>
             </div>
-            <div class="col-2">
-              <input type="text" class="form-control" name="teilPosition" value="<%= teil.position || '' %>" placeholder="Position, z.B. Pos. 2">
+            <div class="col-6 col-md-3 col-xl-2">
+              <label class="d-block mb-0"><span class="zeile-beschriftung">Position</span>
+              <input type="text" class="form-control" name="teilPosition" value="<%= teil.position || '' %>" placeholder="Position, z.B. Pos. 2"></label>
             </div>
-            <div class="col-1 form-check">
-              <input type="checkbox" class="form-check-input konflikt-checkbox" <%= teil.interessenskonflikt ? 'checked' : '' %>>
-              <label class="form-check-label small">Konflikt</label>
+            <div class="col-6 col-xl-1 form-check teil-konflikt">
+              <label class="form-check-label"><input type="checkbox" class="form-check-input konflikt-checkbox" <%= teil.interessenskonflikt ? 'checked' : '' %>> <span class="small">Konflikt</span></label>
               <input type="hidden" name="teilInteressenskonflikt" value="<%= teil.interessenskonflikt ? 'true' : 'false' %>">
             </div>
-            <div class="col-1">
+            <div class="col-6 col-xl-1 text-end text-xl-start">
               <button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button>
             </div>
             <div class="col-12">
@@ -112,11 +114,11 @@
         var zeile = document.createElement('div');
         zeile.className = 'row g-2 mb-3 pb-3 border-bottom align-items-center teil-zeile';
         zeile.innerHTML =
-          '<div class="col-5"><select class="form-select" name="teilKontoId">' + kontoOptionsHtml + '</select></div>' +
-          '<div class="col-3"><input type="text" inputmode="decimal" class="form-control" name="teilBetrag" placeholder="Teilbetrag, z.B. 61.75"></div>' +
-          '<div class="col-2"><input type="text" class="form-control" name="teilPosition" placeholder="Position, z.B. Pos. 2"></div>' +
-          '<div class="col-1 form-check"><input type="checkbox" class="form-check-input konflikt-checkbox"><label class="form-check-label small">Konflikt</label><input type="hidden" name="teilInteressenskonflikt" value="false"></div>' +
-          '<div class="col-1"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>' +
+          '<div class="col-12 col-md-6 col-xl-5"><label class="d-block mb-0"><span class="zeile-beschriftung">Konto</span><select class="form-select" name="teilKontoId">' + kontoOptionsHtml + '</select></label></div>' +
+          '<div class="col-6 col-md-3 col-xl-3"><label class="d-block mb-0"><span class="zeile-beschriftung">Teilbetrag</span><input type="text" inputmode="decimal" class="form-control" name="teilBetrag" placeholder="Teilbetrag, z.B. 61.75"></label></div>' +
+          '<div class="col-6 col-md-3 col-xl-2"><label class="d-block mb-0"><span class="zeile-beschriftung">Position</span><input type="text" class="form-control" name="teilPosition" placeholder="Position, z.B. Pos. 2"></label></div>' +
+          '<div class="col-6 col-xl-1 form-check teil-konflikt"><label class="form-check-label"><input type="checkbox" class="form-check-input konflikt-checkbox"> <span class="small">Konflikt</span></label><input type="hidden" name="teilInteressenskonflikt" value="false"></div>' +
+          '<div class="col-6 col-xl-1 text-end text-xl-start"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>' +
           '<div class="col-12"><label class="form-label small">Beleg für diese Zeile <span class="text-muted">(optional, z.B. Einzelbeleg zu einer Kreditkartenabrechnung — PDF, PNG oder JPEG)</span></label><input type="file" class="form-control form-control-sm teil-beleg-input" accept="application/pdf,image/png,image/jpeg"></div>';
         document.getElementById('teile-container').appendChild(zeile);
         zeileEntfernenBinden(zeile);

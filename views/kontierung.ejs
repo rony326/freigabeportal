@@ -51,11 +51,11 @@
               </div>
 
               <div class="row g-2 mb-3">
-                <div class="col-6">
+                <div class="col-12 col-sm-6">
                   <label class="form-label" for="absender">Absender</label>
                   <input type="text" class="form-control" id="absender" name="absender" value="<%= values.absender || '' %>" required>
                 </div>
-                <div class="col-6">
+                <div class="col-12 col-sm-6">
                   <label class="form-label" for="kreditorId">Lieferant</label>
                   <select class="form-select" id="kreditorId" name="kreditorId" required data-searchable>
                     <option value="">— wählen —</option>
@@ -90,11 +90,11 @@
               </div>
 
               <div class="row g-2 mb-3">
-                <div class="col-6">
+                <div class="col-12 col-sm-6">
                   <label class="form-label" for="betrag">Betrag</label>
                   <input type="text" inputmode="decimal" class="form-control" id="betrag" name="betrag" value="<%= values.betrag || '' %>" placeholder="z.B. 123.45" required>
                 </div>
-                <div class="col-6">
+                <div class="col-12 col-sm-6">
                   <label class="form-label" for="zahlungsziel">Zahlungsziel</label>
                   <input type="date" class="form-control" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>" <%= values.typ === 'gutschrift' ? '' : 'required' %>>
                 </div>

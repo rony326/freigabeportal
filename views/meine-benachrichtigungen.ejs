@@ -1,0 +1,41 @@
+<%- include('_seite_anfang', { titel: 'Meine Benachrichtigungen' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Meine Benachrichtigungen</h1>
+    </div>
+    <div class="row justify-content-center">
+      <div class="col-lg-6">
+        <p class="text-muted">Wähle, wie du über neue Aufgaben, Ablehnungen und Kommentare informiert wirst.</p>
+
+        <% if (zugestellt > 0) { %>
+          <div class="alert alert-success">Gespeichert. <%= zugestellt === 1 ? '1 wartende Mail wurde' : zugestellt + ' wartende Mails wurden' %> sofort als Zusammenfassung zugestellt.</div>
+        <% } else if (locals.fehler) { %>
+          <div class="alert alert-danger"><%= fehler %></div>
+        <% } %>
+
+        <style>
+          .benachrichtigung-option { min-height: 44px; display: flex; align-items: center; gap: .75rem; padding: .5rem .75rem; border: 1px solid var(--bs-border-color, #dee2e6); border-radius: .5rem; margin-bottom: .5rem; cursor: pointer; }
+          .benachrichtigung-option input { width: 1.25rem; height: 1.25rem; margin: 0; flex: none; }
+          .benachrichtigung-option label { flex: 1; min-height: 44px; display: flex; align-items: center; margin: 0; cursor: pointer; }
+        </style>
+        <form method="post" action="/meine-benachrichtigungen">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <% [
+            ['sofort', 'Sofort'],
+            ['taeglich', 'Täglich um ' + zeit],
+            ['woechentlich', 'Wöchentlich am ' + wochentag + ' um ' + zeit],
+            ['standard', 'Standard verwenden (' + standardBezeichnung + ')'],
+          ].forEach(([wert, text]) => { %>
+            <div class="benachrichtigung-option">
+              <input type="radio" class="form-check-input" name="benachrichtigung" id="benachrichtigung-<%= wert %>" value="<%= wert %>" <%= wahl === wert ? 'checked' : '' %>>
+              <label for="benachrichtigung-<%= wert %>"><%= text %></label>
+            </div>
+          <% }) %>
+          <p class="text-muted small">Erinnerungen, Eskalationen und Sicherheitsmeldungen kommen immer sofort.</p>
+          <% if (zeigeHinweis) { %>
+            <div class="alert alert-warning">Bei dieser Bündelung siehst du neue Aufgaben eventuell erst nach der Erinnerung — Erinnerungen kommen trotzdem sofort.</div>
+          <% } %>
+          <button type="submit" class="btn btn-primary">Speichern</button>
+        </form>
+      </div>
+    </div>
+<%- include('_seite_ende') %>

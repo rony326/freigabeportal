@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
 import { runMailDigestJob } from '../../services/cronJobs.js';
-import { standardBenachrichtigung } from '../../services/benachrichtigung.js';
+import { BENACHRICHTIGUNG_WERTE, WOCHENTAG_NAMEN, standardBenachrichtigung, digestWochentag } from '../../services/benachrichtigung.js';
 import { meldeAuditNachweisAenderung } from '../../services/auditNachweisJobs.js';
 
 const LOG_LIMIT = 10;
@@ -58,7 +58,10 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
     }
     return {
       ...felder,
-      batchingAktiv: standardBenachrichtigung(db) !== 'sofort',
+      standardBenachrichtigung: standardBenachrichtigung(db),
+      digestWochentag: digestWochentag(db),
+      wochentagNamen: WOCHENTAG_NAMEN,
+      zurueckgestellt: 0,
       batchingStunde: getConfigValue(db, 'mail_batching_stunde'),
       batchingMinute: getConfigValue(db, 'mail_batching_minute'),
       digestLog: listRecentCronLog(db, 'mail-digest', LOG_LIMIT),
@@ -70,6 +73,7 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
     res.render('admin/mail-einstellungen-form', {
       ...ladeState(req.query.getriggert || null),
       errors: [],
+      zurueckgestellt: Math.max(0, Number.parseInt(req.query.zurueckgestellt, 10) || 0),
       gespeichert: req.query.gespeichert === '1',
     });
   });
@@ -85,7 +89,14 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
       felder[feldName] = wert;
     }
 
-    const batchingAktiv = req.body.batchingAktiv === '1';
+    const standardWahl = req.body.standardBenachrichtigung;
+    const wochentagNum = Number(req.body.digestWochentag);
+    if (!BENACHRICHTIGUNG_WERTE.includes(standardWahl)) {
+      errors.push('Standard-Bündelung muss sofort, täglich oder wöchentlich sein.');
+    }
+    if (!Number.isInteger(wochentagNum) || wochentagNum < 1 || wochentagNum > 7) {
+      errors.push('Wochentag muss zwischen Montag und Sonntag liegen.');
+    }
     const batchingStundeNum = Number(req.body.batchingStunde);
     const batchingMinuteNum = Number(req.body.batchingMinute);
     if (!Number.isInteger(batchingStundeNum) || batchingStundeNum < 0 || batchingStundeNum > 23) {
@@ -98,7 +109,10 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
     if (errors.length > 0) {
       return res.status(400).render('admin/mail-einstellungen-form', {
         ...felder,
-        batchingAktiv,
+        standardBenachrichtigung: standardWahl,
+        digestWochentag: wochentagNum,
+        wochentagNamen: WOCHENTAG_NAMEN,
+        zurueckgestellt: 0,
         batchingStunde: req.body.batchingStunde,
         batchingMinute: req.body.batchingMinute,
         digestLog: listRecentCronLog(db, 'mail-digest', LOG_LIMIT),
@@ -118,10 +132,8 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
     for (const [feldName, configKey] of VORLAGEN_FELDER) {
       setConfigValue(db, configKey, felder[feldName]);
     }
-    setConfigValue(db, 'mail_batching_aktiv', batchingAktiv ? '1' : '0');
-    // Übergang bis zur Standard-Auswahl: Schalter an → täglich (wöchentlich bleibt), aus → sofort.
-    if (!batchingAktiv) setConfigValue(db, 'mail_standard_benachrichtigung', 'sofort');
-    else if (standardBenachrichtigung(db) === 'sofort') setConfigValue(db, 'mail_standard_benachrichtigung', 'taeglich');
+    setConfigValue(db, 'mail_standard_benachrichtigung', standardWahl);
+    setConfigValue(db, 'mail_digest_wochentag', String(wochentagNum));
     setConfigValue(db, 'mail_batching_stunde', String(batchingStundeNum));
     setConfigValue(db, 'mail_batching_minute', String(batchingMinuteNum));
     // Mail ist Nebenwirkung: ein Mailfehler macht das Speichern nicht rückgängig.
@@ -137,8 +149,9 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
 
   router.post('/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
     try {
-      await runMailDigestJob(db, config, mailer);
-      res.redirect('/admin/mail-einstellungen?getriggert=1');
+      const ergebnis = await runMailDigestJob(db, config, mailer);
+      const zurueck = ergebnis?.zurueckgestellt > 0 ? `&zurueckgestellt=${ergebnis.zurueckgestellt}` : '';
+      res.redirect(`/admin/mail-einstellungen?getriggert=1${zurueck}`);
     } catch (err) {
       next(err);
     }

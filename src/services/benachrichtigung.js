@@ -49,9 +49,32 @@ export function zuercherWochentag(jetzt) {
   return WOCHENTAG_NUMMER[WOCHENTAG_FORMAT.format(new Date(jetzt))];
 }
 
-export function istDigestFaellig(wert, jetzt, wochentag) {
+export const WOCHENTAG_NAMEN = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+
+const SIEBEN_TAGE_MS = 7 * 24 * 3600 * 1000;
+
+// Wöchentlich: am gewählten Wochentag fällig. Nachholen (Entscheid): auch an jedem anderen Tag, wenn
+// die älteste wartende Zeile (aeltesteZeile, ISO) mindestens 7 Tage alt ist -- ein verpasster
+// Wochenlauf (Neustart, verschobener Wochentag) verdoppelt so nie die gewählte Wartezeit.
+export function istDigestFaellig(wert, jetzt, wochentag, aeltesteZeile = null) {
   if (wert !== 'woechentlich') return true;
-  return zuercherWochentag(jetzt) === Number(wochentag);
+  if (zuercherWochentag(jetzt) === Number(wochentag)) return true;
+  if (aeltesteZeile == null) return false;
+  const alter = new Date(jetzt).getTime() - new Date(aeltesteZeile).getTime();
+  return Number.isFinite(alter) && alter >= SIEBEN_TAGE_MS;
+}
+
+// Kürzeste Erinnerungs-/Eskalationsfrist in Stunden (Freigabe 1 und 2). Relevanz pro Person wird nicht
+// unterschieden (im Zweifel alle), damit der Hinweis lieber zu oft als zu selten erscheint.
+export function kuerzesteFristStunden(db) {
+  const werte = ['reminder_stunden', 'eskalation_stunden', 'freigabe2_reminder_stunden', 'freigabe2_eskalation_stunden']
+    .map((k) => Number(getConfigValue(db, k)))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return werte.length ? Math.min(...werte) : null;
+}
+
+export function buendelungStunden(wert) {
+  return wert === 'woechentlich' ? 168 : wert === 'taeglich' ? 24 : 0;
 }
 
 export function digestWochentag(db) {

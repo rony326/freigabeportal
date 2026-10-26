@@ -18,6 +18,8 @@ import {
 } from '../../src/services/benachrichtigung.js';
 
 const CONFIG = { publicBaseUrl: 'http://portal.example.org' };
+const ZWISCHEN_DIGEST_BETREFF = 'Freigabeportal: %zusammenfassung% Zusammenfassung (%anzahl% Ereignisse)';
+const ZWISCHEN_DIGEST_TEXT = 'Hallo %empfaengerName%,\n\n%zusammenfassung% Zusammenfassung (Einstellung ändern: %einstellungenLink%)\n\nFolgende Ereignisse warten auf dich:\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%';
 const ALTER_DIGEST_BETREFF = 'Freigabeportal: Tägliche Zusammenfassung (%anzahl% Ereignisse)';
 const ALTER_DIGEST_TEXT = 'Hallo %empfaengerName%,\n\nfolgende Ereignisse warten auf dich:\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%';
 
@@ -283,7 +285,7 @@ test('Digest Dienstag: täglich versendet, wöchentlich (Montag) zurückgestellt
   assert.equal(r1.versendet, 1);
   assert.equal(r1.zurueckgestellt, 1);
   assert.deepEqual(dienstag.sent.map((m) => m.to), ['taeglich@example.org']);
-  assert.match(dienstag.sent[0].subject, /Tägliche Zusammenfassung/);
+  assert.match(dienstag.sent[0].subject, /Deine tägliche Zusammenfassung/);
   assert.equal(listMailLog(db).filter((m) => m.empfaenger === 'woche@example.org' && m.status === 'geplant').length, 2);
 
   const montag = stubMailer();
@@ -292,7 +294,7 @@ test('Digest Dienstag: täglich versendet, wöchentlich (Montag) zurückgestellt
   assert.equal(r2.versendet, 2);
   assert.equal(r2.zurueckgestellt, 0);
   const anWoche = montag.sent.find((m) => m.to === 'woche@example.org');
-  assert.match(anWoche.subject, /Wöchentliche Zusammenfassung \(2 Ereignisse\)/);
+  assert.match(anWoche.subject, /Deine wöchentliche Zusammenfassung \(2 Ereignisse\)/);
   assert.match(anWoche.text, /http:\/\/portal\.example\.org\/meine-benachrichtigungen/);
   assert.ok(listMailLog(db).every((m) => m.status === 'versendet'));
   db.close();
@@ -360,7 +362,7 @@ test('Gescheiterter wöchentlicher Digest wird am Folgetag wiederholt, nicht bis
   const heil = stubMailer();
   const r2 = await runMailDigestJob(db, CONFIG, heil, { jetzt: DIENSTAG });
   assert.equal(heil.sent.length, 1);
-  assert.match(heil.sent[0].subject, /Wöchentliche Zusammenfassung \(1 Ereignisse\)/);
+  assert.match(heil.sent[0].subject, /Deine wöchentliche Zusammenfassung \(1 Ereignisse\)/);
   assert.equal(r2.zurueckgestellt, 1);
   const rows = listMailLog(db);
   assert.equal(rows.filter((m) => m.status === 'versendet').length, 1);
@@ -378,7 +380,7 @@ test('Wiederholungsjob mail-zustellung stellt einen gescheiterten wöchentlichen
   const r = await runMailZustellungJob(db, CONFIG, heil);
   assert.equal(r.status, 'erfolg');
   assert.equal(heil.sent.length, 1);
-  assert.match(heil.sent[0].subject, /Wöchentliche/);
+  assert.match(heil.sent[0].subject, /wöchentliche/);
   db.close();
 });
 
@@ -390,5 +392,56 @@ test('Digest-Wochentag aus mail_digest_wochentag', async () => {
   const mailer = stubMailer();
   const r = await runMailDigestJob(db, CONFIG, mailer, { jetzt: DIENSTAG });
   assert.equal(r.versendet, 1);
+  db.close();
+});
+
+// --- Nachträge Task 2 ---
+
+test('Migration hebt auch die Zwischen-Vorlage (Task 1, nie ausgeliefert) auf den neuen Standard', (t) => {
+  const pfad = mitDateiDb(t);
+  let db = openDatabase(pfad);
+  seedDefaults(db);
+  setConfigValue(db, 'mail_vorlage_digest_betreff', ZWISCHEN_DIGEST_BETREFF);
+  setConfigValue(db, 'mail_vorlage_digest_text', ZWISCHEN_DIGEST_TEXT);
+  db.close();
+  db = openDatabase(pfad);
+  assert.equal(getConfigValue(db, 'mail_vorlage_digest_betreff'), getDefaultConfigValue('mail_vorlage_digest_betreff'));
+  assert.equal(getConfigValue(db, 'mail_vorlage_digest_text'), getDefaultConfigValue('mail_vorlage_digest_text'));
+  db.close();
+});
+
+test('Standard-Digest-Vorlage: "Deine tägliche/wöchentliche Zusammenfassung"', () => {
+  const db = frischeDb();
+  assert.match(getDefaultConfigValue('mail_vorlage_digest_betreff'), /Deine %zusammenfassung% Zusammenfassung/);
+  assert.match(getDefaultConfigValue('mail_vorlage_digest_text'), /Deine %zusammenfassung% Zusammenfassung \(Einstellung ändern: %einstellungenLink%\)/);
+  db.close();
+});
+
+test('benachrichtigungFuer: aktive Person geht vor deaktivierter mit gleicher Adresse', () => {
+  const db = frischeDb();
+  setConfigValue(db, 'mail_standard_benachrichtigung', 'taeglich');
+  person(db, '1', 'geteilt@example.org', 'woechentlich');
+  person(db, '2', 'geteilt@example.org');
+  db.prepare('UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = ?').run('1');
+  assert.equal(benachrichtigungFuer(db, 'geteilt@example.org'), 'taeglich');
+  db.close();
+});
+
+test('istDigestFaellig: wöchentlich ist auch ausserhalb des Wochentags fällig, wenn die älteste Zeile >= 7 Tage alt ist', () => {
+  assert.equal(istDigestFaellig('woechentlich', DIENSTAG, 1), false);
+  assert.equal(istDigestFaellig('woechentlich', DIENSTAG, 1, '2026-10-20T06:00:00.000Z'), true, 'genau 7 Tage');
+  assert.equal(istDigestFaellig('woechentlich', DIENSTAG, 1, '2026-10-21T06:00:00.000Z'), false, '6 Tage');
+});
+
+test('Digest-Job: verpasster Wochenlauf wird nachgeholt (älteste geplante Zeile >= 7 Tage)', async () => {
+  const db = frischeDb();
+  person(db, '1', 'woche@example.org', 'woechentlich');
+  zuweisung(db, 'woche@example.org', 1);
+  db.prepare("UPDATE mail_log SET versucht_am = '2026-10-20T05:00:00.000Z'").run();
+  const mailer = stubMailer();
+  const r = await runMailDigestJob(db, CONFIG, mailer, { jetzt: DIENSTAG });
+  assert.equal(r.versendet, 1);
+  assert.equal(r.zurueckgestellt, 0);
+  assert.equal(mailer.sent.length, 1);
   db.close();
 });

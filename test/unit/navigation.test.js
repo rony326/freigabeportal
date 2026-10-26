@@ -51,7 +51,7 @@ test('Portal: Spesen einreichen fehlt bei inaktivem Modul, Kreditkartenbelege nu
     ['Aufgaben'],
     ['Spesen einreichen', 'Meine Spesen'],
     ['Abgeschlossene Rechnungen', 'Kreditkartenbelege'],
-    ['Ferienmodus', 'Zeitstempel prüfen', 'Problem melden', 'Datenschutz'],
+    ['Benachrichtigungen', 'Ferienmodus', 'Zeitstempel prüfen', 'Problem melden', 'Datenschutz'],
   ]);
   assert.ok(finde(voll, 'Spesen einreichen'));
   assert.ok(finde(voll, 'Kreditkartenbelege'));

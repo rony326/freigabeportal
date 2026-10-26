@@ -5,6 +5,8 @@ import request from 'supertest';
 import { openDatabase } from '../../../src/db/index.js';
 import { seedDefaults, getConfigValue, setConfigValue } from '../../../src/db/adminConfigRepo.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
+import { setzeBenachrichtigung, zuercherWochentag } from '../../../src/services/benachrichtigung.js';
+import { reiheBenachrichtigungEin } from '../../../src/services/notify.js';
 import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createMailEinstellungenRouter } from '../../../src/routes/admin/mailEinstellungen.js';
@@ -60,7 +62,8 @@ const VALID_BODY = {
   neuesGeraetBetreff: 'B17', neuesGeraetText: 'T17',
   fehlermeldungBetreff: 'B18', fehlermeldungText: 'T18',
   kommentarBetreff: 'B19', kommentarText: 'T19',
-  batchingAktiv: '1',
+  standardBenachrichtigung: 'taeglich',
+  digestWochentag: '3',
   batchingStunde: '6',
   batchingMinute: '30',
 };
@@ -97,7 +100,11 @@ test('GET /admin/mail-einstellungen shows the current templates and batching con
   const res = await request(app).get('/admin/mail-einstellungen').set('x-test-person-id', '99');
   assert.equal(res.status, 200);
   assert.match(res.text, /Freigabeportal: Neue Rechnung zur Bearbeitung/);
-  assert.match(res.text, /name="batchingAktiv"/);
+  assert.doesNotMatch(res.text, /name="batchingAktiv"/);
+  assert.match(res.text, /name="standardBenachrichtigung"/);
+  assert.match(res.text, /name="digestWochentag"/);
+  assert.match(res.text, /%zusammenfassung%/);
+  assert.match(res.text, /%einstellungenLink%/);
 });
 
 test('POST /admin/mail-einstellungen saves all 8 templates and the batching config', async () => {
@@ -109,8 +116,9 @@ test('POST /admin/mail-einstellungen saves all 8 templates and the batching conf
   assert.equal(res.status, 302);
   assert.equal(getConfigValue(db, 'mail_vorlage_zuweisung_betreff'), 'B1');
   assert.equal(getConfigValue(db, 'mail_vorlage_digest_text'), 'T8');
-  assert.equal(getConfigValue(db, 'mail_batching_aktiv'), '1');
-  assert.equal(getConfigValue(db, 'mail_standard_benachrichtigung'), 'taeglich', 'Übergang: Schalter an → Standard täglich');
+  assert.equal(getConfigValue(db, 'mail_batching_aktiv'), '0', 'alter Schlüssel wird nicht mehr geschrieben');
+  assert.equal(getConfigValue(db, 'mail_standard_benachrichtigung'), 'taeglich');
+  assert.equal(getConfigValue(db, 'mail_digest_wochentag'), '3');
   assert.equal(getConfigValue(db, 'mail_batching_stunde'), '6');
   assert.equal(getConfigValue(db, 'mail_batching_minute'), '30');
   db.close();
@@ -150,18 +158,23 @@ test('POST /admin/mail-einstellungen rejects an empty freigabe2ReminderBetreff',
   db.close();
 });
 
-test('POST /admin/mail-einstellungen with batchingAktiv absent (checkbox unchecked) turns batching off', async () => {
+test('POST /admin/mail-einstellungen speichert wöchentlich als Standard, ungültige Werte → 400', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedAdmin(db);
   const app = buildTestApp(db);
-  const body = { ...VALID_BODY };
-  delete body.batchingAktiv;
-  setConfigValue(db, 'mail_standard_benachrichtigung', 'woechentlich');
-  const res = await request(app).post('/admin/mail-einstellungen').set('x-test-person-id', '99').type('form').send(body);
+  const post = (body) => request(app).post('/admin/mail-einstellungen').set('x-test-person-id', '99').type('form').send(body);
+  let res = await post({ ...VALID_BODY, standardBenachrichtigung: 'woechentlich', digestWochentag: '5' });
   assert.equal(res.status, 302);
-  assert.equal(getConfigValue(db, 'mail_batching_aktiv'), '0');
-  assert.equal(getConfigValue(db, 'mail_standard_benachrichtigung'), 'sofort', 'Übergang: Schalter aus → Standard sofort');
+  assert.equal(getConfigValue(db, 'mail_standard_benachrichtigung'), 'woechentlich');
+  assert.equal(getConfigValue(db, 'mail_digest_wochentag'), '5');
+  res = await post({ ...VALID_BODY, standardBenachrichtigung: 'sofort' });
+  assert.equal(getConfigValue(db, 'mail_standard_benachrichtigung'), 'sofort');
+  res = await post({ ...VALID_BODY, standardBenachrichtigung: 'quatsch' });
+  assert.equal(res.status, 400);
+  res = await post({ ...VALID_BODY, digestWochentag: '8' });
+  assert.equal(res.status, 400);
+  assert.equal(getConfigValue(db, 'mail_standard_benachrichtigung'), 'sofort');
   db.close();
 });
 
@@ -182,7 +195,27 @@ test('POST /admin/mail-einstellungen/jetzt-ausfuehren triggers runMailDigestJob 
   const app = buildTestApp(db);
   const res = await request(app).post('/admin/mail-einstellungen/jetzt-ausfuehren').set('x-test-person-id', '99');
   assert.equal(res.status, 302);
-  assert.equal(res.headers.location, '/admin/mail-einstellungen?getriggert=1');
+  assert.match(res.headers.location, /^\/admin\/mail-einstellungen\?getriggert=1/);
+  db.close();
+});
+
+test('jetzt ausführen nennt die bis zum Wochentag zurückgehaltenen wöchentlichen Empfänger', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  upsertPerson(db, { id: '1', vorname: 'W', nachname: 'X', email: 'w@example.org', gruppen: [] });
+  setzeBenachrichtigung(db, '1', 'woechentlich');
+  // Wochentag = morgen (Zürcher Zeit), damit heute garantiert nicht fällig ist
+  const morgen = zuercherWochentag(Date.now() + 24 * 3600 * 1000);
+  setConfigValue(db, 'mail_digest_wochentag', String(morgen));
+  reiheBenachrichtigungEin(db, { to: 'w@example.org', typ: 'zuweisung', jobId: null, variablen: { empfaengerName: 'X', jobDateiname: 'a.pdf', grund: 'G', link: 'L' } });
+  const app = buildTestApp(db);
+  const res = await request(app).post('/admin/mail-einstellungen/jetzt-ausfuehren').set('x-test-person-id', '99');
+  assert.equal(res.status, 302);
+  assert.match(res.headers.location, /zurueckgestellt=1/);
+  const seite = await request(app).get(res.headers.location).set('x-test-person-id', '99');
+  const namen = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+  assert.match(seite.text, new RegExp(`1 wöchentliche[^<]* bis ${namen[morgen - 1]} zurückgehalten`));
   db.close();
 });
 

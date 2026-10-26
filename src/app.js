@@ -51,6 +51,7 @@ import { createPoolPageRouter } from './routes/poolPage.js';
 import { createMeineAbgeschlossenenRouter } from './routes/meineAbgeschlossenen.js';
 import { createMeineSpesenRouter } from './routes/meineSpesen.js';
 import { createFerienmodusRouter } from './routes/ferienmodus.js';
+import { createMeineBenachrichtigungenRouter } from './routes/meineBenachrichtigungen.js';
 import { createBannerRouter } from './routes/banner.js';
 import { createDatenschutzRouter } from './routes/datenschutz.js';
 import { createFehlerMeldenRouter } from './routes/fehlerMelden.js';
@@ -283,6 +284,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/banner', sessionLimiter, requireLogin(), createBannerRouter({ db, csrfProtection }));
   app.use('/datenschutz', sessionLimiter, requireLogin(), createDatenschutzRouter({ db }));
   app.use('/fehler-melden', sessionLimiter, requireLogin(), createFehlerMeldenRouter({ db, config, mailer, csrfProtection }));
+  app.use('/meine-benachrichtigungen', sessionLimiter, requireLogin(), createMeineBenachrichtigungenRouter({ db, config, mailer, csrfProtection }));
   app.use('/ferienmodus', sessionLimiter, requireLogin(), createFerienmodusRouter({ db, csrfProtection }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKkAbgleichRouter({ db, config, mailer, csrfProtection }));

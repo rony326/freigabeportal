@@ -193,7 +193,7 @@ export async function stelleDigestZu(db, config, mailer, { empfaenger, ids, vorl
     eintraege: zeilen.map((z) => (z.job_id != null ? `- ${z.betreff} (Job #${z.job_id})` : `- ${z.betreff}`)).join('\n'),
     link: `${config.publicBaseUrl}/pool`,
     // Aktuelle Wahl des Empfängers (auch bei Wiederholungen): "Wöchentliche" nur bei wöchentlich.
-    zusammenfassung: benachrichtigungFuer(db, empfaenger) === 'woechentlich' ? 'Wöchentliche' : 'Tägliche',
+    zusammenfassung: benachrichtigungFuer(db, empfaenger) === 'woechentlich' ? 'wöchentliche' : 'tägliche',
     einstellungenLink: `${config.publicBaseUrl}/meine-benachrichtigungen`,
     portalName: getConfigValue(db, 'seiten_titel') || 'Freigabeportal',
   };

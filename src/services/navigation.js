@@ -22,6 +22,7 @@ const PORTAL = [
     { label: 'Kreditkartenbelege', href: '/kreditkarte', symbol: '▭', flag: 'zeigeKreditkarteNav' },
   ] },
   { titel: 'Persönlich', punkte: [
+    { label: 'Benachrichtigungen', href: '/meine-benachrichtigungen', symbol: '✉', flag: null },
     { label: 'Ferienmodus', href: '/ferienmodus', symbol: '☼', flag: null },
     { label: 'Zeitstempel prüfen', href: '/zeitstempel-pruefen', symbol: '⏱', flag: null },
     { label: 'Problem melden', href: '/fehler-melden', symbol: '!', flag: null },

@@ -1019,8 +1019,10 @@ function migrateKommentareSchema(db) {
 // mail_standard_benachrichtigung (einmalig: nur wenn der neue Schlüssel fehlt), und die Digest-
 // Vorlage wird auf den neuen Standard gehoben, sofern sie noch exakt dem alten entspricht.
 const ALTE_DIGEST_VORLAGE = {
-  mail_vorlage_digest_betreff: 'Freigabeportal: Tägliche Zusammenfassung (%anzahl% Ereignisse)',
-  mail_vorlage_digest_text: 'Hallo %empfaengerName%,\n\nfolgende Ereignisse warten auf dich:\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
+  mail_vorlage_digest_betreff: ['Freigabeportal: Tägliche Zusammenfassung (%anzahl% Ereignisse)', 'Freigabeportal: %zusammenfassung% Zusammenfassung (%anzahl% Ereignisse)'],
+  mail_vorlage_digest_text: ['Hallo %empfaengerName%,\n\nfolgende Ereignisse warten auf dich:\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
+    // Zwischenstand aus der Entwicklung (nie ausgeliefert)
+    'Hallo %empfaengerName%,\n\n%zusammenfassung% Zusammenfassung (Einstellung ändern: %einstellungenLink%)\n\nFolgende Ereignisse warten auf dich:\n\n%eintraege%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%'],
 };
 
 function migrateBenachrichtigungEinstellung(db) {
@@ -1030,7 +1032,7 @@ function migrateBenachrichtigungEinstellung(db) {
     db.prepare('INSERT INTO admin_config (key, value) VALUES (?, ?)').run('mail_standard_benachrichtigung', standard);
   }
   for (const [key, alt] of Object.entries(ALTE_DIGEST_VORLAGE)) {
-    if (wert(key) === alt) {
+    if (alt.includes(wert(key))) {
       db.prepare('UPDATE admin_config SET value = ? WHERE key = ?').run(getDefaultConfigValue(key), key);
     }
   }

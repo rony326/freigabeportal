@@ -125,3 +125,21 @@ test('GET /meine-abgeschlossenen paginates: page 1 shows the newest 20, page 2 s
   assert.match(seite2.text, /href="\?seite=1">Zurück</);
   db.close();
 });
+
+test('P2: Router ohne config (Test-Harness) verkraftet Kommentare — Liste ohne Marke statt Absturz', async () => {
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  for (const id of ['1', '2', '3']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '50', stellvertreter2Id: '3' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'fertig.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(id);
+  db.prepare("INSERT INTO kommentare (job_id, person_id, text, erwaehnt, erstellt_am) VALUES (?, '1', 'Hallo', '[]', '2026-08-16T08:00:00.000Z')").run(id);
+  const res = await request(buildTestApp(db)).get('/meine-abgeschlossenen').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, new RegExp(`id="abgeschlossen-row-${id}"`));
+  assert.doesNotMatch(res.text, /kommentar-marke/);
+  db.close();
+});

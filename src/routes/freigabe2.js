@@ -24,6 +24,15 @@ import { tsaTrustOptions } from '../services/tsaTrust.js';
 import { kommentarBereich } from './kommentare.js';
 import { listeKommentare } from '../services/kommentare.js';
 
+// Stand der Kommentare eines Vorgangs als "<Anzahl>:<letzte id>". Die Seite schreibt ihn beim
+// Rendern ins Formular; der POST vergleicht ihn vor dem Stempeln (Kommentar während die Seite offen
+// war) und nochmals in der Abschluss-Transaktion (Kommentar während Stempeln/TSA).
+function kommentarStandVon(db, jobId) {
+  const liste = listeKommentare(db, jobId);
+  return `${liste.length}:${liste.at(-1)?.id ?? 0}`;
+}
+const NEUER_KOMMENTAR = 'Während der Freigabe ist ein neuer Kommentar eingegangen. Bitte lesen und erneut freigeben.';
+
 export function createFreigabe2Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
@@ -130,6 +139,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       auditLog: buildAuditLog(db, job.id),
       kkHinweis: kkHinweisFuerJob(db, job),
       kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/freigabe2/${job.id}`),
+      kommentarStand: kommentarStandVon(db, job.id),
     });
   }
 
@@ -300,6 +310,13 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         return res.redirect('/pool');
       }
 
+      // Abschlussprüfung 2: ist seit dem Rendern der Seite ein Kommentar eingegangen, nicht freigeben,
+      // sondern die Seite samt neuem Kommentar zeigen. Fehlt das Feld (alter Tab), gilt "0:0".
+      const gesehenerStand = typeof req.body.kommentar_stand === 'string' ? req.body.kommentar_stand : '0:0';
+      if (gesehenerStand !== kommentarStandVon(db, job.id)) {
+        return renderForm(req, res, 409, result, { interessenskonflikt, begruendung }, [NEUER_KOMMENTAR]);
+      }
+
       const freigaben = listFreigabenByJob(db, job.id);
       const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
       const freigeber1Person = getPersonById(db, freigabe1.person_id);
@@ -362,8 +379,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       // Stand der gestempelten Kommentare: geht während Stempeln/TSA ein neuer ein, wird nicht
       // abgeschlossen (sonst fehlte er auf dem archivierten PDF und wäre ungelesen).
       const stampKommentare = listeKommentare(db, job.id);
-      const kommentarStand = (liste) => `${liste.length}:${liste.at(-1)?.id ?? 0}`;
-      const stampKommentarStand = kommentarStand(stampKommentare);
+      const stampKommentarStand = `${stampKommentare.length}:${stampKommentare.at(-1)?.id ?? 0}`;
       const stampData = {
         // Test-Instanz: Marke "TESTMODUS – keine echte Freigabe" auf der Stempelseite.
         ...(config.testmodus ? { testmodus: true } : {}),
@@ -460,12 +476,10 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           unlinkSync(tmpPfad);
           return res.status(409).render('error', { message: 'Die Zahlungsdaten oder deren Pruefung haben sich inzwischen geaendert. Bitte erneut pruefen.' });
         }
-        if (kommentarStand(listeKommentare(db, job.id)) !== stampKommentarStand) {
+        if (kommentarStandVon(db, job.id) !== stampKommentarStand) {
           db.exec('ROLLBACK');
           unlinkSync(tmpPfad);
-          return renderForm(req, res, 409, result, { interessenskonflikt, begruendung }, [
-            'Während der Freigabe ist ein neuer Kommentar eingegangen. Bitte lesen und erneut freigeben.',
-          ], zahlungPflichtig ? zahlungsReview(job, konto, zahlung, req.currentPerson.churchtools_person_id) : null);
+          return renderForm(req, res, 409, result, { interessenskonflikt, begruendung }, [NEUER_KOMMENTAR], zahlungPflichtig ? zahlungsReview(job, konto, zahlung, req.currentPerson.churchtools_person_id) : null);
         }
         createFreigabe(db, {
           jobId: job.id,

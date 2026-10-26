@@ -27,7 +27,8 @@ Kommentare sehen darf, wer den Vorgang selbst sehen darf, also:
 Niemand sonst, auch nicht über eine @Erwähnung. Schreiben darf, wer
 Kommentare sehen darf **und** der Vorgang nicht abgeschlossen ist (siehe
 unten). Ohne Sichtrecht antwortet `POST /kommentare/:jobId` mit 403 und
-speichert nichts.
+speichert nichts; die Verweigerung steht im Zugriffs-Audit unter dem Bereich
+`/kommentare`.
 
 Ein Kommentar ist 1 bis 2000 Zeichen lang, Zeilenumbrüche bleiben erhalten.
 
@@ -63,7 +64,12 @@ erneuten Absenden und eine Meldung:
 - `<Name> darf diesen Vorgang nicht sehen und kann nicht erwähnt werden.`
 - `Unbekannte Person: @…` (kein oder nur ein inaktiver Treffer).
 
-Ein `@` mitten in einem Wort (E-Mail-Adresse) zählt nicht als Erwähnung.
+Als Erwähnungsversuch zählt nur ein `@` mit zwei folgenden Wörtern in der
+Form `@Wort Wort`: das erste Wort beginnt mit einem Buchstaben, das zweite
+mit einem Grossbuchstaben. Passt keine Person, kommt die Meldung „Unbekannte
+Person“ (z. B. `@Hans Unbekannt`). Alles andere ist gewöhnlicher Text und
+blockiert nichts: `@10 Uhr`, `@CHF 20` oder ein einzelnes `@Wort`. Ein `@`
+mitten in einem Wort (E-Mail-Adresse) zählt ebenfalls nicht als Erwähnung.
 
 ## Wer bekommt eine Mail, und mit welchem Link
 
@@ -77,13 +83,20 @@ Der Absender selbst nie. Empfänger sind, sofern sie den Vorgang sehen dürfen:
 - alle Erwähnten.
 
 Jede Mail wird je Empfänger gerendert und enthält je nach Rolle einen anderen
-Link (alle mit `#kommentare`):
+Link (alle mit `#kommentare`). Jeder Link führt auf eine Seite, die genau
+diese Person öffnen darf:
 
 | Empfänger | Link |
 |---|---|
-| aktuell verantwortlich | Arbeitsseite: `/kontierung/:id` (bei Kreditkartenabrechnung `/kontierung/:id/kk-abgleich`), `/spesen-freigabe1/:id`, `/freigabe2/:id`, `/abgelehnt/:id`, bei `unzugewiesen` `/pool` |
+| aktuell verantwortlich, mit Zugang zur Arbeitsseite | `/kontierung/:id` (bei Kreditkartenabrechnung `/kontierung/:id/kk-abgleich`), `/spesen-freigabe1/:id` (nur die zugewiesene Prüfperson bzw. bei Eskalation die Admins), `/freigabe2/:id`, `/abgelehnt/:id` (nur Rechnungen) |
+| verantwortlich ohne Zugang zur Arbeitsseite: Ferienvertretung bei Spesen-Freigabe 1, abgelehnte Spesenposition (sie hat keine Arbeitsseite) | `/zeitstempel-pruefen?jobId=<id>` |
 | sieht über eine eigene Rolle (z. B. einreichende Person, Freigeber 2 vor seiner Phase) | `/zeitstempel-pruefen?jobId=<id>` |
-| sieht nur über `vorgaenge_einsehen` (auch Superadmin/Manager ohne Rolle am Vorgang) | `/admin/vorgaenge/:id` |
+| sieht nur über `vorgaenge_einsehen`, Vorgang läuft (`unzugewiesen`, `zugewiesen`, `freigabe2`, `abgelehnt`) | `/admin/vorgaenge/:id` |
+| sieht nur über `vorgaenge_einsehen`, Vorgang läuft nicht mehr (z. B. `aufgesplittet`) | Superadmin: `/zeitstempel-pruefen?jobId=<id>`; sonst (Manager) kein Link, nur der Hinweis „kein Direktlink (…)“ an Stelle von `%link%` |
+
+Pool-Vorgänge (`unzugewiesen`) haben keine verantwortliche Person; die
+Buchhaltung bekommt bei Erwähnung oder als frühere Kommentierende den Link auf
+die Zeitstempel-Prüfung.
 
 Die Mailvorlage heisst `kommentar` und ist unter **Admin → Einstellungen →
 Mail-Einstellungen** (`/admin/mail-einstellungen`, nur Superadmin) bearbeitbar.
@@ -116,12 +129,15 @@ Eingriffe eines Datenbankadministrators.
 ## Geschlossene Status
 
 Bei diesen Status ist der Vorgang geschlossen: `abgeschlossen`, `abgeholt`,
-`archiviert`, `geloescht` (`KOMMENTAR_GESCHLOSSEN_STATUS`). Dort sieht man die
+`archiviert`, `geloescht` (`KOMMENTAR_GESCHLOSSEN_STATUS`), dazu ein
+aufgesplitteter Elternvorgang, sobald sein Gruppen-PDF erzeugt ist
+(`jobs.gruppe_pdf_pfad` gesetzt, `istKommentarGeschlossen`). Dort sieht man die
 Kommentare weiter, die Seite zeigt „Abgeschlossen — keine neuen Kommentare“
 statt des Formulars, und ein Absenden (z. B. nach einem Statuswechsel
 zwischen Laden und Absenden) wird mit einer Meldung abgelehnt; der Text bleibt
 zum Kopieren stehen. Alle übrigen Status (`unzugewiesen`, `zugewiesen`,
-`freigabe2`, `abgelehnt`, `aufgesplittet`) nehmen Kommentare an.
+`freigabe2`, `abgelehnt`, `aufgesplittet` vor Erzeugung des Gruppen-PDFs)
+nehmen Kommentare an.
 
 ## Marke in den Listen
 
@@ -129,10 +145,13 @@ In den Listen steht neben dem Vorgang eine kleine Sprechblase mit der Anzahl
 der Kommentare und, falls es ungelesene fremde Kommentare gibt, das Badge
 „neu“. Eigene Kommentare zählen nie als neu; das Badge verschwindet, sobald
 man die Detailseite öffnet. Die Marke erscheint nur bei Vorgängen, deren
-Kommentare die Person auch sehen darf. Betroffene Listen: `/pool` (alle
-Listen der Seite), `/meine-spesen`, `/meine-abgeschlossenen`,
-`/admin/vorgaenge`, `/admin/abgelehnt`, jeweils in Tabellen- und
-Kachelansicht.
+Kommentare die Person auch sehen darf. Betroffene Listen: `/pool` (die
+eigenen Aufgaben und die Admin-Eskalationen), `/meine-spesen`,
+`/meine-abgeschlossenen`, `/admin/vorgaenge`, `/admin/abgelehnt`, jeweils in
+Tabellen- und Kachelansicht. Die Pool-Liste unzugewiesener Belege und die
+Rückläufer zeigen keine Marke: keine Seite, die der Pool verlinkt, zeigt
+deren Kommentare (in `/admin/vorgaenge` erscheint sie weiterhin). Das
+`aria-label` lautet „3 Kommentare, davon 2 neu“, ohne neue nur „3 Kommentare“.
 
 ## Auf dem finalen PDF
 
@@ -155,26 +174,31 @@ Beträge) werden nicht ersetzt; dort gilt weiterhin der Stempelfehler. Die
 Kommentare im Stempel sind Teil des Freigabe-Snapshots und damit des
 zeitgestempelten Nachweises.
 
-Kommentare, die nach der Archivierung eines Gruppen-PDFs noch am
-aufgesplitteten Elternvorgang entstehen, erscheinen nicht mehr auf dem
-bereits erzeugten PDF.
+Nach Erzeugung des Gruppen-PDFs nimmt der aufgesplittete Elternvorgang keine
+Kommentare mehr an (siehe Geschlossene Status); ein Kommentar könnte das
+bereits erzeugte PDF nicht mehr erreichen.
 
 ## Neuer Kommentar während Freigabe 2
 
 Kommt zwischen dem Öffnen der Seite und dem Bestätigen der Freigabe 2 ein
-neuer Kommentar dazu, würde das PDF ihn nicht zeigen. Deshalb vergleicht die
-Freigabe den Kommentarstand beim Stempeln mit dem Stand beim Speichern. Hat er
-sich geändert, wird nichts festgeschrieben (kein Zeitstempel, keine Datei,
-Status bleibt `freigabe2`) und die Seite antwortet mit **409**: „Während der
+neuer Kommentar dazu, hätte die freigebende Person ihn nie gesehen. Die
+Seite schreibt deshalb beim Rendern den Kommentarstand
+(`<Anzahl>:<letzte id>`) ins verdeckte Feld `kommentar_stand`; der POST
+vergleicht ihn vor dem Stempeln mit dem aktuellen Stand (fehlt das Feld,
+gilt `0:0`). Zusätzlich vergleicht die Abschluss-Transaktion den Stand beim
+Stempeln mit dem beim Speichern (Kommentar während Stempeln/TSA). Weicht einer
+ab, wird nichts festgeschrieben (kein Zeitstempel, keine Datei, Status bleibt
+`freigabe2`) und die Seite antwortet mit **409**: „Während der
 Freigabe ist ein neuer Kommentar eingegangen. Bitte lesen und erneut
 freigeben.“ Der neue Kommentar ist sichtbar; die Person liest ihn und gibt
 nochmals frei. Dieselbe Prüfung gilt beim Export einer Splitgruppe (Elternjob
 und alle Teile); der Nachhol-Job versucht es erneut.
 
-## Ungespeicherte Angaben bei Kontierung
+## Ungespeicherte Angaben bei Kontierung und Freigabe 2
 
 Ein Kommentar ist ein eigenes Formular mit Seitenwechsel. Auf der
-Kontierungsseite und im Kreditkarten-Abgleich fragt die Seite deshalb vor dem
+Kontierungsseite, im Kreditkarten-Abgleich und bei Freigabe 2 (Begründung,
+Interessenskonflikt, Bestätigungen) fragt die Seite deshalb vor dem
 Absenden des Kommentars per Dialog nach, wenn im Arbeitsformular bereits
 etwas geändert, aber noch nicht gespeichert wurde, sonst gingen diese Angaben
 verloren.

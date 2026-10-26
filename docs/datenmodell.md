@@ -34,6 +34,10 @@ erDiagram
     kreditkarten ||--o{ jobs : "kreditkarte_id (Abrechnungs-Job)"
     kk_belege ||--o{ kk_beleg_ereignisse : "beleg_id"
     jobs ||--o| kk_belege : "zugeordnet_job_id (Teil-Job ← Beleg)"
+    jobs ||--o{ kommentare : "job_id (Rückfragen, unveränderlich)"
+    personen ||--o{ kommentare : "person_id (Verfasser, kein FK)"
+    jobs ||--o{ kommentar_gelesen : "job_id"
+    personen ||--o{ kommentar_gelesen : "person_id (kein FK)"
 
     personen {
         text churchtools_person_id PK
@@ -190,9 +194,22 @@ erDiagram
         text vorher_zustaendig FK
         text ziel_person_id FK
     }
+    kommentare {
+        int id PK
+        int job_id FK
+        text person_id
+        text text "1–2000 Zeichen"
+        text erwaehnt "JSON-Array von Personen-IDs"
+        text erstellt_am
+    }
+    kommentar_gelesen {
+        int job_id PK,FK
+        text person_id PK
+        text zuletzt_am
+    }
     mail_log {
         int id PK
-        text typ "14 mögliche Werte"
+        text typ "20 mögliche Werte"
         int job_id FK
         text empfaenger
         text status "eingereiht | geplant | versendet | fehlgeschlagen"

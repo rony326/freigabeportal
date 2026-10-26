@@ -100,3 +100,22 @@ test('GET /meine-spesen shows the Zeitstempel status and a "Jetzt prüfen" link 
   assert.match(rowMatch[0], new RegExp(`href="/zeitstempel-pruefen\\?jobId=${jobId}"`));
   db.close();
 });
+
+test('P2: Router ohne config (Test-Harness) verkraftet Kommentare — Liste ohne Marke statt Absturz', async () => {
+  const db = openDatabase(':memory:');
+  seedEinreicher(db);
+  seedKontoPersonen(db);
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '51', stellvertreter1Id: '52', freigeber2Id: '53', stellvertreter2Id: '51' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '60', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '60', kontoId, betrag: '10.00', auslageDatum: '2026-08-20',
+    beschreibung: 'Taxi', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '51', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  db.prepare("INSERT INTO kommentare (job_id, person_id, text, erwaehnt, erstellt_am) VALUES (?, '51', 'Hallo', '[]', '2026-09-01T08:00:00.000Z')").run(jobId);
+  const res = await request(buildTestApp(db)).get('/meine-spesen').set('x-test-person-id', '60');
+  assert.equal(res.status, 200);
+  assert.match(res.text, new RegExp(`id="spesen-meine-row-${jobId}"`));
+  assert.doesNotMatch(res.text, /kommentar-marke/);
+  db.close();
+});

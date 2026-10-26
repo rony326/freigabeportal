@@ -163,7 +163,8 @@ test('findeErwaehnungen', () => {
   assert.deepEqual(findeErwaehnungen('Frage an @Anna Beispiel bitte', kandidaten), { ids: ['1'], unbekannt: [] });
   assert.deepEqual(findeErwaehnungen('@anna beispiel, was meinst du?', kandidaten), { ids: ['1'], unbekannt: [] });
   assert.deepEqual(findeErwaehnungen('@Anna Beispiel-Muster und @CLARA ZWEI', kandidaten), { ids: ['10', '3'], unbekannt: [] });
-  assert.deepEqual(findeErwaehnungen('@Unbekannt hallo', kandidaten), { ids: [], unbekannt: ['Unbekannt'] });
+  assert.deepEqual(findeErwaehnungen('@Unbekannt hallo', kandidaten), { ids: [], unbekannt: [] });
+  assert.deepEqual(findeErwaehnungen('@Hans Unbekannt hallo', kandidaten), { ids: [], unbekannt: ['Hans Unbekannt'] });
   assert.deepEqual(findeErwaehnungen('@Anna Beispiel @Anna Beispiel', kandidaten), { ids: ['1'], unbekannt: [] });
   assert.deepEqual(findeErwaehnungen('Mail an info@example.org', kandidaten), { ids: [], unbekannt: [] });
   assert.deepEqual(findeErwaehnungen('@Anna Beispielhaft', kandidaten), { ids: [], unbekannt: ['Anna Beispielhaft'] });
@@ -245,9 +246,9 @@ test('erfasseKommentar: Fehlerfälle', async () => {
   const lang = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: 'a'.repeat(2000) });
   assert.equal(lang.ok, true);
   await lang.zustellung;
-  const unbekannt = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: '@Unbekannt hallo' });
+  const unbekannt = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: '@Hans Unbekannt hallo' });
   assert.equal(unbekannt.ok, false);
-  assert.match(unbekannt.fehler.join(' '), /Unbekannt/);
+  assert.match(unbekannt.fehler.join(' '), /Hans Unbekannt/);
   const fremd = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: '@Emil Fremd schau mal' });
   assert.equal(fremd.ok, false);
   assert.match(fremd.fehler.join(' '), /Emil Fremd/);
@@ -402,7 +403,7 @@ test('Erwähnungen: NFD, NBSP, Zeilenumbruch, mehrfacher Leerraum, Längenänder
   assert.deepEqual(findeErwaehnungen('@Jürg\nMüller', k).ids, ['20']);
   assert.deepEqual(findeErwaehnungen('@jürg   MÜLLER.', k).ids, ['20']);
   assert.deepEqual(findeErwaehnungen('İİİ @Clara Zwei', k), { ids: ['21'], unbekannt: [] });
-  assert.deepEqual(findeErwaehnungen('@Jürg', k), { ids: [], unbekannt: ['Jürg'] });
+  assert.deepEqual(findeErwaehnungen('@Jürg', k), { ids: [], unbekannt: [] }, 'ein einzelnes @Wort ist normaler Text');
 });
 
 test('Kommentar und Mails in einer Transaktion: scheitert das Einreihen, bleibt nichts gespeichert', async () => {
@@ -509,5 +510,82 @@ test('Sichtbarkeits-Prädikat (vorgeladen) = darfKommentareSehen je Person, übe
     const ist = erwaehnbarePersonen(db, CONFIG, j).map((e) => e.id).sort();
     assert.deepEqual(ist, erwartet, JSON.stringify(v));
   }
+  db.close();
+});
+
+test('Abschlussprüfung 1: aufgesplitteter Elternvorgang ist nach Erzeugung des Gruppen-PDFs geschlossen', async () => {
+  const { db, jobId, job, p } = setup();
+  setStatus(db, jobId, 'aufgesplittet');
+  assert.equal(darfKommentieren(db, CONFIG, p('1'), job()), true, 'vor dem Gruppen-PDF offen');
+  db.prepare("UPDATE jobs SET gruppe_pdf_pfad = '/tmp/gruppe.pdf' WHERE id = ?").run(jobId);
+  assert.equal(darfKommentareSehen(db, CONFIG, p('1'), job()), true);
+  assert.equal(darfKommentieren(db, CONFIG, p('1'), job()), false, 'nach dem Gruppen-PDF geschlossen');
+  assert.equal(darfKommentieren(db, CONFIG, p('6'), job()), false);
+  const r = await erfasseKommentar(db, CONFIG, stubMailer(), { job: job(), person: p('1'), text: 'Teil 2 doppelt bezahlt' });
+  assert.equal(r.ok, false);
+  assert.match(r.fehler.join(' '), /abgeschlossen/);
+  assert.equal(listeKommentare(db, jobId).length, 0);
+  db.close();
+});
+
+test('Abschlussprüfung 3: abgelehnte Spesen-Position → Zeitstempel-Prüfseite statt /abgelehnt', async () => {
+  const { db, p } = setup();
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '8' });
+  const spesenId = createJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', quelle: 'spesen', absender: null, dateiname: 's.pdf', pdfPfad: '/tmp/s.pdf' });
+  db.prepare("UPDATE jobs SET eingereicht_von = '9', status = 'abgelehnt', zugewiesen_an = '1' WHERE id = ?").run(spesenId);
+  const mailer = stubMailer();
+  await kommentiere(db, mailer, getJobById(db, spesenId), p('9'), 'Warum abgelehnt?');
+  for (const id of ['1', '8']) {
+    assert.match(mailAn(mailer, id)[0].text, new RegExp(`/zeitstempel-pruefen\\?jobId=${spesenId}#kommentare`), id);
+    assert.doesNotMatch(mailAn(mailer, id)[0].text, /\/abgelehnt\//, id);
+  }
+  db.close();
+});
+
+test('Abschlussprüfung 4: nur Vorgänge-Recht bei nicht laufendem Vorgang → kein toter Link; Superadmin → Zeitstempel-Prüfseite', async () => {
+  const { db, jobId, job, p } = setup();
+  weitere(db, [['11', 'Mia', 'Manager', ['30']]]);
+  setStatus(db, jobId, 'aufgesplittet');
+  const mailer = stubMailer();
+  await kommentiere(db, mailer, job(), p('1'), '@Mia Manager @Gina Einsicht @Fritz Admin bitte ansehen');
+  for (const id of ['11', '7']) {
+    const text = mailAn(mailer, id)[0].text;
+    assert.doesNotMatch(text, /\/admin\/vorgaenge\//, id);
+    assert.doesNotMatch(text, /https:\/\//, `${id}: kein Link`);
+    assert.match(text, /kein Direktlink/i, id);
+  }
+  assert.match(mailAn(mailer, '6')[0].text, new RegExp(`/zeitstempel-pruefen\\?jobId=${jobId}#kommentare`));
+  db.close();
+});
+
+test('Abschlussprüfung 5: Vertretung bei Spesen-Freigabe 1 → Zeitstempel-Prüfseite, Prüfperson → spesen-freigabe1', async () => {
+  const { db, p } = setup();
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '8' });
+  const spesenId = createJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', quelle: 'spesen', absender: null, dateiname: 's.pdf', pdfPfad: '/tmp/s.pdf' });
+  db.prepare("UPDATE jobs SET eingereicht_von = '9', status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(spesenId);
+  const mailer = stubMailer();
+  await kommentiere(db, mailer, getJobById(db, spesenId), p('9'), 'Beleg ist nachgereicht.');
+  assert.match(mailAn(mailer, '1')[0].text, new RegExp(`/spesen-freigabe1/${spesenId}#kommentare`));
+  assert.match(mailAn(mailer, '8')[0].text, new RegExp(`/zeitstempel-pruefen\\?jobId=${spesenId}#kommentare`));
+  db.close();
+});
+
+test('Abschlussprüfung 10: nur "@Wort Wort" ohne passende Person gilt als Erwähnungsversuch', async () => {
+  const kandidaten = [{ id: '1', name: 'Anna Beispiel' }];
+  assert.deepEqual(findeErwaehnungen('Termin @10 Uhr', kandidaten), { ids: [], unbekannt: [] });
+  assert.deepEqual(findeErwaehnungen('Preis @CHF 20', kandidaten), { ids: [], unbekannt: [] });
+  assert.deepEqual(findeErwaehnungen('Preis @CHF', kandidaten), { ids: [], unbekannt: [] });
+  assert.deepEqual(findeErwaehnungen('@Anna Beispiel bitte', kandidaten), { ids: ['1'], unbekannt: [] });
+  assert.deepEqual(findeErwaehnungen('@Hans Unbekannt bitte', kandidaten), { ids: [], unbekannt: ['Hans Unbekannt'] });
+  const { db, job, p } = setup();
+  const mailer = stubMailer();
+  for (const text of ['Termin @10 Uhr', 'Preis @CHF 20']) {
+    const r = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text });
+    assert.equal(r.ok, true, text);
+    await r.zustellung;
+  }
+  const r = await erfasseKommentar(db, CONFIG, mailer, { job: job(), person: p('1'), text: '@Hans Unbekannt bitte' });
+  assert.equal(r.ok, false);
+  assert.match(r.fehler.join(' '), /Unbekannte Person: @Hans Unbekannt/);
   db.close();
 });

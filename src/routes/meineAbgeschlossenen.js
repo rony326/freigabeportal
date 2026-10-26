@@ -12,7 +12,8 @@ export function createMeineAbgeschlossenenRouter({ db, config }) {
 
     res.render('meine-abgeschlossenen', {
       jobs,
-      kommentarInfo: kommentarInfoFuer(db, config, req.currentPerson, jobs.map((j) => j.id)),
+      // Ohne config (schlanke Test-Harnesses) keine Marken statt eines Absturzes.
+      kommentarInfo: config ? kommentarInfoFuer(db, config, req.currentPerson, jobs.map((j) => j.id)) : null,
       gesamtAnzahl,
       seite,
       proSeite,

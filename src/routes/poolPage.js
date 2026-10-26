@@ -61,8 +61,10 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
       adminEskalierteFreigaben: istSuperadmin ? enrich(listAdminEskalierteFreigaben(db)) : [],
       adminEskalierteSpesenFreigaben: istSuperadmin ? enrich(listAdminEskalierteSpesenFreigaben(db)) : [],
     };
-    // Eine Abfrage für alle Listen der Seite (Anzahl/neu je Vorgang).
-    const listen = [daten.poolJobs, daten.ruecklaeufer, daten.meineKontierungen, daten.meineSpesenFreigaben, daten.meineFreigaben, daten.meineAbgelehnten, daten.adminEskalierteKontierungen, daten.adminEskalierteFreigaben, daten.adminEskalierteSpesenFreigaben];
+    // Eine Abfrage für alle Listen der Seite (Anzahl/neu je Vorgang). Pool-Vorgänge (Pool und
+    // Rückläufer, beide unzugewiesen) bekommen keine Marke: keine Seite, die der Pool verlinkt, zeigt
+    // ihre Kommentare, das "neu" bliebe also bis zur Übernahme stehen (Abschlussprüfung 6).
+    const listen = [daten.meineKontierungen, daten.meineSpesenFreigaben, daten.meineFreigaben, daten.meineAbgelehnten, daten.adminEskalierteKontierungen, daten.adminEskalierteFreigaben, daten.adminEskalierteSpesenFreigaben];
     daten.kommentarInfo = kommentarInfoFuer(db, config, req.currentPerson, listen.flat().map((j) => j.id));
     res.render('pool', daten);
   });

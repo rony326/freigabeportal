@@ -6,7 +6,7 @@ import { getEffectiveFreigeber2Id, getJobById } from '../db/jobsRepo.js';
 import { getPersonById, listActivePersonsInGroup } from '../db/personenRepo.js';
 import { personHasPermission } from '../middleware/permissions.js';
 import { canViewJobPdf } from './jobAuthorization.js';
-import { ermittleZustaendigkeit } from './vorgangZustaendigkeit.js';
+import { ermittleZustaendigkeit, LAUFENDE_STATUS } from './vorgangZustaendigkeit.js';
 import { getAktivenVertreter } from './vertretung.js';
 import { reiheBenachrichtigungEin, renderBenachrichtigung } from './notify.js';
 import { getVorlage } from './mailTemplates.js';
@@ -24,8 +24,15 @@ export function darfKommentareSehen(db, config, person, job) {
   return canViewJobPdf(db, config, person, job) || personHasPermission(db, config, person, 'vorgaenge_einsehen');
 }
 
+// Geschlossen: die Status oben, dazu ein aufgesplitteter Elternvorgang, sobald sein Gruppen-PDF
+// erzeugt ist (gruppe_pdf_pfad) — danach erreicht ein neuer Kommentar das archivierte PDF nicht mehr.
+export function istKommentarGeschlossen(job) {
+  if (!job) return true;
+  return KOMMENTAR_GESCHLOSSEN_STATUS.includes(job.status) || (job.status === 'aufgesplittet' && Boolean(job.gruppe_pdf_pfad));
+}
+
 export function darfKommentieren(db, config, person, job) {
-  return darfKommentareSehen(db, config, person, job) && !KOMMENTAR_GESCHLOSSEN_STATUS.includes(job.status);
+  return darfKommentareSehen(db, config, person, job) && !istKommentarGeschlossen(job);
 }
 
 // Alle aktiven Personen in EINER Abfrage (gleiche Form wie getPersonById).
@@ -112,7 +119,10 @@ function parseErwaehnungen(text, kandidaten) {
       if (!treffer.some((t) => t.schluessel === erster.schluessel)) treffer.push({ name: erster.name, schluessel: erster.schluessel, ids });
       continue;
     }
-    const m = rest.match(/^[\p{L}\p{N}_-]+(?:[ \t ]+\p{Lu}[\p{L}\p{N}_-]*)?/u);
+    // Nur "@Wort Wort" (erstes Wort beginnt mit einem Buchstaben, das zweite mit einem Grossbuchstaben)
+    // gilt als Versuch, eine Person zu erwähnen. "@10 Uhr", "@CHF 20" oder ein einzelnes "@Wort" bleiben
+    // gewöhnlicher Text.
+    const m = rest.match(/^\p{L}[\p{L}\p{N}_-]*[ \t\u00A0]+\p{Lu}[\p{L}\p{N}_-]*/u);
     if (m) {
       const wort = m[0].replace(/\s+/g, ' ');
       if (!unbekannt.includes(wort)) unbekannt.push(wort);
@@ -122,9 +132,10 @@ function parseErwaehnungen(text, kandidaten) {
 }
 
 // Erkennt "@Vorname Nachname" (gross/klein egal, längster passender Name gewinnt, danach muss eine
-// Wortgrenze folgen). Ein "@" mitten in einem Wort (E-Mail-Adresse) ist keine Erwähnung. Ein "@"
-// ohne passenden Kandidaten landet mit dem folgenden Wort (bzw. zwei, wenn das zweite gross
-// beginnt) in `unbekannt`. Gleichnamige Kandidaten liefern alle ihre IDs.
+// Wortgrenze folgen). Ein "@" mitten in einem Wort (E-Mail-Adresse) ist keine Erwähnung. Ein
+// "@Wort Wort" ohne passenden Kandidaten (erstes Wort mit Buchstabe, zweites mit Grossbuchstabe am
+// Anfang) landet in `unbekannt`; "@10 Uhr", "@CHF 20" oder ein einzelnes "@Wort" sind normaler Text.
+// Gleichnamige Kandidaten liefern alle ihre IDs.
 export function findeErwaehnungen(text, kandidaten) {
   const { treffer, unbekannt } = parseErwaehnungen(text, kandidaten);
   const ids = [];
@@ -190,12 +201,18 @@ export function beteiligte(db, config, job, optionen = {}) {
   return ermittleEmpfaenger(db, config, job, optionen).map((e) => e.person.churchtools_person_id);
 }
 
-function workflowLink(config, job) {
+// Arbeitsseite der zuständigen Person, oder null, wenn diese Person dort keinen Zugang hätte:
+// Pool-Vorgänge haben keine zuständige Person, eine abgelehnte Spesen-Position hat keine
+// Arbeitsseite (/abgelehnt verweigert Spesen), und /spesen-freigabe1 öffnet nur die zugewiesene
+// Prüfperson bzw. bei Eskalation die Admins — nicht deren Ferienvertretung.
+function workflowLink(config, job, personId) {
   const basis = config.publicBaseUrl;
-  if (job.status === 'unzugewiesen') return `${basis}/pool`;
   if (job.status === 'freigabe2') return `${basis}/freigabe2/${job.id}`;
-  if (job.status === 'abgelehnt') return `${basis}/abgelehnt/${job.id}`;
-  if (job.quelle === 'spesen') return `${basis}/spesen-freigabe1/${job.id}`;
+  if (job.status === 'abgelehnt') return job.quelle === 'spesen' ? null : `${basis}/abgelehnt/${job.id}`;
+  if (job.status !== 'zugewiesen') return null;
+  if (job.quelle === 'spesen') {
+    return job.freigabe1_eskaliert_an_admin || job.zugewiesen_an === personId ? `${basis}/spesen-freigabe1/${job.id}` : null;
+  }
   // KK-Abrechnungen bearbeitet man im Abgleich (/kontierung/:id leitet dorthin um).
   return job.kreditkarte_id ? `${basis}/kontierung/${job.id}/kk-abgleich` : `${basis}/kontierung/${job.id}`;
 }
@@ -207,16 +224,25 @@ function siehtUeberRolle(db, config, person, job) {
   return canViewJobPdf(db, config, ohneAdmin, job);
 }
 
-// Ruling Fix-Runde 1: aktuell zuständig → Arbeitsseite; nur über das Vorgänge-Recht sichtbar →
-// Admin-Vorgang-Detail; sonst (F1 nach Übergabe, F2 vor seiner Phase, Einreicher, frühere
-// Kommentierende mit Rolle) → /zeitstempel-pruefen?jobId=… (canViewJobPdf-geschützt).
+export const KEIN_DIREKTLINK = 'kein Direktlink (der Vorgang ist nicht mehr in Bearbeitung; die Kommentare stehen auf dem archivierten PDF)';
+
+// Ruling Fix-Runde 1 + Abschlussprüfung 3–5: jeder Link führt auf eine Seite, die die Person
+// öffnen darf. Aktuell zuständig → Arbeitsseite (sofern sie dort Zugang hat); über eine eigene Rolle
+// sichtbar → /zeitstempel-pruefen?jobId=… (canViewJobPdf-geschützt); nur über das Vorgänge-Recht
+// sichtbar → Admin-Vorgang-Detail, aber nur für laufende Vorgänge (sonst 404) — danach die
+// Zeitstempel-Prüfseite, wenn canViewJobPdf (Superadmins), sonst kein Link, nur ein kurzer Hinweis.
 function linkFuer(db, config, person, job, verantwortlich) {
   const basis = config.publicBaseUrl;
-  let link;
-  if (verantwortlich.has(person.churchtools_person_id)) link = workflowLink(config, job);
-  else if (siehtUeberRolle(db, config, person, job)) link = `${basis}/zeitstempel-pruefen?jobId=${job.id}`;
-  else link = `${basis}/admin/vorgaenge/${job.id}`;
-  return `${link}#kommentare`;
+  const id = person.churchtools_person_id;
+  const pruefseite = `${basis}/zeitstempel-pruefen?jobId=${job.id}#kommentare`;
+  const arbeit = verantwortlich.has(id) ? workflowLink(config, job, id) : null;
+  if (arbeit) return `${arbeit}#kommentare`;
+  if (siehtUeberRolle(db, config, person, job)) return pruefseite;
+  if (LAUFENDE_STATUS.includes(job.status) && personHasPermission(db, config, person, 'vorgaenge_einsehen')) {
+    return `${basis}/admin/vorgaenge/${job.id}#kommentare`;
+  }
+  if (canViewJobPdf(db, config, person, job)) return pruefseite;
+  return KEIN_DIREKTLINK;
 }
 
 // Vorlage `kommentar`; fehlt ein Teil (gelöscht/leer), gilt die Werkseinstellung (Ruling 2): ein
@@ -272,7 +298,7 @@ export async function erfasseKommentar(db, config, mailer, { job, person, text, 
   if (!darfKommentieren(db, config, person, job)) {
     return {
       ok: false,
-      fehler: [KOMMENTAR_GESCHLOSSEN_STATUS.includes(job?.status) && darfKommentareSehen(db, config, person, job)
+      fehler: [job && istKommentarGeschlossen(job) && darfKommentareSehen(db, config, person, job)
         ? 'Dieser Vorgang ist abgeschlossen; neue Kommentare sind nicht mehr möglich.'
         : 'Du darfst diesen Vorgang nicht kommentieren.'],
     };

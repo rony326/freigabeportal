@@ -39,8 +39,9 @@
               </div>
             <% } %>
 
-            <form method="post" action="/freigabe2/<%= job.id %>">
+            <form method="post" action="/freigabe2/<%= job.id %>" id="freigabe2-form">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+              <input type="hidden" name="kommentar_stand" value="<%= locals.kommentarStand || '0:0' %>">
               <% if (typeof zahlungsart !== 'undefined' && zahlungsart === 'keine_zahlung') { %>
                 <p class="text-muted">Zahlung: keine (Gutschrift) — es werden keine Zahlungsdaten exportiert.</p>
               <% } else if (typeof zahlungsart !== 'undefined' && zahlungsart === 'ohne_zahlungsdaten' && !paymentReview) { %>
@@ -96,7 +97,7 @@
           </div>
         </div>
         <%- include('_audit_log') %>
-        <% if (locals.kommentarBereich) { %><%- include('_kommentare', kommentarBereich) %><% } %>
+        <% if (locals.kommentarBereich) { %><%- include('_kommentare', { ...kommentarBereich, ungespeichertesFormular: 'freigabe2-form' }) %><% } %>
       </div>
     </div>
   <script>

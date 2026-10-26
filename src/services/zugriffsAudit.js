@@ -28,7 +28,7 @@ const METHODEN = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTI
 const ERSTE_SEGMENTE = new Set([
   'admin', 'api', 'internal', 'auth', 'branding', 'downloads', 'pool', 'meine-abgeschlossenen',
   'meine-spesen', 'kreditkarte', 'ferienmodus', 'kontierung', 'spesen', 'spesen-freigabe1',
-  'freigabe2', 'abgelehnt', 'zeitstempel-pruefen',
+  'freigabe2', 'abgelehnt', 'zeitstempel-pruefen', 'kommentare',
 ]);
 const ZWEITE_SEGMENTE = {
   admin: new Set([

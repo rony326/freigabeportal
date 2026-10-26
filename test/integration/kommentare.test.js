@@ -411,3 +411,93 @@ test('KK-Abgleich: Kommentarbereich, Rücksprung dorthin, Mail-Link der verantwo
   assert.ok(!u.db.prepare("SELECT 1 FROM kommentar_gelesen WHERE job_id = ? AND person_id = '5'").get(u.kk));
   await u.aufraeumen();
 });
+
+test('Abschlussprüfung 3–5: jeder Mail-Link öffnet für genau diese Empfängerin eine Seite mit Kommentaren (200)', async () => {
+  const { setFerienmodus } = await import('../../src/db/personenRepo.js');
+  const u = umgebung();
+  const { db } = u;
+  // Ferienvertretung von Anna (F1/Prüfperson/KK-Verantwortliche) ist Emil.
+  setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '5' });
+  const kontoId = db.prepare('SELECT konto_id FROM jobs WHERE id = ?').get(u.jobA).konto_id;
+  const abrId = db.prepare('SELECT spesenabrechnung_id FROM jobs WHERE id = ?').get(u.spesen).spesenabrechnung_id;
+  const spesenAbgelehnt = createSpesenPosition(db, {
+    eingangAm: '2026-10-21T08:00:00.000Z', eingereichtVon: '9', kontoId, betrag: '5.00', auslageDatum: '2026-10-20',
+    beschreibung: 'Parkplatz', dateiname: 'spesen2.pdf', pdfPfad: '/nicht/da/spesen2.pdf', thumbnailPfad: null,
+    spesenabrechnungId: abrId, zugewiesenAn: '1',
+  });
+  ablehnenJob(db, spesenAbgelehnt, { abgelehntVon: '1', grund: 'Kein Beleg' });
+  const eltern = createJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'eltern.pdf', pdfPfad: '/nicht/da/eltern.pdf' });
+  claimJob(db, eltern, '1');
+  setKontierung(db, eltern, kontoId);
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(eltern);
+  const eskaliert = createJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'eskaliert.pdf', pdfPfad: '/nicht/da/eskaliert.pdf' });
+  claimJob(db, eskaliert, '1');
+  setKontierung(db, eskaliert, kontoId);
+  createFreigabe(db, { jobId: eskaliert, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-10-21T08:00:00.000Z', ip: '127.0.0.1', interessenskonflikt: false });
+  abschliessenFreigabe1(db, eskaliert);
+  db.prepare('UPDATE jobs SET freigabe2_eskaliert_an_admin = 1 WHERE id = ?').run(eskaliert);
+
+  // [Schreiberin, Vorgang, Text, erwartete Links je Empfänger (null = bewusst kein Link)]
+  const faelle = [
+    ['3', u.jobA, 'Frage @Gina Einsicht', { 1: `/kontierung/${u.jobA}`, 5: `/kontierung/${u.jobA}`, 7: `/admin/vorgaenge/${u.jobA}` }],
+    ['1', u.f2, 'Bitte prüfen', { 3: `/freigabe2/${u.f2}` }],
+    ['3', u.abg, 'Warum?', { 1: `/abgelehnt/${u.abg}`, 5: `/abgelehnt/${u.abg}` }],
+    ['9', u.spesen, 'Beleg nachgereicht', { 1: `/spesen-freigabe1/${u.spesen}`, 5: `/zeitstempel-pruefen?jobId=${u.spesen}` }],
+    ['9', spesenAbgelehnt, 'Warum abgelehnt?', { 1: `/zeitstempel-pruefen?jobId=${spesenAbgelehnt}`, 5: `/zeitstempel-pruefen?jobId=${spesenAbgelehnt}` }],
+    ['1', u.spesen, 'Danke', { 9: `/zeitstempel-pruefen?jobId=${u.spesen}`, 3: `/zeitstempel-pruefen?jobId=${u.spesen}` }],
+    ['3', u.kk, 'Frage zur Abrechnung', { 1: `/kontierung/${u.kk}/kk-abgleich`, 5: `/kontierung/${u.kk}/kk-abgleich` }],
+    ['1', eltern, '@Gina Einsicht @Fritz Admin bitte ansehen', { 7: null, 6: `/zeitstempel-pruefen?jobId=${eltern}` }],
+    ['1', eskaliert, 'Eskaliert?', { 6: `/freigabe2/${eskaliert}` }],
+  ];
+  for (const [schreiber, jobId, text, erwartet] of faelle) {
+    const vorher = db.prepare('SELECT COALESCE(MAX(id), 0) AS n FROM mail_log').get().n;
+    const pfad = `/zeitstempel-pruefen?jobId=${jobId}`;
+    const res = await poste(u.als(schreiber), pfad, jobId, { text, zurueck: pfad });
+    assert.equal(res.status, 302, `${jobId}: ${text}`);
+    const mails = db.prepare("SELECT empfaenger, text FROM mail_log WHERE typ = 'kommentar' AND job_id = ? AND id > ?").all(jobId, vorher);
+    for (const [personId, ziel] of Object.entries(erwartet)) {
+      const mail = mails.find((m) => m.empfaenger === `p${personId}@example.org`);
+      assert.ok(mail, `${jobId}: Mail an ${personId}`);
+      const link = mail.text.match(/http:\/\/portal\.example\.org(\S+)#kommentare/);
+      if (ziel === null) {
+        assert.equal(link, null, `${jobId}: kein Link für ${personId}`);
+        assert.match(mail.text, /kein Direktlink/);
+        continue;
+      }
+      assert.ok(link, `${jobId}: Link für ${personId}`);
+      assert.equal(link[1], ziel, `${jobId}: Link für ${personId}`);
+    }
+    // Jeder Link in jeder Mail muss für genau diese Empfängerin aufgehen.
+    for (const mail of mails) {
+      const link = mail.text.match(/http:\/\/portal\.example\.org(\S+)#kommentare/);
+      if (!link) continue;
+      const personId = mail.empfaenger.match(/^p(\d+)@/)[1];
+      const seite = await u.als(personId).get(link[1]);
+      assert.equal(seite.status, 200, `${link[1]} als ${personId}`);
+      assert.match(seite.text, /id="kommentare"/, `${link[1]} als ${personId}: Kommentarbereich`);
+    }
+  }
+  await u.aufraeumen();
+});
+
+test('Abschlussprüfung 1: Elternvorgang mit Gruppen-PDF zeigt die Kommentare nur lesend, POST → 422', async () => {
+  const u = umgebung();
+  const { db } = u;
+  const kontoId = db.prepare('SELECT konto_id FROM jobs WHERE id = ?').get(u.jobA).konto_id;
+  const eltern = createJob(db, { eingangAm: '2026-10-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'eltern.pdf', pdfPfad: '/nicht/da/eltern.pdf' });
+  claimJob(db, eltern, '1');
+  setKontierung(db, eltern, kontoId);
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet', gruppe_pdf_pfad = '/nicht/da/gruppe.pdf' WHERE id = ?").run(eltern);
+  const anna = u.als('1');
+  const pfad = `/zeitstempel-pruefen?jobId=${eltern}`;
+  const seite = await anna.get(pfad);
+  assert.equal(seite.status, 200);
+  assert.match(seite.text, /Abgeschlossen — keine neuen Kommentare/);
+  assert.doesNotMatch(seite.text, /action="\/kommentare\//);
+  const res = await anna.post(`/kommentare/${eltern}`).type('form').send({ _csrf: csrfAus(seite.text), text: 'Teil 2 doppelt bezahlt', zurueck: pfad });
+  assert.equal(res.status, 422);
+  assert.match(res.text, /abgeschlossen/);
+  assert.equal(kommentare(db, eltern).length, 0);
+  assert.equal(kommentarMails(db).length, 0);
+  await u.aufraeumen();
+});

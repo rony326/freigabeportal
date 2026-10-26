@@ -1722,6 +1722,14 @@ function seedKommentar(db, jobId, personId, text, erstelltAm) {
   db.prepare('INSERT INTO kommentare (job_id, person_id, text, erwaehnt, erstellt_am) VALUES (?, ?, ?, ?, ?)').run(jobId, personId, text, '[]', erstelltAm);
 }
 
+// Stand der Kommentare, den die Freigabe-2-Seite beim Rendern ins Formular schreibt.
+const kommentarStandAus = (html) => html.match(/name="kommentar_stand" value="([0-9]+:[0-9]+)"/)[1];
+async function kommentarStandSeite(app, id, personId = '3') {
+  const seite = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', personId);
+  assert.equal(seite.status, 200);
+  return kommentarStandAus(seite.text);
+}
+
 test('Kommentar → Freigabe 2 → gespeichertes PDF enthält den Kommentar, DB-Hash passt zur Datei, Zeitstempel-Prüfung ok', async (t) => {
   const { createHash } = await import('node:crypto');
   const { extrahierePdfText } = await import('../../src/services/pdfText.js');
@@ -1739,7 +1747,9 @@ test('Kommentar → Freigabe 2 → gespeichertes PDF enthält den Kommentar, DB-
   const client = setupMockTsa('https://tsa.example.org/tsr');
   client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
 
-  const res = await request(buildTestApp(db)).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  const app = buildTestApp(db);
+  const kommentar_stand = await kommentarStandSeite(app, id);
+  const res = await request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '', kommentar_stand });
   assert.equal(res.status, 302);
   const job = getJobById(db, id);
   assert.equal(job.status, 'abgeschlossen');
@@ -1803,10 +1813,11 @@ test('Spesen-Position: Kommentare erscheinen auf dem finalen PDF', async (t) => 
   const client = setupMockChurchTools(churchtoolsConfig.baseUrl);
   client.intercept({ path: '/api/persons/5', method: 'GET' }).reply(200, { data: { id: 5, iban_1: 'CH9300762011623852957', kontoinhaber: 'Ein Reicher' } }).times(2);
   const app = buildTestApp(db, { churchtoolsConfig });
-  const review = await request(app).post(`/freigabe2/${jobId}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein' });
+  const kommentar_stand = await kommentarStandSeite(app, jobId);
+  const review = await request(app).post(`/freigabe2/${jobId}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', kommentar_stand });
   const stand = review.text.match(/name="zahlungsdaten_stand" value="([a-f0-9]+)"/)[1];
   const res = await request(app).post(`/freigabe2/${jobId}`).set('x-test-person-id', '3').type('form')
-    .send({ interessenskonflikt: 'nein', begruendung: '', zahlungsdaten_bestaetigt: 'ja', zahlungsdaten_stand: stand });
+    .send({ interessenskonflikt: 'nein', begruendung: '', zahlungsdaten_bestaetigt: 'ja', zahlungsdaten_stand: stand, kommentar_stand: kommentarStandAus(review.text) });
   assert.equal(res.status, 302);
   const text = extrahierePdfText(readFileSync(getJobById(db, jobId).pdf_pfad));
   assert.match(text, /Rückfragen und Kommentare/);
@@ -1837,7 +1848,8 @@ test('geht während Stempeln/TSA ein neuer Kommentar ein, wird nicht abgeschloss
   }, { headers: { 'content-type': 'application/timestamp-reply' } });
   const app = buildTestApp(db);
 
-  const res = await request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  const kommentar_stand = await kommentarStandSeite(app, id);
+  const res = await request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '', kommentar_stand });
   assert.equal(res.status, 409);
   assert.match(res.text, /Während der Freigabe ist ein neuer Kommentar eingegangen\. Bitte lesen und erneut freigeben\./);
   assert.match(res.text, /Halt, bitte noch nicht freigeben!/, 'die Seite zeigt den neuen Kommentar');
@@ -1852,11 +1864,63 @@ test('geht während Stempeln/TSA ein neuer Kommentar ein, wird nicht abgeschloss
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM tsa_pruefnachweise WHERE job_id = ?').get(id).n, 0, 'kein TSA-Nachweis gespeichert');
 
   client.intercept({ path: '/tsr', method: 'POST' }).reply(200, signedTsaResponse, { headers: { 'content-type': 'application/timestamp-reply' } });
-  const erneut = await request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  const erneut = await request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form')
+    .send({ interessenskonflikt: 'nein', begruendung: '', kommentar_stand: kommentarStandAus(res.text) });
   assert.equal(erneut.status, 302);
   const fertig = getJobById(db, id);
   assert.equal(fertig.status, 'abgeschlossen');
   const text = extrahierePdfText(readFileSync(fertig.pdf_pfad));
   assert.match(text, /Erste Rückfrage\./);
   assert.match(text, /Halt, bitte noch nicht freigeben!/);
+});
+
+test('Abschlussprüfung 2: Kommentar zwischen Öffnen der Seite und Freigeben → 409 mit dem neuen Kommentar, nichts gestempelt, erneute Freigabe klappt', async (t) => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-kommentar-stand-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const pdfPfad = join(dir, 'a.pdf');
+  const original = await buildPdfFixture(['Rechnung Seite 1']);
+  writeFileSync(pdfPfad, original);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  const app = buildTestApp(db);
+
+  // 10:00 Seite offen (noch ohne Kommentar), 10:01 Einwand von F1, 10:03 Freigeben.
+  const kommentar_stand = await kommentarStandSeite(app, id);
+  assert.equal(kommentar_stand, '0:0');
+  seedKommentar(db, id, '1', 'Nicht freigeben, IBAN falsch', '2026-08-15T10:01:00.000Z');
+  const res = await request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '', kommentar_stand });
+  assert.equal(res.status, 409);
+  assert.match(res.text, /Während der Freigabe ist ein neuer Kommentar eingegangen\. Bitte lesen und erneut freigeben\./);
+  assert.match(res.text, /Nicht freigeben, IBAN falsch/);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.freigabe_snapshot, null);
+  assert.deepEqual(readFileSync(pdfPfad), original);
+  assert.equal(listFreigabenByJob(db, id).filter((f) => f.rolle === 'freigeber2').length, 0);
+
+  // Ohne Feld (z. B. alter Browser-Tab) gilt der Stand "keine Kommentare gesehen".
+  const ohneFeld = await request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(ohneFeld.status, 409);
+
+  const neu = kommentarStandAus(res.text);
+  assert.notEqual(neu, '0:0');
+  const erneut = await request(app).post(`/freigabe2/${id}`).set('x-test-person-id', '3').type('form').send({ interessenskonflikt: 'nein', begruendung: '', kommentar_stand: neu });
+  assert.equal(erneut.status, 302);
+  assert.equal(getJobById(db, id).status, 'abgeschlossen');
+});
+
+test('Abschlussprüfung 7: Freigabe 2 warnt vor ungespeicherten Angaben beim Absenden eines Kommentars', async (t) => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-ungespeichert-'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const pdfPfad = join(dir, 'a.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Rechnung Seite 1']));
+  const { id } = await seedFreigabe2Job(db, { pdfPfad });
+  const res = await request(buildTestApp(db)).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<form method="post" action="\/freigabe2\/\d+" id="freigabe2-form">/);
+  assert.match(res.text, /<form method="post" action="\/kommentare\/\d+" class="kommentar-form" id="kommentar-form-\d+" data-ungespeichert-warnung="freigabe2-form">/);
+  assert.match(res.text, /window\.confirm\('Ungespeicherte Angaben/);
 });

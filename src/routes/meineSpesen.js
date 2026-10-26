@@ -12,7 +12,9 @@ export function createMeineSpesenRouter({ db, config }) {
       ...job,
       kontonummer: job.konto_id ? (getKontoById(db, job.konto_id)?.kontonummer ?? null) : null,
     }));
-    res.render('meine-spesen', { jobs, kommentarInfo: kommentarInfoFuer(db, config, req.currentPerson, jobs.map((j) => j.id)) });
+    // Ohne config (schlanke Test-Harnesses) keine Marken statt eines Absturzes.
+    const kommentarInfo = config ? kommentarInfoFuer(db, config, req.currentPerson, jobs.map((j) => j.id)) : null;
+    res.render('meine-spesen', { jobs, kommentarInfo });
   });
 
   return router;

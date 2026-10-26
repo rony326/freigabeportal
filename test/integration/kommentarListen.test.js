@@ -113,7 +113,7 @@ test('Aufgaben (Pool-Seite): Tabelle und Kacheln zeigen Anzahl und "neu" (eigene
   }
   for (const teil of [`row-${u.eigen}`, `kachel-${u.eigen}`]) {
     const a = ausschnitt(res.text, `[a-zA-Z-]*${teil}`);
-    assert.match(a, /aria-label="1 Kommentar, davon 0 neu"/, teil);
+    assert.match(a, /aria-label="1 Kommentar"/, teil);
     assert.doesNotMatch(a, />neu</, teil);
   }
   for (const teil of [`row-${u.ohne}`, `kachel-${u.ohne}`]) {
@@ -129,7 +129,7 @@ test('"neu" verschwindet, nachdem die Detailseite geöffnet wurde', async () => 
   assert.equal((await anna.get(`/kontierung/${u.mitKommentar}`)).status, 200);
   const danach = await anna.get('/pool');
   assert.doesNotMatch(danach.text, /davon 2 neu/);
-  assert.match(danach.text, /aria-label="3 Kommentare, davon 0 neu"/);
+  assert.match(danach.text, /aria-label="3 Kommentare"/);
   u.aufraeumen();
 });
 
@@ -194,14 +194,28 @@ test('Admin abgelehnt: ohne Sichtrecht auf den Vorgang keine Marke (nur abgelehn
   u.aufraeumen();
 });
 
-test('Pool Rückläufer: pool_zuweisen ohne Sichtrecht sieht keine Marke, Buchhaltung/Superadmin schon', async () => {
+test('Abschlussprüfung 6: Pool-Vorgänge (unzugewiesen, auch Rückläufer) zeigen keine Marke — keine Seite aus dem Pool zeigt die Kommentare', async () => {
   const u = umgebung();
-  const res = await u.als('8').get('/pool');
-  assert.equal(res.status, 200);
-  assert.ok(res.text.includes('rueck.pdf') || res.text.includes(`row-${u.rueck}`), 'Rückläufer ist in der Liste');
-  assert.doesNotMatch(res.text, /kommentar-marke/);
-  const admin = await u.als('6').get('/pool');
-  assert.match(admin.text, /1 Kommentar, davon 1 neu/);
+  for (const person of ['8', '6']) {
+    const res = await u.als(person).get('/pool');
+    assert.equal(res.status, 200);
+    assert.ok(res.text.includes('rueck.pdf') || res.text.includes(`row-${u.rueck}`), `${person}: Rückläufer ist in der Liste`);
+    for (const teil of [`row-${u.rueck}`, `kachel-${u.rueck}`]) {
+      const m = new RegExp(`id="[a-zA-Z-]*${teil}"`).exec(res.text);
+      if (m) assert.doesNotMatch(ausschnitt(res.text, `[a-zA-Z-]*${teil}`), /kommentar-marke/, `${person}: ${teil}`);
+    }
+  }
+  // Die Vorgangsliste verlinkt auf eine Seite mit Kommentarbereich und zeigt die Marke weiterhin.
+  const vorgaenge = await u.als('6').get('/admin/vorgaenge');
+  assert.match(ausschnitt(vorgaenge.text, `vorgang-kachel-${u.rueck}`), /kommentar-marke/);
+  u.aufraeumen();
+});
+
+test('P1: Marke ohne "davon 0 neu", wenn nichts neu ist', async () => {
+  const u = umgebung();
+  const res = await u.als('1').get('/pool');
+  assert.doesNotMatch(res.text, /davon 0 neu/);
+  assert.match(ausschnitt(res.text, `[a-zA-Z-]*row-${u.eigen}`), /aria-label="1 Kommentar"/);
   u.aufraeumen();
 });
 
@@ -209,7 +223,7 @@ test('Marke: Singular/Plural im aria-label, SVG statt Emoji', async () => {
   const u = umgebung();
   const res = await u.als('1').get('/pool');
   assert.match(res.text, /aria-label="3 Kommentare, davon 2 neu"/);
-  assert.match(res.text, /aria-label="1 Kommentar, davon 0 neu"/);
+  assert.match(res.text, /aria-label="1 Kommentar"/);
   assert.match(res.text, /kommentar-marke[^]*?<svg/);
   assert.doesNotMatch(res.text, /💬/);
   u.aufraeumen();

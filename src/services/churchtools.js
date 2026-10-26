@@ -1,3 +1,16 @@
+// A4-01: Alle produktiven ChurchTools-fetch-Aufrufe (Login und nächtlicher Sync) bekommen ein
+// Zeitlimit. Eine hängende CT-Instanz (TCP offen, keine Antwort) darf weder die Login-Anfrage
+// unbegrenzt blockieren noch den Sync dauerhaft lahmlegen (der Reentrancy-Guard im scheduler.js
+// wird erst zurückgesetzt, wenn der Aufruf abbricht). AbortSignal.timeout wie bei TSA
+// (tsaCrlUpdate.js) und dem Einrichtungs-Test (einrichtungTests.js).
+const CT_FETCH_TIMEOUT_MS = 15000;
+
+// Zeitlimit-Signal für einen CT-Aufruf. config.ctFetchTimeoutMs ist eine optionale Stellschraube
+// (Betrieb/Test); produktiv gilt der Standard. Kein Abschwächen der Prüfung: der Standard bleibt.
+function ctSignal(config) {
+  return AbortSignal.timeout(config?.ctFetchTimeoutMs ?? CT_FETCH_TIMEOUT_MS);
+}
+
 export function buildAuthorizeUrl(config, state) {
   const url = new URL('/oauth/authorize', config.baseUrl);
   url.searchParams.set('client_id', config.clientId);
@@ -38,6 +51,7 @@ export async function exchangeCodeForToken(config, code) {
       client_secret: config.clientSecret,
       redirect_uri: config.redirectUri,
     }),
+    signal: ctSignal(config),
   });
   return parseOrThrow(response, 'Token-Austausch');
 }
@@ -49,7 +63,7 @@ export async function fetchPerson(config, accessToken) {
   // Bearer-token request. /oauth/userinfo also returns the profile as a flat object, unlike
   // /api/*'s { data: {...} } envelope.
   const url = new URL('/oauth/userinfo', config.baseUrl);
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` }, signal: ctSignal(config) });
   return parseOrThrow(response, 'Profilabruf');
 }
 
@@ -69,7 +83,7 @@ export async function fetchPersonById(config, loginToken, personId) {
     return daten;
   }
   const url = new URL(`/api/persons/${personId}`, config.baseUrl);
-  const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` } });
+  const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` }, signal: ctSignal(config) });
   const data = await parseOrThrow(response, 'Personenabruf');
   return data.data;
 }
@@ -87,7 +101,7 @@ export function extractCustomFieldValue(person, fieldKey) {
   return getrimmt || null;
 }
 
-export async function fetchGroup(config, loginToken, groupId, { signal } = {}) {
+export async function fetchGroup(config, loginToken, groupId, { signal = ctSignal(config) } = {}) {
   sperreImTestmodus(config);
   const url = new URL(`/api/groups/${groupId}`, config.baseUrl);
   const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` }, signal });
@@ -95,7 +109,7 @@ export async function fetchGroup(config, loginToken, groupId, { signal } = {}) {
   return { id: String(data.data.id), name: data.data.name };
 }
 
-export async function fetchGroupMemberIds(config, loginToken, groupId, { signal } = {}) {
+export async function fetchGroupMemberIds(config, loginToken, groupId, { signal = ctSignal(config) } = {}) {
   sperreImTestmodus(config);
   const url = new URL(`/api/groups/${groupId}/members`, config.baseUrl);
   const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` }, signal });

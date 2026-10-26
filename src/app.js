@@ -341,9 +341,15 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
         .status(403)
         .render('error', { message: 'Sicherheitsprüfung fehlgeschlagen (ungültiges oder abgelaufenes Formular). Bitte lade die Seite neu und versuche es erneut.' });
     }
-    if (typeof err.type === 'string' && err.type.startsWith('entity.')) {
-      // Kaputter Anfrage-Inhalt (Body-Parser): Fehler der Anfrage, kein Serverfehler. Erfasst wird
-      // nur mit angemeldeter Person, damit anonyme Anfragen betrieb_fehler nicht füllen können.
+    // A4-04: Kaputter Anfrage-Inhalt (Body-Parser) ist ein Client-Fehler, kein Serverfehler, und
+    // darf NICHT pro Anfrage `console.error(err.stack)` auslösen — sonst flutet ein
+    // unauthentifizierter Client das Log. Erfasst werden entity.*-Fehler (kaputtes JSON, zu gross)
+    // UND rohe zlib-Dekodierfehler eines defekten komprimierten Bodys (Content-Encoding: gzip +
+    // Trailing-Bytes → err.code 'Z_DATA_ERROR' o.ä., ohne err.type). Beides als 400 ohne Stack-Log.
+    const istKaputterBody = (typeof err.type === 'string' && err.type.startsWith('entity.'))
+      || (typeof err.code === 'string' && err.code.startsWith('Z_'));
+    if (istKaputterBody) {
+      // Erfasst wird nur mit angemeldeter Person, damit anonyme Anfragen betrieb_fehler nicht füllen können.
       const fehlerId = req.currentPerson ? erfasseFehler(db, { req, err, status: 400 }).slice(0, 8) : null;
       return res.status(400).render('error', { message: 'Ungültiger Anfrage-Inhalt.', fehlerId });
     }

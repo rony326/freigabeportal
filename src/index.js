@@ -5,6 +5,11 @@ import { createApp } from './app.js';
 import { createMailerOrFallback } from './services/mailer.js';
 import { startScheduler } from './services/scheduler.js';
 import { acquireStorageLock, resolveStorageConfig } from './services/storageState.js';
+import { installeProzessWaechter } from './services/prozessWaechter.js';
+
+// A4-02: Sicherheitsnetz für unbehandelte Ausnahmen/Promise-Ablehnungen — ganz früh registriert,
+// damit es auch Fehler beim Start noch erfasst (loggt, dann sauberer Exit → Plattform-Neustart).
+installeProzessWaechter();
 
 const baseConfig = loadConfig();
 const lock = acquireStorageLock(baseConfig);

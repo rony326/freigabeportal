@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
+import net from 'node:net';
 import request from 'supertest';
+import { EventEmitter } from 'node:events';
+import { exchangeCodeForToken, fetchPerson, fetchPersonById, fetchGroupMemberIds } from '../../src/services/churchtools.js';
+import { installeProzessWaechter } from '../../src/services/prozessWaechter.js';
 import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults, setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { createApp } from '../../src/app.js';
@@ -71,6 +75,52 @@ test('A4-03: gzip-Body mit angehängten Bytes beendet den Prozess nicht', async 
   assert.equal(danach.status, 302);
 });
 
+// A4-04: Ein defekter komprimierter Body (Content-Encoding: gzip + Trailing-Bytes) erzeugt einen
+// rohen zlib-Fehler ohne err.type. Er muss als 400 (Client-Fehler) beantwortet werden und darf
+// NICHT pro Anfrage einen Stacktrace ins Log schreiben — sonst flutet ein unauthentifizierter
+// Client das Log (Log-Flood, verstärkt O6).
+test('A4-04: defekter gzip-Body ergibt 400 ohne Stack-Log', async () => {
+  const { app } = frischeApp();
+  const body = Buffer.concat([zlib.gzipSync(Buffer.from('{"quelle":"scanner"}')), Buffer.from([0x00, 0x01, 0x02, 0x03, 0xff, 0xfe])]);
+  const original = console.error;
+  const logs = [];
+  console.error = (...args) => { logs.push(args.map((a) => (a && a.stack) || String(a)).join(' ')); };
+  let res;
+  try {
+    res = await request(app)
+      .post('/api/n8n/jobs')
+      .set('Content-Type', 'application/json')
+      .set('Content-Encoding', 'gzip')
+      .send(body);
+  } finally {
+    console.error = original;
+  }
+  assert.equal(res.status, 400, `erwartet 400, war ${res.status}`);
+  const stackArtig = logs.filter((zeile) => /incorrect header check|Z_DATA_ERROR|\n\s+at /.test(zeile));
+  assert.deepEqual(stackArtig, [], `kein Stacktrace ins Log erwartet, war: ${stackArtig.join(' | ')}`);
+});
+
+// A4-02: Prozess-Sicherheitsnetz. Eine unbehandelte Ausnahme UND eine unbehandelte
+// Promise-Ablehnung müssen je eine Logzeile (ohne Geheimnisse) erzeugen und zum sauberen Exit(1)
+// führen, damit der Plattform-Auto-Restart übernimmt. Re-entrancy: ein zweites Ereignis löst keinen
+// zweiten Exit aus.
+test('A4-02: Waechter loggt und beendet bei uncaughtException/unhandledRejection', () => {
+  for (const ereignis of ['uncaughtException', 'unhandledRejection']) {
+    const prozess = new EventEmitter();
+    const logs = [];
+    const exitCodes = [];
+    installeProzessWaechter({ prozess, logger: { error: (...a) => logs.push(a.map(String).join(' ')) }, exit: (c) => exitCodes.push(c) });
+    prozess.emit(ereignis, new Error('platzt'));
+    assert.equal(exitCodes.length, 1, `erwartet genau ein Exit bei ${ereignis}`);
+    assert.equal(exitCodes[0], 1);
+    assert.equal(logs.length, 1, 'erwartet genau eine Logzeile');
+    assert.match(logs[0], /platzt/);
+    // Re-entrancy: ein weiteres Ereignis beendet nicht erneut.
+    prozess.emit('uncaughtException', new Error('nochmal'));
+    assert.equal(exitCodes.length, 1, 'kein zweiter Exit erwartet');
+  }
+});
+
 // Step 1: ungültige Eingaben an Maschinen-Routen (hier: kaputter JSON-Body) müssen als 400 vom
 // zentralen Fehler-Handler (entity.*-Zweig in app.js) behandelt werden, nicht als 500/Absturz.
 test('A4: kaputter JSON-Body ergibt 400, kein Absturz', async () => {
@@ -121,4 +171,38 @@ test('A4: /healthz mit Monitoring-Schlüssel liefert Dienststatus', async () => 
 // zurückgesetzt). Übersprungen: der Nachweis würde die Verbindung real hängen lassen; Fix =
 // AbortSignal.timeout an allen CT-fetch-Aufrufen (die Signal-Plumbing existiert bereits für
 // fetchGroup/fetchGroupMemberIds). Siehe task-4-funde.md A4-01. (Hinweis für Task 5: übersprungen.)
-test('A4-01: ChurchTools-fetch-Aufrufe haben ein Zeitlimit', { skip: 'dokumentierter Fund A4-01: exchangeCodeForToken/fetchPerson/fetchPersonById/sync ohne AbortSignal; Fix in späterer Behebungswelle' }, () => {});
+// A4-01 (behoben): Eine hängende CT-Instanz (TCP offen, keine Antwort) darf weder die Login-Pfade
+// (exchangeCodeForToken/fetchPerson) noch den Sync-Pfad (fetchPersonById/fetchGroupMemberIds)
+// unbegrenzt blockieren. Nachweis mit einem echten TCP-Server, der die Verbindung annimmt und nie
+// antwortet: jeder Aufruf muss per AbortSignal.timeout abbrechen (und nicht hängen). Das Zeitlimit
+// ist über config.ctFetchTimeoutMs für den Test kurz gesetzt; produktiv gilt der 15-s-Standard.
+test('A4-01: ChurchTools-fetch-Aufrufe brechen bei hängender Gegenstelle per Zeitlimit ab', async () => {
+  // Server nimmt die Verbindung an, hält den Socket offen und antwortet nie.
+  const haltendeSockets = [];
+  const server = net.createServer((socket) => { haltendeSockets.push(socket); });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const config = {
+    baseUrl: `http://127.0.0.1:${port}`,
+    clientId: 'c', clientSecret: 's', redirectUri: 'http://portal.example.org/auth/callback',
+    ctFetchTimeoutMs: 200,
+  };
+  try {
+    const istZeitlimit = (err) => err && (err.name === 'TimeoutError' || err.name === 'AbortError'
+      || /aborted|timeout|zeit/i.test(String(err.cause?.name || err.cause?.message || err.message)));
+    for (const aufruf of [
+      () => exchangeCodeForToken(config, 'code'),
+      () => fetchPerson(config, 'access-token'),
+      () => fetchPersonById(config, 'login-token', 42),
+      () => fetchGroupMemberIds(config, 'login-token', '1'),
+    ]) {
+      const start = Date.now();
+      await assert.rejects(aufruf, istZeitlimit, 'Aufruf hätte per Zeitlimit abbrechen müssen');
+      // Beweis, dass das Zeitlimit greift und der Aufruf nicht einfach hängt: deutlich unter 15 s.
+      assert.ok(Date.now() - start < 5000, `Aufruf hing zu lange: ${Date.now() - start} ms`);
+    }
+  } finally {
+    for (const socket of haltendeSockets) socket.destroy();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

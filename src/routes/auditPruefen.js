@@ -2,12 +2,13 @@ import { Router } from 'express';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { normalisierePruefnummer, pruefeAuditNachweis } from '../services/auditPruefung.js';
 import { formatierePruefnummer } from '../services/auditNachweisJobs.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 
 // Oeffentlich (ohne Login) fuer die Revision; nur GET, daher kein CSRF-Token noetig.
 export function createAuditPruefenRouter({ db }) {
   const router = Router();
 
-  router.get('/', async (req, res, next) => {
+  router.get('/', asyncHandler(async (req, res, next) => {
     try {
       const abgeschaltet = getConfigValue(db, 'modul_audit_nachweis_aktiv') !== '1';
       const rohPaket = typeof req.query.paket === 'string' ? req.query.paket : '';
@@ -30,7 +31,7 @@ export function createAuditPruefenRouter({ db }) {
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

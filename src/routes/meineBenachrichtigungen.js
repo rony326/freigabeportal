@@ -11,6 +11,7 @@ import {
   buendelungStunden,
 } from '../services/benachrichtigung.js';
 import { stelleWartendeSofortZu } from '../services/mailZustellung.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 
 const BEZEICHNUNG = { sofort: 'Sofort', taeglich: 'Täglich', woechentlich: 'Wöchentlich' };
 
@@ -55,7 +56,7 @@ export function createMeineBenachrichtigungenRouter({ db, config, mailer, csrfPr
     render(res, req.currentPerson, { zugestellt: Number.isInteger(zugestellt) && zugestellt > 0 ? zugestellt : 0, flushFehler: req.query.flushFehler === '1' });
   });
 
-  router.post('/', csrfProtection, async (req, res, next) => {
+  router.post('/', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const person = req.currentPerson;
       const eingabe = req.body.benachrichtigung;
@@ -78,7 +79,7 @@ export function createMeineBenachrichtigungenRouter({ db, config, mailer, csrfPr
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

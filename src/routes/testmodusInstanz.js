@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { runPoolErinnerungenJob, runFreigabe2ErinnerungenJob, runMailDigestJob, runMailZustellungJob } from '../services/cronJobs.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 
 // Nur in der Test-Instanz gemountet (app.js, Zweig `testmodus`): Test-Postfach und Jobs per Knopf.
 // Ausgeführt werden ausschliesslich diese vier Jobs, gegen die Spiel-DB. Sync, Backup, Zeitstempel
@@ -22,7 +23,7 @@ export function createTestmodusInstanzRouter({ db, config, mailer, csrfProtectio
     res.render('testmodus-postfach', { mails, ergebnis: ergebnis ? ergebnis.split('|').slice(0, TESTMODUS_JOBS.length) : null });
   });
 
-  router.post('/jobs', csrfProtection, async (req, res, next) => {
+  router.post('/jobs', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const teile = [];
       for (const job of TESTMODUS_JOBS) {
@@ -40,7 +41,7 @@ export function createTestmodusInstanzRouter({ db, config, mailer, csrfProtectio
       }
       res.redirect(`/testmodus/postfach?ergebnis=${encodeURIComponent(teile.join('|'))}`);
     } catch (err) { next(err); }
-  });
+  }));
 
   return router;
 }

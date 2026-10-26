@@ -23,6 +23,7 @@ import { sendNotificationMitVertretung } from '../services/notify.js';
 import { markiereAlsKkAbrechnung } from '../services/kkMarkierung.js';
 import { personName } from '../services/auditLog.js';
 import { kommentarInfoFuer } from '../services/kommentare.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 
 export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -69,7 +70,7 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
     res.render('pool', daten);
   });
 
-  router.post('/:id/zuweisen', requirePermission(db, config, 'pool_zuweisen'), csrfProtection, async (req, res, next) => {
+  router.post('/:id/zuweisen', requirePermission(db, config, 'pool_zuweisen'), csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const job = getJobById(db, Number(req.params.id));
       // quelle === 'spesen' mirrors the exclusion already applied by listPoolJobs/listPoolRuecklaeufer
@@ -111,9 +112,9 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/:id/als-kk-abrechnung', csrfProtection, async (req, res, next) => {
+  router.post('/:id/als-kk-abrechnung', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const darf = personHasRole(req.currentPerson, config, 'buchhaltung') || personHasRole(req.currentPerson, config, 'superadmin');
       if (!darf || getConfigValue(db, 'modul_kreditkarten_aktiv') !== '1') {
@@ -131,7 +132,7 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

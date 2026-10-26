@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { nimmKkBelegEntgegen } from '../../services/kkBelegEingang.js';
 import { machineAuditContext, mitAuditKontext } from '../../services/auditContext.js';
+import { asyncCallback } from '../../middleware/asyncHandler.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 1 } });
 
@@ -15,7 +16,7 @@ export function createN8nKkBelegeRouter({ db, config, mailer }) {
   // Wie /api/n8n/jobs: Audit-Ereignisse dieser Route gehören dem n8n-Dienst, nicht 'anonymous'.
   router.use(machineAuditContext('service:n8n', 'n8n'));
   router.post('/', (req, res, next) => {
-    mitAuditKontext(upload.single('pdf'))(req, res, async (uploadErr) => {
+    mitAuditKontext(upload.single('pdf'))(req, res, asyncCallback(next, async (uploadErr) => {
       try {
         if (uploadErr) return res.status(400).json({ fehler: uploadErr.code === 'LIMIT_FILE_SIZE' ? 'datei_zu_gross' : 'upload_fehler' });
         const { status, body } = await nimmKkBelegEntgegen(db, config, mailer, { absender: req.body.absender, buffer: req.file?.buffer });
@@ -23,7 +24,7 @@ export function createN8nKkBelegeRouter({ db, config, mailer }) {
       } catch (err) {
         next(err);
       }
-    });
+    }));
   });
   return router;
 }

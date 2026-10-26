@@ -23,6 +23,7 @@ import { writeFinalDocument } from '../services/finalDocument.js';
 import { tsaTrustOptions } from '../services/tsaTrust.js';
 import { kommentarBereich } from './kommentare.js';
 import { listeKommentare } from '../services/kommentare.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 
 // Stand der Kommentare eines Vorgangs als "<Anzahl>:<letzte id>". Die Seite schreibt ihn beim
 // Rendern ins Formular; der POST vergleicht ihn vor dem Stempeln (Kommentar während die Seite offen
@@ -149,7 +150,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     renderForm(req, res, 200, result, { interessenskonflikt: '', begruendung: '' }, []);
   });
 
-  router.post('/:id', csrfProtection, async (req, res, next) => {
+  router.post('/:id', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const result = loadAuthorized(req, res);
       if (!result) return;
@@ -534,7 +535,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

@@ -20,6 +20,7 @@ import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, normalis
 import { extrahierePdfText } from '../services/pdfText.js';
 import { analysiereText, LEERE_ANALYSE, berechneVorschlaege } from '../services/kkTextAnalyse.js';
 import { kommentarBereich } from './kommentare.js';
+import { asyncCallback } from '../middleware/asyncHandler.js';
 
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 const MAX_ZEILEN = 100;
@@ -122,7 +123,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
 
   router.post('/:id/kk-abgleich', (req, res, next) => {
     mitAuditKontext(upload.any())(req, res, (uploadErr) => {
-      csrfProtection(req, res, async (csrfErr) => {
+      csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         const angelegteDateien = [];
         try {
@@ -350,7 +351,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           if (err instanceof KreditorFeldKonflikt) return res.status(400).render('error', { message: err.message });
           next(err);
         }
-      });
+      }));
     });
   });
 

@@ -90,6 +90,12 @@ export function testmodusWeiche({ db, config, holeTestApp, echterCsrfToken }) {
         beende(db, req, 'spielwiese_fehler', HINWEIS_SPIELWIESE);
         zeigeHinweis(req, res);
         next();
+      })
+      // Wirft einer der beiden Zweige selbst (DB-Fehler in beende/zeigeHinweis, synchroner Throw
+      // aus testApp), darf daraus keine unhandledRejection (= Prozess-Exit) werden.
+      .catch((err) => {
+        if (res.headersSent) return console.error('Testmodus: Fehler nach Antwortbeginn:', err?.message || err);
+        next(err);
       });
   };
 }

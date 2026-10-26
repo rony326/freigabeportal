@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { machineAuditContext } from '../services/auditContext.js';
 import { runTsaCrlAktualisierungJob } from '../services/tsaCrlUpdate.js';
 import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from '../services/cronJobs.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 
 function httpStatusFuer(status) {
   if (status === 'uebersprungen') return 409;
@@ -20,79 +21,79 @@ export function createCronRouter({ db, config, mailer }) {
   const router = Router();
   router.use(machineAuditContext('service:cron', 'Cron API'));
 
-  router.post('/sync-personen', async (req, res, next) => {
+  router.post('/sync-personen', asyncHandler(async (req, res, next) => {
     try {
       const result = await runSyncPersonenJob(db, config, mailer);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/pool-erinnerungen', async (req, res, next) => {
+  router.post('/pool-erinnerungen', asyncHandler(async (req, res, next) => {
     try {
       const result = await runPoolErinnerungenJob(db, config, mailer);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/freigabe2-erinnerungen', async (req, res, next) => {
+  router.post('/freigabe2-erinnerungen', asyncHandler(async (req, res, next) => {
     try {
       const result = await runFreigabe2ErinnerungenJob(db, config, mailer);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/pdf-bereinigung', async (req, res, next) => {
+  router.post('/pdf-bereinigung', asyncHandler(async (req, res, next) => {
     try {
       const result = await runPdfBereinigungJob(db, config);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/tsa-crl-aktualisierung', async (req, res, next) => {
+  router.post('/tsa-crl-aktualisierung', asyncHandler(async (req, res, next) => {
     try {
       const result = await runTsaCrlAktualisierungJob(db, config, mailer);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/zeitstempel-nachholen', async (req, res, next) => {
+  router.post('/zeitstempel-nachholen', asyncHandler(async (req, res, next) => {
     try {
       const result = await runZeitstempelNachholenJob(db, config);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/split-gruppen-nachholen', async (req, res, next) => {
+  router.post('/split-gruppen-nachholen', asyncHandler(async (req, res, next) => {
     try {
       const result = await runSplitGruppenNachholenJob(db, config);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/kk-beleg-erinnerungen', async (req, res, next) => {
+  router.post('/kk-beleg-erinnerungen', asyncHandler(async (req, res, next) => {
     try {
       const result = await runKkBelegErinnerungenJob(db, config, mailer);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/mail-zustellung', async (req, res, next) => {
+  router.post('/mail-zustellung', asyncHandler(async (req, res, next) => {
     try {
       const result = await runMailZustellungJob(db, config, mailer);
       // "Nichts fällig" ist kein Konflikt: 200 statt 409.
@@ -100,7 +101,7 @@ export function createCronRouter({ db, config, mailer }) {
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

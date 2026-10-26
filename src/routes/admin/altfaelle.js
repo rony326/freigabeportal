@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getAltfall, listAltfaelle, altfallAnzeige, altfallStand, entscheideAltfall, AltfallError } from '../../services/altfaelle.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../services/splitGruppenExport.js';
+import { asyncHandler } from '../../middleware/asyncHandler.js';
 
 // Admin -> Altfaelle: abgeschlossene Belege/Splitgruppen ohne belastbaren Freigabe- oder
 // Zahlungsnachweis. Export bleibt gesperrt, bis hier ausdruecklich entschieden wurde.
@@ -25,7 +26,7 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
     });
   }
 
-  router.get('/:id', async (req, res, next) => {
+  router.get('/:id', asyncHandler(async (req, res, next) => {
     try {
       const altfall = getAltfall(db, Number(req.params.id));
       if (!altfall) return res.status(404).render('error', { message: 'Kein offener Altfall mit dieser Nummer.' });
@@ -33,9 +34,9 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/:id', csrfProtection, async (req, res, next) => {
+  router.post('/:id', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const altfall = getAltfall(db, Number(req.params.id));
       if (!altfall) return res.status(409).render('error', { message: 'Dieser Fall ist nicht mehr offen.' });
@@ -66,7 +67,7 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

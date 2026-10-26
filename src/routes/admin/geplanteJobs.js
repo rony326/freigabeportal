@@ -3,6 +3,7 @@ import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentSyncLogs } from '../../db/syncLogRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
 import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from '../../services/cronJobs.js';
+import { asyncHandler } from '../../middleware/asyncHandler.js';
 
 const LOG_LIMIT = 10;
 
@@ -153,23 +154,23 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
   // by an admin click instead of a timer. Each run is already persisted before the redirect, so
   // the GET handler picks the just-created row straight back up as feedback (no separate flash
   // mechanism needed).
-  router.post('/sync-personen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+  router.post('/sync-personen/jetzt-ausfuehren', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       await runSyncPersonenJob(db, config, mailer);
       res.redirect('/admin/geplante-jobs?getriggert=sync-personen');
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/pool-erinnerungen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+  router.post('/pool-erinnerungen/jetzt-ausfuehren', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       await runPoolErinnerungenJob(db, config, mailer);
       res.redirect('/admin/geplante-jobs?getriggert=pool-erinnerungen');
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   router.post('/pdf-bereinigung/jetzt-ausfuehren', csrfProtection, (req, res, next) => {
     try {
@@ -180,50 +181,50 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     }
   });
 
-  router.post('/zeitstempel-nachholen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+  router.post('/zeitstempel-nachholen/jetzt-ausfuehren', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       await runZeitstempelNachholenJob(db, config);
       res.redirect('/admin/geplante-jobs?getriggert=zeitstempel-nachholen');
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/split-gruppen-nachholen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+  router.post('/split-gruppen-nachholen/jetzt-ausfuehren', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       await runSplitGruppenNachholenJob(db, config);
       res.redirect('/admin/geplante-jobs?getriggert=split-gruppen-nachholen');
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/freigabe2-erinnerungen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+  router.post('/freigabe2-erinnerungen/jetzt-ausfuehren', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       await runFreigabe2ErinnerungenJob(db, config, mailer);
       res.redirect('/admin/geplante-jobs?getriggert=freigabe2-erinnerungen');
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/kk-beleg-erinnerungen/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+  router.post('/kk-beleg-erinnerungen/jetzt-ausfuehren', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       await runKkBelegErinnerungenJob(db, config, mailer);
       res.redirect('/admin/geplante-jobs?getriggert=kk-beleg-erinnerungen');
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.post('/mail-zustellung/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+  router.post('/mail-zustellung/jetzt-ausfuehren', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       await runMailZustellungJob(db, config, mailer);
       res.redirect('/admin/geplante-jobs?getriggert=mail-zustellung');
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

@@ -18,6 +18,7 @@ import { createExportEvidence, readExportDocument, confirmArchiveReceipt, Archiv
 import { machineAuditContext, mitAuditKontext } from '../../services/auditContext.js';
 import { exportNachweis } from '../../services/exportSnapshot.js';
 import { pruefeEingangsPdf, PdfEingangFehler } from '../../services/pdfEingang.js';
+import { asyncCallback } from '../../middleware/asyncHandler.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
@@ -40,7 +41,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
   });
 
   router.post('/', (req, res, next) => {
-    mitAuditKontext(upload.single('pdf'))(req, res, async (uploadErr) => {
+    mitAuditKontext(upload.single('pdf'))(req, res, asyncCallback(next, async (uploadErr) => {
       try {
         if (uploadErr) {
           const message = uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Die PDF-Datei darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.';
@@ -174,7 +175,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
       } catch (err) {
         next(err);
       }
-    });
+    }));
   });
 
   // Every business and payment field comes from the frozen export evidence (services/exportSnapshot.js),

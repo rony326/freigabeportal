@@ -6,6 +6,7 @@ import { BENACHRICHTIGUNG_WERTE, WOCHENTAG_NAMEN, standardBenachrichtigung, bena
 import { stelleWartendeSofortZu } from '../../services/mailZustellung.js';
 import { listGeplantMailsGruppiertNachEmpfaenger } from '../../db/mailLogRepo.js';
 import { meldeAuditNachweisAenderung } from '../../services/auditNachweisJobs.js';
+import { asyncHandler } from '../../middleware/asyncHandler.js';
 
 const LOG_LIMIT = 10;
 
@@ -80,7 +81,7 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
     });
   });
 
-  router.post('/', csrfProtection, async (req, res) => {
+  router.post('/', csrfProtection, asyncHandler(async (req, res) => {
     const errors = [];
     const felder = {};
     for (const [feldName] of VORLAGEN_FELDER) {
@@ -160,9 +161,9 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
       }
     }
     res.redirect('/admin/mail-einstellungen?gespeichert=1');
-  });
+  }));
 
-  router.post('/jetzt-ausfuehren', csrfProtection, async (req, res, next) => {
+  router.post('/jetzt-ausfuehren', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const ergebnis = await runMailDigestJob(db, config, mailer);
       const zurueck = ergebnis?.zurueckgestellt > 0 ? `&zurueckgestellt=${ergebnis.zurueckgestellt}` : '';
@@ -170,7 +171,7 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

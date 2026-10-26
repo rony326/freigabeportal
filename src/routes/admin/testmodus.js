@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { BEISPIELPERSONEN } from '../../services/testmodus/beispieldaten.js';
+import { asyncHandler } from '../../middleware/asyncHandler.js';
 
 const STANDARD_PERSON = 'test-4'; // Dora Beispiel (Admin)
 const PERSONEN = BEISPIELPERSONEN.map((p) => ({ id: p.id, name: `${p.vorname} ${p.nachname}`, rolle: p.rolle }));
@@ -31,7 +32,7 @@ export function createTestmodusRouter({ db, steuerung, csrfProtection = (req, re
 
   router.get('/', (req, res) => zeige(req, res));
 
-  router.post('/ein', csrfProtection, async (req, res, next) => {
+  router.post('/ein', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       if (!req.session.testmodus) {
         try {
@@ -47,7 +48,7 @@ export function createTestmodusRouter({ db, steuerung, csrfProtection = (req, re
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   router.post('/aus', csrfProtection, (req, res) => {
     if (req.session.testmodus) {
@@ -68,7 +69,7 @@ export function createTestmodusRouter({ db, steuerung, csrfProtection = (req, re
     res.redirect('/pool');
   });
 
-  router.post('/zuruecksetzen', csrfProtection, async (req, res, next) => {
+  router.post('/zuruecksetzen', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       if (req.session.testmodus && req.body.bestaetigt !== '1') {
         return zeige(req, res, { status: 400, fehler: 'Der Testmodus ist eingeschaltet: Bitte bestätige das Zurücksetzen der Spielwiese.' });
@@ -88,7 +89,7 @@ export function createTestmodusRouter({ db, steuerung, csrfProtection = (req, re
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

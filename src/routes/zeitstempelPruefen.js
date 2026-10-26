@@ -7,13 +7,14 @@ import { canViewJobPdf } from '../services/jobAuthorization.js';
 import { verifyZeitstempel } from '../services/zeitstempel.js';
 import { jobDocument } from '../services/jobDocument.js';
 import { kommentarBereich } from './kommentare.js';
+import { asyncCallback, asyncHandler } from '../middleware/asyncHandler.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
-  router.get('/', async (req, res, next) => {
+  router.get('/', asyncHandler(async (req, res, next) => {
     try {
       const jobId = req.query.jobId ? Number(req.query.jobId) : null;
       if (!jobId) {
@@ -46,9 +47,9 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
-  router.get('/zertifikat', async (req, res, next) => {
+  router.get('/zertifikat', asyncHandler(async (req, res, next) => {
     try {
       const jobId = Number(req.query.jobId);
       const job = jobId ? jobDocument(getJobById(db, jobId)) : null;
@@ -63,14 +64,14 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   router.post('/', (req, res, next) => {
-    mitAuditKontext(upload.single('pdf'))(req, res, async (uploadErr) => {
+    mitAuditKontext(upload.single('pdf'))(req, res, asyncCallback(next, async (uploadErr) => {
       // csrfProtection must run after multer, not before: multer is what parses the multipart
       // body (including the _csrf text field) — running csrfProtection any earlier would find
       // req.body empty and reject every submission.
-      csrfProtection(req, res, async (csrfErr) => {
+      csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
       if (csrfErr) return next(csrfErr);
       try {
         if (uploadErr) {
@@ -101,8 +102,8 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
       } catch (err) {
         next(err);
       }
-      });
-    });
+      }));
+    }));
   });
 
   return router;

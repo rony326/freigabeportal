@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { listMailLog, getMailLogById } from '../../db/mailLogRepo.js';
 import { sendRenderedMail } from '../../services/notify.js';
 import { stelleMailZu } from '../../services/mailZustellung.js';
+import { asyncHandler } from '../../middleware/asyncHandler.js';
 
 export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -10,7 +11,7 @@ export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next
     res.render('admin/mails', { mails: listMailLog(db), gespeichert: req.query.gespeichert === '1' });
   });
 
-  router.post('/:id/erneut-versenden', csrfProtection, async (req, res, next) => {
+  router.post('/:id/erneut-versenden', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const eintrag = getMailLogById(db, Number(req.params.id));
       if (!eintrag) {
@@ -37,7 +38,7 @@ export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

@@ -4,6 +4,7 @@ import { currentAuditActor } from '../../services/auditContext.js';
 import { zeitpunktAnzeige } from '../../services/auditLog.js';
 import { einrichtungsStand, markiereSchritt, setzeOhneZeitstempel, SCHRITTE, mailErledigt, sicherungAktuell, datumAnzeige } from '../../services/ersteinrichtung.js';
 import { pruefeTechnik, testeChurchtools, sendeTestmail, loeseKernjobsAus, JOB_NAMEN, jobStatusText } from '../../services/einrichtungTests.js';
+import { asyncHandler } from '../../middleware/asyncHandler.js';
 
 const KERNJOBS = ['sync-personen', 'pool-erinnerungen', 'mail-zustellung'];
 const TAGE_7_MS = 7 * 24 * 60 * 60 * 1000;
@@ -65,26 +66,26 @@ export function createErsteinrichtungRouter({ db, config, mailer, statusCache = 
     zurueck(res, 'grundlagen');
   });
 
-  router.post('/churchtools-test', csrfProtection, async (req, res) => {
+  router.post('/churchtools-test', csrfProtection, asyncHandler(async (req, res) => {
     const ergebnis = await testeChurchtools(config);
     merke(req, 'churchtools', ergebnis);
     schreibeAudit(db, 'test_churchtools', { ok: ergebnis.ok });
     zurueck(res, 'churchtools');
-  });
+  }));
 
-  router.post('/testmail', csrfProtection, async (req, res) => {
+  router.post('/testmail', csrfProtection, asyncHandler(async (req, res) => {
     const ergebnis = await sendeTestmail(db, mailer, { person: req.currentPerson });
     merke(req, 'testmail', ergebnis);
     schreibeAudit(db, 'test_testmail', { status: ergebnis.status });
     zurueck(res, 'mail');
-  });
+  }));
 
-  router.post('/jobs', csrfProtection, async (req, res) => {
+  router.post('/jobs', csrfProtection, asyncHandler(async (req, res) => {
     const ergebnis = await loeseKernjobsAus(db, config, mailer, KERNJOBS);
     merke(req, 'jobs', { ergebnis });
     schreibeAudit(db, 'test_jobs', { jobs: ergebnis });
     zurueck(res, 'jobs');
-  });
+  }));
 
   router.post('/markieren', csrfProtection, (req, res) => {
     try {

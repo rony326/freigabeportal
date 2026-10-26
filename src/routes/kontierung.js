@@ -50,6 +50,7 @@ import {
   benachrichtigeNachAufsplitten,
   pruefeIbanNachAufsplitten,
 } from '../services/aufsplitten.js';
+import { asyncCallback, asyncHandler } from '../middleware/asyncHandler.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -148,10 +149,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   });
 
   router.post('/:id', (req, res, next) => {
-    mitAuditKontext(uploadBeleg.single('beleg'))(req, res, async (uploadErr) => {
+    mitAuditKontext(uploadBeleg.single('beleg'))(req, res, asyncCallback(next, async (uploadErr) => {
     // csrfProtection runs after multer parses the multipart body (the _csrf field included) —
     // any earlier and req.body would still be empty, rejecting every legitimate submission.
-    csrfProtection(req, res, async (csrfErr) => {
+    csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
     if (csrfErr) return next(csrfErr);
     try {
       const job = loadAuthorizedJob(req, res);
@@ -626,11 +627,11 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     } catch (err) {
       next(err);
     }
-    });
-    });
+    }));
+    }));
   });
 
-  router.post('/:id/zurueck-in-pool', csrfProtection, async (req, res, next) => {
+  router.post('/:id/zurueck-in-pool', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const job = loadAuthorizedJob(req, res, { zurueckgeben: true });
       if (!job) return;
@@ -672,7 +673,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   router.post('/:id/an-gruppe-zurueck', csrfProtection, (req, res) => {
     const job = loadAuthorizedJob(req, res, { zurueckgeben: true });
@@ -698,7 +699,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     res.redirect('/pool');
   });
 
-  router.post('/:id/als-kk-abrechnung', csrfProtection, async (req, res, next) => {
+  router.post('/:id/als-kk-abrechnung', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
@@ -713,7 +714,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   router.post('/:id/kk-markierung-aufheben', csrfProtection, (req, res) => {
     const job = loadAuthorizedJob(req, res);
@@ -769,10 +770,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   });
 
   router.post('/:id/aufsplitten', (req, res, next) => {
-    mitAuditKontext(uploadBeleg.any())(req, res, async (uploadErr) => {
+    mitAuditKontext(uploadBeleg.any())(req, res, asyncCallback(next, async (uploadErr) => {
     // csrfProtection runs after multer parses the multipart body (the _csrf field included) —
     // any earlier and req.body would still be empty, rejecting every legitimate submission.
-    csrfProtection(req, res, async (csrfErr) => {
+    csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
     if (csrfErr) return next(csrfErr);
     try {
       const job = loadAuthorizedJob(req, res);
@@ -906,8 +907,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     } catch (err) {
       next(err);
     }
-    });
-    });
+    }));
+    }));
   });
 
   return router;

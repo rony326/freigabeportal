@@ -346,8 +346,11 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     // unauthentifizierter Client das Log. Erfasst werden entity.*-Fehler (kaputtes JSON, zu gross)
     // UND rohe zlib-Dekodierfehler eines defekten komprimierten Bodys (Content-Encoding: gzip +
     // Trailing-Bytes → err.code 'Z_DATA_ERROR' o.ä., ohne err.type). Beides als 400 ohne Stack-Log.
+    // Der zlib-Zweig greift nur für den Anfrage-Body: body-parser markiert ihn als Client-Fehler
+    // (status 400, expose). Ein serverseitiger zlib-Fehler (ohne diese Markierung) bleibt ein
+    // normaler 500 mit Stack-Log und wird nicht als „Ungültiger Anfrage-Inhalt“ maskiert.
     const istKaputterBody = (typeof err.type === 'string' && err.type.startsWith('entity.'))
-      || (typeof err.code === 'string' && err.code.startsWith('Z_'));
+      || (typeof err.code === 'string' && err.code.startsWith('Z_') && (err.status ?? err.statusCode) === 400 && err.expose === true);
     if (istKaputterBody) {
       // Erfasst wird nur mit angemeldeter Person, damit anonyme Anfragen betrieb_fehler nicht füllen können.
       const fehlerId = req.currentPerson ? erfasseFehler(db, { req, err, status: 400 }).slice(0, 8) : null;

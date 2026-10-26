@@ -622,3 +622,28 @@ test('Echte App ohne je eingeschalteten Testmodus legt keine Spielwiesen-Dateien
   assert.deepEqual(readdirSync(u.config.jobsDir).filter((e) => e.includes('testmodus')), []);
   await u.aufraeumen();
 });
+
+// Review Task 5, Fund 5: wirft die Test-Instanz synchron, muss der Fehler über next(err) laufen —
+// nicht als unhandledRejection (= Prozess-Exit) enden.
+test('Weiche: synchroner Throw der Test-Instanz landet in next(err), keine unhandledRejection', async () => {
+  const { testmodusWeiche } = await import('../../src/middleware/testmodusWeiche.js');
+  const weiche = testmodusWeiche({
+    db: null,
+    config: { churchtools: { groupIdAdmin: '20' } },
+    holeTestApp: async () => () => { throw new Error('Test-Instanz kaputt'); },
+    echterCsrfToken: () => 'token',
+  });
+  const unbehandelt = [];
+  const merke = (g) => unbehandelt.push(g);
+  process.on('unhandledRejection', merke);
+  try {
+    const req = { session: { testmodus: true }, currentPerson: { aktiv: 1, gruppen: ['20'] }, path: '/pool', method: 'GET' };
+    const res = { headersSent: false, locals: {} };
+    const fehler = await new Promise((resolve) => weiche(req, res, resolve));
+    assert.match(String(fehler?.message), /Test-Instanz kaputt/);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(unbehandelt, []);
+  } finally {
+    process.off('unhandledRejection', merke);
+  }
+});

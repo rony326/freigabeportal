@@ -121,6 +121,59 @@ test('A4-02: Waechter loggt und beendet bei uncaughtException/unhandledRejection
   }
 });
 
+// Review Task 5, Fund 4: hängt ChurchTools beim Login, bekommt die Person nach dem Zeitlimit eine
+// 503-Seite mit klarem Hinweis; im Log steht eine knappe Zeile, kein Stacktrace.
+test('A4-01: ChurchTools-Zeitlimit beim Login ergibt 503 mit Hinweis, ohne Stack-Log', async () => {
+  const haltendeSockets = [];
+  const server = net.createServer((socket) => { haltendeSockets.push(socket); });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const config = testConfig();
+  config.churchtools = { ...config.churchtools, baseUrl: `http://127.0.0.1:${server.address().port}`, ctFetchTimeoutMs: 200 };
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const agent = request.agent(createApp({ db, config }));
+  const original = console.error;
+  const logs = [];
+  console.error = (...args) => { logs.push(args.map((a) => (a && a.stack) || String(a)).join(' ')); };
+  try {
+    const login = await agent.get('/auth/login');
+    const state = new URL(login.headers.location).searchParams.get('state');
+    const res = await agent.get(`/auth/callback?code=abc&state=${state}`);
+    assert.equal(res.status, 503);
+    assert.match(res.text, /ChurchTools antwortet gerade nicht\. Bitte in ein paar Minuten erneut versuchen\./);
+    assert.ok(logs.some((zeile) => /ChurchTools antwortet nicht/.test(zeile)), 'knappe Logzeile erwartet');
+    assert.deepEqual(logs.filter((zeile) => /\n\s+at /.test(zeile)), [], 'kein Stacktrace erwartet');
+  } finally {
+    console.error = original;
+    for (const socket of haltendeSockets) socket.destroy();
+    await new Promise((resolve) => server.close(resolve));
+    db.close();
+  }
+});
+
+// Review Task 5, Fund 2: ein zlib-Fehler, der NICHT vom Anfrage-Body stammt (ohne body-parser-
+// Markierung status 400/expose), darf nicht als 400 maskiert werden — er bleibt ein 500 mit
+// Stack-Log. Die Testroute wird vor dem 404-Handler in den Router-Stapel eingehängt.
+test('A4-04: serverseitiger zlib-Fehler bleibt 500 mit Stack-Log', async () => {
+  const { app } = frischeApp();
+  app.get('/__zlib-intern', (req, res, next) => {
+    try { zlib.gunzipSync(Buffer.from('kein gzip')); } catch (err) { next(err); }
+  });
+  const stapel = app._router.stack;
+  stapel.splice(2, 0, stapel.pop());
+  const original = console.error;
+  const logs = [];
+  console.error = (...args) => { logs.push(args.map((a) => (a && a.stack) || String(a)).join(' ')); };
+  let res;
+  try {
+    res = await request(app).get('/__zlib-intern');
+  } finally {
+    console.error = original;
+  }
+  assert.equal(res.status, 500);
+  assert.ok(logs.some((zeile) => /incorrect header check/.test(zeile) && /\n\s+at /.test(zeile)), 'Stack-Log erwartet');
+});
+
 // Step 1: ungültige Eingaben an Maschinen-Routen (hier: kaputter JSON-Body) müssen als 400 vom
 // zentralen Fehler-Handler (entity.*-Zweig in app.js) behandelt werden, nicht als 500/Absturz.
 test('A4: kaputter JSON-Body ergibt 400, kein Absturz', async () => {

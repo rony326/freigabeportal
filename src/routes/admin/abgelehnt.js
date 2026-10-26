@@ -4,6 +4,7 @@ import { getPersonById } from '../../db/personenRepo.js';
 import { logJobLoeschung } from '../../db/jobLoeschungenRepo.js';
 import { kommentarInfoFuer } from '../../services/kommentare.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../services/splitGruppenExport.js';
+import { asyncHandler } from '../../middleware/asyncHandler.js';
 
 export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -27,7 +28,7 @@ export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, 
     res.render('admin/abgelehnt-loeschen', { job, errors: [], begruendung: '' });
   });
 
-  router.post('/:id/loeschen', csrfProtection, async (req, res, next) => {
+  router.post('/:id/loeschen', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const job = getJobById(db, Number(req.params.id));
       if (!job || job.status !== 'abgelehnt') {
@@ -83,7 +84,7 @@ export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, 
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

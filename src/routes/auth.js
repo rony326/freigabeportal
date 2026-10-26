@@ -5,6 +5,15 @@ import { upsertPerson, getPersonById } from '../db/personenRepo.js';
 import { erfasseAnmeldung, sendeNeuesGeraetMail } from '../services/nutzung.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
 import { schreibeTestmodusAudit } from './admin/testmodus.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
+
+export const CT_ZEITLIMIT_MELDUNG = 'ChurchTools antwortet gerade nicht. Bitte in ein paar Minuten erneut versuchen.';
+
+// fetch() mit AbortSignal.timeout lehnt mit einem DOMException 'TimeoutError' ab ('AbortError' bei
+// einem manuell abgebrochenen Signal).
+function istZeitlimit(err) {
+  return err?.name === 'TimeoutError' || err?.name === 'AbortError';
+}
 
 export function createAuthRouter({ db, config, mailer = null, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -15,7 +24,7 @@ export function createAuthRouter({ db, config, mailer = null, csrfProtection = (
     res.redirect(buildAuthorizeUrl(config.churchtools, state));
   });
 
-  router.get('/callback', async (req, res, next) => {
+  router.get('/callback', asyncHandler(async (req, res, next) => {
     try {
       const { code, state } = req.query;
       if (!state || state !== req.session.oauthState) {
@@ -86,9 +95,16 @@ export function createAuthRouter({ db, config, mailer = null, csrfProtection = (
       });
       return;
     } catch (err) {
+      // Review Task 5, Fund 4: hängt ChurchTools (Zeitlimit aus services/churchtools.js), ist das
+      // kein Fehler des Portals — 503 mit klarem Hinweis statt generischer 500-Seite, und nur eine
+      // knappe Logzeile statt Stacktrace/betrieb_fehler pro Anmeldeversuch.
+      if (istZeitlimit(err)) {
+        console.error('Anmeldung: ChurchTools antwortet nicht (Zeitlimit überschritten).');
+        return res.status(503).render('error', { message: CT_ZEITLIMIT_MELDUNG });
+      }
       next(err);
     }
-  });
+  }));
 
   router.post('/logout', csrfProtection, (req, res, next) => {
     // Abmelden beendet den Testmodus (im echten Audit-Log vermerkt).

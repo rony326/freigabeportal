@@ -13,6 +13,7 @@ import { detectBelegMimetype, buildBelegPdf } from '../services/belegAnhaengen.j
 import { pruefeEingangsPdf, PdfEingangFehler } from '../services/pdfEingang.js';
 import { renderFirstPageThumbnail } from '../services/thumbnail.js';
 import { sendNotification } from '../services/notify.js';
+import { asyncCallback } from '../middleware/asyncHandler.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const AUSLAGE_DATUM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -52,7 +53,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
     // exists once multer has parsed the multipart body — same ordering kontierung.js already
     // uses for its own multipart POST routes.
     mitAuditKontext(uploadBelege.any())(req, res, (uploadErr) => {
-      csrfProtection(req, res, async (csrfErr) => {
+      csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {
           const alleKonten = listKonten(db);
@@ -236,7 +237,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
         } catch (err) {
           next(err);
         }
-      });
+      }));
     });
   });
 

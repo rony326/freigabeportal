@@ -10,6 +10,7 @@ import {
   KOMMENTAR_MAX_LAENGE,
 } from '../services/kommentare.js';
 import { erfasseFehler } from '../services/nutzung.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 
 // Erlaubte Rücksprungziele: nur die Seiten mit Kommentarbereich, mit ihren tatsächlichen
 // Mount-Pfaden aus src/app.js (Ablehnung hängt unter /abgelehnt, der KK-Abgleich unter
@@ -61,7 +62,7 @@ export function createKommentareRouter({ db, config, mailer, csrfProtection = (r
     });
   }
 
-  router.post('/:jobId', csrfProtection, async (req, res) => {
+  router.post('/:jobId', csrfProtection, asyncHandler(async (req, res) => {
     const job = /^\d+$/.test(req.params.jobId) ? getJobById(db, Number(req.params.jobId)) : null;
     if (!job || !darfKommentareSehen(db, config, req.currentPerson, job)) {
       return res.status(403).render('error', { message: 'Kein Zugriff auf diesen Vorgang.' });
@@ -86,7 +87,7 @@ export function createKommentareRouter({ db, config, mailer, csrfProtection = (r
     }
     const ziel = sicheresZiel(zurueck);
     res.redirect(ziel ? `${ziel}#kommentare` : '/');
-  });
+  }));
 
   return router;
 }

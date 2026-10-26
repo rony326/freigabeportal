@@ -13,6 +13,7 @@ import { listUmhaengenZiele, umhaengeVorgang, istUmhaengbar, MIN_BEMERKUNG_LAENG
 import { ermittleStriktesWeiterleitungsZiel } from '../../services/kontierungZugriff.js';
 import { kommentarBereich } from '../kommentare.js';
 import { kommentarInfoFuer } from '../../services/kommentare.js';
+import { asyncHandler } from '../../middleware/asyncHandler.js';
 
 const NICHT_LAUFEND = 'Dieser Vorgang existiert nicht oder ist nicht (mehr) in Bearbeitung.';
 
@@ -90,7 +91,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     renderDetail(req, res, 200, job, { umgehaengt: req.query.umgehaengt === '1' });
   });
 
-  router.post('/:id/umhaengen', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, async (req, res, next) => {
+  router.post('/:id/umhaengen', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const job = ladeLaufendenJob(req.params.id);
       if (!job || !istUmhaengbar(job)) return res.status(404).render('error', { message: NICHT_LAUFEND });
@@ -121,7 +122,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

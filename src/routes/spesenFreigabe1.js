@@ -18,6 +18,7 @@ import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/dow
 import { sendNotification, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from '../services/notify.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { kommentarBereich } from './kommentare.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 
 export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -84,7 +85,7 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
     renderForm(req, res, 200, result, { interessenskonflikt: '', begruendung: '' }, []);
   });
 
-  router.post('/:id', csrfProtection, async (req, res, next) => {
+  router.post('/:id', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const result = loadAuthorized(req, res);
       if (!result) return;
@@ -276,7 +277,7 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
     } catch (err) {
       next(err);
     }
-  });
+  }));
 
   return router;
 }

@@ -14,6 +14,7 @@ import { detectBelegMimetype } from '../services/belegAnhaengen.js';
 import { darfAufKarteErfassen, listErfassbareKarten, darfBelegBearbeiten, darfBelegSehen } from '../services/kkRechte.js';
 import { POSITION_PATTERN } from '../services/aufsplitten.js';
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, KK_DATUM_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
+import { asyncCallback } from '../middleware/asyncHandler.js';
 
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 const uploadBeleg = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BELEG_SIZE, files: 1 } });
@@ -88,7 +89,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
 
   router.post('/belege', (req, res, next) => {
     mitAuditKontext(uploadBeleg.single('beleg'))(req, res, (uploadErr) => {
-      csrfProtection(req, res, async (csrfErr) => {
+      csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {
           if (!modulAktiv()) return res.status(403).render('error', { message: 'Die Kreditkarten-Belege sind derzeit deaktiviert.' });
@@ -110,7 +111,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
         } catch (err) {
           next(err);
         }
-      });
+      }));
     });
   });
 
@@ -150,7 +151,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
 
   router.post('/belege/:id', (req, res, next) => {
     mitAuditKontext(uploadBeleg.single('beleg'))(req, res, (uploadErr) => {
-      csrfProtection(req, res, async (csrfErr) => {
+      csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {
           const beleg = ladeBearbeitbarenBeleg(req, res);
@@ -187,7 +188,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
         } catch (err) {
           next(err);
         }
-      });
+      }));
     });
   });
 

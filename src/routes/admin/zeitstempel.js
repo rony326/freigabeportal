@@ -5,6 +5,7 @@ import {
   parseEmpfaengerListe, sendeAuditPruefnummer, meldeAuditEmpfaengerWechsel,
   meldeAuditNachweisAenderung, listPaketeOhneZeitstempel,
 } from '../../services/auditNachweisJobs.js';
+import { asyncHandler } from '../../middleware/asyncHandler.js';
 
 const URL_PATTERN = /^https?:\/\//;
 const RHYTHMEN = { monatlich: 'monatlich', quartalsweise: 'quartalsweise', jaehrlich: 'jährlich' };
@@ -74,7 +75,7 @@ export function createZeitstempelAdminRouter({ db, config = null, mailer = null,
     renderSeite(res, 200, currentState(), { gespeichert: req.query.gespeichert === '1', versand: req.query.versand });
   });
 
-  router.post('/', csrfProtection, async (req, res) => {
+  router.post('/', csrfProtection, asyncHandler(async (req, res) => {
     const { tsaUrl, tsaUser, tsaPasswort, warnungAbStunden } = req.body;
     const trimmedUrl = (tsaUrl || '').trim();
     const trimmedUser = (tsaUser || '').trim();
@@ -151,9 +152,9 @@ export function createZeitstempelAdminRouter({ db, config = null, mailer = null,
       console.error('Audit-Nachweis: Änderungsmail fehlgeschlagen', err);
     }
     res.redirect('/admin/zeitstempel?gespeichert=1');
-  });
+  }));
 
-  router.post('/audit-pruefnummer-senden', csrfProtection, async (req, res) => {
+  router.post('/audit-pruefnummer-senden', csrfProtection, asyncHandler(async (req, res) => {
     let status;
     try {
       ({ status } = await sendeAuditPruefnummer(db, config, mailer));
@@ -162,7 +163,7 @@ export function createZeitstempelAdminRouter({ db, config = null, mailer = null,
       return res.status(500).render('error', { message: 'Der Versand der Prüfnummer ist fehlgeschlagen.' });
     }
     res.redirect(`/admin/zeitstempel?versand=${status}`);
-  });
+  }));
 
   return router;
 }

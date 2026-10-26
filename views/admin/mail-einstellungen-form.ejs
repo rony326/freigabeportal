@@ -127,6 +127,10 @@
         <input type="text" class="form-control" id="digestBetreff" name="digestBetreff" value="<%= digestBetreff %>" required>
         <label class="form-label mt-2" for="digestText">Digest — Text</label>
         <textarea class="form-control" id="digestText" name="digestText" rows="4" required><%= digestText %></textarea>
+        <div class="form-text">Variablen: %empfaengerName%, %anzahl%, %eintraege%, %zusammenfassung%, %einstellungenLink%, %link%, %portalName%</div>
+        <% if (!String(digestText).includes('%zusammenfassung%') || !String(digestText).includes('%einstellungenLink%')) { %>
+          <div class="alert alert-warning mt-2 py-2 small" id="digestVorlageHinweis">Die Vorlage nennt nicht <%= [!String(digestText).includes('%zusammenfassung%') ? '%zusammenfassung%' : null, !String(digestText).includes('%einstellungenLink%') ? '%einstellungenLink%' : null].filter(Boolean).join(' und ') %>: Empfänger erfahren dann nicht den Rhythmus bzw. finden keinen Link zu ihren Einstellungen.</div>
+        <% } %>
       </div>
       <div class="mb-3">
         <label class="form-label" for="freigabe2ReminderBetreff">Freigabe 2 – Reminder — Betreff</label>

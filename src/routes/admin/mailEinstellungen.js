@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
 import { runMailDigestJob } from '../../services/cronJobs.js';
-import { BENACHRICHTIGUNG_WERTE, WOCHENTAG_NAMEN, standardBenachrichtigung, digestWochentag } from '../../services/benachrichtigung.js';
+import { BENACHRICHTIGUNG_WERTE, WOCHENTAG_NAMEN, standardBenachrichtigung, benachrichtigungFuer, digestWochentag } from '../../services/benachrichtigung.js';
+import { stelleWartendeSofortZu } from '../../services/mailZustellung.js';
+import { listGeplantMailsGruppiertNachEmpfaenger } from '../../db/mailLogRepo.js';
 import { meldeAuditNachweisAenderung } from '../../services/auditNachweisJobs.js';
 
 const LOG_LIMIT = 10;
@@ -82,7 +84,8 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
     const errors = [];
     const felder = {};
     for (const [feldName] of VORLAGEN_FELDER) {
-      const wert = (req.body[feldName] || '').trim();
+      // Textareas kommen als CRLF: auf LF vereinheitlichen, damit Vergleiche und Mails konsistent sind.
+      const wert = String(req.body[feldName] || '').replace(/\r\n?/g, '\n').trim();
       if (!wert) {
         errors.push(`${feldName} darf nicht leer sein.`);
       }
@@ -129,6 +132,7 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
     if (getConfigValue(db, 'mail_vorlage_audit_pruefnummer_text') !== felder.auditPruefnummerText) {
       aenderungen.push('Text der Prüfnummer-Mail wurde geändert');
     }
+    const alterStandard = standardBenachrichtigung(db);
     for (const [feldName, configKey] of VORLAGEN_FELDER) {
       setConfigValue(db, configKey, felder[feldName]);
     }
@@ -136,6 +140,17 @@ export function createMailEinstellungenRouter({ db, config, mailer, csrfProtecti
     setConfigValue(db, 'mail_digest_wochentag', String(wochentagNum));
     setConfigValue(db, 'mail_batching_stunde', String(batchingStundeNum));
     setConfigValue(db, 'mail_batching_minute', String(batchingMinuteNum));
+    // Standard neu "sofort": Wartendes aller Adressen, die nun sofort gelten, gleich zustellen.
+    if (standardWahl === 'sofort' && alterStandard !== 'sofort') {
+      for (const empfaenger of [...listGeplantMailsGruppiertNachEmpfaenger(db).keys()]) {
+        if (benachrichtigungFuer(db, empfaenger) !== 'sofort') continue;
+        try {
+          await stelleWartendeSofortZu(db, config, mailer, empfaenger, { vorher: alterStandard });
+        } catch (err) {
+          console.error('Standard auf sofort: Zustellung wartender Mails fehlgeschlagen', err);
+        }
+      }
+    }
     // Mail ist Nebenwirkung: ein Mailfehler macht das Speichern nicht rückgängig.
     if (aenderungen.length > 0) {
       try {

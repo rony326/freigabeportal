@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
@@ -148,6 +149,53 @@ test('Hinweis bei wöchentlich (168 h > Frist), bei täglich nur wenn die Frist 
 test('Radios haben grosse Touch-Ziele (min-height 44 px)', async () => {
   const db = frischeDb();
   const res = await get(buildTestApp(db));
-  assert.match(res.text, /min-height:\s*44px/);
+  assert.match(res.text, /class="benachrichtigung-option"/);
+  assert.doesNotMatch(res.text, /\.benachrichtigung-option\s*\{/);
+  const css = readFileSync(new URL('../../public/css/portal.css', import.meta.url), 'utf8');
+  assert.match(css, /\.benachrichtigung-option\s*\{[^}]*min-height:\s*44px/);
+  db.close();
+});
+
+// --- Abschlussprüfung ---
+
+test('F3: gemeinsame Adresse - Seite nennt den tatsächlich geltenden Wert', async () => {
+  const db = frischeDb();
+  upsertPerson(db, { id: '2', vorname: 'Bert', nachname: 'Muster', email: 'ANNA@example.org', gruppen: [], loggedInNow: true });
+  setzeBenachrichtigung(db, '1', 'woechentlich');
+  const app = buildTestApp(db);
+  const res = await get(app);
+  assert.match(res.text, /Deine Adresse wird mit anderen Personen geteilt; es gilt: Sofort/);
+  setzeBenachrichtigung(db, '2', 'woechentlich');
+  assert.doesNotMatch((await get(app)).text, /Adresse wird mit anderen/);
+  db.close();
+});
+
+test('F4: Person ohne Mailadresse sieht den Hinweis, kann speichern, nichts wird zugestellt', async () => {
+  const db = frischeDb();
+  upsertPerson(db, { id: '3', vorname: 'Ohne', nachname: 'Mail', email: '', gruppen: [], loggedInNow: true });
+  const app = buildTestApp(db);
+  assert.match((await get(app, '3')).text, /Für dich ist keine Mailadresse hinterlegt/);
+  assert.doesNotMatch((await get(app, '1')).text, /keine Mailadresse hinterlegt/);
+  reiheBenachrichtigungEin(db, { to: '', typ: 'zuweisung', jobId: null, variablen: { empfaengerName: 'X', jobDateiname: 'a.pdf', grund: 'G', link: 'L' } });
+  const res = await post(app, 'sofort', '3');
+  assert.equal(res.status, 302);
+  assert.equal(getPersonById(db, '3').benachrichtigung, 'sofort');
+  assert.equal(app.mailer.sent.length, 0);
+  db.close();
+});
+
+test('P1: scheitert die Sofort-Zustellung, meldet die Seite, dass es später erneut versucht wird', async () => {
+  const db = frischeDb();
+  setzeBenachrichtigung(db, '1', 'woechentlich');
+  zuweisung(db, 'anna@example.org');
+  const app = buildTestApp(db);
+  app.mailer.sendMail = async () => { throw new Error('SMTP down'); };
+  const res = await post(app, 'sofort');
+  assert.equal(res.status, 302);
+  assert.match(res.headers.location, /flushFehler=1/);
+  const seite = await request(app).get(res.headers.location).set('x-test-person-id', '1');
+  assert.match(seite.text, /Die wartenden Mails konnten nicht sofort verschickt werden und werden später erneut versucht\./);
+  assert.doesNotMatch(seite.text, /wartende Mail(s)? wurde/);
+  assert.equal(listMailLog(db).filter((m) => m.status === 'geplant').length, 1);
   db.close();
 });

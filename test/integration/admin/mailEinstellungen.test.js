@@ -242,3 +242,58 @@ test('Änderung der Prüfnummer-Mail-Vorlage meldet an die Revision (ohne Vorlag
   assert.equal(app.mailer.sent.length, 0);
   db.close();
 });
+
+// --- Abschlussprüfung ---
+
+test('F1: Vorlagen werden mit LF gespeichert (CRLF aus der Textarea normalisiert)', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const res = await request(buildTestApp(db)).post('/admin/mail-einstellungen').set('x-test-person-id', '99').type('form')
+    .send({ ...VALID_BODY, digestText: 'Zeile 1\r\n\r\nZeile 2\r\n', zuweisungText: 'a\rb' });
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'mail_vorlage_digest_text'), 'Zeile 1\n\nZeile 2');
+  assert.equal(getConfigValue(db, 'mail_vorlage_zuweisung_text'), 'a\nb');
+  db.close();
+});
+
+test('F2: Hinweis, wenn die Digest-Vorlage %zusammenfassung% oder %einstellungenLink% nicht enthält', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const hol = () => request(app).get('/admin/mail-einstellungen').set('x-test-person-id', '99');
+  assert.doesNotMatch((await hol()).text, /digestVorlageHinweis/);
+  setConfigValue(db, 'mail_vorlage_digest_text', 'Eigener Text %eintraege%');
+  const res = await hol();
+  assert.match(res.text, /digestVorlageHinweis/);
+  assert.match(res.text, /nennt nicht %zusammenfassung% und %einstellungenLink%/);
+  setConfigValue(db, 'mail_vorlage_digest_text', 'X %zusammenfassung% Y %einstellungenLink%');
+  assert.doesNotMatch((await hol()).text, /digestVorlageHinweis/);
+  db.close();
+});
+
+test('F5: Standard auf sofort stellt Wartendes der nun sofort geltenden Empfänger gleich zu', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  upsertPerson(db, { id: '1', vorname: 'A', nachname: 'A', email: 'standard@example.org', gruppen: [], loggedInNow: true });
+  upsertPerson(db, { id: '2', vorname: 'B', nachname: 'B', email: 'woche@example.org', gruppen: [], loggedInNow: true });
+  setConfigValue(db, 'mail_standard_benachrichtigung', 'woechentlich');
+  setzeBenachrichtigung(db, '2', 'woechentlich');
+  zuweisungMail(db, 'standard@example.org');
+  zuweisungMail(db, 'woche@example.org');
+  const app = buildTestApp(db);
+  const res = await request(app).post('/admin/mail-einstellungen').set('x-test-person-id', '99').type('form')
+    .send({ ...VALID_BODY, standardBenachrichtigung: 'sofort', digestBetreff: 'Deine %zusammenfassung% Liste' });
+  assert.equal(res.status, 302);
+  assert.deepEqual(app.mailer.sent.map((m) => m.to), ['standard@example.org']);
+  assert.match(app.mailer.sent[0].subject, /wöchentliche/);
+  const stati = db.prepare('SELECT empfaenger, status FROM mail_log ORDER BY id').all();
+  assert.deepEqual(stati.map((s) => s.status), ['versendet', 'geplant']);
+  db.close();
+});
+
+function zuweisungMail(db, to) {
+  return reiheBenachrichtigungEin(db, { to, typ: 'zuweisung', jobId: null, variablen: { empfaengerName: 'X', jobDateiname: 'a.pdf', grund: 'G', link: 'L' } });
+}

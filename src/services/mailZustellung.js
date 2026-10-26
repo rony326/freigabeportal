@@ -182,9 +182,41 @@ export function markiereDigestZeilenFehlgeschlagen(db, zeilen, meldung, jetzt = 
   });
 }
 
+// Wort für %zusammenfassung%; bei "sofort" (einmalige Zustellung nach dem Wechsel) neutral.
+export function zusammenfassungsWort(wert) {
+  return wert === 'woechentlich' ? 'wöchentliche' : wert === 'taeglich' ? 'tägliche' : 'gesammelte';
+}
+
+// Stellt die wartenden ('geplant') Mails einer Adresse sofort als eine Digest-Mail zu (Wechsel auf
+// "sofort" durch die Person oder die Administration). `vorher` ist die bisherige wirksame Wahl und
+// bestimmt das Wort in %zusammenfassung%. Liefert { zugestellt, fehlgeschlagen }.
+export async function stelleWartendeSofortZu(db, config, mailer, email, { vorher = null } = {}) {
+  const adresse = String(email ?? '').trim().toLowerCase();
+  if (!adresse) return { zugestellt: 0, fehlgeschlagen: 0 };
+  const zeilen = db
+    .prepare("SELECT id, empfaenger FROM mail_log WHERE status = 'geplant' AND LOWER(TRIM(empfaenger)) = ? ORDER BY versucht_am, id")
+    .all(adresse);
+  if (!zeilen.length) return { zugestellt: 0, fehlgeschlagen: 0 };
+  let vorlage;
+  try {
+    vorlage = ladeDigestVorlage(db);
+  } catch (err) {
+    console.error('Sofort-Zustellung: Digest-Vorlage unbrauchbar', err);
+    return { zugestellt: 0, fehlgeschlagen: zeilen.length };
+  }
+  const status = await stelleDigestZu(db, config, mailer, {
+    empfaenger: zeilen[0].empfaenger,
+    ids: zeilen.map((z) => z.id),
+    vorlage,
+    zusammenfassung: zusammenfassungsWort(vorher),
+  });
+  if (status === 'versendet') return { zugestellt: zeilen.length, fehlgeschlagen: 0 };
+  return { zugestellt: 0, fehlgeschlagen: status === null ? 0 : zeilen.length };
+}
+
 // Ein Digest-Versuch für einen Empfänger über die übergebenen 'geplant'-Zeilen. Liefert
 // 'versendet' | 'geplant' (Wiederholung vorgesehen) | 'fehlgeschlagen' | null (nichts beansprucht).
-export async function stelleDigestZu(db, config, mailer, { empfaenger, ids, vorlage, jetzt = Date.now() }) {
+export async function stelleDigestZu(db, config, mailer, { empfaenger, ids, vorlage, jetzt = Date.now(), zusammenfassung = null }) {
   const { token, zeilen } = beanspruche(db, ids, 'geplant', jetzt);
   if (!zeilen.length) return null;
   const variablen = {
@@ -193,7 +225,7 @@ export async function stelleDigestZu(db, config, mailer, { empfaenger, ids, vorl
     eintraege: zeilen.map((z) => (z.job_id != null ? `- ${z.betreff} (Job #${z.job_id})` : `- ${z.betreff}`)).join('\n'),
     link: `${config.publicBaseUrl}/pool`,
     // Aktuelle Wahl des Empfängers (auch bei Wiederholungen): "Wöchentliche" nur bei wöchentlich.
-    zusammenfassung: benachrichtigungFuer(db, empfaenger) === 'woechentlich' ? 'wöchentliche' : 'tägliche',
+    zusammenfassung: zusammenfassung ?? zusammenfassungsWort(benachrichtigungFuer(db, empfaenger)),
     einstellungenLink: `${config.publicBaseUrl}/meine-benachrichtigungen`,
     portalName: getConfigValue(db, 'seiten_titel') || 'Freigabeportal',
   };

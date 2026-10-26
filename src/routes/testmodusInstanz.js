@@ -30,6 +30,7 @@ export function createTestmodusInstanzRouter({ db, config, mailer, csrfProtectio
         try {
           const r = await job.fn(db, config, mailer);
           status = STATUS_TEXT[r?.status] || r?.status || 'erfolgreich';
+          if (r?.zurueckgestellt > 0) status += ` (${r.zurueckgestellt} wöchentlich zurückgestellt)`;
         } catch (err) {
           console.error(`Testmodus: Job ${job.name} fehlgeschlagen:`, err?.stack || err);
           const meldung = String(err?.message || err || '').replace(/[|\r\n]+/g, ' ').slice(0, 200);

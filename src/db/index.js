@@ -1032,7 +1032,9 @@ function migrateBenachrichtigungEinstellung(db) {
     db.prepare('INSERT INTO admin_config (key, value) VALUES (?, ?)').run('mail_standard_benachrichtigung', standard);
   }
   for (const [key, alt] of Object.entries(ALTE_DIGEST_VORLAGE)) {
-    if (alt.includes(wert(key))) {
+    const aktuell = wert(key);
+    // Browser senden Textareas mit CRLF: Zeilenenden und Rand-Leerraum vor dem Vergleich vereinheitlichen.
+    if (aktuell !== null && alt.includes(aktuell.replace(/\r\n?/g, '\n').trim())) {
       db.prepare('UPDATE admin_config SET value = ? WHERE key = ?').run(getDefaultConfigValue(key), key);
     }
   }

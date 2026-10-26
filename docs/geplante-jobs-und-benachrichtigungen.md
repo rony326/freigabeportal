@@ -470,7 +470,7 @@ Die Administration legt den Standard (Default `sofort`) und den Wochentag
 - **Wöchentlich holt nach:** Auch ausserhalb des Wochentags geht der Digest raus,
   sobald die älteste wartende Mail 7 Tage alt ist.
 - **Gemeinsame Adressen:** Die Zuordnung erfolgt über die Mailadresse (ohne
-  Gross-/Kleinschreibung und Leerzeichen). Teilen sich mehrere Personen
+  Gross-/Kleinschreibung; Leerzeichen um die gesuchte Adresse werden ignoriert, gespeicherte Adressen werden nicht getrimmt). Teilen sich mehrere Personen
   eine Adresse, gilt die **kürzeste Bündelung** (sofort vor täglich vor
   wöchentlich); aktive Personen gehen deaktivierten vor. Adressen ohne passende
   Person (z. B. Sammeladressen) erhalten den Admin-Standard.
@@ -494,10 +494,44 @@ dem alten Standardtext entspricht; angepasste Vorlagen bleiben unberührt.
 
 **Digest-Vorlage:** zusätzlich zu den bisherigen Variablen (`%empfaengerName%`,
 `%anzahl%`, `%eintraege%`, `%link%`, `%portalName%`) stehen `%zusammenfassung%`
-(„Tägliche“ bzw. „Wöchentliche“, nach der aktuellen Wahl) und
-`%einstellungenLink%` (Link auf `/meine-benachrichtigungen`) zur Verfügung. Der
-Standardbetreff lautet „Freigabeportal: %zusammenfassung% Zusammenfassung
-(%anzahl% Ereignisse)“.
+(klein geschrieben: „tägliche“, „wöchentliche“ nach der aktuellen Wahl; „gesammelte“
+bei einer einmaligen Sofort-Zustellung nach dem Wechsel auf „sofort“) und
+`%einstellungenLink%` (Link auf `/meine-benachrichtigungen`) zur Verfügung. Da
+der Wert klein geschrieben ist, gehört er mitten in einen Satz („Deine
+%zusammenfassung% Zusammenfassung“). Standardbetreff:
+„Freigabeportal: Deine %zusammenfassung% Zusammenfassung (%anzahl% Ereignisse)“.
+Standardtext:
+
+```
+Hallo %empfaengerName%,
+
+Deine %zusammenfassung% Zusammenfassung (Einstellung ändern: %einstellungenLink%)
+
+Folgende Ereignisse warten auf dich:
+
+%eintraege%
+
+Bitte im Freigabeportal anmelden: %link%
+
+Freundliche Grüsse
+%portalName%
+```
+
+Die Admin-Maske speichert Vorlagen mit LF-Zeilenenden (CRLF aus dem Browser wird
+normalisiert) und warnt, wenn der Digest-Text `%zusammenfassung%` oder
+`%einstellungenLink%` nicht enthält. Die Migration vergleicht Zeilenenden- und
+Rand-Leerraum-unabhängig; angepasste Vorlagen bleiben unverändert.
+
+**Weitere Regeln:**
+
+- Personen ohne Mailadresse sehen auf der Seite einen Hinweis; die Wahl lässt
+  sich speichern, es wird aber nichts zugestellt.
+- Teilen sich Personen eine Adresse, zeigt die Seite den tatsächlich geltenden Wert.
+- Stellt die Administration den Standard auf „sofort“, werden Wartende der
+  Adressen, für die nun „sofort“ gilt, sofort zugestellt. Scheitert der Versand,
+  wiederholt `mail-zustellung` ihn; die persönliche Seite meldet das.
+- Das „7 Tage alt“-Nachholen zählt ab `eingereiht_am` (ursprüngliche Einreihung),
+  gescheiterte Wiederholungen setzen das Alter nicht zurück.
 
 Wird eine `geplant`e Zeile so als Teil einer Digest-Mail verschickt, wird
 ihr `mail_log`-Eintrag trotzdem auf `versendet` gesetzt, obwohl der darin

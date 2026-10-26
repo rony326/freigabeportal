@@ -437,11 +437,92 @@ test('Digest-Job: verpasster Wochenlauf wird nachgeholt (älteste geplante Zeile
   const db = frischeDb();
   person(db, '1', 'woche@example.org', 'woechentlich');
   zuweisung(db, 'woche@example.org', 1);
-  db.prepare("UPDATE mail_log SET versucht_am = '2026-10-20T05:00:00.000Z'").run();
+  db.prepare("UPDATE mail_log SET versucht_am = '2026-10-20T05:00:00.000Z', eingereiht_am = '2026-10-20T05:00:00.000Z'").run();
   const mailer = stubMailer();
   const r = await runMailDigestJob(db, CONFIG, mailer, { jetzt: DIENSTAG });
   assert.equal(r.versendet, 1);
   assert.equal(r.zurueckgestellt, 0);
   assert.equal(mailer.sent.length, 1);
+  db.close();
+});
+
+// --- Abschlussprüfung ---
+
+test('F1: Migration hebt die alte Standard-Digest-Vorlage auch bei CRLF-Zeilenenden (Browser-Textarea)', (t) => {
+  const pfad = mitDateiDb(t);
+  let db = openDatabase(pfad);
+  seedDefaults(db);
+  setConfigValue(db, 'mail_vorlage_digest_betreff', ALTER_DIGEST_BETREFF);
+  setConfigValue(db, 'mail_vorlage_digest_text', `${ALTER_DIGEST_TEXT.replace(/\n/g, '\r\n')}\r\n`);
+  db.close();
+  db = openDatabase(pfad);
+  assert.equal(getConfigValue(db, 'mail_vorlage_digest_text'), getDefaultConfigValue('mail_vorlage_digest_text'));
+  db.close();
+});
+
+test('F1: CRLF-gespeicherte angepasste Digest-Vorlage bleibt unverändert', (t) => {
+  const pfad = mitDateiDb(t);
+  let db = openDatabase(pfad);
+  seedDefaults(db);
+  const eigen = 'Mein Text\r\n\r\n%eintraege%';
+  setConfigValue(db, 'mail_vorlage_digest_text', eigen);
+  db.close();
+  db = openDatabase(pfad);
+  assert.equal(getConfigValue(db, 'mail_vorlage_digest_text'), eigen);
+  db.close();
+});
+
+test('P2: Nachholen zählt ab eingereiht_am; ein gescheiterter Wiederholungsversuch setzt das Alter nicht zurück', async () => {
+  const db = frischeDb();
+  person(db, '1', 'woche@example.org', 'woechentlich');
+  zuweisung(db, 'woche@example.org', 1);
+  db.prepare("UPDATE mail_log SET versucht_am = '2026-10-20T05:00:00.000Z', eingereiht_am = '2026-10-20T05:00:00.000Z'").run();
+  const kaputt = stubMailer({ failFor: () => true });
+  const r1 = await runMailDigestJob(db, CONFIG, kaputt, { jetzt: DIENSTAG });
+  assert.equal(r1.wiederholung, 1);
+  // versucht_am ist jetzt neu, eingereiht_am bleibt: der Wochenabstand gilt weiter.
+  const zeile = db.prepare('SELECT * FROM mail_log').get();
+  assert.ok(zeile.versucht_am > '2026-10-21');
+  assert.equal(zeile.eingereiht_am, '2026-10-20T05:00:00.000Z');
+  db.prepare("UPDATE mail_log SET naechster_versuch_am = NULL, sperre_bis = NULL, sperre_token = NULL, versuche = 0").run();
+  const heil = stubMailer();
+  const r2 = await runMailDigestJob(db, CONFIG, heil, { jetzt: DIENSTAG });
+  assert.equal(r2.versendet, 1);
+  assert.equal(r2.zurueckgestellt, 0);
+  db.close();
+});
+
+test('P3: Sofort-Zustellung nutzt das bisherige Wort, sonst "gesammelte"', async () => {
+  const { stelleWartendeSofortZu } = await import('../../src/services/mailZustellung.js');
+  const db = frischeDb();
+  person(db, '1', 'a@example.org', 'woechentlich');
+  zuweisung(db, 'a@example.org', 1);
+  setzeBenachrichtigung(db, '1', 'sofort');
+  const m1 = stubMailer();
+  const r1 = await stelleWartendeSofortZu(db, CONFIG, m1, 'a@example.org', { vorher: 'woechentlich' });
+  assert.equal(r1.zugestellt, 1);
+  assert.match(m1.sent[0].subject, /Deine wöchentliche Zusammenfassung/);
+  setzeBenachrichtigung(db, '1', 'woechentlich');
+  zuweisung(db, 'a@example.org', 2);
+  setzeBenachrichtigung(db, '1', 'sofort');
+  const m2 = stubMailer();
+  await stelleWartendeSofortZu(db, CONFIG, m2, 'a@example.org');
+  assert.match(m2.sent[0].subject, /Deine gesammelte Zusammenfassung/);
+  db.close();
+});
+
+test('P5: Sofort-Zustellung filtert in SQL nach Adresse (Gross-/Kleinschreibung, Leerraum) und lässt andere unberührt', async () => {
+  const { stelleWartendeSofortZu } = await import('../../src/services/mailZustellung.js');
+  const db = frischeDb();
+  person(db, '1', 'a@example.org', 'woechentlich');
+  person(db, '2', 'b@example.org', 'woechentlich');
+  zuweisung(db, 'A@Example.org', 1);
+  zuweisung(db, 'b@example.org', 1);
+  const m = stubMailer();
+  const r = await stelleWartendeSofortZu(db, CONFIG, m, ' a@example.org ');
+  assert.equal(r.zugestellt, 1);
+  assert.equal(m.sent.length, 1);
+  assert.equal(listMailLog(db).filter((x) => x.status === 'geplant').length, 1);
+  assert.deepEqual(await stelleWartendeSofortZu(db, CONFIG, m, ''), { zugestellt: 0, fehlgeschlagen: 0 });
   db.close();
 });

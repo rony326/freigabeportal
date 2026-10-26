@@ -153,3 +153,18 @@ test('Postfach-Mailtext nutzt die CSS-Klasse statt Inline-Style', async () => {
   assert.match(css, /\.testmodus-mailtext\s*\{[^}]*white-space:\s*pre-wrap/);
   u.aufraeumen();
 });
+
+test('F6: Jobs ausführen nennt die zurückgestellten wöchentlichen Empfänger', async () => {
+  const { zuercherWochentag } = await import('../../src/services/benachrichtigung.js');
+  const u = await umgebung();
+  const heute = zuercherWochentag(Date.now());
+  u.db.prepare("UPDATE admin_config SET value = ? WHERE key = 'mail_digest_wochentag'").run(String((heute % 7) + 1));
+  u.db.prepare("UPDATE personen SET benachrichtigung = 'woechentlich'").run();
+  const jetzt = new Date().toISOString();
+  u.db.prepare("INSERT INTO mail_log (typ, empfaenger, betreff, text, status, versucht_am, eingereiht_am, versuche) VALUES ('zuweisung', 'ben@beispiel.invalid', 'B', 'T', 'geplant', ?, ?, 0)").run(jetzt, jetzt);
+  const token = csrfAus((await u.agent.get('/testmodus/postfach')).text);
+  const res = await u.agent.post('/testmodus/jobs').type('form').send({ _csrf: token });
+  assert.equal(res.status, 302);
+  assert.match(decodeURIComponent(res.headers.location), /Mail-Sammelversand: erfolgreich \(1 wöchentlich zurückgestellt\)/);
+  u.aufraeumen();
+});

@@ -578,7 +578,7 @@ async function runMailDigestJobInternal(db, config, mailer, { jetzt = new Date()
     const gruppen = new Map();
     let zurueckgestellt = 0;
     for (const [empfaenger, zeilen] of alleGruppen) {
-      if (istDigestFaellig(benachrichtigungFuer(db, empfaenger), jetzt, wochentag, zeilen.reduce((m, z) => (m == null || z.versucht_am < m ? z.versucht_am : m), null))) {
+      if (istDigestFaellig(benachrichtigungFuer(db, empfaenger), jetzt, wochentag, zeilen.reduce((m, z) => { const t = z.eingereiht_am ?? z.versucht_am; return m == null || t < m ? t : m; }, null))) {
         gruppen.set(empfaenger, zeilen);
         continue;
       }

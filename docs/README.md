@@ -39,6 +39,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [testmodus.md](testmodus.md) | Testmodus (Spielwiese) für Superadmin und Manager: Beispieldaten, Abschottung, Test-Postfach, Zurücksetzen |
 | [statusseite-und-monitoring.md](statusseite-und-monitoring.md) | Statusseite `/admin/betrieb/status`, Dienste und Grenzwerte, `/healthz` mit Überwachungsschlüssel, Uptime-Kuma-Anleitung |
 | [audit-externe-nachweise.md](audit-externe-nachweise.md) | Bedrohungsmodell und lokale Grundlage für externe Audit-Nachweise |
+| [pruefbericht-2026-10.md](pruefbericht-2026-10.md) | Prüfbericht Abschlussprüfung Oktober 2026: Funde, Behebungen, Checklisten für Infomaniak und Geheimnisse |
 
 Phasenpläne und historische Design-Dokumente der einzelnen Ausbaustufen
 liegen weiterhin in [`superpowers/specs/`](superpowers/specs/) und

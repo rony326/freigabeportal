@@ -60,7 +60,7 @@
         <tbody>
           <% stalledJobs.forEach((eintrag) => { %>
             <tr>
-              <td><%= eintrag.job.dateiname %></td>
+              <td><%- include('../_beleg_nr', { jobId: eintrag.job.id }) %> <%- include('../_beleg_name', { job: eintrag.job }) %></td>
               <td><%= eintrag.job.status %></td>
               <td><%= eintrag.akteurName %></td>
               <td><%= eintrag.grund === 'inaktiv' ? 'Person deaktiviert' : 'Person in ChurchTools nicht auflösbar' %></td>

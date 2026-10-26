@@ -172,7 +172,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   kk_markiert_am TEXT,
   kk_erinnert_am TEXT,
   kk_text_betraege TEXT,
-  freigabe2_umgeleitet_an TEXT REFERENCES personen(churchtools_person_id)
+  freigabe2_umgeleitet_an TEXT REFERENCES personen(churchtools_person_id),
+  -- Dateiname des hochgeladenen PDF-Teils (n8n-Eingang); Anzeige bevorzugt ihn vor dateiname.
+  pdf_dateiname TEXT
 );
 
 -- Manipulationsschutz: sobald ein Zeitstempel-Hash/-Zeitpunkt für einen Job gesetzt ist, darf er

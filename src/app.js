@@ -4,6 +4,7 @@ import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, sep } from 'node:path';
+import { belegName } from './services/belegName.js';
 import { existsSync, statSync } from 'node:fs';
 import { SqliteSessionStore } from './db/sessionStore.js';
 import { createAuthRouter } from './routes/auth.js';
@@ -101,6 +102,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // process is running, and shelling out to git on every request would be wasteful.
   app.locals.version = getVersionInfo(join(__dirname, '..'));
   app.locals.zeitpunktAnzeige = zeitpunktAnzeige;
+  app.locals.belegName = belegName;
   app.use((req, res, next) => {
     // X-Content-Type-Options: the PDF magic-byte check on upload only validates the first 4
     // bytes, so this stops a browser from sniffing a crafted upload into something other than

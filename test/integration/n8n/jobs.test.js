@@ -1331,3 +1331,28 @@ test('POST /api/n8n/jobs skips the statement text analysis when no active card h
   rmSync(jobsDir, { recursive: true, force: true });
   db.close();
 });
+
+// Rückmeldung 2026-10-26: Anzeigename "image002.png" (Bild-Anhang) statt Rechnungs-PDF. Der
+// Dateiname des PDF-Teils wird zusätzlich gespeichert und für die Anzeige bevorzugt;
+// jobs.dateiname bleibt unverändert (n8n bekommt ihn zurück, wie übergeben).
+test('POST /api/n8n/jobs speichert den Dateinamen des PDF-Teils (auch mit Umlaut) neben dem Anzeigenamen', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+  try {
+    const res = await request(app)
+      .post('/api/n8n/jobs')
+      .set('X-API-Key', 'n8n-key')
+      .field('quelle', 'lieferant')
+      .field('dateiname', 'image002.png')
+      .attach('pdf', PDF_BYTES, { filename: 'Rechnung_März_4711.pdf', contentType: 'application/pdf' });
+    assert.equal(res.status, 201);
+    const job = getJobById(db, res.body.id);
+    assert.equal(job.dateiname, 'image002.png');
+    assert.equal(job.pdf_dateiname, 'Rechnung_März_4711.pdf');
+  } finally {
+    db.close();
+    rmSync(jobsDir, { recursive: true, force: true });
+  }
+});

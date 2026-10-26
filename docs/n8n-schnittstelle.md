@@ -43,9 +43,9 @@ sequenceDiagram
 
 | Feld | Pflicht | Beschreibung |
 |---|---|---|
-| `pdf` | ja | die Rechnung, max. 20 MB, ein unverschlüsseltes, verarbeitbares PDF mit mindestens einer lesbaren Seite (ein QR-Code ist nicht nötig) |
+| `pdf` | ja | die Rechnung, max. 20 MB, ein unverschlüsseltes, verarbeitbares PDF mit mindestens einer lesbaren Seite (ein QR-Code ist nicht nötig). Der Dateiname dieses Teils wird als `pdf_dateiname` gespeichert und in der Oberfläche bevorzugt angezeigt |
 | `quelle` | ja | `"scanner"` oder `"lieferant"` |
-| `dateiname` | ja | Anzeigename |
+| `dateiname` | ja | Anzeigename; geht unverändert an n8n zurück. In der Oberfläche nur, wenn der PDF-Teil keinen `.pdf`-Namen hat und `dateiname` kein Bildname ist (z. B. `image002.png` aus einer Mail-Signatur) — sonst `Eingang <Datum>`. Jede Anzeige trägt die Belegnummer `#<id>` (`src/services/belegName.js`) |
 | `absender` | nein | `From:`-Header der eingehenden Mail (roh, mit oder ohne Display-Name) — Basis für die automatische Zuweisungsregel |
 | `eingang_am` | nein | ISO-Datum; Default: jetzt |
 

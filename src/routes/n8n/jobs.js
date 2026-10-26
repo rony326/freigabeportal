@@ -26,6 +26,17 @@ const ABHOLEN_TTL_SECONDS = 15 * 60;
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_PDF_SIZE } });
 
+// Dateiname des hochgeladenen PDF-Teils (nur für die Anzeige, services/belegName.js). Multer/busboy
+// lesen den Namen aus dem Content-Disposition-Header als latin1; n8n schickt UTF-8 — zurückwandeln,
+// sofern das ein gültiges UTF-8 ergibt. Pfadanteile und Steuerzeichen weg, auf 255 Zeichen begrenzt.
+function pdfTeilName(file) {
+  let name = String(file?.originalname ?? '');
+  const utf8 = Buffer.from(name, 'latin1').toString('utf8');
+  if (!utf8.includes('\uFFFD')) name = utf8;
+  name = name.split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  return name ? name.slice(0, 255) : null;
+}
+
 function isPdf(buffer) {
   return buffer.length >= 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
 }
@@ -107,7 +118,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
 
         let id;
         try {
-          id = createJob(db, { eingangAm, quelle, absender: absender || null, dateiname, pdfPfad, dateiHash });
+          id = createJob(db, { eingangAm, quelle, absender: absender || null, dateiname, pdfPfad, dateiHash, pdfDateiname: pdfTeilName(req.file) });
         } catch (err) {
           // Ohne Jobzeile keine verwaiste Datei zurücklassen.
           try { unlinkSync(pdfPfad); } catch { /* bereits entfernt */ }

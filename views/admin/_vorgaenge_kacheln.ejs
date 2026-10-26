@@ -5,7 +5,7 @@
     <div class="col">
       <div class="kachel d-flex flex-column gap-2<%= v.haengt ? ' kachel-haengt' : (v.ueberfaellig ? ' kachel-ueberfaellig' : '') %>" id="vorgang-kachel-<%= v.id %>">
         <div class="fw-semibold text-break"><a href="/admin/vorgaenge/<%= v.id %>"><%= v.gegenueber %></a> <%- include('../_kommentar_marke', { jobId: v.id }) %></div>
-        <div class="small text-body-secondary text-break"><%= v.dateiname %></div>
+        <div class="small text-body-secondary text-break"><%- include('../_beleg_nr', { jobId: v.id }) %> <%= v.dateiname %></div>
         <div class="kachel-betrag"><%= v.betrag || '—' %></div>
         <div>
           <%= v.statusLabel %>

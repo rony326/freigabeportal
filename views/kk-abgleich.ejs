@@ -5,7 +5,7 @@
     <div class="row g-4 beleg-umschalter" data-beleg-umschalter data-refresh-url="/downloads/<%= job.id %>/refresh-url">
       <%- include('_beleg_umschalter', { jobId: job.id, pdfUrl: `/downloads/${job.id}/oeffnen`, thumbnailUrl: job.thumbnail_pfad ? `/downloads/${job.id}/thumbnail` : null, refreshUrl: `/downloads/${job.id}/refresh-url`, previewUrl, frameId: 'kontierung-preview-frame', spalte: 'col-lg-5' }) %>
       <div class="col-lg-7 beleg-umschalter-formular" id="beleg-umschalter-formular">
-        <p class="text-muted mb-2"><%= job.dateiname %> · Vorgang #<%= job.id %></p>
+        <p class="text-muted mb-2"><%- include('_beleg_name', { job }) %> <%- include('_beleg_nr', { jobId: job.id }) %></p>
         <% if (errors.length > 0) { %>
           <div class="alert alert-danger"><ul class="mb-0"><% errors.forEach((e) => { %><li><%= e %></li><% }) %></ul>
             <% if (errors.some((e) => e.includes('Datei'))) { %><div class="small mt-2">Hinweis: Nachgereichte Dateien müssen nach einem Fehler neu ausgewählt werden.</div><% } %>

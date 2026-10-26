@@ -135,7 +135,7 @@ export function findMoeglicheDoppelrechnungen(db, { job, kreditorId, betrag, zah
     .all(kreditorId, zahlungsziel, betragZahl, job.eingang_am, tage, job.id, familie, familie);
 }
 
-export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad, dateiHash }) {
+export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad, dateiHash, pdfDateiname }) {
   const regel = findMatchingZuweisungsregel(db, absender);
   let kontoId = null;
   let zugewiesenAn = null;
@@ -163,10 +163,10 @@ export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad,
 
   const result = db
     .prepare(
-      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an, kreditor_id, lieferant, datei_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an, kreditor_id, lieferant, datei_hash, pdf_dateiname)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn, kreditorId, lieferant, dateiHash ?? null);
+    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn, kreditorId, lieferant, dateiHash ?? null, pdfDateiname || null);
 
   return Number(result.lastInsertRowid);
 }
@@ -835,8 +835,8 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
          eingang_am, quelle, absender, dateiname, pdf_pfad, thumbnail_pfad, status,
          konto_id, zugewiesen_an, hinweis_konto_id, betrag, zahlungsziel, rechnungsnummer, lieferant, kreditor_id, aufgesplittet_von,
          qr_iban, qr_referenz, qr_betrag, qr_waehrung, qr_creditor_name, qr_erkannt_am,
-         rechnungsposition, beleg_seitenzahl, typ, beschreibung, kk_eigenbeleg_grund
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         rechnungsposition, beleg_seitenzahl, typ, beschreibung, kk_eigenbeleg_grund, pdf_dateiname
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       parentJob.eingang_am,
@@ -865,7 +865,8 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
       belegSeitenzahl ?? null,
       typ ?? null,
       beschreibung ?? null,
-      kkEigenbelegGrund ?? null
+      kkEigenbelegGrund ?? null,
+      parentJob.pdf_dateiname ?? null
     );
   return Number(result.lastInsertRowid);
 }

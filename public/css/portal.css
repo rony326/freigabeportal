@@ -374,6 +374,18 @@
 .kachel-angaben dd {
   margin-bottom: 0;
 }
+/* Belegnummer (#<id>), klein und gedämpft: dieselbe Nummer wie in Auswahlfeldern ("#2 Rechnung.pdf"). */
+.beleg-nr {
+  font-size: .8125rem;
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--bs-secondary-color);
+  white-space: nowrap;
+}
+h1 .beleg-nr {
+  font-size: .875rem;
+  vertical-align: middle;
+}
 /* In der Tabelle ist das Formular inline mit Breite nach Inhalt. In der schmalen Kachel
    nimmt es eine eigene Zeile und das Auswahlfeld schrumpft, damit nichts über den Rand läuft. */
 .kachel .zuweisen-form {

@@ -25,7 +25,7 @@
               <tr>
                 <td><%= fall.job.id %></td>
                 <td><%= fall.gruppe ? 'Splitgruppe' : fall.job.quelle === 'spesen' ? 'Spesen' : 'Rechnung' %></td>
-                <td><%= fall.job.dateiname %></td>
+                <td><%- include('../_beleg_nr', { jobId: fall.job.id }) %> <%- include('../_beleg_name', { job: fall.job }) %></td>
                 <td><%= fall.grund %></td>
                 <td><a href="/admin/altfaelle/<%= fall.job.id %>" class="btn btn-outline-primary btn-sm">Prüfen</a></td>
               </tr>

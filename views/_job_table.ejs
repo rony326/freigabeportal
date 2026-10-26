@@ -2,17 +2,18 @@
      the section, heading included, when a list is empty) — no empty-state branch needed here. */ %>
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>Vorschau</th><th>Quelle</th><th>Absender</th><th>Kreditor</th><th>Konto</th><th>Eingang</th><th></th></tr></thead>
+      <thead><tr><th>Vorschau</th><th>Beleg</th><th>Quelle</th><th>Absender</th><th>Kreditor</th><th>Konto</th><th>Eingang</th><th></th></tr></thead>
       <tbody>
         <% jobs.forEach((job) => { %>
           <tr id="<%= idPrefix %>-row-<%= job.id %>" data-job-container>
             <td>
               <% if (job.thumbnail_pfad) { %>
-                <a href="/downloads/<%= job.id %>/oeffnen" target="_blank" rel="noopener" class="thumbnail-link" aria-label="PDF öffnen: <%= job.dateiname %>"><img class="thumbnail-preview pdf-preview rounded" src="/downloads/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau" height="60" style="cursor:pointer"></a>
+                <a href="/downloads/<%= job.id %>/oeffnen" target="_blank" rel="noopener" class="thumbnail-link" aria-label="PDF öffnen: <%- include('_beleg_name', { job }) %>"><img class="thumbnail-preview pdf-preview rounded" src="/downloads/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau" height="60" style="cursor:pointer"></a>
               <% } else { %>
                 <span class="thumbnail-placeholder text-muted">Keine Vorschau</span>
               <% } %>
             </td>
+            <td class="text-break"><%- include('_beleg_nr', { jobId: job.id }) %><br><small><%- include('_beleg_name', { job }) %></small></td>
             <td><%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %> <%- include('_kommentar_marke', { jobId: job.id }) %></td>
             <td><%= job.absender || '—' %></td>
             <td><%= job.lieferant || '—' %></td>

@@ -1,6 +1,6 @@
 <%- include('../_seite_anfang', { titel: 'Rechnung löschen' }) %>
     <div class="seitenkopf">
-      <h1 class="seitenkopf-titel">Rechnung löschen: <%= job.dateiname %></h1>
+      <h1 class="seitenkopf-titel">Rechnung löschen: <%- include('../_beleg_name', { job }) %> <%- include('../_beleg_nr', { jobId: job.id }) %></h1>
     </div>
     <p class="text-muted">Ablehnungsgrund: <%= job.ablehnungsgrund %></p>
     <% if (errors.length > 0) { %>

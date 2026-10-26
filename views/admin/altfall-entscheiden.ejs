@@ -2,7 +2,7 @@
     <% const m = anzeige.daten.metadaten; const z = anzeige.daten.zahlung; const h = anzeige.daten.herkunft; %>
     <% const herkunftText = { freigabe_snapshot: 'eingefrorener Freigabe-Snapshot', freigabe_snapshot_unbestaetigt: 'Freigabe-Snapshot, damals nicht bestätigt', jobdatensatz: 'aktueller Jobdatensatz (nicht freigabegebunden)', kontenstamm_aktuell: 'aktueller Kontenstamm (nicht freigabegebunden)', qr_scan_eingang: 'QR-Scan beim Eingang', churchtools_aktuell: 'AKTUELLER ChurchTools-Stand, nicht der historische Freigabestand', nicht_verfuegbar: 'nicht verfügbar', jobdatensatz_und_aktueller_stamm: 'Jobdatensatz und aktueller Stamm', lieferanten_iban_aktuell: 'aktuell hinterlegte Lieferanten-IBANs' }; %>
     <div class="seitenkopf">
-      <h1 class="seitenkopf-titel">Altfall <%= anzeige.job.id %>: <%= anzeige.job.dateiname %></h1>
+      <h1 class="seitenkopf-titel">Altfall: <%- include('../_beleg_name', { job: anzeige.job }) %> <%- include('../_beleg_nr', { jobId: anzeige.job.id }) %></h1>
     </div>
     <div class="alert alert-warning"><%= anzeige.grund %></div>
     <% if (errors.length > 0) { %>

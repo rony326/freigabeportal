@@ -66,6 +66,8 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'kk_text_betraege', ddl: 'ALTER TABLE jobs ADD COLUMN kk_text_betraege TEXT' },
   // Admin-Umhängen bei Freigabe 2 (/admin/vorgaenge): hat Vorrang vor Stellvertreter2/Freigeber2.
   { column: 'freigabe2_umgeleitet_an', ddl: 'ALTER TABLE jobs ADD COLUMN freigabe2_umgeleitet_an TEXT REFERENCES personen(churchtools_person_id)' },
+  // Dateiname des PDF-Teils beim n8n-Eingang (services/belegName.js: Anzeige statt Bild-Anhangname).
+  { column: 'pdf_dateiname', ddl: 'ALTER TABLE jobs ADD COLUMN pdf_dateiname TEXT' },
 ];
 
 const PERSONEN_TABLE_MIGRATIONS = [

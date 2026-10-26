@@ -6,12 +6,13 @@
     <div class="col">
       <div class="kachel d-flex flex-column gap-2" id="<%= idPrefix %>-kachel-<%= job.id %>" data-job-container>
         <% if (job.thumbnail_pfad) { %>
-          <a href="/downloads/<%= job.id %>/oeffnen" target="_blank" rel="noopener" class="thumbnail-link d-block" aria-label="PDF öffnen: <%= job.dateiname %>"><img class="thumbnail-preview pdf-preview kachel-vorschau rounded" src="/downloads/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau"></a>
+          <a href="/downloads/<%= job.id %>/oeffnen" target="_blank" rel="noopener" class="thumbnail-link d-block" aria-label="PDF öffnen: <%- include('_beleg_name', { job }) %>"><img class="thumbnail-preview pdf-preview kachel-vorschau rounded" src="/downloads/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau"></a>
         <% } else { %>
           <div class="thumbnail-placeholder kachel-vorschau-leer text-muted small">Keine Vorschau</div>
         <% } %>
         <div class="fw-semibold text-break"><%= job.lieferant || job.absender || '—' %> <%- include('_kommentar_marke', { jobId: job.id }) %></div>
         <dl class="kachel-angaben small mb-0">
+          <dt>Beleg</dt><dd class="text-break"><%- include('_beleg_nr', { jobId: job.id }) %> <%- include('_beleg_name', { job }) %></dd>
           <% if (job.lieferant && job.absender) { %>
             <dt>Absender</dt><dd class="text-break"><%= job.absender %></dd>
           <% } %>

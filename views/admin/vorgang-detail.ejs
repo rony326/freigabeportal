@@ -1,6 +1,6 @@
 <%- include('../_seite_anfang', { titel: `Vorgang ${vorgang.dateiname}` }) %>
     <div class="seitenkopf">
-      <h1 class="seitenkopf-titel"><%= vorgang.gegenueber %> <small class="text-body-secondary"><%= vorgang.dateiname %></small></h1>
+      <h1 class="seitenkopf-titel"><%= vorgang.gegenueber %> <small class="text-body-secondary"><%= vorgang.dateiname %></small> <%- include('../_beleg_nr', { jobId: vorgang.id }) %></h1>
     </div>
     <p><a href="/admin/vorgaenge">← Laufende Vorgänge</a></p>
 

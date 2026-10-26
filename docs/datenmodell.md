@@ -100,6 +100,7 @@ erDiagram
         text quelle "scanner | lieferant | spesen"
         text absender
         text dateiname
+        text pdf_dateiname "Name des PDF-Teils (n8n)"
         text pdf_pfad
         text status "11 mögliche Werte"
         int konto_id FK

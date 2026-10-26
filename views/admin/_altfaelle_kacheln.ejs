@@ -3,7 +3,7 @@
   <% altfaelle.forEach((fall) => { %>
     <div class="col">
       <div class="kachel d-flex flex-column gap-2" id="altfall-kachel-<%= fall.job.id %>">
-        <div class="fw-semibold text-break"><%= fall.job.dateiname %></div>
+        <div class="fw-semibold text-break"><%- include('../_beleg_name', { job: fall.job }) %> <%- include('../_beleg_nr', { jobId: fall.job.id }) %></div>
         <dl class="kachel-angaben small mb-0">
           <dt>Job</dt><dd><%= fall.job.id %></dd>
           <dt>Art</dt><dd><%= fall.gruppe ? 'Splitgruppe' : fall.job.quelle === 'spesen' ? 'Spesen' : 'Rechnung' %></dd>

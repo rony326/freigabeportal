@@ -3,9 +3,9 @@
   <% jobs.forEach((job) => { %>
     <div class="col">
       <div class="kachel d-flex flex-column gap-2" id="abgelehnt-kachel-<%= job.id %>">
-        <div class="fw-semibold text-break"><%= job.lieferant || job.dateiname %> <%- include('../_kommentar_marke', { jobId: job.id }) %></div>
+        <div class="fw-semibold text-break"><% if (job.lieferant) { %><%= job.lieferant %><% } else { %><%- include('../_beleg_name', { job }) %><% } %> <%- include('../_kommentar_marke', { jobId: job.id }) %></div>
         <dl class="kachel-angaben small mb-0">
-          <dt>Dateiname</dt><dd class="text-break"><%= job.dateiname %></dd>
+          <dt>Beleg</dt><dd class="text-break"><%- include('../_beleg_nr', { jobId: job.id }) %> <%- include('../_beleg_name', { job }) %></dd>
           <dt>Lieferant</dt><dd><%= job.lieferant || '—' %></dd>
           <dt>Grund</dt><dd><%= job.ablehnungsgrund %></dd>
           <dt>Abgelehnt von</dt><dd><%= job.abgelehntVonPerson ? `${job.abgelehntVonPerson.vorname} ${job.abgelehntVonPerson.nachname}` : 'Unbekannt' %></dd>

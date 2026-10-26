@@ -1,0 +1,4 @@
+<% /* Anzeigename eines Belegs: PDF-Dateiname statt Bild-Anhangname, sonst "Eingang <Datum>"
+     (services/belegName.js, über app.locals). mitNummer: true setzt "#<id> " davor (Auswahlfelder).
+     Test-Apps ohne app.locals zeigen den Rohnamen. */
+   const bnName = typeof belegName === 'function' ? belegName(job) : job.dateiname; %><% if (locals.mitNummer) { %>#<%= job.id %> <% } %><%= bnName %>

@@ -6,6 +6,7 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getAktivenVertreter } from './vertretung.js';
 import { LAUFENDE_STATUS, ermittleZustaendigkeit } from './vorgangZustaendigkeit.js';
+import { belegName } from './belegName.js';
 
 export const STATUS_LABEL = {
   unzugewiesen: 'Pool',
@@ -100,7 +101,7 @@ export function beschreibeVorgang(db, job, { jetzt = Date.now(), namen = namensA
         : anzeigeName(zustaendigPerson);
   return {
     id: job.id,
-    dateiname: job.dateiname,
+    dateiname: belegName(job),
     eingangAm: job.eingang_am,
     seit: seitWann(db, job),
     art,

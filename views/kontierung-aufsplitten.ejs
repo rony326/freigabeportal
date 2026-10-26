@@ -1,6 +1,6 @@
 <%- include('_seite_anfang', { titel: 'Rechnung aufsplitten', rahmen: 'ohne' }) %>
     <div class="seitenkopf">
-      <h1 class="seitenkopf-titel">Rechnung aufsplitten: <%= job.dateiname %></h1>
+      <h1 class="seitenkopf-titel">Rechnung aufsplitten: <%- include('_beleg_name', { job }) %> <%- include('_beleg_nr', { jobId: job.id }) %></h1>
     </div>
     <p class="text-muted">Vorgangsnummer: <%= job.id %></p>
     <div class="row g-3 beleg-umschalter" data-beleg-umschalter data-refresh-url="/downloads/<%= job.id %>/refresh-url">

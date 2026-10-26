@@ -28,7 +28,8 @@ in [`docs/`](docs/README.md).
 `npm run test:responsive` öffnet jede Seite aus `test/responsive/seiten.js`
 in einem echten Browser (Chromium über Playwright) in vier Breiten — 360
 (Handy, Touch), 768 und 1024 (Tablet, Touch), 1280 (Desktop, Maus) — und
-meldet Layout-Verstösse. Die App läuft dafür als Test-Instanz auf den
+meldet Layout-Verstösse. Alle Breiten laufen hell, 360 und 1280 px
+zusätzlich im Dunkelmodus (`colorScheme: 'dark'`). Die App läuft dafür als Test-Instanz auf den
 Testmodus-Beispieldaten in einem temporären Verzeichnis, ohne Netz. Der
 Test ist **nicht** Teil von `npm test`.
 
@@ -47,13 +48,15 @@ anderweitig vorhanden sein, z. B. über `LD_LIBRARY_PATH`.
 **Ausführen:**
 
 ```bash
-npm run test:responsive                                 # alle Seiten, alle Breiten (~1 Min)
+npm run test:responsive                                 # alle Seiten, alle Breiten, hell + dunkel (~1.5 Min)
 npm run test:responsive -- --seite=kontierung           # nur Seiten, deren Name das enthält
 npm run test:responsive -- --seite=Personen --breite=360
+npm run test:responsive -- --seite=Vorgänge --farbschema=dunkel   # nur dunkel, alle Breiten
 ```
 
 `--seite` filtert nach Teil des Namens (Gross-/Kleinschreibung egal),
-`--breite` nach genau einer der vier Breiten. Ein Filter, der auf nichts
+`--breite` nach genau einer der vier Breiten, `--farbschema` nach `hell`
+oder `dunkel` (mit `dunkel` laufen alle vier Breiten dunkel). Ein Filter, der auf nichts
 passt, ist ein Fehler (Exit 2).
 
 **Ausgabe:** eine Zeile je Verstoss (`Breite  Seite  Art  Selektor  Masse`),
@@ -68,9 +71,16 @@ danach eine Tabelle Art × Breite. Arten:
 | `menue` | unter 992 px fehlt der Menüknopf oder die Seitenleiste öffnet nicht (im geöffneten Menü werden touch/text/ueberlappung mitgeprüft) |
 | `band` | Testmodus-Band höher als 30 % des Bildschirms oder Inhalt nicht erreichbar |
 | `iframe` | PDF-Seiten (`pdf: true`): unter 992 px wurde der PDF-Viewer oder das signierte PDF geladen, bzw. ab 992 px ist das eingebettete PDF nicht geladen |
+| `schliessen` | das ✕ einer Meldung (`.alert .btn-close`) ragt aus der Meldung; bei `.alert-kompakt` zusätzlich nicht senkrecht mittig |
+| `kontrast` | Text in farbig hinterlegten Tabellenzeilen (`tr.table-warning` usw.) unter 4.5:1 gegen den tatsächlichen Hintergrund |
+
+`text` meldet ab 1200 px zusätzlich eine Dateiauswahl, die schmaler ist als
+ihr Inhalt ("Datei auswählen | Keine ausgewählt" abgeschnitten). Seiten im
+Dunkelmodus erscheinen als `<Seite> (dunkel)`.
 
 Screenshots der betroffenen Seiten (Verstösse rot umrandet) landen in
-`test-results/responsive/` als `<breite>-<seite>.png`.
+`test-results/responsive/` als `<breite>-<seite>.png` bzw.
+`<breite>-dunkel-<seite>.png`.
 
 **Exit-Codes:** `0` keine Verstösse, `1` Verstösse, `2` der Test selbst ist
 gescheitert (Browser/Server startet nicht, Seite lädt nicht oder liefert

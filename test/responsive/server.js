@@ -10,6 +10,7 @@ import { MockAgent, setGlobalDispatcher } from 'undici';
 import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults, setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { createApp } from '../../src/app.js';
+import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from '../../src/middleware/rateLimit.js';
 import { erstelleSpielwiese } from '../../src/services/testmodus/spielwiese.js';
 import { createTestMailer } from '../../src/services/testmodus/testMailer.js';
 import { BEISPIELPERSONEN } from '../../src/services/testmodus/beispieldaten.js';
@@ -19,6 +20,7 @@ import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createKreditkarte, setErfasser } from '../../src/db/kreditkartenRepo.js';
 import { createKkBeleg } from '../../src/db/kkBelegeRepo.js';
 import { createJob, markiereJobAlsKkAbrechnung } from '../../src/db/jobsRepo.js';
+import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
 
 export const STANDARD_PERSON = 'test-4'; // Dora, Superadmin in der Test-Konfiguration
 const PERSONEN = new Set(BEISPIELPERSONEN.map((p) => p.id));
@@ -58,6 +60,10 @@ async function ergaenzeDaten(db, config) {
   // Lange Werte: Dateinamen ohne Leerzeichen, langer Kreditor, IBAN, lange Kommentarzeile.
   db.prepare('UPDATE jobs SET dateiname = ? WHERE id IN (?, ?)').run(LANG.dateiname, ids.pool, ids.anna);
   ids.konto = konto;
+  // Überfällig (Admin → Laufende Vorgänge: gelb hinterlegte Zeile, Prüfung kontrast): Pool-Beleg seit 10 Tagen.
+  db.prepare('UPDATE jobs SET eingang_am = ? WHERE id = ?').run(new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString(), ids.pool);
+  // Dora darf eingreifen: "Umhängen"-Knöpfe in der Vorgangsliste (auch in der überfälligen Zeile).
+  setBerechtigungenForPerson(db, 'test-4', ['workflow_eingreifen']);
   const langerKreditor = createKreditor(db, { name: LANG.kreditor, kontoId: konto });
   ids.langerKreditor = langerKreditor;
   createKreditorIban(db, { kreditorId: langerKreditor, iban: LANG.iban });
@@ -117,7 +123,11 @@ export async function starteResponsiveServer({ port = 0 } = {}) {
   const sp = await erstelleSpielwiese(echteDb, config, { neu: true });
   const ids = await ergaenzeDaten(sp.db, sp.config);
   const mailer = createTestMailer();
-  const testApp = createApp({ db: sp.db, config: sp.config, mailer, testmodus: true });
+  // Der Lauf ruft als eine Person (Dora) mehrere hundert Seiten in wenigen Minuten auf (hell + dunkel):
+  // eigene, grosszügige Limiter statt der Betriebswerte (300/15 min je Person), sonst 429 mitten im Lauf.
+  const viel = { limit: 1_000_000 };
+  const limiter = { publicLimiter: createPublicRateLimiter(viel), sessionLimiter: createSessionRateLimiter(viel), machineLimiter: createMachineRateLimiter(viel) };
+  const testApp = createApp({ db: sp.db, config: sp.config, mailer, testmodus: true, limiter });
 
   // Hülle: eine feste Sitzung je Beispielperson. ?als=test-1 wählt die Person und merkt sie sich
   // im Cookie (für Folgeanfragen derselben Browser-Sitzung: Formulare, Bilder, Skripte).

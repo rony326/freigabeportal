@@ -200,5 +200,6 @@ Bootstrap:
   JavaScript stehen Beleg und Formular untereinander. Im Pool öffnet das
   Vorschaubild unter 992 px das PDF im neuen Tab, ab 992 px den Dialog.
 - **Prüfung**: `npm run test:responsive` (Playwright, nicht Teil von
-  `npm test`) besucht jede Seite in 360/768/1024/1280 px, siehe README
+  `npm test`) besucht jede Seite in 360/768/1024/1280 px (360 und 1280
+  zusätzlich im Dunkelmodus), siehe README
   "Responsive testen".

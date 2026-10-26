@@ -92,6 +92,8 @@ export const SEITEN = [
   { name: 'Admin Ersteinrichtung', view: 'admin/ersteinrichtung', pfad: '/admin/ersteinrichtung' },
   { name: 'Admin Zeitstempel', view: 'admin/zeitstempel-form', pfad: '/admin/zeitstempel' },
   { name: 'Admin Module', view: 'admin/module-form', pfad: '/admin/module' },
+  // Kompakte Erfolgsmeldung "Gespeichert." mit ✕ neben dem Speichern-Knopf (Prüfung schliessen).
+  { name: 'Admin Module gespeichert', view: 'admin/module-form', pfad: '/admin/module?gespeichert=1' },
   { name: 'Admin Mail-Einstellungen', view: 'admin/mail-einstellungen-form', pfad: '/admin/mail-einstellungen' },
   { name: 'Admin Mails', view: 'admin/mails', pfad: '/admin/mails' },
   { name: 'Admin Sync', view: 'admin/sync', pfad: '/admin/sync' },

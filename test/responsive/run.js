@@ -5,8 +5,12 @@
 // (menue), Testmodus-Band höchstens 30 % hoch und Inhalt erreichbar (band), PDF-Seiten mit
 // Beleg/Formular-Umschalter (pdf: true in seiten.js) laden unter 992 px weder PDF.js-Viewer noch
 // signiertes PDF, ab 992 px ist das eingebettete PDF geladen (iframe). Dialoge (modal: in seiten.js)
-// werden über ihren Knopf geöffnet und samt iframe-Dokument geprüft (modal).
-// Aufruf: npm run test:responsive [-- --seite=<Teil des Namens> --breite=360]
+// werden über ihren Knopf geöffnet und samt iframe-Dokument geprüft (modal). Das ✕ einer Meldung
+// (.alert .btn-close) liegt in seiner Meldung, bei kompakten Meldungen mittig (schliessen). Text in
+// farbig hinterlegten Tabellenzeilen (überfällig/hängt) hat ≥ 4.5:1 Kontrast (kontrast). Ab 1200 px
+// passt die Dateiauswahl ("Datei auswählen | Keine ausgewählt") ungekürzt in ihr Feld (text).
+// Farbschema: alle Breiten hell, zusätzlich 360 und 1280 px dunkel (DUNKEL_BREITEN).
+// Aufruf: npm run test:responsive [-- --seite=<Teil des Namens> --breite=360 --farbschema=dunkel]
 // Ausgabe: eine Zeile je Verstoss "Breite Seite Art Selektor Masse", danach Zusammenfassung.
 // Exit-Codes: 0 alles gut, 1 Verstösse, 2 Test selbst gescheitert (Browser/Server startet nicht,
 // Seite lädt nicht oder falscher HTTP-Status, Filter passt auf nichts) — getrennt ausgegeben.
@@ -22,11 +26,15 @@ const MIN_TOUCH = 44;
 const MENUE_BIS = 992;
 const BAND_MAX_ANTEIL = 0.3;
 const PARALLEL = 4;
+const DUNKEL_BREITEN = new Set([360, 1280]);
+const MIN_KONTRAST = 4.5;
+const DATEIAUSWAHL_AB = 1200;
 const SCREENSHOT_DIR = new URL('../../test-results/responsive/', import.meta.url).pathname;
 
 const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
 const filterSeite = arg('seite');
 const filterBreite = arg('breite') ? Number(arg('breite')) : null;
+const filterSchema = arg('farbschema') || null;
 
 function slug(text) {
   return text.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
@@ -43,7 +51,7 @@ function pfadFuer(seite, ids) {
 
 // Läuft im Browser: sammelt Verstösse gegen Überlauf, Touch-Ziele und Band-Höhe.
 // wurzel: nur Elemente darin prüfen (geöffnetes Menü), dann ohne Überlauf und Band.
-function pruefeImBrowser({ minTouch, touch, bandMaxAnteil, wurzel = null }) {
+function pruefeImBrowser({ minTouch, touch, bandMaxAnteil, minKontrast, dateiauswahlAb, wurzel = null }) {
   const verstoesse = [];
   const bereich = wurzel ? document.querySelector(wurzel) : document;
   if (!bereich) return verstoesse;
@@ -169,9 +177,84 @@ function pruefeImBrowser({ minTouch, touch, bandMaxAnteil, wurzel = null }) {
       }
     }
   }
+  // 5. Schliessen-✕ einer Meldung: liegt ganz in der Meldung (hing bei "Gespeichert." darunter
+  // heraus); bei kompakten einzeiligen Meldungen (.alert-kompakt) zusätzlich senkrecht mittig.
+  for (const knopf of bereich.querySelectorAll('.alert .btn-close')) {
+    if (!sichtbar(knopf)) continue;
+    const meldung = knopf.closest('.alert');
+    const a = meldung.getBoundingClientRect();
+    const k = knopf.getBoundingClientRect();
+    if (k.left < a.left - 1 || k.right > a.right + 1 || k.top < a.top - 1 || k.bottom > a.bottom + 1) {
+      markiere(knopf);
+      verstoesse.push({ art: 'schliessen', selektor: selektor(meldung).replace(/ ".*$/, ''), masse: `✕ ${masse(k)} bei y ${Math.round(k.top - a.top)} ragt aus Meldung ${masse(a)}` });
+    } else if (meldung.classList.contains('alert-kompakt') && Math.abs((k.top + k.bottom) / 2 - (a.top + a.bottom) / 2) > 2) {
+      markiere(knopf);
+      verstoesse.push({ art: 'schliessen', selektor: selektor(meldung).replace(/ ".*$/, ''), masse: `✕ nicht mittig (${Math.round(k.top - a.top)} oben, ${Math.round(a.bottom - k.bottom)} unten)` });
+    }
+  }
+
+  // 6. Kontrast in farbig hinterlegten Tabellenzeilen (.table-warning/.table-danger …): jeder
+  // Textträger (Elemente mit eigenem Text, Knöpfe) gegen den tatsächlichen Hintergrund.
+  // rgb()/rgba() und color(srgb …) (Ergebnis von color-mix, Werte 0–1).
+  const rgba = (farbe) => {
+    const m = /rgba?\(([^)]+)\)/.exec(farbe);
+    const srgb = /color\(srgb ([^)]+)\)/.exec(farbe);
+    if (!m && !srgb) return null;
+    const t = (m || srgb)[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+    const f = srgb ? 255 : 1;
+    return { r: t[0] * f, g: t[1] * f, b: t[2] * f, a: t.length > 3 ? t[3] : 1 };
+  };
+  const mische = (vorne, hinten) => ({ r: vorne.r * vorne.a + hinten.r * (1 - vorne.a), g: vorne.g * vorne.a + hinten.g * (1 - vorne.a), b: vorne.b * vorne.a + hinten.b * (1 - vorne.a), a: 1 });
+  const hintergrund = (el) => {
+    const schichten = [];
+    for (let p = el; p; p = p.parentElement) {
+      const f = rgba(getComputedStyle(p).backgroundColor);
+      if (f && f.a > 0) { schichten.push(f); if (f.a >= 1) break; }
+    }
+    return schichten.reverse().reduce((h, f) => mische(f, h), { r: 255, g: 255, b: 255, a: 1 });
+  };
+  const leucht = ({ r, g, b }) => {
+    const k = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * k(r) + 0.7152 * k(g) + 0.0722 * k(b);
+  };
+  const kontrast = (x, y) => { const [h, d] = [leucht(x), leucht(y)].sort((m, n) => n - m); return (h + 0.05) / (d + 0.05); };
+  for (const el of bereich.querySelectorAll('tbody tr[class*="table-"] *')) {
+    const eigenerText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+    if (!eigenerText || !sichtbar(el)) continue;
+    const bg = hintergrund(el);
+    const st = getComputedStyle(el);
+    const farbe = rgba(st.color);
+    if (!farbe) {
+      verstoesse.push({ art: 'kontrast', selektor: selektor(el), masse: `Farbe nicht lesbar: ${st.color}` });
+      continue;
+    }
+    const fg = mische({ ...farbe, a: farbe.a * Number(st.opacity) }, bg);
+    const wert = kontrast(fg, bg);
+    if (wert + 0.005 < minKontrast) {
+      markiere(el);
+      verstoesse.push({ art: 'kontrast', selektor: selektor(el), masse: `${wert.toFixed(2)}:1 < ${minKontrast}:1 (${st.color} auf rgb(${Math.round(bg.r)}, ${Math.round(bg.g)}, ${Math.round(bg.b)}))` });
+    }
+  }
+
+  // 7. Dateiauswahl ab dateiauswahlAb px: Knopf und "Keine ausgewählt" passen ungekürzt ins Feld.
+  if (vw >= dateiauswahlAb) {
+    for (const el of bereich.querySelectorAll('input[type=file]')) {
+      if (!sichtbar(el)) continue;
+      const probe = el.cloneNode();
+      Object.assign(probe.style, { width: 'max-content', position: 'absolute', visibility: 'hidden', left: '0', top: '0' });
+      el.parentElement.append(probe);
+      const noetig = probe.getBoundingClientRect().width;
+      probe.remove();
+      const breite = el.getBoundingClientRect().width;
+      if (breite + 1 < noetig) {
+        markiere(el);
+        verstoesse.push({ art: 'text', selektor: selektor(el), masse: `Dateiauswahl ${Math.round(breite)} px breit, braucht ${Math.round(noetig)} px` });
+      }
+    }
+  }
   if (wurzel) return verstoesse;
 
-  // 5. Testmodus-Band höchstens 30 % des Bildschirms, Inhalt bleibt erreichbar.
+  // 8. Testmodus-Band höchstens 30 % des Bildschirms, Inhalt bleibt erreichbar.
   const band = document.querySelector('.testmodus-band');
   if (band) {
     const r = band.getBoundingClientRect();
@@ -319,13 +402,14 @@ async function sendeFehlerzustand(page, fz) {
   return res.status();
 }
 
-async function pruefeSeite(browser, server, seite, b) {
+async function pruefeSeite(browser, server, seite, b, schema) {
   const context = await browser.newContext({
     viewport: { width: b.breite, height: b.hoehe },
     isMobile: b.isMobile,
     hasTouch: b.hasTouch,
     deviceScaleFactor: 1,
     locale: 'de-CH',
+    colorScheme: schema === 'dunkel' ? 'dark' : 'light',
   });
   // Kein Netz für den Browser: alles ausser dem lokalen Server wird abgebrochen.
   await context.route((url) => !url.href.startsWith(`${server.url}/`), (route) => route.abort());
@@ -356,7 +440,7 @@ async function pruefeSeite(browser, server, seite, b) {
     const erwartet = seite.status ?? 200;
     if (status !== erwartet) fehler.push(`${pfad}: HTTP ${status} statt ${erwartet}`);
     await page.waitForTimeout(50);
-    const optionen = { minTouch: MIN_TOUCH, touch: b.hasTouch, bandMaxAnteil: BAND_MAX_ANTEIL };
+    const optionen = { minTouch: MIN_TOUCH, touch: b.hasTouch, bandMaxAnteil: BAND_MAX_ANTEIL, minKontrast: MIN_KONTRAST, dateiauswahlAb: DATEIAUSWAHL_AB };
     verstoesse.push(...await page.evaluate(pruefeImBrowser, optionen));
     if (b.breite < MENUE_BIS) verstoesse.push(...await pruefeMenue(page, optionen));
     if (seite.pdf) verstoesse.push(...await pruefePdf(page, b, pdfAnfragen));
@@ -367,16 +451,17 @@ async function pruefeSeite(browser, server, seite, b) {
       // (zeigt dann Desktop-Grössen): stattdessen das Fenster auf Seitenhöhe ziehen.
       const hoehe = await page.evaluate(() => document.documentElement.scrollHeight).catch(() => b.hoehe);
       await page.setViewportSize({ width: b.breite, height: Math.min(Math.max(hoehe, b.hoehe), 16000) }).catch(() => {});
-      await page.screenshot({ path: join(SCREENSHOT_DIR, `${b.breite}-${slug(seite.name)}.png`) }).catch(() => {});
+      await page.screenshot({ path: join(SCREENSHOT_DIR, `${b.breite}${schema === 'dunkel' ? '-dunkel' : ''}-${slug(seite.name)}.png`) }).catch(() => {});
     }
   } catch (err) {
     fehler.push(`${seite.pfad}: ${String(err.message).split('\n')[0].slice(0, 160)}`);
   } finally {
     await context.close().catch(() => {});
   }
+  const seitenName = schema === 'dunkel' ? `${seite.name} (dunkel)` : seite.name;
   return {
-    verstoesse: verstoesse.map((v) => ({ ...v, breite: b.breite, seite: seite.name })),
-    fehler: fehler.map((text) => `${b.breite}  ${seite.name}  ${text}`),
+    verstoesse: verstoesse.map((v) => ({ ...v, breite: b.breite, seite: seitenName })),
+    fehler: fehler.map((text) => `${b.breite}  ${seitenName}  ${text}`),
   };
 }
 
@@ -393,7 +478,7 @@ function zusammenfassen(verstoesse) {
 }
 
 function tabelle(verstoesse, breiten) {
-  const arten = ['ueberlauf', 'touch', 'text', 'ueberlappung', 'menue', 'band', 'iframe', 'modal'];
+  const arten = ['ueberlauf', 'touch', 'text', 'ueberlappung', 'menue', 'band', 'iframe', 'modal', 'schliessen', 'kontrast'];
   const zeilen = [['Art', ...breiten.map((b) => String(b.breite)), 'Summe']];
   for (const art of arten) {
     const proBreite = breiten.map((b) => verstoesse.filter((v) => v.art === art && v.breite === b.breite).length);
@@ -421,6 +506,9 @@ function abbruch(meldung) {
 }
 
 async function main() {
+  if (filterSchema && !['hell', 'dunkel'].includes(filterSchema)) {
+    return abbruch(`--farbschema=${filterSchema} gibt es nicht. Gültig: hell, dunkel.`);
+  }
   if (filterBreite !== null && !BREITEN.some((b) => b.breite === filterBreite)) {
     return abbruch(`--breite=${arg('breite')} gibt es nicht. Gültig: ${BREITEN.map((b) => b.breite).join(', ')}.`);
   }
@@ -431,7 +519,9 @@ async function main() {
   }
   rmSync(SCREENSHOT_DIR, { recursive: true, force: true });
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
-  const auftraege = breiten.flatMap((b) => seiten.map((s) => ({ s, b })));
+  const schemata = (b) => ['hell', ...(DUNKEL_BREITEN.has(b.breite) || filterSchema === 'dunkel' ? ['dunkel'] : [])]
+    .filter((schema) => !filterSchema || schema === filterSchema);
+  const auftraege = breiten.flatMap((b) => schemata(b).flatMap((schema) => seiten.map((s) => ({ s, b, schema }))));
   const alle = [];
   const fehler = [];
   const start = Date.now();
@@ -451,8 +541,8 @@ async function main() {
     let naechster = 0;
     await Promise.all(Array.from({ length: PARALLEL }, async () => {
       while (naechster < auftraege.length && browser) {
-        const { s, b } = auftraege[naechster++];
-        const ergebnis = await pruefeSeite(browser, server, s, b);
+        const { s, b, schema } = auftraege[naechster++];
+        const ergebnis = await pruefeSeite(browser, server, s, b, schema);
         alle.push(...ergebnis.verstoesse);
         fehler.push(...ergebnis.fehler);
       }
@@ -461,7 +551,7 @@ async function main() {
     await aufraeumen();
   }
 
-  const reihenfolge = (v) => [breiten.findIndex((b) => b.breite === v.breite), seiten.findIndex((s) => s.name === v.seite)];
+  const reihenfolge = (v) => [breiten.findIndex((b) => b.breite === v.breite), seiten.findIndex((s) => s.name === v.seite.replace(/ \(dunkel\)$/, ''))];
   const zeilen = zusammenfassen(alle).sort((a, b) => {
     const [ab, as] = reihenfolge(a);
     const [bb, bs] = reihenfolge(b);
@@ -470,7 +560,7 @@ async function main() {
   for (const z of zeilen) {
     console.log(`${z.breite}  ${z.seite}  ${z.art}  ${z.selektor}  ${z.masse}${z.anzahl > 1 ? `  (×${z.anzahl})` : ''}`);
   }
-  console.log(`\n${seiten.length} Seiten × ${breiten.length} Breiten in ${Math.round((Date.now() - start) / 1000)} s — ${alle.length} Verstösse (${zeilen.length} Zeilen)\n`);
+  console.log(`\n${auftraege.length} Prüfungen (${seiten.length} Seiten × ${breiten.length} Breiten, hell${auftraege.some((a) => a.schema === 'dunkel') ? ` + dunkel bei ${[...new Set(auftraege.filter((a) => a.schema === 'dunkel').map((a) => a.b.breite))].join('/')} px` : ''}) in ${Math.round((Date.now() - start) / 1000)} s — ${alle.length} Verstösse (${zeilen.length} Zeilen)\n`);
   console.log(tabelle(alle, breiten));
   if (alle.length) {
     const proSeite = new Map();

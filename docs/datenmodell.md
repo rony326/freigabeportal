@@ -52,6 +52,7 @@ erDiagram
         text ferienmodus_von
         text ferienmodus_bis
         text ferienmodus_stellvertreter_id FK
+        text benachrichtigung "NULL/sofort/taeglich/woechentlich"
         text deaktiviert_am
         text deaktivierungsgrund
     }
@@ -254,6 +255,12 @@ Person als gelöscht oder archiviert (`deaktivierungsgrund`
 `deaktiviert_am`). Fehlende Gruppenmitgliedschaft allein deaktiviert nicht,
 sie leert nur `gruppen`; ein erneuter Login reaktiviert und löscht beide
 Felder — siehe [personen-sync.md](personen-sync.md#zugangsmodell).
+
+**Benachrichtigung** (`benachrichtigung`): persönliche Bündelung der Mails,
+`NULL` = Standard der Administration (`admin_config.mail_standard_benachrichtigung`).
+Gültig sind `sofort`, `taeglich`, `woechentlich`; gesetzt über
+`/meine-benachrichtigungen` — siehe
+[Persönliche Benachrichtigungen](geplante-jobs-und-benachrichtigungen.md#persönliche-benachrichtigungen-meine-benachrichtigungen).
 
 **Ferienmodus** (`ferienmodus_von`, `ferienmodus_bis`, `ferienmodus_stellvertreter_id`):
 selbstverwalteter, additiver Abwesenheits-Zeitraum mit gewähltem Stellvertreter — siehe

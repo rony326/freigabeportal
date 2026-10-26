@@ -507,8 +507,8 @@ Ablauf:
 6. Audit-Eintrag `kk_beleg_erfasst` (`person_id` = die identifizierte
    Person, Kommentar „per Mail eingegangen“) und eine **immer sofortige**
    Mail `kk-beleg-eingegangen` mit einem Link direkt auf
-   `/kreditkarte/belege/:id/bearbeiten` — dieser Typ ignoriert den
-   globalen Batching-Schalter, damit die Person den Ergänzen-Link nicht
+   `/kreditkarte/belege/:id/bearbeiten` — dieser Typ ignoriert die persönliche
+   Benachrichtigungswahl (ist in `IMMER_SOFORT_TYPEN`), damit die Person den Ergänzen-Link nicht
    erst auf den nächsten Digest-Lauf warten muss.
 
 **Nur die Person selbst kann den Entwurf vervollständigen**:

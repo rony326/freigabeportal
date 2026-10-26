@@ -73,7 +73,7 @@ flowchart LR
 | `kk-beleg-erinnerungen` | täglich 08:00 (Europe/Zürich) | Geplante Jobs | ja | `cron_log` | Erinnerungs-Mails für seit langem offene Kreditkartenbelege/-entwürfe und noch nicht abgeglichene Kreditkartenabrechnungen |
 | `mail-zustellung` | alle 5 Minuten | Geplante Jobs | ja | `cron_log` (nur Läufe mit fälligen Mails) | wiederholt eingereihte, noch nicht zugestellte Mails und gescheiterte Digests mit wachsendem Abstand |
 | `datenbank-sicherung` | täglich 03:00 (Europe/Zürich) | Datenbank-Backup | nein | `cron_log` | verschlüsselte `.fpbak`-Sicherung von DB + `JOBS_DIR` + `BRANDING_DIR` nach `BACKUP_DIR`, Retention nur für `.fpbak` |
-| `mail-digest` | täglich 07:00 (Europe/Zürich) | Mail-Einstellungen | nein | `cron_log` | fasst wegen aktivem Batching eingereihte (`mail_log.status = 'geplant'`) Mails pro Empfänger zu einer täglichen Zusammenfassung zusammen |
+| `mail-digest` | täglich 07:00 (Europe/Zürich) | Mail-Einstellungen | nein | `cron_log` | fasst gemäss der persönlichen Wahl (täglich/wöchentlich) eingereihte (`mail_log.status = 'geplant'`) Mails pro Empfänger zu einer Zusammenfassung zusammen |
 | `sicherheitsalarme` | alle 30 Minuten | nur `admin_config` (`cron_sicherheitsalarme_intervall_minuten`) | nein | Audit-Log (`hintergrundlauf`), `mail_log` | meldet ungeklärte Backup-Löschabsichten |
 | `tsa-crl-aktualisierung` | täglich 04:15 (Europe/Zürich), nur mit `TSA_CRL_AUTO_UPDATE=true` | nur `admin_config` (`cron_tsa_crl_stunde`/`cron_tsa_crl_minute`) | ja | Audit-Log (`hintergrundlauf`), `mail_log` bei Alarm | erneuert `TSA_CRL_FILE` aus der validierten TSA-Kette — siehe [tsa-vertrauensanker.md](tsa-vertrauensanker.md#automatische-sperrlisten-erneuerung) |
 | `audit-export` | täglich 03:15 (Europe/Zürich) | nur `admin_config` / Admin → Zeitstempel (`cron_audit_export_stunde`/`_minute`) | nein | Audit-Log (`hintergrundlauf`), kein `cron_log` | erzeugt Audit-Pakete, holt RFC3161-Zeitstempel (auch nachträglich), Alarm bei Rückstand (nur mit konfigurierter TSA-URL) |
@@ -281,20 +281,36 @@ Termin wird nicht nachgeholt (siehe oben).
 
 ### `mail-digest`
 
-Nur relevant, wenn **Admin → Einstellungen → Mail-Einstellungen** den Batching-Schalter
-aktiviert hat — dann reiht `sendNotification` (siehe unten) eine Zeile mit
-`status = 'geplant'` ein, statt sofort zu versenden. Dieser Job gruppiert
-alle wartenden Zeilen nach Empfänger, beansprucht sie mit einer befristeten
-Sperre und verschickt pro Empfänger eine gesammelte Digest-Mail. Bei Erfolg
+Läuft täglich zur eingestellten Versandzeit. Relevant ist er für alle Personen,
+deren [persönliche Benachrichtigung](#persönliche-benachrichtigungen-meine-benachrichtigungen)
+(oder, ohne eigene Wahl, der Admin-Standard `mail_standard_benachrichtigung`)
+nicht „sofort“ ist — für sie reiht `sendNotification` (siehe unten) eine Zeile
+mit `status = 'geplant'` ein, statt sofort zu versenden. Der Job gruppiert
+alle wartenden Zeilen nach Empfänger und prüft pro Empfänger, ob er heute dran
+ist:
+
+- **täglich:** jeden Lauf;
+- **wöchentlich:** nur am Wochentag `mail_digest_wochentag` (Zürcher Datum,
+  1 = Montag … 7 = Sonntag), **oder** sobald die älteste wartende Zeile
+  mindestens 7 Tage alt ist (Nachholen, z. B. wenn der Wochentag geändert
+  wurde oder ein Lauf ausgefallen ist). Alle anderen wöchentlichen Empfänger
+  bleiben `geplant`; die Cron-Details nennen sie als „bis zum Wochentag
+  zurückgestellt“. Eine Zeile mit begonnener Wiederholung (`versuche > 0`)
+  wartet nie auf die nächste Woche.
+
+Fällige Zeilen werden mit einer befristeten Sperre beansprucht und pro
+Empfänger als eine gesammelte Digest-Mail verschickt. Bei Erfolg
 werden die Zeilen `versendet`; scheitert der Versand, bleiben sie `geplant`,
 erhalten einen Versuchszähler und einen nächsten Versuchszeitpunkt und werden
 von `mail-zustellung` erneut als Digest verschickt — erst nach
 ausgeschöpften Versuchen werden sie `fehlgeschlagen`. Ein Lauf mit
 Zustellfehlern endet mit Status `fehler`. Ist die Digest-Vorlage selbst nicht
-renderbar, werden alle wartenden Zeilen sofort `fehlgeschlagen` (manuell
-wiederholbar). `sync-fehler`, `iban-warnung` und `kk-beleg-eingegangen`
-ignorieren den Batching-Schalter und werden immer sofort zugestellt.
-Überlappungsschutz wie bei `zeitstempel-nachholen`. Zeitplan,
+renderbar, werden die heute fälligen Zeilen sofort `fehlgeschlagen` (manuell
+wiederholbar); wöchentliche Zeilen ausserhalb ihres Wochentags bleiben
+`geplant`. Die [immer sofort zugestellten Typen](#benachrichtigungen-e-mail)
+ignorieren die persönliche Wahl. Beim Digest zählt die **aktuelle** Wahl der
+Person: wer von täglich auf wöchentlich wechselt (oder umgekehrt), verliert
+nichts. Überlappungsschutz wie bei `zeitstempel-nachholen`. Zeitplan,
 Vorlagen-Bearbeitung und manuelles "Jetzt ausführen" leben — wie bei
 `datenbank-sicherung` — nicht unter **Admin → Betrieb → Geplante Jobs**, sondern auf
 der eigenen Seite **Admin → Einstellungen → Mail-Einstellungen**.
@@ -309,7 +325,8 @@ Wiederholungslauf der persistenten Zustellung
 - `geplant` mit mindestens einem gescheiterten Digest-Versuch.
 
 Die erste Digest-Zustellung bleibt dem täglichen `mail-digest`-Termin
-vorbehalten. Ohne fällige Zeilen läuft nichts und es entsteht weder ein
+vorbehalten; die Wiederholung kennt keinen Wochentag-Filter und stellt auch
+wöchentliche Digests sofort wieder zu. Ohne fällige Zeilen läuft nichts und es entsteht weder ein
 `cron_log`- noch ein Audit-Eintrag. Intervall
 `cron_mail_zustellung_intervall_minuten` (Default 5), Höchstzahl der
 Versuche je Mail `mail_zustellung_max_versuche` (Default 8, nur über
@@ -355,7 +372,7 @@ dauerhaft in `mail_log` gespeichert und durchläuft diese Status:
 | Status | Bedeutung |
 |---|---|
 | `eingereiht` | gespeichert, Zustellung läuft oder wird automatisch wiederholt (`versuche`, `naechster_versuch_am`, `fehler_details` zeigen den Stand) |
-| `geplant` | gespeichert, wartet auf den täglichen Digest (Batching); nach einem gescheiterten Digest ebenfalls mit Versuchszähler |
+| `geplant` | gespeichert, wartet auf den Digest (täglich oder wöchentlich, je nach persönlicher Wahl); nach einem gescheiterten Digest ebenfalls mit Versuchszähler |
 | `versendet` | vom SMTP-Server angenommen (`versendet_am`) |
 | `fehlgeschlagen` | endgültig: Wiederholungen ausgeschöpft oder nicht zustellbar (z. B. Vorlage nicht renderbar) — nur noch manuell wiederholbar |
 
@@ -402,26 +419,85 @@ codierten Strings.
 | `freigabe2-reminder` | `freigabe2`-Job länger als `freigabe2_reminder_stunden` unbeantwortet — geht an den effektiven Freigeber 2 |
 | `freigabe2-eskalation` | `freigabe2`-Job länger als `freigabe2_eskalation_stunden` unbeantwortet — geht erst nach erfolgter Übergabe an die Admin-Gruppe raus |
 | `ablehnung` | Rechnung bei Kontierung oder Freigabe 2 abgelehnt |
-| `sync-fehler` | ChurchTools-Sync fehlgeschlagen oder abgebrochen — **immer sofort**, unabhängig vom Batching-Schalter |
-| `iban-warnung` | QR-Code-IBAN weicht von der hinterlegten Lieferanten-IBAN ab — **immer sofort**, unabhängig vom Batching-Schalter |
+| `sync-fehler` | ChurchTools-Sync fehlgeschlagen oder abgebrochen — **immer sofort**, unabhängig von der persönlichen Wahl |
+| `iban-warnung` | QR-Code-IBAN weicht von der hinterlegten Lieferanten-IBAN ab — **immer sofort**, unabhängig von der persönlichen Wahl |
 | `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Kreditor erfasst |
 | `duplikat-warnung` | Möglicher Doppelscan: gleicher Kreditor, Betrag und Zahlungsziel, Eingang binnen 14 Tagen |
 | `kk-abrechnung-zugewiesen` | Kreditkartenabrechnung (manuell oder automatisch erkannt) einer Karte zugeordnet — geht an die verantwortliche Person |
 | `kk-beleg-erinnerung` | seit langem offener Kreditkartenbeleg/-entwurf bzw. noch nicht abgeglichene Kreditkartenabrechnung (Job `kk-beleg-erinnerungen`, siehe oben) |
-| `admin-umzuweisung` | Admin hat einen laufenden Vorgang umgehängt; an die neue Person (plus deren Ferienvertretung) und die bisherige; ignoriert das Batching wie `sync-fehler`/`iban-warnung`/`kk-beleg-eingegangen` |
-| `kk-beleg-eingegangen` | per Mail eingereichter Kreditkartenbeleg als Entwurf angelegt — **immer sofort**, unabhängig vom Batching-Schalter (Link zum Vervollständigen soll nicht bis zum nächsten Digest warten) |
+| `admin-umzuweisung` | Admin hat einen laufenden Vorgang umgehängt; an die neue Person (plus deren Ferienvertretung) und die bisherige; **immer sofort** wie `sync-fehler`/`iban-warnung`/`kk-beleg-eingegangen` |
+| `kk-beleg-eingegangen` | per Mail eingereichter Kreditkartenbeleg als Entwurf angelegt — **immer sofort**, unabhängig von der persönlichen Wahl (Link zum Vervollständigen soll nicht bis zum nächsten Digest warten) |
 | `neues-geraet` | Anmeldung von einem für die Person noch unbekannten Gerät (Cookie `fp_geraet`) — an die Person selbst, **immer sofort**; siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md) |
-| `kommentar` | neuer Kommentar an einem Vorgang — an Beteiligte und Erwähnte (nicht an den Schreiber); folgt dem Batching-Schalter; Details und Links: [kommentare.md](kommentare.md) |
+| `kommentar` | neuer Kommentar an einem Vorgang — an Beteiligte und Erwähnte (nicht an den Schreiber); folgt der persönlichen Wahl; Details und Links: [kommentare.md](kommentare.md) |
 | `fehlermeldung` | Person hat über „Problem melden“ ein Problem gemeldet — an alle mit Recht `betrieb_einsehen`, **immer sofort** |
 
-**Batching:** Ist unter **Admin → Einstellungen → Mail-Einstellungen** aktiviert, werden
-alle Typen ausser `sync-fehler`/`iban-warnung`/`admin-umzuweisung`/`kk-beleg-eingegangen`/`neues-geraet`/`fehlermeldung`
-nicht sofort verschickt, sondern als `status = 'geplant'` eingereiht
-und vom `mail-digest`-Job (siehe oben) einmal täglich pro Empfänger zu
-einer Sammel-Mail zusammengefasst — `kk-abrechnung-zugewiesen` und
-`kk-beleg-erinnerung` folgen also dem globalen Schalter wie jeder andere
-reguläre Typ, nur `kk-beleg-eingegangen` ist wie `sync-fehler`/
-`iban-warnung` von der Bündelung ausgenommen.
+**Sofort oder gesammelt:** Ob eine Mail sofort geht oder als
+`status = 'geplant'` auf den `mail-digest`-Job (siehe oben) wartet, entscheidet
+die Wahl des Empfängers (siehe nächster Abschnitt) — ausser bei den **immer
+sofort zugestellten Typen**, die nie warten. Das sind genau die Typen in
+`IMMER_SOFORT_TYPEN` (`src/services/notify.js`):
+`sync-fehler`, `iban-warnung`, `kk-beleg-eingegangen`, `admin-umzuweisung`,
+`audit-pruefnummer`, `neues-geraet`, `fehlermeldung`, `testmail`, `reminder`,
+`eskalation`, `freigabe2-reminder`, `freigabe2-eskalation`,
+`kk-beleg-erinnerung`, `sicherheitsalarm`, `duplikat-warnung` und
+`rechnungsnummer-warnung`. Erinnerungen und Eskalationen sind zeitkritisch
+und dürfen nie eine Woche warten; die Warnungen sind sicherheits- oder
+betriebsrelevant. Alle übrigen Typen (u. a. `zuweisung`, `ablehnung`,
+`kommentar`, `kk-abrechnung-zugewiesen`) folgen der Wahl.
+
+### Persönliche Benachrichtigungen (Meine Benachrichtigungen)
+
+Jede angemeldete Person wählt unter **`/meine-benachrichtigungen`** (Navigation
+„Benachrichtigungen“, `GET`/`POST`, mit CSRF-Token), wie sie die nicht
+zeitkritischen Mails bekommt:
+
+| Wahl | Spalte `personen.benachrichtigung` | Wirkung |
+|---|---|---|
+| Standard der Administration | `NULL` | es gilt `mail_standard_benachrichtigung` |
+| Sofort | `sofort` | jede Mail einzeln, wie bisher |
+| Täglich | `taeglich` | eine Zusammenfassung pro Tag zur Versandzeit |
+| Wöchentlich | `woechentlich` | eine Zusammenfassung pro Woche am Wochentag `mail_digest_wochentag` |
+
+Die Administration legt den Standard (Default `sofort`) und den Wochentag
+(Default `1` = Montag) unter **Admin → Einstellungen → Mail-Einstellungen** fest.
+
+- **Wechsel auf „sofort“:** Wartende (`geplant`e) Mails der Person werden
+  sofort als Digest zugestellt, die Seite meldet die Anzahl. Auch wer den
+  Standard der Administration wählt und dieser „sofort“ ist, bekommt Wartendes
+  sofort.
+- **Wechsel zwischen täglich und wöchentlich:** Wartendes bleibt erhalten; der
+  nächste Digest-Lauf entscheidet nach der aktuellen Wahl.
+- **Wöchentlich holt nach:** Auch ausserhalb des Wochentags geht der Digest raus,
+  sobald die älteste wartende Mail 7 Tage alt ist.
+- **Gemeinsame Adressen:** Die Zuordnung erfolgt über die Mailadresse (ohne
+  Gross-/Kleinschreibung und Leerzeichen). Teilen sich mehrere Personen
+  eine Adresse, gilt die **kürzeste Bündelung** (sofort vor täglich vor
+  wöchentlich); aktive Personen gehen deaktivierten vor. Adressen ohne passende
+  Person (z. B. Sammeladressen) erhalten den Admin-Standard.
+- **Fristenhinweis:** Ist die gewählte Bündelung länger als die kürzeste
+  Erinnerungs-/Eskalationsfrist (`reminder_stunden`, `eskalation_stunden`,
+  `freigabe2_reminder_stunden`, `freigabe2_eskalation_stunden`; täglich = 24 h,
+  wöchentlich = 168 h), zeigt die Seite einen Hinweis, dass neue Aufgaben
+  eventuell erst nach der Erinnerung sichtbar werden — Erinnerungen kommen
+  trotzdem sofort. Es werden im Zweifel alle vier Fristen berücksichtigt.
+- **Ungültige Eingabe:** `422`; Änderungen sind im Audit-Log (Spalte
+  `benachrichtigung` erscheint in vorher/nachher).
+
+**Migration bestehender Installationen** (einmalig und idempotent beim Start,
+`migrateBenachrichtigungEinstellung` in `src/db/index.js`): Fehlt
+`mail_standard_benachrichtigung`, wird es auf `taeglich` gesetzt, wenn bisher
+`mail_batching_aktiv = '1'` war, sonst auf `sofort`. Das Verhalten der
+Installation bleibt damit unverändert. `mail_batching_aktiv` bleibt als
+Schlüssel in `admin_config` bestehen, wird aber nirgends mehr gelesen. Die
+gespeicherte Digest-Vorlage wird auf die neue Fassung gehoben, sofern sie noch
+dem alten Standardtext entspricht; angepasste Vorlagen bleiben unberührt.
+
+**Digest-Vorlage:** zusätzlich zu den bisherigen Variablen (`%empfaengerName%`,
+`%anzahl%`, `%eintraege%`, `%link%`, `%portalName%`) stehen `%zusammenfassung%`
+(„Tägliche“ bzw. „Wöchentliche“, nach der aktuellen Wahl) und
+`%einstellungenLink%` (Link auf `/meine-benachrichtigungen`) zur Verfügung. Der
+Standardbetreff lautet „Freigabeportal: %zusammenfassung% Zusammenfassung
+(%anzahl% Ereignisse)“.
 
 Wird eine `geplant`e Zeile so als Teil einer Digest-Mail verschickt, wird
 ihr `mail_log`-Eintrag trotzdem auf `versendet` gesetzt, obwohl der darin

@@ -107,8 +107,9 @@ Schlüssel in `admin_config`: `mail_vorlage_kommentar_betreff` und
 eingebaute Standardtext; scheitert das Rendern trotzdem, bleibt der Kommentar
 gespeichert und die Mail erscheint im Mail-Protokoll als `fehlgeschlagen`.
 
-Der Typ `kommentar` folgt dem globalen Batching-Schalter: bei „täglich
-gesammelt“ geht die Mail im Digest raus, nicht sofort (siehe
+Der Typ `kommentar` folgt der **persönlichen Wahl** der Empfängerin bzw. des
+Empfängers (`/meine-benachrichtigungen`, sonst Admin-Standard): bei „täglich“
+oder „wöchentlich“ geht die Mail im Digest raus, bei „sofort“ einzeln (siehe
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail)).
 Kommentar und Mail-Einreihung werden gemeinsam gespeichert oder gemeinsam
 verworfen; die Zustellung läuft danach im Hintergrund über die Mail-Warteschlange

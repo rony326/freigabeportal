@@ -209,13 +209,21 @@ sowie die drei Kreditkarten-Typen `kk-abrechnung-zugewiesen`,
 `kk-beleg-erinnerung` und `kk-beleg-eingegangen`, sowie `kommentar` (siehe [kommentare.md](kommentare.md)), siehe
 [kreditkarten-belege.md](kreditkarten-belege.md#3-abrechnung-markieren-und-übergeben)
 und [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail))
-plus die Digest-Vorlage, sowie der globale Batching-Schalter
-(sofort vs. täglich gesammelt) mit Versandzeit und manuellem "Jetzt
-ausführen" für den `mail-digest`-Job. **Nur `superadmin`**, wie
+plus die Digest-Vorlage, sowie der **Standard für Benachrichtigungen**
+(`mail_standard_benachrichtigung`: sofort, täglich oder wöchentlich gesammelt),
+der **Wochentag für die wöchentliche Zusammenfassung** (`mail_digest_wochentag`,
+1 = Montag bis 7 = Sonntag, Default Montag) und die Versandzeit
+(`mail_batching_stunde`/`mail_batching_minute`, gilt für täglich und wöchentlich),
+dazu das manuelle "Jetzt ausführen" für den `mail-digest`-Job. Der Standard gilt
+für alle Personen, die auf [Meine Benachrichtigungen](geplante-jobs-und-benachrichtigungen.md#persönliche-benachrichtigungen-meine-benachrichtigungen)
+(`/meine-benachrichtigungen`) nichts anderes gewählt haben. Den alten Schalter
+`mail_batching_aktiv` gibt es nicht mehr. **Nur `superadmin`**, wie
 Eskalationszeiten/Erscheinungsbild/Zeitstempel/Backup. Details:
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail)
 und
-[2026-09-07-mail-vorlagen-und-batching-design.md](superpowers/specs/2026-09-07-mail-vorlagen-und-batching-design.md).
+[2026-09-07-mail-vorlagen-und-batching-design.md](superpowers/specs/2026-09-07-mail-vorlagen-und-batching-design.md)
+bzw. für die persönliche Wahl
+[2026-10-25-persoenliche-benachrichtigungen-design.md](superpowers/specs/2026-10-25-persoenliche-benachrichtigungen-design.md).
 
 ## Personen (`/admin/personen`)
 

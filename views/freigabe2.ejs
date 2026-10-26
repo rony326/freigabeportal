@@ -4,7 +4,7 @@
     </div>
     <div class="row g-3 beleg-umschalter" data-beleg-umschalter data-refresh-url="/downloads/<%= job.id %>/refresh-url">
       <%- include('_beleg_umschalter', { jobId: job.id, pdfUrl: `/downloads/${job.id}/oeffnen`, thumbnailUrl: job.thumbnail_pfad ? `/downloads/${job.id}/thumbnail` : null, refreshUrl: `/downloads/${job.id}/refresh-url`, previewUrl, frameId: 'freigabe2-preview-frame', spalte: 'col-lg-7' }) %>
-      <div class="col-lg-5 beleg-umschalter-formular">
+      <div class="col-lg-5 beleg-umschalter-formular" id="beleg-umschalter-formular">
         <div class="card">
           <div class="card-body">
             <% if (typeof kkHinweis !== 'undefined' && kkHinweis) { %>

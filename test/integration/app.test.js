@@ -124,7 +124,7 @@ test('GET /pool renders the logo in the centered header cell when logoAusrichtun
 
   const res = await agent.get('/pool');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<div class="text-center">\s*<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2 logo-hell">/);
+  assert.match(res.text, /<div class="portal-kopf-mitte text-center">\s*<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2 logo-hell">/);
   assert.doesNotMatch(res.text, /<div class="text-start">\s*<img/, 'the left cell should stay empty when alignment is "mitte"');
   db.close();
 });

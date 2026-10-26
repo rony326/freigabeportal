@@ -6,6 +6,15 @@
 (function () {
   var container = document.querySelector('[data-beleg-umschalter]');
   if (!container) return;
+  // Eingebettet (Aufsplitten im Kontierungs-Modal): der Beleg steht schon daneben auf der
+  // Elternseite, und das Modal ist schmaler als 992 px — kein Umschalter, keine Belegspalte.
+  var eingebettet = false;
+  try { eingebettet = window.self !== window.top; } catch (e) { eingebettet = true; }
+  if (eingebettet) {
+    var belegSpalte = container.querySelector('.beleg-umschalter-beleg');
+    if (belegSpalte) belegSpalte.hidden = true;
+    return;
+  }
   var desktop = window.matchMedia('(min-width: 992px)');
   var frame = container.querySelector('iframe[data-preview-url]');
   var geladen = false;

@@ -2,22 +2,24 @@
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Personen</h1>
     </div>
+    <%# Unter 768 px stapelt portal.css (.stapel-tabelle) jede Zeile als Karte; Beschriftung aus data-label. %>
     <div class="table-responsive">
-      <table class="table align-middle">
+      <table class="table align-middle stapel-tabelle personen-tabelle">
         <thead><tr><th>Name</th><th>E-Mail</th><th>Status</th><th>Rolle</th><th>Einzelrechte</th><th>Hinweis</th><th>Ferienmodus</th></tr></thead>
         <tbody>
           <% personen.forEach((p) => { %>
+            <% const hatHinweis = p.ct_person_unresolved || (p.aktiv && p.gruppen.length === 0) || (!p.aktiv && p.deaktivierungsgrund); %>
             <tr>
-              <td><%= p.vorname %> <%= p.nachname %></td>
-              <td><%= p.email %></td>
-              <td><span class="badge <%= p.aktiv ? 'text-bg-success' : 'text-bg-secondary' %>"><%= p.aktiv ? 'Aktiv' : 'Inaktiv' %></span></td>
-              <td><span class="badge text-bg-info"><%= p.rolle %></span></td>
-              <td>
+              <td class="stapel-titel"><%= p.vorname %> <%= p.nachname %></td>
+              <td data-label="E-Mail"><%= p.email %></td>
+              <td data-label="Status"><span class="badge <%= p.aktiv ? 'text-bg-success' : 'text-bg-secondary' %>"><%= p.aktiv ? 'Aktiv' : 'Inaktiv' %></span></td>
+              <td data-label="Rolle"><span class="badge text-bg-info"><%= p.rolle %></span></td>
+              <td data-label="Einzelrechte" class="stapel-block">
                 <% if (p.rolle !== 'Benutzer') { %>
                   <span class="text-muted small">bereits über Rolle <%= p.rolle %> enthalten</span>
                 <% } %>
                 <% if (bearbeitbar) { %>
-                <form method="post" action="/admin/personen/<%= p.churchtools_person_id %>/berechtigungen" class="d-flex flex-wrap gap-2 mt-1">
+                <form method="post" action="/admin/personen/<%= p.churchtools_person_id %>/berechtigungen" class="personen-rechte d-flex flex-wrap gap-2 mt-1">
                   <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                   <% grantableBerechtigungen.forEach((berechtigung) => { %>
                     <div class="form-check form-check-inline">
@@ -35,7 +37,7 @@
                   <button type="submit" class="btn btn-sm btn-outline-primary">Speichern</button>
                 </form>
                 <% } else { %>
-                <div class="d-flex flex-wrap gap-2 mt-1">
+                <div class="personen-rechte d-flex flex-wrap gap-2 mt-1">
                   <% grantableBerechtigungen.forEach((berechtigung) => { %>
                     <div class="form-check form-check-inline">
                       <input
@@ -53,12 +55,12 @@
                 </div>
                 <% } %>
               </td>
-              <td>
+              <td data-label="Hinweis" class="stapel-block<%= hatHinweis ? '' : ' stapel-leer' %>">
                 <% if (p.ct_person_unresolved) { %><span class="text-warning d-block">⚠️ Person in ChurchTools nicht auflösbar (nicht auflösbar)</span><% } %>
                 <% if (p.aktiv && p.gruppen.length === 0) { %><span class="text-muted small d-block">Keine Verwaltungsgruppe – Portalzugang über ChurchTools-Login (Rechte nur über Konten, Karten, Vertretungen oder Einzelrechte)</span><% } %>
                 <% if (!p.aktiv && p.deaktivierungsgrund) { %><span class="text-muted small d-block">Zugang entzogen<%= p.deaktivierungsgrund === 'churchtools_geloescht' ? ': Person in ChurchTools gelöscht' : p.deaktivierungsgrund === 'churchtools_archiviert' ? ': Person in ChurchTools archiviert' : '' %><%= p.deaktiviert_am ? ` (${p.deaktiviert_am.slice(0, 10)})` : '' %></span><% } %>
               </td>
-              <td>
+              <td data-label="Ferienmodus">
                 <% if (p.ferienmodus_von) { %>
                   <span class="badge text-bg-info d-block"><%= p.ferienmodus_von %> – <%= p.ferienmodus_bis %></span>
                   <span class="text-muted small">Stellvertreter: <%= p.ferienmodusStellvertreterName %></span>

@@ -71,3 +71,11 @@ test('Portal: Zähler nur bei offeneAufgaben > 0', () => {
   assert.equal(finde(portal({ offeneAufgaben: 3 }), 'Aufgaben').zaehler, 3);
   assert.equal(finde(portal({ offeneAufgaben: 3 }), 'Meine Spesen').zaehler, undefined);
 });
+
+test('Benachrichtigungen: Anzeige-Label mit weichem Trennstrich an der richtigen Stelle, label unverändert', () => {
+  const punkt = bauePortalGruppen({ pfad: '/meine-benachrichtigungen', spesenModulAktiv: true, zeigeKreditkarteNav: true, offeneAufgaben: 0 })
+    .flatMap((g) => g.punkte).find((p) => p.href === '/meine-benachrichtigungen');
+  assert.equal(punkt.label, 'Benachrichtigungen');
+  assert.equal(punkt.trennung, 'Benachrich­tigungen');
+  assert.equal(punkt.trennung.replace('­', ''), punkt.label);
+});

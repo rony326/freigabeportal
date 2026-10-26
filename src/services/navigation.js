@@ -22,7 +22,9 @@ const PORTAL = [
     { label: 'Kreditkartenbelege', href: '/kreditkarte', symbol: '▭', flag: 'zeigeKreditkarteNav' },
   ] },
   { titel: 'Persönlich', punkte: [
-    { label: 'Benachrichtigungen', href: '/meine-benachrichtigungen', symbol: '✉', flag: null },
+    // trennung: Label mit weichem Trennstrich (\u00AD) an der richtigen Stelle, falls es in der
+    // 210-px-Leiste umbrechen muss (fett beim aktiven Punkt). Nur für die Anzeige.
+    { label: 'Benachrichtigungen', trennung: 'Benachrich\u00ADtigungen', href: '/meine-benachrichtigungen', symbol: '✉', flag: null },
     { label: 'Ferienmodus', href: '/ferienmodus', symbol: '☼', flag: null },
     { label: 'Zeitstempel prüfen', href: '/zeitstempel-pruefen', symbol: '⏱', flag: null },
     { label: 'Problem melden', href: '/fehler-melden', symbol: '!', flag: null },
@@ -70,6 +72,7 @@ function baue(definition, pfad, sichtbar, zaehlerFuer = () => undefined) {
         .filter((p) => p.flag === null || sichtbar(p.flag))
         .map((p) => {
           const punkt = { label: p.label, href: p.href, aktiv: istAktiv(pfad, p.href), symbol: p.symbol };
+          if (p.trennung) punkt.trennung = p.trennung;
           const z = zaehlerFuer(p);
           if (z !== undefined) punkt.zaehler = z;
           return punkt;

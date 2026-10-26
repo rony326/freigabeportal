@@ -47,6 +47,33 @@
   font-weight: 600;
 }
 
+/* Handy (unter 576 px): Menüknopf, Titel/Logo und die Knöpfe rechts teilen sich die erste Zeile,
+   die Reiter Portal/Admin stehen in einer eigenen zweiten Zeile. Sonst bleibt neben den
+   44-px-Touch-Knöpfen kein Platz für den Titel (er würde ganz weggekürzt). */
+@media (max-width: 575.98px) {
+  .portal-kopf-zeile {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "menue marke rechts"
+      "reiter reiter reiter";
+    row-gap: .25rem;
+  }
+  .portal-kopf-links {
+    display: contents !important;
+  }
+  #seitenleiste-toggle { grid-area: menue; }
+  /* Titel bzw. Logo links und Logo in der Mitte schliessen sich aus: gleiche Zelle, die leere entfällt. */
+  .portal-kopf-marke,
+  .portal-kopf-mitte { grid-area: marke; min-width: 0; }
+  .portal-kopf-marke:not(:has(*)),
+  .portal-kopf-mitte:not(:has(*)) { display: none; }
+  .portal-kopf-rechts { grid-area: rechts; gap: .375rem !important; }
+  .portal-reiter {
+    grid-area: reiter;
+    margin-left: 0;
+  }
+}
+
 /* ---------- Rahmen ---------- */
 .portal-inhalt {
   min-width: 0;
@@ -131,8 +158,9 @@
   flex-grow: 1;
   min-width: 0;
   /* Lange Wörter (fett beim aktiven Punkt, z. B. "Benachrichtigungen") trennen statt über den
-     Rand der 210-px-Leiste zu ragen. Wirkt nur, wo das Wort sonst nicht passt. */
-  hyphens: auto;
+     Rand der 210-px-Leiste zu ragen — nur am weichen Trennstrich aus navigation.js (trennung),
+     nicht nach Wörterbuch (das trennte falsch). Wirkt nur, wo das Wort sonst nicht passt. */
+  hyphens: manual;
   overflow-wrap: anywhere;
 }
 .portal-zaehler {
@@ -355,6 +383,11 @@
 
 /* Testmodus-Band: schwarz auf gelb, klebt oben, bricht am Handy um. */
 .testmodus-band { position: sticky; top: 0; z-index: 1060; background: #ffd400; color: #000; border-bottom: 3px solid #000; }
+/* Handy: das umgebrochene Band ist gut ein Viertel des Bildschirms hoch. Es steht weiterhin oben
+   auf jeder Seite, scrollt aber mit weg, statt beim Lesen dauernd ein Viertel zu verdecken. */
+@media (max-width: 575.98px) {
+  .testmodus-band { position: static; }
+}
 .testmodus-band-zeile { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding-top: .4rem; padding-bottom: .4rem; }
 .testmodus-band-text { font-size: 1rem; margin-right: auto; }
 .testmodus-band-person { display: flex; gap: .5rem; align-items: center; flex: 1 1 14rem; max-width: 28rem; }
@@ -483,6 +516,68 @@
 .form-select {
   max-width: 100%;
   text-overflow: ellipsis;
+}
+
+/* ---------- Responsive: Tabellen als Karten (Handy) ----------
+   .stapel-tabelle (z. B. Admin Personen): unter 768 px wird jede Zeile eine Karte. .stapel-titel
+   ist die Kartenüberschrift, andere Zellen zeigen ihre Spaltenbeschriftung (data-label) davor,
+   .stapel-block darüber; .stapel-leer (nichts anzuzeigen) entfällt. Ab 768 px unveränderte Tabelle. */
+@media (max-width: 767.98px) {
+  .stapel-tabelle thead {
+    display: none;
+  }
+  .stapel-tabelle,
+  .stapel-tabelle tbody,
+  .stapel-tabelle tr,
+  .stapel-tabelle td {
+    display: block;
+    width: 100%;
+  }
+  .stapel-tabelle tr {
+    margin-bottom: .75rem;
+    padding: .5rem .75rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+    background: var(--bs-body-bg);
+  }
+  .stapel-tabelle td {
+    padding: .2rem 0;
+    border: 0;
+    overflow-wrap: anywhere;
+  }
+  .stapel-tabelle td[data-label]::before {
+    content: attr(data-label);
+    display: inline-block;
+    min-width: 6.5rem;
+    margin-right: .5rem;
+    font-size: .875em;
+    color: var(--bs-secondary-color);
+  }
+  .stapel-tabelle td.stapel-block::before {
+    display: block;
+  }
+  .stapel-tabelle td.stapel-titel {
+    font-weight: 600;
+    font-size: 1.1em;
+  }
+  .stapel-tabelle td.stapel-leer {
+    display: none;
+  }
+  /* Einzelrechte: zwei Häkchen je Zeile statt einer langen Spalte. */
+  .personen-rechte {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: .75rem !important;
+    row-gap: 0 !important;
+  }
+  .personen-rechte .form-check-inline {
+    margin-right: 0;
+  }
+  .personen-rechte > .btn {
+    grid-column: 1 / -1;
+    justify-self: start;
+    margin-top: .25rem;
+  }
 }
 
 /* ---------- Responsive: Tablet-Stufe (768–991 px) ----------

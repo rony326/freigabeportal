@@ -169,8 +169,11 @@
       document.getElementById('preview-dialog').showModal();
     }
 
-    document.querySelectorAll('.thumbnail-preview').forEach((img) => {
-      img.addEventListener('click', (event) => {
+    // Handler am Link (nicht am Bild): so öffnet auch Enter auf dem fokussierten Link den Dialog.
+    document.querySelectorAll('.thumbnail-link').forEach((link) => {
+      const img = link.querySelector('.thumbnail-preview');
+      if (!img) return;
+      link.addEventListener('click', (event) => {
         // Unter 992 px (Handy/Tablet) kein Dialog mit eingebettetem PDF — iOS/iPadOS scrollen
         // eingebettete PDFs nicht zuverlässig: der umgebende Link öffnet das PDF im neuen Tab
         // (/downloads/:id/oeffnen signiert bei jedem Klick frisch). Ab 992 px wie bisher.

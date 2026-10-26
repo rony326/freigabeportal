@@ -1,7 +1,7 @@
 <%
   // Belegspalte der PDF-Seiten (Responsive-Durchgang, Ziel 5). Aufruf innerhalb einer
   // <div class="row … beleg-umschalter" data-beleg-umschalter data-refresh-url="…">, deren
-  // Formularspalte die Klasse beleg-umschalter-formular trägt:
+  // Formularspalte die Klasse und id beleg-umschalter-formular trägt (Ziel von aria-controls):
   //   include('_beleg_umschalter', { jobId, pdfUrl, thumbnailUrl, refreshUrl, previewUrl, frameId, spalte, einbetten, hoehe })
   //   pdfUrl       stabiler Link "PDF öffnen" (/downloads/:id/oeffnen, leitet auf frisch signierte URL um)
   //   thumbnailUrl /downloads/:id/thumbnail oder null (dann Platzhalter)
@@ -16,7 +16,7 @@
       <div class="col-12 d-lg-none beleg-umschalter-knoepfe" hidden>
         <div class="btn-group w-100" role="group" aria-label="Ansicht wählen">
           <button type="button" class="btn btn-outline-primary" data-beleg-ansicht="beleg" aria-pressed="false" aria-controls="beleg-umschalter-beleg">Beleg</button>
-          <button type="button" class="btn btn-outline-primary active" data-beleg-ansicht="formular" aria-pressed="true">Formular</button>
+          <button type="button" class="btn btn-outline-primary active" data-beleg-ansicht="formular" aria-pressed="true" aria-controls="beleg-umschalter-formular">Formular</button>
         </div>
       </div>
       <div class="<%= bSpalte %> beleg-umschalter-beleg" id="beleg-umschalter-beleg">

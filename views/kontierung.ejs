@@ -11,7 +11,7 @@
       </div>
       <div class="w-100"></div>
       <%- include('_beleg_umschalter', { jobId: job.id, pdfUrl: `/downloads/${job.id}/oeffnen`, thumbnailUrl: job.thumbnail_pfad ? `/downloads/${job.id}/thumbnail` : null, refreshUrl: `/downloads/${job.id}/refresh-url`, previewUrl, frameId: 'kontierung-preview-frame', spalte: 'col-lg-7' }) %>
-      <div class="col-lg-5 beleg-umschalter-formular">
+      <div class="col-lg-5 beleg-umschalter-formular" id="beleg-umschalter-formular">
         <div class="card">
           <div class="card-body">
             <% if (typeof qrInfo !== 'undefined' && qrInfo) { %>

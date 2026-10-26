@@ -10,7 +10,10 @@
 // - fehlerzustand: Formular nach dem Laden ohne Browser-Prüfung absenden, damit die Seite mit
 //   Fehlermeldungen geprüft wird (Review Focus 2). { formular, felder?, knopf?, entferneAttribute? }
 //   formular/knopf sind CSS-Selektoren, felder setzt Werte per name.
-// - status: erwarteter HTTP-Status (Standard 200).
+//   Antwortet das Formular mit Weiterleitung (POST → 302 → GET), wird die Zielseite geprüft.
+// - status: erwarteter HTTP-Status (Standard 200; bei fehlerzustand der Status der Antwortseite).
+// - pdf: true für Seiten mit Beleg/Formular-Umschalter: unter 992 px darf weder der PDF.js-Viewer
+//   noch das signierte PDF geladen werden, ab 992 px muss das eingebettete PDF (iframe) geladen sein.
 //
 // Neue Seite: Eintrag ergänzen; braucht sie Daten, die die Testmodus-Beispieldaten nicht haben,
 // diese in server.js (ergaenzeDaten) anlegen und die ID in `ids` zurückgeben.
@@ -23,15 +26,15 @@ export const SEITEN = [
   { name: 'Aufgaben (Anna)', view: 'pool', pfad: '/pool', als: 'test-1' },
   { name: 'Aufgaben Kacheln', view: 'pool', pfad: '/pool?ansicht=kacheln', als: 'test-1' },
   { name: 'Aufgaben Tabelle', view: 'pool', pfad: '/pool?ansicht=tabelle', als: 'test-1' },
-  { name: 'Kontierung', view: 'kontierung', pfad: '/kontierung/{anna}', als: 'test-1' },
+  { name: 'Kontierung', view: 'kontierung', pfad: '/kontierung/{anna}', als: 'test-1', pdf: true },
   {
-    name: 'Kontierung mit Fehlern', view: 'kontierung', pfad: '/kontierung/{anna}', als: 'test-1', status: 400,
+    name: 'Kontierung mit Fehlern', view: 'kontierung', pfad: '/kontierung/{anna}', als: 'test-1', status: 400, pdf: true,
     fehlerzustand: { formular: '#kontierung-form', knopf: 'button[name="aktion"][value="kontieren"]', felder: { kontoId: '', betrag: 'kein-betrag', zahlungsziel: '' } },
   },
-  { name: 'Aufsplitten', view: 'kontierung-aufsplitten', pfad: '/kontierung/{anna}/aufsplitten', als: 'test-1' },
-  { name: 'KK-Abgleich', view: 'kk-abgleich', pfad: '/kontierung/{kkAbrechnung}/kk-abgleich', als: 'test-1' },
-  { name: 'Freigabe 2', view: 'freigabe2', pfad: '/freigabe2/{freigabe2}', als: 'test-2' },
-  { name: 'Spesen-Freigabe 1', view: 'spesen-freigabe1', pfad: '/spesen-freigabe1/{spesen}', als: 'test-1' },
+  { name: 'Aufsplitten', view: 'kontierung-aufsplitten', pfad: '/kontierung/{anna}/aufsplitten', als: 'test-1', pdf: true },
+  { name: 'KK-Abgleich', view: 'kk-abgleich', pfad: '/kontierung/{kkAbrechnung}/kk-abgleich', als: 'test-1', pdf: true },
+  { name: 'Freigabe 2', view: 'freigabe2', pfad: '/freigabe2/{freigabe2}', als: 'test-2', pdf: true },
+  { name: 'Spesen-Freigabe 1', view: 'spesen-freigabe1', pfad: '/spesen-freigabe1/{spesen}', als: 'test-1', pdf: true },
   { name: 'Abgelehnt', view: 'abgelehnt', pfad: '/abgelehnt/{abgelehnt}', als: 'test-1' },
   {
     name: 'Kommentar mit Fehler', view: 'kommentar-fehler', pfad: '/kontierung/{anna}', als: 'test-1', status: 422,

@@ -2,11 +2,14 @@
 // Prüft: seitliches Scrollen (ueberlauf), Touch-Ziele < 44 px (touch, nur Touch-Breiten, inkl.
 // Reiter und Seitenleisten-Punkte — unter 992 px im geöffneten Menü), Knopf-/Menütext passt in
 // seinen Kasten (text), Bedienelemente überdecken sich nicht (ueberlappung), Menü unter 992 px
-// (menue), Testmodus-Band höchstens 30 % hoch und Inhalt erreichbar (band).
+// (menue), Testmodus-Band höchstens 30 % hoch und Inhalt erreichbar (band), PDF-Seiten mit
+// Beleg/Formular-Umschalter (pdf: true in seiten.js) laden unter 992 px weder PDF.js-Viewer noch
+// signiertes PDF, ab 992 px ist das eingebettete PDF geladen (iframe).
 // Aufruf: npm run test:responsive [-- --seite=<Teil des Namens> --breite=360]
 // Ausgabe: eine Zeile je Verstoss "Breite Seite Art Selektor Masse", danach Zusammenfassung.
 // Exit-Codes: 0 alles gut, 1 Verstösse, 2 Test selbst gescheitert (Browser/Server startet nicht,
 // Seite lädt nicht oder falscher HTTP-Status, Filter passt auf nichts) — getrennt ausgegeben.
+// Gibt es beides, kommt Exit 2; die Verstösse werden trotzdem ausgegeben und ausdrücklich erwähnt.
 // Screenshots der betroffenen Seiten nach test-results/responsive/.
 import { chromium } from 'playwright';
 import { mkdirSync, rmSync } from 'node:fs';
@@ -209,10 +212,35 @@ async function pruefeMenue(page, optionen) {
   }
 }
 
+// PDF-Seiten (Beleg/Formular-Umschalter): unter 992 px kein eingebettetes PDF (keine Anfrage an
+// Viewer oder signiertes PDF, auch nicht nach dem Umschalten auf "Beleg"), ab 992 px ist das
+// iframe geladen (src gesetzt) — sofern die Seite eines hat (Aufsplitten hat keins).
+async function pruefePdf(page, b, pdfAnfragen) {
+  if (b.breite < MENUE_BIS) {
+    const knopf = page.locator('[data-beleg-ansicht="beleg"]');
+    if (await knopf.count() && await knopf.isVisible()) {
+      await knopf.click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(150);
+    }
+    return pdfAnfragen.length
+      ? [{ art: 'iframe', selektor: 'iframe.pdf-preview', masse: `${pdfAnfragen.length} PDF-Anfragen unter ${MENUE_BIS} px (${pdfAnfragen[0]})` }]
+      : [];
+  }
+  const src = await page.evaluate(() => {
+    const frame = document.querySelector('[data-beleg-umschalter] iframe[data-preview-url]');
+    return frame ? frame.getAttribute('src') || '' : null;
+  });
+  if (src === null || src.includes('/vendor/pdfjs/web/viewer.html')) return [];
+  return [{ art: 'iframe', selektor: 'iframe.pdf-preview', masse: `src nicht gesetzt ab ${MENUE_BIS} px ("${src.slice(0, 40)}")` }];
+}
+
 async function sendeFehlerzustand(page, fz) {
   // Auf die vollständig geladene Antwortseite warten (nicht nur auf die Antwort: sonst läuft die
   // Prüfung noch im alten oder halb aufgebauten Dokument und findet nichts).
   const navigation = page.waitForNavigation({ waitUntil: 'load', timeout: 15000 });
+  // Scheitert evaluate unten (oder fehlt das Formular), würde das Warten später ohne Abnehmer
+  // abgelehnt (unhandled rejection) — der Fehler kommt stattdessen über das throw unten bzw. await.
+  navigation.catch(() => {});
   const ok = await page.evaluate(({ formular, felder, knopf }) => {
     const form = document.querySelector(formular);
     if (!form) return false;
@@ -238,7 +266,10 @@ async function sendeFehlerzustand(page, fz) {
   }, fz);
   if (!ok) throw new Error(`Formular ${fz.formular} nicht gefunden`);
   const res = await navigation;
-  if (!res || res.request().method() !== 'POST') throw new Error(`Formular ${fz.formular}: keine POST-Antwort`);
+  // POST → 302 → GET (Post/Redirect/Get) ist erlaubt: geprüft wird die Zielseite, deren Status zählt.
+  let anfrage = res?.request();
+  while (anfrage?.redirectedFrom()) anfrage = anfrage.redirectedFrom();
+  if (!res || anfrage.method() !== 'POST') throw new Error(`Formular ${fz.formular}: keine POST-Antwort`);
   return res.status();
 }
 
@@ -254,6 +285,18 @@ async function pruefeSeite(browser, server, seite, b) {
   await context.route((url) => !url.href.startsWith(`${server.url}/`), (route) => route.abort());
   const page = await context.newPage();
   page.on('dialog', (d) => d.accept().catch(() => {}));
+  // PDF-Seiten: Anfragen an den PDF.js-Viewer bzw. an das signierte PDF (/downloads/:id?expires…)
+  // mitschreiben — unter 992 px darf keine kommen (nur Vorschaubild /downloads/:id/thumbnail).
+  const pdfAnfragen = [];
+  if (seite.pdf) {
+    page.on('request', (req) => {
+      const u = new URL(req.url());
+      if (u.pathname.startsWith('/vendor/pdfjs/web/viewer.html')
+        || (/^\/downloads\/[^/]+$/.test(u.pathname) && u.searchParams.has('signature'))) {
+        pdfAnfragen.push(u.pathname);
+      }
+    });
+  }
   const verstoesse = [];
   const fehler = []; // Infrastruktur/Laden (falscher HTTP-Status, Zeitüberschreitung …): Exit 2
   try {
@@ -270,6 +313,7 @@ async function pruefeSeite(browser, server, seite, b) {
     const optionen = { minTouch: MIN_TOUCH, touch: b.hasTouch, bandMaxAnteil: BAND_MAX_ANTEIL };
     verstoesse.push(...await page.evaluate(pruefeImBrowser, optionen));
     if (b.breite < MENUE_BIS) verstoesse.push(...await pruefeMenue(page, optionen));
+    if (seite.pdf) verstoesse.push(...await pruefePdf(page, b, pdfAnfragen));
     if (verstoesse.length) {
       await page.addStyleTag({ content: '[data-responsive-verstoss]{outline:3px solid #e00 !important;outline-offset:-1px}' }).catch(() => {});
       // fullPage verliert bei isMobile/hasTouch die (pointer: coarse)-Emulation während der Aufnahme
@@ -302,7 +346,7 @@ function zusammenfassen(verstoesse) {
 }
 
 function tabelle(verstoesse, breiten) {
-  const arten = ['ueberlauf', 'touch', 'text', 'ueberlappung', 'menue', 'band'];
+  const arten = ['ueberlauf', 'touch', 'text', 'ueberlappung', 'menue', 'band', 'iframe'];
   const zeilen = [['Art', ...breiten.map((b) => String(b.breite)), 'Summe']];
   for (const art of arten) {
     const proBreite = breiten.map((b) => verstoesse.filter((v) => v.art === art && v.breite === b.breite).length);
@@ -389,8 +433,11 @@ async function main() {
     console.log(`Screenshots: ${SCREENSHOT_DIR}`);
   }
   if (fehler.length) {
-    console.error(`\n${fehler.length} Seiten liessen sich nicht prüfen (Infrastruktur/Laden, keine Verstösse):`);
+    console.error(`\n${fehler.length} Seiten liessen sich nicht prüfen (Infrastruktur/Laden — keine Layout-Verstösse):`);
     for (const f of fehler.sort()) console.error(`  ${f}`);
+    if (alle.length) {
+      console.error(`\nAchtung: zusätzlich ${alle.length} Verstösse (oben aufgelistet). Exit 2 hat Vorrang vor 1 — nach dem Beheben der Ladefehler bleiben diese Verstösse.`);
+    }
     process.exitCode = 2;
     return;
   }

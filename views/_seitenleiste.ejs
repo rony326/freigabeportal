@@ -14,7 +14,7 @@
             <li>
               <a class="portal-punkt<%= punkt.aktiv ? ' aktiv' : '' %>" href="<%= punkt.href %>"<% if (punkt.aktiv) { %> aria-current="page"<% } %><% if (eingeklappt) { %> title="<%= punkt.label %>" aria-label="<%= punkt.label %>"<% } %>>
                 <span class="portal-symbol" aria-hidden="true"><%= punkt.symbol %></span>
-                <span class="portal-label"><%= punkt.label %></span>
+                <span class="portal-label"><%= punkt.trennung || punkt.label %></span>
                 <% if (punkt.zaehler) { %><span class="badge rounded-pill portal-zaehler"><%= punkt.zaehler %></span><% } %>
               </a>
             </li>

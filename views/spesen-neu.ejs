@@ -15,10 +15,13 @@
         <input type="text" class="form-control" id="titel" name="titel" value="<%= values.titel || '' %>">
       </div>
 
+      <% /* Spalten: Handy untereinander, ab md 6/3/3 + 6/4/2. Ab xl zwei Zeilen (4/2/2/4 + 6/auto): in
+     einer Zeile blieb für "Beleg" nur col-xl-2 (~160 px) — die Dateiauswahl "Datei auswählen | Keine
+     ausgewählt" braucht ~370 px und wurde abgeschnitten. Gleiche Klassen im Zeilen-Template unten. */ %>
       <div id="positionen-container">
         <% values.positionen.forEach((pos) => { %>
           <div class="row g-2 mb-3 pb-3 border-bottom align-items-start position-zeile">
-            <div class="col-md-6 col-xl-3">
+            <div class="col-md-6 col-xl-4">
               <label class="form-label small">Konto</label>
               <select class="form-select" name="posKontoId">
                 <option value="">— Konto wählen —</option>
@@ -35,15 +38,15 @@
               <label class="form-label small">Auslage-Datum</label>
               <input type="date" class="form-control" name="posAuslageDatum" value="<%= pos.auslageDatum || '' %>">
             </div>
-            <div class="col-md-6 col-xl-2">
+            <div class="col-md-6 col-xl-4">
               <label class="form-label small">Verwendungszweck</label>
               <input type="text" class="form-control" name="posBeschreibung" value="<%= pos.beschreibung || '' %>">
             </div>
-            <div class="col-md-4 col-xl-2">
+            <div class="col-md-4 col-xl-6">
               <label class="form-label small">Beleg</label>
               <input type="file" class="form-control position-beleg-input" accept="application/pdf,image/png,image/jpeg" required>
             </div>
-            <div class="col-md-2 col-xl-1 d-flex align-items-end position-entfernen">
+            <div class="col-md-2 col-xl-auto align-self-xl-end d-flex align-items-end position-entfernen">
               <button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button>
             </div>
           </div>
@@ -91,17 +94,17 @@
           var zeile = document.createElement('div');
           zeile.className = 'row g-2 mb-3 pb-3 border-bottom align-items-start position-zeile';
           zeile.innerHTML =
-            '<div class="col-md-6 col-xl-3"><label class="form-label small">Konto</label>' +
+            '<div class="col-md-6 col-xl-4"><label class="form-label small">Konto</label>' +
             '<select class="form-select" name="posKontoId">' + kontoOptionsHtml + '</select></div>' +
             '<div class="col-md-3 col-xl-2"><label class="form-label small">Betrag</label>' +
             '<input type="text" inputmode="decimal" class="form-control" name="posBetrag" placeholder="z.B. 61.75"></div>' +
             '<div class="col-md-3 col-xl-2"><label class="form-label small">Auslage-Datum</label>' +
             '<input type="date" class="form-control" name="posAuslageDatum"></div>' +
-            '<div class="col-md-6 col-xl-2"><label class="form-label small">Verwendungszweck</label>' +
+            '<div class="col-md-6 col-xl-4"><label class="form-label small">Verwendungszweck</label>' +
             '<input type="text" class="form-control" name="posBeschreibung"></div>' +
-            '<div class="col-md-4 col-xl-2"><label class="form-label small">Beleg</label>' +
+            '<div class="col-md-4 col-xl-6"><label class="form-label small">Beleg</label>' +
             '<input type="file" class="form-control position-beleg-input" accept="application/pdf,image/png,image/jpeg" required></div>' +
-            '<div class="col-md-2 col-xl-1 d-flex align-items-end position-entfernen"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
+            '<div class="col-md-2 col-xl-auto align-self-xl-end d-flex align-items-end position-entfernen"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';
           var container = document.getElementById('positionen-container');
           if (container) container.appendChild(zeile);
           zeileEntfernenBinden(zeile);

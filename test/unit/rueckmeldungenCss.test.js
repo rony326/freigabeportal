@@ -27,3 +27,10 @@ test('farbig hinterlegte Tabellenzeilen: gedämpfte Schrift, Links und Umriss-Kn
   assert.match(css, /\.table > tbody > tr\[class\*="table-"\] \.btn-outline-primary \{\s*--bs-btn-color: var\(--bs-table-color\);/);
   assert.match(css, /\.table > tbody > tr\[class\*="table-"\] a:not\(\.btn\) \{/);
 });
+
+test('Spesen einreichen: ab xl hat "Beleg" Platz für die Dateiauswahl (Formular und Zeilen-Template gleich)', () => {
+  const src = readFileSync(new URL('../../views/spesen-neu.ejs', import.meta.url), 'utf8');
+  const beleg = [...src.matchAll(/<div class="(col-md-4 col-xl-\d+)"[^>]*>\s*'?\s*(?:\+\s*')?<label class="form-label small">Beleg/g)].map((m) => m[1]);
+  assert.equal(beleg.length, 2, 'Beleg-Spalte im Formular und im Template');
+  for (const klassen of beleg) assert.equal(klassen, 'col-md-4 col-xl-6');
+});

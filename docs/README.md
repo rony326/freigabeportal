@@ -16,6 +16,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [auth-und-rechte.md](auth-und-rechte.md) | ChurchTools-OAuth2-Login, Rollenmodell (Gruppen) und additive Einzelrechte, Job-Autorisierung |
 | [datenmodell.md](datenmodell.md) | Alle Datenbanktabellen, ER-Diagramm, wichtige Constraints |
 | [rechnungs-workflow.md](rechnungs-workflow.md) | Der zentrale Prozess: Status-Modell einer Rechnung, Kontierung, Gutschriften, Freigabe 1/2, Ablehnung, Aufsplitten, Splitgruppen-Export, Löschung |
+| [kommentare.md](kommentare.md) | Kommentare an Rechnungen: Sichtrecht, @Erwähnungen, Mails und Links, Unveränderlichkeit, Marke „neu“, Abschnitt auf dem finalen PDF, Konflikt bei Freigabe 2 |
 | [spesen-einreichung.md](spesen-einreichung.md) | Zweite Domäne neben Lieferantenrechnungen: Spesen/Auslagen-Einreichung durch die Person selbst, eigene Freigabe-1-Seite |
 | [kreditkarten-belege.md](kreditkarten-belege.md) | Dritte Domäne: Vorab-Erfassung von Kreditkartenbelegen, Abgleich gegen die Monatsabrechnung als erweitertes Aufsplitten |
 | [n8n-schnittstelle.md](n8n-schnittstelle.md) | API-Vertrag für Rechnungseingang (inkl. PDF-Eingangsprüfung) und -abholung durch n8n |

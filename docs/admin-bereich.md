@@ -206,7 +206,7 @@ Editierbare Betreff-/Text-Vorlagen (`%variable%`-Platzhalter) für alle
 Mail-Typen (inkl. `freigabe2-reminder`/`freigabe2-eskalation`, siehe
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#freigabe2-erinnerungen),
 sowie die drei Kreditkarten-Typen `kk-abrechnung-zugewiesen`,
-`kk-beleg-erinnerung` und `kk-beleg-eingegangen`, siehe
+`kk-beleg-erinnerung` und `kk-beleg-eingegangen`, sowie `kommentar` (siehe [kommentare.md](kommentare.md)), siehe
 [kreditkarten-belege.md](kreditkarten-belege.md#3-abrechnung-markieren-und-übergeben)
 und [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail))
 plus die Digest-Vorlage, sowie der globale Batching-Schalter

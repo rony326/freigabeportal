@@ -33,6 +33,11 @@ vollständig in der Spalte `status`.
 > `freigabe2`. Die beiden Werte sind ein Überbleibsel eines früheren
 > Entwurfs und aus Kompatibilitätsgründen weiterhin im Constraint erlaubt.
 
+Auf allen Arbeitsseiten und der Zeitstempel-Prüfung lassen sich bei laufenden
+Vorgängen Rückfragen und Kommentare hinterlassen; bei `abgeschlossen`, `abgeholt`,
+`archiviert` und `geloescht` sind sie nur noch lesbar. Details:
+[kommentare.md](kommentare.md).
+
 ## Status-Diagramm
 
 ```mermaid

@@ -411,6 +411,7 @@ codierten Strings.
 | `admin-umzuweisung` | Admin hat einen laufenden Vorgang umgehängt; an die neue Person (plus deren Ferienvertretung) und die bisherige; ignoriert das Batching wie `sync-fehler`/`iban-warnung`/`kk-beleg-eingegangen` |
 | `kk-beleg-eingegangen` | per Mail eingereichter Kreditkartenbeleg als Entwurf angelegt — **immer sofort**, unabhängig vom Batching-Schalter (Link zum Vervollständigen soll nicht bis zum nächsten Digest warten) |
 | `neues-geraet` | Anmeldung von einem für die Person noch unbekannten Gerät (Cookie `fp_geraet`) — an die Person selbst, **immer sofort**; siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md) |
+| `kommentar` | neuer Kommentar an einem Vorgang — an Beteiligte und Erwähnte (nicht an den Schreiber); folgt dem Batching-Schalter; Details und Links: [kommentare.md](kommentare.md) |
 | `fehlermeldung` | Person hat über „Problem melden“ ein Problem gemeldet — an alle mit Recht `betrieb_einsehen`, **immer sofort** |
 
 **Batching:** Ist unter **Admin → Einstellungen → Mail-Einstellungen** aktiviert, werden

@@ -438,6 +438,8 @@ und gehören zur vollständigen Datenbanksicherung.
 | `audit_export_pakete` | Unveränderliches lokales Register hashverketteter Audit-Pakete mit Ereignisbereich, Lücken und Vorgängerhash. |
 | `audit_export_zeitstempel` | Unveränderlicher RFC3161-Zeitstempel je Audit-Paket (`paket_nr` PK → `audit_export_pakete.id`, `token`, `gen_time`, `nachweis` JSON inkl. beim Stempeln geprüfter Kette, `erstellt_am`); UPDATE/DELETE gesperrt. Wie das Paketregister nicht in der zentralen Audit-Trigger-Liste. |
 | `nutzung_seitenaufrufe`, `nutzung_anmeldungen`, `nutzung_geraete` | Nutzungsdaten je Person (Seitenaufrufe 90 Tage, Anmeldungen 365 Tage, Geräte 365 Tage nach `zuletzt_am`); bewusst ohne Audit-Trigger. Siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md). |
+| `kommentare` | Unveränderliche Kommentare je Vorgang (`job_id`, `person_id`, `text` 1–2000 Zeichen, `erwaehnt` als JSON, `erstellt_am`); Trigger sperren UPDATE/DELETE; mit Audit-Triggern. Siehe [kommentare.md](kommentare.md). |
+| `kommentar_gelesen` | Je Person und Vorgang der letzte Lesezeitpunkt (Primärschlüssel `job_id`, `person_id`), Basis für das Badge „neu“; bewusst ohne Audit-Trigger. |
 | `betrieb_fehler` | Erfasste Fehler mit eindeutiger Anfrage-ID (`request_id`), Stacktrace nur serverseitig; 365 Tage. |
 | `betrieb_fehlermeldungen` | Von Personen gemeldete Probleme (Status `offen`/`in_arbeit`/`erledigt`, Notiz); 365 Tage; mit Audit-Triggern. |
 | `banner`, `banner_ausgeblendet` | Banner (Art `info`/`wartung`/`warnung`, Zeitraum `von`–`bis`, `aktiv`; mit Audit-Triggern) und die je Person weggeklickten Info-Banner. |

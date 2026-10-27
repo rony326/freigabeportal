@@ -103,6 +103,12 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.locals.version = getVersionInfo(join(__dirname, '..'));
   app.locals.zeitpunktAnzeige = zeitpunktAnzeige;
   app.locals.belegName = belegName;
+  // Versions-Parameter für /js/portal.js und /css/portal.css (aus dem Dateistand beim Start): neue
+  // Stände werden sofort geladen, und eine im Browser gespeicherte alte Umleitung der nackten URL
+  // greift nicht mehr (Rückmeldung 2026-10-27: ERR_TOO_MANY_REDIRECTS auf portal.js).
+  app.locals.assetVersion = ['js/portal.js', 'css/portal.css']
+    .map((datei) => Math.trunc(statSync(join(__dirname, '..', 'public', datei)).mtimeMs).toString(36))
+    .join('');
   app.use((req, res, next) => {
     // X-Content-Type-Options: the PDF magic-byte check on upload only validates the first 4
     // bytes, so this stops a browser from sniffing a crafted upload into something other than
@@ -160,7 +166,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   const publicDir = join(__dirname, '..', 'public');
   // Rückmeldung Live-Portal: der Browser holte "/js/portal.js/" (Schrägstrich angehängt) und bekam
   // die HTML-404 — Skript verweigert (MIME text/html). Keine Seite verweist so darauf; hängt ein
-  // Proxy, Lesezeichen oder eine alte Seite den Schrägstrich an, führt eine 301 zur echten Datei.
+  // Proxy, Lesezeichen oder eine alte Seite den Schrägstrich an, führt eine 302 zur echten Datei.
   app.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
     const m = /^(\/(?:js|css|vendor)\/[^?]*?\.[a-z0-9]+)\/+$/i.exec(req.path);
@@ -168,7 +174,9 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     const ziel = resolve(publicDir, `.${m[1]}`);
     if (!ziel.startsWith(publicDir + sep) || !existsSync(ziel) || !statSync(ziel).isFile()) return next();
     const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
-    return res.redirect(301, m[1] + query);
+    // 302, nicht 301: eine dauerhafte Umleitung speichert der Browser — zusammen mit einer alten,
+    // gespeicherten Umleitung in die Gegenrichtung entstand live eine Endlosschleife.
+    return res.redirect(302, m[1] + query);
   });
   app.use(express.static(publicDir));
   app.use(loadBranding(db));

@@ -31,7 +31,7 @@
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
-  <link rel="stylesheet" href="/css/portal.css">
+  <link rel="stylesheet" href="/css/portal.css?v=<%= locals.assetVersion || 0 %>">
   <%- include('_brand_styles') %>
   <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
   <title><%= titel %> — <%= branding.seitenTitel %><%= sAdminBereich ? ' Admin' : '' %></title>

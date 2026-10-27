@@ -121,8 +121,8 @@ test('GET /pool rendert das volle Grundgerüst: Bootstrap genau einmal, containe
   assert.match(reiter[0], /<a [^>]*href="\/pool"[^>]*aria-current="page"[^>]*>Portal<\/a>/);
   assert.doesNotMatch(reiter[0], /href="\/admin"/);
   assert.match(res.text, /id="seitenleiste-toggle"/);
-  assert.match(res.text, /<script src="\/js\/portal\.js" defer><\/script>/);
-  assert.match(res.text, /<link rel="stylesheet" href="\/css\/portal\.css">/);
+  assert.match(res.text, /<script src="\/js\/portal\.js\?v=[a-z0-9]+" defer><\/script>/);
+  assert.match(res.text, /<link rel="stylesheet" href="\/css\/portal\.css\?v=[a-z0-9]+">/);
   assert.match(res.text, /<title>Aufgaben — /);
   db.close();
 });

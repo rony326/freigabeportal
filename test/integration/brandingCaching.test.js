@@ -89,16 +89,19 @@ test('Seiten verlinken das Logo mit Versionsparameter; versionierte Abrufe sind 
 // Live-Portal-Konsole: "/js/portal.js/" (mit Schrägstrich) → 404 als text/html, Skript verweigert.
 // Im aktuellen Code verweist keine Seite so darauf (_seite_ende: absolutes /js/portal.js, keine
 // <base>, keine Umleitung, die einen Schrägstrich anhängt); ein Schrägstrich, der von aussen
-// (Proxy, Lesezeichen, alte Seite) angehängt wird, führt jetzt per 301 zur Datei statt zur HTML-404.
+// (Proxy, Lesezeichen, alte Seite) angehängt wird, führt per 302 zur Datei statt zur HTML-404.
+// 302 statt 301: Rückmeldung 2026-10-27 — der Browser hatte eine alte, dauerhaft gespeicherte
+// Umleitung /js/portal.js → /js/portal.js/; zusammen mit einer (ebenfalls gespeicherten) 301
+// zurück entstand ERR_TOO_MANY_REDIRECTS. Eine 302 speichert der Browser nicht.
 test('Statische Datei mit angehängtem Schrägstrich wird auf die Datei umgeleitet, nicht als HTML-404 beantwortet', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });
   try {
     const res = await request(app).get('/js/portal.js/');
-    assert.equal(res.status, 301);
+    assert.equal(res.status, 302);
     assert.equal(res.headers.location, '/js/portal.js');
     const css = await request(app).get('/css/portal.css//?x=1');
-    assert.equal(css.status, 301);
+    assert.equal(css.status, 302);
     assert.equal(css.headers.location, '/css/portal.css?x=1');
     // Unbekannte Datei bleibt 404 (kein Umleiten ins Leere).
     const fehlt = await request(app).get('/js/gibt-es-nicht.js/');
@@ -107,6 +110,25 @@ test('Statische Datei mit angehängtem Schrägstrich wird auf die Datei umgeleit
     const seite = await request(app).get('/js/portal.js');
     assert.equal(seite.status, 200);
     assert.match(seite.headers['content-type'], /javascript/);
+  } finally {
+    db.close();
+  }
+});
+
+// Rückmeldung 2026-10-27: Seiten binden portal.js/portal.css mit Versions-Parameter ein, damit
+// eine im Browser gespeicherte alte Umleitung der nackten URL nicht mehr greift und neue Stände
+// sofort geladen werden.
+test('Seiten binden portal.js und portal.css mit Versions-Parameter ein', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  try {
+    const seite = await request(app).get('/nonexistent-route-xyz');
+    const js = /<script src="\/js\/portal\.js\?v=([a-z0-9]+)" defer><\/script>/.exec(seite.text);
+    const css = /<link rel="stylesheet" href="\/css\/portal\.css\?v=([a-z0-9]+)">/.exec(seite.text);
+    assert.ok(js, 'portal.js ohne ?v=');
+    assert.ok(css, 'portal.css ohne ?v=');
+    const geladen = await request(app).get(`/js/portal.js?v=${js[1]}`);
+    assert.equal(geladen.status, 200);
   } finally {
     db.close();
   }

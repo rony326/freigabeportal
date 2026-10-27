@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
 // Versionierte Abrufe (?v=… aus loadBranding, ändert sich mit jeder neuen Logo-Datei) darf der
@@ -20,7 +21,9 @@ export function createBrandingRouter({ db }) {
       }
       res.type(mimetype);
       // sendFile setzt ETag und Last-Modified und beantwortet If-None-Match/If-Modified-Since mit 304.
-      res.sendFile(pfad, {
+      // Gespeichert wird der Pfad so, wie BRANDING_DIR ihn vorgibt (Standard relativ:
+      // './data/branding'); sendFile verlangt einen absoluten Pfad.
+      res.sendFile(resolve(pfad), {
         cacheControl: false,
         headers: { 'Cache-Control': req.query.v ? CACHE_VERSIONIERT : CACHE_OHNE_VERSION, 'Content-Type': mimetype },
       }, (err) => {

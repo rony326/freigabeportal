@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import { mkdtempSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { createApp } from '../../src/app.js';
@@ -111,3 +111,33 @@ test('Statische Datei mit angehängtem Schrägstrich wird auf die Datei umgeleit
     db.close();
   }
 });
+
+// Rückmeldung 2026-10-27: Live lieferte /branding/logo und /branding/logo-dunkel 500. Der
+// Standard-Ordner BRANDING_DIR ist './data/branding' (relativ), gespeichert wird der relative
+// Pfad — res.sendFile verlangt aber einen absoluten Pfad. Ein Ordner mit Punkt im Pfad (z. B.
+// ein verstecktes Datenverzeichnis beim Hoster) darf ebenfalls nicht zu 404 führen.
+for (const [name, ordnerName] of [['relativer Pfad', 'logo-rel-'], ['Pfad mit Punkt-Ordner', '.logo-punkt-']]) {
+  test(`/branding/logo liefert das Logo auch bei ${name}`, async () => {
+    const dir = mkdtempSync(join(tmpdir(), ordnerName));
+    const absolut = join(dir, 'logo.png');
+    writeFileSync(absolut, PNG);
+    const pfad = name === 'relativer Pfad' ? relative(process.cwd(), absolut) : absolut;
+    const db = openDatabase(':memory:');
+    setConfigValue(db, 'branding_logo_pfad', pfad);
+    setConfigValue(db, 'branding_logo_mimetype', 'image/png');
+    setConfigValue(db, 'branding_logo_dunkel_pfad', pfad);
+    setConfigValue(db, 'branding_logo_dunkel_mimetype', 'image/png');
+    const app = createApp({ db, config: testConfig() });
+    try {
+      for (const url of ['/branding/logo?v=1', '/branding/logo-dunkel']) {
+        const res = await request(app).get(url);
+        assert.equal(res.status, 200, url);
+        assert.equal(res.headers['content-type'], 'image/png', url);
+        assert.deepEqual(res.body, PNG, url);
+      }
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}

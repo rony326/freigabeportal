@@ -105,8 +105,9 @@
   <script>
     document.querySelectorAll('.beanspruchen-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
+        if (btn.getAttribute('aria-busy') === 'true') return;
         const id = btn.dataset.jobId;
-        const res = await fetch(`/api/pool/${id}/beanspruchen`, { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' } });
+        const res = await Portal.beschaeftigt(btn, fetch(`/api/pool/${id}/beanspruchen`, { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' } }));
         if (res.ok) {
           window.location.href = `/kontierung/${id}`;
           return;
@@ -139,11 +140,14 @@
         event.preventDefault();
         const id = form.dataset.jobId;
         const personId = form.querySelector('select[name="personId"]').value;
-        const res = await fetch(`/pool/${id}/zuweisen`, {
+        const knopf = form.querySelector('button[type=submit], button:not([type])');
+        if (knopf && knopf.getAttribute('aria-busy') === 'true') return;
+        const anfrage = fetch(`/pool/${id}/zuweisen`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' },
           body: new URLSearchParams({ personId }),
         });
+        const res = await (knopf ? Portal.beschaeftigt(knopf, anfrage) : anfrage);
         if (res.ok) {
           window.location.reload();
           return;

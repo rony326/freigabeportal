@@ -501,13 +501,15 @@
       });
 
       document.getElementById('neuer-lieferant-speichern').addEventListener('click', function () {
+        var speichern = this;
+        if (speichern.getAttribute('aria-busy') === 'true') return;
         var name = nameInput.value.trim();
         errorBox.classList.add('d-none');
-        fetch('/kontierung/lieferanten', {
+        Portal.beschaeftigt(speichern, fetch('/kontierung/lieferanten', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' },
           body: 'name=' + encodeURIComponent(name) + '&kontoId=' + encodeURIComponent(kontoSelect.value),
-        })
+        }))
           .then(function (res) {
             return res.json().then(function (data) { return { ok: res.ok, data: data }; });
           })

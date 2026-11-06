@@ -748,3 +748,6 @@ h1 .beleg-nr {
     max-width: 420px;
   }
 }
+
+/* Sendestatus (public/js/portal.js): Knopf arbeitet, weitere Klicks ignorieren. */
+.wird-gesendet { pointer-events: none; opacity: .75; }

@@ -18,7 +18,7 @@ export class AltfallError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-const OFFEN_EINZEL = `SELECT * FROM jobs j WHERE j.status = 'abgeschlossen' AND j.aufgesplittet_von IS NULL
+const OFFEN_EINZEL = `SELECT * FROM jobs j WHERE j.status = 'abgeschlossen' AND j.aufgesplittet_von IS NULL AND COALESCE(j.typ,'') <> 'rapport'
   AND NOT EXISTS (SELECT 1 FROM export_nachweise e WHERE e.job_id = j.id)
   AND NOT EXISTS (SELECT 1 FROM altfall_entscheidungen a WHERE a.job_id = j.id)`;
 const OFFEN_GRUPPEN = `SELECT * FROM jobs j WHERE j.status = 'aufgesplittet' AND j.aufgesplittet_von IS NULL

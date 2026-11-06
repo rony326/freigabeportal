@@ -224,7 +224,7 @@ export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZei
   const zeitstempelBedingung = nurMitZeitstempel ? ' AND zeitstempel_gesetzt_am IS NOT NULL' : ' AND (zeitstempel_erforderlich = 0 OR zeitstempel_gesetzt_am IS NOT NULL)';
   const rows = db
     .prepare(
-      `SELECT * FROM jobs WHERE status = 'abgeschlossen' AND aufgesplittet_von IS NULL
+      `SELECT * FROM jobs WHERE status = 'abgeschlossen' AND aufgesplittet_von IS NULL AND COALESCE(typ, '') <> 'rapport'
        AND (fetched_by_n8n_at IS NULL OR fetched_by_n8n_at < ?)${zeitstempelBedingung}`
     )
     .all(staleThreshold)
@@ -244,7 +244,7 @@ export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZei
 export function confirmAbholung(db, id, nurMitZeitstempel = false) {
   const zeitstempelBedingung = nurMitZeitstempel ? " AND zeitstempel_gesetzt_am IS NOT NULL" : ' AND (zeitstempel_erforderlich = 0 OR zeitstempel_gesetzt_am IS NOT NULL)';
   const result = db
-    .prepare(`UPDATE jobs SET status = 'abgeholt' WHERE id = ? AND status = 'abgeschlossen'${zeitstempelBedingung}`)
+    .prepare(`UPDATE jobs SET status = 'abgeholt' WHERE id = ? AND status = 'abgeschlossen' AND COALESCE(typ, '') <> 'rapport'${zeitstempelBedingung}`)
     .run(id);
   if (result.changes === 0) return null;
   return getJobById(db, id);

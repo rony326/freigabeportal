@@ -2571,3 +2571,16 @@ test('findMoeglicheDoppelrechnungen ignores the job itself and parts of the same
   void kindA;
   db.close();
 });
+
+test('listAbholbereitJobs und confirmAbholung ignorieren typ rapport', () => {
+  const db = openDatabase(':memory:');
+  seedKonto(db);
+  const id = createJob(db, { eingangAm: '2026-01-01T00:00:00.000Z', quelle: 'scanner', absender: 'a@b.ch', dateiname: 'x.pdf', pdfPfad: '/x.pdf' });
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', typ = 'rapport', abgeschlossen_am = ? WHERE id = ?").run(new Date().toISOString(), id);
+  assert.deepEqual(listAbholbereitJobs(db, 0), []);
+  assert.equal(confirmAbholung(db, id), null);
+  assert.equal(getJobById(db, id).status, 'abgeschlossen');
+  db.prepare("UPDATE jobs SET typ = NULL WHERE id = ?").run(id);
+  assert.equal(listAbholbereitJobs(db, 0).length, 1);
+  db.close();
+});

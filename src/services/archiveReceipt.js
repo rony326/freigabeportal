@@ -4,6 +4,7 @@ import { getJobById, listSplitKinder, confirmAbholung, confirmGruppenAbholung } 
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { jobDocument } from './jobDocument.js';
 import { exportNachweis } from './exportSnapshot.js';
+import { rapportMetadaten } from './rapporte.js';
 
 export const ARCHIVE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -11,9 +12,21 @@ export class ArchiveError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-function loadExportable(db, id) {
+// art trennt die beiden Exportwege strikt: Rechnungen (art 'beleg') nur über /api/n8n/jobs,
+// Rapporte (art 'rapport') nur über /api/n8n/rapporte. Ein Rapport im Rechnungsweg würde vom
+// n8n-Ablauf als Rechnung in Bexio gebucht; er gilt dort darum als nicht vorhanden.
+function loadJobOfArt(db, id, art) {
   const job = getJobById(db, id);
-  if (!job) throw new ArchiveError(404, 'Job nicht gefunden.');
+  if (!job || (job.typ === 'rapport') !== (art === 'rapport')) throw new ArchiveError(404, 'Job nicht gefunden.');
+  return job;
+}
+
+function exportPfad(art) {
+  return art === 'rapport' ? '/api/n8n/rapporte' : '/api/n8n/jobs';
+}
+
+function loadExportable(db, id, art) {
+  const job = loadJobOfArt(db, id, art);
   if (job.aufgesplittet_von || !['abgeschlossen', 'abgeholt', 'aufgesplittet', 'archiviert'].includes(job.status)) {
     throw new ArchiveError(409, 'Job ist nicht fuer den Archivexport freigegeben.');
   }
@@ -44,7 +57,8 @@ function documentHash(job) {
 // Manifest-Metadaten stammen ausschliesslich aus dem Export-/Zahlungsnachweis (Snapshot oder
 // Altfall-Entscheidung). Unbelegte Werte eines bereits uebergebenen Altfalls stehen getrennt
 // unter unbelegte_jobdaten und sind nie Teil der freigabegebundenen Metadaten.
-function manifestInhalt(db, job, children, group) {
+function manifestInhalt(db, job, children, group, art) {
+  if (art === 'rapport') return { nachweis_status: 'kenntnisnahme', metadaten: rapportMetadaten(db, job), zahlung: null, positionen: [] };
   const nachweis = exportNachweis(db, job);
   if (!nachweis.exportierbar) throw new ArchiveError(409, `Nachpruefung erforderlich: ${nachweis.grund}`);
   const positionen = group
@@ -64,9 +78,10 @@ function manifestInhalt(db, job, children, group) {
   };
 }
 
-export function createExportEvidence(db, id) {
+export function createExportEvidence(db, id, { art = 'beleg' } = {}) {
   db.exec('BEGIN IMMEDIATE');
   try {
+    loadJobOfArt(db, id, art);
     const existing = db.prepare('SELECT * FROM export_nachweise WHERE job_id = ?').get(id);
     // Once receipted, the immutable manifest remains retrievable after local retention ends.
     const receipted = existing && db.prepare('SELECT 1 FROM archiv_quittungen WHERE export_id = ?').get(existing.id);
@@ -74,7 +89,7 @@ export function createExportEvidence(db, id) {
       db.exec('COMMIT');
       return JSON.parse(existing.manifest);
     }
-    const { job, children, group } = loadExportable(db, id);
+    const { job, children, group } = loadExportable(db, id, art);
     const hash = documentHash(job);
     if (existing && existing.sha256 !== hash) throw new ArchiveError(409, 'Exportversion wurde bereits mit anderen Bytes festgeschrieben.');
     if (existing) {
@@ -84,9 +99,9 @@ export function createExportEvidence(db, id) {
     const manifest = {
       version: 2, export_id: randomUUID(), job_id: id, sha256: hash,
       erstellt_am: new Date().toISOString(), archiv: 'paperless-ngx',
-      ...manifestInhalt(db, job, children, group),
+      ...manifestInhalt(db, job, children, group, art),
     };
-    manifest.download_pfad = `/api/n8n/jobs/${id}/exportdatei/${manifest.export_id}`;
+    manifest.download_pfad = `${exportPfad(art)}/${id}/exportdatei/${manifest.export_id}`;
     manifest.metadaten.datei_sha256 = hash;
     db.prepare('INSERT INTO export_nachweise (id, job_id, sha256, manifest, erstellt_am) VALUES (?, ?, ?, ?, ?)')
       .run(manifest.export_id, id, hash, JSON.stringify(manifest), manifest.erstellt_am);
@@ -95,11 +110,11 @@ export function createExportEvidence(db, id) {
   } catch (err) { db.exec('ROLLBACK'); throw err; }
 }
 
-export function readExportDocument(db, id, exportId) {
+export function readExportDocument(db, id, exportId, { art = 'beleg' } = {}) {
+  const job = loadJobOfArt(db, id, art);
   const evidence = db.prepare('SELECT * FROM export_nachweise WHERE job_id = ? AND id = ?').get(id, exportId);
   if (!evidence) throw new ArchiveError(404, 'Exportnachweis nicht gefunden.');
-  if (!db.prepare('SELECT 1 FROM archiv_quittungen WHERE export_id = ?').get(exportId)) loadExportable(db, id);
-  const job = getJobById(db, id);
+  if (!db.prepare('SELECT 1 FROM archiv_quittungen WHERE export_id = ?').get(exportId)) loadExportable(db, id, art);
   let bytes;
   try { bytes = readFileSync(jobDocument(job).pdf_pfad); }
   catch { throw new ArchiveError(409, 'Die festgeschriebene Exportdatei ist lokal nicht verfuegbar.'); }
@@ -109,7 +124,7 @@ export function readExportDocument(db, id, exportId) {
   return bytes;
 }
 
-export function confirmArchiveReceipt(db, id, body) {
+export function confirmArchiveReceipt(db, id, body, { art = 'beleg' } = {}) {
   const { export_id, sha256, dokument_id, task_id } = body || {};
   if (typeof export_id !== 'string' || export_id.length > 64 || typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256) ||
       !Number.isSafeInteger(dokument_id) || dokument_id <= 0 ||
@@ -118,6 +133,7 @@ export function confirmArchiveReceipt(db, id, body) {
   }
   db.exec('BEGIN IMMEDIATE');
   try {
+    loadJobOfArt(db, id, art);
     const evidence = db.prepare('SELECT * FROM export_nachweise WHERE id = ? AND job_id = ?').get(export_id, id);
     if (!evidence || evidence.sha256 !== sha256) throw new ArchiveError(409, 'Export-ID oder Dateihash stimmt nicht ueberein.');
     const previous = db.prepare('SELECT * FROM archiv_quittungen WHERE export_id = ?').get(export_id);
@@ -131,9 +147,15 @@ export function confirmArchiveReceipt(db, id, body) {
     if (db.prepare('SELECT 1 FROM archiv_quittungen WHERE dokument_id = ?').get(String(dokument_id))) {
       throw new ArchiveError(409, 'Paperless-Dokument ist bereits einem anderen Export zugeordnet.');
     }
-    const { job, group } = loadExportable(db, id);
+    const { job, group } = loadExportable(db, id, art);
     if (documentHash(job) !== sha256) throw new ArchiveError(409, 'Lokale Exportdatei wurde veraendert.');
-    if (group && !job.gruppe_abgeholt_am) {
+    if (art === 'rapport') {
+      // confirmAbholung schliesst Rapporte aus (Rechnungsweg); hier gezielt nur den Rapport umstellen.
+      if (job.status === 'abgeschlossen' &&
+          db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ? AND typ = 'rapport' AND status = 'abgeschlossen'").run(id).changes === 0) {
+        throw new ArchiveError(409, 'Rapport kann nicht bestaetigt werden.');
+      }
+    } else if (group && !job.gruppe_abgeholt_am) {
       if (!confirmGruppenAbholung(db, id)) throw new ArchiveError(409, 'Gruppe kann nicht bestaetigt werden.');
     } else if (!group && job.status === 'abgeschlossen') {
       if (!confirmAbholung(db, id)) throw new ArchiveError(409, 'Job kann nicht bestaetigt werden.');

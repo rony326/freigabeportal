@@ -138,6 +138,31 @@ function personNameOder(db, personId) {
   return p ? name(p) : personId ? `Unbekannte Person (${personId})` : null;
 }
 
+// Archiv-Metadaten eines Rapports für den n8n-Exportnachweis (/api/n8n/rapporte): bewusst ohne
+// Rechnungs- und Zahlungsfelder, damit der Rapport nie als Buchung behandelt werden kann.
+export function rapportMetadaten(db, job) {
+  return {
+    job_id: job.id,
+    art: 'rapport',
+    eingang_am: job.eingang_am,
+    quelle: job.quelle,
+    absender: job.absender,
+    dateiname: job.dateiname,
+    markiert_von: personNameOder(db, job.rapport_markiert_von),
+    markiert_am: job.rapport_markiert_am,
+    bemerkung: job.rapport_bemerkung,
+    kenntnisnahmen: aktuelleKenntnisnahmen(db, job).map((k) => ({
+      person_id: k.person_id,
+      name: personNameOder(db, k.person_id),
+      zugeteilt_am: k.zugeteilt_am,
+      bestaetigt_am: k.bestaetigt_am,
+      entfernt_am: k.entfernt_am,
+      begruendung: k.begruendung,
+    })),
+    abgeschlossen_am: job.abgeschlossen_am,
+  };
+}
+
 function kommentarStand(kommentare) {
   return `${kommentare.length}:${kommentare.at(-1)?.id ?? 0}`;
 }

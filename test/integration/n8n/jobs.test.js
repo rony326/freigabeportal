@@ -1356,3 +1356,77 @@ test('POST /api/n8n/jobs speichert den Dateinamen des PDF-Teils (auch mit Umlaut
     rmSync(jobsDir, { recursive: true, force: true });
   }
 });
+
+// Anti-Ziel Rapporte: ein Rapport darf über /api/n8n/jobs/* nie sichtbar, exportierbar oder
+// bestätigbar sein -- der bestehende n8n-Ablauf würde ihn sonst als Rechnung in Bexio buchen.
+async function abgeschlossenerRapport(t) {
+  const { claimJob } = await import('../../../src/db/jobsRepo.js');
+  const { markiereRapport, bestaetigeRapport } = await import('../../../src/services/rapporte.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'modul_rapporte_aktiv', '1');
+  setConfigValue(db, 'zeitstempel_tsa_url', '');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-rapport-test-'));
+  t.after(() => { db.close(); rmSync(jobsDir, { recursive: true, force: true }); });
+  upsertPerson(db, { id: '1', vorname: 'Buch', nachname: 'Haltung', email: '1@example.org', gruppen: ['10'] });
+  upsertPerson(db, { id: '2', vorname: 'Anna', nachname: 'Empfang', email: '2@example.org', gruppen: [] });
+  const config = { ...testConfig(jobsDir), churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' }, publicBaseUrl: 'https://portal.example.org', tsaTrustRequired: false };
+  const mailer = createStubMailer();
+  async function rapport() {
+    const pdfPfad = join(jobsDir, `rapport-${Math.random().toString(36).slice(2)}.pdf`);
+    writeFileSync(pdfPfad, PDF_BYTES);
+    const jobId = createJob(db, { eingangAm: '2026-11-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rapport.pdf', pdfPfad });
+    claimJob(db, jobId, '1');
+    assert.equal((await markiereRapport(db, config, mailer, { job: getJobById(db, jobId), person: { churchtools_person_id: '1', vorname: 'Buch', nachname: 'Haltung' }, empfaengerIds: ['2'], bemerkung: null, ip: '' })).ok, true);
+    assert.equal((await bestaetigeRapport(db, config, { jobId, person: { churchtools_person_id: '2', vorname: 'Anna', nachname: 'Empfang' }, ip: '' })).abgeschlossen, true);
+    return jobId;
+  }
+  return { db, config, app: buildTestApp(db, config, mailer), rapport };
+}
+
+test('Rapport erscheint nie in /api/n8n/jobs/abholbereit und archivierung-ausstehend', async (t) => {
+  const s = await abgeschlossenerRapport(t);
+  const abgeschlossen = await s.rapport();
+  const abgeholt = await s.rapport();
+  s.db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ?").run(abgeholt);
+  const archiviert = await s.rapport();
+  s.db.prepare("UPDATE jobs SET status = 'archiviert' WHERE id = ?").run(archiviert);
+
+  const abholbereit = await request(s.app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  assert.equal(abholbereit.status, 200);
+  assert.deepEqual(abholbereit.body, []);
+  assert.equal(getJobById(s.db, abgeschlossen).fetched_by_n8n_at, null);
+  const ausstehend = await request(s.app).get('/api/n8n/jobs/archivierung-ausstehend').set('X-API-Key', 'n8n-key');
+  assert.equal(ausstehend.status, 200);
+  assert.deepEqual(ausstehend.body, []);
+});
+
+test('Rapport-ID auf /api/n8n/jobs/:id/exportnachweis, /exportdatei, /abholung-bestaetigen, /archivierung-bestaetigen → 404', async (t) => {
+  const s = await abgeschlossenerRapport(t);
+  const id = await s.rapport();
+  // Eine über /api/n8n/rapporte festgeschriebene Exportversion darf hier ebenfalls nicht greifen.
+  const { createExportEvidence } = await import('../../../src/services/archiveReceipt.js');
+  const manifest = createExportEvidence(s.db, id, { art: 'rapport' });
+  const anfragen = [
+    request(s.app).get(`/api/n8n/jobs/${id}/exportnachweis`),
+    request(s.app).get(`/api/n8n/jobs/${id}/exportdatei/${manifest.export_id}`),
+    request(s.app).post(`/api/n8n/jobs/${id}/abholung-bestaetigen`),
+    request(s.app).post(`/api/n8n/jobs/${id}/archivierung-bestaetigen`).send({ export_id: manifest.export_id, sha256: manifest.sha256, dokument_id: 5, task_id: 'b2ba769c-455f-4d97-9fb6-986eac19a334' }),
+  ];
+  for (const anfrage of anfragen) {
+    const res = await anfrage.set('X-API-Key', 'n8n-key');
+    assert.equal(res.status, 404, `${res.req.method} ${res.req.path}`);
+    assert.deepEqual(res.body, { error: 'Job nicht gefunden.' });
+  }
+  assert.equal(getJobById(s.db, id).status, 'abgeschlossen');
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM archiv_quittungen').get().n, 0);
+});
+
+test('Rapport erscheint nicht in /admin/altfaelle', async (t) => {
+  const { listAltfaelle, getAltfall } = await import('../../../src/services/altfaelle.js');
+  const s = await abgeschlossenerRapport(t);
+  const id = await s.rapport();
+  assert.equal(getJobById(s.db, id).status, 'abgeschlossen');
+  assert.deepEqual(listAltfaelle(s.db), []);
+  assert.equal(getAltfall(s.db, id), null);
+});

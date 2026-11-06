@@ -48,6 +48,9 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) <= 0) {
       return res.status(400).json({ error: 'Ungueltige Job-ID.' });
     }
+    // Rapporte existieren für den Rechnungsweg nicht: der n8n-Ablauf würde sie sonst als Rechnung
+    // in Bexio buchen. Ihr Export läuft ausschliesslich über /api/n8n/rapporte.
+    if (getJobById(db, Number(value))?.typ === 'rapport') return res.status(404).json({ error: 'Job nicht gefunden.' });
     next();
   });
 
@@ -285,7 +288,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
       return res.status(400).json({ error: 'Ungueltiger Cursor nach_id.' });
     }
     const rows = db.prepare(`SELECT j.id, j.status FROM jobs j
-      WHERE j.id > ? AND j.aufgesplittet_von IS NULL
+      WHERE j.id > ? AND j.aufgesplittet_von IS NULL AND COALESCE(j.typ, '') <> 'rapport'
         AND (j.status IN ('abgeholt', 'archiviert') OR (j.status = 'aufgesplittet' AND j.gruppe_abgeholt_am IS NOT NULL))
         AND NOT EXISTS (SELECT 1 FROM export_nachweise e JOIN archiv_quittungen q ON q.export_id = e.id WHERE e.job_id = j.id)
       ORDER BY j.id LIMIT 100`).all(Number(after));

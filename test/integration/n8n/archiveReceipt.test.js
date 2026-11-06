@@ -275,3 +275,22 @@ test('a mature group receipt does not cover children added after export issuance
   assert.ok(existsSync(added.path));
   assert.equal(getJobById(s.db, added.id).status, 'abgeholt');
 });
+
+test('art trennt Rechnungs- und Rapport-Export: falsche Art → 404, ohne Zustandsänderung', async (t) => {
+  const { createExportEvidence, readExportDocument, confirmArchiveReceipt, ArchiveError } = await import('../../../src/services/archiveReceipt.js');
+  const s = setup(t);
+  const rechnung = s.job('rechnung');
+  const manifest = (await s.get(rechnung.id)).body;
+  assert.equal(manifest.download_pfad, `/api/n8n/jobs/${rechnung.id}/exportdatei/${manifest.export_id}`);
+  const nichtGefunden = (err) => err instanceof ArchiveError && err.status === 404 && err.message === 'Job nicht gefunden.';
+  assert.throws(() => createExportEvidence(s.db, rechnung.id, { art: 'rapport' }), nichtGefunden);
+  assert.throws(() => readExportDocument(s.db, rechnung.id, manifest.export_id, { art: 'rapport' }), nichtGefunden);
+  assert.throws(() => confirmArchiveReceipt(s.db, rechnung.id, s.receipt(manifest), { art: 'rapport' }), nichtGefunden);
+
+  const rapport = s.job('rapport');
+  s.db.prepare("UPDATE jobs SET typ = 'rapport' WHERE id = ?").run(rapport.id);
+  assert.equal((await s.get(rapport.id)).status, 404);
+  assert.throws(() => createExportEvidence(s.db, rapport.id), nichtGefunden);
+  assert.equal(getJobById(s.db, rechnung.id).status, 'abgeschlossen');
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM archiv_quittungen').get().n, 0);
+});

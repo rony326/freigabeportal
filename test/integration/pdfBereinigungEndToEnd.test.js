@@ -125,3 +125,47 @@ test('a complete workflow retains files until archive receipt and retention, the
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
+
+test('ein quittierter Rapport ist nach 7 Tagen archiviert und seine Datei entfernt', async (t) => {
+  const { createJob, claimJob } = await import('../../src/db/jobsRepo.js');
+  const { setConfigValue } = await import('../../src/db/adminConfigRepo.js');
+  const { markiereRapport, bestaetigeRapport } = await import('../../src/services/rapporte.js');
+  const { writeFileSync } = await import('node:fs');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'modul_rapporte_aktiv', '1');
+  setConfigValue(db, 'zeitstempel_tsa_url', '');
+  const jobsDir = mkdtempSync(join(tmpdir(), 'pdf-bereinigung-rapport-test-'));
+  t.after(() => { db.close(); rmSync(jobsDir, { recursive: true, force: true }); });
+  const config = testConfig(jobsDir);
+  const app = createApp({ db, config });
+  upsertPerson(db, { id: '1', vorname: 'Buch', nachname: 'Haltung', email: 'b@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'Anna', nachname: 'Empfang', email: 'a@example.org', gruppen: [], loggedInNow: false });
+
+  const pdfPfad = join(jobsDir, 'rapport.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Rapport Seite 1']));
+  const jobId = createJob(db, { eingangAm: '2026-11-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rapport.pdf', pdfPfad });
+  claimJob(db, jobId, '1');
+  const mailer = { async sendMail() {} };
+  assert.equal((await markiereRapport(db, config, mailer, { job: getJobById(db, jobId), person: { churchtools_person_id: '1', vorname: 'Buch', nachname: 'Haltung' }, empfaengerIds: ['2'], bemerkung: null, ip: '' })).ok, true);
+  assert.equal((await bestaetigeRapport(db, config, { jobId, person: { churchtools_person_id: '2', vorname: 'Anna', nachname: 'Empfang' }, ip: '' })).abgeschlossen, true);
+  const finalPfad = getJobById(db, jobId).pdf_pfad;
+
+  const manifest = (await request(app).get(`/api/n8n/rapporte/${jobId}/exportnachweis`).set('X-API-Key', 'n8n-key')).body;
+  const receipt = await request(app).post(`/api/n8n/rapporte/${jobId}/archivierung-bestaetigen`).set('X-API-Key', 'n8n-key').send({
+    export_id: manifest.export_id, sha256: manifest.sha256, dokument_id: 321, task_id: 'b2ba769c-455f-4d97-9fb6-986eac19a334',
+  });
+  assert.equal(receipt.status, 200);
+  assert.equal(getJobById(db, jobId).status, 'abgeholt');
+
+  const zuFrueh = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(zuFrueh.body.archiviert, 0);
+  assert.equal(existsSync(finalPfad), true, 'vor Ablauf der Aufbewahrung bleibt die Datei');
+
+  t.mock.method(Date, 'now', () => Date.parse(receipt.body.quittung.bestaetigt_am) + ARCHIVE_RETENTION_MS);
+  const sweep = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(sweep.status, 200);
+  assert.equal(sweep.body.archiviert, 1);
+  assert.equal(getJobById(db, jobId).status, 'archiviert');
+  assert.equal(existsSync(finalPfad), false);
+});

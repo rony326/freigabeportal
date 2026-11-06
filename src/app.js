@@ -16,6 +16,7 @@ import { ansichtWahl } from './middleware/ansicht.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { createN8nBackupRouter } from './routes/n8n/backup.js';
 import { createN8nKkBelegeRouter } from './routes/n8n/kkBelege.js';
+import { createN8nRapporteRouter } from './routes/n8n/rapporte.js';
 import { loadCurrentPerson, loadBeispielperson, requireRole, requireAnyRole, requireLogin } from './middleware/roles.js';
 import { requireAdminAreaAccess, requirePermission } from './middleware/permissions.js';
 import { loadNavFlags } from './middleware/nav.js';
@@ -319,6 +320,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/n8n/backup', machineLimiter, requireApiKey({ n8nApiKey: config.backupApiKey }), createN8nBackupRouter({ config }));
   app.use('/api/n8n/kk-belege', machineLimiter, requireApiKey(config), createN8nKkBelegeRouter({ db, config, mailer }));
+  app.use('/api/n8n/rapporte', machineLimiter, requireApiKey(config), createN8nRapporteRouter({ db, config }));
   app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db, csrfProtection }));
   // Dashboard for every logged-in person, not just Buchhaltung/Superadmin: "/" always redirects
   // here now that the old landing page is gone, and a Freigeber1/2-only person (no group

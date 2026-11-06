@@ -16,6 +16,11 @@
         <div class="form-text">Wenn aktiv, können Belege zu Kreditkartenkäufen vorab hochgeladen und Abrechnungen einer Karte zugeordnet und abgeglichen werden. Wenn deaktiviert, sind keine neuen Uploads und keine neuen Markierungen möglich — bereits markierte Abrechnungen können weiterhin abgeglichen werden.</div>
       </div>
       <div class="form-check mb-3">
+        <input type="checkbox" class="form-check-input" id="rapporteAktiv" name="rapporteAktiv" value="1"<% if (rapporteAktiv) { %> checked<% } %>>
+        <label class="form-check-label" for="rapporteAktiv">Rapporte (nur zur Kenntnis) aktiv</label>
+        <div class="form-text">Wenn aktiv, können Belege in der Kontierung als «Nur zur Kenntnis (Rapport)» an Personen weitergegeben werden, die den Eingang bestätigen. Wenn deaktiviert, sind keine neuen Markierungen möglich — bereits weitergegebene Rapporte laufen unverändert weiter.</div>
+      </div>
+      <div class="form-check mb-3">
         <input type="checkbox" class="form-check-input" id="strikteFreigeber1Pruefung" name="strikteFreigeber1Pruefung" value="1"<% if (strikteFreigeber1Pruefung) { %> checked<% } %>>
         <label class="form-check-label" for="strikteFreigeber1Pruefung">Strikte Freigeber1-Prüfung bei der Kontierung</label>
         <div class="form-text">Wenn aktiv, gilt Freigabe 1 bei der Kontierung nur noch als erteilt, wenn die kontierende Person tatsächlich Freigeber1 (oder bei laufender Eskalation: Stellvertreter1) des gewählten Kontos ist. Andernfalls wird die Rechnung nach der Kontierung direkt an den echten Freigeber1 weitergereicht.</div>

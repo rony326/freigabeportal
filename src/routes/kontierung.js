@@ -30,6 +30,7 @@ import { findKreditorIbanByIban, createKreditorIban } from '../db/kreditorIbanRe
 import { kreditorIdAusEingabe, kreditorNameVariablen, KreditorFeldKonflikt } from '../services/kreditorFelder.js';
 import { getKreditkarteById, listKreditkarten } from '../db/kreditkartenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
+import { istRapportModulAktiv, listRapportEmpfaengerKandidaten, markiereRapport, hebeRapportAuf } from '../services/rapporte.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from '../services/notify.js';
@@ -101,6 +102,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     return true;
   }
 
+  // Nur bei aktivem Modul bietet das Formular «Nur zur Kenntnis (Rapport)» an.
+  function rapportAnsicht(job) {
+    const aktiv = istRapportModulAktiv(db);
+    return { rapportModulAktiv: aktiv, rapportEmpfaengerKandidaten: aktiv ? listRapportEmpfaengerKandidaten(db) : [] };
+  }
+
   router.get('/:id', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
@@ -113,6 +120,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       alleKonten: listKonten(db),
       kreditoren: listKreditoren(db),
       kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
+      ...rapportAnsicht(job),
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       kkHinweis: kkHinweisFuerJob(db, job),
       values: {
@@ -158,6 +166,29 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const job = loadAuthorizedJob(req, res);
       if (!job) return;
       if (sperreKkAbrechnung(job, res)) return;
+      // Vor jeder Kontierungsvalidierung: ein Rapport hat weder Konto noch Betrag, die Felder des
+      // Formulars werden hier bewusst nicht gelesen.
+      if (req.body.aktion === 'rapport') {
+        const empfaengerIds = [].concat(req.body.empfaengerIds ?? []).map(String);
+        const bemerkung = req.body.bemerkung || '';
+        const ergebnis = await markiereRapport(db, config, mailer, { job, person: req.currentPerson, empfaengerIds, bemerkung, ip: req.ip });
+        if (ergebnis.ok) return res.redirect('/pool');
+        if (ergebnis.status !== 400) return res.status(ergebnis.status).render('error', { message: ergebnis.fehler });
+        return res.status(400).render('kontierung', {
+          job,
+          konten: ladeKontenFuerJob(req, job),
+          alleKonten: listKonten(db),
+          kreditoren: listKreditoren(db),
+          previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
+          kkHinweis: kkHinweisFuerJob(db, job),
+          kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
+          ...rapportAnsicht(job),
+          values: { kontoId: '', typ: 'rapport', interessenskonflikt: '', begruendung: '', absender: job.absender || '', betrag: '', zahlungsziel: '', rechnungsnummer: '', kreditorId: '', rapportEmpfaengerIds: empfaengerIds, rapportBemerkung: bemerkung },
+          qrInfo: buildQrInfo(db, job),
+          errors: [ergebnis.fehler],
+          auditLog: buildAuditLog(db, job.id),
+        });
+      }
       const konten = ladeKontenFuerJob(req, job);
       const kreditoren = listKreditoren(db);
       const qrInfo = buildQrInfo(db, job);
@@ -184,6 +215,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           values,
           qrInfo,
           kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
+          ...rapportAnsicht(job),
           errors: Array.isArray(messages) ? messages : [messages],
           auditLog: buildAuditLog(db, job.id),
         });
@@ -711,6 +743,16 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const ok = await markiereAlsKkAbrechnung(db, config, mailer, { job, karte, markiertVon: req.currentPerson, ip: req.ip, ausStatus: 'zugewiesen' });
       if (!ok) return res.status(409).render('error', { message: 'Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.' });
       res.redirect(karte.verantwortlich_id === req.currentPerson.churchtools_person_id ? `/kontierung/${job.id}/kk-abgleich` : '/pool');
+    } catch (err) {
+      next(err);
+    }
+  }));
+
+  router.post('/:id/rapport-aufheben', csrfProtection, asyncHandler(async (req, res, next) => {
+    try {
+      const ergebnis = await hebeRapportAuf(db, config, { jobId: Number(req.params.id), person: req.currentPerson, ip: req.ip });
+      if (!ergebnis.ok) return res.status(ergebnis.status).render('error', { message: ergebnis.fehler });
+      res.redirect(`/kontierung/${req.params.id}`);
     } catch (err) {
       next(err);
     }

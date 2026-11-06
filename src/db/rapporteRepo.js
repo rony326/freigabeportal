@@ -5,14 +5,18 @@ import { getJobById } from './jobsRepo.js';
 
 const OFFEN = 'bestaetigt_am IS NULL AND entfernt_am IS NULL';
 
+// Geschachtelt aufrufbar: in einer bereits offenen Transaktion (z. B. Service, der zusaetzlich
+// freigaben und Mails schreibt) wird ein SAVEPOINT statt eines zweiten BEGIN verwendet.
 function inTransaktion(db, fn) {
-  db.exec('BEGIN IMMEDIATE');
+  const verschachtelt = db.isTransaction;
+  db.exec(verschachtelt ? 'SAVEPOINT rapport_tx' : 'BEGIN IMMEDIATE');
   try {
     const ergebnis = fn();
-    db.exec('COMMIT');
+    db.exec(verschachtelt ? 'RELEASE rapport_tx' : 'COMMIT');
     return ergebnis;
   } catch (err) {
-    db.exec('ROLLBACK');
+    if (verschachtelt) db.exec('ROLLBACK TO rapport_tx; RELEASE rapport_tx');
+    else db.exec('ROLLBACK');
     throw err;
   }
 }

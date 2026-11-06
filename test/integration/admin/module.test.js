@@ -184,3 +184,20 @@ test('POST /admin/module persists audit_log_lokale_zeit as "1" when the checkbox
 
   db.close();
 });
+
+test('POST /admin/module speichert modul_rapporte_aktiv aus der Checkbox rapporteAktiv', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  assert.equal(getConfigValue(db, 'modul_rapporte_aktiv'), '0');
+  const get = await request(app).get('/admin/module').set('x-test-person-id', '99');
+  assert.doesNotMatch(get.text, /name="rapporteAktiv"[^>]*checked/);
+  await request(app).post('/admin/module').set('x-test-person-id', '99').type('form').send({ rapporteAktiv: '1' });
+  assert.equal(getConfigValue(db, 'modul_rapporte_aktiv'), '1');
+  const get2 = await request(app).get('/admin/module').set('x-test-person-id', '99');
+  assert.match(get2.text, /name="rapporteAktiv"[^>]*checked/);
+  await request(app).post('/admin/module').set('x-test-person-id', '99').type('form').send({});
+  assert.equal(getConfigValue(db, 'modul_rapporte_aktiv'), '0');
+  db.close();
+});

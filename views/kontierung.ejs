@@ -38,6 +38,7 @@
 
             <form id="kontierung-form" method="post" action="/kontierung/<%= job.id %>" enctype="multipart/form-data">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+              <div class="kontierung-block">
               <div class="mb-3">
                 <label class="form-label" for="kontoId">Konto</label>
                 <select class="form-select" id="kontoId" name="kontoId" required data-searchable>
@@ -64,6 +65,8 @@
                 </div>
               </div>
 
+              </div>
+
               <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.iban) { %>
                 <div class="mb-3">
                   <label class="form-label" for="qrIban">IBAN (aus QR-Code)</label>
@@ -73,15 +76,22 @@
 
               <div class="mb-3">
                 <div class="form-check form-check-inline">
-                  <input class="form-check-input" type="radio" name="typ" id="typRechnung" value="rechnung" <%= values.typ !== 'gutschrift' ? 'checked' : '' %>>
+                  <input class="form-check-input" type="radio" name="typ" id="typRechnung" value="rechnung" <%= values.typ !== 'gutschrift' && values.typ !== 'rapport' ? 'checked' : '' %>>
                   <label class="form-check-label" for="typRechnung">Rechnung</label>
                 </div>
                 <div class="form-check form-check-inline">
                   <input class="form-check-input" type="radio" name="typ" id="typGutschrift" value="gutschrift" <%= values.typ === 'gutschrift' ? 'checked' : '' %>>
                   <label class="form-check-label" for="typGutschrift">Gutschrift</label>
                 </div>
+                <% if (typeof rapportModulAktiv !== 'undefined' && rapportModulAktiv) { %>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="typ" id="typRapport" value="rapport" <%= values.typ === 'rapport' ? 'checked' : '' %>>
+                    <label class="form-check-label" for="typRapport">Nur zur Kenntnis (Rapport)</label>
+                  </div>
+                <% } %>
               </div>
 
+              <div class="kontierung-block">
               <div class="mb-3">
                 <label class="form-label" for="rechnungsnummer" id="rechnungsnummer-label">Rechnungsnummer</label>
                 <input type="text" class="form-control" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" required>
@@ -126,6 +136,25 @@
                 <input type="file" class="form-control" id="beleg" name="beleg" accept="application/pdf,image/png,image/jpeg">
               </div>
 
+              </div>
+
+              <% if (typeof rapportModulAktiv !== 'undefined' && rapportModulAktiv) { %>
+                <div id="rapport-block" class="d-none">
+                  <div class="mb-3">
+                    <label class="form-label" for="rapportEmpfaenger">Empfängerinnen und Empfänger <span class="text-muted">(Mehrfachauswahl mit Strg/Cmd)</span></label>
+                    <select class="form-select" id="rapportEmpfaenger" name="empfaengerIds" multiple size="8" disabled>
+                      <% rapportEmpfaengerKandidaten.forEach((p) => { %>
+                        <option value="<%= p.churchtools_person_id %>" <%= (values.rapportEmpfaengerIds || []).includes(p.churchtools_person_id) ? 'selected' : '' %>><%= p.nachname %> <%= p.vorname %></option>
+                      <% }) %>
+                    </select>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label" for="rapportBemerkung">Bemerkung <span class="text-muted">(optional, höchstens 2000 Zeichen)</span></label>
+                    <textarea class="form-control" id="rapportBemerkung" name="bemerkung" maxlength="2000" disabled><%= values.rapportBemerkung || '' %></textarea>
+                  </div>
+                </div>
+              <% } %>
+
             </form>
             <form id="zurueck-in-pool-form" method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
@@ -137,6 +166,9 @@
             <div class="d-flex flex-wrap gap-2">
               <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary btn-sm">Kontieren</button>
               <button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger btn-sm">Ablehnen</button>
+              <% if (typeof rapportModulAktiv !== 'undefined' && rapportModulAktiv) { %>
+                <button type="submit" form="kontierung-form" name="aktion" value="rapport" id="rapport-btn" class="btn btn-primary btn-sm d-none" disabled>Zur Kenntnis weitergeben</button>
+              <% } %>
               <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#zurueck-in-pool-modal">Zurück in den Pool legen</button>
               <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#an-gruppe-zurueck-modal">An Gruppe zurücksenden</button>
               <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#aufsplitten-modal">Rechnung aufsplitten</button>
@@ -281,6 +313,32 @@
       });
       aktualisiereTypUi();
     })();
+    // Typ «Nur zur Kenntnis (Rapport)»: Kontierungsfelder weg (deaktiviert, damit sie weder validiert
+    // noch gesendet werden), Empfänger-Auswahl und Bemerkung dafür da. Umschalten zurück stellt alles her.
+    <% if (typeof rapportModulAktiv !== 'undefined' && rapportModulAktiv) { %>
+    (function () {
+      var radio = document.getElementById('typRapport');
+      var block = document.getElementById('rapport-block');
+      var knopf = document.getElementById('rapport-btn');
+      var kontierungKnoepfe = [document.querySelector('button[value="kontieren"]'), document.getElementById('ablehnen-btn'), document.querySelector('[data-bs-target="#aufsplitten-modal"]')];
+      function umschalten() {
+        var rapport = radio.checked;
+        Array.prototype.forEach.call(document.querySelectorAll('.kontierung-block'), function (b) {
+          b.classList.toggle('d-none', rapport);
+          Array.prototype.forEach.call(b.querySelectorAll('input, select, textarea'), function (f) { f.disabled = rapport; });
+        });
+        block.classList.toggle('d-none', !rapport);
+        Array.prototype.forEach.call(block.querySelectorAll('select, textarea'), function (f) { f.disabled = !rapport; });
+        knopf.classList.toggle('d-none', !rapport);
+        knopf.disabled = !rapport;
+        kontierungKnoepfe.forEach(function (k) { if (k) k.classList.toggle('d-none', rapport); });
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="typ"]'), function (r) {
+        r.addEventListener('change', umschalten);
+      });
+      umschalten();
+    })();
+    <% } %>
     // "Rechnung aufsplitten" opens the existing standalone split page inside a Bootstrap modal via
     // an <iframe>, rather than navigating away — the page itself is unchanged (still a normal
     // GET/POST form) so error re-renders just update in place inside the modal. Two things need

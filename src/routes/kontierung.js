@@ -51,6 +51,7 @@ import {
   pruefeIbanNachAufsplitten,
 } from '../services/aufsplitten.js';
 import { asyncCallback, asyncHandler } from '../middleware/asyncHandler.js';
+import { neueFehler, feldFehlerAttr } from '../utils/feldFehler.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -128,6 +129,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       },
       qrInfo,
       errors: [],
+      feldFehler: {},
+      feldFehlerAttr,
       auditLog: buildAuditLog(db, job.id),
       kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/kontierung/${job.id}`),
     });
@@ -173,8 +176,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const jobTyp = typ === 'gutschrift' ? 'gutschrift' : 'rechnung';
       const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, kreditorId, typ: jobTyp };
 
-      const renderFehler = (messages, status = 400) =>
-        res.status(status).render('kontierung', {
+      // `messages`: Text, Liste oder ein neueFehler()-Sammler; `feld` ordnet einen einzelnen Text einem Feld zu.
+      const renderFehler = (messages, status = 400, feld = null) => {
+        const fehler = neueFehler();
+        if (messages && Array.isArray(messages.liste)) messages.liste.forEach((t) => fehler.add(Object.keys(messages.proFeld).find((k) => messages.proFeld[k] === t) || null, t));
+        else (Array.isArray(messages) ? messages : [messages]).forEach((t) => fehler.add(feld, t));
+        return res.status(status).render('kontierung', {
           job,
           konten,
           alleKonten: listKonten(db),
@@ -184,9 +191,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           values,
           qrInfo,
           kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
-          errors: Array.isArray(messages) ? messages : [messages],
+          errors: fehler.liste,
+          feldFehler: fehler.proFeld,
+          feldFehlerAttr,
           auditLog: buildAuditLog(db, job.id),
         });
+      };
 
       if (uploadErr) {
         return renderFehler(uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Der Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.');
@@ -204,7 +214,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
 
       if (aktion === 'ablehnen') {
         if (!begruendung) {
-          return renderFehler('Bei einer Ablehnung ist eine Begründung Pflicht.');
+          return renderFehler('Bei einer Ablehnung ist eine Begründung Pflicht.', 400, 'begruendung');
         }
 
         db.exec('BEGIN');
@@ -271,42 +281,42 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         return res.redirect('/pool');
       }
 
-      const errors = [];
+      const errors = neueFehler();
 
       const konto = konten.find((k) => String(k.id) === kontoId);
       if (!konto) {
-        errors.push('Bitte ein gültiges Konto aus der Liste auswählen.');
+        errors.add('kontoId', 'Bitte ein gültiges Konto aus der Liste auswählen.');
       }
       if (!absender) {
-        errors.push('Bitte einen Absender angeben.');
+        errors.add('absender', 'Bitte einen Absender angeben.');
       }
       const kreditor = kreditorId ? getKreditorById(db, kreditorId) : null;
       if (!kreditor) {
-        errors.push('Bitte einen gültigen Lieferanten aus der Liste auswählen.');
+        errors.add('kreditorId', 'Bitte einen gültigen Lieferanten aus der Liste auswählen.');
       }
       if (!rechnungsnummer) {
-        errors.push('Bitte eine Rechnungsnummer angeben.');
+        errors.add('rechnungsnummer', 'Bitte eine Rechnungsnummer angeben.');
       }
       const hatKonflikt = interessenskonflikt === 'ja';
       if (hatKonflikt && !begruendung) {
-        errors.push('Bei einem Interessenskonflikt ist eine Begründung Pflicht.');
+        errors.add('begruendung', 'Bei einem Interessenskonflikt ist eine Begründung Pflicht.');
       }
       if (!betrag) {
-        errors.push('Bitte einen Betrag angeben.');
+        errors.add('betrag', 'Bitte einen Betrag angeben.');
       } else if (!BETRAG_PATTERN.test(betrag)) {
-        errors.push('Betrag muss eine gültige Zahl sein (z.B. 123.45).');
+        errors.add('betrag', 'Betrag muss eine gültige Zahl sein (z.B. 123.45).');
       }
       // Eine Gutschrift hat kein Fälligkeitsdatum im eigentlichen Sinn — nur bei einer Rechnung
       // ist das Zahlungsziel Pflicht; ein trotzdem mitgegebener Wert wird aber weiterhin geprüft.
       if (!zahlungsziel) {
         if (jobTyp === 'rechnung') {
-          errors.push('Bitte ein Zahlungsziel angeben.');
+          errors.add('zahlungsziel', 'Bitte ein Zahlungsziel angeben.');
         }
       } else if (!ZAHLUNGSZIEL_PATTERN.test(zahlungsziel) || Number.isNaN(new Date(zahlungsziel).getTime())) {
-        errors.push('Zahlungsziel ist kein gültiges Datum.');
+        errors.add('zahlungsziel', 'Zahlungsziel ist kein gültiges Datum.');
       }
 
-      if (errors.length > 0) {
+      if (errors.liste.length > 0) {
         return renderFehler(errors);
       }
 

@@ -1925,3 +1925,20 @@ test('Abschlussprüfung 7: Freigabe 2 warnt vor ungespeicherten Angaben beim Abs
   assert.match(res.text, /<form method="post" action="\/kommentare\/\d+" class="kommentar-form" id="kommentar-form-\d+" data-ungespeichert-warnung="freigabe2-form">/);
   assert.match(res.text, /window\.confirm\('Ungespeicherte Angaben/);
 });
+
+test('freigabe2: Begründung bei Konflikt am Feld', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'freigeben', interessenskonflikt: 'ja', begruendung: '' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /id="f2begruendung"[^>]*is-invalid|is-invalid[^>]*id="f2begruendung"/);
+  assert.match(res.text, /id="f2begruendung-fehler"/);
+  assert.match(res.text, /href="#f2begruendung"/);
+  db.close();
+});

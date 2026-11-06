@@ -1,4 +1,5 @@
 <%- include('_seite_anfang', { titel: 'Freigabe 2', rahmen: 'kompakt' }) %>
+<% const ff = locals.feldFehler || {}; const ffAttr = locals.feldFehlerAttr || (() => ''); %>
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Freigabe 2: <%- include('_beleg_name', { job }) %> <%- include('_beleg_nr', { jobId: job.id }) %></h1>
     </div>
@@ -31,11 +32,7 @@
             <p><strong>Interessenskonflikt Freigeber 1:</strong> <%= freigabe1.interessenskonflikt ? 'Ja' : 'Nein' %></p>
             <% if (freigabe1.kommentar) { %><p><strong>Begründung:</strong> <%= freigabe1.kommentar %></p><% } %>
 
-            <% if (errors.length > 0) { %>
-              <div class="alert alert-danger">
-                <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
-              </div>
-            <% } %>
+            <%- include('_fehler_liste', { errors, feldFehler: locals.feldFehler || {} }) %>
 
             <form method="post" action="/freigabe2/<%= job.id %>" id="freigabe2-form">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
@@ -64,13 +61,15 @@
                   <% }) %>
                   <input type="hidden" name="zahlungsdaten_stand" value="<%= paymentReview.fingerprint %>">
                   <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="zahlungsdaten_bestaetigt" id="zahlungsdatenBestaetigt" value="ja">
+                    <input class="form-check-input<%= ff.zahlungsdatenBestaetigt ? ' is-invalid' : '' %>" type="checkbox" name="zahlungsdaten_bestaetigt" id="zahlungsdatenBestaetigt" value="ja"<%- ffAttr(ff, 'zahlungsdatenBestaetigt') %>>
                     <label class="form-check-label" for="zahlungsdatenBestaetigt"><%= paymentReview.art === 'spesen' ? 'IBAN, Kontoinhaber, Betrag und Konto geprueft' : paymentReview.art === 'qr_rechnung' ? 'Zahlungsempfaenger, IBAN, Referenz, Betrag und Konto geprueft' : 'Zahlung wird manuell erfasst; Konto und Betrag geprueft' %></label>
+<% if (ff.zahlungsdatenBestaetigt) { %><div class="invalid-feedback d-block" id="zahlungsdatenBestaetigt-fehler"><%= ff.zahlungsdatenBestaetigt %></div><% } %>
                   </div>
                   <% if ((paymentReview.hinweise || []).length > 0) { %>
                     <div class="form-check">
-                      <input class="form-check-input" type="checkbox" name="zahlungshinweise_bestaetigt" id="zahlungshinweiseBestaetigt" value="ja">
+                      <input class="form-check-input<%= ff.zahlungshinweiseBestaetigt ? ' is-invalid' : '' %>" type="checkbox" name="zahlungshinweise_bestaetigt" id="zahlungshinweiseBestaetigt" value="ja"<%- ffAttr(ff, 'zahlungshinweiseBestaetigt') %>>
                       <label class="form-check-label" for="zahlungshinweiseBestaetigt">Die oben genannten Abweichungen wurden geklaert</label>
+<% if (ff.zahlungshinweiseBestaetigt) { %><div class="invalid-feedback d-block" id="zahlungshinweiseBestaetigt-fehler"><%= ff.zahlungshinweiseBestaetigt %></div><% } %>
                     </div>
                   <% } %>
                 </div>
@@ -86,8 +85,9 @@
                 </div>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="f2begruendung">Begründung (bei Interessenskonflikt oder Ablehnung Pflicht)</label>
-                <textarea class="form-control" id="f2begruendung" name="begruendung"><%= values.begruendung || '' %></textarea>
+                <label class="form-label" for="f2begruendung">Begründung <span class="text-muted" data-begruendung-hinweis><%= values.interessenskonflikt === 'ja' ? '(Pflicht)' : '(bei Ablehnung Pflicht)' %></span></label>
+                <textarea class="form-control<%= ff.f2begruendung ? ' is-invalid' : '' %>" id="f2begruendung" name="begruendung"<%- ffAttr(ff, 'f2begruendung') %>><%= values.begruendung || '' %></textarea>
+<% if (ff.f2begruendung) { %><div class="invalid-feedback d-block" id="f2begruendung-fehler"><%= ff.f2begruendung %></div><% } %>
               </div>
               <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2"><%= job.quelle === 'spesen' && !paymentReview ? 'Zahlungsdaten pruefen' : 'Freigeben' %></button>
               <button type="submit" name="aktion" value="ablehnen" class="btn btn-outline-danger">Ablehnen</button>
@@ -98,4 +98,21 @@
         <% if (locals.kommentarBereich) { %><%- include('_kommentare', { ...kommentarBereich, ungespeichertesFormular: 'freigabe2-form' }) %><% } %>
       </div>
     </div>
+  <script>
+    // Begründung ist nur bei gemeldetem Interessenskonflikt sofort Pflicht (bei Ablehnung prüft sie der Server).
+    // Läuft auch einmal beim Laden, damit ein Fehler-Rerender den Zustand wiederherstellt.
+    (function () {
+      var feld = document.getElementById('f2begruendung');
+      var hinweis = document.querySelector('label[for="f2begruendung"] [data-begruendung-hinweis]');
+      var ja = document.getElementById('f2konfliktJa');
+      function aktualisiereBegruendung() {
+        feld.required = ja.checked;
+        if (hinweis) hinweis.textContent = ja.checked ? '(Pflicht)' : '(bei Ablehnung Pflicht)';
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="interessenskonflikt"]'), function (radio) {
+        radio.addEventListener('change', aktualisiereBegruendung);
+      });
+      aktualisiereBegruendung();
+    })();
+  </script>
 <%- include('_seite_ende') %>

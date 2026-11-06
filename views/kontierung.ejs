@@ -1,4 +1,5 @@
 <%- include('_seite_anfang', { titel: 'Kontierung', rahmen: 'kompakt' }) %>
+<% const ff = locals.feldFehler || {}; const ffAttr = locals.feldFehlerAttr || (() => ''); %>
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Kontierung: <%- include('_beleg_name', { job }) %> <%- include('_beleg_nr', { jobId: job.id }) %></h1>
     </div>
@@ -30,37 +31,36 @@
                 QR-Code deutet auf Lieferant <strong><%= qrInfo.vorschlagKreditor.name %></strong> hin, aktuell zugewiesen: <strong><%= qrInfo.zugewiesenerKreditor.name %></strong> — bitte prüfen.
               </div>
             <% } %>
-            <% if (errors.length > 0) { %>
-              <div class="alert alert-danger">
-                <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
-              </div>
-            <% } %>
+            <%- include('_fehler_liste', { errors, feldFehler: locals.feldFehler || {} }) %>
 
             <form id="kontierung-form" method="post" action="/kontierung/<%= job.id %>" enctype="multipart/form-data">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
               <div class="mb-3">
                 <label class="form-label" for="kontoId">Konto</label>
-                <select class="form-select" id="kontoId" name="kontoId" required data-searchable>
+                <select class="form-select<%= ff.kontoId ? ' is-invalid' : '' %>" id="kontoId" name="kontoId" required data-searchable<%- ffAttr(ff, 'kontoId') %>>
                   <option value="">— wählen —</option>
                   <% konten.forEach((k) => { %>
                     <option value="<%= k.id %>" <%= String(k.id) === values.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
                   <% }) %>
                 </select>
+<% if (ff.kontoId) { %><div class="invalid-feedback d-block" id="kontoId-fehler"><%= ff.kontoId %></div><% } %>
               </div>
 
               <div class="row g-2 mb-3">
                 <div class="col-12 col-sm-6">
                   <label class="form-label" for="absender">Absender</label>
-                  <input type="text" class="form-control" id="absender" name="absender" value="<%= values.absender || '' %>" required>
+                  <input type="text" class="form-control<%= ff.absender ? ' is-invalid' : '' %>" id="absender" name="absender" value="<%= values.absender || '' %>" required<%- ffAttr(ff, 'absender') %>>
+<% if (ff.absender) { %><div class="invalid-feedback d-block" id="absender-fehler"><%= ff.absender %></div><% } %>
                 </div>
                 <div class="col-12 col-sm-6">
                   <label class="form-label" for="kreditorId">Lieferant</label>
-                  <select class="form-select" id="kreditorId" name="kreditorId" required data-searchable>
+                  <select class="form-select<%= ff.kreditorId ? ' is-invalid' : '' %>" id="kreditorId" name="kreditorId" required data-searchable<%- ffAttr(ff, 'kreditorId') %>>
                     <option value="">— wählen —</option>
                     <% kreditoren.forEach((d) => { %>
                       <option value="<%= d.id %>" <%= String(d.id) === values.kreditorId ? 'selected' : '' %>><%= d.name %></option>
                     <% }) %>
                   </select>
+<% if (ff.kreditorId) { %><div class="invalid-feedback d-block" id="kreditorId-fehler"><%= ff.kreditorId %></div><% } %>
                 </div>
               </div>
 
@@ -84,17 +84,20 @@
 
               <div class="mb-3">
                 <label class="form-label" for="rechnungsnummer" id="rechnungsnummer-label">Rechnungsnummer</label>
-                <input type="text" class="form-control" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" required>
+                <input type="text" class="form-control<%= ff.rechnungsnummer ? ' is-invalid' : '' %>" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" required<%- ffAttr(ff, 'rechnungsnummer') %>>
+<% if (ff.rechnungsnummer) { %><div class="invalid-feedback d-block" id="rechnungsnummer-fehler"><%= ff.rechnungsnummer %></div><% } %>
               </div>
 
               <div class="row g-2 mb-3">
                 <div class="col-12 col-sm-6">
                   <label class="form-label" for="betrag">Betrag</label>
-                  <input type="text" inputmode="decimal" class="form-control" id="betrag" name="betrag" value="<%= values.betrag || '' %>" placeholder="z.B. 123.45" required>
+                  <input type="text" inputmode="decimal" class="form-control<%= ff.betrag ? ' is-invalid' : '' %>" id="betrag" name="betrag" value="<%= values.betrag || '' %>" placeholder="z.B. 123.45" required<%- ffAttr(ff, 'betrag') %>>
+<% if (ff.betrag) { %><div class="invalid-feedback d-block" id="betrag-fehler"><%= ff.betrag %></div><% } %>
                 </div>
                 <div class="col-12 col-sm-6">
                   <label class="form-label" for="zahlungsziel">Zahlungsziel</label>
-                  <input type="date" class="form-control" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>" <%= values.typ === 'gutschrift' ? '' : 'required' %>>
+                  <input type="date" class="form-control<%= ff.zahlungsziel ? ' is-invalid' : '' %>" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>" <%= values.typ === 'gutschrift' ? '' : 'required' %><%- ffAttr(ff, 'zahlungsziel') %>>
+<% if (ff.zahlungsziel) { %><div class="invalid-feedback d-block" id="zahlungsziel-fehler"><%= ff.zahlungsziel %></div><% } %>
                 </div>
               </div>
 
@@ -117,8 +120,9 @@
               </div>
 
               <div class="mb-3">
-                <label class="form-label" for="begruendung">Begründung <span class="text-muted">(bei Interessenskonflikt oder Ablehnung Pflicht)</span></label>
-                <textarea class="form-control" id="begruendung" name="begruendung"><%= values.begruendung || '' %></textarea>
+                <label class="form-label" for="begruendung">Begründung <span class="text-muted" data-begruendung-hinweis><%= values.interessenskonflikt === 'ja' ? '(Pflicht)' : '(bei Ablehnung Pflicht)' %></span></label>
+                <textarea class="form-control<%= ff.begruendung ? ' is-invalid' : '' %>" id="begruendung" name="begruendung"<%- ffAttr(ff, 'begruendung') %>><%= values.begruendung || '' %></textarea>
+<% if (ff.begruendung) { %><div class="invalid-feedback d-block" id="begruendung-fehler"><%= ff.begruendung %></div><% } %>
               </div>
 
               <div class="mb-3">
@@ -253,6 +257,23 @@
       </div>
     </div>
   <script>
+    // Begründung ist nur bei gemeldetem Interessenskonflikt sofort Pflicht (bei Ablehnung prüft sie der Server).
+    // Läuft auch einmal beim Laden, damit ein Fehler-Rerender den Zustand wiederherstellt.
+    (function () {
+      var feld = document.getElementById('begruendung');
+      var hinweis = document.querySelector('label[for="begruendung"] [data-begruendung-hinweis]');
+      var ja = document.getElementById('konfliktJa');
+      function aktualisiereBegruendung() {
+        feld.required = ja.checked;
+        if (hinweis) hinweis.textContent = ja.checked ? '(Pflicht)' : '(bei Ablehnung Pflicht)';
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="interessenskonflikt"]'), function (radio) {
+        radio.addEventListener('change', aktualisiereBegruendung);
+      });
+      aktualisiereBegruendung();
+    })();
+  </script>
+  <script>
     // Eingebettetes PDF, "Vorschau neu laden" und Beleg/Formular-Umschalter: public/js/belegUmschalter.js.
     // Ablehnen deliberately needs none of these fields filled in (the server-side handler skips
     // all of these checks for aktion=ablehnen, only requiring Begründung) — but each field's HTML
@@ -353,6 +374,10 @@
         input.className = select.className;
         input.setAttribute('autocomplete', 'off');
         input.setAttribute('role', 'combobox');
+        // Fehlerzustand (aria-invalid/-describedby) gehört auf das sichtbare Feld.
+        ['aria-invalid', 'aria-describedby'].forEach(function (attr) {
+          if (select.hasAttribute(attr)) input.setAttribute(attr, select.getAttribute(attr));
+        });
         input.setAttribute('aria-expanded', 'false');
         if (select.disabled) input.disabled = true;
         var placeholderOption = select.querySelector('option[value=""]');

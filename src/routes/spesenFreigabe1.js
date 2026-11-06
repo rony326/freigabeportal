@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { feldFehlerAttr } from '../utils/feldFehler.js';
 import {
   getJobById,
   eskalierenFreigabe1,
@@ -64,7 +65,7 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
     return { job, konto: getKontoById(db, job.konto_id) };
   }
 
-  function renderForm(req, res, status, { job, konto }, values, errors) {
+  function renderForm(req, res, status, { job, konto }, values, errors, feldFehler = {}) {
     const spesenabrechnung = getSpesenabrechnungById(db, job.spesenabrechnung_id);
     res.status(status).render('spesen-freigabe1', {
       job,
@@ -74,6 +75,8 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values,
       errors,
+      feldFehler,
+      feldFehlerAttr,
       auditLog: buildAuditLog(db, job.id),
       kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/spesen-freigabe1/${job.id}`),
     });
@@ -95,7 +98,7 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
       const values = { interessenskonflikt: interessenskonflikt || '', begruendung: begruendung || '' };
 
       if ((hatKonflikt || aktion === 'ablehnen') && !begruendung) {
-        return renderForm(req, res, 400, result, values, ['Begründung ist bei Interessenskonflikt oder Ablehnung Pflicht.']);
+        return renderForm(req, res, 400, result, values, ['Begründung ist bei Interessenskonflikt oder Ablehnung Pflicht.'], { sf1begruendung: 'Begründung ist bei Interessenskonflikt oder Ablehnung Pflicht.' });
       }
 
       const zeitpunkt = new Date().toISOString();

@@ -3338,3 +3338,24 @@ test('POST /kontierung/:id rejects contradicting kreditorId and debitorId withou
   assert.equal(listFreigabenByJob(db, id).length, 0);
   db.close();
 });
+
+test('kontierung: Fehler stehen am Feld', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /id="betrag"[^>]*is-invalid|is-invalid[^>]*id="betrag"/);
+  assert.match(res.text, /id="betrag-fehler"[^>]*>\s*Bitte einen Betrag angeben\./);
+  assert.match(res.text, /href="#betrag"/);
+  db.close();
+});

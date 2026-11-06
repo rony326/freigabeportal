@@ -24,6 +24,7 @@ import { tsaTrustOptions } from '../services/tsaTrust.js';
 import { kommentarBereich } from './kommentare.js';
 import { listeKommentare } from '../services/kommentare.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { feldFehlerAttr } from '../utils/feldFehler.js';
 
 // Stand der Kommentare eines Vorgangs als "<Anzahl>:<letzte id>". Die Seite schreibt ihn beim
 // Rendern ins Formular; der POST vergleicht ihn vor dem Stempeln (Kommentar während die Seite offen
@@ -107,7 +108,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     return { job, konto };
   }
 
-  function renderForm(req, res, status, { job, konto }, values, errors, paymentReview = null) {
+  function renderForm(req, res, status, { job, konto }, values, errors, paymentReview = null, feldFehler = {}) {
     const freigaben = listFreigabenByJob(db, job.id);
     const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
     if (!freigabe1) {
@@ -136,6 +137,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values,
       errors,
+      feldFehler,
+      feldFehlerAttr,
       paymentReview,
       auditLog: buildAuditLog(db, job.id),
       kkHinweis: kkHinweisFuerJob(db, job),
@@ -159,7 +162,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const hatKonflikt = interessenskonflikt === 'ja';
 
       if (hatKonflikt && !begruendung) {
-        return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einem Interessenskonflikt ist eine Begründung Pflicht.']);
+        return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einem Interessenskonflikt ist eine Begründung Pflicht.'], null, { f2begruendung: 'Bei einem Interessenskonflikt ist eine Begründung Pflicht.' });
       }
 
       if (hatKonflikt && aktion === 'ablehnen') {
@@ -245,7 +248,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
 
       if (aktion === 'ablehnen') {
         if (!begruendung) {
-          return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einer Ablehnung ist eine Begründung Pflicht.']);
+          return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einer Ablehnung ist eine Begründung Pflicht.'], null, { f2begruendung: 'Bei einer Ablehnung ist eine Begründung Pflicht.' });
         }
         db.exec('BEGIN');
         try {
@@ -357,9 +360,11 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           (zahlung.hinweise.length === 0 || req.body.zahlungshinweise_bestaetigt === 'ja');
         if (!bestaetigt) {
           const changed = Boolean(req.body.zahlungsdaten_stand);
+          const standGeaendert = changed && req.body.zahlungsdaten_stand !== review.fingerprint;
+          const text = standGeaendert ? 'Der Zahlungs- oder Vorgangsstand wurde geaendert. Bitte erneut pruefen und bestaetigen.' : 'Bitte die Zahlungsdaten pruefen und bestaetigen.';
+          const feld = standGeaendert ? null : (req.body.zahlungsdaten_bestaetigt !== 'ja' ? 'zahlungsdatenBestaetigt' : 'zahlungshinweiseBestaetigt');
           return renderForm(req, res, changed ? 409 : 400, result, { interessenskonflikt, begruendung },
-            [changed && req.body.zahlungsdaten_stand !== review.fingerprint ? 'Der Zahlungs- oder Vorgangsstand wurde geaendert. Bitte erneut pruefen und bestaetigen.' : 'Bitte die Zahlungsdaten pruefen und bestaetigen.'],
-            review);
+            [text], review, feld ? { [feld]: text } : {});
         }
         zahlungsStand = review.fingerprint;
       }

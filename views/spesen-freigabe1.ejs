@@ -1,4 +1,5 @@
 <%- include('_seite_anfang', { titel: 'Spesen-Freigabe 1', rahmen: 'kompakt' }) %>
+<% const ff = locals.feldFehler || {}; const ffAttr = locals.feldFehlerAttr || (() => ''); %>
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Spesen-Freigabe 1: <%- include('_beleg_name', { job }) %> <%- include('_beleg_nr', { jobId: job.id }) %></h1>
     </div>
@@ -17,11 +18,7 @@
         <p><strong>Verwendungszweck:</strong> <%= job.beschreibung %></p>
         <p><strong>Eingereicht von:</strong> <%= eingereichtePerson ? `${eingereichtePerson.vorname} ${eingereichtePerson.nachname}` : 'Unbekannt' %></p>
 
-        <% if (errors.length > 0) { %>
-          <div class="alert alert-danger">
-            <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
-          </div>
-        <% } %>
+        <%- include('_fehler_liste', { errors, feldFehler: locals.feldFehler || {} }) %>
 
         <div class="card">
           <div class="card-body">
@@ -38,8 +35,9 @@
                 </div>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="sf1begruendung">Begründung <span class="text-muted">(bei Interessenskonflikt oder Ablehnung Pflicht)</span></label>
-                <textarea class="form-control" id="sf1begruendung" name="begruendung"><%= values.begruendung || '' %></textarea>
+                <label class="form-label" for="sf1begruendung">Begründung <span class="text-muted" data-begruendung-hinweis><%= values.interessenskonflikt === 'ja' ? '(Pflicht)' : '(bei Ablehnung Pflicht)' %></span></label>
+                <textarea class="form-control<%= ff.sf1begruendung ? ' is-invalid' : '' %>" id="sf1begruendung" name="begruendung"<%- ffAttr(ff, 'sf1begruendung') %>><%= values.begruendung || '' %></textarea>
+<% if (ff.sf1begruendung) { %><div class="invalid-feedback d-block" id="sf1begruendung-fehler"><%= ff.sf1begruendung %></div><% } %>
               </div>
               <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2">Freigeben</button>
               <button type="submit" name="aktion" value="ablehnen" class="btn btn-outline-danger">Ablehnen</button>
@@ -52,4 +50,21 @@
       </div>
     </div>
 
+  <script>
+    // Begründung ist nur bei gemeldetem Interessenskonflikt sofort Pflicht (bei Ablehnung prüft sie der Server).
+    // Läuft auch einmal beim Laden, damit ein Fehler-Rerender den Zustand wiederherstellt.
+    (function () {
+      var feld = document.getElementById('sf1begruendung');
+      var hinweis = document.querySelector('label[for="sf1begruendung"] [data-begruendung-hinweis]');
+      var ja = document.getElementById('sf1konfliktJa');
+      function aktualisiereBegruendung() {
+        feld.required = ja.checked;
+        if (hinweis) hinweis.textContent = ja.checked ? '(Pflicht)' : '(bei Ablehnung Pflicht)';
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="interessenskonflikt"]'), function (radio) {
+        radio.addEventListener('change', aktualisiereBegruendung);
+      });
+      aktualisiereBegruendung();
+    })();
+  </script>
 <%- include('_seite_ende') %>

@@ -1,4 +1,5 @@
 import { parseEmpfaengerListe } from './services/auditNachweisJobs.js';
+import { feldFehlerAttr } from './utils/feldFehler.js';
 import express from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
@@ -103,6 +104,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.locals.version = getVersionInfo(join(__dirname, '..'));
   app.locals.zeitpunktAnzeige = zeitpunktAnzeige;
   app.locals.belegName = belegName;
+  app.locals.feldFehlerAttr = feldFehlerAttr;
   // Versions-Parameter für /js/portal.js und /css/portal.css (aus dem Dateistand beim Start): neue
   // Stände werden sofort geladen, und eine im Browser gespeicherte alte Umleitung der nackten URL
   // greift nicht mehr (Rückmeldung 2026-10-27: ERR_TOO_MANY_REDIRECTS auf portal.js).

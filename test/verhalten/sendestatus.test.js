@@ -19,8 +19,6 @@ async function kontierungSeite() {
   return { page, posts };
 }
 
-// Die Pflichtfelder stehen im Formular nicht fix; für den Test genügt der Submit-Versuch des Browsers
-// nicht, daher das Formular ohne Validierung absenden (Knopf mit Klick, novalidate setzen).
 // Zwei schnelle Klicks im Seitenkontext. Der Zustand wird im selben evaluate gelesen: Solange die
 // verzögerte Antwort aussteht, antwortet die Seite Playwright erst nach der Navigation.
 // Mit `mitPageshow` wird danach ein pageshow(persisted) ausgelöst und der Zustand erneut gelesen.
@@ -68,18 +66,60 @@ test('sendestatus: pageshow persisted setzt zurück', async () => {
   assert.equal(z.markiert, 0);
 });
 
+// Fügt ein POST-Formular ein (Antwort per page.route, kein eigener submit-Handler) und sendet es zweimal ab.
+async function sendeTestFormular(page, { formAttr = '', knopfAttr = '' } = {}) {
+  await page.route('**/testformular', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<p>ok</p>' }));
+  return page.evaluate(({ formAttr, knopfAttr }) => {
+    const f = document.createElement('form');
+    f.method = 'post'; f.action = '/testformular';
+    f.innerHTML = `<button type="submit" id="dl" ${knopfAttr}>Laden</button>`;
+    for (const [k, v] of Object.entries(formAttr)) f.setAttribute(k, v);
+    document.body.appendChild(f);
+    const knopf = document.getElementById('dl');
+    knopf.click();
+    knopf.click();
+    return { busy: knopf.getAttribute('aria-busy'), markiert: document.querySelectorAll('.wird-gesendet').length };
+  }, { formAttr, knopfAttr });
+}
+
 test('sendestatus: Download-Formular bleibt bedienbar', async () => {
   const page = await b.neueSeite('/');
-  await page.evaluate(() => {
-    const f = document.createElement('form');
-    f.method = 'post'; f.action = '/nirgends'; f.setAttribute('data-kein-sendestatus', '');
-    f.innerHTML = '<button type="submit" id="dl">Laden</button>';
-    f.addEventListener('submit', (e) => e.preventDefault());
-    document.body.appendChild(f);
+  const z = await sendeTestFormular(page, { formAttr: { 'data-kein-sendestatus': '' } });
+  assert.equal(z.busy, null);
+  assert.equal(z.markiert, 0);
+});
+
+test('sendestatus: formtarget am Knopf sperrt das Formular nicht', async () => {
+  const page = await b.neueSeite('/');
+  const z = await sendeTestFormular(page, { knopfAttr: 'formtarget="_blank"' });
+  assert.equal(z.busy, null);
+  assert.equal(z.markiert, 0);
+});
+
+test('sendestatus: Freigabe nach 15 s', async () => {
+  // page.clock ist hier unzuverlässig (runFor greift während einer laufenden Navigation nicht immer):
+  // Der 15-s-Timer wird vor dem Laden abgefangen und im Test selbst ausgelöst.
+  const page = await b.neueSeite('/kontierung/' + b.server.ids.anna, { als: 'test-1' });
+  await page.addInitScript(() => {
+    const echt = window.setTimeout.bind(window);
+    window.__timer15 = [];
+    window.setTimeout = (fn, ms, ...args) => (ms === 15000 ? (window.__timer15.push(() => fn(...args)), 0) : echt(fn, ms, ...args));
   });
-  await page.click('#dl');
-  assert.equal(await page.locator('#dl').getAttribute('aria-busy'), null);
-  assert.equal(await page.locator('.wird-gesendet').count(), 0);
+  await page.reload();
+  await page.route('**/kontierung/' + b.server.ids.anna, (route) => (route.request().method() === 'POST' ? route.fulfill({ status: 204 }) : route.continue()));
+  const z = await page.evaluate(() => {
+    const lies = () => document.querySelector('button[name=aktion][value=kontieren]').getAttribute('aria-busy');
+    document.getElementById('kontierung-form').noValidate = true;
+    document.querySelector('button[name=aktion][value=kontieren]').click();
+    const davor = lies();
+    const timer = window.__timer15.length;
+    window.__timer15.forEach((f) => f());
+    return { davor, timer, danach: lies(), markiert: document.querySelectorAll('.wird-gesendet').length };
+  });
+  assert.equal(z.davor, 'true');
+  assert.equal(z.timer, 1);
+  assert.equal(z.danach, null);
+  assert.equal(z.markiert, 0);
 });
 
 test('sendestatus: Beanspruchen zeigt Spinner', async () => {

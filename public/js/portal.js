@@ -60,6 +60,7 @@ window.Portal = window.Portal || {};
     if (!form || form.tagName !== 'FORM') return;
     if ((form.method || '').toLowerCase() !== 'post') return;
     if (form.target || form.hasAttribute('data-kein-sendestatus')) return;
+    if (e.submitter && e.submitter.formTarget) return; // z. B. formtarget=_blank: Seite bleibt stehen
     if (gesendet.has(form)) { e.preventDefault(); return; }
     var knopf = e.submitter || form.querySelector('button[type=submit], button:not([type]), input[type=submit]');
     if (knopf && knopf.tagName === 'INPUT') knopf = null; // kein Inhalt für einen Spinner

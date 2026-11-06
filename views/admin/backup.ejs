@@ -100,7 +100,7 @@
               <td><%= b.erstelltAm %></td>
               <td class="text-end">
                 <a class="btn btn-outline-secondary btn-sm" href="/admin/backup/dateien/<%= encodeURIComponent(b.dateiname) %>">Download</a>
-                <form method="post" action="/admin/backup/dateien/<%= encodeURIComponent(b.dateiname) %>/loeschen" class="d-inline" onsubmit="return confirm('Backup wirklich löschen?');">
+                <form method="post" action="/admin/backup/dateien/<%= encodeURIComponent(b.dateiname) %>/loeschen" class="d-inline" data-bestaetigen="Backup wirklich löschen?" data-bestaetigen-knopf="Löschen" data-bestaetigen-gefahr>
                   <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                   <button type="submit" class="btn btn-outline-danger btn-sm">Löschen</button>
                 </form>

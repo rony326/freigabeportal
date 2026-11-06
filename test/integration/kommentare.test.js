@@ -380,7 +380,7 @@ test('Kontierung: Warnung vor ungespeicherten Kontierungsangaben beim Absenden e
   assert.match(res.text, /<form method="post" action="\/kommentare\/\d+" class="kommentar-form" id="kommentar-form-\d+" data-ungespeichert-warnung="kontierung-form">/);
   assert.match(res.text, /<form id="kontierung-form"/);
   assert.match(res.text, /dataset\.ungespeichertWarnung/);
-  assert.match(res.text, /window\.confirm\('Ungespeicherte Angaben/);
+  assert.match(res.text, /Portal\.bestaetigen\(\{[\s\S]*Ungespeicherte Angaben/);
   // Seiten ohne Arbeitsformular bekommen den Haken nicht.
   const vorgang = await u.als('7').get(`/admin/vorgaenge/${u.jobA}`);
   assert.doesNotMatch(vorgang.text, /data-ungespeichert-warnung/);

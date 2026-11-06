@@ -1923,7 +1923,7 @@ test('Abschlussprüfung 7: Freigabe 2 warnt vor ungespeicherten Angaben beim Abs
   assert.equal(res.status, 200);
   assert.match(res.text, /<form method="post" action="\/freigabe2\/\d+" id="freigabe2-form">/);
   assert.match(res.text, /<form method="post" action="\/kommentare\/\d+" class="kommentar-form" id="kommentar-form-\d+" data-ungespeichert-warnung="freigabe2-form">/);
-  assert.match(res.text, /window\.confirm\('Ungespeicherte Angaben/);
+  assert.match(res.text, /Portal\.bestaetigen\(\{[\s\S]*Ungespeicherte Angaben/);
 });
 
 test('freigabe2: Begründung bei Konflikt am Feld', async () => {

@@ -47,7 +47,7 @@
           ladeVorschau();
         })
         .catch(function () {
-          alert('Vorschau konnte nicht neu geladen werden.');
+          Portal.meldung(refreshBtn, 'Vorschau konnte nicht neu geladen werden.', 'fehler');
         });
     });
   }

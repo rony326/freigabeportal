@@ -98,3 +98,77 @@ window.Portal = window.Portal || {};
   }
   document.querySelectorAll('[data-begruendung-pflicht-bei]').forEach(init);
 })();
+
+// Bestätigungsdialog (views/_bestaetigen_dialog.ejs) statt window.confirm.
+// Portal.bestaetigen({ titel, text, knopf, gefahr }) -> Promise<boolean>; Escape/Abbrechen/Schliessen -> false.
+// form[data-bestaetigen="<Text>"] (optional data-bestaetigen-knopf, data-bestaetigen-gefahr): Der erste Submit wird
+// in der Capture-Phase angehalten, nach "true" per requestSubmit(submitter) erneut ausgelöst (Flag gegen Endlosschleife).
+// Ohne JS (oder ohne Dialog) sendet das Formular ganz normal.
+(function () {
+  var laufend = null;
+
+  window.Portal.bestaetigen = function (opt) {
+    var dialog = document.getElementById('bestaetigen-dialog');
+    if (!dialog || !window.bootstrap || !window.bootstrap.Modal) {
+      return Promise.resolve(true); // Notfall: Dialog fehlt, Aktion nicht blockieren
+    }
+    if (laufend) return laufend;
+    var ok = document.getElementById('bestaetigen-dialog-ok');
+    document.getElementById('bestaetigen-dialog-titel').textContent = opt.titel || 'Bitte bestätigen';
+    document.getElementById('bestaetigen-dialog-text').textContent = opt.text || '';
+    ok.textContent = opt.knopf || 'OK';
+    ok.className = 'btn ' + (opt.gefahr ? 'btn-danger' : 'btn-primary');
+    var modal = window.bootstrap.Modal.getOrCreateInstance(dialog);
+    laufend = new Promise(function (resolve) {
+      var antwort = false;
+      var beiOk = function () { antwort = true; modal.hide(); };
+      var beiZu = function () {
+        ok.removeEventListener('click', beiOk);
+        dialog.removeEventListener('hidden.bs.modal', beiZu);
+        laufend = null;
+        resolve(antwort);
+      };
+      ok.addEventListener('click', beiOk);
+      dialog.addEventListener('hidden.bs.modal', beiZu);
+      dialog.addEventListener('shown.bs.modal', function fokus() {
+        dialog.removeEventListener('shown.bs.modal', fokus);
+        ok.focus();
+      });
+      modal.show();
+    });
+    return laufend;
+  };
+
+  var freigegeben = new WeakSet();
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (!form || form.tagName !== 'FORM' || !form.hasAttribute('data-bestaetigen')) return;
+    if (freigegeben.has(form)) { freigegeben.delete(form); return; }
+    if (!document.getElementById('bestaetigen-dialog') || !window.bootstrap) return;
+    e.preventDefault();
+    var submitter = e.submitter || null;
+    window.Portal.bestaetigen({
+      titel: form.getAttribute('data-bestaetigen-titel') || 'Bitte bestätigen',
+      text: form.getAttribute('data-bestaetigen'),
+      knopf: form.getAttribute('data-bestaetigen-knopf') || 'OK',
+      gefahr: form.hasAttribute('data-bestaetigen-gefahr')
+    }).then(function (ja) {
+      if (!ja) return;
+      freigegeben.add(form);
+      form.requestSubmit(submitter);
+    });
+  }, true);
+})();
+
+// Kurze Rückmeldung unter einem Element statt eines Browser-Popups. art: 'erfolg' | 'fehler'.
+window.Portal.meldung = function (ziel, text, art) {
+  var alt = ziel.nextElementSibling;
+  if (alt && alt.hasAttribute('data-portal-meldung')) alt.remove();
+  var el = document.createElement('div');
+  el.className = 'small ' + (art === 'erfolg' ? 'text-success' : 'text-danger');
+  el.setAttribute('role', 'status');
+  el.setAttribute('data-portal-meldung', '');
+  el.textContent = text;
+  ziel.insertAdjacentElement('afterend', el);
+  return el;
+};

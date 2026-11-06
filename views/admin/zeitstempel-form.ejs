@@ -112,7 +112,7 @@
       <p class="mb-1">Noch kein Paket erzeugt.</p>
     <% } %>
     <p><%= paketeOhneZeitstempel %> Paket<%= paketeOhneZeitstempel === 1 ? '' : 'e' %> noch ohne Zeitstempel.</p>
-    <form method="post" action="/admin/zeitstempel/audit-pruefnummer-senden" onsubmit="return confirm('Prüfnummer des letzten Pakets jetzt an die Revision senden?');">
+    <form method="post" action="/admin/zeitstempel/audit-pruefnummer-senden" data-bestaetigen="Prüfnummer des letzten Pakets jetzt an die Revision senden?" data-bestaetigen-knopf="Senden">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary">Prüfnummer jetzt senden</button>
     </form>

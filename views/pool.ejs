@@ -149,6 +149,23 @@
       });
     });
 
+    function ersatz(container, text, klasse) {
+      let msg;
+      if (container.tagName === 'TR') {
+        msg = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = container.children.length;
+        cell.className = klasse;
+        cell.textContent = text;
+        msg.appendChild(cell);
+      } else {
+        msg = document.createElement('div');
+        msg.className = 'kachel ' + klasse;
+        msg.textContent = text;
+      }
+      return msg;
+    }
+
     document.querySelectorAll('.zuweisen-form').forEach((form) => {
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -163,11 +180,17 @@
         });
         const res = await (knopf ? Portal.beschaeftigt(knopf, anfrage) : anfrage);
         if (res.ok) {
-          window.location.reload();
+          const option = form.querySelector('select[name="personId"] option:checked');
+          const text = `An ${option ? option.textContent.trim() : 'Person'} gesendet ✓`;
+          // Jede Darstellung dieses Jobs (Zeile und Kachel, Pool und Rückläufer) ersetzen.
+          document.querySelectorAll('[data-job-container]').forEach((container) => {
+            if (!container.querySelector(`[data-job-id="${id}"]`)) return;
+            container.replaceWith(ersatz(container, text, 'text-success'));
+          });
           return;
         }
         const body = await res.json().catch(() => ({}));
-        alert(body.error || 'Zuweisung fehlgeschlagen.');
+        Portal.meldung(form, body.error || 'Zuweisung fehlgeschlagen.', 'fehler');
       });
     });
 

@@ -7,6 +7,9 @@
     <% if (umgehaengt) { %>
       <div class="alert alert-success">Vorgang umgehängt. Die beteiligten Personen wurden per Mail informiert.</div>
     <% } %>
+    <% if (rapportHinweis) { %>
+      <div class="alert alert-success"><%= rapportHinweis %></div>
+    <% } %>
     <% if (errors.length) { %>
       <div class="alert alert-danger"><ul class="mb-0"><% errors.forEach((e) => { %><li><%= e %></li><% }) %></ul></div>
     <% } %>
@@ -27,6 +30,59 @@
         <dt class="col-sm-3">Beleg</dt><dd class="col-sm-9"><a href="<%= pdfUrl %>" target="_blank" rel="noopener">PDF öffnen</a></dd>
       <% } %>
     </dl>
+
+    <% if (rapport) { %>
+      <h2 class="h5" id="rapport">Kenntnisnahme<% if (vorgang.fortschritt) { %> <small class="text-body-secondary">(<%= vorgang.fortschritt %> bestätigt)</small><% } %></h2>
+      <p class="text-body-secondary">Weitergegeben von <%= rapport.markiertVon %><% if (rapport.bemerkung) { %>: «<%= rapport.bemerkung %>»<% } %></p>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Empfänger</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <% rapport.empfaenger.forEach((e) => { %>
+              <tr>
+                <td><%= e.name %></td>
+                <td>
+                  <% if (e.status === 'bestaetigt') { %>Zur Kenntnis genommen (<%= e.bestaetigtAm.slice(0, 10) %>)
+                  <% } else if (e.status === 'offen') { %><span class="badge text-bg-warning">offen</span>
+                  <% } else { %><%= e.status === 'ersetzt' ? 'Ersetzt' : 'Entfernt' %><% if (e.entferntVon) { %> von <%= e.entferntVon %><% } %><% if (e.begruendung) { %>: <%= e.begruendung %><% } %><% } %>
+                </td>
+                <td>
+                  <% if (darfRapportEingreifen && e.status === 'offen') { %>
+                    <details>
+                      <summary>Ersetzen / Entfernen</summary>
+                      <form method="post" action="/admin/vorgaenge/<%= vorgang.id %>/rapport/<%= e.id %>/ersetzen" class="mt-2">
+                        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                        <label class="form-label" for="neu-<%= e.id %>">Ersetzen durch</label>
+                        <select class="form-select mb-2" id="neu-<%= e.id %>" name="neuePersonId" required>
+                          <option value="">Bitte wählen …</option>
+                          <% rapport.kandidaten.forEach((p) => { %><option value="<%= p.id %>"><%= p.name %></option><% }) %>
+                        </select>
+                        <label class="form-label" for="ersetzen-b-<%= e.id %>">Begründung (Pflicht, mindestens <%= minBemerkung %> Zeichen)</label>
+                        <textarea class="form-control mb-2" id="ersetzen-b-<%= e.id %>" name="begruendung" rows="2" minlength="<%= minBemerkung %>" required></textarea>
+                        <button type="submit" class="btn btn-primary btn-sm">Ersetzen</button>
+                      </form>
+                      <form method="post" action="/admin/vorgaenge/<%= vorgang.id %>/rapport/<%= e.id %>/entfernen" class="mt-3">
+                        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                        <label class="form-label" for="entfernen-b-<%= e.id %>">Ohne Ersatz entfernen: Begründung (Pflicht, mindestens <%= minBemerkung %> Zeichen)</label>
+                        <textarea class="form-control mb-2" id="entfernen-b-<%= e.id %>" name="begruendung" rows="2" minlength="<%= minBemerkung %>" required></textarea>
+                        <button type="submit" class="btn btn-outline-danger btn-sm">Entfernen</button>
+                      </form>
+                    </details>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <% if (darfRapportEingreifen) { %>
+        <form method="post" action="/admin/vorgaenge/<%= vorgang.id %>/rapport/aufheben" class="mb-3">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <button type="submit" class="btn btn-outline-secondary btn-sm">Markierung aufheben</button>
+          <span class="form-text">Nur möglich, solange noch niemand bestätigt hat.</span>
+        </form>
+      <% } %>
+    <% } %>
 
     <h2 class="h5">Verlauf</h2>
     <% if (auditLog.length === 0) { %>

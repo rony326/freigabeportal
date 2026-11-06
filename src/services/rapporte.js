@@ -13,6 +13,8 @@ import {
   listKenntnisnahmen,
   listOffeneKenntnisnahmen,
   listRapportIdsZumAbschliessen,
+  ersetzeEmpfaenger,
+  entferneEmpfaenger,
 } from '../db/rapporteRepo.js';
 import { stampKenntnisnahme } from './pdfStamp.js';
 import { setZeitstempelMitNachweis } from './zeitstempel.js';
@@ -23,8 +25,10 @@ import { listeKommentare } from './kommentare.js';
 import { reiheBenachrichtigungEin } from './notify.js';
 import { stelleEintraegeZu } from './mailZustellung.js';
 import { personHasPermission } from '../middleware/permissions.js';
+import { MIN_BEMERKUNG_LAENGE } from './vorgangUmhaengen.js';
 
 export const MAX_BEMERKUNG_LAENGE = 2000;
+const NICHT_OFFEN = 'Diese Empfängerzeile ist nicht (mehr) offen: sie wurde inzwischen bestätigt, ersetzt oder entfernt.';
 
 function name(person) {
   return `${person.vorname} ${person.nachname}`;
@@ -290,4 +294,123 @@ export async function schliesseRapporteNach(db, config) {
     }
   }
   return geschlossen;
+}
+
+// Lädt die offene Zeile, die zu Job und Kenntnisnahme-ID passt (verhindert, dass eine ID eines
+// anderen Rapports über diese Route bearbeitet wird). null, wenn der Rapport nicht mehr
+// 'kenntnisnahme' ist oder die Zeile nicht (mehr) offen ist.
+function ladeOffeneZeile(db, jobId, kenntnisnahmeId) {
+  const job = getJobById(db, jobId);
+  if (!job || job.typ !== 'rapport' || job.status !== 'kenntnisnahme') return null;
+  return { job, zeile: listOffeneKenntnisnahmen(db, jobId).find((k) => k.id === kenntnisnahmeId) ?? null };
+}
+
+function pruefeBegruendung(begruendung) {
+  if ((begruendung || '').trim().length < MIN_BEMERKUNG_LAENGE) {
+    return { ok: false, status: 400, fehler: `Bitte eine Begründung mit mindestens ${MIN_BEMERKUNG_LAENGE} Zeichen angeben.` };
+  }
+  if (begruendung.trim().length > MAX_BEMERKUNG_LAENGE) {
+    return { ok: false, status: 400, fehler: `Die Begründung darf höchstens ${MAX_BEMERKUNG_LAENGE} Zeichen lang sein.` };
+  }
+  return null;
+}
+
+// Ersetzt einen offenen Empfänger durch eine andere Person (Admin-Eingriff). Die Zeile und die
+// Prüfungen laufen in einer Transaktion; wer schon offen ist (auch die ersetzte Person selbst),
+// wird abgewiesen, bevor die UNIQUE-Bedingung der Tabelle greift.
+export async function ersetzeRapportEmpfaenger(db, config, { jobId, kenntnisnahmeId, neuePersonId, begruendung, admin, ip, mailer = null }) {
+  const fehler = pruefeBegruendung(begruendung);
+  if (fehler) return fehler;
+  const text = begruendung.trim();
+  const neue = listRapportEmpfaengerKandidaten(db).find((p) => p.churchtools_person_id === String(neuePersonId));
+  if (!neue) return { ok: false, status: 400, fehler: 'Bitte eine gültige neue Empfängerin oder einen gültigen neuen Empfänger wählen.' };
+
+  const zeitpunkt = new Date().toISOString();
+  let eintrag;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const geladen = ladeOffeneZeile(db, jobId, kenntnisnahmeId);
+    if (!geladen?.zeile) {
+      db.exec('ROLLBACK');
+      return { ok: false, status: 409, fehler: NICHT_OFFEN };
+    }
+    if (listOffeneKenntnisnahmen(db, jobId).some((k) => k.person_id === neue.churchtools_person_id)) {
+      db.exec('ROLLBACK');
+      return { ok: false, status: 409, fehler: `${name(neue)} ist bereits offene Empfängerin bzw. offener Empfänger dieses Rapports.` };
+    }
+    const alt = getPersonById(db, geladen.zeile.person_id);
+    if (!ersetzeEmpfaenger(db, kenntnisnahmeId, { neuePersonId: neue.churchtools_person_id, von: admin.churchtools_person_id, begruendung: text, zeitpunkt })) {
+      db.exec('ROLLBACK');
+      return { ok: false, status: 409, fehler: NICHT_OFFEN };
+    }
+    createFreigabe(db, {
+      jobId, personId: admin.churchtools_person_id, rolle: 'rapport_empfaenger_ersetzt', zeitpunkt, ip,
+      interessenskonflikt: false, kommentar: `${alt ? name(alt) : geladen.zeile.person_id} → ${name(neue)}: ${text}`, eskaliertVon: null,
+    });
+    const markierer = geladen.job.rapport_markiert_von ? getPersonById(db, geladen.job.rapport_markiert_von) : null;
+    eintrag = reiheBenachrichtigungEin(db, {
+      to: neue.email,
+      typ: 'rapport-zuweisung',
+      jobId,
+      variablen: {
+        empfaengerName: name(neue),
+        jobDateiname: geladen.job.dateiname,
+        markiertVon: markierer ? name(markierer) : '',
+        bemerkung: geladen.job.rapport_bemerkung || '',
+        link: `${config.publicBaseUrl}/rapporte/${jobId}`,
+      },
+    });
+    db.exec('COMMIT');
+  } catch (err) {
+    if (db.isTransaction) db.exec('ROLLBACK');
+    throw err;
+  }
+  // Ohne Mailer bleibt die Mail in der Outbox und wird vom Mail-Retry zugestellt.
+  if (mailer) await stelleEintraegeZu(db, mailer, [eintrag]);
+  return { ok: true };
+}
+
+// Entfernt einen offenen Empfänger ohne Ersatz. Der letzte Offene darf nur gehen, wenn schon
+// jemand bestätigt hat; dann ist der Rapport vollständig und wird abgeschlossen.
+export async function entferneRapportEmpfaenger(db, config, { jobId, kenntnisnahmeId, begruendung, admin, ip }) {
+  const fehler = pruefeBegruendung(begruendung);
+  if (fehler) return fehler;
+  const text = begruendung.trim();
+  const zeitpunkt = new Date().toISOString();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const geladen = ladeOffeneZeile(db, jobId, kenntnisnahmeId);
+    if (!geladen?.zeile) {
+      db.exec('ROLLBACK');
+      return { ok: false, status: 409, fehler: NICHT_OFFEN };
+    }
+    const entfernt = getPersonById(db, geladen.zeile.person_id);
+    const ergebnis = entferneEmpfaenger(db, kenntnisnahmeId, { von: admin.churchtools_person_id, begruendung: text, zeitpunkt });
+    if (ergebnis === 'letzter_offen_ohne_bestaetigung') {
+      db.exec('ROLLBACK');
+      return { ok: false, status: 409, fehler: 'Das ist der letzte offene Empfänger und niemand hat bisher bestätigt. Bitte stattdessen einen Ersatz bestimmen (ersetzen) oder die Markierung aufheben.' };
+    }
+    if (ergebnis !== 'entfernt') {
+      db.exec('ROLLBACK');
+      return { ok: false, status: 409, fehler: NICHT_OFFEN };
+    }
+    createFreigabe(db, {
+      jobId, personId: admin.churchtools_person_id, rolle: 'rapport_empfaenger_entfernt', zeitpunkt, ip,
+      interessenskonflikt: false, kommentar: `${entfernt ? name(entfernt) : geladen.zeile.person_id}: ${text}`, eskaliertVon: null,
+    });
+    db.exec('COMMIT');
+  } catch (err) {
+    if (db.isTransaction) db.exec('ROLLBACK');
+    throw err;
+  }
+  let abgeschlossen = false;
+  if (listOffeneKenntnisnahmen(db, jobId).length === 0) {
+    try {
+      abgeschlossen = await finalisiereRapport(db, config, jobId);
+    } catch (err) {
+      // Entfernung bleibt gültig; der Cron (schliesseRapporteNach) holt den Abschluss nach.
+      console.error(`Rapport ${jobId}: Abschluss fehlgeschlagen, wird nachgeholt:`, err.message);
+    }
+  }
+  return { ok: true, abgeschlossen };
 }

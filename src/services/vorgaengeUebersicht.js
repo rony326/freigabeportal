@@ -7,18 +7,21 @@ import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getAktivenVertreter } from './vertretung.js';
 import { LAUFENDE_STATUS, ermittleZustaendigkeit } from './vorgangZustaendigkeit.js';
 import { belegName } from './belegName.js';
+import { aktuelleKenntnisnahmen } from './rapporte.js';
 
 export const STATUS_LABEL = {
   unzugewiesen: 'Pool',
   zugewiesen: 'Kontierung / Freigabe 1',
   freigabe2: 'Freigabe 2',
   abgelehnt: 'Abgelehnt',
+  kenntnisnahme: 'Wartet auf Kenntnisnahme',
 };
 
-const ART_LABEL = { rechnung: 'Rechnung', gutschrift: 'Gutschrift', spesen: 'Spesen' };
+const ART_LABEL = { rechnung: 'Rechnung', gutschrift: 'Gutschrift', spesen: 'Spesen', rapport: 'Rapport' };
 const STUNDE_MS = 60 * 60 * 1000;
 
 function artVon(job) {
+  if (job.typ === 'rapport') return 'rapport';
   if (job.quelle === 'spesen') return 'spesen';
   return job.typ === 'gutschrift' ? 'gutschrift' : 'rechnung';
 }
@@ -63,7 +66,18 @@ function seitWann(db, job) {
   return letzter ? letzter.zeitpunkt : job.eingang_am;
 }
 
+// Rapport: n von m der aktuellen Empfänger haben bestätigt (entfernte/ersetzte zählen nicht mit).
+function rapportStand(db, job) {
+  const zeilen = aktuelleKenntnisnahmen(db, job).filter((k) => !k.entfernt_am);
+  return { bestaetigt: zeilen.filter((k) => k.bestaetigt_am).length, gesamt: zeilen.length, offen: zeilen.filter((k) => !k.bestaetigt_am) };
+}
+
 function istUeberfaellig(db, job, jetzt) {
+  if (job.status === 'kenntnisnahme') {
+    const stunden = Number(getConfigValue(db, 'rapport_eskalation_stunden'));
+    const aeltester = rapportStand(db, job).offen.map((k) => Date.parse(k.zugeteilt_am)).sort((a, b) => a - b)[0];
+    return Boolean(stunden) && aeltester !== undefined && aeltester < jetzt - stunden * STUNDE_MS;
+  }
   if (job.status === 'unzugewiesen') {
     const stunden = Number(getConfigValue(db, 'reminder_stunden'));
     return Boolean(stunden) && Date.parse(job.eingang_am) < jetzt - stunden * STUNDE_MS;
@@ -95,8 +109,10 @@ export function beschreibeVorgang(db, job, { jetzt = Date.now(), namen = namensA
   const vertreterId = zust.personId ? getAktivenVertreter(db, zust.personId) : null;
   const konto = job.konto_id ? getKontoById(db, job.konto_id) : null;
   const art = artVon(job);
-  const zustaendigName =
-    zust.art === 'pool' ? (job.pool_rueckgesendet_bemerkung ? 'Pool – Rückläufer' : 'Pool')
+  const rapport = job.status === 'kenntnisnahme' ? rapportStand(db, job) : null;
+  const zustaendigName = rapport
+    ? (rapport.offen.map((k) => anzeigeName(namen(k.person_id))).join(', ') || '—')
+    : zust.art === 'pool' ? (job.pool_rueckgesendet_bemerkung ? 'Pool – Rückläufer' : 'Pool')
       : zust.art === 'admin' ? 'Admin-Gruppe'
         : anzeigeName(zustaendigPerson);
   return {
@@ -112,7 +128,8 @@ export function beschreibeVorgang(db, job, { jetzt = Date.now(), namen = namensA
     gegenueber: art === 'spesen' ? anzeigeName(namen(job.eingereicht_von)) : job.lieferant || job.absender || '—',
     kontoLabel: konto ? `${konto.kontonummer} ${konto.bezeichnung}` : '—',
     zustaendig: { art: zust.art, personId: zust.personId, name: zustaendigName, vertretungName: vertreterId ? anzeigeName(namen(vertreterId)) : null },
-    prognoseF2: prognoseFreigabe2(db, job, namen),
+    fortschritt: rapport ? `${rapport.bestaetigt} von ${rapport.gesamt}` : null,
+    prognoseF2: rapport ? null : prognoseFreigabe2(db, job, namen),
     kennzeichen: kennzeichenVon(job),
     haengt: haengendeIds.has(job.id),
     ueberfaellig: istUeberfaellig(db, job, jetzt),

@@ -26,6 +26,7 @@
           <option value="rechnung"<%= filter.art === 'rechnung' ? ' selected' : '' %>>Rechnung</option>
           <option value="gutschrift"<%= filter.art === 'gutschrift' ? ' selected' : '' %>>Gutschrift</option>
           <option value="spesen"<%= filter.art === 'spesen' ? ' selected' : '' %>>Spesen</option>
+          <option value="rapport"<%= filter.art === 'rapport' ? ' selected' : '' %>>Rapport</option>
         </select>
       </div>
       <div class="col-auto">
@@ -63,7 +64,7 @@
                 <td><%= v.betrag || '—' %></td>
                 <td><%= v.kontoLabel %></td>
                 <td>
-                  <%= v.statusLabel %>
+                  <%= v.statusLabel %><% if (v.fortschritt) { %> <small class="text-body-secondary">(<%= v.fortschritt %>)</small><% } %>
                   <% v.kennzeichen.forEach((k) => { %><span class="badge text-bg-secondary ms-1"><%= k %></span><% }) %>
                   <% if (v.haengt) { %><span class="badge text-bg-danger ms-1">hängt</span><% } %>
                   <% if (v.ueberfaellig) { %><span class="badge text-bg-warning ms-1">überfällig</span><% } %>

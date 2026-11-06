@@ -1,4 +1,7 @@
 import { test } from 'node:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
@@ -13,6 +16,9 @@ import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungen
 import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { requirePermission } from '../../../src/middleware/permissions.js';
+import { markiereRapport } from '../../../src/services/rapporte.js';
+import { listKenntnisnahmen, bestaetigeKenntnisnahme } from '../../../src/db/rapporteRepo.js';
+import { buildPdfFixture } from '../../helpers/pdfFixture.js';
 import { createVorgaengeRouter } from '../../../src/routes/admin/vorgaenge.js';
 
 const CONFIG = {
@@ -191,4 +197,140 @@ test('422-Neuanzeige behält den abgeschickten Stand, damit eine zwischenzeitlic
     .send({ zielId: '5', bemerkung: 'Zuständigkeit geklärt', bestaetigung: 'ja', stand: stand(fehler.text) });
   assert.equal(erneut.status, 409);
   db.close();
+});
+
+// --- Rapporte ---
+
+async function seedRapport(t, { empfaenger = ['2', '3'] } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'vorgaenge-rapport-'));
+  const db = openDatabase(':memory:');
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  seed(db);
+  setConfigValue(db, 'modul_rapporte_aktiv', '1');
+  setConfigValue(db, 'zeitstempel_tsa_url', '');
+  const config = { ...CONFIG, jobsDir: dir, tsaTrustRequired: false };
+  const pdfPfad = join(dir, 'rapport.pdf');
+  writeFileSync(pdfPfad, await buildPdfFixture(['Rapport']));
+  const jobId = createJob(db, { eingangAm: '2026-11-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rapport.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
+  const markierer = { churchtools_person_id: '1', vorname: 'P1', nachname: 'M' };
+  const r = await markiereRapport(db, config, { async sendMail() {} }, { job: getJobById(db, jobId), person: markierer, empfaengerIds: empfaenger, bemerkung: 'Bitte lesen', ip: '' });
+  assert.equal(r.ok, true);
+  const app = express();
+  app.set('view engine', 'ejs');
+  app.set('views', new URL('../../../views', import.meta.url).pathname);
+  app.use((req, res, next) => { res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null }; next(); });
+  app.use(express.urlencoded({ extended: false }));
+  app.use((req, res, next) => { req.session = { personId: req.headers['x-test-person-id'] }; next(); });
+  app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(db, config));
+  app.use('/admin/vorgaenge', requirePermission(db, config, 'vorgaenge_einsehen'), createVorgaengeRouter({ db, config, mailer: { async sendMail() {} } }));
+  return { db, app, jobId };
+}
+
+const ersetzen = (x, kid, body, person = '99') => request(x.app).post(`/admin/vorgaenge/${x.jobId}/rapport/${kid}/ersetzen`).set('x-test-person-id', person).type('form').send(body);
+const entfernen = (x, kid, body, person = '99') => request(x.app).post(`/admin/vorgaenge/${x.jobId}/rapport/${kid}/entfernen`).set('x-test-person-id', person).type('form').send(body);
+
+test('Rapport erscheint mit Art "Rapport" und "1 von 2" im Dashboard, Filter typ=rapport', async (t) => {
+  const x = await seedRapport(t);
+  const [k1] = listKenntnisnahmen(x.db, x.jobId);
+  bestaetigeKenntnisnahme(x.db, x.jobId, k1.person_id, new Date().toISOString());
+  const liste = await request(x.app).get('/admin/vorgaenge').set('x-test-person-id', '99');
+  assert.equal(liste.status, 200);
+  assert.match(liste.text, /Rapport/);
+  assert.match(liste.text, /Wartet auf Kenntnisnahme/);
+  assert.match(liste.text, /1 von 2/);
+  const nurRapport = await request(x.app).get('/admin/vorgaenge?typ=rapport').set('x-test-person-id', '99');
+  assert.match(nurRapport.text, /rapport\.pdf/);
+  assert.doesNotMatch(nurRapport.text, /rechnung\.pdf/);
+  const nurRechnung = await request(x.app).get('/admin/vorgaenge?art=rechnung').set('x-test-person-id', '99');
+  assert.doesNotMatch(nurRechnung.text, /rapport\.pdf/);
+  const detail = await request(x.app).get(`/admin/vorgaenge/${x.jobId}`).set('x-test-person-id', '99');
+  assert.equal(detail.status, 200);
+  assert.match(detail.text, /Zur Kenntnis weitergegeben/);
+  assert.match(detail.text, /\/rapport\/\d+\/ersetzen/);
+});
+
+test('ersetzen: alte Zeile entfernt mit ersetzt_durch_id, neue Person bekommt Mail, Audit-Eintrag', async (t) => {
+  const x = await seedRapport(t);
+  const [k1] = listKenntnisnahmen(x.db, x.jobId);
+  const res = await ersetzen(x, k1.id, { neuePersonId: '5', begruendung: 'Person ist abwesend' });
+  assert.equal(res.status, 302);
+  const zeilen = listKenntnisnahmen(x.db, x.jobId);
+  const alt = zeilen.find((k) => k.id === k1.id);
+  const neu = zeilen.find((k) => k.person_id === '5');
+  assert.ok(alt.entfernt_am);
+  assert.equal(alt.ersetzt_durch_id, neu.id);
+  assert.equal(alt.begruendung, 'Person ist abwesend');
+  assert.ok(listMailLog(x.db).some((m) => m.typ === 'rapport-zuweisung' && m.empfaenger === 'p5@example.org'));
+  const f = listFreigabenByJob(x.db, x.jobId).at(-1);
+  assert.equal(f.rolle, 'rapport_empfaenger_ersetzt');
+  assert.equal(f.person_id, '99');
+  const detail = await request(x.app).get(`/admin/vorgaenge/${x.jobId}`).set('x-test-person-id', '99');
+  assert.match(detail.text, /Empfänger ersetzt/);
+});
+
+test('ersetzen mit Begründung < 10 Zeichen → 400; ohne workflow_eingreifen → 403; schon offene oder gleiche Person → 409', async (t) => {
+  const x = await seedRapport(t);
+  const [k1, k2] = listKenntnisnahmen(x.db, x.jobId);
+  assert.equal((await ersetzen(x, k1.id, { neuePersonId: '5', begruendung: 'kurz' })).status, 400);
+  assert.equal((await ersetzen(x, k1.id, { neuePersonId: '5', begruendung: 'Person ist abwesend' }, '55')).status, 403);
+  assert.equal((await ersetzen(x, k1.id, { neuePersonId: k2.person_id, begruendung: 'Person ist abwesend' })).status, 409);
+  assert.equal((await ersetzen(x, k1.id, { neuePersonId: k1.person_id, begruendung: 'Person ist abwesend' })).status, 409);
+  assert.equal((await ersetzen(x, k1.id, { neuePersonId: 'gibtsnicht', begruendung: 'Person ist abwesend' })).status, 400);
+  assert.equal(listKenntnisnahmen(x.db, x.jobId).length, 2);
+});
+
+test('ersetzen doppelt abgeschickt (gleiche kid) → zweites Mal 409, nur eine neue Zeile', async (t) => {
+  const x = await seedRapport(t);
+  const [k1] = listKenntnisnahmen(x.db, x.jobId);
+  assert.equal((await ersetzen(x, k1.id, { neuePersonId: '5', begruendung: 'Person ist abwesend' })).status, 302);
+  assert.equal((await ersetzen(x, k1.id, { neuePersonId: '6', begruendung: 'Person ist abwesend' })).status, 409);
+  assert.equal(listKenntnisnahmen(x.db, x.jobId).length, 3);
+});
+
+test('entfernen des letzten Offenen nach einer Bestätigung → abgeschlossen mit Vermerk "entfernt"', async (t) => {
+  const x = await seedRapport(t);
+  const [k1, k2] = listKenntnisnahmen(x.db, x.jobId);
+  bestaetigeKenntnisnahme(x.db, x.jobId, k1.person_id, new Date().toISOString());
+  const res = await entfernen(x, k2.id, { begruendung: 'Nicht mehr zuständig' });
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(x.db, x.jobId).status, 'abgeschlossen');
+  assert.equal(listFreigabenByJob(x.db, x.jobId).at(-1).rolle, 'rapport_empfaenger_entfernt');
+  assert.equal(listKenntnisnahmen(x.db, x.jobId).find((k) => k.id === k2.id).begruendung, 'Nicht mehr zuständig');
+});
+
+test('entfernen eines von zwei Offenen lässt den Rapport offen; kurze Begründung → 400', async (t) => {
+  const x = await seedRapport(t);
+  const [k1] = listKenntnisnahmen(x.db, x.jobId);
+  assert.equal((await entfernen(x, k1.id, { begruendung: 'kurz' })).status, 400);
+  assert.equal((await entfernen(x, k1.id, { begruendung: 'Nicht mehr zuständig' })).status, 302);
+  assert.equal(getJobById(x.db, x.jobId).status, 'kenntnisnahme');
+});
+
+test('entfernen des letzten Offenen ohne Bestätigung → 409 mit Hinweis ersetzen/aufheben', async (t) => {
+  const x = await seedRapport(t, { empfaenger: ['2'] });
+  const [k1] = listKenntnisnahmen(x.db, x.jobId);
+  const res = await entfernen(x, k1.id, { begruendung: 'Nicht mehr zuständig' });
+  assert.equal(res.status, 409);
+  assert.match(res.text, /ersetzen|aufheben/);
+  assert.equal(getJobById(x.db, x.jobId).status, 'kenntnisnahme');
+});
+
+test('aufheben über das Dashboard: Rapport wird wieder normaler Vorgang; ohne Recht 403', async (t) => {
+  const x = await seedRapport(t);
+  assert.equal((await request(x.app).post(`/admin/vorgaenge/${x.jobId}/rapport/aufheben`).set('x-test-person-id', '55').type('form').send({})).status, 403);
+  const res = await request(x.app).post(`/admin/vorgaenge/${x.jobId}/rapport/aufheben`).set('x-test-person-id', '99').type('form').send({});
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(x.db, x.jobId).status, 'zugewiesen');
+  assert.equal(listFreigabenByJob(x.db, x.jobId).at(-1).rolle, 'rapport_markierung_aufgehoben');
+});
+
+test('allgemeines Umhängen bietet Rapporte nicht an', async (t) => {
+  const x = await seedRapport(t);
+  const detail = await request(x.app).get(`/admin/vorgaenge/${x.jobId}`).set('x-test-person-id', '99');
+  assert.doesNotMatch(detail.text, /\/umhaengen"/);
+  const post = await request(x.app).post(`/admin/vorgaenge/${x.jobId}/umhaengen`).set('x-test-person-id', '99').type('form')
+    .send({ zielId: '5', bemerkung: 'Zuständigkeit geklärt', bestaetigung: 'ja', stand: 'x' });
+  assert.equal(post.status, 404);
 });

@@ -1,7 +1,7 @@
 import { getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 
-export const LAUFENDE_STATUS = ['unzugewiesen', 'zugewiesen', 'freigabe2', 'abgelehnt'];
+export const LAUFENDE_STATUS = ['unzugewiesen', 'zugewiesen', 'freigabe2', 'abgelehnt', 'kenntnisnahme'];
 
 // Wer muss bei diesem Job jetzt handeln? Spiegelt die Autorisierung der Workflow-Seiten
 // (kontierungZugriff.js, ablehnung.js, freigabe2.js), ohne Ferienvertretung -- die kommt additiv

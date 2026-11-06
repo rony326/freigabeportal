@@ -17,6 +17,8 @@ function name(person) {
 // ein Umhängen würde nur einen toten Vorgang erzeugen.
 export function istUmhaengbar(job) {
   if (!job || !LAUFENDE_STATUS.includes(job.status)) return false;
+  // Rapporte haben keine einzelne zuständige Person; Empfänger werden einzeln ersetzt/entfernt.
+  if (job.status === 'kenntnisnahme') return false;
   if (job.status === 'abgelehnt' && job.quelle === 'spesen') return false;
   return true;
 }

@@ -8,7 +8,7 @@
         <div class="small text-body-secondary text-break"><%- include('../_beleg_nr', { jobId: v.id }) %> <%= v.dateiname %></div>
         <div class="kachel-betrag"><%= v.betrag || '—' %></div>
         <div>
-          <%= v.statusLabel %>
+          <%= v.statusLabel %><% if (v.fortschritt) { %> (<%= v.fortschritt %>)<% } %>
           <% v.kennzeichen.forEach((k) => { %><span class="badge text-bg-secondary ms-1"><%= k %></span><% }) %>
           <% if (v.haengt) { %><span class="badge text-bg-danger ms-1">hängt</span><% } %>
           <% if (v.ueberfaellig) { %><span class="badge text-bg-warning ms-1">überfällig</span><% } %>

@@ -11,10 +11,12 @@ import { listLaufendeVorgaenge, beschreibeVorgang, STATUS_LABEL } from '../../se
 import { LAUFENDE_STATUS, ermittleZustaendigkeit, standToken } from '../../services/vorgangZustaendigkeit.js';
 import { listUmhaengenZiele, umhaengeVorgang, istUmhaengbar, MIN_BEMERKUNG_LAENGE } from '../../services/vorgangUmhaengen.js';
 import { ermittleStriktesWeiterleitungsZiel } from '../../services/kontierungZugriff.js';
+import { aktuelleKenntnisnahmen, listRapportEmpfaengerKandidaten, ersetzeRapportEmpfaenger, entferneRapportEmpfaenger, hebeRapportAuf } from '../../services/rapporte.js';
 import { kommentarBereich } from '../kommentare.js';
 import { kommentarInfoFuer } from '../../services/kommentare.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 
+const ARTEN = ['rechnung', 'gutschrift', 'spesen', 'rapport'];
 const NICHT_LAUFEND = 'Dieser Vorgang existiert nicht oder ist nicht (mehr) in Bearbeitung.';
 
 export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
@@ -43,7 +45,29 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     return person ? { name: `${person.vorname} ${person.nachname}` } : null;
   }
 
-  function renderDetail(req, res, status, job, { errors = [], werte = {}, umgehaengt = false, standOverride = null } = {}) {
+  function rapportDaten(job) {
+    if (job.status !== 'kenntnisnahme') return null;
+    const person = (id) => getPersonById(db, id);
+    const nameVon = (id) => { const p = id ? person(id) : null; return p ? `${p.vorname} ${p.nachname}` : (id || '—'); };
+    const zeilen = aktuelleKenntnisnahmen(db, job);
+    const offeneIds = new Set(zeilen.filter((k) => !k.bestaetigt_am && !k.entfernt_am).map((k) => k.person_id));
+    const empfaenger = zeilen.map((k) => ({
+      id: k.id,
+      name: nameVon(k.person_id),
+      status: k.bestaetigt_am ? 'bestaetigt' : k.entfernt_am ? (k.ersetzt_durch_id ? 'ersetzt' : 'entfernt') : 'offen',
+      bestaetigtAm: k.bestaetigt_am,
+      entferntAm: k.entfernt_am,
+      entferntVon: k.entfernt_von ? nameVon(k.entfernt_von) : null,
+      begruendung: k.begruendung,
+      personId: k.person_id,
+    }));
+    const kandidaten = listRapportEmpfaengerKandidaten(db)
+      .filter((p) => !offeneIds.has(p.churchtools_person_id))
+      .map((p) => ({ id: p.churchtools_person_id, name: `${p.vorname} ${p.nachname}` }));
+    return { empfaenger, kandidaten, markiertVon: nameVon(job.rapport_markiert_von), markiertAm: job.rapport_markiert_am, bemerkung: job.rapport_bemerkung };
+  }
+
+  function renderDetail(req, res, status, job, { errors = [], werte = {}, umgehaengt = false, standOverride = null, rapportHinweis = null } = {}) {
     const darfEingreifen = kannEingreifen(req) && istUmhaengbar(job);
     res.status(status).render('admin/vorgang-detail', {
       vorgang: beschreibeVorgang(db, job),
@@ -59,6 +83,9 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
       errors,
       werte: { zielId: '', bemerkung: '', ...werte },
       umgehaengt,
+      rapport: rapportDaten(job),
+      darfRapportEingreifen: job.status === 'kenntnisnahme' && kannEingreifen(req),
+      rapportHinweis,
       kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/admin/vorgaenge/${job.id}`),
     });
   }
@@ -66,7 +93,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
   router.get('/', (req, res) => {
     const filter = {
       status: LAUFENDE_STATUS.includes(req.query.status) ? req.query.status : '',
-      art: ['rechnung', 'gutschrift', 'spesen'].includes(req.query.art) ? req.query.art : '',
+      art: ARTEN.includes(req.query.art) ? req.query.art : (req.query.typ === 'rapport' ? 'rapport' : ''),
       personId: typeof req.query.person === 'string' ? req.query.person : '',
       nurProbleme: req.query.probleme === '1',
     };
@@ -88,7 +115,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
   router.get('/:id', (req, res) => {
     const job = ladeLaufendenJob(req.params.id);
     if (!job) return res.status(404).render('error', { message: NICHT_LAUFEND });
-    renderDetail(req, res, 200, job, { umgehaengt: req.query.umgehaengt === '1' });
+    renderDetail(req, res, 200, job, { umgehaengt: req.query.umgehaengt === '1', rapportHinweis: { ersetzt: 'Empfänger ersetzt. Die neue Person wurde per Mail informiert.', entfernt: 'Empfänger entfernt.' }[req.query.rapport] || null });
   });
 
   router.post('/:id/umhaengen', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, asyncHandler(async (req, res, next) => {
@@ -122,6 +149,52 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     } catch (err) {
       next(err);
     }
+  }));
+
+  // Rapport-Eingriffe: Fehler (400/409) zeigen die Detailseite mit Meldung neu an.
+  function rapportAntwort(req, res, job, ergebnis, hinweis) {
+    if (ergebnis.ok) return res.redirect(`/admin/vorgaenge/${job.id}?rapport=${hinweis}`);
+    const aktuell = getJobById(db, job.id);
+    if (!aktuell || !LAUFENDE_STATUS.includes(aktuell.status)) return res.status(404).render('error', { message: NICHT_LAUFEND });
+    return renderDetail(req, res, ergebnis.status, aktuell, { errors: [ergebnis.fehler] });
+  }
+
+  function ladeRapportJob(req, res) {
+    const job = ladeLaufendenJob(req.params.id);
+    if (!job || job.status !== 'kenntnisnahme') {
+      res.status(404).render('error', { message: NICHT_LAUFEND });
+      return null;
+    }
+    return job;
+  }
+
+  const text = (v) => (typeof v === 'string' ? v : '');
+
+  router.post('/:id/rapport/aufheben', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, asyncHandler(async (req, res) => {
+    const job = ladeRapportJob(req, res);
+    if (!job) return;
+    const ergebnis = await hebeRapportAuf(db, config, { jobId: job.id, person: req.currentPerson, ip: req.ip });
+    if (ergebnis.ok) return res.redirect(`/admin/vorgaenge/${job.id}`);
+    return rapportAntwort(req, res, job, ergebnis);
+  }));
+
+  router.post('/:id/rapport/:kid/ersetzen', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, asyncHandler(async (req, res) => {
+    const job = ladeRapportJob(req, res);
+    if (!job) return;
+    const ergebnis = await ersetzeRapportEmpfaenger(db, config, {
+      jobId: job.id, kenntnisnahmeId: Number(req.params.kid), neuePersonId: text(req.body.neuePersonId),
+      begruendung: text(req.body.begruendung), admin: req.currentPerson, ip: req.ip, mailer,
+    });
+    return rapportAntwort(req, res, job, ergebnis, 'ersetzt');
+  }));
+
+  router.post('/:id/rapport/:kid/entfernen', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, asyncHandler(async (req, res) => {
+    const job = ladeRapportJob(req, res);
+    if (!job) return;
+    const ergebnis = await entferneRapportEmpfaenger(db, config, {
+      jobId: job.id, kenntnisnahmeId: Number(req.params.kid), begruendung: text(req.body.begruendung), admin: req.currentPerson, ip: req.ip,
+    });
+    return rapportAntwort(req, res, job, ergebnis, 'entfernt');
   }));
 
   return router;

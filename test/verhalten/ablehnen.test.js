@@ -51,6 +51,19 @@ test('Pool: In den Pool legen fragt Hinweis-Konto', async () => {
   await page.close();
 });
 
+test('Escape schliesst den Dialog und behält den getippten Text', async () => {
+  const page = await b.neueSeite(`/freigabe2/${b.server.ids.freigabe2}`, { als: 'test-2' });
+  const posts = merkePosts(page);
+  await page.click('button[name=aktion][value=ablehnen]');
+  await page.waitForSelector('#ablehnen-dialog.show');
+  await page.fill('#ablehnen-dialog-begruendung', 'Getippt');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('#ablehnen-dialog', { state: 'hidden' });
+  assert.equal(posts.length, 0);
+  assert.equal(await page.inputValue('#f2begruendung'), 'Getippt');
+  await page.close();
+});
+
 // Mutierende Tests zuletzt: der gemeinsame Server bleibt sonst nicht unverändert.
 test('Ablehnen bestätigen sendet aktion=ablehnen mit Begründung', async () => {
   const page = await b.neueSeite(`/freigabe2/${b.server.ids.freigabe2}`, { als: 'test-2' });

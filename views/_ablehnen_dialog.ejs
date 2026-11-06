@@ -23,24 +23,35 @@
   (function () {
     var form = document.getElementById(<%- JSON.stringify(formId) %>);
     var original = document.getElementById(<%- JSON.stringify(begruendungId) %>);
-    var knopf = document.querySelector('button[name="aktion"][value="ablehnen"]');
+    // Auf das Formular eingegrenzt (der Knopf kann per form-Attribut ausserhalb des Formulars stehen).
+    var knopf = Array.prototype.filter.call(document.querySelectorAll('button[name="aktion"][value="ablehnen"]'), function (k) { return k.form === form; })[0];
     var el = document.getElementById('ablehnen-dialog');
     var feld = document.getElementById('ablehnen-dialog-begruendung');
     if (!form || !original || !knopf || !el || !window.bootstrap) return;
+    var bestaetigt = false;
     var dialog = window.bootstrap.Modal.getOrCreateInstance(el);
     knopf.addEventListener('click', function (e) {
       e.preventDefault();
       feld.value = original.value;
       feld.classList.remove('is-invalid');
+      feld.removeAttribute('aria-invalid');
+      bestaetigt = false;
       dialog.show();
     });
     el.addEventListener('shown.bs.modal', function () { feld.focus(); });
+    // Escape, Schliessen-Kreuz, Hintergrundklick und Abbrechen: getippter Text bleibt erhalten.
+    el.addEventListener('hide.bs.modal', function () {
+      if (!bestaetigt) original.value = feld.value;
+    });
+    feld.addEventListener('input', function () {
+      if (feld.value.trim()) { feld.classList.remove('is-invalid'); feld.removeAttribute('aria-invalid'); }
+    });
     document.getElementById('ablehnen-dialog-abbrechen').addEventListener('click', function () {
-      original.value = feld.value;
       dialog.hide();
     });
     document.getElementById('ablehnen-dialog-bestaetigen').addEventListener('click', function () {
-      if (!feld.value.trim()) { feld.classList.add('is-invalid'); feld.focus(); return; }
+      if (!feld.value.trim()) { feld.classList.add('is-invalid'); feld.setAttribute('aria-invalid', 'true'); feld.focus(); return; }
+      bestaetigt = true;
       original.value = feld.value;
       if (typeof window.entferneKontierungsPflicht === 'function') window.entferneKontierungsPflicht();
       dialog.hide();

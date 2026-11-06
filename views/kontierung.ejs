@@ -244,6 +244,7 @@
       });
     }
     document.getElementById('ablehnen-btn').addEventListener('click', function (e) {
+      // Die defaultPrevented-Prüfung setzt voraus, dass _ablehnen_dialog.ejs vor diesem Skript eingebunden ist (Listener-Reihenfolge).
       // Mit Dialog-JS fängt _ablehnen_dialog.ejs den Klick ab; die Pflicht fällt erst bei der Bestätigung.
       if (!e.defaultPrevented) entferneKontierungsPflicht();
     });

@@ -16,6 +16,8 @@ test('Bereich stammt aus einer festen Liste und enthaelt keine IDs oder Query-We
   assert.equal(zugriffsBereich(req('/api/n8n/kk-belege/7')), '/api/n8n/kk-belege');
   assert.equal(zugriffsBereich(req('/api/n8n/anderes')), '/api/n8n');
   assert.equal(zugriffsBereich(req('/downloads/17?sig=abc')), '/downloads');
+  assert.equal(zugriffsBereich(req('/rapporte/5')), '/rapporte', 'Rapport-Seiten');
+  assert.equal(zugriffsBereich(req('/api/n8n/rapporte')), '/api/n8n/rapporte', 'n8n-Rapport-Endpunkt');
   assert.equal(zugriffsBereich(req('/kommentare/42', 'POST')), '/kommentare', 'verweigerte Kommentar-POSTs');
   assert.equal(zugriffsBereich(req('/%2e%2e/etc/passwd')), 'sonstige');
   assert.equal(zugriffsBereich(req('/')), '/');

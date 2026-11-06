@@ -667,3 +667,27 @@ test('rapport-erinnerungen: Rapport mit 0 offen in kenntnisnahme wird nachgeholt
   assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
   db.close();
 });
+
+test('rapport-erinnerungen: nicht abschliessbarer Rapport wird als Fehler mit Job-ID gemeldet', async () => {
+  // pdf_pfad zeigt auf eine nicht vorhandene Datei: das Nachholen scheitert.
+  const { db, jobId } = await seedRapport({ empfaenger: ['2', '3'] });
+  const { bestaetigeKenntnisnahme, entferneEmpfaenger, listOffeneKenntnisnahmen } = await import('../../src/db/rapporteRepo.js');
+  bestaetigeKenntnisnahme(db, jobId, '2', new Date().toISOString());
+  entferneEmpfaenger(db, listOffeneKenntnisnahmen(db, jobId)[0].id, { von: '9', begruendung: 'nicht mehr nötig hier', zeitpunkt: new Date().toISOString() });
+  const origError = console.error;
+  console.error = () => {};
+  let r;
+  try {
+    r = await runRapportErinnerungenJob(db, RAPPORT_CONFIG, createStubMailer());
+  } finally {
+    console.error = origError;
+  }
+  assert.equal(r.status, 'fehler');
+  assert.equal(r.nachgeholt, 0);
+  assert.deepEqual(r.fehlgeschlagen, [jobId]);
+  const log = listRecentCronLog(db, 'rapport-erinnerungen', 1)[0];
+  assert.equal(log.status, 'fehler');
+  assert.match(log.details, new RegExp(`Abschluss fehlgeschlagen.*${jobId}`));
+  assert.equal(getJobById(db, jobId).status, 'kenntnisnahme');
+  db.close();
+});

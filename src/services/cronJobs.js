@@ -268,7 +268,7 @@ async function runRapportErinnerungenJobInternal(db, config, mailer) {
     const eskalationStunden = Number(getConfigValue(db, 'rapport_eskalation_stunden'));
 
     // Zuerst nachholen: ein vollständig bestätigter Rapport soll weder erinnert noch eskaliert werden.
-    const nachgeholt = await schliesseRapporteNach(db, config);
+    const { nachgeholt, fehlgeschlagen } = await schliesseRapporteNach(db, config);
 
     const plan = planeInTransaktion(db, () => {
       const eintraege = [];
@@ -324,8 +324,18 @@ async function runRapportErinnerungenJobInternal(db, config, mailer) {
 
     const bilanz = await stelleEintraegeZu(db, mailer, plan.eintraege);
     const abschluss = abschlussMitBilanz(`Reminder: ${plan.reminder}, Eskalation: ${plan.eskalation}, Nachgeholt: ${nachgeholt}`, bilanz);
-    logCronLauf(db, { job: 'rapport-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: abschluss.status, details: abschluss.details });
-    return { status: abschluss.status, reminder: plan.reminder, eskalation: plan.eskalation, nachgeholt, mails: bilanz, ...(abschluss.error ? { error: abschluss.error } : {}) };
+    // Ein hängender Abschluss (z. B. unlesbares PDF) darf nicht still bleiben: der Lauf gilt als Fehler.
+    let status = abschluss.status;
+    let details = abschluss.details;
+    let error = abschluss.error;
+    if (fehlgeschlagen.length > 0) {
+      const meldung = `Abschluss fehlgeschlagen für Rapport(e) ${fehlgeschlagen.join(', ')}`;
+      status = 'fehler';
+      details = `${details}; ${meldung}`;
+      error = error ? `${error}; ${meldung}` : meldung;
+    }
+    logCronLauf(db, { job: 'rapport-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status, details });
+    return { status, reminder: plan.reminder, eskalation: plan.eskalation, nachgeholt, fehlgeschlagen, mails: bilanz, ...(error ? { error } : {}) };
   } catch (err) {
     logCronLauf(db, { job: 'rapport-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
     return { status: 'fehler', error: err.message };

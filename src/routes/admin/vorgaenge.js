@@ -50,7 +50,8 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     const person = (id) => getPersonById(db, id);
     const nameVon = (id) => { const p = id ? person(id) : null; return p ? `${p.vorname} ${p.nachname}` : (id || '—'); };
     const zeilen = aktuelleKenntnisnahmen(db, job);
-    const offeneIds = new Set(zeilen.filter((k) => !k.bestaetigt_am && !k.entfernt_am).map((k) => k.person_id));
+    // Wer offen ist oder schon bestätigt hat, ist bereits Empfänger und kommt nicht als Ersatz in Frage.
+    const offeneIds = new Set(zeilen.filter((k) => !k.entfernt_am).map((k) => k.person_id));
     const empfaenger = zeilen.map((k) => ({
       id: k.id,
       name: nameVon(k.person_id),

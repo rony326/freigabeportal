@@ -1216,12 +1216,15 @@ const RAPPORT_WERTE = /,\s*'(kenntnisnahme|rapport[_-][a-z_-]+)'/g;
 // Stand anlegen, dann per writable_schema die neuen CHECK-Werte wieder aus jobs, freigaben,
 // mail_log und cron_log entfernen. Enthält einen Job, eine freigaben-Zeile, den Zeitstempel-Trigger
 // und idx_jobs_datei_hash, und eine sqlite_sequence für jobs oberhalb der höchsten id.
-function legeAltDbOhneRapporteAn(dbPath) {
+function legeAltDbOhneRapporteAn(dbPath, { jobsLeeren = false } = {}) {
   const alt = openDatabase(dbPath);
   alt.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'A', 'B', 'a@example.org')").run();
   alt.prepare("INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, datei_hash) VALUES ('2026-11-01', 'scanner', 'Firma AG', 'a.pdf', '/tmp/a.pdf', 'freigabe1', 'h1')").run();
-  alt.prepare("INSERT INTO freigaben (job_id, person_id, rolle, zeitpunkt, ip) VALUES (1, '1', 'freigeber1', '2026-11-01', '::1')").run();
+  if (!jobsLeeren) alt.prepare("INSERT INTO freigaben (job_id, person_id, rolle, zeitpunkt, ip) VALUES (1, '1', 'freigeber1', '2026-11-01', '::1')").run();
   alt.prepare("UPDATE sqlite_sequence SET seq = 7 WHERE name = 'jobs'").run();
+  if (jobsLeeren) {
+    alt.exec('DELETE FROM jobs');
+  }
   alt.exec('PRAGMA writable_schema = ON');
   for (const name of ['jobs', 'freigaben', 'mail_log', 'cron_log']) {
     const { sql } = alt.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
@@ -1278,6 +1281,20 @@ test('jobs akzeptiert status kenntnisnahme nach Migration einer Alt-DB', () => {
       assert.deepEqual(verwaist, [], 'keine Verweise auf Zwischentabellen');
       assert.throws(() => db.prepare("UPDATE jobs SET zeitstempel_datei_hash = 'a' WHERE id = 1").run() && db.prepare("UPDATE jobs SET zeitstempel_datei_hash = 'b' WHERE id = 1").run(), /unveraenderlich/);
       pruefeRapportWerteErlaubt(db);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+test('Migration einer Alt-DB mit leerer jobs-Tabelle behält den AUTOINCREMENT-Zähler', () => {
+  mitTempDb((dbPath) => {
+    legeAltDbOhneRapporteAn(dbPath, { jobsLeeren: true });
+    const db = openDatabase(dbPath);
+    try {
+      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 0);
+      const neu = db.prepare("INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad, status) VALUES ('2026-11-06', 'scanner', 'r.pdf', '/tmp/r.pdf', 'kenntnisnahme')").run();
+      assert.equal(Number(neu.lastInsertRowid), 8);
     } finally {
       db.close();
     }

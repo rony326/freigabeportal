@@ -264,7 +264,11 @@ function migrateJobsStatusKenntnisnahme(db) {
     db.exec(`INSERT INTO jobs_neu (${spalten}) SELECT ${spalten} FROM jobs`);
     db.exec('DROP TABLE jobs');
     db.exec('ALTER TABLE jobs_neu RENAME TO jobs');
-    if (sequenz) db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'jobs'").run(sequenz.seq);
+    if (sequenz) {
+      // Bei leerer jobs-Tabelle legt der INSERT ... SELECT keine sqlite_sequence-Zeile an: dann neu eintragen.
+      const geaendert = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'jobs'").run(sequenz.seq).changes;
+      if (geaendert === 0 && sequenz.seq > 0) db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('jobs', ?)").run(sequenz.seq);
+    }
     for (const sql of abhaengige) db.exec(sql);
     const verletzungen = [...fkSchluessel()].filter((v) => !fkVorher.has(v));
     if (verletzungen.length > 0) {

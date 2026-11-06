@@ -281,6 +281,18 @@ test('ersetzen mit Begründung < 10 Zeichen → 400; ohne workflow_eingreifen �
   assert.equal(listKenntnisnahmen(x.db, x.jobId).length, 2);
 });
 
+test('ersetzen durch eine Person, die schon bestätigt hat → 409, keine neue Zeile; Kandidatenliste ohne sie', async (t) => {
+  const x = await seedRapport(t, { empfaenger: ['2', '3', '4'] });
+  const [k1, k2] = listKenntnisnahmen(x.db, x.jobId);
+  bestaetigeKenntnisnahme(x.db, x.jobId, k1.person_id, new Date().toISOString());
+  const vorher = listKenntnisnahmen(x.db, x.jobId).length;
+  const detail = await request(x.app).get(`/admin/vorgaenge/${x.jobId}`).set('x-test-person-id', '99');
+  assert.doesNotMatch(detail.text, new RegExp(`<option value="${k1.person_id}"`));
+  const res = await ersetzen(x, k2.id, { neuePersonId: k1.person_id, begruendung: 'Person ist abwesend' });
+  assert.equal(res.status, 409);
+  assert.equal(listKenntnisnahmen(x.db, x.jobId).length, vorher);
+});
+
 test('ersetzen doppelt abgeschickt (gleiche kid) → zweites Mal 409, nur eine neue Zeile', async (t) => {
   const x = await seedRapport(t);
   const [k1] = listKenntnisnahmen(x.db, x.jobId);

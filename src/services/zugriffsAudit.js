@@ -28,7 +28,7 @@ const METHODEN = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTI
 const ERSTE_SEGMENTE = new Set([
   'admin', 'api', 'internal', 'auth', 'branding', 'downloads', 'pool', 'meine-abgeschlossenen',
   'meine-spesen', 'kreditkarte', 'ferienmodus', 'kontierung', 'spesen', 'spesen-freigabe1',
-  'freigabe2', 'abgelehnt', 'zeitstempel-pruefen', 'kommentare',
+  'freigabe2', 'abgelehnt', 'zeitstempel-pruefen', 'kommentare', 'rapporte',
 ]);
 const ZWEITE_SEGMENTE = {
   admin: new Set([
@@ -39,7 +39,7 @@ const ZWEITE_SEGMENTE = {
   api: new Set(['n8n', 'pool']),
   internal: new Set(['cron']),
 };
-const N8N_SEGMENTE = new Set(['jobs', 'backup', 'kk-belege']);
+const N8N_SEGMENTE = new Set(['jobs', 'backup', 'kk-belege', 'rapporte']);
 const RECHT_MUSTER = /^[a-z_]{1,40}$/;
 
 let fehlerAnzahl = 0;

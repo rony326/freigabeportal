@@ -13,6 +13,7 @@ import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { markiereRapport } from '../../src/services/rapporte.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
+import { createPoolPageRouter } from '../../src/routes/poolPage.js';
 
 const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' }, downloadSigningSecret: 's', jobsDir: '/tmp', publicBaseUrl: 'https://portal.example.org' };
 
@@ -62,6 +63,28 @@ test('Modul an: Radio im Formular, Kandidatenliste ohne unresolved', async () =>
   assert.match(get.text, /typRapport/);
   assert.match(get.text, /Anna Empfang|Empfang Anna/);
   assert.doesNotMatch(get.text, /e2@example\.org|Bruno Empfang/);
+  t.db.close();
+});
+
+test('nach dem Markieren fehlt der Rapport in der Kontierungsliste des Markierers', async () => {
+  const t = setup();
+  const vorher = t.db.prepare("SELECT id FROM jobs WHERE status = 'zugewiesen' AND zugewiesen_an = '1'").all().map((r) => r.id);
+  assert.deepEqual(vorher, [t.jobId], 'Testaufbau: Job liegt vor dem Markieren in der Kontierung');
+  const pool = express();
+  pool.set('view engine', 'ejs');
+  pool.set('views', new URL('../../views', import.meta.url).pathname);
+  pool.use((req, res, next) => { res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null }; next(); });
+  pool.use((req, res, next) => { req.session = { personId: req.headers['x-test-person-id'] }; next(); });
+  pool.use(loadCurrentPerson(t.db));
+  pool.use(loadNavFlags(t.db, config));
+  pool.use('/pool', requireLogin(), createPoolPageRouter({ db: t.db, config }));
+  const davor = await request(pool).get('/pool').set('x-test-person-id', '1');
+  assert.match(davor.text, /rapport\.pdf/, 'Testaufbau: vor dem Markieren steht der Job in der Kontierungsliste');
+  assert.equal((await markiere(t, t.jobId, { empfaengerIds: ['2'] })).status, 302);
+  const res = await request(pool).get('/pool').set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /rapport\.pdf/);
+  assert.doesNotMatch(res.text, new RegExp(`/kontierung/${t.jobId}\\b`));
   t.db.close();
 });
 

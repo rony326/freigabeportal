@@ -310,15 +310,17 @@ export async function bestaetigeRapport(db, config, { jobId, person, ip }) {
 // Holt Rapporte nach, die vollständig bestätigt sind, aber noch in 'kenntnisnahme' stehen. Fehler
 // eines Rapports (z. B. unlesbares PDF) werden protokolliert und stoppen die übrigen nicht.
 export async function schliesseRapporteNach(db, config) {
-  let geschlossen = 0;
+  let nachgeholt = 0;
+  const fehlgeschlagen = [];
   for (const jobId of listRapportIdsZumAbschliessen(db)) {
     try {
-      if (await finalisiereRapport(db, config, jobId)) geschlossen += 1;
+      if (await finalisiereRapport(db, config, jobId)) nachgeholt += 1;
     } catch (err) {
       console.error(`Rapport ${jobId}: Nachholen des Abschlusses fehlgeschlagen:`, err.message);
+      fehlgeschlagen.push(jobId);
     }
   }
-  return geschlossen;
+  return { nachgeholt, fehlgeschlagen };
 }
 
 // Lädt die offene Zeile, die zu Job und Kenntnisnahme-ID passt (verhindert, dass eine ID eines
@@ -359,9 +361,9 @@ export async function ersetzeRapportEmpfaenger(db, config, { jobId, kenntnisnahm
       db.exec('ROLLBACK');
       return { ok: false, status: 409, fehler: NICHT_OFFEN };
     }
-    if (listOffeneKenntnisnahmen(db, jobId).some((k) => k.person_id === neue.churchtools_person_id)) {
+    if (aktuelleKenntnisnahmen(db, geladen.job).some((k) => k.person_id === neue.churchtools_person_id && !k.entfernt_am)) {
       db.exec('ROLLBACK');
-      return { ok: false, status: 409, fehler: `${name(neue)} ist bereits offene Empfängerin bzw. offener Empfänger dieses Rapports.` };
+      return { ok: false, status: 409, fehler: `${name(neue)} ist bereits Empfängerin bzw. Empfänger dieses Rapports (offen oder schon bestätigt).` };
     }
     const alt = getPersonById(db, geladen.zeile.person_id);
     if (!ersetzeEmpfaenger(db, kenntnisnahmeId, { neuePersonId: neue.churchtools_person_id, von: admin.churchtools_person_id, begruendung: text, zeitpunkt })) {

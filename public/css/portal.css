@@ -374,6 +374,14 @@
 .kachel-angaben dd {
   margin-bottom: 0;
 }
+.entscheidung {
+  margin-bottom: 1rem;
+}
+.entscheidung-betrag {
+  font-size: 1.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 /* Belegnummer (#<id>), klein und gedämpft: dieselbe Nummer wie in Auswahlfeldern ("#2 Rechnung.pdf"). */
 .beleg-nr {
   font-size: .8125rem;

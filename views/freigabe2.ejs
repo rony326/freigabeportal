@@ -11,26 +11,30 @@
             <% if (typeof kkHinweis !== 'undefined' && kkHinweis) { %>
               <div class="alert <%= kkHinweis.startsWith('Kreditkartenbeleg') ? 'alert-info' : 'alert-warning' %> py-2"><%= kkHinweis %></div>
             <% } %>
-            <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %><% if (job.absender) { %> · Absender: <%= job.absender %><% } %></p>
-            <p><strong>Konto:</strong> <%= konto.kontonummer %> — <%= konto.bezeichnung %></p>
-            <% if (job.quelle === 'spesen') { %>
-              <% if (spesenabrechnungTitel) { %>
-                <p><strong>Titel:</strong> <%= spesenabrechnungTitel %></p>
+            <div class="entscheidung">
+              <div class="entscheidung-betrag"><%= job.betrag || '—' %><% if (job.typ === 'gutschrift') { %> <span class="badge text-bg-secondary fs-6 fw-normal align-middle">Gutschrift</span><% } %></div>
+              <% if (job.quelle === 'spesen') { %>
+                <div>Eingereicht von <%= spesenEinreicher ? `${spesenEinreicher.vorname} ${spesenEinreicher.nachname}` : 'Unbekannt' %></div>
+              <% } else if (job.lieferant) { %>
+                <div><%= job.lieferant %></div>
               <% } %>
-              <p><strong>Verwendungszweck:</strong> <%= job.beschreibung %></p>
-              <p><strong>Auslage-Datum:</strong> <%= job.auslage_datum %></p>
-              <p><strong>Eingereicht von:</strong> <%= spesenEinreicher ? `${spesenEinreicher.vorname} ${spesenEinreicher.nachname}` : 'Unbekannt' %></p>
-              <% if (job.betrag) { %><p><strong>Betrag:</strong> <%= job.betrag %></p><% } %>
-            <% } else { %>
-              <% if (job.typ === 'gutschrift') { %><p><strong>Typ:</strong> Gutschrift</p><% } %>
-              <% if (job.lieferant) { %><p><strong>Lieferant:</strong> <%= job.lieferant %></p><% } %>
-              <% if (job.rechnungsnummer) { %><p><strong>Rechnungsnummer:</strong> <%= job.rechnungsnummer %></p><% } %>
-              <% if (job.betrag) { %><p><strong>Betrag:</strong> <%= job.betrag %></p><% } %>
-              <% if (job.zahlungsziel) { %><p><strong>Zahlungsziel:</strong> <%= job.zahlungsziel %></p><% } %>
-            <% } %>
-            <p><strong>Freigeber 1:</strong> <%= freigeber1Person.vorname %> <%= freigeber1Person.nachname %></p>
-            <p><strong>Interessenskonflikt Freigeber 1:</strong> <%= freigabe1.interessenskonflikt ? 'Ja' : 'Nein' %></p>
-            <% if (freigabe1.kommentar) { %><p><strong>Begründung:</strong> <%= freigabe1.kommentar %></p><% } %>
+              <div class="text-muted">Konto <%= konto.kontonummer %> — <%= konto.bezeichnung %></div>
+            </div>
+            <dl class="kachel-angaben">
+              <dt>Quelle</dt><dd><%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %></dd>
+              <% if (job.absender) { %><dt>Absender</dt><dd><%= job.absender %></dd><% } %>
+              <% if (job.quelle === 'spesen') { %>
+                <% if (spesenabrechnungTitel) { %><dt>Titel</dt><dd><%= spesenabrechnungTitel %></dd><% } %>
+                <dt>Verwendungszweck</dt><dd><%= job.beschreibung %></dd>
+                <dt>Auslage-Datum</dt><dd><%= job.auslage_datum %></dd>
+              <% } else { %>
+                <% if (job.rechnungsnummer) { %><dt>Rechnungsnummer</dt><dd><%= job.rechnungsnummer %></dd><% } %>
+                <% if (job.zahlungsziel) { %><dt>Zahlungsziel</dt><dd><%= job.zahlungsziel %></dd><% } %>
+              <% } %>
+              <dt>Freigeber 1</dt><dd><%= freigeber1Person.vorname %> <%= freigeber1Person.nachname %></dd>
+              <dt>Interessenskonflikt Freigeber 1</dt><dd><%= freigabe1.interessenskonflikt ? 'Ja' : 'Nein' %></dd>
+              <% if (freigabe1.kommentar) { %><dt>Begründung</dt><dd><%= freigabe1.kommentar %></dd><% } %>
+            </dl>
 
             <%- include('_fehler_liste', { errors, feldFehler: locals.feldFehler || {} }) %>
 
@@ -51,10 +55,14 @@
                     <p class="mb-1"><strong>Kontoinhaber:</strong> <span class="text-break"><%= daten.kontoinhaber %></span></p>
                   <% } else if (paymentReview.art === 'qr_rechnung') { %>
                     <p class="mb-1"><strong>Zahlungsempfaenger:</strong> <span class="text-break"><%= daten.empfaenger %></span></p>
-                    <p class="mb-1"><strong>IBAN:</strong> <span class="text-break"><%= daten.iban %></span></p>
+                    <% if (paymentReview.abgleich === 'abweichung') { %>
+                      <div class="alert alert-danger py-2 mb-1"><strong>IBAN:</strong> <span class="text-break"><%= daten.iban %></span> — NICHT bei diesem Lieferanten hinterlegt</div>
+                    <% } else { %>
+                      <p class="mb-1"><strong>IBAN:</strong> <span class="text-break"><%= daten.iban %></span></p>
+                    <% } %>
                     <% if (daten.referenz) { %><p class="mb-1"><strong>Referenz:</strong> <span class="text-break"><%= daten.referenz %></span></p><% } %>
                     <% if (daten.betrag) { %><p class="mb-1"><strong>QR-Betrag:</strong> <%= daten.betrag %> <%= daten.waehrung || '' %></p><% } %>
-                    <p class="mb-1"><strong>IBAN-Abgleich:</strong> <%= { uebereinstimmung: 'bei diesem Lieferanten hinterlegt', abweichung: 'NICHT bei diesem Lieferanten hinterlegt', keine_iban_hinterlegt: 'keine IBAN beim Lieferanten hinterlegt', kein_lieferant: 'kein Lieferant zugeordnet' }[paymentReview.abgleich] || paymentReview.abgleich %></p>
+                    <% if (paymentReview.abgleich !== 'abweichung') { %><p class="mb-1"><strong>IBAN-Abgleich:</strong> <%= { uebereinstimmung: 'bei diesem Lieferanten hinterlegt', abweichung: 'NICHT bei diesem Lieferanten hinterlegt', keine_iban_hinterlegt: 'keine IBAN beim Lieferanten hinterlegt', kein_lieferant: 'kein Lieferant zugeordnet' }[paymentReview.abgleich] || paymentReview.abgleich %></p><% } %>
                   <% } %>
                   <% (paymentReview.hinweisTexte || []).forEach((text) => { %>
                     <div class="alert alert-warning py-2 my-2"><%= text %></div>

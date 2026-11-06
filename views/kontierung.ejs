@@ -8,7 +8,7 @@
         <% if (typeof kkHinweis !== 'undefined' && kkHinweis) { %>
           <div class="alert <%= kkHinweis.startsWith('Kreditkartenbeleg') ? 'alert-info' : 'alert-warning' %> py-2"><%= kkHinweis %></div>
         <% } %>
-        <p class="text-muted">Vorgangsnummer: <%= job.id %> · Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></p>
+        <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></p>
       </div>
       <div class="w-100"></div>
       <%- include('_beleg_umschalter', { jobId: job.id, pdfUrl: `/downloads/${job.id}/oeffnen`, thumbnailUrl: job.thumbnail_pfad ? `/downloads/${job.id}/thumbnail` : null, refreshUrl: `/downloads/${job.id}/refresh-url`, previewUrl, frameId: 'kontierung-preview-frame', spalte: 'col-lg-7' }) %>
@@ -135,30 +135,52 @@
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
             </form>
 
-            <div class="d-flex flex-wrap gap-2">
-              <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary btn-sm">Kontieren</button>
-              <button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger btn-sm">Ablehnen</button>
-              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#zurueck-in-pool-modal">Zurück in den Pool legen</button>
-              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#an-gruppe-zurueck-modal">An Gruppe zurücksenden</button>
-              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#aufsplitten-modal">Rechnung aufsplitten</button>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary">Kontieren</button>
+              <button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger">Ablehnen</button>
+              <div class="dropdown">
+                <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Weitere Aktionen</button>
+                <ul class="dropdown-menu">
+                  <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#zurueck-in-pool-modal">Zurück in den Pool legen</button></li>
+                  <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#an-gruppe-zurueck-modal">An Gruppe zurücksenden</button></li>
+                  <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#aufsplitten-modal">Rechnung aufsplitten</button></li>
+                  <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0 && !job.aufgesplittet_von) { %>
+                    <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#kk-abrechnung-modal">Als Kreditkartenabrechnung übergeben …</button></li>
+                  <% } %>
+                </ul>
+              </div>
             </div>
-            <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0 && !job.aufgesplittet_von) { %>
-              <form method="post" action="/kontierung/<%= job.id %>/als-kk-abrechnung" class="d-flex flex-wrap gap-2 align-items-center mt-3">
-                <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-                <label class="form-label mb-0" for="kk-karte">Kreditkartenabrechnung für</label>
-                <select class="form-select form-select-sm w-auto" id="kk-karte" name="kreditkarteId" required>
-                  <option value="">— Karte —</option>
-                  <% kkKarten.forEach((k) => { %><option value="<%= k.id %>"><%= k.bezeichnung %><%= k.karte_endziffern ? ` (•••• ${k.karte_endziffern})` : '' %></option><% }) %>
-                </select>
-                <button type="submit" class="btn btn-outline-primary btn-sm">Zum Abgleich übergeben</button>
-              </form>
-            <% } %>
           </div>
         </div>
         <%- include('_audit_log') %>
         <% if (locals.kommentarBereich) { %><%- include('_kommentare', { ...kommentarBereich, ungespeichertesFormular: 'kontierung-form' }) %><% } %>
       </div>
     </div>
+
+    <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0 && !job.aufgesplittet_von) { %>
+    <div class="modal fade" id="kk-abrechnung-modal" tabindex="-1" aria-labelledby="kk-abrechnung-modal-label" aria-hidden="true">
+      <div class="modal-dialog">
+        <form class="modal-content" method="post" action="/kontierung/<%= job.id %>/als-kk-abrechnung">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <div class="modal-header">
+            <h5 class="modal-title" id="kk-abrechnung-modal-label">Als Kreditkartenabrechnung übergeben</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+          </div>
+          <div class="modal-body">
+            <label class="form-label" for="kk-karte">Kreditkartenabrechnung für</label>
+            <select class="form-select" id="kk-karte" name="kreditkarteId" required>
+              <option value="">— Karte —</option>
+              <% kkKarten.forEach((k) => { %><option value="<%= k.id %>"><%= k.bezeichnung %><%= k.karte_endziffern ? ` (•••• ${k.karte_endziffern})` : '' %></option><% }) %>
+            </select>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="submit" class="btn btn-primary">Zum Abgleich übergeben</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <% } %>
 
     <div class="modal fade" id="aufsplitten-modal" tabindex="-1" aria-labelledby="aufsplitten-modal-label" aria-hidden="true">
       <div class="modal-dialog modal-xl modal-dialog-scrollable" style="height:90vh">

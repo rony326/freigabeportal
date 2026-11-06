@@ -3362,3 +3362,32 @@ test('kontierung: Fehler stehen am Feld', async () => {
   assert.match(res.text, /href="#betrag"/);
   db.close();
 });
+
+test('kontierung: Nebenaktionen im Menü Weitere Aktionen', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'modul_kreditkarten_aktiv', '1');
+  seedKontoAndPersonen(db);
+  const { createKreditkarte } = await import('../../src/db/kreditkartenRepo.js');
+  createKreditkarte(db, { bezeichnung: 'Visa Jugend', verantwortlichId: '1', erfassungOffen: true });
+  const id = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  const html = res.text;
+  assert.match(html, /dropdown-toggle[^>]*>\s*Weitere Aktionen/);
+  const menue = html.match(/class="dropdown-menu[\s\S]*?<\/ul>/);
+  assert.ok(menue, 'dropdown-menu vorhanden');
+  for (const text of ['Zurück in den Pool legen', 'An Gruppe zurücksenden', 'Rechnung aufsplitten', 'Als Kreditkartenabrechnung übergeben']) {
+    assert.ok(menue[0].includes(text), `${text} im Menü`);
+  }
+  assert.ok(!html.includes('Vorgangsnummer:'));
+  assert.match(html, /<button[^>]*id="ablehnen-btn"[^>]*btn-outline-danger/);
+  assert.doesNotMatch(html, /<button[^>]*value="kontieren"[^>]*btn-sm/);
+  const modal = html.match(/id="kk-abrechnung-modal"[\s\S]*?(?=<div class="modal fade"|<script)/);
+  assert.ok(modal, 'kk-abrechnung-modal vorhanden');
+  assert.ok(modal[0].includes(`action="/kontierung/${id}/als-kk-abrechnung"`));
+  assert.ok(modal[0].includes('name="_csrf"'));
+  db.close();
+});

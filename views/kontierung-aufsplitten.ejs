@@ -2,7 +2,6 @@
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Rechnung aufsplitten: <%- include('_beleg_name', { job }) %> <%- include('_beleg_nr', { jobId: job.id }) %></h1>
     </div>
-    <p class="text-muted">Vorgangsnummer: <%= job.id %></p>
     <div class="row g-3 beleg-umschalter" data-beleg-umschalter data-refresh-url="/downloads/<%= job.id %>/refresh-url">
       <%# Aufsplitten hatte nie ein eingebettetes PDF: ab 992 px bleibt es so, darunter kommt der Beleg per Umschalter dazu. %>
       <%- include('_beleg_umschalter', { jobId: job.id, pdfUrl: `/downloads/${job.id}/oeffnen`, thumbnailUrl: job.thumbnail_pfad ? `/downloads/${job.id}/thumbnail` : null, refreshUrl: `/downloads/${job.id}/refresh-url`, einbetten: false, spalte: 'col-12 d-lg-none' }) %>

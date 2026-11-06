@@ -56,6 +56,8 @@ test('Escape schliesst den Dialog und behält den getippten Text', async () => {
   const posts = merkePosts(page);
   await page.click('button[name=aktion][value=ablehnen]');
   await page.waitForSelector('#ablehnen-dialog.show');
+  // Erst nach dem Einblenden (Fokus im Feld) reagiert Bootstrap auf Escape.
+  await page.waitForFunction(() => document.activeElement && document.activeElement.id === 'ablehnen-dialog-begruendung');
   await page.fill('#ablehnen-dialog-begruendung', 'Getippt');
   await page.keyboard.press('Escape');
   await page.waitForSelector('#ablehnen-dialog', { state: 'hidden' });

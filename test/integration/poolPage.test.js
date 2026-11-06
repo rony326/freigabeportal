@@ -23,6 +23,7 @@ import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createPoolPageRouter } from '../../src/routes/poolPage.js';
+import { divBereiche } from '../helpers/ansichtParitaet.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 
 function buildTestApp(db, mailer = { async sendMail() {} }) {
@@ -167,7 +168,7 @@ test('GET /pool returns 200 for a logged-in person without the buchhaltung or po
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '77');
   assert.equal(res.status, 200);
-  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Pool<\/h2>/);
+  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Pool <span class="abschnitt-zahl"/);
   // No jobs exist anywhere for this person — every section is empty, so the dashboard shows
   // the summary empty-state instead of a heading with nothing under it.
   assert.doesNotMatch(res.text, /Meine offenen Kontierungen/);
@@ -472,7 +473,7 @@ test('GET /pool no longer shows a "Meine Spesen" section — it moved to its own
   });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '60');
-  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Meine Spesen<\/h2>/);
+  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Meine offenen Spesen-Freigaben <span class="abschnitt-zahl"/);
   assert.doesNotMatch(res.text, /Taxi/);
   assert.match(res.text, /href="\/meine-spesen"/);
   db.close();
@@ -745,9 +746,11 @@ test('pool: Betrag in Tabelle und Kachel', async () => {
   seedDefaults(db);
   seedFreigabeJob(db, '123.45');
   const res = await request(buildTestApp(db)).get('/pool').set('x-test-person-id', '50');
-  assert.match(res.text, /<th[^>]*>Betrag<\/th>/);
-  assert.match(res.text, /<td class="text-end text-nowrap betrag">123\.45<\/td>/);
-  assert.match(res.text, /<dt>Betrag<\/dt><dd class="betrag">123\.45<\/dd>/);
+  const tabelle = divBereiche(res.text, 'ansicht-tabelle').join('');
+  const kacheln = divBereiche(res.text, 'ansicht-kacheln').join('');
+  assert.match(tabelle, /<th[^>]*>Betrag<\/th>/);
+  assert.match(tabelle, /<td class="text-end text-nowrap betrag">123\.45<\/td>/);
+  assert.match(kacheln, /<dt>Betrag<\/dt><dd class="betrag">123\.45<\/dd>/);
   db.close();
 });
 

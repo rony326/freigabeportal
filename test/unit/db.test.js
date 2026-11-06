@@ -1207,3 +1207,156 @@ test('openDatabase widens freigaben/person_berechtigungen/mail_log/cron_log on a
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- Rapporte (nur zur Kenntnis) -------------------------------------------------------------
+
+const RAPPORT_WERTE = /,\s*'(kenntnisnahme|rapport[_-][a-z_-]+)'/g;
+
+// Baut eine «heutige» Datenbank (vor den Rapporten) nach: erst mit openDatabase den aktuellen
+// Stand anlegen, dann per writable_schema die neuen CHECK-Werte wieder aus jobs, freigaben,
+// mail_log und cron_log entfernen. Enthält einen Job, eine freigaben-Zeile, den Zeitstempel-Trigger
+// und idx_jobs_datei_hash, und eine sqlite_sequence für jobs oberhalb der höchsten id.
+function legeAltDbOhneRapporteAn(dbPath) {
+  const alt = openDatabase(dbPath);
+  alt.prepare("INSERT INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'A', 'B', 'a@example.org')").run();
+  alt.prepare("INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, datei_hash) VALUES ('2026-11-01', 'scanner', 'Firma AG', 'a.pdf', '/tmp/a.pdf', 'freigabe1', 'h1')").run();
+  alt.prepare("INSERT INTO freigaben (job_id, person_id, rolle, zeitpunkt, ip) VALUES (1, '1', 'freigeber1', '2026-11-01', '::1')").run();
+  alt.prepare("UPDATE sqlite_sequence SET seq = 7 WHERE name = 'jobs'").run();
+  alt.exec('PRAGMA writable_schema = ON');
+  for (const name of ['jobs', 'freigaben', 'mail_log', 'cron_log']) {
+    const { sql } = alt.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+    alt.prepare("UPDATE sqlite_master SET sql = ? WHERE type = 'table' AND name = ?").run(sql.replace(RAPPORT_WERTE, ''), name);
+  }
+  alt.exec('PRAGMA writable_schema = OFF');
+  alt.close();
+  const pruef = new DatabaseSync(dbPath);
+  const jobsSql = pruef.prepare("SELECT sql FROM sqlite_master WHERE name = 'jobs'").get().sql;
+  pruef.close();
+  assert.doesNotMatch(jobsSql, /kenntnisnahme/, 'Testaufbau: Alt-DB darf kenntnisnahme noch nicht kennen');
+}
+
+function mitTempDb(fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'db-rapporte-test-'));
+  try {
+    fn(join(dir, 'portal.db'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function pruefeRapportWerteErlaubt(db) {
+  db.prepare("INSERT OR IGNORE INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'A', 'B', 'a@example.org')").run();
+  const jobId = db.prepare("INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad, status, typ) VALUES ('2026-11-06', 'scanner', 'r.pdf', '/tmp/r.pdf', 'kenntnisnahme', 'rapport')").run().lastInsertRowid;
+  for (const rolle of ['rapport_markiert', 'rapport_bestaetigt', 'rapport_empfaenger_ersetzt', 'rapport_empfaenger_entfernt', 'rapport_markierung_aufgehoben']) {
+    db.prepare("INSERT INTO freigaben (job_id, person_id, rolle, zeitpunkt, ip) VALUES (?, '1', ?, '2026-11-06', '::1')").run(jobId, rolle);
+  }
+  for (const typ of ['rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation']) {
+    db.prepare("INSERT INTO mail_log (typ, empfaenger, betreff, text, status, versucht_am) VALUES (?, 'a@example.org', 'b', 't', 'versendet', '2026-11-06')").run(typ);
+  }
+  db.prepare("INSERT INTO cron_log (job, gestartet_am, status) VALUES ('rapport-erinnerungen', '2026-11-06', 'erfolg')").run();
+  assert.throws(() => db.prepare("INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad, status) VALUES ('2026-11-06', 'scanner', 'x.pdf', '/tmp/x.pdf', 'unbekannt')").run());
+}
+
+test('jobs akzeptiert status kenntnisnahme nach Migration einer Alt-DB', () => {
+  mitTempDb((dbPath) => {
+    legeAltDbOhneRapporteAn(dbPath);
+    const db = openDatabase(dbPath);
+    try {
+      const alt = db.prepare('SELECT * FROM jobs WHERE id = 1').get();
+      assert.equal(alt.absender, 'Firma AG', 'bestehende Zeilen bleiben erhalten');
+      assert.equal(alt.status, 'freigabe1');
+      const neu = db.prepare("INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad, status, typ) VALUES ('2026-11-06', 'scanner', 'r.pdf', '/tmp/r.pdf', 'kenntnisnahme', 'rapport')").run();
+      assert.equal(Number(neu.lastInsertRowid), 8, 'AUTOINCREMENT-Zähler bleibt erhalten (keine wiederverwendeten ids)');
+      assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+      const namen = new Set(db.prepare('SELECT name FROM sqlite_master').all().map((r) => r.name));
+      assert.ok(namen.has('idx_jobs_datei_hash'), 'idx_jobs_datei_hash fehlt');
+      assert.ok(namen.has('trg_zeitstempel_hash_unveraenderlich'), 'trg_zeitstempel_hash_unveraenderlich fehlt');
+      assert.ok(namen.has('audit_jobs_UPDATE'), 'Audit-Trigger auf jobs fehlt');
+      const freigabenSql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'freigaben'").get().sql;
+      assert.match(freigabenSql, /REFERENCES "?jobs"?\s*\(id\)/);
+      const verwaist = db.prepare("SELECT name FROM sqlite_master WHERE sql LIKE '%jobs_pre%' OR sql LIKE '%jobs_neu%' OR name LIKE 'jobs_%'").all();
+      assert.deepEqual(verwaist, [], 'keine Verweise auf Zwischentabellen');
+      assert.throws(() => db.prepare("UPDATE jobs SET zeitstempel_datei_hash = 'a' WHERE id = 1").run() && db.prepare("UPDATE jobs SET zeitstempel_datei_hash = 'b' WHERE id = 1").run(), /unveraenderlich/);
+      pruefeRapportWerteErlaubt(db);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+test('Migration ist idempotent (zweites openDatabase ändert nichts)', () => {
+  mitTempDb((dbPath) => {
+    legeAltDbOhneRapporteAn(dbPath);
+    const schemaStand = (db) => db.prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").all();
+    const erst = openDatabase(dbPath);
+    const vorher = schemaStand(erst);
+    const jobsVorher = erst.prepare('SELECT * FROM jobs ORDER BY id').all();
+    erst.close();
+    const zweit = openDatabase(dbPath);
+    try {
+      assert.deepEqual(schemaStand(zweit), vorher);
+      assert.deepEqual(zweit.prepare('SELECT * FROM jobs ORDER BY id').all(), jobsVorher);
+    } finally {
+      zweit.close();
+    }
+  });
+});
+
+function legeKenntnisnahmeAn(db, { bestaetigt = null } = {}) {
+  db.prepare("INSERT OR IGNORE INTO personen (churchtools_person_id, vorname, nachname, email) VALUES ('1', 'A', 'B', 'a@example.org')").run();
+  const jobId = db.prepare("INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad, status, typ) VALUES ('2026-11-06', 'scanner', 'r.pdf', '/tmp/r.pdf', 'kenntnisnahme', 'rapport')").run().lastInsertRowid;
+  const id = db.prepare("INSERT INTO kenntnisnahmen (job_id, person_id, zugeteilt_am, bestaetigt_am) VALUES (?, '1', '2026-11-06', ?)").run(jobId, bestaetigt).lastInsertRowid;
+  return { jobId, id };
+}
+
+test('kenntnisnahmen: bestätigte Zeile ist unveränderlich, DELETE abgebrochen', () => {
+  const db = openDatabase(':memory:');
+  const { id } = legeKenntnisnahmeAn(db, { bestaetigt: '2026-11-06T10:00:00.000Z' });
+  assert.throws(() => db.prepare("UPDATE kenntnisnahmen SET begruendung = 'x' WHERE id = ?").run(id), /unveraenderlich/);
+  assert.throws(() => db.prepare('DELETE FROM kenntnisnahmen WHERE id = ?').run(id), /unveraenderlich/);
+  const offen = legeKenntnisnahmeAn(db);
+  db.prepare("UPDATE kenntnisnahmen SET erinnert_am = '2026-11-07' WHERE id = ?").run(offen.id);
+  assert.throws(() => db.prepare('DELETE FROM kenntnisnahmen WHERE id = ?').run(offen.id), /unveraenderlich/);
+  const spalten = db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  for (const s of ['rapport_markiert_von', 'rapport_markiert_am', 'rapport_bemerkung', 'rapport_eskaliert_am']) {
+    assert.ok(spalten.includes(s), `jobs.${s} fehlt`);
+  }
+  db.close();
+});
+
+test('kenntnisnahmen: dieselbe Person kann nicht zweimal offen auf demselben Job stehen', () => {
+  const db = openDatabase(':memory:');
+  const { jobId, id } = legeKenntnisnahmeAn(db);
+  const insert = db.prepare("INSERT INTO kenntnisnahmen (job_id, person_id, zugeteilt_am) VALUES (?, '1', '2026-11-06')");
+  assert.throws(() => insert.run(jobId), /UNIQUE/);
+  // Nach Entfernen (oder Bestätigen) darf dieselbe Person wieder offen zugeteilt werden.
+  db.prepare("UPDATE kenntnisnahmen SET entfernt_am = '2026-11-06', entfernt_von = '1', begruendung = 'falsch' WHERE id = ?").run(id);
+  assert.doesNotThrow(() => insert.run(jobId));
+  db.close();
+});
+
+test('neue freigaben-rollen, mail_log-typen und cron_log-job sind erlaubt', () => {
+  const db = openDatabase(':memory:');
+  pruefeRapportWerteErlaubt(db);
+  db.close();
+  mitTempDb((dbPath) => {
+    legeAltDbOhneRapporteAn(dbPath);
+    const migriert = openDatabase(dbPath);
+    try {
+      pruefeRapportWerteErlaubt(migriert);
+      assert.equal(migriert.prepare('SELECT COUNT(*) AS n FROM freigaben WHERE job_id = 1').get().n, 1, 'freigaben-Zeile bleibt erhalten');
+    } finally {
+      migriert.close();
+    }
+  });
+});
+
+test('kenntnisnahmen-Änderungen erscheinen im audit_log', () => {
+  const db = openDatabase(':memory:');
+  const { id } = legeKenntnisnahmeAn(db);
+  db.prepare("UPDATE kenntnisnahmen SET bestaetigt_am = '2026-11-06T11:00:00.000Z' WHERE id = ?").run(id);
+  const ereignisse = db.prepare("SELECT aktion, nachher FROM audit_ereignisse WHERE objekt = 'kenntnisnahmen' AND objekt_id = ? ORDER BY id").all(String(id));
+  assert.deepEqual(ereignisse.map((e) => e.aktion), ['INSERT', 'UPDATE']);
+  assert.equal(JSON.parse(ereignisse[1].nachher).bestaetigt_am, '2026-11-06T11:00:00.000Z');
+  db.close();
+});

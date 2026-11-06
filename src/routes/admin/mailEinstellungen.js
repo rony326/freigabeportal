@@ -49,6 +49,12 @@ const VORLAGEN_FELDER = [
   ['fehlermeldungText', 'mail_vorlage_fehlermeldung_text'],
   ['kommentarBetreff', 'mail_vorlage_kommentar_betreff'],
   ['kommentarText', 'mail_vorlage_kommentar_text'],
+  ['rapportZuweisungBetreff', 'mail_vorlage_rapport_zuweisung_betreff'],
+  ['rapportZuweisungText', 'mail_vorlage_rapport_zuweisung_text'],
+  ['rapportReminderBetreff', 'mail_vorlage_rapport_reminder_betreff'],
+  ['rapportReminderText', 'mail_vorlage_rapport_reminder_text'],
+  ['rapportEskalationBetreff', 'mail_vorlage_rapport_eskalation_betreff'],
+  ['rapportEskalationText', 'mail_vorlage_rapport_eskalation_text'],
 ];
 
 export function createMailEinstellungenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {

@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS admin_config (
 -- both fields in one shot via logCronLauf and never use 'laufend'.
 CREATE TABLE IF NOT EXISTS cron_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen', 'mail-zustellung')),
+  job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen', 'mail-zustellung', 'rapport-erinnerungen')),
   gestartet_am TEXT NOT NULL,
   beendet_am TEXT,
   status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   pdf_pfad TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN (
     'unzugewiesen','zugewiesen','kontiert','freigabe1','freigabe2',
-    'abgeschlossen','abgeholt','archiviert','abgelehnt','aufgesplittet','geloescht'
+    'abgeschlossen','abgeholt','archiviert','abgelehnt','aufgesplittet','geloescht','kenntnisnahme'
   )) DEFAULT 'unzugewiesen',
   konto_id INTEGER REFERENCES konten(id),
   zugewiesen_an TEXT REFERENCES personen(churchtools_person_id),
@@ -174,7 +174,12 @@ CREATE TABLE IF NOT EXISTS jobs (
   kk_text_betraege TEXT,
   freigabe2_umgeleitet_an TEXT REFERENCES personen(churchtools_person_id),
   -- Dateiname des hochgeladenen PDF-Teils (n8n-Eingang); Anzeige bevorzugt ihn vor dateiname.
-  pdf_dateiname TEXT
+  pdf_dateiname TEXT,
+  -- Rapporte (nur zur Kenntnis): wer den Beleg als Rapport markiert hat, Bemerkung, Eskalation.
+  rapport_markiert_von TEXT,
+  rapport_markiert_am TEXT,
+  rapport_bemerkung TEXT,
+  rapport_eskaliert_am TEXT
 );
 
 -- Manipulationsschutz: sobald ein Zeitstempel-Hash/-Zeitpunkt für einen Job gesetzt ist, darf er
@@ -222,7 +227,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id INTEGER NOT NULL REFERENCES jobs(id),
   person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung', 'kk_abrechnung_markiert', 'kk_markierung_aufgehoben', 'kk_abgleich', 'admin_umzuweisung', 'duplikat_verdacht')),
+  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung', 'kk_abrechnung_markiert', 'kk_markierung_aufgehoben', 'kk_abgleich', 'admin_umzuweisung', 'duplikat_verdacht', 'rapport_markiert', 'rapport_bestaetigt', 'rapport_empfaenger_ersetzt', 'rapport_empfaenger_entfernt', 'rapport_markierung_aufgehoben')),
   zeitpunkt TEXT NOT NULL,
   ip TEXT NOT NULL,
   interessenskonflikt INTEGER NOT NULL DEFAULT 0,
@@ -235,7 +240,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
 
 CREATE TABLE IF NOT EXISTS mail_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar')),
+  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation')),
   job_id INTEGER REFERENCES jobs(id),
   empfaenger TEXT NOT NULL,
   betreff TEXT NOT NULL,

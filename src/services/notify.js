@@ -22,9 +22,11 @@ export const FREIGABE2_AN_ADMIN_GRUND =
 // bisherige sofort wissen, dass sie nichts mehr tun muss. Erinnerungen und Eskalationen (reminder,
 // eskalation, freigabe2-*, kk-beleg-erinnerung) sind zeitkritisch und dürfen nie eine Woche
 // warten; sicherheitsalarm, duplikat-warnung und rechnungsnummer-warnung sind Warnungen.
+// rapport-reminder/-eskalation wie freigabe2-*; rapport-zuweisung folgt der Bündelung wie zuweisung.
 export const IMMER_SOFORT_TYPEN = new Set([
   'sync-fehler', 'iban-warnung', 'kk-beleg-eingegangen', 'admin-umzuweisung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail',
   'reminder', 'eskalation', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-beleg-erinnerung',
+  'rapport-reminder', 'rapport-eskalation',
   'sicherheitsalarm', 'duplikat-warnung', 'rechnungsnummer-warnung',
 ]);
 

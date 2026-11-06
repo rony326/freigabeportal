@@ -68,6 +68,11 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'freigabe2_umgeleitet_an', ddl: 'ALTER TABLE jobs ADD COLUMN freigabe2_umgeleitet_an TEXT REFERENCES personen(churchtools_person_id)' },
   // Dateiname des PDF-Teils beim n8n-Eingang (services/belegName.js: Anzeige statt Bild-Anhangname).
   { column: 'pdf_dateiname', ddl: 'ALTER TABLE jobs ADD COLUMN pdf_dateiname TEXT' },
+  // Rapporte (nur zur Kenntnis): Markierung, Bemerkung und Eskalationszeitpunkt.
+  { column: 'rapport_markiert_von', ddl: 'ALTER TABLE jobs ADD COLUMN rapport_markiert_von TEXT' },
+  { column: 'rapport_markiert_am', ddl: 'ALTER TABLE jobs ADD COLUMN rapport_markiert_am TEXT' },
+  { column: 'rapport_bemerkung', ddl: 'ALTER TABLE jobs ADD COLUMN rapport_bemerkung TEXT' },
+  { column: 'rapport_eskaliert_am', ddl: 'ALTER TABLE jobs ADD COLUMN rapport_eskaliert_am TEXT' },
 ];
 
 const PERSONEN_TABLE_MIGRATIONS = [
@@ -219,6 +224,67 @@ function migrateJobsTableQuelleCheck(db) {
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }
+}
+
+// Rapporte: neuer jobs-Status 'kenntnisnahme'. Bewusst NICHT das Rename-alt-Muster von
+// migrateJobsTableQuelleCheck: modernes SQLite (legacy_alter_table=OFF) schreibt beim Umbenennen
+// von jobs die FK-Verweise aller anderen Tabellen (freigaben, mail_log, kommentare, …) auf den
+// alten Namen um, und nach dem DROP zeigten sie ins Leere. Stattdessen das «12-Schritte»-Verfahren
+// aus der SQLite-Doku: neue Tabelle anlegen, kopieren, alte löschen, neue umbenennen. Die Kopie
+// übernimmt alle Spalten generisch (PRAGMA table_info), also auch solche, die erst später per
+// ALTER TABLE hinzukamen. Indizes und Trigger von jobs verschwinden mit DROP TABLE und werden aus
+// dem vorher gemerkten SQL neu angelegt. Der AUTOINCREMENT-Zähler wird übernommen, damit einmal
+// vergebene ids (auch endgültig gelöschter Jobs, siehe job_loeschungen) nie wieder vergeben werden.
+function migrateJobsStatusKenntnisnahme(db) {
+  const tabelle = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'").get();
+  if (!tabelle || tabelle.sql.includes("'kenntnisnahme'")) return;
+  // Sehr alte Tabellen ohne status-CHECK erlauben 'kenntnisnahme' bereits: nichts zu erweitern.
+  if (!/\bstatus\s+IN\s*\(/i.test(tabelle.sql)) return;
+
+  const neuSql = ersetzeGenauEinmal(
+    ersetzeGenauEinmal(tabelle.sql, /^CREATE TABLE\s+("?)jobs\1\s*\(/, 'CREATE TABLE jobs_neu ('),
+    /'geloescht'/,
+    "'geloescht','kenntnisnahme'"
+  );
+  const abhaengige = db
+    .prepare("SELECT sql FROM sqlite_master WHERE tbl_name = 'jobs' AND type IN ('index', 'trigger') AND sql IS NOT NULL")
+    .all()
+    .map((r) => r.sql);
+  const spalten = db.prepare('PRAGMA table_info(jobs)').all().map((c) => `"${c.name}"`).join(', ');
+  const sequenz = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'jobs'").get();
+  // Bereits vorhandene Verwaiste (z. B. mail_log-Zeilen endgültig gelöschter Jobs) dürfen den Start
+  // nicht verhindern; abgebrochen wird nur, wenn der Neuaufbau selbst neue Verletzungen erzeugt.
+  const fkSchluessel = () => new Set(db.prepare('PRAGMA foreign_key_check').all().map((v) => `${v.table}|${v.rowid}|${v.parent}|${v.fkid}`));
+  const fkVorher = fkSchluessel();
+
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    db.exec(neuSql);
+    db.exec(`INSERT INTO jobs_neu (${spalten}) SELECT ${spalten} FROM jobs`);
+    db.exec('DROP TABLE jobs');
+    db.exec('ALTER TABLE jobs_neu RENAME TO jobs');
+    if (sequenz) db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'jobs'").run(sequenz.seq);
+    for (const sql of abhaengige) db.exec(sql);
+    const verletzungen = [...fkSchluessel()].filter((v) => !fkVorher.has(v));
+    if (verletzungen.length > 0) {
+      throw new Error(`migrateJobsStatusKenntnisnahme: foreign_key_check meldet ${verletzungen.length} Verletzung(en)`);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
+function ersetzeGenauEinmal(text, muster, ersatz) {
+  const treffer = text.match(new RegExp(muster.source, 'g')) || [];
+  if (treffer.length !== 1) {
+    throw new Error(`migrateJobsStatusKenntnisnahme: ${muster} kommt ${treffer.length}-mal statt genau einmal im jobs-SQL vor`);
+  }
+  return text.replace(muster, ersatz);
 }
 
 function migrateJobsTable(db) {
@@ -1017,6 +1083,92 @@ function migrateKommentareSchema(db) {
   );`);
 }
 
+// Rapporte (nur zur Kenntnis), docs/superpowers/specs/2026-11-06-rapporte-kenntnisnahme-design.md.
+// Eine Zeile pro zugeteilter Person; bestätigte Zeilen sind unveränderlich, gelöscht wird nie
+// (Entfernen/Ersetzen setzt entfernt_am bzw. ersetzt_durch_id). Audit-Trigger: migrateSecuritySchema.
+function migrateRapporteSchema(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS kenntnisnahmen (
+    id INTEGER PRIMARY KEY,
+    job_id INTEGER NOT NULL REFERENCES jobs(id),
+    person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+    zugeteilt_am TEXT NOT NULL,
+    bestaetigt_am TEXT,
+    entfernt_am TEXT,
+    entfernt_von TEXT,
+    begruendung TEXT,
+    ersetzt_durch_id INTEGER REFERENCES kenntnisnahmen(id),
+    erinnert_am TEXT
+  );
+  CREATE INDEX IF NOT EXISTS kenntnisnahmen_job_idx ON kenntnisnahmen(job_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS kenntnisnahmen_offen_eindeutig ON kenntnisnahmen(job_id, person_id)
+    WHERE bestaetigt_am IS NULL AND entfernt_am IS NULL;
+  CREATE TRIGGER IF NOT EXISTS kenntnisnahmen_bestaetigt_unveraenderlich BEFORE UPDATE ON kenntnisnahmen
+  WHEN OLD.bestaetigt_am IS NOT NULL
+  BEGIN SELECT RAISE(ABORT, 'bestaetigte kenntnisnahme ist unveraenderlich'); END;
+  CREATE TRIGGER IF NOT EXISTS kenntnisnahmen_no_delete BEFORE DELETE ON kenntnisnahmen
+  BEGIN SELECT RAISE(ABORT, 'kenntnisnahmen ist unveraenderlich'); END;`);
+}
+
+// Rapporte: neue freigaben-Rollen, Mail-Typen und cron_log-Job. Gleiches Rebuild-Muster wie
+// migrateKommentarMailTyp/migrateDuplikatVerdacht, läuft danach und vor migrateSecuritySchema.
+function migrateRapportChecks(db) {
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'freigaben',
+    marker: 'rapport_markierung_aufgehoben',
+    createSql: `CREATE TABLE freigaben (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL REFERENCES jobs(id),
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung', 'kk_abrechnung_markiert', 'kk_markierung_aufgehoben', 'kk_abgleich', 'admin_umzuweisung', 'duplikat_verdacht', 'rapport_markiert', 'rapport_bestaetigt', 'rapport_empfaenger_ersetzt', 'rapport_empfaenger_entfernt', 'rapport_markierung_aufgehoben')),
+      zeitpunkt TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      interessenskonflikt INTEGER NOT NULL DEFAULT 0,
+      kommentar TEXT,
+      eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+      vertretung_fuer TEXT REFERENCES personen(churchtools_person_id),
+      vorher_zustaendig TEXT REFERENCES personen(churchtools_person_id),
+      ziel_person_id TEXT REFERENCES personen(churchtools_person_id)
+    )`,
+    spalten: ['id', 'job_id', 'person_id', 'rolle', 'zeitpunkt', 'ip', 'interessenskonflikt', 'kommentar', 'eskaliert_von', 'vertretung_fuer', 'vorher_zustaendig', 'ziel_person_id'],
+  });
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'mail_log',
+    marker: 'rapport-eskalation',
+    createSql: `CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('eingereiht', 'versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL,
+      eingereiht_am TEXT,
+      versuche INTEGER NOT NULL DEFAULT 0,
+      naechster_versuch_am TEXT,
+      sperre_token TEXT,
+      sperre_bis TEXT,
+      versendet_am TEXT
+    )`,
+    spalten: ['id', 'typ', 'job_id', 'empfaenger', 'betreff', 'text', 'status', 'fehler_details', 'versucht_am', 'eingereiht_am', 'versuche', 'naechster_versuch_am', 'sperre_token', 'sperre_bis', 'versendet_am'],
+  });
+  db.exec('CREATE INDEX IF NOT EXISTS mail_log_zustellung_idx ON mail_log(status, naechster_versuch_am)');
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'cron_log',
+    marker: 'rapport-erinnerungen',
+    createSql: `CREATE TABLE cron_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen', 'mail-zustellung', 'rapport-erinnerungen')),
+      gestartet_am TEXT NOT NULL,
+      beendet_am TEXT,
+      status TEXT NOT NULL CHECK(status IN ('erfolg', 'fehler', 'laufend')),
+      details TEXT
+    )`,
+    spalten: ['id', 'job', 'gestartet_am', 'beendet_am', 'status', 'details'],
+  });
+}
+
 // Persönliche Benachrichtigungen: der globale Schalter mail_batching_aktiv wird zum Standard
 // mail_standard_benachrichtigung (einmalig: nur wenn der neue Schlüssel fehlt), und die Digest-
 // Vorlage wird auf den neuen Standard gehoben, sofern sie noch exakt dem alten entspricht.
@@ -1057,6 +1209,7 @@ export function openDatabase(dbPath) {
   const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
   migrateJobsTableQuelleCheck(db);
+  migrateJobsStatusKenntnisnahme(db);
   migrateJobsTable(db);
   migrateFreigabenTable(db);
   migrateMailLogTable(db);
@@ -1079,6 +1232,8 @@ export function openDatabase(dbPath) {
   migrateTestmailTyp(db);
   migrateKommentarMailTyp(db);
   migrateKommentareSchema(db);
+  migrateRapporteSchema(db);
+  migrateRapportChecks(db);
   migrateBenachrichtigungEinstellung(db);
   migrateBetriebSchema(db);
   // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)

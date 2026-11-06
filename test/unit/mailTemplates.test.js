@@ -82,3 +82,21 @@ test('admin-umzuweisung hat eine Standardvorlage mit Bemerkung und Link', () => 
   }
   db.close();
 });
+
+test('getVorlage liefert die drei Rapport-Vorlagen mit ihren Variablen', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const erwartet = {
+    'rapport-zuweisung': ['%empfaengerName%', '%jobDateiname%', '%markiertVon%', '%bemerkung%', '%link%'],
+    'rapport-reminder': ['%empfaengerName%', '%jobDateiname%', '%stunden%', '%link%'],
+    'rapport-eskalation': ['%jobDateiname%', '%stunden%', '%offenePersonen%', '%link%'],
+  };
+  for (const [typ, variablen] of Object.entries(erwartet)) {
+    const vorlage = getVorlage(db, typ);
+    assert.ok(vorlage.betreff && vorlage.betreff.trim(), `${typ}: Betreff leer`);
+    assert.ok(vorlage.text && vorlage.text.trim(), `${typ}: Text leer`);
+    for (const v of variablen) assert.ok(vorlage.text.includes(v), `${typ}: ${v} fehlt im Text`);
+    assert.doesNotMatch(vorlage.betreff + vorlage.text, /ß/);
+  }
+  db.close();
+});

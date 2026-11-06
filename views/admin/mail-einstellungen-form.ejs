@@ -123,6 +123,27 @@
         <div class="form-text">Variablen: %empfaengerName%, %verfasserName%, %kommentarText%, %jobId%, %jobDateiname%, %link%, %portalName%</div>
       </div>
       <div class="mb-3">
+        <label class="form-label" for="rapportZuweisungBetreff">Rapport zur Kenntnis — Zuweisung — Betreff</label>
+        <input type="text" class="form-control" id="rapportZuweisungBetreff" name="rapportZuweisungBetreff" value="<%= rapportZuweisungBetreff %>" required>
+        <label class="form-label mt-2" for="rapportZuweisungText">Rapport zur Kenntnis — Zuweisung — Text</label>
+        <textarea class="form-control" id="rapportZuweisungText" name="rapportZuweisungText" rows="8" required><%= rapportZuweisungText %></textarea>
+        <div class="form-text">Variablen: %empfaengerName%, %jobDateiname%, %markiertVon%, %bemerkung%, %link%, %portalName%</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="rapportReminderBetreff">Rapport zur Kenntnis — Erinnerung — Betreff</label>
+        <input type="text" class="form-control" id="rapportReminderBetreff" name="rapportReminderBetreff" value="<%= rapportReminderBetreff %>" required>
+        <label class="form-label mt-2" for="rapportReminderText">Rapport zur Kenntnis — Erinnerung — Text</label>
+        <textarea class="form-control" id="rapportReminderText" name="rapportReminderText" rows="6" required><%= rapportReminderText %></textarea>
+        <div class="form-text">Variablen: %empfaengerName%, %jobDateiname%, %stunden%, %link%, %portalName%</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="rapportEskalationBetreff">Rapport zur Kenntnis — Eskalation — Betreff</label>
+        <input type="text" class="form-control" id="rapportEskalationBetreff" name="rapportEskalationBetreff" value="<%= rapportEskalationBetreff %>" required>
+        <label class="form-label mt-2" for="rapportEskalationText">Rapport zur Kenntnis — Eskalation — Text</label>
+        <textarea class="form-control" id="rapportEskalationText" name="rapportEskalationText" rows="6" required><%= rapportEskalationText %></textarea>
+        <div class="form-text">Variablen: %jobDateiname%, %stunden%, %offenePersonen%, %link%, %portalName%</div>
+      </div>
+      <div class="mb-3">
         <label class="form-label" for="digestBetreff">Digest (tägliche/wöchentliche Zusammenfassung) — Betreff</label>
         <input type="text" class="form-control" id="digestBetreff" name="digestBetreff" value="<%= digestBetreff %>" required>
         <label class="form-label mt-2" for="digestText">Digest — Text</label>

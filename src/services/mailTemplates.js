@@ -20,6 +20,9 @@ const TYP_ZU_KEY_INFIX = {
   'neues-geraet': 'neues_geraet',
   fehlermeldung: 'fehlermeldung',
   kommentar: 'kommentar',
+  'rapport-zuweisung': 'rapport_zuweisung',
+  'rapport-reminder': 'rapport_reminder',
+  'rapport-eskalation': 'rapport_eskalation',
 };
 
 export function renderTemplate(vorlage, variablen) {

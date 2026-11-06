@@ -62,6 +62,9 @@ const VALID_BODY = {
   neuesGeraetBetreff: 'B17', neuesGeraetText: 'T17',
   fehlermeldungBetreff: 'B18', fehlermeldungText: 'T18',
   kommentarBetreff: 'B19', kommentarText: 'T19',
+  rapportZuweisungBetreff: 'B20', rapportZuweisungText: 'T20',
+  rapportReminderBetreff: 'B21', rapportReminderText: 'T21',
+  rapportEskalationBetreff: 'B22', rapportEskalationText: 'T22',
   standardBenachrichtigung: 'taeglich',
   digestWochentag: '3',
   batchingStunde: '6',
@@ -297,3 +300,23 @@ test('F5: Standard auf sofort stellt Wartendes der nun sofort geltenden Empfäng
 function zuweisungMail(db, to) {
   return reiheBenachrichtigungEin(db, { to, typ: 'zuweisung', jobId: null, variablen: { empfaengerName: 'X', jobDateiname: 'a.pdf', grund: 'G', link: 'L' } });
 }
+
+test('POST /admin/mail-einstellungen speichert die sechs Rapport-Vorlagenfelder', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const seite = await request(app).get('/admin/mail-einstellungen').set('x-test-person-id', '99');
+  for (const feld of ['rapportZuweisungBetreff', 'rapportZuweisungText', 'rapportReminderBetreff', 'rapportReminderText', 'rapportEskalationBetreff', 'rapportEskalationText']) {
+    assert.match(seite.text, new RegExp(`name="${feld}"`), `${feld} fehlt im Formular`);
+  }
+  const res = await request(app).post('/admin/mail-einstellungen').set('x-test-person-id', '99').type('form').send(VALID_BODY);
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'mail_vorlage_rapport_zuweisung_betreff'), 'B20');
+  assert.equal(getConfigValue(db, 'mail_vorlage_rapport_zuweisung_text'), 'T20');
+  assert.equal(getConfigValue(db, 'mail_vorlage_rapport_reminder_betreff'), 'B21');
+  assert.equal(getConfigValue(db, 'mail_vorlage_rapport_reminder_text'), 'T21');
+  assert.equal(getConfigValue(db, 'mail_vorlage_rapport_eskalation_betreff'), 'B22');
+  assert.equal(getConfigValue(db, 'mail_vorlage_rapport_eskalation_text'), 'T22');
+  db.close();
+});

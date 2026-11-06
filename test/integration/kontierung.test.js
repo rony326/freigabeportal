@@ -203,7 +203,9 @@ test('GET /kontierung/:id drops the Konto select\'s required attribute on click 
   assert.equal(res.status, 200);
   assert.match(res.text, /<select class="form-select" id="kontoId" name="kontoId" required data-searchable>/);
   assert.match(res.text, /<button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn"/);
-  assert.match(res.text, /getElementById\('ablehnen-btn'\)\.addEventListener\('click', function \(\) \{\s*\[[^\]]*'kontoId'[^\]]*\]\.forEach\(function \(id\) \{\s*document\.getElementById\(id\)\.required = false;/);
+  assert.match(res.text, /function entferneKontierungsPflicht\(\) \{\s*\[[^\]]*'kontoId'[^\]]*\]\.forEach\(function \(id\) \{\s*document\.getElementById\(id\)\.required = false;/);
+  assert.match(res.text, /getElementById\('ablehnen-btn'\)\.addEventListener\('click'/);
+  assert.match(res.text, /id="ablehnen-dialog"/);
   db.close();
 });
 

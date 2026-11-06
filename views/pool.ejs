@@ -102,6 +102,20 @@
       <iframe id="preview-frame" src="" class="pdf-preview" style="width:80vw;height:80vh"></iframe>
     </dialog>
 
+  <% if (meineKontierungen.length > 0) { %>
+    <%- include('_zurueck_in_pool_dialog', { alleKonten }) %>
+    <script>
+      document.querySelectorAll('[data-zurueck-in-pool]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          if (!window.bootstrap) return;
+          e.preventDefault();
+          document.getElementById('zurueck-in-pool-form').action = '/kontierung/' + encodeURIComponent(btn.dataset.zurueckInPool) + '/zurueck-in-pool';
+          window.bootstrap.Modal.getOrCreateInstance(document.getElementById('zurueck-in-pool-modal')).show();
+        });
+      });
+    </script>
+  <% } %>
+
   <script>
     document.querySelectorAll('.beanspruchen-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {

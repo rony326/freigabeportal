@@ -1,0 +1,50 @@
+<% /* Rückfrage beim Ablehnen. Parameter: formId (Formular mit dem Ablehnen-Knopf), begruendungId (Textarea der Seite).
+     Ohne JS bleibt der Ablehnen-Knopf ein normaler Submit-Knopf (aktion=ablehnen). */ %>
+<div class="modal fade" id="ablehnen-dialog" tabindex="-1" aria-labelledby="ablehnen-dialog-titel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ablehnen-dialog-titel">Rechnung ablehnen?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label" for="ablehnen-dialog-begruendung">Begründung</label>
+        <textarea class="form-control" id="ablehnen-dialog-begruendung" rows="4" required aria-describedby="ablehnen-dialog-fehler"></textarea>
+        <div class="invalid-feedback" id="ablehnen-dialog-fehler">Bitte eine Begründung angeben.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="ablehnen-dialog-abbrechen">Abbrechen</button>
+        <button type="button" class="btn btn-danger" id="ablehnen-dialog-bestaetigen">Ablehnen</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    var form = document.getElementById(<%- JSON.stringify(formId) %>);
+    var original = document.getElementById(<%- JSON.stringify(begruendungId) %>);
+    var knopf = document.querySelector('button[name="aktion"][value="ablehnen"]');
+    var el = document.getElementById('ablehnen-dialog');
+    var feld = document.getElementById('ablehnen-dialog-begruendung');
+    if (!form || !original || !knopf || !el || !window.bootstrap) return;
+    var dialog = window.bootstrap.Modal.getOrCreateInstance(el);
+    knopf.addEventListener('click', function (e) {
+      e.preventDefault();
+      feld.value = original.value;
+      feld.classList.remove('is-invalid');
+      dialog.show();
+    });
+    el.addEventListener('shown.bs.modal', function () { feld.focus(); });
+    document.getElementById('ablehnen-dialog-abbrechen').addEventListener('click', function () {
+      original.value = feld.value;
+      dialog.hide();
+    });
+    document.getElementById('ablehnen-dialog-bestaetigen').addEventListener('click', function () {
+      if (!feld.value.trim()) { feld.classList.add('is-invalid'); feld.focus(); return; }
+      original.value = feld.value;
+      if (typeof window.entferneKontierungsPflicht === 'function') window.entferneKontierungsPflicht();
+      dialog.hide();
+      form.requestSubmit(knopf);
+    });
+  })();
+</script>

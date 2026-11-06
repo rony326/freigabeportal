@@ -22,7 +22,7 @@
 
         <div class="card">
           <div class="card-body">
-            <form method="post" action="/spesen-freigabe1/<%= job.id %>">
+            <form method="post" action="/spesen-freigabe1/<%= job.id %>" id="spesen-freigabe1-form">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
               <div class="mb-3">
                 <div class="form-check">
@@ -50,4 +50,5 @@
       </div>
     </div>
 
+<%- include('_ablehnen_dialog', { formId: 'spesen-freigabe1-form', begruendungId: 'sf1begruendung' }) %>
 <%- include('_seite_ende') %>

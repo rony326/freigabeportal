@@ -690,3 +690,30 @@ test('assigning a Pool Beleg to a person on active Ferienmodus also mails their 
   assert.ok(zuweisungsMails.some((m) => m.to === 'p2@example.org'));
   db.close();
 });
+
+test('poolPage: In-den-Pool-Knopf ohne JS bleibt Formular', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedBuchhaltungPerson(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'k.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '50' WHERE id = ?").run(id);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  const m = res.text.match(new RegExp(`<form method="post" action="/kontierung/${id}/zurueck-in-pool"[^>]*>([\\s\\S]*?)</form>`));
+  assert.ok(m, 'Formular mit POST-action vorhanden');
+  assert.match(m[1], /name="_csrf" value="valid-token"/);
+  assert.match(m[1], new RegExp(`data-zurueck-in-pool="${id}"`));
+  assert.match(res.text, /id="zurueck-in-pool-modal"/);
+  db.close();
+});
+
+test('poolPage: ohne eigene Kontierungen kein Pool-Dialog', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedBuchhaltungPerson(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.doesNotMatch(res.text, /id="zurueck-in-pool-modal"/);
+  db.close();
+});

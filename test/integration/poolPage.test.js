@@ -473,7 +473,7 @@ test('GET /pool no longer shows a "Meine Spesen" section — it moved to its own
   });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '60');
-  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Meine offenen Spesen-Freigaben <span class="abschnitt-zahl"/);
+  assert.doesNotMatch(res.text, /<h2[^>]*>\s*Meine Spesen\b/);
   assert.doesNotMatch(res.text, /Taxi/);
   assert.match(res.text, /href="\/meine-spesen"/);
   db.close();

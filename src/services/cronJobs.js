@@ -39,6 +39,8 @@ import {
   markKkBelegDateiGeloescht,
   logKkBelegEreignis,
 } from '../db/kkBelegeRepo.js';
+import { listRapporteFuerErinnerung, markErinnert, listRapporteFuerEskalation, markRapportEskaliert, listOffeneKenntnisnahmen } from '../db/rapporteRepo.js';
+import { schliesseRapporteNach } from './rapporte.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { pruneMailLogOlderThan, listGeplantMailsGruppiertNachEmpfaenger } from '../db/mailLogRepo.js';
@@ -253,6 +255,79 @@ async function runFreigabe2ErinnerungenJobInternal(db, config, mailer) {
     return { status: abschluss.status, reminder: plan.reminder, eskalation: plan.eskalation, mails: bilanz, ...(abschluss.error ? { error: abschluss.error } : {}) };
   } catch (err) {
     logCronLauf(db, { job: 'freigabe2-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
+    return { status: 'fehler', error: err.message };
+  }
+}
+
+export const runRapportErinnerungenJob = auditedJob('rapport-erinnerungen', runRapportErinnerungenJobInternal);
+
+async function runRapportErinnerungenJobInternal(db, config, mailer) {
+  const gestartetAm = new Date().toISOString();
+  try {
+    const reminderStunden = Number(getConfigValue(db, 'rapport_reminder_stunden'));
+    const eskalationStunden = Number(getConfigValue(db, 'rapport_eskalation_stunden'));
+
+    // Zuerst nachholen: ein vollständig bestätigter Rapport soll weder erinnert noch eskaliert werden.
+    const nachgeholt = await schliesseRapporteNach(db, config);
+
+    const plan = planeInTransaktion(db, () => {
+      const eintraege = [];
+      let reminder = 0;
+      for (const { kenntnisnahme, job } of listRapporteFuerErinnerung(db, reminderStunden)) {
+        const person = getPersonById(db, kenntnisnahme.person_id);
+        // Inaktive/unauflösbare Personen werden nicht erinnert; die Eskalation erfasst sie sofort.
+        if (!person || !person.aktiv || person.ct_person_unresolved) continue;
+        if (!markErinnert(db, kenntnisnahme.id)) continue;
+        eintraege.push(reiheBenachrichtigungEin(db, {
+          to: person.email,
+          typ: 'rapport-reminder',
+          jobId: job.id,
+          variablen: {
+            empfaengerName: `${person.vorname} ${person.nachname}`,
+            jobDateiname: job.dateiname,
+            stunden: reminderStunden,
+            link: `${config.publicBaseUrl}/rapporte/${job.id}`,
+          },
+        }));
+        reminder += 1;
+      }
+
+      let eskalation = 0;
+      // Leer = Admin-Gruppe (nicht "niemand"), anders als bei den Freigabe-2-Übergaben.
+      const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'rapport_eskalation_empfaenger') || 'gruppe:admin');
+      if (empfaenger.length > 0) {
+        for (const job of listRapporteFuerEskalation(db, eskalationStunden)) {
+          if (!markRapportEskaliert(db, job.id, new Date().toISOString())) continue; // paralleler Lauf war schneller
+          const offenePersonen = listOffeneKenntnisnahmen(db, job.id)
+            .map((k) => getPersonById(db, k.person_id))
+            .map((p) => (p ? `${p.vorname} ${p.nachname}` : null))
+            .filter(Boolean)
+            .join(', ');
+          for (const email of empfaenger) {
+            eintraege.push(reiheBenachrichtigungEin(db, {
+              to: email,
+              typ: 'rapport-eskalation',
+              jobId: job.id,
+              variablen: {
+                jobDateiname: job.dateiname,
+                stunden: eskalationStunden,
+                offenePersonen,
+                link: `${config.publicBaseUrl}/admin/vorgaenge?typ=rapport`,
+              },
+            }));
+          }
+          eskalation += 1;
+        }
+      }
+      return { eintraege, reminder, eskalation };
+    });
+
+    const bilanz = await stelleEintraegeZu(db, mailer, plan.eintraege);
+    const abschluss = abschlussMitBilanz(`Reminder: ${plan.reminder}, Eskalation: ${plan.eskalation}, Nachgeholt: ${nachgeholt}`, bilanz);
+    logCronLauf(db, { job: 'rapport-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: abschluss.status, details: abschluss.details });
+    return { status: abschluss.status, reminder: plan.reminder, eskalation: plan.eskalation, nachgeholt, mails: bilanz, ...(abschluss.error ? { error: abschluss.error } : {}) };
+  } catch (err) {
+    logCronLauf(db, { job: 'rapport-erinnerungen', gestartetAm, beendetAm: new Date().toISOString(), status: 'fehler', details: err.message });
     return { status: 'fehler', error: err.message };
   }
 }

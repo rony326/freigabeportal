@@ -43,6 +43,20 @@
         <label class="form-label" for="ibanAbweichungEmpfaenger">IBAN-Abweichungs-Empfänger (ein Ziel pro Zeile: E-Mail-Adresse oder "gruppe:buchhaltung"/"gruppe:admin") <span class="text-muted">— zusätzlich zur kontierenden Person und den Freigebern des betroffenen Kontos</span></label>
         <textarea class="form-control" id="ibanAbweichungEmpfaenger" name="ibanAbweichungEmpfaenger" rows="4"><%= ibanAbweichungEmpfaenger || '' %></textarea>
       </div>
+      <hr class="my-3">
+      <h2 class="h5">Rapporte — Erinnerung bei ausstehender Kenntnisnahme</h2>
+      <div class="mb-3">
+        <label class="form-label" for="rapportReminderStunden">Reminder an die Person nach (Stunden)</label>
+        <input type="number" class="form-control" id="rapportReminderStunden" name="rapportReminderStunden" value="<%= rapportReminderStunden %>" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="rapportEskalationStunden">Eskalation nach (Stunden)</label>
+        <input type="number" class="form-control" id="rapportEskalationStunden" name="rapportEskalationStunden" value="<%= rapportEskalationStunden %>" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="rapportEskalationEmpfaenger">Empfänger der Eskalation (ein Ziel pro Zeile: E-Mail-Adresse oder "gruppe:admin"/"gruppe:buchhaltung"; leer = Admin-Gruppe)</label>
+        <textarea class="form-control" id="rapportEskalationEmpfaenger" name="rapportEskalationEmpfaenger" rows="3"><%= rapportEskalationEmpfaenger || '' %></textarea>
+      </div>
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>
         <div class="alert alert-success alert-dismissible alert-kompakt fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">

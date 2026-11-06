@@ -170,6 +170,21 @@ export function listRapporteFuerEskalation(db, stunden) {
     .all(schwelle);
 }
 
+// Rapporte, die abgeschlossen werden könnten, es aber nicht sind (0 offen, ≥1 bestätigt): z. B. wenn
+// Stempel/TSA beim letzten Versuch scheiterten oder der letzte offene Empfänger entfernt wurde.
+export function listRapportIdsZumAbschliessen(db) {
+  return db
+    .prepare(
+      `SELECT j.id FROM jobs j
+       WHERE j.status = 'kenntnisnahme'
+         AND NOT EXISTS (SELECT 1 FROM kenntnisnahmen k WHERE k.job_id = j.id AND k.bestaetigt_am IS NULL AND k.entfernt_am IS NULL)
+         AND EXISTS (SELECT 1 FROM kenntnisnahmen k WHERE k.job_id = j.id AND k.bestaetigt_am IS NOT NULL)
+       ORDER BY j.id`
+    )
+    .all()
+    .map((r) => r.id);
+}
+
 export function markRapportEskaliert(db, jobId, zeitpunkt) {
   return db
     .prepare('UPDATE jobs SET rapport_eskaliert_am = ? WHERE id = ? AND rapport_eskaliert_am IS NULL')

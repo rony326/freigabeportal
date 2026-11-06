@@ -264,3 +264,37 @@ test('validateEmpfaengerListe prüft eine 100-kB-Zeile schnell und lehnt sie ab'
   validateEmpfaengerListe('a@b.ch\ngruppe:admin', 'Ziel', ok);
   assert.deepEqual(ok, []);
 });
+
+test('POST /admin/eskalation speichert die drei Rapport-Felder, leerer Empfänger erlaubt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await request(app).post('/admin/eskalation').set('x-test-person-id', '99').type('form')
+    .send({ ...VALID_BODY, rapportReminderStunden: '10', rapportEskalationStunden: '20', rapportEskalationEmpfaenger: '' });
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'rapport_reminder_stunden'), '10');
+  assert.equal(getConfigValue(db, 'rapport_eskalation_stunden'), '20');
+  assert.equal(getConfigValue(db, 'rapport_eskalation_empfaenger'), '');
+  const res2 = await request(app).post('/admin/eskalation').set('x-test-person-id', '99').type('form')
+    .send({ ...VALID_BODY, rapportReminderStunden: '10', rapportEskalationStunden: '20', rapportEskalationEmpfaenger: ' x@example.org ' });
+  assert.equal(res2.status, 302);
+  assert.equal(getConfigValue(db, 'rapport_eskalation_empfaenger'), 'x@example.org');
+  const get = await request(app).get('/admin/eskalation').set('x-test-person-id', '99');
+  assert.match(get.text, /id="rapportReminderStunden"[^>]*value="10"/);
+  db.close();
+});
+
+test('POST /admin/eskalation lehnt nicht-numerische Rapport-Stunden und ungültigen Empfänger mit 400 ab', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  for (const body of [{ rapportReminderStunden: 'abc' }, { rapportEskalationStunden: '0' }, { rapportEskalationEmpfaenger: 'kein-mail' }]) {
+    const res = await request(app).post('/admin/eskalation').set('x-test-person-id', '99').type('form')
+      .send({ ...VALID_BODY, rapportReminderStunden: '10', rapportEskalationStunden: '20', rapportEskalationEmpfaenger: '', ...body });
+    assert.equal(res.status, 400, JSON.stringify(body));
+  }
+  assert.equal(getConfigValue(db, 'rapport_reminder_stunden'), '72');
+  db.close();
+});

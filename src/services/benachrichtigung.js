@@ -67,7 +67,7 @@ export function istDigestFaellig(wert, jetzt, wochentag, aeltesteZeile = null) {
 // Kürzeste Erinnerungs-/Eskalationsfrist in Stunden (Freigabe 1 und 2). Relevanz pro Person wird nicht
 // unterschieden (im Zweifel alle), damit der Hinweis lieber zu oft als zu selten erscheint.
 export function kuerzesteFristStunden(db) {
-  const werte = ['reminder_stunden', 'eskalation_stunden', 'freigabe2_reminder_stunden', 'freigabe2_eskalation_stunden']
+  const werte = ['reminder_stunden', 'eskalation_stunden', 'freigabe2_reminder_stunden', 'freigabe2_eskalation_stunden', 'rapport_reminder_stunden', 'rapport_eskalation_stunden']
     .map((k) => Number(getConfigValue(db, k)))
     .filter((n) => Number.isFinite(n) && n > 0);
   return werte.length ? Math.min(...werte) : null;

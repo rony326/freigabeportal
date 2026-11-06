@@ -12,6 +12,7 @@ import {
   schliesseRapportAbWennVollstaendig,
   listKenntnisnahmen,
   listOffeneKenntnisnahmen,
+  listRapportIdsZumAbschliessen,
 } from '../db/rapporteRepo.js';
 import { stampKenntnisnahme } from './pdfStamp.js';
 import { setZeitstempelMitNachweis } from './zeitstempel.js';
@@ -275,4 +276,18 @@ export async function bestaetigeRapport(db, config, { jobId, person, ip }) {
     }
   }
   return { ok: true, abgeschlossen };
+}
+
+// Holt Rapporte nach, die vollständig bestätigt sind, aber noch in 'kenntnisnahme' stehen. Fehler
+// eines Rapports (z. B. unlesbares PDF) werden protokolliert und stoppen die übrigen nicht.
+export async function schliesseRapporteNach(db, config) {
+  let geschlossen = 0;
+  for (const jobId of listRapportIdsZumAbschliessen(db)) {
+    try {
+      if (await finalisiereRapport(db, config, jobId)) geschlossen += 1;
+    } catch (err) {
+      console.error(`Rapport ${jobId}: Nachholen des Abschlusses fehlgeschlagen:`, err.message);
+    }
+  }
+  return geschlossen;
 }

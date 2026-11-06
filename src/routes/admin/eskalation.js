@@ -39,6 +39,9 @@ export function createEskalationRouter({ db, csrfProtection = (req, res, next) =
       freigabe2ReminderStunden: getConfigValue(db, 'freigabe2_reminder_stunden'),
       freigabe2EskalationStunden: getConfigValue(db, 'freigabe2_eskalation_stunden'),
       freigabe2EskalationEmpfaenger: getConfigValue(db, 'freigabe2_eskalation_empfaenger'),
+      rapportReminderStunden: getConfigValue(db, 'rapport_reminder_stunden'),
+      rapportEskalationStunden: getConfigValue(db, 'rapport_eskalation_stunden'),
+      rapportEskalationEmpfaenger: getConfigValue(db, 'rapport_eskalation_empfaenger'),
       errors: [],
       gespeichert: req.query.gespeichert === '1',
     });
@@ -46,6 +49,10 @@ export function createEskalationRouter({ db, csrfProtection = (req, res, next) =
 
   router.post('/', csrfProtection, (req, res) => {
     const { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger, ibanAbweichungEmpfaenger, freigabe2ReminderStunden, freigabe2EskalationStunden, freigabe2EskalationEmpfaenger } = req.body;
+    // Ältere Formulare ohne die Rapport-Felder lassen den gespeicherten Wert unverändert.
+    const rapportReminderStunden = req.body.rapportReminderStunden ?? getConfigValue(db, 'rapport_reminder_stunden') ?? '72';
+    const rapportEskalationStunden = req.body.rapportEskalationStunden ?? getConfigValue(db, 'rapport_eskalation_stunden') ?? '168';
+    const rapportEskalationEmpfaenger = req.body.rapportEskalationEmpfaenger ?? getConfigValue(db, 'rapport_eskalation_empfaenger');
     const errors = [];
 
     const reminderNum = Number(reminderStunden);
@@ -64,13 +71,25 @@ export function createEskalationRouter({ db, csrfProtection = (req, res, next) =
     if (!Number.isInteger(freigabe2EskalationNum) || freigabe2EskalationNum <= 0) {
       errors.push('Freigabe 2 – Eskalations-Stunden muss eine positive Ganzzahl sein.');
     }
+    const rapportReminderNum = Number(rapportReminderStunden);
+    const rapportEskalationNum = Number(rapportEskalationStunden);
+    if (!Number.isInteger(rapportReminderNum) || rapportReminderNum <= 0) {
+      errors.push('Rapporte – Reminder-Stunden muss eine positive Ganzzahl sein.');
+    }
+    if (!Number.isInteger(rapportEskalationNum) || rapportEskalationNum <= 0) {
+      errors.push('Rapporte – Eskalations-Stunden muss eine positive Ganzzahl sein.');
+    }
+    // Leer ist erlaubt: dann geht die Eskalation an die Admin-Gruppe.
+    if ((rapportEskalationEmpfaenger || '').trim() !== '') {
+      validateEmpfaengerListe(rapportEskalationEmpfaenger, 'Rapporte – Eskalations-Empfänger', errors);
+    }
     validateEmpfaengerListe(reminderEmpfaenger, 'Reminder-Empfänger', errors);
     validateEmpfaengerListe(eskalationEmpfaenger, 'Eskalations-Empfänger', errors);
     validateEmpfaengerListe(ibanAbweichungEmpfaenger, 'IBAN-Abweichungs-Empfänger', errors);
     validateEmpfaengerListe(freigabe2EskalationEmpfaenger, 'Freigabe 2 – Übergabe-Empfänger', errors);
 
     if (errors.length > 0) {
-      return res.status(400).render('admin/eskalation-form', { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger, ibanAbweichungEmpfaenger, freigabe2ReminderStunden, freigabe2EskalationStunden, freigabe2EskalationEmpfaenger, errors, gespeichert: false });
+      return res.status(400).render('admin/eskalation-form', { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger, ibanAbweichungEmpfaenger, freigabe2ReminderStunden, freigabe2EskalationStunden, freigabe2EskalationEmpfaenger, rapportReminderStunden, rapportEskalationStunden, rapportEskalationEmpfaenger, errors, gespeichert: false });
     }
 
     setConfigValue(db, 'reminder_stunden', String(reminderNum));
@@ -81,6 +100,9 @@ export function createEskalationRouter({ db, csrfProtection = (req, res, next) =
     setConfigValue(db, 'freigabe2_reminder_stunden', String(freigabe2ReminderNum));
     setConfigValue(db, 'freigabe2_eskalation_stunden', String(freigabe2EskalationNum));
     setConfigValue(db, 'freigabe2_eskalation_empfaenger', freigabe2EskalationEmpfaenger.trim());
+    setConfigValue(db, 'rapport_reminder_stunden', String(rapportReminderNum));
+    setConfigValue(db, 'rapport_eskalation_stunden', String(rapportEskalationNum));
+    setConfigValue(db, 'rapport_eskalation_empfaenger', (rapportEskalationEmpfaenger || '').trim());
     res.redirect('/admin/eskalation?gespeichert=1');
   });
 

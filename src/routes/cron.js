@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { machineAuditContext } from '../services/auditContext.js';
 import { runTsaCrlAktualisierungJob } from '../services/tsaCrlUpdate.js';
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from '../services/cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runRapportErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from '../services/cronJobs.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 
 function httpStatusFuer(status) {
@@ -42,6 +42,15 @@ export function createCronRouter({ db, config, mailer }) {
   router.post('/freigabe2-erinnerungen', asyncHandler(async (req, res, next) => {
     try {
       const result = await runFreigabe2ErinnerungenJob(db, config, mailer);
+      res.status(httpStatusFuer(result.status)).json(result);
+    } catch (err) {
+      next(err);
+    }
+  }));
+
+  router.post('/rapport-erinnerungen', asyncHandler(async (req, res, next) => {
+    try {
+      const result = await runRapportErinnerungenJob(db, config, mailer);
       res.status(httpStatusFuer(result.status)).json(result);
     } catch (err) {
       next(err);

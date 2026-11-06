@@ -1,4 +1,4 @@
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from './cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runFreigabe2ErinnerungenJob, runRapportErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from './cronJobs.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { runSicherheitsalarmeJob } from './sicherheitsalarme.js';
 import { runTsaCrlAktualisierungJob } from './tsaCrlUpdate.js';
@@ -104,6 +104,7 @@ export function startScheduler({
     runMailDigestJob: mailDigestJob,
     runFreigabe2ErinnerungenJob: freigabe2ErinnerungenJob,
     runKkBelegErinnerungenJob: kkBelegErinnerungenJob,
+    runRapportErinnerungenJob: rapportErinnerungenJob = async () => ({ status: 'uebersprungen' }),
     // Aeltere Test-Fakes ohne diesen Eintrag bekommen einen wirkungslosen Platzhalter.
     runSicherheitsalarmeJob: sicherheitsalarmeJob = async () => ({ status: 'uebersprungen' }),
     runMailZustellungJob: mailZustellungJob = async () => ({ status: 'uebersprungen' }),
@@ -121,6 +122,7 @@ export function startScheduler({
     runMailDigestJob,
     runFreigabe2ErinnerungenJob,
     runKkBelegErinnerungenJob,
+    runRapportErinnerungenJob,
     runSicherheitsalarmeJob,
     runMailZustellungJob,
     runTsaCrlAktualisierungJob,
@@ -160,6 +162,14 @@ export function startScheduler({
     async () => {
       const result = await freigabe2ErinnerungenJob(db, config, mailer);
       if (result.status === 'fehler') console.error('Geplanter freigabe2-erinnerungen-Lauf fehlgeschlagen:', result.error);
+    }
+  );
+
+  scheduleInterval(
+    () => zahlOderStandard(getConfigValue(db, 'cron_rapport_erinnerungen_intervall_minuten'), 60) * MINUTE_MS,
+    async () => {
+      const result = await rapportErinnerungenJob(db, config, mailer);
+      if (result.status === 'fehler') console.error('Geplanter rapport-erinnerungen-Lauf fehlgeschlagen:', result.error);
     }
   );
 

@@ -1,13 +1,14 @@
 import { Router } from 'express';
-import { runPoolErinnerungenJob, runFreigabe2ErinnerungenJob, runMailDigestJob, runMailZustellungJob } from '../services/cronJobs.js';
+import { runPoolErinnerungenJob, runFreigabe2ErinnerungenJob, runRapportErinnerungenJob, runMailDigestJob, runMailZustellungJob } from '../services/cronJobs.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 
 // Nur in der Test-Instanz gemountet (app.js, Zweig `testmodus`): Test-Postfach und Jobs per Knopf.
-// Ausgeführt werden ausschliesslich diese vier Jobs, gegen die Spiel-DB. Sync, Backup, Zeitstempel
+// Ausgeführt werden ausschliesslich diese Jobs, gegen die Spiel-DB. Sync, Backup, Zeitstempel
 // und n8n gehören bewusst nicht dazu.
 export const TESTMODUS_JOBS = [
   { id: 'pool-erinnerungen', name: 'Pool-Erinnerungen', fn: runPoolErinnerungenJob },
   { id: 'freigabe2-erinnerungen', name: 'Freigabe-2-Erinnerungen', fn: runFreigabe2ErinnerungenJob },
+  { id: 'rapport-erinnerungen', name: 'Rapport-Erinnerungen', fn: runRapportErinnerungenJob },
   { id: 'mail-digest', name: 'Mail-Sammelversand', fn: runMailDigestJob },
   { id: 'mail-zustellung', name: 'Mailzustellung', fn: runMailZustellungJob },
 ];

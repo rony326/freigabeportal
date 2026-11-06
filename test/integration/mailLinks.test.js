@@ -137,7 +137,7 @@ test('jeder im Quellcode erzeugte Mail-Link zeigt auf eine vorhandene GET-Route'
   const pfade = new Set();
   for (const datei of quellen) {
     for (const [, pfad] of readFileSync(datei, 'utf8').matchAll(/\$\{config\.publicBaseUrl\}(\/[^`\s'"]*)/g)) {
-      pfade.add(pfad.replace(/\$\{[^}]+\}/g, '1').replace(/\\n.*$/, ''));
+      pfade.add(pfad.replace(/\$\{[^}]+\}/g, '1').replace(/\\n.*$/, '').replace(/\?.*$/, ''));
     }
   }
   assert.ok(pfade.size >= 10, `expected to find the mail links in src, found ${[...pfade]}`);

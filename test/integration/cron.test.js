@@ -723,3 +723,24 @@ test('POST /internal/cron/split-gruppen-nachholen runs with the correct secret a
   assert.equal(res.body.nachgeholt, 0);
   db.close();
 });
+
+test('POST /internal/cron/rapport-erinnerungen without the secret is rejected', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).post('/internal/cron/rapport-erinnerungen');
+  assert.equal(res.status, 401);
+  db.close();
+});
+
+test('POST /internal/cron/rapport-erinnerungen with the secret runs the job', async () => {
+  const { seedDefaults } = await import('../../src/db/adminConfigRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const app = createApp({ db, config: testConfig(), mailer: stubMailer() });
+  const res = await request(app).post('/internal/cron/rapport-erinnerungen').set('X-Cron-Secret', 'cron-secret');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.reminder, 0);
+  assert.equal(res.body.eskalation, 0);
+  assert.equal(res.body.nachgeholt, 0);
+  db.close();
+});

@@ -9,9 +9,9 @@ import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { createJob, getJobById, listAbholbereitJobs, markiereJobAlsKkAbrechnung } from '../../src/db/jobsRepo.js';
 import { createKreditkarte } from '../../src/db/kreditkartenRepo.js';
 import { createKkBeleg, getKkBelegById } from '../../src/db/kkBelegeRepo.js';
-import { upsertPerson } from '../../src/db/personenRepo.js';
+import { upsertPerson, deactivatePerson } from '../../src/db/personenRepo.js';
 import { listRecentCronLog, startCronLauf } from '../../src/db/cronLogRepo.js';
-import { runZeitstempelNachholenJob as retryTimestamp, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runKkBelegErinnerungenJob, runPdfBereinigungJob } from '../../src/services/cronJobs.js';
+import { runZeitstempelNachholenJob as retryTimestamp, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runKkBelegErinnerungenJob, runPdfBereinigungJob, runRapportErinnerungenJob } from '../../src/services/cronJobs.js';
 import { createBackupKeyring } from '../helpers/backupKeyring.js';
 import { logMailAttempt, listMailLog } from '../../src/db/mailLogRepo.js';
 import { setupMockTsa, signedTsaResponse } from '../helpers/mockTsa.js';
@@ -557,3 +557,113 @@ for (const wert of ['-5', 'abc', '2.5', '0', null]) {
     assert.doesNotMatch(t.sent[0].text, /Neu/);
   });
 }
+
+// --- rapport-erinnerungen ---------------------------------------------------------------------
+const RAPPORT_CONFIG = { publicBaseUrl: 'https://portal.example.org', churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, tsaTrustRequired: false };
+
+async function seedRapport({ dir = null, empfaenger = ['2', '3'], zugeteiltVorStunden = 80 } = {}) {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'zeitstempel_tsa_url', '');
+  for (const id of ['1', '2', '3']) upsertPerson(db, { id, vorname: `P${id}`, nachname: 'M', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  upsertPerson(db, { id: '9', vorname: 'Super', nachname: 'Admin', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
+  let pdfPfad = '/x.pdf';
+  if (dir) {
+    pdfPfad = join(dir, 'rapport.pdf');
+    writeFileSync(pdfPfad, await buildPdfFixture(['Rapport Seite 1']));
+  }
+  const jobId = createJob(db, { eingangAm: '2026-11-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rapport.pdf', pdfPfad });
+  db.prepare("UPDATE jobs SET status='zugewiesen', zugewiesen_an='1', betrag=10, zahlungsziel='2026-12-01', rechnungsnummer='R1' WHERE id=?").run(jobId);
+  const { markiereAlsRapport } = await import('../../src/db/rapporteRepo.js');
+  const zeit = new Date(Date.now() - zugeteiltVorStunden * 3600 * 1000).toISOString();
+  markiereAlsRapport(db, jobId, { markiertVon: '1', empfaengerIds: empfaenger, bemerkung: 'b', zeitpunkt: zeit });
+  return { db, jobId };
+}
+const mailsVom = (db, typ) => listMailLog(db).filter((m) => m.typ === typ);
+
+test('rapport-erinnerungen: Reminder nach 72h genau einmal pro offener Kenntnisnahme', async () => {
+  const { db } = await seedRapport({ zugeteiltVorStunden: 80 });
+  const mailer = createStubMailer();
+  const erster = await runRapportErinnerungenJob(db, RAPPORT_CONFIG, mailer);
+  assert.equal(erster.status, 'erfolg');
+  assert.equal(erster.reminder, 2);
+  assert.deepEqual(mailsVom(db, 'rapport-reminder').map((m) => m.empfaenger).sort(), ['p2@example.org', 'p3@example.org']);
+  const zweiter = await runRapportErinnerungenJob(db, RAPPORT_CONFIG, mailer);
+  assert.equal(zweiter.reminder, 0);
+  assert.equal(mailsVom(db, 'rapport-reminder').length, 2);
+  db.close();
+});
+
+test('rapport-erinnerungen: zu junge Kenntnisnahmen werden nicht erinnert', async () => {
+  const { db } = await seedRapport({ zugeteiltVorStunden: 10 });
+  const r = await runRapportErinnerungenJob(db, RAPPORT_CONFIG, createStubMailer());
+  assert.equal(r.reminder, 0);
+  assert.equal(r.eskalation, 0);
+  db.close();
+});
+
+test('rapport-erinnerungen: bestätigte Personen bekommen keinen Reminder', async () => {
+  const { db, jobId } = await seedRapport({ zugeteiltVorStunden: 80 });
+  const { bestaetigeKenntnisnahme } = await import('../../src/db/rapporteRepo.js');
+  bestaetigeKenntnisnahme(db, jobId, '2', new Date().toISOString());
+  const r = await runRapportErinnerungenJob(db, RAPPORT_CONFIG, createStubMailer());
+  assert.equal(r.reminder, 1);
+  assert.deepEqual(mailsVom(db, 'rapport-reminder').map((m) => m.empfaenger), ['p3@example.org']);
+  db.close();
+});
+
+test('rapport-erinnerungen: Eskalation nach 168h einmal pro Rapport mit offenen Namen im Text', async () => {
+  const { db, jobId } = await seedRapport({ zugeteiltVorStunden: 200 });
+  const mailer = createStubMailer();
+  const r = await runRapportErinnerungenJob(db, RAPPORT_CONFIG, mailer);
+  assert.equal(r.eskalation, 1);
+  const eskalationen = mailer.sent.filter((m) => /Kenntnisnahme seit langem/.test(m.subject));
+  assert.deepEqual(eskalationen.map((m) => m.to), ['admin@example.org']);
+  assert.match(eskalationen[0].text, /P2 M, P3 M/);
+  assert.match(eskalationen[0].text, /https:\/\/portal\.example\.org\/admin\/vorgaenge\?typ=rapport/);
+  assert.ok(getJobById(db, jobId).rapport_eskaliert_am);
+  const zweiter = await runRapportErinnerungenJob(db, RAPPORT_CONFIG, mailer);
+  assert.equal(zweiter.eskalation, 0);
+  assert.equal(mailsVom(db, 'rapport-eskalation').length, 1);
+  db.close();
+});
+
+test('rapport-erinnerungen: deaktivierter Empfänger → keine Erinnerung, sofortige Eskalation', async () => {
+  const { db } = await seedRapport({ zugeteiltVorStunden: 1 });
+  deactivatePerson(db, '2');
+  const r = await runRapportErinnerungenJob(db, RAPPORT_CONFIG, createStubMailer());
+  assert.equal(r.reminder, 0);
+  assert.equal(r.eskalation, 1);
+  assert.equal(mailsVom(db, 'rapport-reminder').length, 0);
+  assert.equal(mailsVom(db, 'rapport-eskalation').length, 1);
+  db.close();
+});
+
+test('rapport-erinnerungen: nach Ersetzen wird erneut eskalierbar (rapport_eskaliert_am NULL)', async () => {
+  const { db, jobId } = await seedRapport({ zugeteiltVorStunden: 200 });
+  const { listOffeneKenntnisnahmen, ersetzeEmpfaenger } = await import('../../src/db/rapporteRepo.js');
+  await runRapportErinnerungenJob(db, RAPPORT_CONFIG, createStubMailer());
+  assert.ok(getJobById(db, jobId).rapport_eskaliert_am);
+  const offen = listOffeneKenntnisnahmen(db, jobId)[0];
+  ersetzeEmpfaenger(db, offen.id, { neuePersonId: '1', von: '9', begruendung: 'Ersatz wegen Abwesenheit', zeitpunkt: new Date().toISOString() });
+  assert.equal(getJobById(db, jobId).rapport_eskaliert_am, null);
+  db.prepare('UPDATE kenntnisnahmen SET zugeteilt_am = ? WHERE person_id = ?').run(new Date(Date.now() - 200 * 3600 * 1000).toISOString(), '1');
+  const r = await runRapportErinnerungenJob(db, RAPPORT_CONFIG, createStubMailer());
+  assert.equal(r.eskalation, 1);
+  assert.equal(mailsVom(db, 'rapport-eskalation').length, 2);
+  db.close();
+});
+
+test('rapport-erinnerungen: Rapport mit 0 offen in kenntnisnahme wird nachgeholt abgeschlossen', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'rapport-nachholen-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const { db, jobId } = await seedRapport({ dir, empfaenger: ['2', '3'] });
+  const { bestaetigeKenntnisnahme, entferneEmpfaenger, listOffeneKenntnisnahmen } = await import('../../src/db/rapporteRepo.js');
+  bestaetigeKenntnisnahme(db, jobId, '2', new Date().toISOString());
+  entferneEmpfaenger(db, listOffeneKenntnisnahmen(db, jobId)[0].id, { von: '9', begruendung: 'nicht mehr nötig hier', zeitpunkt: new Date().toISOString() });
+  assert.equal(getJobById(db, jobId).status, 'kenntnisnahme');
+  const r = await runRapportErinnerungenJob(db, { ...RAPPORT_CONFIG, jobsDir: dir }, createStubMailer());
+  assert.equal(r.nachgeholt, 1);
+  assert.equal(getJobById(db, jobId).status, 'abgeschlossen');
+  db.close();
+});

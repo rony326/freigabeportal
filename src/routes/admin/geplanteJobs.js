@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentSyncLogs } from '../../db/syncLogRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
-import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from '../../services/cronJobs.js';
+import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runRapportErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from '../../services/cronJobs.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 
 const LOG_LIMIT = 10;
@@ -21,6 +21,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       cronZeitstempelNachholenIntervallMinuten: getConfigValue(db, 'cron_zeitstempel_nachholen_intervall_minuten'),
       cronSplitGruppenNachholenIntervallMinuten: getConfigValue(db, 'cron_split_gruppen_nachholen_intervall_minuten'),
       cronFreigabe2ErinnerungenIntervallMinuten: getConfigValue(db, 'cron_freigabe2_erinnerungen_intervall_minuten'),
+      cronRapportErinnerungenIntervallMinuten: getConfigValue(db, 'cron_rapport_erinnerungen_intervall_minuten'),
       kkBelegErinnerungenAktiv: getConfigValue(db, 'kk_beleg_erinnerungen_aktiv') === '1',
       kkBelegErinnerungTage: getConfigValue(db, 'kk_beleg_erinnerung_tage'),
       cronKkBelegErinnerungenStunde: getConfigValue(db, 'cron_kk_beleg_erinnerungen_stunde'),
@@ -31,6 +32,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       zeitstempelNachholenLog: listRecentCronLog(db, 'zeitstempel-nachholen', LOG_LIMIT),
       splitGruppenNachholenLog: listRecentCronLog(db, 'split-gruppen-nachholen', LOG_LIMIT),
       freigabe2ErinnerungenLog: listRecentCronLog(db, 'freigabe2-erinnerungen', LOG_LIMIT),
+      rapportErinnerungenLog: listRecentCronLog(db, 'rapport-erinnerungen', LOG_LIMIT),
       kkBelegErinnerungenLog: listRecentCronLog(db, 'kk-beleg-erinnerungen', LOG_LIMIT),
       cronMailZustellungIntervallMinuten: getConfigValue(db, 'cron_mail_zustellung_intervall_minuten'),
       mailZustellungLog: listRecentCronLog(db, 'mail-zustellung', LOG_LIMIT),
@@ -62,6 +64,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
       kkBelegErinnerungenStunde,
       kkBelegErinnerungenMinute,
       mailZustellungIntervallMinuten,
+      rapportErinnerungenIntervallMinuten,
     } = req.body;
     const errors = [];
 
@@ -100,6 +103,8 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     const kkBelegErinnerungenAktivBool = kkBelegErinnerungenAktiv === '1';
     // Ältere, vor diesem Feld geladene Formulare senden es nicht: dann bleibt der gespeicherte Wert.
     const mailZustellungIntervallRoh = mailZustellungIntervallMinuten ?? getConfigValue(db, 'cron_mail_zustellung_intervall_minuten') ?? '5';
+    const rapportErinnerungenIntervallRoh = rapportErinnerungenIntervallMinuten ?? getConfigValue(db, 'cron_rapport_erinnerungen_intervall_minuten') ?? '60';
+    const rapportErinnerungenIntervallNum = ganzzahlImBereich(rapportErinnerungenIntervallRoh, 1, 1440, 'Rapport-Erinnerungen: Intervall (Minuten)');
     const mailZustellungIntervallNum = ganzzahlImBereich(mailZustellungIntervallRoh, 1, 1440, 'Mail-Zustellung: Intervall (Minuten)');
 
     if (errors.length > 0) {
@@ -113,6 +118,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
         cronZeitstempelNachholenIntervallMinuten: zeitstempelNachholenIntervallMinuten,
         cronSplitGruppenNachholenIntervallMinuten: splitGruppenNachholenIntervallMinuten,
         cronFreigabe2ErinnerungenIntervallMinuten: freigabe2ErinnerungenIntervallMinuten,
+        cronRapportErinnerungenIntervallMinuten: rapportErinnerungenIntervallRoh,
         kkBelegErinnerungenAktiv: kkBelegErinnerungenAktivBool,
         kkBelegErinnerungTage,
         cronKkBelegErinnerungenStunde: kkBelegErinnerungenStunde,
@@ -123,6 +129,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
         zeitstempelNachholenLog: listRecentCronLog(db, 'zeitstempel-nachholen', LOG_LIMIT),
         splitGruppenNachholenLog: listRecentCronLog(db, 'split-gruppen-nachholen', LOG_LIMIT),
         freigabe2ErinnerungenLog: listRecentCronLog(db, 'freigabe2-erinnerungen', LOG_LIMIT),
+        rapportErinnerungenLog: listRecentCronLog(db, 'rapport-erinnerungen', LOG_LIMIT),
         kkBelegErinnerungenLog: listRecentCronLog(db, 'kk-beleg-erinnerungen', LOG_LIMIT),
         cronMailZustellungIntervallMinuten: mailZustellungIntervallRoh,
         mailZustellungLog: listRecentCronLog(db, 'mail-zustellung', LOG_LIMIT),
@@ -145,6 +152,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     setConfigValue(db, 'kk_beleg_erinnerung_tage', String(kkBelegErinnerungTageNum));
     setConfigValue(db, 'cron_kk_beleg_erinnerungen_stunde', String(kkBelegErinnerungenStundeNum));
     setConfigValue(db, 'cron_kk_beleg_erinnerungen_minute', String(kkBelegErinnerungenMinuteNum));
+    setConfigValue(db, 'cron_rapport_erinnerungen_intervall_minuten', String(rapportErinnerungenIntervallNum));
     setConfigValue(db, 'cron_mail_zustellung_intervall_minuten', String(mailZustellungIntervallNum));
     res.redirect('/admin/geplante-jobs?gespeichert=1');
   });
@@ -203,6 +211,15 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     try {
       await runFreigabe2ErinnerungenJob(db, config, mailer);
       res.redirect('/admin/geplante-jobs?getriggert=freigabe2-erinnerungen');
+    } catch (err) {
+      next(err);
+    }
+  }));
+
+  router.post('/rapport-erinnerungen/jetzt-ausfuehren', csrfProtection, asyncHandler(async (req, res, next) => {
+    try {
+      await runRapportErinnerungenJob(db, config, mailer);
+      res.redirect('/admin/geplante-jobs?getriggert=rapport-erinnerungen');
     } catch (err) {
       next(err);
     }

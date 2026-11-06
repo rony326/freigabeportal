@@ -121,7 +121,7 @@
 
               <div class="mb-3">
                 <label class="form-label" for="begruendung">Begründung <span class="text-muted" data-begruendung-hinweis><%= values.interessenskonflikt === 'ja' ? '(Pflicht)' : '(bei Ablehnung Pflicht)' %></span></label>
-                <textarea class="form-control<%= ff.begruendung ? ' is-invalid' : '' %>" id="begruendung" name="begruendung"<%- ffAttr(ff, 'begruendung') %>><%= values.begruendung || '' %></textarea>
+                <textarea class="form-control<%= ff.begruendung ? ' is-invalid' : '' %>" id="begruendung" name="begruendung" data-begruendung-pflicht-bei="konfliktJa"<%- ffAttr(ff, 'begruendung') %>><%= values.begruendung || '' %></textarea>
 <% if (ff.begruendung) { %><div class="invalid-feedback d-block" id="begruendung-fehler"><%= ff.begruendung %></div><% } %>
               </div>
 
@@ -257,23 +257,6 @@
       </div>
     </div>
   <script>
-    // Begründung ist nur bei gemeldetem Interessenskonflikt sofort Pflicht (bei Ablehnung prüft sie der Server).
-    // Läuft auch einmal beim Laden, damit ein Fehler-Rerender den Zustand wiederherstellt.
-    (function () {
-      var feld = document.getElementById('begruendung');
-      var hinweis = document.querySelector('label[for="begruendung"] [data-begruendung-hinweis]');
-      var ja = document.getElementById('konfliktJa');
-      function aktualisiereBegruendung() {
-        feld.required = ja.checked;
-        if (hinweis) hinweis.textContent = ja.checked ? '(Pflicht)' : '(bei Ablehnung Pflicht)';
-      }
-      Array.prototype.forEach.call(document.querySelectorAll('input[name="interessenskonflikt"]'), function (radio) {
-        radio.addEventListener('change', aktualisiereBegruendung);
-      });
-      aktualisiereBegruendung();
-    })();
-  </script>
-  <script>
     // Eingebettetes PDF, "Vorschau neu laden" und Beleg/Formular-Umschalter: public/js/belegUmschalter.js.
     // Ablehnen deliberately needs none of these fields filled in (the server-side handler skips
     // all of these checks for aktion=ablehnen, only requiring Begründung) — but each field's HTML
@@ -374,6 +357,14 @@
         input.className = select.className;
         input.setAttribute('autocomplete', 'off');
         input.setAttribute('role', 'combobox');
+        if (select.id) {
+          input.id = select.id + '-suche';
+          // Fehlerlinks auf das versteckte <select> führen stattdessen auf das sichtbare Feld.
+          Array.prototype.forEach.call(document.querySelectorAll('a[href="#' + select.id + '"]'), function (link) {
+            link.setAttribute('href', '#' + input.id);
+            link.addEventListener('click', function (e) { e.preventDefault(); input.focus(); });
+          });
+        }
         // Fehlerzustand (aria-invalid/-describedby) gehört auf das sichtbare Feld.
         ['aria-invalid', 'aria-describedby'].forEach(function (attr) {
           if (select.hasAttribute(attr)) input.setAttribute(attr, select.getAttribute(attr));

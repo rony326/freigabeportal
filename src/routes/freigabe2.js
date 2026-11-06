@@ -362,7 +362,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           const changed = Boolean(req.body.zahlungsdaten_stand);
           const standGeaendert = changed && req.body.zahlungsdaten_stand !== review.fingerprint;
           const text = standGeaendert ? 'Der Zahlungs- oder Vorgangsstand wurde geaendert. Bitte erneut pruefen und bestaetigen.' : 'Bitte die Zahlungsdaten pruefen und bestaetigen.';
-          const feld = standGeaendert ? null : (req.body.zahlungsdaten_bestaetigt !== 'ja' ? 'zahlungsdatenBestaetigt' : 'zahlungshinweiseBestaetigt');
+          const feld = standGeaendert ? null : (req.body.zahlungsdaten_bestaetigt !== 'ja' ? 'zahlungsdatenBestaetigt' : (zahlung.hinweise.length > 0 ? 'zahlungshinweiseBestaetigt' : null));
           return renderForm(req, res, changed ? 409 : 400, result, { interessenskonflikt, begruendung },
             [text], review, feld ? { [feld]: text } : {});
         }

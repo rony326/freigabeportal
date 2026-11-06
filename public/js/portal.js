@@ -78,3 +78,23 @@ window.Portal = window.Portal || {};
     document.querySelectorAll('.wird-gesendet').forEach(entmarkiere);
   });
 })();
+
+// Begründung: Pflicht erst, wenn der Interessenskonflikt gemeldet ist. Das Textfeld trägt
+// data-begruendung-pflicht-bei="<id des Konflikt-Radios>"; der Hinweis im Label ist
+// [data-begruendung-hinweis]. Fehlende Elemente werden ignoriert.
+(function () {
+  function init(feld) {
+    var ja = document.getElementById(feld.getAttribute('data-begruendung-pflicht-bei'));
+    if (!ja) return;
+    var label = feld.id ? document.querySelector('label[for="' + feld.id + '"]') : null;
+    var hinweis = label ? label.querySelector('[data-begruendung-hinweis]') : null;
+    var radios = ja.name ? document.querySelectorAll('input[type="radio"][name="' + ja.name + '"]') : [ja];
+    function aktualisiere() {
+      feld.required = ja.checked;
+      if (hinweis) hinweis.textContent = ja.checked ? '(Pflicht)' : '(bei Ablehnung Pflicht)';
+    }
+    Array.prototype.forEach.call(radios, function (r) { r.addEventListener('change', aktualisiere); });
+    aktualisiere();
+  }
+  document.querySelectorAll('[data-begruendung-pflicht-bei]').forEach(init);
+})();

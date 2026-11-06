@@ -176,11 +176,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const jobTyp = typ === 'gutschrift' ? 'gutschrift' : 'rechnung';
       const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, kreditorId, typ: jobTyp };
 
-      // `messages`: Text, Liste oder ein neueFehler()-Sammler; `feld` ordnet einen einzelnen Text einem Feld zu.
+      // `messages`: Text oder neueFehler()-Sammler; `feld` ordnet einen einzelnen Text einem Feld zu.
       const renderFehler = (messages, status = 400, feld = null) => {
-        const fehler = neueFehler();
-        if (messages && Array.isArray(messages.liste)) messages.liste.forEach((t) => fehler.add(Object.keys(messages.proFeld).find((k) => messages.proFeld[k] === t) || null, t));
-        else (Array.isArray(messages) ? messages : [messages]).forEach((t) => fehler.add(feld, t));
+        const fehler = typeof messages === 'object' && messages && Array.isArray(messages.liste) ? messages : neueFehler();
+        if (fehler !== messages) fehler.add(feld, messages);
         return res.status(status).render('kontierung', {
           job,
           konten,

@@ -3356,6 +3356,7 @@ test('kontierung: Fehler stehen am Feld', async () => {
   assert.equal(res.status, 400);
   assert.match(res.text, /id="betrag"[^>]*is-invalid|is-invalid[^>]*id="betrag"/);
   assert.match(res.text, /id="betrag-fehler"[^>]*>\s*Bitte einen Betrag angeben\./);
+  assert.match(res.text, /aria-invalid="true" aria-describedby="betrag-fehler"/);
   assert.match(res.text, /href="#betrag"/);
   db.close();
 });

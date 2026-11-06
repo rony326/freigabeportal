@@ -25,3 +25,18 @@ test('Begründung wird bei Interessenskonflikt Pflicht', async () => {
   await pruefe(`/kontierung/${b.server.ids.anna}`, 'test-1', { feld: 'begruendung', konflikt: '#konfliktJa', kein: '#konfliktNein' });
   await pruefe(`/freigabe2/${b.server.ids.freigabe2}`, 'test-2', { feld: 'f2begruendung', konflikt: '#f2konfliktJa', kein: '#f2konfliktNein' });
 });
+
+test('Fehlerlink zum Lieferanten fokussiert das sichtbare Suchfeld', async () => {
+  const page = await b.neueSeite(`/kontierung/${b.server.ids.anna}`, { als: 'test-1' });
+  await Promise.all([
+    page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes(`/kontierung/${b.server.ids.anna}`)),
+    page.evaluate(() => {
+      document.getElementById('kontierung-form').noValidate = true;
+      document.querySelector('button[name=aktion][value=kontieren]').click();
+    }),
+  ]);
+  await page.waitForSelector('.alert-danger a[href^="#kreditorId"]');
+  await page.click('.alert-danger a[href^="#kreditorId"]');
+  assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.id), 'kreditorId-suche');
+  await page.close();
+});

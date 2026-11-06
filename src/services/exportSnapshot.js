@@ -206,10 +206,10 @@ export function bereiteGruppenSnapshotVor(db, parent, kinder, erstelltAm = new D
     if (!snapshot?.job) { grund = `Teilbeleg ${kind.id} hat keinen Freigabe-Snapshot.`; break; }
     const zahlung = zahlungAusSnapshot(snapshot);
     if (zahlung.art !== erwartet.art || JSON.stringify(zahlung.daten) !== JSON.stringify(erwartet.daten)) {
-      grund = `Teilbeleg ${kind.id} hat andere Zahlungsdaten bestaetigt als die Gesamtrechnung.`; break;
+      grund = `Teilbeleg ${kind.id} hat andere Zahlungsdaten bestätigt als die Gesamtrechnung.`; break;
     }
     if (!zahlungVollstaendig({ ...zahlung, hinweise: [...new Set([...zahlung.hinweise, ...erwartet.hinweise])] })) {
-      grund = `Die Zahlungsdaten von Teilbeleg ${kind.id} wurden nicht ausdruecklich bestaetigt.`; break;
+      grund = `Die Zahlungsdaten von Teilbeleg ${kind.id} wurden nicht ausdrücklich bestätigt.`; break;
     }
     zahlung.hinweise.forEach((h) => hinweise.add(h));
     abgleich = abgleich ?? zahlung.abgleich;

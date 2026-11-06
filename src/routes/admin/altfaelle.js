@@ -60,7 +60,7 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
           await pruefeUndFinalisiereSplitGruppe(db, altfall.job.id, config);
         } catch (err) {
           // The split-gruppen-nachholen cron job retries a failed merge.
-          console.error(`Splitgruppen-Finalisierung nach Altfall-Entscheidung fuer ${altfall.job.id} fehlgeschlagen:`, err.message);
+          console.error(`Splitgruppen-Finalisierung nach Altfall-Entscheidung für ${altfall.job.id} fehlgeschlagen:`, err.message);
         }
       }
       res.redirect('/admin/altfaelle?gespeichert=1');

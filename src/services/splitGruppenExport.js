@@ -98,7 +98,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
       const bytes = readFileSync(kind.pdf_pfad);
       const expected = kind.zeitstempel_datei_hash || kind.final_datei_hash;
       if (expected && createHash('sha256').update(bytes).digest('hex') !== expected) {
-        throw new Error('Teilbeleg stimmt nicht mit seinem Freigabe-Hash ueberein.');
+        throw new Error('Teilbeleg stimmt nicht mit seinem Freigabe-Hash überein.');
       }
       return bytes;
     });
@@ -168,7 +168,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
           !readFileSync(parent.pdf_pfad).equals(basisBuffer) ||
           kommentarStandGruppe(db, [parent.id, ...kinder.map((kind) => kind.id)]) !== kommentarStand ||
           kinder.some((kind, index) => !readFileSync(kind.pdf_pfad).equals(kindBuffers[index]))) {
-        throw new Error('Gruppenstand oder Quelldateien wurden waehrend der Finalisierung geaendert.');
+        throw new Error('Gruppenstand oder Quelldateien wurden während der Finalisierung geändert.');
       }
       if (db.prepare('SELECT 1 FROM export_nachweise WHERE job_id = ?').get(parent.id)) throw new Error('Archivexport wurde bereits festgeschrieben.');
       const geschrieben = markGruppeExportiert(db, parent.id, {

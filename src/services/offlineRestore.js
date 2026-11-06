@@ -54,7 +54,7 @@ function restoreOfflineInternal(buffer, config, options) {
   const identity = maintenanceIdentity(options);
   const digest = createHash('sha256').update(buffer).digest('hex');
   if (typeof options.expectedSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(options.expectedSha256) || digest !== options.expectedSha256) {
-    throw new Error('Backup-SHA-256 fehlt oder stimmt nicht mit dem erwarteten Wert ueberein.');
+    throw new Error('Backup-SHA-256 fehlt oder stimmt nicht mit dem erwarteten Wert überein.');
   }
   const lock = acquireStorageLock(config, 'restore');
   let generation;
@@ -158,7 +158,7 @@ function rollbackOfflineInternal(config, options) {
     if (!pointer?.previous) throw new Error('Kein vorheriger Datenstand für den Rückwechsel vorhanden.');
     const current = pointer.previous;
     if (!['dbPath', 'jobsDir', 'brandingDir'].every((key) => typeof current[key] === 'string' && isAbsolute(current[key]) && existsSync(current[key]))) {
-      throw new Error('Vorheriger Datenstand ist unvollstaendig.');
+      throw new Error('Vorheriger Datenstand ist unvollständig.');
     }
     if (!statSync(current.dbPath).isFile() || !statSync(current.jobsDir).isDirectory() || !statSync(current.brandingDir).isDirectory()) throw new Error('Vorheriger Datenstand ist ungültig.');
     const db = new DatabaseSync(current.dbPath, { readOnly: true });

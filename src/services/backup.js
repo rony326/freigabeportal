@@ -40,7 +40,7 @@ function validateFileReferences(db, manifest, zip) {
     const entry = zip.getEntry(`${root}/${name.split(sep).join('/')}`);
     if (required && (!entry || entry.isDirectory)) throw new BackupValidationError('Eine aktive Datenbank-Dateireferenz fehlt im Backup.');
     if (entry && expectedHash && sha256(entry.getData()) !== expectedHash) {
-      throw new BackupValidationError('Belegdatei stimmt nicht mit dem finalen Datenbank-Hash ueberein.');
+      throw new BackupValidationError('Belegdatei stimmt nicht mit dem finalen Datenbank-Hash überein.');
     }
   }
   for (const job of db.prepare('SELECT * FROM jobs').all()) {
@@ -215,7 +215,7 @@ export function validateBackupArchive(buffer) {
   }
 
   if (typeof manifest.erstelltAm !== 'string' || !Number.isFinite(Date.parse(manifest.erstelltAm)) || !Array.isArray(manifest.dateien)) {
-    throw new BackupValidationError('Backup-Manifest ist unvollstaendig.');
+    throw new BackupValidationError('Backup-Manifest ist unvollständig.');
   }
   for (const [praefix, feld] of [
     ['jobs/', 'dateiAnzahlJobs'],
@@ -223,14 +223,14 @@ export function validateBackupArchive(buffer) {
   ]) {
     const deklariert = manifest[feld];
     const tatsaechlich = zaehleDateiEintraege(zip, praefix);
-    if (!Number.isSafeInteger(deklariert) || deklariert !== tatsaechlich) throw new BackupValidationError('Dateianzahl stimmt nicht mit dem Manifest ueberein.');
+    if (!Number.isSafeInteger(deklariert) || deklariert !== tatsaechlich) throw new BackupValidationError('Dateianzahl stimmt nicht mit dem Manifest überein.');
   }
 
   const declared = new Set();
   for (const file of manifest.dateien) {
     if (!file || typeof file.pfad !== 'string' || file.pfad === 'manifest.json' || declared.has(file.pfad) ||
         !Number.isSafeInteger(file.groesse) || file.groesse < 0 || typeof file.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(file.sha256)) {
-      throw new BackupValidationError('Ungueltiger Dateinachweis im Backup-Manifest.');
+      throw new BackupValidationError('Ungültiger Dateinachweis im Backup-Manifest.');
     }
     declared.add(file.pfad);
     const entry = zip.getEntry(file.pfad);
@@ -238,7 +238,7 @@ export function validateBackupArchive(buffer) {
     try {
       const bytes = entry.getData();
       if (bytes.length !== file.groesse || sha256(bytes) !== file.sha256) throw new Error('Hash mismatch');
-    } catch { throw new BackupValidationError('Backup-Datei ist beschaedigt oder stimmt nicht mit ihrem SHA-256 ueberein.'); }
+    } catch { throw new BackupValidationError('Backup-Datei ist beschädigt oder stimmt nicht mit ihrem SHA-256 überein.'); }
   }
   if (zip.getEntries().some((entry) => !entry.isDirectory && entry.entryName !== 'manifest.json' && !declared.has(entry.entryName))) {
     throw new BackupValidationError('Archiv enthaelt Dateien ausserhalb des Manifests.');

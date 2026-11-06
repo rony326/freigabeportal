@@ -16,7 +16,7 @@ export function acquireStorageLock(config, purpose = 'server') {
   const paths = storagePaths(config);
   try { mkdirSync(paths.lockPath, { mode: 0o700 }); }
   catch (err) {
-    if (err.code === 'EEXIST') throw new Error(`Datenspeicher ist gesperrt: ${paths.lockPath}. Laufende Prozesse stoppen; verwaiste Sperren nur nach manueller Pruefung entfernen.`);
+    if (err.code === 'EEXIST') throw new Error(`Datenspeicher ist gesperrt: ${paths.lockPath}. Laufende Prozesse stoppen; verwaiste Sperren nur nach manueller Prüfung entfernen.`);
     throw err;
   }
   const token = randomUUID();
@@ -28,7 +28,7 @@ export function acquireStorageLock(config, purpose = 'server') {
   return {
     ...paths,
     assertHeld() {
-      if (released || JSON.parse(readFileSync(ownerPath, 'utf8')).token !== token) throw new Error('Wartungssperre ist nicht mehr gueltig.');
+      if (released || JSON.parse(readFileSync(ownerPath, 'utf8')).token !== token) throw new Error('Wartungssperre ist nicht mehr gültig.');
     },
     release() {
       if (released) return;
@@ -64,10 +64,10 @@ export function atomicJson(path, value) {
 
 function checkedPaths(paths, requireComplete = true) {
   if (!paths || !['dbPath', 'jobsDir', 'brandingDir'].every((key) => typeof paths[key] === 'string' && isAbsolute(paths[key]))) {
-    throw new Error('Ungueltiger aktiver Datenstand.');
+    throw new Error('Ungültiger aktiver Datenstand.');
   }
   if (requireComplete && (!statSync(paths.dbPath).isFile() || !statSync(paths.jobsDir).isDirectory() || !statSync(paths.brandingDir).isDirectory())) {
-    throw new Error('Aktiver Datenstand ist unvollstaendig.');
+    throw new Error('Aktiver Datenstand ist unvollständig.');
   }
   return { dbPath: paths.dbPath, jobsDir: paths.jobsDir, brandingDir: paths.brandingDir };
 }

@@ -6,8 +6,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const VERBOTEN = /\b(pruef\w*|geprueft|bestaetig\w*|geaendert|veraendert|waehrend|fuer|geklaert|\w*empfaenger|gueltig\w*|muessen)\b/i;
-const QUELLEN = ['src/services/paymentApproval.js', 'src/routes/freigabe2.js', 'src/routes/spesenFreigabe1.js'];
+// Bewusst NICHT abgedeckt: <script>-Blöcke, Attributwerte name/value/id/href/..., Mail-Variablen,
+// sowie technische API-/TSA-/DB-Trigger-Texte und Logmeldungen in src/ (nur die Dateien in QUELLEN).
+const VERBOTEN = /\b(pruef\w*|\w*geprueft|bestaetig\w*|\w*aender\w*|\w*aendert|veraendert|waehrend|fuer|geklaert|\w*empfaenger|\w*gueltig\w*|muessen|\w*staendig\w*|ueberein|\w*loesch\w*)\b/i;
+const QUELLEN = [
+  'src/services/paymentApproval.js', 'src/routes/freigabe2.js', 'src/routes/spesenFreigabe1.js',
+  'src/services/exportSnapshot.js', 'src/services/verwaisteDateien.js', 'src/services/splitGruppenExport.js',
+  'src/services/backup.js', 'src/services/offlineRestore.js', 'src/services/storageState.js',
+  'src/services/altfaelle.js', 'src/routes/admin/altfaelle.js', 'src/services/sicherheitsalarme.js',
+];
 
 function ejsDateien(dir) {
   const out = [];

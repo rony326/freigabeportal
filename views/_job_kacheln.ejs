@@ -19,6 +19,7 @@
           <dt>Quelle</dt><dd><%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %></dd>
           <dt>Eingang</dt><dd><%- include('_zeitpunkt', { wert: job.eingang_am }) %></dd>
           <dt>Konto</dt><dd><%= job.kontonummer || (job.hinweisKonto ? `Hinweis: ${job.hinweisKonto.kontonummer} — ${job.hinweisKonto.bezeichnung}` : '—') %></dd>
+          <dt>Betrag</dt><dd class="betrag"><%= job.betrag || '—' %></dd>
         </dl>
         <div class="mt-auto d-flex flex-wrap gap-1 align-items-start">
           <%- include('_job_aktionen', { job }) %>

@@ -759,3 +759,10 @@ h1 .beleg-nr {
 
 /* Sendestatus (public/js/portal.js): Knopf arbeitet, weitere Klicks ignorieren. */
 .wird-gesendet { pointer-events: none; opacity: .75; }
+
+.abschnitt-zahl {
+  font-weight: normal;
+  color: var(--bs-secondary-color);
+  font-variant-numeric: tabular-nums;
+  margin-left: .25rem;
+}

@@ -21,6 +21,8 @@ erDiagram
     kreditoren ||--o{ kreditor_ibans : "hat"
     kreditoren ||--o{ zuweisungsregeln : "Ziel"
     jobs ||--o{ freigaben : "Verlauf"
+    jobs ||--o{ kenntnisnahmen : "Rapport: je Empfänger:in eine Zeile"
+    personen ||--o{ kenntnisnahmen : "person_id"
     jobs ||--o{ mail_log : "ausgelöste Mails"
     jobs ||--o{ jobs : "aufgesplittet_von (Parent → Teile)"
     jobs ||--o{ job_loeschungen : "Löschprotokoll (kein FK)"
@@ -102,7 +104,7 @@ erDiagram
         text dateiname
         text pdf_dateiname "Name des PDF-Teils (n8n)"
         text pdf_pfad
-        text status "11 mögliche Werte"
+        text status "12 mögliche Werte"
         int konto_id FK
         text zugewiesen_an FK
         int kreditor_id FK
@@ -112,7 +114,7 @@ erDiagram
         text zahlungsziel
         text rechnungsnummer
         text lieferant
-        text typ "rechnung | gutschrift, NULL bei Spesen"
+        text typ "rechnung | gutschrift | rapport, NULL bei Spesen"
         int hinweis_konto_id FK
         text zeitstempel_gesetzt_am
         text zeitstempel_datei_hash
@@ -136,6 +138,10 @@ erDiagram
         text kk_erinnert_am "letzte Abrechnungs-Erinnerung"
         text kk_text_betraege "JSON-Cache der PDF-Textanalyse"
         text freigabe2_umgeleitet_an FK "Admin-Umleitung Freigabe 2"
+        text rapport_markiert_von FK "Rapport: markierende Person"
+        text rapport_markiert_am
+        text rapport_bemerkung
+        text rapport_eskaliert_am "Rapport: Eskalation gesendet"
     }
     kreditkarten {
         int id PK
@@ -186,7 +192,7 @@ erDiagram
         int id PK
         int job_id FK "kein enforced FK, siehe unten"
         text person_id FK
-        text rolle "15 mögliche Werte"
+        text rolle "20 mögliche Werte"
         text zeitpunkt
         text ip
         int interessenskonflikt
@@ -211,7 +217,7 @@ erDiagram
     }
     mail_log {
         int id PK
-        text typ "20 mögliche Werte"
+        text typ "23 mögliche Werte"
         int job_id FK
         text empfaenger
         text status "eingereiht | geplant | versendet | fehlgeschlagen"
@@ -321,7 +327,7 @@ für den Betrugserkennungs-Abgleich, siehe
 
 ### `jobs`
 Die zentrale Tabelle — eine Zeile pro Rechnung/Beleg/Spesen-Position.
-`status` ist eine von elf Werten (State Machine, siehe
+`status` ist eine von zwölf Werten (State Machine, siehe
 [rechnungs-workflow.md](rechnungs-workflow.md)). Die vielen
 `*_eskaliert_*`-Spalten protokollieren Interessenskonflikt-Eskalationen
 getrennt für Freigabe 1 und Freigabe 2. `aufgesplittet_von` verweist auf
@@ -372,6 +378,29 @@ Splitgruppe bei deren Finalisierung ein. Beide sind per Trigger
 unveränderlich, sobald gesetzt (auch kein Zurücksetzen auf `NULL`), und die
 einzige Quelle für exportierte Metadaten — siehe
 [export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md).
+
+**Rapport-Spalten** (`rapport_markiert_von`, `rapport_markiert_am`,
+`rapport_bemerkung`, `rapport_eskaliert_am`): nur bei `typ = 'rapport'`
+(Status `kenntnisnahme`, danach `abgeschlossen` …) befüllt; `typ` kennt dafür
+den zusätzlichen Wert `rapport`. `rapport_eskaliert_am` hält fest, dass die
+einmalige Eskalation gesendet wurde; Aufheben der Markierung setzt alle vier
+Spalten zurück. Konto, Kreditor, Lieferant, Betrag, Zahlungsziel und
+Rechnungsnummer bleiben bei einem Rapport `NULL`. Siehe
+[rechnungs-workflow.md](rechnungs-workflow.md#9-rapporte-status-kenntnisnahme).
+
+### `kenntnisnahmen`
+Eine Zeile je zugeteilter Person und Rapport (`job_id`, `person_id`,
+`zugeteilt_am`). `bestaetigt_am` ist der Zeitpunkt der Bestätigung;
+`entfernt_am`/`entfernt_von`/`begruendung` markieren eine entfernte,
+ersetzte oder bei Aufheben der Markierung geschlossene Zeile,
+`ersetzt_durch_id` verweist auf die Nachfolgerzeile, `erinnert_am` auf den
+gesendeten Reminder. **Append-only:** `DELETE` ist per Trigger gesperrt,
+bestätigte Zeilen sind unveränderlich (`UPDATE` verboten). Ein Teil-Unique-
+Index erlaubt je Rapport und Person nur **eine offene** Zeile (weder bestätigt
+noch entfernt). Mit den zentralen Audit-Triggern protokolliert.
+Die `freigaben`-Rollen `rapport_markiert`, `rapport_bestaetigt`,
+`rapport_empfaenger_ersetzt`, `rapport_empfaenger_entfernt` und
+`rapport_markierung_aufgehoben` ergänzen das Verlaufsprotokoll.
 
 ### `altfall_entscheidungen`
 Append-only (Trigger gegen `UPDATE`/`DELETE`), höchstens eine Zeile je Job

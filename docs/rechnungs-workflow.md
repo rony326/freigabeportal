@@ -19,6 +19,7 @@ vollständig in der Spalte `status`.
 | `unzugewiesen` | im Pool, noch niemandem zugewiesen |
 | `zugewiesen` | einer Person zur Kontierung zugewiesen |
 | `freigabe2` | Kontierung + Freigabe 1 erledigt, wartet auf die zweite, unabhängige Freigabe |
+| `kenntnisnahme` | als Rapport (nur zur Kenntnis) weitergegeben, wartet auf die Bestätigung der Empfänger:innen — siehe Abschnitt 9 |
 | `abgeschlossen` | beide Freigaben erteilt, PDF final gestempelt (und ggf. zeitgestempelt) |
 | `abgeholt` | von n8n abgerufen, lokale PDF-Datei bereits gelöscht |
 | `archiviert` | vom nächtlichen Bereinigungs-Job als endgültig archiviert markiert |
@@ -35,7 +36,7 @@ vollständig in der Spalte `status`.
 
 Auf allen Arbeitsseiten und der Zeitstempel-Prüfung lassen sich bei laufenden
 Vorgängen Rückfragen und Kommentare hinterlassen; bei `abgeschlossen`, `abgeholt`,
-`archiviert` und `geloescht` sind sie nur noch lesbar. Details:
+`archiviert` und `geloescht` sind sie nur noch lesbar. Bei `kenntnisnahme` sind Kommentare möglich wie bei laufenden Vorgängen. Details:
 [kommentare.md](kommentare.md).
 
 ## Status-Diagramm
@@ -55,6 +56,9 @@ stateDiagram-v2
     zugewiesen --> zugewiesen: Kontierung mit Interessenskonflikt\n(an Stellvertreter1 / Admin übergeben)
     zugewiesen --> abgelehnt: bei Kontierung ablehnen
     zugewiesen --> aufgesplittet: aufsplitten (erzeugt N Teil-Jobs)
+    zugewiesen --> kenntnisnahme: als Rapport markieren\n(nur zur Kenntnis, Modul aktiv)
+    kenntnisnahme --> zugewiesen: Markierung aufheben\n(nur vor der ersten Bestätigung)
+    kenntnisnahme --> abgeschlossen: alle Empfänger:innen bestätigt\n(Vermerk gestempelt)
     zugewiesen --> zugewiesen: als Kreditkartenabrechnung markiert
     unzugewiesen --> zugewiesen: als Kreditkartenabrechnung markiert
 
@@ -418,6 +422,80 @@ eskaliert wurde, gilt nie als „überfällig“.
 zusätzlich Jobs, bei denen die Person einen `freigaben`-Eintrag mit Rolle
 `freigeber2` hat — so sieht auch die nach einer Admin-Umleitung freigebende
 Person den Vorgang dort.
+
+## 9. Rapporte (Status `kenntnisnahme`)
+
+Ein **Rapport** ist ein Beleg, der nicht bezahlt, sondern nur **zur Kenntnis**
+weitergegeben wird (z. B. ein Bericht oder eine Mitteilung, die per Scanner
+oder Mail im Pool landete). Er durchläuft weder Freigabe 1 noch Freigabe 2,
+hat kein Konto, keinen Kreditor und keinen Betrag; `jobs.typ` ist `rapport`.
+
+**Voraussetzung:** Das Modul ist unter **Admin → Module** eingeschaltet
+(`modul_rapporte_aktiv`, Default aus). Ist es aus, fehlt die Auswahl in der
+Kontierung; bereits markierte Rapporte laufen weiter.
+
+```mermaid
+flowchart TD
+    A["Kontierung (Status zugewiesen):<br/>Typ «Nur zur Kenntnis (Rapport)»"] --> B["alle aktiven Personen sind Empfänger,<br/>Bemerkung optional"]
+    B --> C["Status kenntnisnahme<br/>je Person eine Zeile in kenntnisnahmen<br/>Mail rapport-zuweisung"]
+    C --> D{"Person öffnet /rapporte/:id<br/>und bestätigt"}
+    D --> E["bestaetigt_am gesetzt<br/>freigaben: rapport_bestaetigt"]
+    E --> F{"noch offene<br/>Empfänger:innen?"}
+    F -- ja --> D
+    F -- nein --> G["finalisiereRapport: Seite<br/>«Zur Kenntnis genommen» stempeln,<br/>TSA falls konfiguriert"]
+    G --> H["Status abgeschlossen<br/>→ n8n-Archivierung (Paperless)"]
+    C -. "vor der ersten Bestätigung" .-> I["Aufheben: zurück zu zugewiesen<br/>(Markierer:in oder workflow_eingreifen)"]
+```
+
+**Markieren.** In der Kontierung gibt es neben Rechnung und Gutschrift den
+dritten Typ «Nur zur Kenntnis (Rapport)». Zulässig ist das nur für Belege aus
+Scanner/Lieferant, die weder aufgesplittet noch Teil einer Kreditkarten-
+Abrechnung sind. Empfänger sind **alle aktiven Personen**; die Bemerkung ist
+optional (max. 2000 Zeichen). Es entstehen ein `freigaben`-Eintrag
+`rapport_markiert` und je Empfänger:in ein Eintrag in `kenntnisnahmen` sowie
+eine Mail `rapport-zuweisung` (folgt der Bündelungswahl). Rechnungs-
+spezifische Felder (Konto, Betrag, Eskalationsmerker) werden zurückgesetzt.
+
+**Bestätigen.** Nur die namentlich zugeteilte Person darf bestätigen
+(`GET /rapporte/:id`, `POST /rapporte/:id/bestaetigen`); eine Ferienmodus-
+Stellvertretung gibt es hier **nicht**. Offene Rapporte erscheinen im Pool in
+der Sektion «Zur Kenntnis» und im Badge der Navigation. Mit der letzten
+Bestätigung stempelt `finalisiereRapport` eine Seite «Zur Kenntnis
+genommen» (Empfänger:innen mit Zeitpunkt, Bemerkung, Kommentare) an das PDF,
+holt bei konfigurierter TSA einen Zeitstempel und setzt `abgeschlossen`. Der
+Rapport erscheint dann unter **Meine Abgeschlossenen**. Wird der letzte
+offene Empfänger entfernt und liegt mindestens eine Bestätigung vor, schliesst
+der Job `rapport-erinnerungen` den Rapport nach.
+
+**Aufheben.** `POST /kontierung/:id/rapport-aufheben` — durch die
+markierende Person oder mit `workflow_eingreifen` — setzt den Rapport
+zurück auf `zugewiesen` (an die markierende Person), solange **keine**
+Bestätigung vorliegt. Offene Zeilen werden mit `entfernt_am` markiert,
+`freigaben`: `rapport_markierung_aufgehoben`. Nach der ersten Bestätigung ist
+Aufheben gesperrt.
+
+**Erinnerung und Eskalation.** Der Job `rapport-erinnerungen` mailt jeder
+offenen Person nach `rapport_reminder_stunden` (Default 72) einen Reminder
+(`rapport-reminder`) und eskaliert **einmal je Rapport** nach
+`rapport_eskalation_stunden` (Default 168) an `rapport_eskalation_empfaenger`
+(leer = Admin-Gruppe; Mail `rapport-eskalation`). Inaktive oder nicht
+auflösbare Empfänger:innen werden nicht erinnert, aber sofort eskaliert.
+Einstellungen: **Admin → Eskalationszeiten**. Details:
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#rapport-erinnerungen).
+
+**Admin-Eingriff.** Unter **Admin → Vorgänge** (`/admin/vorgaenge`) tragen
+Rapporte die Art «Rapport» und die Anzeige «n von m» bestätigt; Filter
+`?typ=rapport`. Mit `workflow_eingreifen` lassen sich je offener Empfänger:in
+**Ersetzen** (neue Person, per Mail informiert) oder **Entfernen** und die
+ganze Markierung **Aufheben**; Ersetzen/Entfernen verlangen eine Begründung
+von mindestens 10 Zeichen. Das allgemeine Umhängen (Abschnitt 8) gibt es für
+Rapporte nicht. Bestätigte Zeilen bleiben unveränderlich.
+
+**Archivierung.** Abgeschlossene Rapporte exportiert n8n über eigene
+Endpunkte `/api/n8n/rapporte/*` ausschliesslich nach Paperless (kein Bexio,
+keine Zahlung) — siehe [n8n-paperless-archivierung.md](n8n-paperless-archivierung.md#rapporte).
+`/api/n8n/jobs/*` liefert für Rapporte 404. `pdf-bereinigung` archiviert
+quittierte Rapporte nach sieben Tagen wie Rechnungen.
 
 ## "Stalled Jobs" — blockierte Rechnungen
 

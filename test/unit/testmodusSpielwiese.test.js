@@ -38,8 +38,12 @@ test('erstellt DB, Verzeichnisse, Beispieldaten', async () => {
   assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM konten').get().c, 2);
   assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 2);
   const status = sp.db.prepare("SELECT status, COUNT(*) c FROM jobs WHERE quelle != 'spesen' GROUP BY status").all().map((r) => r.status).sort();
-  assert.deepEqual(status, ['abgelehnt', 'abgeschlossen', 'freigabe2', 'unzugewiesen', 'zugewiesen']);
+  assert.deepEqual(status, ['abgelehnt', 'abgeschlossen', 'freigabe2', 'kenntnisnahme', 'unzugewiesen', 'zugewiesen']);
   assert.equal(sp.db.prepare("SELECT COUNT(*) c FROM jobs WHERE quelle = 'spesen'").get().c, 1);
+  assert.equal(sp.db.prepare("SELECT COUNT(*) c FROM jobs WHERE status = 'kenntnisnahme'").get().c, 1);
+  assert.equal(sp.db.prepare("SELECT COUNT(*) c FROM jobs WHERE typ = 'rapport' AND status = 'abgeschlossen'").get().c, 1);
+  assert.equal(sp.db.prepare("SELECT COUNT(*) c FROM kenntnisnahmen k JOIN jobs j ON j.id = k.job_id WHERE j.status = 'kenntnisnahme'").get().c, 2);
+  assert.equal(sp.db.prepare("SELECT COUNT(*) c FROM kenntnisnahmen k JOIN jobs j ON j.id = k.job_id WHERE j.status = 'kenntnisnahme' AND k.bestaetigt_am IS NOT NULL").get().c, 1);
   assert.equal(sp.db.prepare("SELECT COUNT(*) c FROM freigaben WHERE rolle = 'freigeber1'").get().c, 3);
   assert.ok(readdirSync(p.jobsDir).filter((f) => f.endsWith('.pdf')).length >= 6);
   assert.equal(sp.db.prepare("SELECT email FROM personen WHERE churchtools_person_id='test-1'").get().email, 'anna@beispiel.invalid');

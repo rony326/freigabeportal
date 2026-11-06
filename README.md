@@ -198,7 +198,7 @@ das erste Konto anzulegen oder später Einzelrechte zuzuweisen.
 ### Zeitgesteuerte Jobs — laufen im Node-Prozess selbst
 
 Kein externer Task Scheduler nötig: Solange der Node-Prozess läuft (Infomaniaks
-Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App fünfzehn
+Node.js-Hosting hält ihn dauerhaft am Laufen), plant sich die App sechzehn
 Hintergrund-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/index.js`):
 
 | Job | Zeitplan | Zweck |
@@ -209,6 +209,7 @@ Hintergrund-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/inde
 | `pdf-bereinigung` | täglich, Default 02:30 (Europe/Zürich) | Archivierung abgeholter Jobs, Aufräumen alter `.tmp`-Stempeldateien, Mail-Log-Retention, Quarantäne verwaister finaler Dateien |
 | `zeitstempel-nachholen` | Intervall, Default alle 5 Min. | wiederholt fehlgeschlagene RFC3161-Zeitstempel-Versuche (nur solange die PDF noch lokal vorliegt) |
 | `split-gruppen-nachholen` | Intervall, Default alle 15 Min. | holt die Zusammenführung einer vollständig freigegebenen Splitgruppe nach, wenn sie noch aussteht oder am Zeitstempel gescheitert ist |
+| `rapport-erinnerungen` | Intervall, Default alle 60 Min. | Reminder (72 h) und einmalige Eskalation (168 h) für Rapporte, die noch nicht von allen Empfänger:innen zur Kenntnis genommen wurden |
 | `kk-beleg-erinnerungen` | täglich, Default 08:00 (Europe/Zürich) | Erinnerungen zu offenen Kreditkartenbelegen und nicht abgeglichenen Abrechnungen |
 | `mail-zustellung` | Intervall, Default alle 5 Min. | wiederholt eingereihte, noch nicht zugestellte Mails und gescheiterte Digests mit wachsendem Abstand (nach SMTP-Ausfall oder Neustart) |
 | `datenbank-sicherung` | täglich, Default 03:00 (Europe/Zürich) | DB + `JOBS_DIR` + `BRANDING_DIR` als authentifiziert verschlüsselte `.fpbak` sichern (Schlüsselbund `BACKUP_KEYRING_FILE` Pflicht, sonst scheitert der Lauf); Retention nur für `.fpbak`, alte ZIPs bleiben erhalten |
@@ -219,14 +220,14 @@ Hintergrund-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/inde
 | `audit-pruefnummer` | täglich, Default 07:00 (Europe/Zürich), sendet nur am Versandtag | Prüfnummer-Mail an die Revision; Prüfseite `/audit-pruefen` (öffentlich) |
 | `nutzungsdaten-bereinigung` | täglich, Default 03:45 (Europe/Zürich) | löscht Nutzungsdaten nach Frist (Seitenaufrufe 90 Tage, übrige 365 Tage) — siehe [docs/betrieb-und-nutzung.md](docs/betrieb-und-nutzung.md) |
 
-**Admin → Betrieb → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan von acht Jobs
+**Admin → Betrieb → Geplante Jobs** (`/admin/geplante-jobs`): Zeitplan von neun Jobs
 einstellen (wirkt ab dem nächsten planmässigen Lauf, kein Neustart nötig),
 jeden davon manuell sofort auslösen, und den Verlauf der letzten Läufe
 (Erfolg/Fehler samt Details) einsehen — sowohl geplante als auch manuell
 ausgelöste Läufe landen im selben Verlauf. `datenbank-sicherung` wird unter
 **Admin → Betrieb → Datenbank-Backup**, `mail-digest` unter **Admin → Einstellungen →
 Mail-Einstellungen** eingestellt; `sicherheitsalarme` nur über `admin_config`.
-Details zu allen fünfzehn Jobs:
+Details zu allen sechzehn Jobs:
 [docs/geplante-jobs-und-benachrichtigungen.md](docs/geplante-jobs-und-benachrichtigungen.md).
 
 **Verpasste Termine werden nicht nachgeholt:** Nach einem Neustart plant der

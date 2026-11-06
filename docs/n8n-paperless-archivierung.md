@@ -60,6 +60,31 @@ zugeordnete Dokument-ID liefern 409; ungueltige Eingaben 400, fehlende Authentis
 Bei technischen Fehlern gibt es keinen erfolgreichen Teilabschluss: Abholstatus und
 Quittung werden in derselben DB-Transaktion gespeichert. Die Requests loeschen keine Dateien.
 
+## Rapporte
+
+Rapporte (nur zur Kenntnis) verwenden **denselben Vertrag** (Exportnachweis,
+hashgebundener Download, Archivquittung, sieben Tage Wartefrist), aber unter
+eigenen Pfaden mit demselben `X-API-Key`:
+
+| Rechnungen | Rapporte |
+|---|---|
+| `GET /api/n8n/jobs/abholbereit` | `GET /api/n8n/rapporte/abholbereit` |
+| `GET /api/n8n/jobs/archivierung-ausstehend` | `GET /api/n8n/rapporte/archivierung-ausstehend` |
+| `GET /api/n8n/jobs/{id}/exportnachweis` | `GET /api/n8n/rapporte/{id}/exportnachweis` |
+| `GET {download_pfad}` | `GET /api/n8n/rapporte/{id}/exportdatei/{exportId}` |
+| `POST /api/n8n/jobs/{id}/archivierung-bestaetigen` | `POST /api/n8n/rapporte/{id}/archivierung-bestaetigen` |
+
+Das Manifest hat Version 2 mit `metadaten.art = "rapport"`, `zahlung: null` und
+`positionen: []`; die Metadaten enthalten Markierer:in, Bemerkung und die
+Kenntnisnahmen. Ein Rapport über den Rechnungspfad (und umgekehrt) liefert 404.
+Rapporte werden **nicht** in Bexio gebucht.
+
+**Betreiberhinweis:** In n8n ist ein **separater Zweig** einzurichten, der
+Rapporte abholt, nach Paperless lädt und die Quittung zurückmeldet. Der
+bestehende Rechnungs-Workflow bleibt unverändert. `pdf-bereinigung` löscht die
+lokale Datei eines quittierten Rapports nach sieben Tagen und setzt
+`archiviert`.
+
 ## n8n-Schritte
 
 1. Export-ID, Manifest und Prozessfortschritt dauerhaft unter der Export-ID speichern.

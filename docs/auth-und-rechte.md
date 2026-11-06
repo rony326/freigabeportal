@@ -115,7 +115,7 @@ additive Rechte, unabhängig von ChurchTools-Gruppen
 - `kreditkarten_verwalten`: Kreditkarten anlegen/bearbeiten/(de)aktivieren und Erfasser pflegen — erlaubt `/admin/kreditkarten/*`, siehe [kreditkarten-belege.md](kreditkarten-belege.md#rechte)
 - `sync_verwalten`: Sync konfigurieren (zusätzlich zu `sync_einsehen`)
 - `vorgaenge_einsehen`: Übersicht laufender Vorgänge — erlaubt `GET /admin/vorgaenge` und `GET /admin/vorgaenge/:id`
-- `workflow_eingreifen`: in laufende Vorgänge eingreifen — Force-Aktionen bei hängenden Jobs, Altfälle und Umhängen (`POST /admin/vorgaenge/:id/umhaengen`)
+- `workflow_eingreifen`: in laufende Vorgänge eingreifen — Force-Aktionen bei hängenden Jobs, Altfälle und Umhängen (`POST /admin/vorgaenge/:id/umhaengen`); gilt auch für Rapporte: Empfänger ersetzen/entfernen und Markierung aufheben (`POST /admin/vorgaenge/:id/rapport/…`) sowie `POST /kontierung/:id/rapport-aufheben` für Dritte. Das Bestätigen eines Rapports ist **kein** Recht, sondern an die namentlich zugeteilte Person gebunden (kein Ferienmodus, keine Vertretung)
 - `betrieb_einsehen` („Betrieb & Nutzung“): Nutzungsdaten und Fehler einsehen, Fehlermeldungen bearbeiten, Banner und Datenschutztext verwalten — erlaubt `/admin/betrieb/*`, siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md)
 
 `superadmin` erhält jedes dieser Rechte automatisch über sein

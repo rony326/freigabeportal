@@ -16,6 +16,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [auth-und-rechte.md](auth-und-rechte.md) | ChurchTools-OAuth2-Login, Rollenmodell (Gruppen) und additive Einzelrechte, Job-Autorisierung |
 | [datenmodell.md](datenmodell.md) | Alle Datenbanktabellen, ER-Diagramm, wichtige Constraints |
 | [rechnungs-workflow.md](rechnungs-workflow.md) | Der zentrale Prozess: Status-Modell einer Rechnung, Kontierung, Gutschriften, Freigabe 1/2, Ablehnung, Aufsplitten, Splitgruppen-Export, Löschung |
+| [rechnungs-workflow.md#9-rapporte-status-kenntnisnahme](rechnungs-workflow.md#9-rapporte-status-kenntnisnahme) | Rapporte (nur zur Kenntnis): Markierung in der Kontierung, Bestätigung durch alle Empfänger:innen, Erinnerung/Eskalation, Admin-Eingriff, Archivierung über eigene n8n-Endpunkte |
 | [kommentare.md](kommentare.md) | Kommentare an Rechnungen: Sichtrecht, @Erwähnungen, Mails und Links, Unveränderlichkeit, Marke „neu“, Abschnitt auf dem finalen PDF, Konflikt bei Freigabe 2 |
 | [spesen-einreichung.md](spesen-einreichung.md) | Zweite Domäne neben Lieferantenrechnungen: Spesen/Auslagen-Einreichung durch die Person selbst, eigene Freigabe-1-Seite |
 | [kreditkarten-belege.md](kreditkarten-belege.md) | Dritte Domäne: Vorab-Erfassung von Kreditkartenbelegen, Abgleich gegen die Monatsabrechnung als erweitertes Aufsplitten |
@@ -28,7 +29,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md) | RFC3161-Zeitstempel, Nachhol-Mechanismus, Verifikations- und Zertifikatsseite |
 | [ersteinrichtung.md](ersteinrichtung.md) | Geführter Einrichtungsassistent `/admin/ersteinrichtung`: 14 Schritte, Messregeln, Tests, Dashboard-Hinweis, Statusdienst `einrichtung` |
 | [admin-bereich.md](admin-bereich.md) | Alle Admin-Seiten mit den jeweils benötigten Rechten |
-| [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md) | Die fünfzehn automatischen Hintergrund-Jobs, persistente Mailzustellung mit Wiederholung, Eskalationslogik, Verhalten nach Neustart |
+| [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md) | Die sechzehn automatischen Hintergrund-Jobs, persistente Mailzustellung mit Wiederholung, Eskalationslogik, Verhalten nach Neustart |
 | [personen-sync.md](personen-sync.md) | Nächtlicher ChurchTools-Personen-/Gruppen-Sync: Zugangsmodell (Gruppenaustritt vs. entzogener Zugang vs. Ausfall), Schutzmechanismen, "stalled jobs" |
 | [backup-verschluesselung.md](backup-verschluesselung.md) | **Verbindlich:** verschlüsselte `.fpbak`-Sicherungen, Schlüsselbund und Schlüsselaufbewahrung, Rotation, n8n-Abholung, Altsicherungen |
 | [offline-restore.md](offline-restore.md) | **Verbindlich:** Offline-Wiederherstellung und Rückwechsel, Prozesssperre, verwaiste Sperren |

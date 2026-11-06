@@ -9,6 +9,7 @@ import {
   createJob, claimJob, setKontierung, updateKontierungMetadaten, abschliessenFreigabe1,
   abschliessenFreigabe2, ablehnenJob, setThumbnailPfad, createSpesenPosition,
 } from '../../db/jobsRepo.js';
+import { markiereAlsRapport, bestaetigeKenntnisnahme, schliesseRapportAbWennVollstaendig } from '../../db/rapporteRepo.js';
 import { createFreigabe } from '../../db/freigabenRepo.js';
 import { createSpesenabrechnung } from '../../db/spesenabrechnungenRepo.js';
 import { renderFirstPageThumbnail } from '../thumbnail.js';
@@ -72,6 +73,14 @@ function bisFreigabe2(db, id, kontoId, lieferant, kreditorId, betrag) {
   abschliessenFreigabe1(db, id);
 }
 
+// Anna übernimmt und markiert den Beleg als Rapport für die genannten Personen.
+function rapportAlsRapport(db, id, empfaengerIds, bemerkung) {
+  claimJob(db, id, 'test-1');
+  const zeitpunkt = new Date().toISOString();
+  markiereAlsRapport(db, id, { markiertVon: 'test-1', empfaengerIds, bemerkung, zeitpunkt });
+  createFreigabe(db, { jobId: id, personId: 'test-1', rolle: 'rapport_markiert', zeitpunkt, ip: '127.0.0.1', interessenskonflikt: false, kommentar: empfaengerIds.join(', ') });
+}
+
 export async function spieleBeispieldatenEin(db, testConfig) {
   for (const p of BEISPIELPERSONEN) {
     upsertPerson(db, { id: p.id, vorname: p.vorname, nachname: p.nachname, email: `${p.vorname.toLowerCase()}@beispiel.invalid`, gruppen: p.gruppen });
@@ -106,6 +115,15 @@ export async function spieleBeispieldatenEin(db, testConfig) {
   bisFreigabe2(db, fertig.id, konto1, 'Muster Druck AG', k1, '300.00');
   createFreigabe(db, { jobId: fertig.id, personId: 'test-2', rolle: 'freigeber2', zeitpunkt: new Date().toISOString(), ip: '127.0.0.1', interessenskonflikt: false });
   abschliessenFreigabe2(db, fertig.id);
+
+  // Rapporte (nur zur Kenntnis): einer offen (Ben bestätigt, Carla offen), einer abgeschlossen
+  const rapportOffen = await neuerJob(db, testConfig, 'Rapport zur Kenntnis', 'Muster Druck AG', '0.00');
+  rapportAlsRapport(db, rapportOffen.id, ['test-2', 'test-3'], 'Beispiel: Bitte zur Kenntnis nehmen');
+  bestaetigeKenntnisnahme(db, rapportOffen.id, 'test-2', new Date().toISOString());
+  const rapportFertig = await neuerJob(db, testConfig, 'Abgeschlossener Rapport', 'Beispiel Büro GmbH', '0.00');
+  rapportAlsRapport(db, rapportFertig.id, ['test-2'], null);
+  bestaetigeKenntnisnahme(db, rapportFertig.id, 'test-2', new Date().toISOString());
+  schliesseRapportAbWennVollstaendig(db, rapportFertig.id, new Date().toISOString());
 
   // Spesenposition von Carla
   const now = new Date().toISOString();

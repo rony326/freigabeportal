@@ -56,7 +56,7 @@ kleinen Bildschirmen. Schlüsseltabelle und Cookie-Logik:
 | Personen | `/admin/personen` | `superadmin` oder `manager` |
 | Mail-Protokoll | `/admin/mails` | Einzelrecht `mails_einsehen` |
 | Personen-Sync | `/admin/sync` | `sync_einsehen`; Konfiguration zusätzlich `sync_verwalten`, Force-Aktionen zusätzlich `workflow_eingreifen` |
-| Laufende Vorgänge | `/admin/vorgaenge` | Einzelrecht `vorgaenge_einsehen` (Umhängen: `workflow_eingreifen`); `superadmin` ✓, `manager` ✓ (nur ansehen) |
+| Laufende Vorgänge | `/admin/vorgaenge` | Einzelrecht `vorgaenge_einsehen` (Umhängen: `workflow_eingreifen`); `superadmin` ✓, `manager` ✓ (nur ansehen); bei Rapporten Ersetzen/Entfernen/Aufheben ebenfalls `workflow_eingreifen` |
 | Abgelehnte Rechnungen | `/admin/abgelehnt` | Einzelrecht `abgelehnt_verwalten` |
 | Altfälle | `/admin/altfaelle` | Einzelrecht `workflow_eingreifen` (nicht im Manager-Bündel) |
 | Geplante Jobs | `/admin/geplante-jobs` | Einzelrecht `geplante_jobs_verwalten` |
@@ -71,6 +71,8 @@ kleinen Bildschirmen. Schlüsseltabelle und Cookie-Logik:
 | Testmodus | `/admin/testmodus` | `superadmin` oder `manager`; Spielwiese zum gefahrlosen Ausprobieren, siehe [testmodus.md](testmodus.md) |
 
 Die Seite **Laufende Vorgänge** zeigt alle Vorgänge in `unzugewiesen`, `zugewiesen`, `freigabe2` und `abgelehnt`; mit `workflow_eingreifen` lassen sie sich umhängen. Details: [rechnungs-workflow.md](rechnungs-workflow.md#8-admin-eingriff-laufende-vorgänge-umhängen).
+
+**Rapporte im Dashboard:** Die Liste zeigt auch Rapporte (Status `kenntnisnahme`) mit der Art «Rapport» und dem Stand «n von m» bestätigt; Filter `?typ=rapport`. Auf der Detailseite kann man mit `workflow_eingreifen` je offener Empfängerin bzw. offenem Empfänger **Ersetzen** (neue Person, per Mail informiert) oder **Entfernen** (Begründung mindestens 10 Zeichen) und die ganze Markierung **Aufheben**. Das allgemeine Umhängen ist für Rapporte nicht vorgesehen. Siehe [rechnungs-workflow.md](rechnungs-workflow.md#9-rapporte-status-kenntnisnahme).
 
 Die mit **nur `superadmin`** markierten Bereiche lassen sich als
 Einzelrecht gar nicht vergeben — strukturell abgesichert über den
@@ -121,6 +123,12 @@ dieselben Werte für Rechnungen, die in `freigabe2` festhängen:
 selbst geht an keine konfigurierbare Liste, sondern immer an die
 tatsächlich zuständige Person. Siehe
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#freigabe2-erinnerungen).
+
+Für **Rapporte** (nur zur Kenntnis) gibt es drei weitere Felder:
+`rapport_reminder_stunden` (Default 72, Reminder an jede offene Person),
+`rapport_eskalation_stunden` (Default 168, einmalige Eskalation je Rapport) und
+`rapport_eskalation_empfaenger` (leer = Admin-Gruppe). Siehe
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#rapport-erinnerungen).
 
 ## Erscheinungsbild (`/admin/erscheinungsbild`)
 
@@ -185,12 +193,13 @@ beschreibt noch den früheren ZIP-/Live-Restore-Stand.
 ## Module (`/admin/module`)
 
 Ein/Aus-Schalter für optionale Portal-Bereiche, gespeichert im
-`admin_config`-Key/Value-Store wie jeder andere Schalter. Aktuell drei
+`admin_config`-Key/Value-Store wie jeder andere Schalter. Aktuell vier
 Modul-Einträge (Default: **Spesenmodul aktiv**, **Kreditkartenmodul
-deaktiviert**):
+deaktiviert**, **Rapporte-Modul deaktiviert**):
 
 - **Spesenmodul** (`modul_spesen_aktiv`) — deaktiviert blendet "Spesen einreichen" in der Seitenleiste (Reiter Portal, Gruppe Spesen) aus und lässt `GET /spesen/neu`/`POST /spesen` mit `403` abweisen; bereits eingereichte Spesen-Positionen laufen unverändert durch Freigabe 1/2 (siehe [spesen-einreichung.md](spesen-einreichung.md)).
 - **Kreditkartenmodul** (`modul_kreditkarten_aktiv`, Default aus) — deaktiviert blendet "Kreditkartenbelege" in der Seitenleiste (Reiter Portal, Gruppe Belege) aus, blockiert neue Uploads (`GET /kreditkarte`/`POST /kreditkarte/belege` → `403`) und neue Markierungen als Kreditkartenabrechnung; bereits markierte Abrechnungen lassen sich weiter abgleichen, bestehende Teil-Jobs laufen unverändert weiter (siehe [kreditkarten-belege.md](kreditkarten-belege.md#modul-schalter-adminmodule)).
+- **Rapporte-Modul** (`modul_rapporte_aktiv`, Default aus) — eingeschaltet erscheint in der Kontierung der dritte Typ «Nur zur Kenntnis (Rapport)»; ausgeschaltet verschwindet die Auswahl, und ein Markieren als Rapport wird mit `409` abgewiesen. Bereits markierte Rapporte laufen unverändert weiter (Bestätigung, Erinnerung, Archivierung). Siehe [rechnungs-workflow.md](rechnungs-workflow.md#9-rapporte-status-kenntnisnahme).
 - **Strikte Freigeber1-Prüfung** (`kontierung_strikte_freigeber1_pruefung`, Default aus) — siehe [rechnungs-workflow.md](rechnungs-workflow.md#2-kontierung-status-zugewiesen).
 
 Gedacht als Sammelstelle für künftige, ebenfalls unabhängig einführbare Module.
@@ -273,7 +282,7 @@ unveränderlich. Siehe
 
 ## Geplante Jobs (`/admin/geplante-jobs`)
 
-Zeitplan-Konfiguration und manuelles Sofort-Auslösen von acht der fünfzehn
+Zeitplan-Konfiguration und manuelles Sofort-Auslösen von neun der sechzehn
 Hintergrund-Jobs (`datenbank-sicherung` und `mail-digest` haben eigene
 Konfigurationsseiten, siehe oben; `sicherheitsalarme` nur über
 `admin_config`), inklusive ihrer Lauf-Historie — einschließlich des

@@ -4,7 +4,7 @@
 
 Kein externer Task-Scheduler nötig: Solange der Node-Prozess läuft
 (Infomaniaks Node.js-Hosting hält ihn dauerhaft am Leben), plant sich die
-App **fünfzehn** Hintergrund-Jobs selbst ein (`src/services/scheduler.js`,
+App **sechzehn** Hintergrund-Jobs selbst ein (`src/services/scheduler.js`,
 gestartet in `src/index.js`). Jeder Zeitplan wird bei **jedem** Tick neu
 aus `admin_config` gelesen (nicht einmalig beim Start) — eine gespeicherte
 Änderung wirkt ab dem nächsten Lauf, ganz ohne Neustart.
@@ -60,7 +60,7 @@ flowchart LR
   [offline-restore.md](offline-restore.md#abbruch-und-sperren). Solange der
   Server deshalb nicht läuft, laufen auch keine Jobs — siehe erster Punkt.
 
-## Die fünfzehn Jobs
+## Die sechzehn Jobs
 
 | Job | Standard-Zeitplan | Einstellbar unter | `POST /internal/cron/…` | Protokoll | Zweck |
 |---|---|---|---|---|---|
@@ -70,6 +70,7 @@ flowchart LR
 | `pdf-bereinigung` | täglich 02:30 | Geplante Jobs | ja | `cron_log` | archiviert abgeholte Jobs, räumt verwaiste `.tmp`-Stempeldateien, abgeschlossene `mail_log`-Einträge und Dateien verworfener Kreditkartenbelege über der Aufbewahrungsfrist auf |
 | `zeitstempel-nachholen` | alle 5 Minuten | Geplante Jobs | ja | `cron_log` | wiederholt fehlgeschlagene RFC3161-Stempelversuche |
 | `split-gruppen-nachholen` | alle 15 Minuten | Geplante Jobs | ja | `cron_log` | holt eine noch nicht zusammengeführte Splitgruppe nach (unvollständig oder am TSA gescheitert) |
+| `rapport-erinnerungen` | alle 60 Minuten | Geplante Jobs | ja | `cron_log` | Reminder und einmalige Eskalation für Rapporte, die noch nicht von allen Empfänger:innen zur Kenntnis genommen wurden; holt Abschlüsse nach |
 | `kk-beleg-erinnerungen` | täglich 08:00 (Europe/Zürich) | Geplante Jobs | ja | `cron_log` | Erinnerungs-Mails für seit langem offene Kreditkartenbelege/-entwürfe und noch nicht abgeglichene Kreditkartenabrechnungen |
 | `mail-zustellung` | alle 5 Minuten | Geplante Jobs | ja | `cron_log` (nur Läufe mit fälligen Mails) | wiederholt eingereihte, noch nicht zugestellte Mails und gescheiterte Digests mit wachsendem Abstand |
 | `datenbank-sicherung` | täglich 03:00 (Europe/Zürich) | Datenbank-Backup | nein | `cron_log` | verschlüsselte `.fpbak`-Sicherung von DB + `JOBS_DIR` + `BRANDING_DIR` nach `BACKUP_DIR`, Retention nur für `.fpbak` |
@@ -334,6 +335,31 @@ Versuche je Mail `mail_zustellung_max_versuche` (Default 8, nur über
 40 … Minuten, höchstens 6 Stunden — mit dem Default also rund 10½ Stunden
 bis zur endgültigen Aufgabe.
 
+### `rapport-erinnerungen`
+
+Läuft immer (auch bei ausgeschaltetem Rapporte-Modul, damit bereits
+markierte Rapporte nicht liegenbleiben). Intervall
+`cron_rapport_erinnerungen_intervall_minuten` (Default 60). Ein Lauf:
+
+1. **Nachholen:** Rapporte ohne offene Empfänger:innen und mit mindestens
+   einer Bestätigung werden abgeschlossen (`schliesseRapporteNach`), bevor
+   erinnert oder eskaliert wird.
+2. **Reminder:** jede **offene** Person erhält nach `rapport_reminder_stunden`
+   (Default 72, ab Zuteilung) einmal die Mail `rapport-reminder`
+   (Marker `kenntnisnahmen.erinnert_am`). Inaktive oder in ChurchTools nicht
+   mehr auflösbare Personen werden nicht erinnert.
+3. **Eskalation:** nach `rapport_eskalation_stunden` (Default 168) geht
+   **einmal je Rapport** die Mail `rapport-eskalation` an
+   `rapport_eskalation_empfaenger` (leer = Admin-Gruppe, anders als bei
+   Freigabe 2) mit den noch offenen Personen und einem Link auf
+   `/admin/vorgaenge?typ=rapport` (Marker `jobs.rapport_eskaliert_am`).
+   Inaktive Empfänger:innen lösen die Eskalation sofort aus.
+
+Der Ferienmodus wird ignoriert: erinnert wird immer die genannte Person.
+Auswahl, Marker und Einreihen geschehen in einer Transaktion; die Zustellung
+folgt danach wie bei den übrigen Erinnerungs-Jobs. Einstellung unter
+**Admin → Eskalationszeiten**.
+
 ### `kk-beleg-erinnerungen`
 
 Läuft nur, wenn sowohl das Kreditkartenmodul (`modul_kreditkarten_aktiv`)
@@ -424,6 +450,9 @@ codierten Strings.
 | `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Kreditor erfasst |
 | `duplikat-warnung` | Möglicher Doppelscan: gleicher Kreditor, Betrag und Zahlungsziel, Eingang binnen 14 Tagen |
 | `kk-abrechnung-zugewiesen` | Kreditkartenabrechnung (manuell oder automatisch erkannt) einer Karte zugeordnet — geht an die verantwortliche Person |
+| `rapport-zuweisung` | Rapport zur Kenntnis zugeteilt (bzw. Empfänger ersetzt) — an die zugeteilte Person; **folgt** der persönlichen Sofort-/Digest-Wahl; Ferienvertretung wird nicht informiert |
+| `rapport-reminder` | offene Kenntnisnahme länger als `rapport_reminder_stunden` unbestätigt — an die Person selbst, **immer sofort** |
+| `rapport-eskalation` | Rapport länger als `rapport_eskalation_stunden` nicht vollständig bestätigt — an `rapport_eskalation_empfaenger` (leer = Admin-Gruppe), **immer sofort** |
 | `kk-beleg-erinnerung` | seit langem offener Kreditkartenbeleg/-entwurf bzw. noch nicht abgeglichene Kreditkartenabrechnung (Job `kk-beleg-erinnerungen`, siehe oben) |
 | `admin-umzuweisung` | Admin hat einen laufenden Vorgang umgehängt; an die neue Person (plus deren Ferienvertretung) und die bisherige; **immer sofort** wie `sync-fehler`/`iban-warnung`/`kk-beleg-eingegangen` |
 | `kk-beleg-eingegangen` | per Mail eingereichter Kreditkartenbeleg als Entwurf angelegt — **immer sofort**, unabhängig von der persönlichen Wahl (Link zum Vervollständigen soll nicht bis zum nächsten Digest warten) |
@@ -439,10 +468,10 @@ sofort zugestellten Typen**, die nie warten. Das sind genau die Typen in
 `sync-fehler`, `iban-warnung`, `kk-beleg-eingegangen`, `admin-umzuweisung`,
 `audit-pruefnummer`, `neues-geraet`, `fehlermeldung`, `testmail`, `reminder`,
 `eskalation`, `freigabe2-reminder`, `freigabe2-eskalation`,
-`kk-beleg-erinnerung`, `sicherheitsalarm`, `duplikat-warnung` und
+`rapport-reminder`, `rapport-eskalation`, `kk-beleg-erinnerung`, `sicherheitsalarm`, `duplikat-warnung` und
 `rechnungsnummer-warnung`. Erinnerungen und Eskalationen sind zeitkritisch
 und dürfen nie eine Woche warten; die Warnungen sind sicherheits- oder
-betriebsrelevant. Alle übrigen Typen (u. a. `zuweisung`, `ablehnung`,
+betriebsrelevant. Alle übrigen Typen (u. a. `zuweisung`, `rapport-zuweisung`, `ablehnung`,
 `kommentar`, `kk-abrechnung-zugewiesen`) folgen der Wahl.
 
 ### Persönliche Benachrichtigungen (Meine Benachrichtigungen)

@@ -188,6 +188,32 @@ ausgeliefert, unabhängig von ihrem eigenen Status.
 - [Archivvertrag und n8n-Umstellung](n8n-paperless-archivierung.md) beschreibt
   die neuen Endpunkte, Wiederholungen und den Nachweis aus Paperless.
 
+## Rapporte (nur zur Kenntnis)
+
+Rapporte (`jobs.typ = 'rapport'`, siehe [rechnungs-workflow.md](rechnungs-workflow.md#9-rapporte-status-kenntnisnahme))
+laufen **nicht** über `/api/n8n/jobs/*`: dort liefern alle Endpunkte für einen
+Rapport 404, und `abholbereit`/`archivierung-ausstehend` enthalten keine
+Rapporte. Sie haben einen eigenen Pfad mit demselben Header `X-API-Key`
+(`N8N_API_KEY`):
+
+| Endpunkt | Zweck |
+|---|---|
+| `GET /api/n8n/rapporte/abholbereit` | abgeschlossene Rapporte (Einträge mit `art: "rapport"`, `export_nachweis_url`); gleiche Zeitstempel-Bedingung wie bei Rechnungen |
+| `GET /api/n8n/rapporte/archivierung-ausstehend?nach_id=` | abgeholte/archivierte Rapporte ohne Archivquittung |
+| `GET /api/n8n/rapporte/:id/exportnachweis` | Exportmanifest (Version 2) |
+| `GET /api/n8n/rapporte/:id/exportdatei/:exportId` | die zum Nachweis gehörenden PDF-Bytes |
+| `POST /api/n8n/rapporte/:id/archivierung-bestaetigen` | Archivquittung wie bei Rechnungen |
+
+Das Manifest trägt `metadaten.art = "rapport"` (mit Markierer:in, Bemerkung und
+den Kenntnisnahmen samt Zeitpunkten), `nachweis_status: "kenntnisnahme"`,
+`zahlung: null` und `positionen: []`. **Der Rapport darf nicht in Bexio
+gebucht werden**; er wird nur in Paperless archiviert.
+
+**Betreiberhinweis:** n8n braucht dafür einen **eigenen, zusätzlichen Zweig**
+(Abholung `rapporte/abholbereit` → Paperless → Quittung). Der bestehende
+Rechnungs-Workflow bleibt unverändert; ohne den neuen Zweig bleiben
+abgeschlossene Rapporte im Status `abgeschlossen`.
+
 ## Backup-Abholung
 
 `GET /api/n8n/backup/latest` (`X-API-Key`, ausschliesslich der separate

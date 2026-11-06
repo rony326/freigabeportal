@@ -71,6 +71,7 @@ Beim Aufbau (und nach jedem Zurücksetzen) legt das System Folgendes an:
   kein echtes Dokument“): eine im Pool (120.00), eine bei Anna zugewiesen
   (86.50), eine zur Freigabe 2 bei Ben (450.00), eine abgelehnte (99.90) und
   eine abgeschlossene (300.00).
+- **Rapporte:** ein offener Rapport «Rapport zur Kenntnis» für Ben und Carla, von Ben bereits bestätigt (Status `kenntnisnahme`, 1 von 2), und ein abgeschlossener Rapport für Ben. Beide sind von Anna markiert. Neue Rapporte lassen sich in der Spielwiese nur markieren, wenn das Rapporte-Modul in den kopierten Einstellungen eingeschaltet ist.
 - **Spesen:** eine Position von Carla (23.40, „Beispiel-Spesen“), zugewiesen an Anna.
 
 Alle Einstellungen der echten App (Eskalationszeiten, Mail-Vorlagen, Module,

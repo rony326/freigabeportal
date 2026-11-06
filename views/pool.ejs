@@ -84,6 +84,11 @@
       <%- jobListe({ jobs: meineFreigaben, idPrefix: 'freigabe2', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben' }) %>
     <% } %>
 
+    <% if (typeof meineRapporte !== 'undefined' && meineRapporte.length > 0) { %>
+      <h2 class="h5 mt-4">Zur Kenntnis</h2>
+      <%- jobListe({ jobs: meineRapporte, idPrefix: 'rapport', linkPrefix: '/rapporte', aktionLabel: 'Ansehen' }) %>
+    <% } %>
+
     <% if (meineAbgelehnten.length > 0) { %>
       <h2 class="h5 mt-4">Meine abgelehnten Jobs</h2>
       <%- jobListe({ jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen' }) %>
@@ -91,7 +96,8 @@
 
     <% if (poolJobs.length === 0 && ruecklaeufer.length === 0 && adminEskalierteKontierungen.length === 0 && adminEskalierteFreigaben.length === 0
          && adminEskalierteSpesenFreigaben.length === 0 && meineKontierungen.length === 0 && meineSpesenFreigaben.length === 0
-         && meineFreigaben.length === 0 && meineAbgelehnten.length === 0) { %>
+         && meineFreigaben.length === 0 && meineAbgelehnten.length === 0
+         && (typeof meineRapporte === 'undefined' || meineRapporte.length === 0)) { %>
       <p class="text-muted mt-4">Keine offenen Aufgaben. Abgeschlossene Rechnungen findest du unter <a href="/meine-abgeschlossenen">Abgeschlossene Rechnungen</a>, deine Spesen-Einreichungen unter <a href="/meine-spesen">Meine Spesen</a>.</p>
     <% } %>
 

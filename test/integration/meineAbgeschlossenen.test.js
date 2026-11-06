@@ -143,3 +143,40 @@ test('P2: Router ohne config (Test-Harness) verkraftet Kommentare — Liste ohne
   assert.doesNotMatch(res.text, /kommentar-marke/);
   db.close();
 });
+
+test('abgeschlossener Rapport (ohne Konto) erscheint für Markierer und Empfänger, als «Rapport» gekennzeichnet; nicht für Unbeteiligte', async () => {
+  const { markiereAlsRapport } = await import('../../src/db/rapporteRepo.js');
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  for (const id of ['2', '3']) upsertPerson(db, { id, vorname: `P${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [], loggedInNow: false });
+  const jobId = createJob(db, { eingangAm: '2026-11-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rapport-fertig.pdf', pdfPfad: '/tmp/r.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '50' WHERE id = ?").run(jobId);
+  markiereAlsRapport(db, jobId, { markiertVon: '50', empfaengerIds: ['2'], bemerkung: null, zeitpunkt: '2026-11-01T00:00:00.000Z' });
+  db.prepare("UPDATE kenntnisnahmen SET bestaetigt_am = '2026-11-02T00:00:00.000Z' WHERE job_id = ?").run(jobId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen', zugewiesen_an = NULL WHERE id = ?").run(jobId);
+  const app = buildTestApp(db);
+  for (const person of ['50', '2']) {
+    const res = await request(app).get('/meine-abgeschlossenen').set('x-test-person-id', person);
+    assert.equal(res.status, 200);
+    assert.match(res.text, /rapport-fertig\.pdf/, `Person ${person}`);
+    assert.match(res.text, />Rapport</);
+  }
+  const fremd = await request(app).get('/meine-abgeschlossenen').set('x-test-person-id', '3');
+  assert.doesNotMatch(fremd.text, /rapport-fertig\.pdf/);
+  db.close();
+});
+
+test('frühere Kenntnisnahme-Zeile einer aufgehobenen Markierung macht eine spätere Rechnung nicht sichtbar', async () => {
+  const { markiereAlsRapport, hebeRapportMarkierungAuf } = await import('../../src/db/rapporteRepo.js');
+  const db = openDatabase(':memory:');
+  seedBuchhaltungPerson(db, '50');
+  upsertPerson(db, { id: '2', vorname: 'P2', nachname: 'Muster', email: 'p2@example.org', gruppen: [], loggedInNow: false });
+  const jobId = createJob(db, { eingangAm: '2026-11-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'spaeter-rechnung.pdf', pdfPfad: '/tmp/r.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '50' WHERE id = ?").run(jobId);
+  markiereAlsRapport(db, jobId, { markiertVon: '50', empfaengerIds: ['2'], bemerkung: null, zeitpunkt: '2026-11-01T00:00:00.000Z' });
+  hebeRapportMarkierungAuf(db, jobId);
+  db.prepare("UPDATE jobs SET status = 'abgeschlossen' WHERE id = ?").run(jobId);
+  const res = await request(buildTestApp(db)).get('/meine-abgeschlossenen').set('x-test-person-id', '2');
+  assert.doesNotMatch(res.text, /spaeter-rechnung\.pdf/);
+  db.close();
+});

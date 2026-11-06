@@ -175,3 +175,8 @@ export function markRapportEskaliert(db, jobId, zeitpunkt) {
     .prepare('UPDATE jobs SET rapport_eskaliert_am = ? WHERE id = ? AND rapport_eskaliert_am IS NULL')
     .run(zeitpunkt, jobId).changes > 0;
 }
+
+// Auch entfernte/ersetzte Zeilen zählen: wer je Empfänger war, darf den Rapport weiter ansehen.
+export function hatKenntnisnahmeZeile(db, jobId, personId) {
+  return Boolean(db.prepare('SELECT 1 FROM kenntnisnahmen WHERE job_id = ? AND person_id = ? LIMIT 1').get(jobId, personId));
+}

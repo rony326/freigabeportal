@@ -331,6 +331,85 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
   }
 }
 
+export const KENNTNISNAHME_TITEL = 'Zur Kenntnis genommen';
+
+function kenntnisnahmeZeile(k) {
+  const name = einzeilig(k.name);
+  if (k.bestaetigtAm) return `${name} — zur Kenntnis genommen am ${formatZeitpunkt(k.bestaetigtAm)}`;
+  if (k.entferntAm) {
+    const was = k.ersetztDurch ? `ersetzt durch ${einzeilig(k.ersetztDurch)}` : 'entfernt';
+    const von = k.entferntVon ? ` von ${einzeilig(k.entferntVon)}` : '';
+    const grund = k.begruendung ? ` — Begründung: ${einzeilig(k.begruendung)}` : '';
+    return `${name} — ${was} am ${formatZeitpunkt(k.entferntAm)}${von}${grund}`;
+  }
+  return `${name} — offen`;
+}
+
+// Vermerk eines Rapports (nur zur Kenntnis): ersetzt den Freigabestempel, trägt also weder Konto
+// noch Betrag. Eine angehängte A4-Hochformat-Seite (Folgeseiten bei vielen Empfängern/Kommentaren),
+// gleiche Fehlermeldungen wie stampAndFinalize.
+export async function stampKenntnisnahme(pdfBuffer, data) {
+  let doc;
+  try {
+    doc = await PDFDocument.load(pdfBuffer);
+  } catch {
+    throw new Error('PDF konnte nicht geladen werden – Datei ist beschädigt oder kein gültiges PDF.');
+  }
+
+  try {
+    if (doc.getPages().length === 0) {
+      throw new Error('PDF enthält keine Seiten und kann nicht gestempelt werden.');
+    }
+    const width = STAMP_WIDTH;
+    const height = STAMP_HEIGHT;
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
+    const maxWidth = width - PAGE_MARGIN;
+
+    const page = doc.addPage([width, height]);
+    let y = height - 50;
+    if (data.testmodus === true) y = zeichneTestmodusMarke(page, boldFont, font, y);
+    page.drawText(KENNTNISNAHME_TITEL, { x: 60, y, size: 16, font: boldFont, color: rgb(0, 0, 0) });
+    y -= 26;
+    if (data.jobId != null) {
+      page.drawText(`Job-ID: ${data.jobId}`, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });
+      y -= 26;
+    }
+    const kopf = [`Weitergegeben von: ${einzeilig(data.markiertVon?.name)}`];
+    if (data.markiertVon?.zeitpunkt) kopf.push(`Weitergegeben am: ${formatZeitpunkt(data.markiertVon.zeitpunkt)}`);
+    for (const line of kopf) {
+      for (const wrapped of wrapLine(font, line, 10, maxWidth)) {
+        page.drawText(wrapped, { x: 60, y, size: 10, font, color: rgb(0, 0, 0) });
+        y -= 14;
+      }
+    }
+
+    let fortsetzung = { page, y };
+    const bemerkung = winAnsiSicher(data.bemerkung).trim();
+    if (bemerkung) {
+      const zeilen = bemerkung.split('\n').flatMap((absatz) => {
+        const umbrochen = wrapLine(font, absatz, 9, maxWidth);
+        return umbrochen.length ? umbrochen.map((text) => ({ text })) : [{ text: '' }];
+      });
+      fortsetzung = drawAbschnitt(doc, font, 'Bemerkung', zeilen, fortsetzung.page, fortsetzung.y - BLOCK_GAP, width, height);
+    }
+
+    const empfaengerZeilen = (data.kenntnisnahmen || []).flatMap((k) => wrapLine(font, kenntnisnahmeZeile(k), 9, maxWidth).map((text) => ({ text })));
+    let { page: empfaengerSeite, y: empfaengerY } = fortsetzung;
+    empfaengerY -= BLOCK_GAP;
+    if (empfaengerY < VERLAUF_BOTTOM_MARGIN + VERLAUF_LINE_HEIGHT) {
+      empfaengerSeite = doc.addPage([width, height]);
+      empfaengerY = height - 50;
+    }
+    const nachEmpfaengern = drawAbschnitt(doc, font, 'Empfängerinnen und Empfänger', empfaengerZeilen, empfaengerSeite, empfaengerY, width, height);
+    drawKommentare(doc, font, boldFont, [{ kommentare: data.kommentare }], nachEmpfaengern, width, height);
+
+    return Buffer.from(await doc.save());
+  } catch {
+    throw new Error('PDF konnte nicht gestempelt werden – Dokument ist ungültig oder enthält Zeichen, die nicht dargestellt werden können.');
+  }
+}
+
 // Combined stamp page for a Splitgruppe: one Konto/Betrag/Position/Freigabe-1+2 block per split
 // line instead of stampAndFinalize's single Konto block, plus one shared Verlauf covering every
 // child's freigaben (caller pre-sorts/pre-labels it, see splitGruppenExport.js). Reuses

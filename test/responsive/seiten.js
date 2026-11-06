@@ -44,6 +44,7 @@ export const SEITEN = [
   { name: 'Freigabe 2', view: 'freigabe2', pfad: '/freigabe2/{freigabe2}', als: 'test-2', pdf: true },
   { name: 'Spesen-Freigabe 1', view: 'spesen-freigabe1', pfad: '/spesen-freigabe1/{spesen}', als: 'test-1', pdf: true },
   { name: 'Abgelehnt', view: 'abgelehnt', pfad: '/abgelehnt/{abgelehnt}', als: 'test-1' },
+  { name: 'Rapport', view: 'rapport', pfad: '/rapporte/{rapport}', als: 'test-1', pdf: true },
   {
     name: 'Kommentar mit Fehler', view: 'kommentar-fehler', pfad: '/kontierung/{anna}', als: 'test-1', status: 422,
     fehlerzustand: { formular: '.kommentar-form', felder: { text: LANGER_KOMMENTAR } },

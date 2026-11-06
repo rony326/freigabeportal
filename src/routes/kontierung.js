@@ -750,9 +750,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
 
   router.post('/:id/rapport-aufheben', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
+      const vorher = getJobById(db, Number(req.params.id));
       const ergebnis = await hebeRapportAuf(db, config, { jobId: Number(req.params.id), person: req.currentPerson, ip: req.ip });
       if (!ergebnis.ok) return res.status(ergebnis.status).render('error', { message: ergebnis.fehler });
-      res.redirect(`/kontierung/${req.params.id}`);
+      // Der Beleg geht an die markierende Person zurück; nur sie kann die Kontierung öffnen.
+      const istMarkierer = vorher?.rapport_markiert_von === req.currentPerson.churchtools_person_id;
+      res.redirect(istMarkierer ? `/kontierung/${req.params.id}` : '/pool');
     } catch (err) {
       next(err);
     }

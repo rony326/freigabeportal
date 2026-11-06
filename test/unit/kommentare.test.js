@@ -495,8 +495,13 @@ test('Sichtbarkeits-Prädikat (vorgeladen) = darfKommentareSehen je Person, übe
   setFerienmodus(db, '3', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
   db.prepare("UPDATE jobs SET eingereicht_von = '9' WHERE id = ?").run(jobId);
   const ids = db.prepare('SELECT churchtools_person_id AS id FROM personen WHERE aktiv = 1').all().map((r) => r.id);
+  // Rapport-Variante: Empfängerzeilen (eine davon entfernt) für 5 und 6; Markierer 8.
+  db.prepare("INSERT INTO kenntnisnahmen (job_id, person_id, zugeteilt_am) VALUES (?, '5', 'x'), (?, '6', 'x')").run(jobId, jobId);
+  db.prepare("UPDATE kenntnisnahmen SET entfernt_am = 'y' WHERE job_id = ? AND person_id = '6'").run(jobId);
   const varianten = [
     {},
+    { typ: 'rapport', status: 'kenntnisnahme', rapport_markiert_von: '8', konto_id: null },
+    { typ: 'rapport', status: 'abgeschlossen', rapport_markiert_von: '8', konto_id: null },
     { status: 'freigabe2' },
     { status: 'freigabe2', freigabe2_eskaliert_von: '3' },
     { status: 'freigabe2', freigabe2_umgeleitet_an: '5' },

@@ -24,6 +24,7 @@ const ZURUECK_MUSTER = [
   /^\/abgelehnt\/\d+$/,
   /^\/spesen-freigabe1\/\d+$/,
   /^\/admin\/vorgaenge\/\d+$/,
+  /^\/rapporte\/\d+$/,
   /^\/zeitstempel-pruefen\?jobId=\d+$/,
 ];
 

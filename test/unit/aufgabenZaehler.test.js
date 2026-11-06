@@ -115,3 +115,18 @@ test('loadNavFlags zählt für Superadmins eskalierte Aufgaben im Badge', () => 
   assert.ok(!(aufgaben(resNormal).zaehler ?? aufgaben(resNormal).badge));
   db.close();
 });
+
+test('zaehleOffeneAufgaben zählt offene Rapporte der Person (+1), bestätigte nicht mehr', async () => {
+  const { markiereAlsRapport, bestaetigeKenntnisnahme } = await import('../../src/db/rapporteRepo.js');
+  const db = setup();
+  const a = neuerJob(db, 'rapport.pdf');
+  claimJob(db, a, '50');
+  assert.equal(zaehleOffeneAufgaben(db, '1'), 0);
+  markiereAlsRapport(db, a, { markiertVon: '50', empfaengerIds: ['1', '2'], bemerkung: null, zeitpunkt: '2026-11-01T00:00:00.000Z' });
+  assert.equal(zaehleOffeneAufgaben(db, '1'), 1);
+  assert.equal(zaehleOffeneAufgaben(db, '50'), 0, 'der Markierer hat keine Aufgabe mehr');
+  bestaetigeKenntnisnahme(db, a, '1', '2026-11-02T00:00:00.000Z');
+  assert.equal(zaehleOffeneAufgaben(db, '1'), 0);
+  assert.equal(zaehleOffeneAufgaben(db, '2'), 1);
+  db.close();
+});

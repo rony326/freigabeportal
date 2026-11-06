@@ -21,6 +21,7 @@ import { createKreditkarte, setErfasser } from '../../src/db/kreditkartenRepo.js
 import { createKkBeleg } from '../../src/db/kkBelegeRepo.js';
 import { createJob, markiereJobAlsKkAbrechnung } from '../../src/db/jobsRepo.js';
 import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
+import { markiereAlsRapport } from '../../src/db/rapporteRepo.js';
 
 export const STANDARD_PERSON = 'test-4'; // Dora, Superadmin in der Test-Konfiguration
 const PERSONEN = new Set(BEISPIELPERSONEN.map((p) => p.id));
@@ -85,6 +86,13 @@ async function ergaenzeDaten(db, config) {
   markiereJobAlsKkAbrechnung(db, ids.kkAbrechnung, { kreditkarteId: ids.karte, verantwortlichId: 'test-1', ausStatus: 'unzugewiesen' });
   const belegPfad = await pdf(join(config.jobsDir, 'responsive-kk-beleg.pdf'), 'Beleg Zugticket');
   ids.kkBeleg = createKkBeleg(db, { kreditkarteId: ids.karte, hochgeladenVon: 'test-4', gekauftVon: 'test-4', quelle: 'web', pdfPfad: belegPfad, betrag: '12.50', kaufdatum: jetzt.slice(0, 10), beschreibung: `Zugticket ${LANG.kommentarWort}`, kontoId: konto, status: 'offen' });
+
+  // Rapport (nur zur Kenntnis) von Dora an Anna: Detailseite mit Knopf «Zur Kenntnis genommen».
+  setConfigValue(db, 'modul_rapporte_aktiv', '1');
+  const rapportPfad = await pdf(join(config.jobsDir, 'responsive-rapport.pdf'), 'Rapport Jugendlager');
+  ids.rapport = createJob(db, { eingangAm: jetzt, quelle: 'scanner', absender: null, dateiname: 'Rapport_Jugendlager.pdf', pdfPfad: rapportPfad, dateiHash: 'responsive-rapport' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = 'test-4' WHERE id = ?").run(ids.rapport);
+  markiereAlsRapport(db, ids.rapport, { markiertVon: 'test-4', empfaengerIds: ['test-1', 'test-2'], bemerkung: `Zur Info: ${LANG.kommentarWort}`, zeitpunkt: jetzt });
 
   // Betrieb: Fehler, Fehlermeldung, Warn-Banner (Review Focus 3: Band + Banner + Kopfzeile).
   db.prepare('INSERT INTO betrieb_fehler (request_id, zeitpunkt, person_id, methode, pfad, status, meldung, stack, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')

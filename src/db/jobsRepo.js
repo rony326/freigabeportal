@@ -662,17 +662,24 @@ export function listAbgeschlossenJobsForPerson(db, personId, { seite = 1, proSei
 
   // Die dritte Bedingung deckt die Person ab, die Freigabe 2 tatsächlich erteilt hat: nach einer
   // Admin-Umleitung ist freigabe2_umgeleitet_an beim Abschluss bereits wieder gelöscht.
+  // Rapporte haben kein Konto (daher LEFT JOIN): sichtbar für Markierer und jede (auch frühere)
+  // Empfängerin -- nur solange der Job ein Rapport ist, sonst machte eine Zeile aus einer
+  // aufgehobenen Markierung eine spätere Rechnung sichtbar.
   const where = `WHERE jobs.status IN ('abgeschlossen', 'abgeholt', 'archiviert')
          AND jobs.freigabe2_eskaliert_an_admin = 0
          AND (
            jobs.zugewiesen_an = ?
            OR ${EFFEKTIVER_FREIGEBER2_SQL} = ?
            OR EXISTS (SELECT 1 FROM freigaben f WHERE f.job_id = jobs.id AND f.rolle = 'freigeber2' AND f.person_id = ?)
+           OR (jobs.typ = 'rapport' AND (
+             jobs.rapport_markiert_von = ?
+             OR EXISTS (SELECT 1 FROM kenntnisnahmen k WHERE k.job_id = jobs.id AND k.person_id = ?)
+           ))
          )`;
-  const params = [personId, personId, personId];
+  const params = [personId, personId, personId, personId, personId];
 
   const gesamtAnzahl = db
-    .prepare(`SELECT COUNT(*) AS anzahl FROM jobs JOIN konten ON konten.id = jobs.konto_id ${where}`)
+    .prepare(`SELECT COUNT(*) AS anzahl FROM jobs LEFT JOIN konten ON konten.id = jobs.konto_id ${where}`)
     .get(...params).anzahl;
   const gesamtSeiten = Math.max(1, Math.ceil(gesamtAnzahl / proSeiteSicher));
   const seiteSicher = Math.min(seiteGewuenscht, gesamtSeiten);
@@ -681,7 +688,7 @@ export function listAbgeschlossenJobsForPerson(db, personId, { seite = 1, proSei
   const jobs = db
     .prepare(
       `SELECT jobs.* FROM jobs
-       JOIN konten ON konten.id = jobs.konto_id
+       LEFT JOIN konten ON konten.id = jobs.konto_id
        ${where}
        ORDER BY jobs.eingang_am DESC
        LIMIT ? OFFSET ?`

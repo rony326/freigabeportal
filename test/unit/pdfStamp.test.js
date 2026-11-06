@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PDFDocument, PageSizes } from 'pdf-lib';
 import * as mupdf from 'mupdf';
-import { stampAndFinalize, stampGruppenDokument, TESTMODUS_MARKE } from '../../src/services/pdfStamp.js';
+import { stampAndFinalize, stampGruppenDokument, stampKenntnisnahme, TESTMODUS_MARKE } from '../../src/services/pdfStamp.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 
 const [A4_BREITE, A4_HOEHE] = PageSizes.A4;
@@ -481,4 +481,67 @@ test('Testmodus: Gruppen-Stempelseite trägt die Marke; ohne Flag nicht', async 
   assert.doesNotMatch(extractedText(await stampGruppenDokument(pdf, daten), 1), /TESTMODUS/);
   const text = extractedText(await stampGruppenDokument(pdf, { ...daten, testmodus: true }), 1);
   assert.ok(text.includes(TESTMODUS_MARKE), text);
+});
+
+function sampleKenntnisnahme(overrides = {}) {
+  return {
+    jobId: 77,
+    markiertVon: { name: 'Buch Haltung', zeitpunkt: '2026-11-01T08:00:00.000Z' },
+    bemerkung: 'Bitte lesen',
+    kenntnisnahmen: [
+      { name: 'Anna Empfang', bestaetigtAm: '2026-11-02T09:00:00.000Z', entferntAm: null, entferntVon: null, begruendung: null, ersetztDurch: null },
+      { name: 'Bruno Empfang', bestaetigtAm: null, entferntAm: '2026-11-03T10:00:00.000Z', entferntVon: 'Super Admin', begruendung: 'ist ausgetreten', ersetztDurch: 'Clara Ersatz' },
+      { name: 'Clara Ersatz', bestaetigtAm: '2026-11-04T11:00:00.000Z', entferntAm: null, entferntVon: null, begruendung: null, ersetztDurch: null },
+    ],
+    kommentare: [{ zeitpunkt: '2026-11-02T12:00:00.000Z', verfasser: 'Anna Empfang', text: 'Gelesen, danke' }],
+    ...overrides,
+  };
+}
+
+test('stampKenntnisnahme hängt genau eine A4-Hochformat-Seite mit Titel, Job-ID, Bemerkung, Empfängern und Kommentaren an', async () => {
+  const pdf = await buildPdfFixture(['Rapport Seite 1']);
+  const stamped = await stampKenntnisnahme(pdf, sampleKenntnisnahme());
+  const reloaded = await PDFDocument.load(stamped);
+  assert.equal(reloaded.getPageCount(), 2);
+  const { width, height } = reloaded.getPage(1).getSize();
+  assert.equal(width, A4_BREITE);
+  assert.equal(height, A4_HOEHE);
+  const text = extractedText(stamped, 1);
+  assert.match(text, /Zur Kenntnis genommen/);
+  assert.match(text, /Job-ID: 77/);
+  assert.match(text, /Buch Haltung/);
+  assert.match(text, /Bitte lesen/);
+  assert.match(text, /Anna Empfang/);
+  assert.match(text, /Bruno Empfang/);
+  assert.match(text, /ist ausgetreten/);
+  assert.match(text, /Clara Ersatz/);
+  assert.match(text, /Super Admin/);
+  assert.match(text, /Rückfragen und Kommentare/);
+  assert.match(text, /Gelesen, danke/);
+  assert.doesNotMatch(text, /Konto|Betrag/, 'der Vermerk trägt keine Konto- oder Betragsfelder');
+});
+
+test('stampKenntnisnahme stellt Nicht-WinAnsi-Zeichen im Namen als "?" dar und wirft nicht', async () => {
+  const pdf = await buildPdfFixture(['Rapport Seite 1']);
+  const daten = sampleKenntnisnahme({ bemerkung: null, kommentare: [] });
+  daten.kenntnisnahmen[0].name = 'Анна 😀 Empfang';
+  const stamped = await stampKenntnisnahme(pdf, daten);
+  const text = extractedText(stamped, 1);
+  assert.match(text, /\?\?\?\? \? Empfang/);
+});
+
+test('stampKenntnisnahme: viele Empfänger laufen auf Folgeseiten weiter; Testmodus-Marke nur mit Flag', async () => {
+  const pdf = await buildPdfFixture(['Rapport Seite 1']);
+  const viele = Array.from({ length: 80 }, (_, i) => ({ name: `Person ${i + 1}`, bestaetigtAm: '2026-11-02T09:00:00.000Z', entferntAm: null, entferntVon: null, begruendung: null, ersetztDurch: null }));
+  const stamped = await stampKenntnisnahme(pdf, sampleKenntnisnahme({ kenntnisnahmen: viele, testmodus: true }));
+  const reloaded = await PDFDocument.load(stamped);
+  assert.ok(reloaded.getPageCount() >= 3);
+  const alle = Array.from({ length: reloaded.getPageCount() - 1 }, (_, i) => extractedText(stamped, i + 1)).join('\n');
+  assert.match(alle, /Person 80/);
+  assert.ok(extractedText(stamped, 1).includes(TESTMODUS_MARKE));
+});
+
+test('stampKenntnisnahme wirft dieselbe deutsche Meldung wie stampAndFinalize bei ungültigem PDF', async () => {
+  await assert.rejects(() => stampKenntnisnahme(Buffer.from('kein pdf'), sampleKenntnisnahme()), /PDF konnte nicht geladen werden/);
+  await assert.rejects(() => stampKenntnisnahme(NOT_REALLY_A_PDF, sampleKenntnisnahme()), /PDF konnte nicht gestempelt werden/);
 });

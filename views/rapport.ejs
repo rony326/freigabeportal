@@ -1,0 +1,64 @@
+<%- include('_seite_anfang', { titel: 'Rapport', rahmen: pdfSichtbar ? 'kompakt' : 'voll' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Rapport: <%- include('_beleg_name', { job }) %> <%- include('_beleg_nr', { jobId: job.id }) %></h1>
+    </div>
+    <div class="row g-3 beleg-umschalter" <% if (pdfSichtbar) { %>data-beleg-umschalter data-refresh-url="/downloads/<%= job.id %>/refresh-url"<% } %>>
+      <% if (pdfSichtbar) { %>
+        <%- include('_beleg_umschalter', { jobId: job.id, pdfUrl: `/downloads/${job.id}/oeffnen`, thumbnailUrl: job.thumbnail_pfad ? `/downloads/${job.id}/thumbnail` : null, refreshUrl: `/downloads/${job.id}/refresh-url`, previewUrl, frameId: 'rapport-preview-frame', spalte: 'col-lg-7' }) %>
+      <% } %>
+      <div class="<%= pdfSichtbar ? 'col-lg-5' : 'col-lg-8' %> beleg-umschalter-formular" id="beleg-umschalter-formular">
+        <div class="card">
+          <div class="card-body">
+            <p class="text-muted">Nur zur Kenntnis – dieses Dokument wird nicht als Rechnung verbucht.</p>
+            <p><strong>Weitergegeben von:</strong> <%= markiertVonName %>, <%- include('_zeitpunkt', { wert: job.rapport_markiert_am }) %></p>
+            <% if (job.rapport_bemerkung) { %>
+              <p class="mb-1"><strong>Bemerkung:</strong></p>
+              <p style="white-space: pre-line"><%= job.rapport_bemerkung %></p>
+            <% } %>
+            <p>
+              <strong>Status:</strong>
+              <% if (job.status === 'kenntnisnahme') { %>
+                wartet auf Kenntnisnahme (<%= bestaetigt %> von <%= gesamt %>)
+              <% } else { %>
+                abgeschlossen (<%= bestaetigt %> von <%= gesamt %>)<% if (job.abgeschlossen_am) { %>, <%- include('_zeitpunkt', { wert: job.abgeschlossen_am }) %><% } %>
+              <% } %>
+            </p>
+
+            <h2 class="h5 mt-3">Empfängerinnen und Empfänger</h2>
+            <ul class="list-group list-group-flush mb-3">
+              <% empfaenger.forEach((e) => { %>
+                <li class="list-group-item px-0">
+                  <%= e.name %> —
+                  <% if (e.bestaetigtAm) { %>
+                    <span class="text-success">zur Kenntnis genommen am <%- include('_zeitpunkt', { wert: e.bestaetigtAm }) %></span>
+                  <% } else if (e.entferntAm) { %>
+                    <span class="text-body-secondary"><%= e.ersetztDurch ? `ersetzt durch ${e.ersetztDurch}` : 'entfernt' %> am <%- include('_zeitpunkt', { wert: e.entferntAm }) %><% if (e.entferntVon) { %> von <%= e.entferntVon %><% } %><% if (e.begruendung) { %> („<%= e.begruendung %>“)<% } %></span>
+                  <% } else { %>
+                    <span class="badge text-bg-warning">offen</span>
+                  <% } %>
+                </li>
+              <% }) %>
+            </ul>
+
+            <% if (eigeneOffen) { %>
+              <form method="post" action="/rapporte/<%= job.id %>/bestaetigen" class="d-inline">
+                <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                <button type="submit" class="btn btn-primary">Zur Kenntnis genommen</button>
+              </form>
+            <% } %>
+            <% if (darfAufheben) { %>
+              <form method="post" action="/kontierung/<%= job.id %>/rapport-aufheben" class="d-inline">
+                <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                <button type="submit" class="btn btn-outline-secondary">Markierung aufheben</button>
+              </form>
+              <div class="form-text">Möglich, solange noch niemand bestätigt hat. Der Beleg geht dann zurück in die Kontierung der markierenden Person.</div>
+            <% } %>
+            <% if (['abgeschlossen', 'abgeholt', 'archiviert'].includes(job.status) && pdfSichtbar) { %>
+              <p class="mt-3 mb-0"><a href="/zeitstempel-pruefen?jobId=<%= job.id %>">Zeitstempel prüfen</a></p>
+            <% } %>
+          </div>
+        </div>
+        <% if (locals.kommentarBereich) { %><%- include('_kommentare', { ...kommentarBereich }) %><% } %>
+      </div>
+    </div>
+<%- include('_seite_ende') %>

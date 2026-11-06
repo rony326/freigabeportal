@@ -5,7 +5,7 @@ import { getKontoById } from '../db/kontenRepo.js';
 import { getEffectiveFreigeber2Id, getJobById } from '../db/jobsRepo.js';
 import { getPersonById, listActivePersonsInGroup } from '../db/personenRepo.js';
 import { personHasPermission } from '../middleware/permissions.js';
-import { canViewJobPdf } from './jobAuthorization.js';
+import { canViewJobPdf, darfRapportSehen } from './jobAuthorization.js';
 import { ermittleZustaendigkeit, LAUFENDE_STATUS } from './vorgangZustaendigkeit.js';
 import { getAktivenVertreter } from './vertretung.js';
 import { reiheBenachrichtigungEin, renderBenachrichtigung } from './notify.js';
@@ -14,6 +14,7 @@ import { getDefaultConfigValue } from '../db/adminConfigRepo.js';
 import { logMailAttempt } from '../db/mailLogRepo.js';
 import { stelleEintraegeZu } from './mailZustellung.js';
 
+// Ein Rapport in 'kenntnisnahme' ist bewusst offen (kommentierbar), erst ab 'abgeschlossen' nur lesbar.
 export const KOMMENTAR_GESCHLOSSEN_STATUS = ['abgeschlossen', 'abgeholt', 'archiviert', 'geloescht'];
 export const KOMMENTAR_MAX_LAENGE = 2000;
 
@@ -65,6 +66,11 @@ function sichtbarkeitFuer(db, config, job) {
     if (job.eingereicht_von) ueberRolle.add(job.eingereicht_von);
     const konto = job.konto_id ? getKontoById(db, job.konto_id) : null;
     if (konto) mitVertretung(getEffectiveFreigeber2Id(job, konto));
+    // Rapport: wie istRapportBeteiligt (jobAuthorization.js), ohne Vertretung.
+    if (job.typ === 'rapport') {
+      if (job.rapport_markiert_von) ueberRolle.add(job.rapport_markiert_von);
+      for (const r of db.prepare('SELECT DISTINCT person_id FROM kenntnisnahmen WHERE job_id = ?').all(job.id)) ueberRolle.add(r.person_id);
+    }
   }
   const mitRecht = new Set(
     db.prepare("SELECT person_id FROM person_berechtigungen WHERE berechtigung = 'vorgaenge_einsehen'").all().map((r) => r.person_id)
@@ -175,6 +181,13 @@ function ermittleEmpfaenger(db, config, job, { schreiberId, erwaehntIds = [] } =
     mitVertretung(getEffectiveFreigeber2Id(job, konto));
   }
   if (job.eingereicht_von) kandidaten.push(job.eingereicht_von);
+  // Rapport: markierende Person und alle nicht entfernten Empfänger.
+  if (job.typ === 'rapport') {
+    if (job.rapport_markiert_von) kandidaten.push(job.rapport_markiert_von);
+    for (const r of db.prepare('SELECT person_id FROM kenntnisnahmen WHERE job_id = ? AND entfernt_am IS NULL ORDER BY id').all(job.id)) {
+      kandidaten.push(r.person_id);
+    }
+  }
   for (const r of db.prepare('SELECT person_id FROM kommentare WHERE job_id = ? GROUP BY person_id ORDER BY MIN(id)').all(job.id)) {
     kandidaten.push(r.person_id);
   }
@@ -235,6 +248,8 @@ function linkFuer(db, config, person, job, verantwortlich) {
   const basis = config.publicBaseUrl;
   const id = person.churchtools_person_id;
   const pruefseite = `${basis}/zeitstempel-pruefen?jobId=${job.id}#kommentare`;
+  // Rapporte haben eine eigene Seite (offen wie abgeschlossen), auf der die Kommentare stehen.
+  if (darfRapportSehen(db, config, person, job)) return `${basis}/rapporte/${job.id}#kommentare`;
   const arbeit = verantwortlich.has(id) ? workflowLink(config, job, id) : null;
   if (arbeit) return `${arbeit}#kommentare`;
   if (siehtUeberRolle(db, config, person, job)) return pruefseite;

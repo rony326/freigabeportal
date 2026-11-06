@@ -23,6 +23,7 @@ import { sendNotificationMitVertretung } from '../services/notify.js';
 import { markiereAlsKkAbrechnung } from '../services/kkMarkierung.js';
 import { personName } from '../services/auditLog.js';
 import { kommentarInfoFuer } from '../services/kommentare.js';
+import { listOffeneRapporteForPerson } from '../db/rapporteRepo.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 
 export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
@@ -58,6 +59,8 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
       meineSpesenFreigaben: enrich(listSpesenFreigabe1JobsForPerson(db, personId)),
       meineFreigaben: enrich(listFreigabe2JobsForPerson(db, personId)),
       meineAbgelehnten: enrich(listAbgelehntJobsForPerson(db, personId)),
+      // Rapporte nur zur Kenntnis: nur die genannte Person selbst, keine Ferienvertretung.
+      meineRapporte: enrich(listOffeneRapporteForPerson(db, personId)),
       adminEskalierteKontierungen: istSuperadmin ? enrich(listAdminEskalierteKontierungen(db)) : [],
       adminEskalierteFreigaben: istSuperadmin ? enrich(listAdminEskalierteFreigaben(db)) : [],
       adminEskalierteSpesenFreigaben: istSuperadmin ? enrich(listAdminEskalierteSpesenFreigaben(db)) : [],
@@ -65,7 +68,7 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
     // Eine Abfrage für alle Listen der Seite (Anzahl/neu je Vorgang). Pool-Vorgänge (Pool und
     // Rückläufer, beide unzugewiesen) bekommen keine Marke: keine Seite, die der Pool verlinkt, zeigt
     // ihre Kommentare, das "neu" bliebe also bis zur Übernahme stehen (Abschlussprüfung 6).
-    const listen = [daten.meineKontierungen, daten.meineSpesenFreigaben, daten.meineFreigaben, daten.meineAbgelehnten, daten.adminEskalierteKontierungen, daten.adminEskalierteFreigaben, daten.adminEskalierteSpesenFreigaben];
+    const listen = [daten.meineKontierungen, daten.meineSpesenFreigaben, daten.meineFreigaben, daten.meineAbgelehnten, daten.meineRapporte, daten.adminEskalierteKontierungen, daten.adminEskalierteFreigaben, daten.adminEskalierteSpesenFreigaben];
     daten.kommentarInfo = kommentarInfoFuer(db, config, req.currentPerson, listen.flat().map((j) => j.id));
     res.render('pool', daten);
   });

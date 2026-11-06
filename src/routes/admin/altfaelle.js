@@ -43,7 +43,7 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
       const { entscheidung, begruendung, stand, bestaetigung } = req.body;
       const values = { entscheidung, begruendung };
       if (bestaetigung !== 'ja') {
-        return renderAltfall(req, res, 400, altfall, { errors: ['Bitte bestaetigen, dass die angezeigten Daten geprueft wurden.'], values });
+        return renderAltfall(req, res, 400, altfall, { errors: ['Bitte bestätigen, dass die angezeigten Daten geprüft wurden.'], values });
       }
       const anzeige = await altfallAnzeige(db, config, altfall);
       try {

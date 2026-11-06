@@ -45,7 +45,7 @@ export function loadBackupKeyring(config) {
     return { activeKeyId: document.activeKeyId, keys };
   } catch {
     // Never include parser input, key material or secret-bearing paths in logs.
-    throw new BackupValidationError('Backup-Schluesselbund unlesbar oder ungueltig: separate regulaere Datei, Modus 0600/0400 und gueltiges Format erforderlich.');
+    throw new BackupValidationError('Backup-Schlüsselbund unlesbar oder ungültig: separate reguläre Datei, Modus 0600/0400 und gültiges Format erforderlich.');
   } finally {
     bytes?.fill(0);
     if (fd !== undefined) closeSync(fd);
@@ -53,7 +53,7 @@ export function loadBackupKeyring(config) {
 }
 
 export function encryptBackupArchive(plaintext, keyring) {
-  if (!Buffer.isBuffer(plaintext) || plaintext.length > BACKUP_LIMITS.archiveBytes) throw new BackupValidationError('Backup-Archiv ist zu gross oder ungueltig.');
+  if (!Buffer.isBuffer(plaintext) || plaintext.length > BACKUP_LIMITS.archiveBytes) throw new BackupValidationError('Backup-Archiv ist zu gross oder ungültig.');
   const id = Buffer.from(keyring.activeKeyId, 'ascii');
   if (!KEY_ID.test(keyring.activeKeyId) || !keyring.keys.has(keyring.activeKeyId)) throw new BackupValidationError('Aktiver Backup-Schluessel fehlt.');
   const nonce = randomBytes(NONCE_BYTES);
@@ -73,7 +73,7 @@ export function decryptBackupArchive(buffer, keyring) {
   const id = buffer.subarray(9, 9 + idLength).toString('utf8');
   if (!idLength || idLength > 64 || !KEY_ID.test(id) || buffer.length < headerLength + TAG_BYTES ||
       buffer.length - headerLength - TAG_BYTES > BACKUP_LIMITS.archiveBytes || !keyring.keys.has(id)) {
-    throw new BackupValidationError('Backup-Header ungueltig oder Backup-Schluessel nicht vorhanden.');
+    throw new BackupValidationError('Backup-Header ungültig oder Backup-Schlüssel nicht vorhanden.');
   }
   let plaintext;
   try {

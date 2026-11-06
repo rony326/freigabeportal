@@ -62,7 +62,7 @@ test('keyring requires private regular bounded file outside backed-up trees', (t
   const { dir, config } = setup(t);
   assert.throws(() => loadBackupKeyring({}), /BACKUP_KEYRING_FILE/);
   chmodSync(config.backupKeyringFile, 0o644);
-  assert.throws(() => loadBackupKeyring(config), /Schluesselbund/);
+  assert.throws(() => loadBackupKeyring(config), /Schlüsselbund/);
   chmodSync(config.backupKeyringFile, 0o600);
   const link = join(dir, 'keys-link');
   symlinkSync(config.backupKeyringFile, link);

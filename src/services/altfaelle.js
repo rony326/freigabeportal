@@ -97,7 +97,7 @@ async function spesenZahlung(config, job, snapshot) {
   } catch {
     // An unavailable or incomplete master record only allows the archive-only decision.
   }
-  return { zahlung: { art: 'spesen', daten: null, abgleich: null, hinweise: [] }, herkunft: 'nicht_verfuegbar', fehler: 'Aktuelle ChurchTools-Zahlungsdaten sind nicht abrufbar oder ungueltig.' };
+  return { zahlung: { art: 'spesen', daten: null, abgleich: null, hinweise: [] }, herkunft: 'nicht_verfuegbar', fehler: 'Aktuelle ChurchTools-Zahlungsdaten sind nicht abrufbar oder ungültig.' };
 }
 
 // Stand, der der entscheidenden Person gezeigt wird. Asynchron, weil Spesen ohne eingefrorene
@@ -184,16 +184,16 @@ export function entscheideAltfall(db, { anzeige, entscheidung, stand, begruendun
     throw new AltfallError(403, 'Eigene Spesen koennen nicht selbst entschieden werden.');
   }
   if (stand !== altfallStand(anzeige.job.id, anzeige.daten, person.churchtools_person_id)) {
-    throw new AltfallError(409, 'Der angezeigte Stand hat sich geaendert. Bitte erneut pruefen.');
+    throw new AltfallError(409, 'Der angezeigte Stand hat sich geändert. Bitte erneut prüfen.');
   }
   db.exec('BEGIN IMMEDIATE');
   try {
     const aktuell = getAltfall(db, anzeige.job.id);
     if (!aktuell || JSON.stringify(getJobById(db, anzeige.job.id)) !== JSON.stringify(anzeige.job)) {
-      throw new AltfallError(409, 'Dieser Fall wurde inzwischen entschieden, exportiert oder geaendert.');
+      throw new AltfallError(409, 'Dieser Fall wurde inzwischen entschieden, exportiert oder geändert.');
     }
     if (anzeige.gruppe && JSON.stringify(listSplitKinder(db, anzeige.job.id)) !== anzeige.kinderStand) {
-      throw new AltfallError(409, 'Die Splitgruppe wurde inzwischen geaendert.');
+      throw new AltfallError(409, 'Die Splitgruppe wurde inzwischen geändert.');
     }
     const zeitpunkt = new Date().toISOString();
     const result = db.prepare(`INSERT INTO altfall_entscheidungen

@@ -151,7 +151,7 @@ export function pruefeVerwaisteFinaleDateien(db, config, { mindestAlterMs: minde
         }
         const jetztStat = lstatSync(pfad, { throwIfNoEntry: false });
         if (!jetztStat?.isFile() || jetztStat.ino !== vorher.ino || jetztStat.dev !== verzeichnisStat.dev || jetztStat.size !== vorher.groesse || jetztStat.mtimeMs !== vorher.mtimeMs) {
-          throw new QuarantaeneFehler('Datei wurde waehrend der Pruefung veraendert.', 409);
+          throw new QuarantaeneFehler('Datei wurde während der Prüfung verändert.', 409);
         }
         const bestehend = lstatSync(ziel, { throwIfNoEntry: false });
         if (bestehend) {
@@ -256,7 +256,7 @@ export function loescheQuarantaeneDatei(db, config, id, begruendungRoh) {
   const quarantaene = quarantaeneVerzeichnis(config.jobsDir, false);
   const eintrag = offenerEintrag(db, id);
   const pfad = join(quarantaene, eintrag.dateiname);
-  if (!lstatSync(pfad, { throwIfNoEntry: false })) throw new QuarantaeneFehler('Quarantaene-Datei fehlt; Zustand bitte manuell pruefen.', 409);
+  if (!lstatSync(pfad, { throwIfNoEntry: false })) throw new QuarantaeneFehler('Quarantäne-Datei fehlt; Zustand bitte manuell prüfen.', 409);
   if (dateiFingerabdruck(pfad).sha256 !== eintrag.sha256) throw new QuarantaeneFehler('Quarantaene-Datei stimmt nicht mehr mit dem gespeicherten Hash ueberein.', 409);
   if (dateinameReferenziert(db, eintrag.dateiname) === 'aktiv' || hashBekannt(db, eintrag.sha256)) {
     throw new QuarantaeneFehler('Datei wird inzwischen referenziert und darf nicht geloescht werden.', 409);

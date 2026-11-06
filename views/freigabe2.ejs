@@ -54,7 +54,7 @@
                     <p class="mb-1"><strong>IBAN:</strong> <span class="text-break"><%= daten.iban %></span></p>
                     <p class="mb-1"><strong>Kontoinhaber:</strong> <span class="text-break"><%= daten.kontoinhaber %></span></p>
                   <% } else if (paymentReview.art === 'qr_rechnung') { %>
-                    <p class="mb-1"><strong>Zahlungsempfaenger:</strong> <span class="text-break"><%= daten.empfaenger %></span></p>
+                    <p class="mb-1"><strong>Zahlungsempfänger:</strong> <span class="text-break"><%= daten.empfaenger %></span></p>
                     <% if (paymentReview.abgleich === 'abweichung') { %>
                       <div class="alert alert-danger py-2 mb-1"><strong>IBAN:</strong> <span class="text-break"><%= daten.iban %></span> — NICHT bei diesem Lieferanten hinterlegt</div>
                     <% } else { %>
@@ -70,13 +70,13 @@
                   <input type="hidden" name="zahlungsdaten_stand" value="<%= paymentReview.fingerprint %>">
                   <div class="form-check">
                     <input class="form-check-input<%= ff.zahlungsdatenBestaetigt ? ' is-invalid' : '' %>" type="checkbox" name="zahlungsdaten_bestaetigt" id="zahlungsdatenBestaetigt" value="ja"<%- ffAttr(ff, 'zahlungsdatenBestaetigt') %>>
-                    <label class="form-check-label" for="zahlungsdatenBestaetigt"><%= paymentReview.art === 'spesen' ? 'IBAN, Kontoinhaber, Betrag und Konto geprueft' : paymentReview.art === 'qr_rechnung' ? 'Zahlungsempfaenger, IBAN, Referenz, Betrag und Konto geprueft' : 'Zahlung wird manuell erfasst; Konto und Betrag geprueft' %></label>
+                    <label class="form-check-label" for="zahlungsdatenBestaetigt"><%= paymentReview.art === 'spesen' ? 'IBAN, Kontoinhaber, Betrag und Konto geprüft' : paymentReview.art === 'qr_rechnung' ? 'Zahlungsempfänger, IBAN, Referenz, Betrag und Konto geprüft' : 'Zahlung wird manuell erfasst; Konto und Betrag geprüft' %></label>
 <% if (ff.zahlungsdatenBestaetigt) { %><div class="invalid-feedback d-block" id="zahlungsdatenBestaetigt-fehler"><%= ff.zahlungsdatenBestaetigt %></div><% } %>
                   </div>
                   <% if ((paymentReview.hinweise || []).length > 0) { %>
                     <div class="form-check">
                       <input class="form-check-input<%= ff.zahlungshinweiseBestaetigt ? ' is-invalid' : '' %>" type="checkbox" name="zahlungshinweise_bestaetigt" id="zahlungshinweiseBestaetigt" value="ja"<%- ffAttr(ff, 'zahlungshinweiseBestaetigt') %>>
-                      <label class="form-check-label" for="zahlungshinweiseBestaetigt">Die oben genannten Abweichungen wurden geklaert</label>
+                      <label class="form-check-label" for="zahlungshinweiseBestaetigt">Die oben genannten Abweichungen wurden geklärt</label>
 <% if (ff.zahlungshinweiseBestaetigt) { %><div class="invalid-feedback d-block" id="zahlungshinweiseBestaetigt-fehler"><%= ff.zahlungshinweiseBestaetigt %></div><% } %>
                     </div>
                   <% } %>
@@ -97,7 +97,7 @@
                 <textarea class="form-control<%= ff.f2begruendung ? ' is-invalid' : '' %>" id="f2begruendung" name="begruendung" data-begruendung-pflicht-bei="f2konfliktJa"<%- ffAttr(ff, 'f2begruendung') %>><%= values.begruendung || '' %></textarea>
 <% if (ff.f2begruendung) { %><div class="invalid-feedback d-block" id="f2begruendung-fehler"><%= ff.f2begruendung %></div><% } %>
               </div>
-              <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2"><%= job.quelle === 'spesen' && !paymentReview ? 'Zahlungsdaten pruefen' : 'Freigeben' %></button>
+              <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2"><%= job.quelle === 'spesen' && !paymentReview ? 'Zahlungsdaten prüfen' : 'Freigeben' %></button>
               <button type="submit" name="aktion" value="ablehnen" class="btn btn-outline-danger">Ablehnen</button>
             </form>
           </div>

@@ -125,7 +125,7 @@ export function einzelNachweis(db, job) {
   if (snapshot?.job) {
     return {
       status: 'snapshot_zahlung_unbestaetigt', exportierbar: false,
-      grund: 'Die Zahlungsdaten wurden bei Freigabe 2 nicht ausdruecklich bestaetigt.',
+      grund: 'Die Zahlungsdaten wurden bei Freigabe 2 nicht ausdrücklich bestätigt.',
       metadaten: belegMetadaten(snapshot.job, snapshot.konto), zahlung: zahlungExport({ ...zahlungAusSnapshot(snapshot) }, 'freigabe2_unbestaetigt'),
     };
   }

@@ -104,11 +104,11 @@ export function buildBackupArchive(db, config) {
       try {
         const opened = fstatSync(fd);
         if (!opened.isFile() || opened.size !== stat.size || opened.ino !== stat.ino || opened.dev !== stat.dev) {
-          throw new BackupValidationError('Datei wurde waehrend der Sicherung ausgetauscht.');
+          throw new BackupValidationError('Datei wurde während der Sicherung ausgetauscht.');
         }
         bytes = readFileSync(fd);
       } finally { closeSync(fd); }
-      if (bytes.length !== stat.size) throw new BackupValidationError('Datei wurde waehrend der Sicherung veraendert.');
+      if (bytes.length !== stat.size) throw new BackupValidationError('Datei wurde während der Sicherung verändert.');
       totalBytes += bytes.length;
       zip.addFile(name, bytes, '', 0o600);
       dateien.push({ pfad: name, groesse: bytes.length, sha256: sha256(bytes) });
@@ -161,7 +161,7 @@ export function buildBackupArchive(db, config) {
 export function validateBackupArchive(buffer) {
   let zip;
   try {
-    if (!Buffer.isBuffer(buffer) || buffer.length > BACKUP_LIMITS.archiveBytes) throw new BackupValidationError('Backup-Archiv ist zu gross oder ungueltig.');
+    if (!Buffer.isBuffer(buffer) || buffer.length > BACKUP_LIMITS.archiveBytes) throw new BackupValidationError('Backup-Archiv ist zu gross oder ungültig.');
     zip = new AdmZip(buffer);
     if (zip.getEntryCount() > BACKUP_LIMITS.entries) throw new BackupValidationError('Zu viele Eintraege im Backup-Archiv.');
     const names = new Map();
@@ -262,7 +262,7 @@ export function validateBackupArchive(buffer) {
       testDb.exec('PRAGMA trusted_schema = OFF');
       const integrity = testDb.prepare('PRAGMA integrity_check').all();
       if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok' || testDb.prepare('PRAGMA foreign_key_check').all().length) {
-        throw new BackupValidationError('Datenbankintegritaet oder Fremdschluesselpruefung fehlgeschlagen.');
+        throw new BackupValidationError('Datenbankintegrität oder Fremdschlüsselprüfung fehlgeschlagen.');
       }
       const tables = new Set(testDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name));
       for (const required of REQUIRED_TABLES) {

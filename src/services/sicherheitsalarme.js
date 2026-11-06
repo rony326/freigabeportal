@@ -100,10 +100,10 @@ function beanspruche(db, jetzt) {
 function mailInhalt(db, config, absichten) {
   const zeilen = absichten.map((a) => `- Vorgang ${a.id}: ${a.dateiname} (Absicht vom ${a.zeitpunkt}${a.operation_id ? `, operationId ${a.operation_id}` : ''})`);
   return {
-    subject: `Freigabeportal: ${absichten.length} ungeklaerte Backup-Loeschung(en)`,
-    text: `Fuer folgende Backup-Loeschungen fehlt ein Ergebnisprotokoll. Ob die Datei entfernt wurde, ist ungeklaert.\n\n${zeilen.join('\n')}\n\n`
-      + 'Bitte Dateibestand pruefen und den Vorgang unter Admin -> Datenbank-Backup begruendet klaeren. '
-      + 'Diese Nachricht klaert keinen Vorgang.\n\n'
+    subject: `Freigabeportal: ${absichten.length} ungeklärte Backup-Löschung(en)`,
+    text: `Für folgende Backup-Löschungen fehlt ein Ergebnisprotokoll. Ob die Datei entfernt wurde, ist ungeklärt.\n\n${zeilen.join('\n')}\n\n`
+      + 'Bitte Dateibestand prüfen und den Vorgang unter Admin -> Datenbank-Backup begründet klären. '
+      + 'Diese Nachricht klärt keinen Vorgang.\n\n'
       + `${config.publicBaseUrl ? `${config.publicBaseUrl}/admin/backup\n\n` : ''}${getConfigValue(db, 'seiten_titel') || 'Freigabeportal'}`,
   };
 }
@@ -133,7 +133,7 @@ export async function versendeFaelligeAlarme(db, config, mailer, { jetzt = Date.
   const { subject, text } = mailInhalt(db, config, aktuell.map((alarm) => offen.get(alarm.schluessel)));
   let fehler = null;
   try {
-    if (!empfaenger.length) throw Object.assign(new Error('Keine Empfaenger fuer Sicherheitsalarme konfiguriert.'), { code: 'KEINE_EMPFAENGER' });
+    if (!empfaenger.length) throw Object.assign(new Error('Keine Empfänger für Sicherheitsalarme konfiguriert.'), { code: 'KEINE_EMPFAENGER' });
     await mailer.sendMail({ to: empfaenger.join(', '), subject, text });
   } catch (err) {
     fehler = fehlerCode(err);

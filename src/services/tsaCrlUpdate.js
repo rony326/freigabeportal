@@ -109,15 +109,15 @@ async function alarmiere(db, config, mailer, { meldung, ablauf }) {
   const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'sicherheitsalarm_empfaenger') ?? 'gruppe:admin').filter(Boolean);
   if (!empfaenger.length) return;
   const stand = ablauf ? `Die aktuellen Sperrlisten sind gueltig bis ${new Date(ablauf).toISOString()}.`
-    : 'Es sind keine gueltigen Sperrlisten vorhanden.';
+    : 'Es sind keine gültigen Sperrlisten vorhanden.';
   await sendRenderedMail(db, mailer, {
     to: empfaenger.join(', '),
     typ: 'sicherheitsalarm',
     jobId: null,
     subject: 'Freigabeportal: TSA-Sperrlisten konnten nicht erneuert werden',
     text: `Die automatische Erneuerung der TSA-Sperrlisten ist fehlgeschlagen:\n\n${meldung}\n\n${stand} `
-      + 'Danach werden neue Zeitstempel abgelehnt und betroffene Belege bleiben fuer den Export gesperrt.\n\n'
-      + 'Manuell pruefen: npm run tsa:crl-update (siehe docs/tsa-vertrauensanker.md).\n\n'
+      + 'Danach werden neue Zeitstempel abgelehnt und betroffene Belege bleiben für den Export gesperrt.\n\n'
+      + 'Manuell prüfen: npm run tsa:crl-update (siehe docs/tsa-vertrauensanker.md).\n\n'
       + `${getConfigValue(db, 'seiten_titel') || 'Freigabeportal'}`,
   });
 }

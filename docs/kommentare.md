@@ -4,7 +4,7 @@ Beteiligte können an einem Vorgang Rückfragen und Kommentare hinterlassen,
 statt sie per Mail oder Telefon zu klären. Die Kommentare stehen auf der
 Detailseite des Vorgangs, lösen eine Benachrichtigung aus und erscheinen am
 Ende auf dem finalen, gestempelten PDF. Das gilt für Lieferantenrechnungen,
-Spesenpositionen und Kreditkartenabrechnungen gleichermassen.
+Spesenpositionen, Kreditkartenabrechnungen und Rapporte gleichermassen.
 
 Code: `src/services/kommentare.js` (Regeln), `src/routes/kommentare.js`
 (`POST /kommentare/:jobId`), `views/_kommentare.ejs` (Bereich auf der Seite),
@@ -20,13 +20,14 @@ Kommentare sehen darf, wer den Vorgang selbst sehen darf, also:
   das PDF des Vorgangs sehen darf: Superadmin; bei Status `unzugewiesen` die
   Rolle Buchhaltung; sonst die zugewiesene Person, die einreichende Person
   (Spesen), der effektive Freigeber 2 des Kontos und jeweils deren aktive
-  Vertretung, oder
+  Vertretung; bei einem Rapport die markierende Person und jede Person,
+  die eine Kenntnisnahme-Zeile hat oder hatte (ohne Ferien-Vertretung), oder
 - wer das additive Recht `vorgaenge_einsehen` hat (Superadmin und Manager
   haben es über ihr Rollenbündel).
 
 Niemand sonst, auch nicht über eine @Erwähnung. Schreiben darf, wer
 Kommentare sehen darf **und** der Vorgang nicht abgeschlossen ist (siehe
-unten). Ohne Sichtrecht antwortet `POST /kommentare/:jobId` mit 403 und
+unten). Ein Rapport im Status `kenntnisnahme` gilt als laufend. Ohne Sichtrecht antwortet `POST /kommentare/:jobId` mit 403 und
 speichert nichts; die Verweigerung steht im Zugriffs-Audit unter dem Bereich
 `/kommentare`.
 
@@ -41,6 +42,7 @@ Der Bereich „Rückfragen und Kommentare“ (Anker `#kommentare`) steht auf:
 | Kontierung | `/kontierung/:id` |
 | Kreditkarten-Abgleich | `/kontierung/:id/kk-abgleich` |
 | Freigabe 2 | `/freigabe2/:id` |
+| Rapport (nur zur Kenntnis) | `/rapporte/:id` |
 | Überarbeitung abgelehnter Rechnungen | `/abgelehnt/:id` |
 | Spesen-Freigabe 1 | `/spesen-freigabe1/:id` |
 | Admin → Vorgänge (Detail) | `/admin/vorgaenge/:id` |

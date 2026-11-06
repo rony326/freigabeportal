@@ -44,6 +44,7 @@ Exportmanifest verwenden sie gemeinsam.
 | Rechnung ohne QR-Bill | `ohne_zahlungsdaten` | nein | keine; Zahlung manuell |
 | Gutschrift | `keine_zahlung` | nein | keine |
 | Splitgruppe / Kreditkartenabrechnung | wie die Gesamtrechnung (Elternjob) | jedes Kind bestätigt dieselbe Gesamtzahlung | eine Zahlung je Gruppe |
+| Rapport (nur zur Kenntnis) | – (`zahlung: null`) | keine Freigabe 2, nur Kenntnisnahme | keine; Export nur über `/api/n8n/rapporte`, nie über `/api/n8n/jobs` |
 
 Begründung: Eine Zahlung wird nur für die Spesen-Rückerstattung und für
 QR-Rechnungen maschinell vorbereitet. Genau dort kann eine manipulierte

@@ -45,7 +45,7 @@ flowchart LR
 Es gibt keine separate Backend-API und kein Frontend-Build: jede Seite ist
 eine serverseitig gerenderte EJS-Ansicht, Formulare posten klassisch per
 `POST`. JSON-Schnittstellen gibt es für n8n-Rechnungen und Kreditkartenbelege
-(`/api/n8n/jobs/*`, `/api/n8n/kk-belege`), den Pool (`/api/pool`),
+(`/api/n8n/jobs/*`, `/api/n8n/kk-belege`), Rapporte (`/api/n8n/rapporte/*`), den Pool (`/api/pool`),
 Cron-Aufrufe und den Healthcheck. Die Backup-API liefert eine Datei.
 Siehe [n8n-schnittstelle.md](n8n-schnittstelle.md).
 
@@ -117,6 +117,7 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
 | `/api/n8n/jobs` | machine | `X-API-Key` | Rechnungseingang/-abholung durch n8n |
 | `/api/n8n/backup` | machine | `X-API-Key` mit separatem `BACKUP_API_KEY` | Abholung des neuesten Backup-Archivs durch n8n (Offsite-Ablage) |
 | `/api/n8n/kk-belege` | machine | `X-API-Key` mit `N8N_API_KEY`, Modul aktiv | Kreditkartenbelege per Mail als Entwurf erfassen |
+| `/api/n8n/rapporte` | machine | `X-API-Key` mit `N8N_API_KEY` | Abholung und Archivquittung abgeschlossener Rapporte, getrennt von `/api/n8n/jobs`, siehe [n8n-schnittstelle.md](n8n-schnittstelle.md) |
 | `/kreditkarte` | session | eingeloggt + Beleg-/Kartenrechte | Kreditkartenbelege erfassen und bearbeiten |
 | `/ferienmodus` | session | eingeloggt | eigene Abwesenheit und Stellvertretung verwalten |
 | `/api/pool` | session | Rolle `buchhaltung` | JSON-Pool-API (Beanspruchen) |
@@ -128,6 +129,7 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
 | `/spesen` | session | eingeloggt | Spesen-Einreichung (Formular + Speichern) |
 | `/spesen-freigabe1` | session | eingeloggt + Job-Autorisierung | Freigabe 1 für Spesen-Positionen (review-only) |
 | `/freigabe2` | session | eingeloggt + Job-Autorisierung | zweite Freigabe (Rechnungen und Spesen) |
+| `/rapporte` | session | eingeloggt + Beteiligung am Rapport | Rapport ansehen und zur Kenntnis nehmen (`GET /:id`, `POST /:id/bestaetigen`), siehe [rechnungs-workflow.md](rechnungs-workflow.md#9-rapporte-status-kenntnisnahme) |
 | `/abgelehnt` | session | eingeloggt + Job-Autorisierung | Überarbeitung abgelehnter Rechnungen |
 | `/kommentare` | session | eingeloggt + Sichtrecht auf den Vorgang | `POST /kommentare/:jobId`: Kommentar speichern, siehe [kommentare.md](kommentare.md) |
 | `/zeitstempel-pruefen` | session | eingeloggt | Zeitstempel-Verifikation + Zertifikat |

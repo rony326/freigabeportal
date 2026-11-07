@@ -2,7 +2,7 @@ const RIGHTS = [
   'konten_verwalten', 'kreditoren_verwalten', 'geplante_jobs_verwalten',
   'abgelehnt_verwalten', 'mails_einsehen', 'sync_einsehen', 'audit_log_einsehen',
   'pool_zuweisen', 'sync_verwalten', 'workflow_eingreifen', 'kreditkarten_verwalten',
-  'vorgaenge_einsehen', 'betrieb_einsehen',
+  'vorgaenge_einsehen', 'betrieb_einsehen', 'auswertung_einsehen', 'budgets_verwalten',
 ];
 
 export function migrateSecuritySchema(db) {
@@ -120,7 +120,7 @@ export function migrateSecuritySchema(db) {
     export_nachweise: 'id', archiv_quittungen: 'export_id',
     kreditkarten: 'id', kreditkarte_erfasser: 'kreditkarte_id', kk_belege: 'id',
     altfall_entscheidungen: 'id', banner: 'id', betrieb_fehlermeldungen: 'id',
-    kommentare: 'id', kenntnisnahmen: 'id',
+    kommentare: 'id', kenntnisnahmen: 'id', konto_budgets: 'konto_id',
   };
   // Inhalte, die nach Ablauf der Aufbewahrung nicht im (unveränderlichen) Audit-Log bleiben dürfen.
   const GESCHWAERZT = { betrieb_fehlermeldungen: ['beschreibung', 'seite', 'user_agent'] };

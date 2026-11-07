@@ -201,3 +201,32 @@ test('POST /admin/module speichert modul_rapporte_aktiv aus der Checkbox rapport
   assert.equal(getConfigValue(db, 'modul_rapporte_aktiv'), '0');
   db.close();
 });
+
+test('Auswertung: Schwelle "länger offen" hat Default 14 und wird auf Module angezeigt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  assert.equal(getConfigValue(db, 'auswertung_offen_schwelle_tage'), '14');
+  const res = await request(buildTestApp(db)).get('/admin/module').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /name="auswertungOffenSchwelleTage"[^>]*value="14"/);
+  db.close();
+});
+
+test('Auswertung: Schwelle speichern (gültig) und ablehnen (ausserhalb 1–365) ohne Teilspeicherung', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const ok = await request(app).post('/admin/module').set('x-test-person-id', '99').type('form').send({ spesenAktiv: '1', auswertungOffenSchwelleTage: '30' });
+  assert.equal(ok.status, 302);
+  assert.equal(getConfigValue(db, 'auswertung_offen_schwelle_tage'), '30');
+  for (const wert of ['0', '366', 'abc', '2.5']) {
+    const res = await request(app).post('/admin/module').set('x-test-person-id', '99').type('form').send({ auswertungOffenSchwelleTage: wert });
+    assert.equal(res.status, 400, wert);
+    assert.match(res.text, /zwischen 1 und 365/);
+    assert.equal(getConfigValue(db, 'auswertung_offen_schwelle_tage'), '30');
+    assert.equal(getConfigValue(db, 'modul_spesen_aktiv'), '1', 'nichts anderes gespeichert');
+  }
+  db.close();
+});

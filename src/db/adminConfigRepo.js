@@ -130,6 +130,8 @@ const DEFAULTS = {
   status_speicher_warnung_prozent: '15',
   status_speicher_fehler_prozent: '5',
   einrichtung_ohne_zeitstempel: '0',
+  // Auswertung: ab wie vielen Tagen eine offene Rechnung als "länger offen" zählt (1–365).
+  auswertung_offen_schwelle_tage: '14',
 };
 
 export function seedDefaults(db) {

@@ -2667,6 +2667,9 @@ test('POST /kontierung/lieferanten creates a Kreditor and returns it as JSON, fo
   const db = openDatabase(':memory:');
   seedDefaults(db);
   upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
+  // Ohne Buchhaltungsgruppe, aber mit einer offenen Kontierung (z. B. weitergeleitet als Freigeber 1).
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
   const app = buildTestApp(db, createStubMailer());
 
   const res = await request(app)
@@ -3389,5 +3392,17 @@ test('kontierung: Nebenaktionen im Menü Weitere Aktionen', async () => {
   assert.ok(modal, 'kk-abrechnung-modal vorhanden');
   assert.ok(modal[0].includes(`action="/kontierung/${id}/als-kk-abrechnung"`));
   assert.ok(modal[0].includes('name="_csrf"'));
+  db.close();
+});
+
+test('POST /kontierung/lieferanten: Person ohne Buchhaltung, Recht oder offene Kontierung → 403, nichts angelegt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  upsertPerson(db, { id: '7', vorname: 'Nur', nachname: 'Spesen', email: 'spesen@example.org', gruppen: [], loggedInNow: true });
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).post('/kontierung/lieferanten').set('x-test-person-id', '7').type('form').send({ name: 'Fremde AG' });
+  assert.equal(res.status, 403);
+  const { listKreditoren } = await import('../../src/db/kreditorenRepo.js');
+  assert.equal(listKreditoren(db).length, 0);
   db.close();
 });

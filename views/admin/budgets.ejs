@@ -26,7 +26,8 @@
                 <td><%= k.bezeichnung %></td>
                 <td><%= k.freigeber1 %></td>
                 <td>
-                  <input type="text" inputmode="decimal" class="form-control<% if (k.fehler) { %> is-invalid<% } %>" name="budget_<%= k.id %>" value="<%= k.wert %>" aria-label="Budget <%= jahr %> für Konto <%= k.kontonummer %>"<% if (k.fehler) { %> aria-invalid="true"<% } %>>
+                  <input type="text" inputmode="decimal" class="form-control betrag<% if (k.fehler) { %> is-invalid<% } %>" id="budget_<%= k.id %>" name="budget_<%= k.id %>" value="<%= k.wert %>" aria-label="Budget <%= jahr %> für Konto <%= k.kontonummer %>"<% if (k.fehler) { %> aria-invalid="true" aria-describedby="budget_<%= k.id %>-fehler"<% } %>>
+                  <% if (k.fehler) { %><div class="invalid-feedback" id="budget_<%= k.id %>-fehler">Keine gültige Zahl. Beispiele: 12000, 12'000.50 oder 12 000,50.</div><% } %>
                   <% if (k.vorjahr) { %><div class="form-text">Vorjahr: <%= k.vorjahr %></div><% } %>
                 </td>
               </tr>

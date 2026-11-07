@@ -45,7 +45,8 @@ Die Regeln stehen auch unten auf der Seite.
 - **Zeitraum:** «Laufendes Jahr bis heute» (Standard), «Letzte 12 Monate» (heute − 365 Tage),
   «Vorjahr» oder «Eigener Zeitraum» (Von ≤ Bis, höchstens 5 Jahre). Massgebend ist das
   **Zürcher Datum** von `abgeschlossen_am` (Freigabe 2). Ungültige Angaben zeigen eine Meldung
-  und den Standard-Zeitraum.
+  und den Standard-Zeitraum. Wer ein Datum ändert, stellt die Auswahl automatisch auf «Eigener
+  Zeitraum»; eine Voreinstellung zu wählen füllt Von/Bis passend aus.
 - **Freigegeben** = Status `abgeschlossen`, `abgeholt` oder `archiviert`.
 - **In Freigabe** = aktueller Stand `zugewiesen` oder `freigabe2`; in der Kennzahl und bei
   «länger offen» zählen auch Belege im Pool (`unzugewiesen`, Konto noch unbekannt), in der

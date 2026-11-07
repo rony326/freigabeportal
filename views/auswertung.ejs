@@ -16,7 +16,7 @@
         <label class="form-label small mb-1" for="zeitraum">Zeitraum</label>
         <select class="form-select" id="zeitraum" name="zeitraum">
           <% ['jahr', '12m', 'vorjahr', 'eigen'].forEach((art) => { %>
-            <option value="<%= art %>"<%= zeitraum.art === art ? ' selected' : '' %>><%= zeitraumText[art] %></option>
+            <option value="<%= art %>"<%= zeitraum.art === art ? ' selected' : '' %><% if (voreinstellungen[art]) { %> data-von="<%= voreinstellungen[art].von %>" data-bis="<%= voreinstellungen[art].bis %>"<% } %>><%= zeitraumText[art] %></option>
           <% }) %>
         </select>
       </div>
@@ -39,17 +39,32 @@
       </div>
       <div class="col-auto align-self-end"><button type="submit" class="btn btn-outline-primary">Anzeigen</button></div>
     </form>
-    <p class="form-text mt-n3 mb-4">Von/Bis gilt nur bei «Eigener Zeitraum».</p>
+    <script nonce="<%= locals.cspNonce %>">
+      // Zeitraum und Von/Bis gehören zusammen: ein Datum ändern heisst «Eigener Zeitraum»,
+      // eine Voreinstellung wählen füllt die Daten aus.
+      (function () {
+        var wahl = document.getElementById('zeitraum');
+        var von = document.getElementById('von');
+        var bis = document.getElementById('bis');
+        [von, bis].forEach(function (feld) {
+          feld.addEventListener('input', function () { wahl.value = 'eigen'; });
+        });
+        wahl.addEventListener('change', function () {
+          var option = wahl.options[wahl.selectedIndex];
+          if (option.dataset.von) { von.value = option.dataset.von; bis.value = option.dataset.bis; }
+        });
+      })();
+    </script>
 
     <div class="row row-cols-1 row-cols-sm-2 row-cols-xl-4 g-3 mb-4">
       <div class="col"><div class="card h-100"><div class="card-body">
         <div class="text-body-secondary small">Freigegeben</div>
-        <div class="fs-4 fw-semibold" data-kennzahl="freigegeben"><%= formatChf(kennzahlen.freigegeben.betrag) %></div>
+        <div class="fs-4 fw-semibold betrag" data-kennzahl="freigegeben"><%= formatChf(kennzahlen.freigegeben.betrag) %></div>
         <div class="text-body-secondary small"><%= kennzahlen.freigegeben.anzahl %> <%= kennzahlen.freigegeben.anzahl === 1 ? 'Rechnung' : 'Rechnungen' %></div>
       </div></div></div>
       <div class="col"><div class="card h-100"><div class="card-body">
         <div class="text-body-secondary small">Zurzeit in Freigabe</div>
-        <div class="fs-4 fw-semibold" data-kennzahl="inFreigabe"><%= formatChf(kennzahlen.inFreigabe.betrag) %></div>
+        <div class="fs-4 fw-semibold betrag" data-kennzahl="inFreigabe"><%= formatChf(kennzahlen.inFreigabe.betrag) %></div>
         <div class="text-body-secondary small"><%= kennzahlen.inFreigabe.anzahl %> <%= kennzahlen.inFreigabe.anzahl === 1 ? 'Rechnung' : 'Rechnungen' %></div>
       </div></div></div>
       <div class="col"><div class="card h-100"><div class="card-body">
@@ -85,9 +100,9 @@
               <tr>
                 <td class="fw-medium"><%= z.kontonummer %> <%= z.bezeichnung %></td>
                 <td><%= z.verantwortlich || '—' %></td>
-                <td class="text-end"><%= z.budget === null ? 'kein Budget' : formatChf(z.budget) %></td>
-                <td class="text-end"><%= formatChf(z.freigegeben) %></td>
-                <td class="text-end"><%= formatChf(z.inFreigabe) %></td>
+                <td class="text-end betrag"><%= z.budget === null ? 'kein Budget' : formatChf(z.budget) %></td>
+                <td class="text-end betrag"><%= formatChf(z.freigegeben) %></td>
+                <td class="text-end betrag"><%= formatChf(z.inFreigabe) %></td>
                 <td>
                   <% if (z.budget === null) { %>
                     <span class="text-body-secondary small">—</span>
@@ -176,7 +191,7 @@
               <tr>
                 <td class="fw-medium"><%= l.name %></td>
                 <td class="text-end"><%= l.anzahl %></td>
-                <td class="text-end"><%= formatChf(l.betrag) %></td>
+                <td class="text-end betrag"><%= formatChf(l.betrag) %></td>
                 <td><div class="d-flex align-items-center gap-2"><div class="auswertung-balken flex-grow-1" aria-hidden="true"><span class="auswertung-frei" style="width: <%= breite(l.betrag, groesster) %>%"></span></div><span class="small text-end" style="min-width: 3rem"><%= (l.anteil * 100).toFixed(1) %> %</span></div></td>
                 <td><%= l.konten.join(', ') || '—' %></td>
               </tr>

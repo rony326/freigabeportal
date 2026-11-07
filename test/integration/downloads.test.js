@@ -513,3 +513,18 @@ test('GET /downloads/:jobId/oeffnen returns 403 for a person the job is not assi
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('Dateiname mit Zeichen ausserhalb Latin-1 (€, Emoji): PDF wird geliefert, Name als filename* kodiert', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'downloads-test-'));
+  const config = testConfig();
+  const pdfPfad = join(dir, 'euro.pdf');
+  writeFileSync(pdfPfad, PDF_BYTES);
+  const id = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'scanner', absender: null, dateiname: "Rechnung 50 € (Mai)'s 🎵.pdf", pdfPfad });
+  const res = await request(buildTestApp(db, config)).get(buildSignedDownloadUrl(config, id, 900));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['content-disposition'],
+    "inline; filename=\"Rechnung 50 _ (Mai)'s _.pdf\"; filename*=UTF-8''Rechnung%2050%20%E2%82%AC%20%28Mai%29%27s%20%F0%9F%8E%B5.pdf");
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});

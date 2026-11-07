@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import { personHasRole } from '../middleware/roles.js';
+import { personHasPermission } from '../middleware/permissions.js';
+import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
 import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
 import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
@@ -150,6 +153,16 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   // Portal-Admins), since Kontierung itself is usually done by Buchhaltung, not admins — mirrors
   // the validation in POST /admin/kreditoren, minus the admin-only gate.
   router.post('/lieferanten', csrfProtection, (req, res) => {
+    // Nur wer kontiert: Buchhaltung, Superadmin, Recht kreditoren_verwalten oder eine offene
+    // Kontierung/Überarbeitung bei sich (z. B. als Freigeber 1 weitergeleitet).
+    const person = req.currentPerson;
+    const darf = personHasRole(person, config, 'buchhaltung') || personHasRole(person, config, 'superadmin')
+      || personHasPermission(db, config, person, 'kreditoren_verwalten')
+      || Boolean(db.prepare("SELECT 1 FROM jobs WHERE zugewiesen_an = ? AND status IN ('zugewiesen', 'abgelehnt') LIMIT 1").get(person.churchtools_person_id));
+    if (!darf) {
+      meldeZugriffVerweigert(req, { grund: 'fehlendes_recht', status: 403, recht: 'kreditoren_verwalten' });
+      return res.status(403).json({ error: 'Du darfst keine Lieferanten anlegen.' });
+    }
     const { name, kontoId } = req.body;
     const trimmedName = (name || '').trim();
     if (!trimmedName) {

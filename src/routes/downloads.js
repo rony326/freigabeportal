@@ -108,8 +108,12 @@ export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITE
     // policies) fall back to downloading the file instead of rendering it in the <iframe>
     // preview used by pool.ejs, kontierung.ejs, and freigabe2.ejs. "inline" plus a sanitized
     // filename (CR/LF stripped, quotes escaped) makes every browser render it in place.
+    // filename*= (RFC 5987) trägt Zeichen ausserhalb von ASCII (€, Umlaute aus UTF-8, Emoji);
+    // Node lehnt sie im normalen filename="" ab (ERR_INVALID_CHAR → 500).
     const safeName = job.dateiname.replace(/[\r\n"]/g, '');
-    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+    const asciiName = safeName.replace(/[^\x20-\x7e]/gu, '_');
+    const kodiert = encodeURIComponent(safeName).replace(/['()*]/g, (z) => `%${z.charCodeAt(0).toString(16).toUpperCase()}`);
+    res.setHeader('Content-Disposition', `inline; filename="${asciiName}"${asciiName === safeName ? '' : `; filename*=UTF-8''${kodiert}`}`);
     // A chunked response with no Content-Length is a known trigger for some PDF viewers
     // (notably Safari/iOS) to fall back to a download prompt instead of rendering inline —
     // setting it explicitly removes that ambiguity for every browser.

@@ -49,3 +49,21 @@ test('Vorschau-Dialog hat transform-origin vom Bild', async () => {
   assert.ok(Math.abs(d.x - d.breite / 2) > 3 || Math.abs(d.y - d.hoehe / 2) > 3, 'Mitte des Dialogs');
   await page.close();
 });
+
+test('Gehaltener Druck auf die Kachelfläche (Touch) navigiert zur Hauptaktion', async () => {
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch();
+  const kontext = await browser.newContext({ viewport: { width: 1280, height: 900 }, hasTouch: true, isMobile: true });
+  const page = await kontext.newPage();
+  await page.goto(`${b.server.url}/pool?ansicht=kacheln&als=test-2`);
+  const titel = page.locator(`#freigabe2-kachel-${b.server.ids.freigabe2} .fw-semibold`).first();
+  await titel.scrollIntoViewIfNeeded();
+  const box = await titel.boundingBox();
+  assert.ok(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), 'pointer: coarse');
+  await page.mouse.move(box.x + 5, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(250);
+  await page.mouse.up();
+  await page.waitForURL((u) => u.pathname === `/freigabe2/${b.server.ids.freigabe2}`);
+  await browser.close();
+});

@@ -245,6 +245,9 @@
     });
     document.getElementById('preview-dialog-close').addEventListener('click', () => {
       document.getElementById('preview-dialog').close();
+    });
+    // Auch bei Escape: Iframe leeren, sobald der Dialog schliesst.
+    document.getElementById('preview-dialog').addEventListener('close', () => {
       document.getElementById('preview-frame').src = '';
     });
   </script>

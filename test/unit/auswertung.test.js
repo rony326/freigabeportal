@@ -269,3 +269,22 @@ test('Ausschöpfung wie im Entwurf: (freigegeben + in Freigabe) / Budget, über 
   assert.equal(za.ueberBudget, true);
   db.close();
 });
+
+test('Durchlaufzeiten bleiben bei vielen Rechnungen und grossem Audit-Log schnell (keine Abfrage pro Rechnung)', () => {
+  const { db, a } = setup();
+  const insJob = db.prepare("INSERT INTO jobs (eingang_am, quelle, dateiname, pdf_pfad, status, konto_id, abgeschlossen_am, betrag) VALUES ('2026-02-01T00:00:00Z','scanner','x','x','archiviert',?, '2026-03-01T00:00:00Z', '10')");
+  const insAudit = db.prepare("INSERT INTO audit_ereignisse (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, vorher, nachher) VALUES ('2026-02-03T00:00:00Z', 's', 's', 'jobs', ?, 'UPDATE', ?, ?)");
+  db.exec('BEGIN');
+  for (let i = 0; i < 3000; i++) {
+    const id = String(insJob.run(a).lastInsertRowid);
+    for (let u = 0; u < 8; u++) insAudit.run(id, JSON.stringify({ status: u === 0 ? 'unzugewiesen' : 'zugewiesen' }), JSON.stringify({ status: 'zugewiesen' }));
+  }
+  db.exec('COMMIT');
+  const start = Date.now();
+  const pool = durchlaufzeiten(db, { ...JAHR, kontoIds: null }).find((s) => s.stufe === 'pool');
+  const dauer = Date.now() - start;
+  assert.equal(pool.anzahl, 3000);
+  assert.equal(pool.median, 2);
+  assert.ok(dauer < 1500, `durchlaufzeiten brauchte ${dauer} ms`);
+  db.close();
+});

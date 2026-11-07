@@ -237,13 +237,21 @@ export function budgetProKonto(db, { von, bis, budgetJahr, kontoIds }) {
 
 // ---------- Durchlaufzeiten ----------
 
-function poolEnde(db, job) {
-  const audit = db.prepare(`SELECT MIN(zeitpunkt) AS t FROM audit_ereignisse
-    WHERE objekt = 'jobs' AND objekt_id = ? AND aktion = 'UPDATE'
-      AND json_extract(vorher, '$.status') = 'unzugewiesen' AND json_extract(nachher, '$.status') <> 'unzugewiesen'`).get(String(job.id)).t;
-  const zuweisung = db.prepare("SELECT MIN(zeitpunkt) AS t FROM freigaben WHERE job_id = ? AND rolle = 'pool_zuweisung'").get(job.id).t;
-  const kandidaten = [audit, zuweisung].filter(Boolean).sort();
-  return kandidaten[0] ?? job.eingang_am;
+// Pool-Ende und letzte Freigabe 1 für viele Jobs in je einer Abfrage (statt einer pro Job): das
+// Audit-Log ist nur nach (objekt, aktion, zeitpunkt) indiziert und wächst mit jeder Änderung.
+function poolEnden(db) {
+  const enden = new Map();
+  const merke = (id, t) => { if (t && (!enden.has(id) || t < enden.get(id))) enden.set(id, t); };
+  for (const r of db.prepare(`SELECT objekt_id, MIN(zeitpunkt) AS t FROM audit_ereignisse
+    WHERE objekt = 'jobs' AND aktion = 'UPDATE'
+      AND json_extract(vorher, '$.status') = 'unzugewiesen' AND json_extract(nachher, '$.status') <> 'unzugewiesen'
+    GROUP BY objekt_id`).all()) merke(Number(r.objekt_id), r.t);
+  for (const r of db.prepare("SELECT job_id, MIN(zeitpunkt) AS t FROM freigaben WHERE rolle = 'pool_zuweisung' GROUP BY job_id").all()) merke(r.job_id, r.t);
+  return enden;
+}
+
+function letzteFreigaben1(db) {
+  return new Map(db.prepare("SELECT job_id, MAX(zeitpunkt) AS t FROM freigaben WHERE rolle = 'freigeber1' GROUP BY job_id").all().map((r) => [r.job_id, r.t]));
 }
 
 function tage(vonIso, bisIso) {
@@ -252,10 +260,14 @@ function tage(vonIso, bisIso) {
 
 export function durchlaufzeiten(db, { von, bis, kontoIds }) {
   const werte = { pool: [], freigabe1: [], freigabe2: [] };
-  for (const job of freigegebeneJobs(db, { von, bis, kontoIds }, 'j.id, j.eingang_am, j.abgeschlossen_am')) {
-    const ende = poolEnde(db, job);
+  const jobs = freigegebeneJobs(db, { von, bis, kontoIds }, 'j.id, j.eingang_am, j.abgeschlossen_am');
+  if (!jobs.length) return Object.keys(werte).map((stufe) => ({ stufe, median: null, p90: null, anzahl: 0 }));
+  const enden = poolEnden(db);
+  const freigaben1 = letzteFreigaben1(db);
+  for (const job of jobs) {
+    const ende = enden.get(job.id) ?? job.eingang_am;
     werte.pool.push(tage(job.eingang_am, ende));
-    const f1 = db.prepare("SELECT MAX(zeitpunkt) AS t FROM freigaben WHERE job_id = ? AND rolle = 'freigeber1'").get(job.id).t;
+    const f1 = freigaben1.get(job.id);
     if (f1) {
       werte.freigabe1.push(tage(ende, f1));
       werte.freigabe2.push(tage(f1, job.abgeschlossen_am));

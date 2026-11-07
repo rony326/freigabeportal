@@ -14,7 +14,8 @@ export const SYMBOLE = [
   'inbox', 'plus-circle', 'wallet2', 'check2-circle', 'credit-card', 'bell', 'sun', 'patch-check', 'bug', 'shield-lock',
   'activity', 'x-circle', 'hourglass-split', 'journal-text', 'building', 'credit-card-2-front', 'people', 'alarm',
   'envelope-at', 'palette', 'grid-3x3-gap', 'clock-history', 'list-check', 'database', 'shield-exclamation',
-  'envelope-paper', 'arrow-repeat', 'calendar-check', 'card-list', 'speedometer2', 'cone-striped',
+  'envelope-paper', 'arrow-repeat', 'calendar-check', 'card-list', 'speedometer2', 'cone-striped', 'piggy-bank',
+  'bar-chart-line',
   // Sonstige: Menü, Farbmodus, Neu laden, Tabelle, Kacheln
   'list', 'circle-half', 'arrow-clockwise', 'table', 'grid',
 ];
@@ -23,6 +24,7 @@ export const SYMBOLE = [
 const PORTAL = [
   { titel: 'Arbeit', punkte: [
     { label: 'Aufgaben', href: '/pool', symbol: 'inbox', flag: null },
+    { label: 'Auswertung', href: '/auswertung', symbol: 'bar-chart-line', flag: 'auswertungSichtbar' },
   ] },
   { titel: 'Spesen', punkte: [
     { label: 'Spesen einreichen', href: '/spesen/neu', symbol: 'plus-circle', flag: 'spesenModulAktiv' },
@@ -53,6 +55,7 @@ const ADMIN = [
     { label: 'Konten', href: '/admin/konten', symbol: 'journal-text', flag: 'konten' },
     { label: 'Kreditoren', href: '/admin/kreditoren', symbol: 'building', flag: 'kreditoren' },
     { label: 'Kreditkarten', href: '/admin/kreditkarten', symbol: 'credit-card-2-front', flag: 'kreditkarten' },
+    { label: 'Budgets', href: '/admin/budgets', symbol: 'piggy-bank', flag: 'budgets' },
     { label: 'Personen', href: '/admin/personen', symbol: 'people', flag: 'personen' },
   ] },
   { titel: 'Einstellungen', punkte: [
@@ -92,8 +95,8 @@ function baue(definition, pfad, sichtbar, zaehlerFuer = () => undefined) {
     .filter((g) => g.punkte.length > 0);
 }
 
-export function bauePortalGruppen({ pfad, spesenModulAktiv, zeigeKreditkarteNav, offeneAufgaben }) {
-  const optionen = { spesenModulAktiv, zeigeKreditkarteNav };
+export function bauePortalGruppen({ pfad, spesenModulAktiv, zeigeKreditkarteNav, offeneAufgaben, auswertungSichtbar = false }) {
+  const optionen = { spesenModulAktiv, zeigeKreditkarteNav, auswertungSichtbar };
   return baue(
     PORTAL,
     pfad,

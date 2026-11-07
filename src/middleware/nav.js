@@ -5,6 +5,7 @@ import { zeigeKreditkartenBereich } from '../services/kkRechte.js';
 import { bereichFuerPfad, bauePortalGruppen, baueAdminGruppen } from '../services/navigation.js';
 import { aktiveBanner } from '../services/banner.js';
 import { zaehleOffeneAufgaben } from '../services/aufgabenZaehler.js';
+import { zugangFuer } from '../services/auswertung.js';
 
 export function loadNavFlags(db, config) {
   return (req, res, next) => {
@@ -31,6 +32,7 @@ export function loadNavFlags(db, config) {
       module: res.locals.isSuperadmin,
       ersteinrichtung: res.locals.isSuperadmin,
       kreditkarten: hasPermission('kreditkarten_verwalten'),
+      budgets: hasPermission('budgets_verwalten'),
       altfaelle: hasPermission('workflow_eingreifen'),
       betrieb: hasPermission('betrieb_einsehen'),
       testmodus: res.locals.isSuperadmin || res.locals.isManager,
@@ -55,6 +57,7 @@ export function loadNavFlags(db, config) {
               pfad: res.locals.currentPath,
               spesenModulAktiv: res.locals.spesenModulAktiv !== false,
               zeigeKreditkarteNav: res.locals.zeigeKreditkarteNav,
+              auswertungSichtbar: zugangFuer(db, config, person) !== null,
               // /pool lädt dieselben Listen ohnehin und legt die Summe hier ab (routes/poolPage.js).
               offeneAufgaben: res.locals.offeneAufgabenVorab
                 ?? zaehleOffeneAufgaben(db, person.churchtools_person_id, { istSuperadmin: res.locals.isSuperadmin }),

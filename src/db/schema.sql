@@ -345,3 +345,13 @@ CREATE TABLE IF NOT EXISTS kk_beleg_ereignisse (
   zeitpunkt TEXT NOT NULL,
   kommentar TEXT
 );
+
+-- Budget pro Konto und Kalenderjahr (Auswertung). Pflege durch Personen mit budgets_verwalten.
+CREATE TABLE IF NOT EXISTS konto_budgets (
+  konto_id INTEGER NOT NULL REFERENCES konten(id),
+  jahr INTEGER NOT NULL CHECK (jahr BETWEEN 2000 AND 2100),
+  betrag REAL NOT NULL CHECK (betrag >= 0),
+  geaendert_von TEXT,
+  geaendert_am TEXT NOT NULL,
+  PRIMARY KEY (konto_id, jahr)
+);

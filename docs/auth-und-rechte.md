@@ -100,7 +100,7 @@ den Portalzugang für seine konto-, karten- oder rechtebasierten Aufgaben.
 
 ## Additive Einzelrechte (`person_berechtigungen`)
 
-Zusätzlich zum Gruppenmodell gibt es dreizehn einzeln vergebbare,
+Zusätzlich zum Gruppenmodell gibt es fünfzehn einzeln vergebbare,
 additive Rechte, unabhängig von ChurchTools-Gruppen
 (`src/middleware/permissions.js`, `src/db/personBerechtigungenRepo.js`):
 
@@ -117,6 +117,8 @@ additive Rechte, unabhängig von ChurchTools-Gruppen
 - `vorgaenge_einsehen`: Übersicht laufender Vorgänge — erlaubt `GET /admin/vorgaenge` und `GET /admin/vorgaenge/:id`
 - `workflow_eingreifen`: in laufende Vorgänge eingreifen — Force-Aktionen bei hängenden Jobs, Altfälle und Umhängen (`POST /admin/vorgaenge/:id/umhaengen`); gilt auch für Rapporte: Empfänger ersetzen/entfernen und Markierung aufheben (`POST /admin/vorgaenge/:id/rapport/…`) sowie `POST /kontierung/:id/rapport-aufheben` für Dritte. Das Bestätigen eines Rapports ist **kein** Recht, sondern an die namentlich zugeteilte Person gebunden (kein Ferienmodus, keine Vertretung)
 - `betrieb_einsehen` („Betrieb & Nutzung“): Nutzungsdaten und Fehler einsehen, Fehlermeldungen bearbeiten, Banner und Datenschutztext verwalten — erlaubt `/admin/betrieb/*`, siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md)
+- `auswertung_einsehen` („Auswertung einsehen (alle Konten)“): `/auswertung` für alle Konten inkl. „Wo Rechnungen liegen“. Ohne das Recht sehen Freigeber 1 und Stellvertreter 1 die Seite nur für ihre eigenen aktiven Konten, siehe [auswertung.md](auswertung.md)
+- `budgets_verwalten` („Budgets verwalten“): Budgets pro Konto und Jahr pflegen und importieren — erlaubt `/admin/budgets/*`, siehe [auswertung.md](auswertung.md#budgets-pflegen)
 
 `superadmin` erhält jedes dieser Rechte automatisch über sein
 Rollen-Bundle, `manager` jedes ausser `sync_verwalten`,
@@ -130,7 +132,7 @@ Sieben Admin-Bereiche bleiben `superadmin`-exklusiv: Eskalationszeiten,
 Erscheinungsbild, Zeitstempel, Datenbank-Backup, Datei-Quarantäne, Module
 und Mail-Einstellungen. Für sie gibt es keine additiven Einzelrechte; die
 Routen prüfen die Rolle direkt. Der `CHECK`-Constraint akzeptiert nur die
-dreizehn oben genannten Rechte.
+fünfzehn oben genannten Rechte.
 
 Details zur Rechte-Matrix pro Admin-Seite: [admin-bereich.md](admin-bereich.md).
 

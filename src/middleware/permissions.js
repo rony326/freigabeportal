@@ -15,6 +15,8 @@ export const GRANTABLE_BERECHTIGUNGEN = [
   'workflow_eingreifen',
   'vorgaenge_einsehen',
   'betrieb_einsehen',
+  'auswertung_einsehen',
+  'budgets_verwalten',
 ];
 
 export const BERECHTIGUNG_LABELS = {
@@ -31,6 +33,8 @@ export const BERECHTIGUNG_LABELS = {
   workflow_eingreifen: 'In laufende Vorgänge eingreifen',
   vorgaenge_einsehen: 'Laufende Vorgänge einsehen',
   betrieb_einsehen: 'Betrieb & Nutzung',
+  auswertung_einsehen: 'Auswertung einsehen (alle Konten)',
+  budgets_verwalten: 'Budgets verwalten',
 };
 
 // Superadmin und Manager bekommen jedes vergebbare Recht über ihr Rollen-Bundle, unabhängig von

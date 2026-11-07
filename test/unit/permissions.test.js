@@ -10,10 +10,10 @@ import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS, personHasPermission, req
 
 const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
 
-test('GRANTABLE_BERECHTIGUNGEN lists exactly the thirteen catalog permissions, separating sync reading and writing', () => {
+test('GRANTABLE_BERECHTIGUNGEN lists exactly the fifteen catalog permissions, separating sync reading and writing', () => {
   assert.deepEqual(
     [...GRANTABLE_BERECHTIGUNGEN].sort(),
-    ['abgelehnt_verwalten', 'audit_log_einsehen', 'betrieb_einsehen', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'kreditoren_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'vorgaenge_einsehen', 'workflow_eingreifen']
+    ['abgelehnt_verwalten', 'audit_log_einsehen', 'betrieb_einsehen', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'kreditoren_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'vorgaenge_einsehen', 'workflow_eingreifen', 'auswertung_einsehen', 'budgets_verwalten'].sort()
   );
 });
 
@@ -128,5 +128,22 @@ test('requireAdminAreaAccess allows a manager with zero individual grants', asyn
   const app = buildPermissionTestApp(db);
   const res = await request(app).get('/admin-area').set('x-test-person-id', '1');
   assert.equal(res.status, 200);
+  db.close();
+});
+
+test('auswertung_einsehen und budgets_verwalten sind vergebbar und beschriftet', () => {
+  assert.ok(GRANTABLE_BERECHTIGUNGEN.includes('auswertung_einsehen'));
+  assert.ok(GRANTABLE_BERECHTIGUNGEN.includes('budgets_verwalten'));
+  assert.equal(BERECHTIGUNG_LABELS.auswertung_einsehen, 'Auswertung einsehen (alle Konten)');
+  assert.equal(BERECHTIGUNG_LABELS.budgets_verwalten, 'Budgets verwalten');
+});
+
+test('auswertung_einsehen kann einer Person in der Datenbank zugewiesen werden', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '7', vorname: 'K', nachname: 'Assier', email: 'k@b.ch', gruppen: [], loggedInNow: false });
+  db.prepare("INSERT INTO person_berechtigungen (person_id, berechtigung) VALUES ('7', 'auswertung_einsehen'), ('7', 'budgets_verwalten')").run();
+  const person = { churchtools_person_id: '7', gruppen: [] };
+  assert.equal(personHasPermission(db, CONFIG, person, 'auswertung_einsehen'), true);
+  assert.equal(personHasPermission(db, CONFIG, person, 'budgets_verwalten'), true);
   db.close();
 });

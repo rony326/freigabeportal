@@ -30,6 +30,12 @@
         <label class="form-check-label" for="auditLogLokaleZeit">Audit-Log-Zeiten in Lokalzeit (Europe/Zürich) anzeigen</label>
         <div class="form-text">In der Datenbank wird weiterhin UTC gespeichert — diese Einstellung wirkt sich nur auf die Anzeige im Audit-Log aus.</div>
       </div>
+      <div class="mb-3">
+        <label class="form-label" for="auswertungOffenSchwelleTage">Auswertung: «länger offen» ab (Tage)</label>
+        <input type="number" min="1" max="365" step="1" class="form-control<% if (fehler) { %> is-invalid<% } %>" style="max-width: 8rem" id="auswertungOffenSchwelleTage" name="auswertungOffenSchwelleTage" value="<%= auswertungOffenSchwelleTage %>"<% if (fehler) { %> aria-invalid="true" aria-describedby="auswertungOffenSchwelleTageFehler"<% } %>>
+        <% if (fehler) { %><div class="invalid-feedback" id="auswertungOffenSchwelleTageFehler"><%= fehler %></div><% } %>
+        <div class="form-text">Offene Rechnungen, die länger als diese Anzahl Tage im Portal liegen, werden in der Auswertung gezählt.</div>
+      </div>
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>
         <div class="alert alert-success alert-dismissible alert-kompakt fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">

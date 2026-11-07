@@ -149,6 +149,7 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
 | `/api/pool` | session | Rolle `buchhaltung` | JSON-Pool-API (Beanspruchen) |
 | `/pool` | session | eingeloggt | Dashboard für jede aktive Person (nur offene Aufgaben) |
 | `/meine-abgeschlossenen` | session | eingeloggt | eigene abgeschlossene Rechnungen, paginiert |
+| `/auswertung` | session | `auswertung_einsehen` oder Freigeber 1/Stellvertreter 1 eines aktiven Kontos (sonst 403) | Auswertung Rechnungen mit Budget, Durchlaufzeit, Engpässen, Lieferanten; CSV-Export `GET /export/:abschnitt.csv`, siehe [auswertung.md](auswertung.md) |
 | `/meine-spesen` | session | eingeloggt | eigene Spesen-Einreichungen über alle Stati, siehe [spesen-einreichung.md](spesen-einreichung.md) |
 | `/downloads` | eigene (session bzw. public je Route) | siehe [n8n-schnittstelle.md](n8n-schnittstelle.md) | signierte PDF-/Thumbnail-Auslieferung: `GET /:jobId?expires&signature` (public, signiert), `GET /:jobId/thumbnail` (eingeloggt, Vorschaubild), `GET /:jobId/refresh-url` (eingeloggt, frisch signierte Vorschau-URL als JSON), `GET /:jobId/oeffnen` (eingeloggt, 302 auf frisch signierte URL — Knopf "PDF öffnen") |
 | `/kontierung` | session | eingeloggt + Job-Autorisierung | Kontierung, Aufsplitten, Kreditkarten-Abgleich |

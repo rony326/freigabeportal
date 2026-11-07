@@ -277,7 +277,7 @@ gespeichert, sondern bei jeder Prüfung aus dem heutigen Datum berechnet
 
 ### `person_berechtigungen`
 Additive Einzelrechte, siehe [auth-und-rechte.md](auth-und-rechte.md). Ein
-`CHECK`-Constraint erlaubt dreizehn Rechte. Für die sieben
+`CHECK`-Constraint erlaubt fünfzehn Rechte. Für die sieben
 `superadmin`-exklusiven Admin-Bereiche gibt es keine vergebbaren Werte.
 
 ### `konten`
@@ -286,6 +286,13 @@ dessen Stellvertreter, Freigeber 2 + dessen Stellvertreter — alle vier
 müssen unterschiedliche, aktive Personen sein
 (`validateKontoRoles`). Freigeber 1 kontiert/erstfreigibt, Freigeber 2
 erteilt die zweite, unabhängige Freigabe (Vier-Augen-Prinzip).
+
+### `konto_budgets`
+Budget pro Konto und Kalenderjahr für die [Auswertung](auswertung.md): `konto_id` → `konten`,
+`jahr` (CHECK 2000–2100), `betrag` (REAL, CHECK ≥ 0), `geaendert_von`, `geaendert_am`;
+Primärschlüssel `(konto_id, jahr)`. Gepflegt unter Admin → Budgets (`budgets_verwalten`), jede
+Änderung über den Audit-Trigger in `audit_ereignisse` (`objekt_id` = `konto_id`, Jahr im
+Snapshot).
 
 ### `kreditoren` und `zuweisungsregeln`
 Bis 2026-09-29 hiessen Tabellen und Spalten fachlich falsch `debitoren`,

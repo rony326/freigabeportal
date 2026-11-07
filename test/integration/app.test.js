@@ -137,7 +137,7 @@ test('GET /nonexistent-route-xyz renders the logo in the right header cell along
   const app = createApp({ db, config: testConfig() });
   const res = await request(app).get('/nonexistent-route-xyz');
   assert.equal(res.status, 404);
-  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2 logo-hell">\s*<button type="button" id="theme-toggle"/);
+  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2 logo-hell">\s*<div class="dropdown farbmodus-menue">\s*<button type="button" id="theme-toggle"/);
   db.close();
 });
 
@@ -353,7 +353,7 @@ test('Hauptmenü renders no menu at all for an anonymous visitor', async () => {
   const db = openDatabase(':memory:');
   const app = createApp({ db, config: testConfig() });
   const res = await request(app).get('/nonexistent-route-xyz');
-  assert.doesNotMatch(res.text, /dropdown-menu/);
+  assert.doesNotMatch(res.text, /class="dropdown-menu/); // das Farbmodus-Menü im Kopf ist kein Hauptmenü
   assert.doesNotMatch(res.text, />Aufgaben</);
   db.close();
 });

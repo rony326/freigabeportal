@@ -778,3 +778,6 @@ h1 .beleg-nr {
   font-variant-numeric: tabular-nums;
   margin-left: .25rem;
 }
+
+/* Farbmodus-Wechsel: kurzer, weicher Übergang (JS setzt die Klasse nicht bei reduzierter Bewegung). */
+.farbwechsel, .farbwechsel * { transition: background-color .25s, color .25s, border-color .25s !important; }

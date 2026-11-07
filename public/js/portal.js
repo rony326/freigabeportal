@@ -1,15 +1,40 @@
 // Gemeinsames Verhalten des Grundgerüsts (views/_seite_anfang.ejs). Wird mit defer geladen.
 (function () {
-  var toggle = document.getElementById('theme-toggle');
-  if (toggle) {
-    toggle.addEventListener('click', function () {
-      var root = document.documentElement;
-      var next = root.getAttribute('data-theme') === 'dunkel' ? 'hell' : 'dunkel';
-      root.setAttribute('data-theme', next);
-      root.setAttribute('data-bs-theme', next === 'dunkel' ? 'dark' : 'light');
-      document.cookie = 'theme=' + next + ';path=/;max-age=31536000;samesite=lax';
+  var root = document.documentElement;
+  var dunkelMedium = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  var systemAktiv = false;
+
+  function setzeTheme(dunkel) {
+    root.setAttribute('data-theme', dunkel ? 'dunkel' : 'hell');
+    root.setAttribute('data-bs-theme', dunkel ? 'dark' : 'light');
+  }
+  function wende(wahl) {
+    systemAktiv = wahl === 'system';
+    setzeTheme(wahl === 'dunkel' || (systemAktiv && dunkelMedium && dunkelMedium.matches));
+  }
+  if (dunkelMedium) {
+    dunkelMedium.addEventListener('change', function () {
+      if (systemAktiv) setzeTheme(dunkelMedium.matches);
     });
   }
+  var eintraege = document.querySelectorAll('[data-farbmodus]');
+  // Ohne Cookie und ohne Admin-Standard liefert der Server "system" aus: dann dem Medium folgen.
+  eintraege.forEach(function (e) {
+    if (e.getAttribute('aria-pressed') === 'true') systemAktiv = e.getAttribute('data-farbmodus') === 'system';
+  });
+  eintraege.forEach(function (eintrag) {
+    eintrag.addEventListener('click', function () {
+      var wahl = eintrag.getAttribute('data-farbmodus');
+      var bewegt = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      if (bewegt) {
+        root.classList.add('farbwechsel');
+        setTimeout(function () { root.classList.remove('farbwechsel'); }, 250);
+      }
+      wende(wahl);
+      document.cookie = 'theme=' + wahl + ';path=/;max-age=31536000;samesite=lax';
+      eintraege.forEach(function (e) { e.setAttribute('aria-pressed', e === eintrag ? 'true' : 'false'); });
+    });
+  });
 
   // Eingeklappte Seitenleiste (PDF-Seiten): Label als Tooltip neben dem Symbol.
   if (window.bootstrap && window.bootstrap.Tooltip) {

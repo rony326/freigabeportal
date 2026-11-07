@@ -89,3 +89,14 @@ test('portal.css: dunkles Logo nur im Dunkelmodus, beim Drucken immer das helle'
   assert.match(druck, /\.logo-dunkel\s*\{\s*display:\s*none\s*!important;?\s*\}/);
   assert.match(druck, /\.logo-hell\s*\{\s*display:\s*inline(-block)?\s*!important;?\s*\}/);
 });
+
+test('Cookie system überschreibt Admin-Standard dunkel', async () => {
+  const db = openDatabase(':memory:');
+  setConfigValue(db, 'branding_theme_default', 'dunkel');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/does-not-exist').set('Cookie', 'theme=system');
+  assert.equal(res.status, 404);
+  assert.match(res.text, /<html lang="de">/);
+  assert.match(res.text, /data-farbmodus="system"[^>]*aria-pressed="true"/);
+  db.close();
+});

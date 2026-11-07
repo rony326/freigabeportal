@@ -90,3 +90,34 @@ test('loadNavFlags sets all flags false and adminNav all-false for an anonymous 
   assert.equal(Object.values(res.locals.adminNav).every((v) => v === false), true);
   db.close();
 });
+
+test('loadNavFlags berechnet Banner und Navigation erst beim Lesen (Downloads/JSON sparen die Abfragen)', () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '1', vorname: 'A', nachname: 'B', email: 'a@b.ch', gruppen: ['10'], loggedInNow: false });
+  const { res } = runLoadNavFlags(db, CONFIG, { churchtools_person_id: '1', gruppen: ['10'], aktiv: 1 }, '/pool');
+  // Ohne Lesen keine Abfrage: eine kaputte Tabelle fällt erst beim Zugriff auf.
+  db.exec('DROP TABLE banner_ausgeblendet; DROP TABLE banner');
+  assert.ok(Object.getOwnPropertyDescriptor(res.locals, 'banner').get, 'banner ist ein Getter');
+  assert.deepEqual(res.locals.banner, [], 'Rückfall statt Absturz, wenn das Banner nicht lesbar ist');
+  assert.equal(res.locals.navigation.bereich, 'portal');
+  db.close();
+});
+
+test('loadNavFlags: Navigation fällt bei kaputter Datenbank auf null zurück (Fehlerseite rendert weiter)', (t) => {
+  t.mock.method(console, 'error', () => {});
+  const db = openDatabase(':memory:');
+  const { res } = runLoadNavFlags(db, CONFIG, { churchtools_person_id: '1', gruppen: ['10'], aktiv: 1 }, '/pool');
+  db.exec('PRAGMA foreign_keys = OFF; DROP TABLE jobs');
+  assert.equal(res.locals.navigation, null);
+  db.close();
+});
+
+test('loadNavFlags übernimmt eine vorab gezählte Aufgabensumme (routes/poolPage.js) statt neu zu zählen', () => {
+  const db = openDatabase(':memory:');
+  const { res } = runLoadNavFlags(db, CONFIG, { churchtools_person_id: '1', gruppen: ['10'], aktiv: 1 }, '/pool');
+  res.locals.offeneAufgabenVorab = 7;
+  db.exec('PRAGMA foreign_keys = OFF; DROP TABLE jobs');
+  const pool = res.locals.navigation.gruppen.flatMap((g) => g.punkte ?? g.eintraege ?? []).find((p) => p.href === '/pool');
+  assert.equal(pool?.zaehler, 7);
+  db.close();
+});

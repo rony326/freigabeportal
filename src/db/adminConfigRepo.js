@@ -149,6 +149,16 @@ export function getConfigValue(db, key) {
   return row ? row.value : null;
 }
 
+// Mehrere Werte in einer Abfrage (z.B. pro Anfrage in der Middleware). Fehlende Schlüssel -> null,
+// wie bei getConfigValue.
+export function getConfigValues(db, keys) {
+  const werte = Object.fromEntries(keys.map((key) => [key, null]));
+  if (keys.length === 0) return werte;
+  const rows = db.prepare(`SELECT key, value FROM admin_config WHERE key IN (${keys.map(() => '?').join(', ')})`).all(...keys);
+  for (const row of rows) werte[row.key] = row.value;
+  return werte;
+}
+
 export function setConfigValue(db, key, value) {
   db.prepare(
     'INSERT INTO admin_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'

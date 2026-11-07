@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs';
-import { getConfigValue } from '../db/adminConfigRepo.js';
+import { getConfigValues } from '../db/adminConfigRepo.js';
 
 // Logo-URL mit Versionsparameter aus der Änderungszeit der Datei: der Browser darf das Logo lange
 // cachen (siehe routes/branding.js) und holt nach einem neuen Upload trotzdem sofort das neue.
@@ -24,18 +24,28 @@ function parseThemeCookie(cookieHeader) {
   return value === 'hell' || value === 'dunkel' || value === 'system' ? value : null;
 }
 
+// Eine Abfrage pro Anfrage statt elf. Bewusst kein Zwischenspeicher: admin_config wird auch
+// direkt per SQL (Testmodus-Trigger, Wiederherstellung) geändert.
+const BRANDING_SCHLUESSEL = [
+  'branding_farbe_primaer', 'branding_farbe_sekundaer', 'branding_theme_default',
+  'branding_logo_pfad', 'branding_logo_mimetype', 'branding_logo_ausrichtung',
+  'branding_logo_dunkel_pfad', 'branding_logo_dunkel_mimetype',
+  'footer_text', 'seiten_titel', 'modul_spesen_aktiv',
+];
+
 export function loadBranding(db) {
   return (req, res, next) => {
-    const primaryColor = getConfigValue(db, 'branding_farbe_primaer');
-    const secondaryColor = getConfigValue(db, 'branding_farbe_sekundaer');
-    const themeDefault = getConfigValue(db, 'branding_theme_default') || 'system';
-    const logoPfad = getConfigValue(db, 'branding_logo_pfad');
-    const logoMimetype = getConfigValue(db, 'branding_logo_mimetype');
-    const logoAusrichtung = getConfigValue(db, 'branding_logo_ausrichtung') || 'links';
-    const logoDunkelPfad = getConfigValue(db, 'branding_logo_dunkel_pfad');
-    const logoDunkelMimetype = getConfigValue(db, 'branding_logo_dunkel_mimetype');
-    const footerText = getConfigValue(db, 'footer_text') ?? 'Freigabeportal';
-    const seitenTitel = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
+    const c = getConfigValues(db, BRANDING_SCHLUESSEL);
+    const primaryColor = c.branding_farbe_primaer;
+    const secondaryColor = c.branding_farbe_sekundaer;
+    const themeDefault = c.branding_theme_default || 'system';
+    const logoPfad = c.branding_logo_pfad;
+    const logoMimetype = c.branding_logo_mimetype;
+    const logoAusrichtung = c.branding_logo_ausrichtung || 'links';
+    const logoDunkelPfad = c.branding_logo_dunkel_pfad;
+    const logoDunkelMimetype = c.branding_logo_dunkel_mimetype;
+    const footerText = c.footer_text ?? 'Freigabeportal';
+    const seitenTitel = c.seiten_titel || 'Freigabeportal';
 
     const userTheme = parseThemeCookie(req.headers.cookie);
     let themeAttr;
@@ -69,7 +79,7 @@ export function loadBranding(db) {
       // from the same toggle without duplicating the dunkel/dark mapping in 17 places.
       bsThemeAttr: themeAttr === 'dunkel' ? 'dark' : themeAttr === 'hell' ? 'light' : null,
     };
-    res.locals.spesenModulAktiv = getConfigValue(db, 'modul_spesen_aktiv') !== '0';
+    res.locals.spesenModulAktiv = c.modul_spesen_aktiv !== '0';
     next();
   };
 }

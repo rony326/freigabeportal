@@ -1,6 +1,7 @@
 import { parseEmpfaengerListe } from './services/auditNachweisJobs.js';
 import { feldFehlerAttr } from './utils/feldFehler.js';
 import express from 'express';
+import compression from 'compression';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import { fileURLToPath } from 'node:url';
@@ -101,6 +102,10 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
   app.set('views', join(__dirname, '..', 'views'));
+  // Übersetzte Vorlagen behalten, auch ohne NODE_ENV=production: sonst übersetzt Express jede
+  // Vorlage bei jedem Aufruf neu (gemessen: /pool rund 4-5x langsamer). `npm run dev` startet den
+  // Prozess bei Änderungen ohnehin neu.
+  app.set('view cache', true);
   // Computed once at startup, not per request — the deployed commit doesn't change while the
   // process is running, and shelling out to git on every request would be wasteful.
   app.locals.version = getVersionInfo(join(__dirname, '..'));
@@ -110,7 +115,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // Versions-Parameter für /js/portal.js und /css/portal.css (aus dem Dateistand beim Start): neue
   // Stände werden sofort geladen, und eine im Browser gespeicherte alte Umleitung der nackten URL
   // greift nicht mehr (Rückmeldung 2026-10-27: ERR_TOO_MANY_REDIRECTS auf portal.js).
-  app.locals.assetVersion = ['js/portal.js', 'css/portal.css', 'vendor/bootstrap-icons/symbole.svg']
+  app.locals.assetVersion = ['js/portal.js', 'js/belegUmschalter.js', 'css/portal.css', 'vendor/bootstrap-icons/symbole.svg', 'vendor/bootstrap/bootstrap.min.css', 'vendor/bootstrap/bootstrap.bundle.min.js']
     .map((datei) => Math.trunc(statSync(join(__dirname, '..', 'public', datei)).mtimeMs).toString(36))
     .join('');
   app.use((req, res, next) => {
@@ -182,7 +187,16 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     // gespeicherten Umleitung in die Gegenrichtung entstand live eine Endlosschleife.
     return res.redirect(302, m[1] + query);
   });
-  app.use(express.static(publicDir));
+  // HTML, CSS, JS und SVG komprimiert ausliefern (Bootstrap-CSS 233 KB -> rund 31 KB). PDFs und
+  // Bilder komprimiert die Bibliothek von sich aus nicht.
+  app.use(compression());
+  // Dateien mit ?v=<Stand> ändern sich unter dieser URL nie: ein Jahr cachen, ohne Rückfrage.
+  // Ohne Version bleibt es bei der Rückfrage per ETag/Last-Modified.
+  app.use(express.static(publicDir, {
+    setHeaders(res) {
+      if (res.req?.query?.v) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }));
   app.use(loadBranding(db));
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));

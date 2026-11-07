@@ -880,3 +880,32 @@ test('GET /admin zeigt den Hinweis auf fehlenden Revisions-Empfänger, bis einer
   assert.doesNotMatch(res.text, /kein Revisions-Empfänger festgelegt/);
   db.close();
 });
+
+test('Statische Dateien: mit ?v= ein Jahr immutable gecacht, ohne Version nur per ETag geprüft', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const versioniert = await request(app).get(`/css/portal.css?v=${app.locals.assetVersion}`);
+  assert.equal(versioniert.status, 200);
+  assert.equal(versioniert.headers['cache-control'], 'public, max-age=31536000, immutable');
+  const ohne = await request(app).get('/css/portal.css');
+  assert.equal(ohne.status, 200);
+  assert.doesNotMatch(ohne.headers['cache-control'] || '', /immutable/);
+  assert.ok(ohne.headers.etag);
+  db.close();
+});
+
+test('Statische Dateien und Seiten werden komprimiert ausgeliefert', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/vendor/bootstrap/bootstrap.min.css').set('Accept-Encoding', 'gzip');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['content-encoding'], 'gzip');
+  db.close();
+});
+
+test('Vorlagen-Cache ist auch ohne NODE_ENV=production eingeschaltet', () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  assert.equal(app.enabled('view cache'), true);
+  db.close();
+});

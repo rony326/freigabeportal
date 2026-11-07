@@ -764,3 +764,20 @@ test('pool: Spalte heisst Lieferant', async () => {
   assert.match(res.text, /<td class="text-end text-nowrap betrag">—<\/td>/);
   db.close();
 });
+
+test('GET /pool: Aufgabenzähler im Menü stimmt mit zaehleOffeneAufgaben überein (Summe aus den Seitenlisten)', async () => {
+  const { zaehleOffeneAufgaben } = await import('../../src/services/aufgabenZaehler.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedBuchhaltungPerson(db);
+  for (const name of ['a', 'b', 'c']) {
+    const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: `${name}.pdf`, pdfPfad: `/tmp/${name}.pdf` });
+    claimJob(db, id, '50');
+  }
+  const erwartet = zaehleOffeneAufgaben(db, '50');
+  assert.equal(erwartet, 3);
+  const res = await request(buildTestApp(db)).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  assert.match(res.text, new RegExp(`portal-zaehler">${erwartet}<`));
+  db.close();
+});

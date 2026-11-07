@@ -69,7 +69,7 @@ for (const s of FORMULARSEITEN) {
     } else {
       assert.doesNotMatch(html, /<iframe[^>]*pdf-preview/);
     }
-    assert.match(html, /<script src="\/js\/belegUmschalter\.js" defer><\/script>/);
+    assert.match(html, /<script src="\/js\/belegUmschalter\.js\?v=[^"]+" defer><\/script>/);
   });
 }
 

@@ -1,5 +1,5 @@
 import { personHasRole } from './roles.js';
-import { personHasPermission } from './permissions.js';
+import { erstellePermissionPruefer } from './permissions.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { zeigeKreditkartenBereich } from '../services/kkRechte.js';
 import { bereichFuerPfad, bauePortalGruppen, baueAdminGruppen } from '../services/navigation.js';
@@ -12,7 +12,7 @@ export function loadNavFlags(db, config) {
     res.locals.isBuchhaltung = personHasRole(person, config, 'buchhaltung');
     res.locals.isSuperadmin = personHasRole(person, config, 'superadmin');
     res.locals.isManager = personHasRole(person, config, 'manager');
-    const hasPermission = (permission) => personHasPermission(db, config, person, permission);
+    const hasPermission = erstellePermissionPruefer(db, config, person);
     res.locals.adminNav = {
       vorgaenge: hasPermission('vorgaenge_einsehen'),
       konten: hasPermission('konten_verwalten'),
@@ -38,10 +38,14 @@ export function loadNavFlags(db, config) {
     // Strip a trailing slash (e.g. "/pool/") so nav highlighting/buttons keyed on an exact
     // path like "/pool" still match — Express routes both with and without it identically.
     res.locals.currentPath = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
-    res.locals.kreditkartenModulAktiv = getConfigValue(db, 'modul_kreditkarten_aktiv') === '1';
-    res.locals.zeigeKreditkarteNav = Boolean(person) && res.locals.kreditkartenModulAktiv && zeigeKreditkartenBereich(db, person.churchtools_person_id);
-    res.locals.banner = person ? aktiveBanner(db, person.churchtools_person_id) : [];
-    if (person) {
+    // Banner und Navigation (inkl. Aufgabenzähler) braucht nur eine gerenderte Seite. Als Getter
+    // berechnet, erst wenn res.render sie liest -- Downloads, JSON und Weiterleitungen sparen sich
+    // die Abfragen. Ergebnis je Anfrage gemerkt.
+    lazyLocal(res, 'kreditkartenModulAktiv', () => getConfigValue(db, 'modul_kreditkarten_aktiv') === '1', false);
+    lazyLocal(res, 'zeigeKreditkarteNav', () => Boolean(person) && res.locals.kreditkartenModulAktiv && zeigeKreditkartenBereich(db, person.churchtools_person_id), false);
+    lazyLocal(res, 'banner', () => (person ? aktiveBanner(db, person.churchtools_person_id) : []), []);
+    lazyLocal(res, 'navigation', () => {
+      if (!person) return null;
       const bereich = bereichFuerPfad(res.locals.currentPath);
       const zeigeAdminReiter = Boolean(res.locals.isSuperadmin || res.locals.isManager || Object.values(res.locals.adminNav).some(Boolean));
       const gruppen =
@@ -51,12 +55,37 @@ export function loadNavFlags(db, config) {
               pfad: res.locals.currentPath,
               spesenModulAktiv: res.locals.spesenModulAktiv !== false,
               zeigeKreditkarteNav: res.locals.zeigeKreditkarteNav,
-              offeneAufgaben: zaehleOffeneAufgaben(db, person.churchtools_person_id, { istSuperadmin: res.locals.isSuperadmin }),
+              // /pool lädt dieselben Listen ohnehin und legt die Summe hier ab (routes/poolPage.js).
+              offeneAufgaben: res.locals.offeneAufgabenVorab
+                ?? zaehleOffeneAufgaben(db, person.churchtools_person_id, { istSuperadmin: res.locals.isSuperadmin }),
             });
-      res.locals.navigation = { bereich, zeigeAdminReiter, gruppen };
-    } else {
-      res.locals.navigation = null;
-    }
+      return { bereich, zeigeAdminReiter, gruppen };
+    }, null);
     next();
   };
+}
+
+// `rueckfall` (optional): Wert, falls das Berechnen scheitert -- so rendert z.B. die Fehlerseite bei
+// kaputter Datenbank noch, nur ohne Menü/Banner (vorher lief die Middleware gar nicht erst durch).
+function lazyLocal(res, name, berechne, ...rueckfall) {
+  let wert;
+  let berechnet = false;
+  Object.defineProperty(res.locals, name, {
+    enumerable: true,
+    configurable: true,
+    get() {
+      if (!berechnet) {
+        try {
+          wert = berechne();
+        } catch (err) {
+          if (rueckfall.length === 0) throw err;
+          console.error(`${name} konnte nicht berechnet werden:`, err.message);
+          wert = rueckfall[0];
+        }
+        berechnet = true;
+      }
+      return wert;
+    },
+    set(neu) { wert = neu; berechnet = true; },
+  });
 }

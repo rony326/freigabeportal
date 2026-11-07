@@ -94,6 +94,7 @@ export const SEITEN = [
   { name: 'Admin Zeitstempel', view: 'admin/zeitstempel-form', pfad: '/admin/zeitstempel' },
   { name: 'Admin Module', view: 'admin/module-form', pfad: '/admin/module' },
   { name: 'Admin Budgets', view: 'admin/budgets', pfad: '/admin/budgets' },
+  { name: 'Auswertung', view: 'auswertung', pfad: '/auswertung' },
   // Kompakte Erfolgsmeldung "Gespeichert." mit ✕ neben dem Speichern-Knopf (Prüfung schliessen).
   { name: 'Admin Module gespeichert', view: 'admin/module-form', pfad: '/admin/module?gespeichert=1' },
   { name: 'Admin Mail-Einstellungen', view: 'admin/mail-einstellungen-form', pfad: '/admin/mail-einstellungen' },

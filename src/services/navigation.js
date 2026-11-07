@@ -24,6 +24,7 @@ export const SYMBOLE = [
 const PORTAL = [
   { titel: 'Arbeit', punkte: [
     { label: 'Aufgaben', href: '/pool', symbol: 'inbox', flag: null },
+    { label: 'Auswertung', href: '/auswertung', symbol: 'bar-chart-line', flag: 'auswertungSichtbar' },
   ] },
   { titel: 'Spesen', punkte: [
     { label: 'Spesen einreichen', href: '/spesen/neu', symbol: 'plus-circle', flag: 'spesenModulAktiv' },
@@ -94,8 +95,8 @@ function baue(definition, pfad, sichtbar, zaehlerFuer = () => undefined) {
     .filter((g) => g.punkte.length > 0);
 }
 
-export function bauePortalGruppen({ pfad, spesenModulAktiv, zeigeKreditkarteNav, offeneAufgaben }) {
-  const optionen = { spesenModulAktiv, zeigeKreditkarteNav };
+export function bauePortalGruppen({ pfad, spesenModulAktiv, zeigeKreditkarteNav, offeneAufgaben, auswertungSichtbar = false }) {
+  const optionen = { spesenModulAktiv, zeigeKreditkarteNav, auswertungSichtbar };
   return baue(
     PORTAL,
     pfad,

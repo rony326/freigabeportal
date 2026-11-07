@@ -219,6 +219,7 @@ export function budgetProKonto(db, { von, bis, budgetJahr, kontoIds }) {
   return konten.map((k) => {
     const budget = budgets.has(k.id) ? budgets.get(k.id) : null;
     const f = runde(freigegeben.get(k.id) ?? 0, 2);
+    const offen = runde(inFreigabe.get(k.id) ?? 0, 2);
     return {
       kontoId: k.id,
       kontonummer: k.kontonummer,
@@ -226,9 +227,10 @@ export function budgetProKonto(db, { von, bis, budgetJahr, kontoIds }) {
       verantwortlich: namen.get(k.freigeber1_id) || null,
       budget,
       freigegeben: f,
-      inFreigabe: runde(inFreigabe.get(k.id) ?? 0, 2),
-      ausschoepfung: budget ? runde(f / budget, 4) : null,
-      ueberBudget: budget !== null && f > budget,
+      inFreigabe: offen,
+      // Wie im freigegebenen Entwurf: offene Rechnungen belasten das Budget schon mit.
+      ausschoepfung: budget ? runde((f + offen) / budget, 4) : null,
+      ueberBudget: budget !== null && f + offen > budget,
     };
   });
 }

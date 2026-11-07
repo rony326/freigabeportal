@@ -847,3 +847,23 @@ h1 .beleg-nr {
 @media (min-width: 992px) {
   html { scroll-padding-top: calc(var(--portal-oben-hoehe, 0px) + .5rem); }
 }
+
+/* Auswertung: gestapelte Balken (Budget-Ausschöpfung, Lieferanten-Anteil). Farben aus Bootstrap
+   (Hell/Dunkel): freigegeben = primary, in Freigabe = helleres primary, über Budget = warning. */
+.auswertung-balken {
+  display: flex;
+  height: 0.625rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bs-secondary-bg);
+}
+.auswertung-balken > span { display: block; height: 100%; }
+.auswertung-frei { background: var(--bs-primary); }
+.auswertung-offen { background: color-mix(in srgb, var(--bs-primary) 40%, var(--bs-body-bg)); }
+.auswertung-ueber { background: var(--bs-warning); }
+.auswertung-legende {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 3px;
+}

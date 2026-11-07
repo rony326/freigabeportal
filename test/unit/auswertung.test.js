@@ -258,3 +258,14 @@ test('formatChf und parseBetrag', () => {
   assert.equal(parseBetrag('-5'), null);
   assert.equal(parseBetrag('1.2.3'), null);
 });
+
+test('Ausschöpfung wie im Entwurf: (freigegeben + in Freigabe) / Budget, über Budget auch durch offene Rechnungen', () => {
+  const { db, a } = setup();
+  job(db, { konto_id: a, betrag: '80' });
+  job(db, { konto_id: a, betrag: '40', status: 'freigabe2' });
+  setzeBudget(db, { kontoId: a, jahr: 2026, betrag: 100, personId: '9' });
+  const za = budgetProKonto(db, { ...JAHR, budgetJahr: 2026, kontoIds: null }).find((z) => z.kontoId === a);
+  assert.equal(za.ausschoepfung, 1.2);
+  assert.equal(za.ueberBudget, true);
+  db.close();
+});

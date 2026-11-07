@@ -75,6 +75,10 @@ export function createAuswertungRouter({ db, config }) {
     res.render('auswertung', {
       zeitraum,
       aktuellesJahr: Number(heute.slice(0, 4)),
+      voreinstellungen: Object.fromEntries(['jahr', '12m', 'vorjahr'].map((art) => {
+        const z = parseZeitraum({ zeitraum: art }, heute);
+        return [art, { von: z.von, bis: z.bis }];
+      })),
       konten: k.konten,
       kontoNr: k.kontoNr,
       zugang,

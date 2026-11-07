@@ -16,7 +16,7 @@
         <label class="form-label small mb-1" for="zeitraum">Zeitraum</label>
         <select class="form-select" id="zeitraum" name="zeitraum">
           <% ['jahr', '12m', 'vorjahr', 'eigen'].forEach((art) => { %>
-            <option value="<%= art %>"<%= zeitraum.art === art ? ' selected' : '' %>><%= zeitraumText[art] %></option>
+            <option value="<%= art %>"<%= zeitraum.art === art ? ' selected' : '' %><% if (voreinstellungen[art]) { %> data-von="<%= voreinstellungen[art].von %>" data-bis="<%= voreinstellungen[art].bis %>"<% } %>><%= zeitraumText[art] %></option>
           <% }) %>
         </select>
       </div>
@@ -39,7 +39,22 @@
       </div>
       <div class="col-auto align-self-end"><button type="submit" class="btn btn-outline-primary">Anzeigen</button></div>
     </form>
-    <p class="form-text mt-n3 mb-4">Von/Bis gilt nur bei «Eigener Zeitraum».</p>
+    <script nonce="<%= locals.cspNonce %>">
+      // Zeitraum und Von/Bis gehören zusammen: ein Datum ändern heisst «Eigener Zeitraum»,
+      // eine Voreinstellung wählen füllt die Daten aus.
+      (function () {
+        var wahl = document.getElementById('zeitraum');
+        var von = document.getElementById('von');
+        var bis = document.getElementById('bis');
+        [von, bis].forEach(function (feld) {
+          feld.addEventListener('input', function () { wahl.value = 'eigen'; });
+        });
+        wahl.addEventListener('change', function () {
+          var option = wahl.options[wahl.selectedIndex];
+          if (option.dataset.von) { von.value = option.dataset.von; bis.value = option.dataset.bis; }
+        });
+      })();
+    </script>
 
     <div class="row row-cols-1 row-cols-sm-2 row-cols-xl-4 g-3 mb-4">
       <div class="col"><div class="card h-100"><div class="card-body">

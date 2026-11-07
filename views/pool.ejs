@@ -85,7 +85,7 @@
     <% } %>
 
     <% if (typeof meineRapporte !== 'undefined' && meineRapporte.length > 0) { %>
-      <h2 class="h5 mt-4">Zur Kenntnis</h2>
+      <h2 class="h5 mt-4">Zur Kenntnis <span class="abschnitt-zahl"><%= meineRapporte.length %></span></h2>
       <%- jobListe({ jobs: meineRapporte, idPrefix: 'rapport', linkPrefix: '/rapporte', aktionLabel: 'Ansehen' }) %>
     <% } %>
 

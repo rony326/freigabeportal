@@ -19,6 +19,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [rechnungs-workflow.md#9-rapporte-status-kenntnisnahme](rechnungs-workflow.md#9-rapporte-status-kenntnisnahme) | Rapporte (nur zur Kenntnis): Markierung in der Kontierung, Bestätigung durch alle Empfänger:innen, Erinnerung/Eskalation, Admin-Eingriff, Archivierung über eigene n8n-Endpunkte |
 | [kommentare.md](kommentare.md) | Kommentare an Rechnungen: Sichtrecht, @Erwähnungen, Mails und Links, Unveränderlichkeit, Marke „neu“, Abschnitt auf dem finalen PDF, Konflikt bei Freigabe 2 |
 | [spesen-einreichung.md](spesen-einreichung.md) | Zweite Domäne neben Lieferantenrechnungen: Spesen/Auslagen-Einreichung durch die Person selbst, eigene Freigabe-1-Seite |
+| [auswertung.md](auswertung.md) | Seite Auswertung: Kennzahlen, Budget pro Konto, Durchlaufzeit, wo Rechnungen liegen, Lieferanten, Zählregeln, CSV-Export; Budgets pflegen und aus Excel/CSV importieren; Rechte `auswertung_einsehen`, `budgets_verwalten` |
 | [kreditkarten-belege.md](kreditkarten-belege.md) | Dritte Domäne: Vorab-Erfassung von Kreditkartenbelegen, Abgleich gegen die Monatsabrechnung als erweitertes Aufsplitten |
 | [n8n-schnittstelle.md](n8n-schnittstelle.md) | API-Vertrag für Rechnungseingang (inkl. PDF-Eingangsprüfung) und -abholung durch n8n |
 | [n8n-paperless-archivierung.md](n8n-paperless-archivierung.md) | Exportmanifest, hashgebundener Download und Archivquittung |

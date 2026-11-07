@@ -81,7 +81,8 @@ kleinen Bildschirmen. Schlüsseltabelle und Cookie-Logik:
 | Datei-Quarantäne | `/admin/dateiquarantaene` | **nur** `superadmin` (verwaiste finale Dokumente zurückholen/löschen, Begründung Pflicht) |
 | Betrieb & Nutzung | `/admin/betrieb` (+ `/personen/:id`, `/fehler`, `/fehler/:requestId`, `/meldungen`, `/meldungen/:id`, `/banner`, `/datenschutz`, `/status`) | Einzelrecht `betrieb_einsehen`; `superadmin` ✓, `manager` ✗ — siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md); Status: [statusseite-und-monitoring.md](statusseite-und-monitoring.md) |
 | Kreditkarten | `/admin/kreditkarten` | Einzelrecht `kreditkarten_verwalten` |
-| Module | `/admin/module` | **nur** `superadmin` |
+| Budgets | `/admin/budgets` (+ `/import`, `/import/vorschau`, `/import/bestaetigen`) | Einzelrecht `budgets_verwalten`; `superadmin` ✓, `manager` ✓ — Budget pro Konto und Jahr, Import aus Excel/CSV mit Vorschau, siehe [auswertung.md](auswertung.md#budgets-pflegen) |
+| Module | `/admin/module` | **nur** `superadmin`; enthält auch die Schwelle «länger offen» der Auswertung (`auswertung_offen_schwelle_tage`, 1–365, Standard 14) |
 | Ersteinrichtung | `/admin/ersteinrichtung` | **nur** `superadmin`; geführter Assistent mit 14 Schritten (8 Pflicht), technische Prüfung, ChurchTools-Test, Testmail, Kernjobs auslösen; Hinweis auf dem Admin-Dashboard ("später" blendet ihn 7 Tage aus); Statusdienst `einrichtung` |
 | Mail-Einstellungen | `/admin/mail-einstellungen` | **nur** `superadmin` |
 | Testmodus | `/admin/testmodus` | `superadmin` oder `manager`; Spielwiese zum gefahrlosen Ausprobieren, siehe [testmodus.md](testmodus.md) |

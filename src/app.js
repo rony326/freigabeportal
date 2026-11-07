@@ -40,6 +40,7 @@ import { createMailsRouter } from './routes/admin/mails.js';
 import { createSyncRouter } from './routes/admin/sync.js';
 import { createAdminAbgelehntRouter } from './routes/admin/abgelehnt.js';
 import { createVorgaengeRouter } from './routes/admin/vorgaenge.js';
+import { createBudgetsRouter } from './routes/admin/budgets.js';
 import { createAuditLogRouter } from './routes/admin/auditLog.js';
 import { createGeplanteJobsRouter } from './routes/admin/geplanteJobs.js';
 import { createBackupRouter } from './routes/admin/backup.js';
@@ -309,6 +310,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // Formulare werden weitergeleitet; 308 erhaelt Methode und Body, die Pruefungen gelten am Ziel.
   app.use('/admin/debitoren', (req, res) => res.redirect(req.method === 'GET' || req.method === 'HEAD' ? 301 : 308, `/admin/kreditoren${req.url.replace(/^\/(?=\?|$)/, '')}`));
   app.use('/admin/kreditkarten', requirePermission(db, config, 'kreditkarten_verwalten'), createKreditkartenAdminRouter({ db, csrfProtection }));
+  app.use('/admin/budgets', requirePermission(db, config, 'budgets_verwalten'), createBudgetsRouter({ db, csrfProtection }));
   app.use('/admin/eskalation', requireRole(config, 'superadmin'), createEskalationRouter({ db, csrfProtection }));
   app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config, csrfProtection }));
   app.use('/admin/ersteinrichtung', requireRole(config, 'superadmin'), createErsteinrichtungRouter({ db, config, mailer, statusCache, csrfProtection }));

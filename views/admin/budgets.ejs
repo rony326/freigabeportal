@@ -1,0 +1,44 @@
+<%- include('../_seite_anfang', { titel: 'Budgets' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Budgets <%= jahr %></h1>
+    </div>
+    <p class="text-muted">Ein Budget pro Konto und Kalenderjahr. Die Auswertung zeigt, wie viel davon freigegeben ist. Leeres Feld = kein Budget.</p>
+    <form method="get" action="/admin/budgets" class="filterzeile mb-3">
+      <div class="col-auto">
+        <label class="visually-hidden" for="jahrWahl">Jahr</label>
+        <input type="number" class="form-control" id="jahrWahl" name="jahr" min="2000" max="2100" value="<%= jahr %>" style="max-width: 7rem">
+      </div>
+      <div class="col-auto"><button type="submit" class="btn btn-outline-secondary">Jahr wechseln</button></div>
+    </form>
+    <% if (fehler) { %><div class="alert alert-danger" role="alert"><%= fehler %></div><% } %>
+    <form method="post" action="/admin/budgets">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <input type="hidden" name="jahr" value="<%= jahr %>">
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Konto</th><th>Bezeichnung</th><th>Freigeber 1</th><th style="min-width: 12rem">Budget <%= jahr %> (CHF)</th></tr></thead>
+          <tbody>
+            <% konten.forEach((k) => { %>
+              <tr>
+                <td><%= k.kontonummer %></td>
+                <td><%= k.bezeichnung %></td>
+                <td><%= k.freigeber1 %></td>
+                <td>
+                  <input type="text" inputmode="decimal" class="form-control<% if (k.fehler) { %> is-invalid<% } %>" name="budget_<%= k.id %>" value="<%= k.wert %>" aria-label="Budget <%= jahr %> für Konto <%= k.kontonummer %>"<% if (k.fehler) { %> aria-invalid="true"<% } %>>
+                  <% if (k.vorjahr) { %><div class="form-text">Vorjahr: <%= k.vorjahr %></div><% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <% if (konten.length === 0) { %><p class="text-muted">Es gibt keine aktiven Konten.</p><% } %>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+      <% if (gespeichert) { %>
+        <div class="alert alert-success alert-dismissible alert-kompakt fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">
+          Gespeichert.
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schliessen"></button>
+        </div>
+      <% } %>
+    </form>
+<%- include('../_seite_ende') %>

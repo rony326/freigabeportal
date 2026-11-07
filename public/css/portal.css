@@ -235,7 +235,8 @@
   min-width: 0;
   margin: 0;
   font-size: calc(1.3rem + .6vw);
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -392,13 +393,11 @@
 .entscheidung-betrag {
   font-size: 1.75rem;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 /* Belegnummer (#<id>), klein und gedämpft: dieselbe Nummer wie in Auswahlfeldern ("#2 Rechnung.pdf"). */
 .beleg-nr {
   font-size: .8125rem;
   font-weight: normal;
-  font-variant-numeric: tabular-nums;
   color: var(--bs-secondary-color);
   white-space: nowrap;
 }
@@ -420,7 +419,6 @@ h1 .beleg-nr {
 }
 .kachel-betrag {
   font-size: 1.25rem;
-  font-variant-numeric: tabular-nums;
 }
 
 /* Testmodus-Band: schwarz auf gelb, klebt oben, bricht am Handy um. z-index 1035: über
@@ -803,9 +801,13 @@ h1 .beleg-nr {
 .abschnitt-zahl {
   font-weight: normal;
   color: var(--bs-secondary-color);
-  font-variant-numeric: tabular-nums;
   margin-left: .25rem;
 }
 
 /* Farbmodus-Wechsel: kurzer, weicher Übergang (JS setzt die Klasse nicht bei reduzierter Bewegung). */
 .farbwechsel, .farbwechsel * { transition: background-color .25s, color .25s, border-color .25s !important; }
+
+/* Zahlen und Zeitangaben: gleich breite Ziffern, damit Spalten sauber untereinander stehen. */
+.betrag, .beleg-nr, .zeitpunkt, .kachel-betrag, .entscheidung-betrag, .abschnitt-zahl {
+  font-variant-numeric: tabular-nums;
+}

@@ -100,3 +100,21 @@ test('Cookie system überschreibt Admin-Standard dunkel', async () => {
   assert.match(res.text, /data-farbmodus="system"[^>]*aria-pressed="true"/);
   db.close();
 });
+
+test('Markenstile: kein globaler Button-Rand, feiner PDF-Rahmen mit Schatten', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/nonexistent-route-xyz');
+  assert.doesNotMatch(res.text, /button\s*\{\s*border-color/);
+  assert.doesNotMatch(res.text, /border:\s*2px solid #000/);
+  assert.match(res.text, /\.pdf-preview\s*\{[^}]*box-shadow:\s*0 1px 2px rgb\(0 0 0 \/ \.08\)/);
+  db.close();
+});
+
+test('portal.css: gemeinsame tabular-nums-Regel inkl. .zeitpunkt', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../../public/css/portal.css', import.meta.url), 'utf8');
+  assert.match(css, /\.betrag,[^{]*\.zeitpunkt[^{]*\{\s*font-variant-numeric:\s*tabular-nums;/);
+  assert.equal((css.match(/font-variant-numeric/g) || []).length, 1);
+  assert.match(css, /\.seitenkopf-titel \{[^}]*font-weight: 600;\s*letter-spacing: -0\.01em;/);
+});

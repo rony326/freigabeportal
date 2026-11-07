@@ -283,7 +283,7 @@
         </div>
       </div>
     </div>
-  <script>
+  <script nonce="<%= locals.cspNonce %>">
     // Eingebettetes PDF, "Vorschau neu laden" und Beleg/Formular-Umschalter: public/js/belegUmschalter.js.
     // Ablehnen deliberately needs none of these fields filled in (the server-side handler skips
     // all of these checks for aktion=ablehnen, only requiring Begründung) — but each field's HTML

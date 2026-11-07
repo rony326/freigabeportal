@@ -177,9 +177,14 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
   `X-Frame-Options: SAMEORIGIN` (nicht `DENY`, weil PDF-Vorschauen als
   same-origin `<iframe>` eingebettet werden), `Referrer-Policy: no-referrer`
   (signierte Download-URLs tragen ihre Signatur in der Query-String),
-  restriktive `Content-Security-Policy` (`img-src 'self' data:` — `data:`
-  nur für Bilder, weil Bootstraps Symbole wie Schliessen-✕, Auswahlpfeil und
-  Häkchen als data-URI-SVG im CSS stecken).
+  restriktive `Content-Security-Policy`: Skripte und `<style>`-Blöcke nur aus
+  eigenen Dateien oder mit der Nonce der Anfrage (`res.locals.cspNonce`, pro
+  Anfrage neu; jede View setzt sie, `test/integration/cspSweep.test.js` und
+  `test/verhalten/csp.test.js` prüfen das), keine Inline-Ereignis-Attribute
+  (`onclick=…`; Druck-Knöpfe nutzen `data-drucken` aus `public/js/portal.js`).
+  `style="…"`-Attribute bleiben erlaubt (`style-src-attr 'unsafe-inline'`).
+  `img-src 'self' data:` — `data:` nur für Bilder, weil Bootstraps Symbole wie
+  Schliessen-✕, Auswahlpfeil und Häkchen als data-URI-SVG im CSS stecken.
 - **Signierte, zeitlich begrenzte Download-URLs** (`src/services/downloadUrl.js`):
   HMAC-SHA256 über `jobId.expires`, zeitkonstanter Vergleich
   (`crypto.timingSafeEqual`). Nutzt niemand die Session, sondern eine

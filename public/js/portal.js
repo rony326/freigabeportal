@@ -1,5 +1,9 @@
 // Gemeinsames Verhalten des Grundgerüsts (views/_seite_anfang.ejs). Wird mit defer geladen.
 (function () {
+  // Druck-Knöpfe (data-drucken): ohne Inline-onclick, das die Content-Security-Policy blockiert.
+  document.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('[data-drucken]')) window.print();
+  });
   var root = document.documentElement;
   var dunkelMedium = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   var systemAktiv = false;

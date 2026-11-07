@@ -193,10 +193,9 @@ Das sind **11** Punkte.
 
 ## 6. Vorschläge für später
 
-- **CSP ohne `'unsafe-inline'`:** pro Anfrage eine Nonce erzeugen, jedes
-  Inline-Skript damit kennzeichnen und `'unsafe-inline'` streichen. Eigenes
-  Arbeitspaket, weil alle Ansichten und der Roh-Ausgabe-Sweep angepasst werden
-  müssen. Heute durch die übrige strenge CSP und das Escaping abgefedert.
+- **CSP ohne `'unsafe-inline'`:** umgesetzt am 2026-11-07. Skripte und
+  `<style>`-Blöcke laufen nur noch mit der Nonce der Anfrage; `style="…"`-Attribute
+  bleiben bewusst erlaubt (siehe [architektur.md](architektur.md#sicherheitsmechanismen-auszug)).
 - **Fehler-Handler: `headersSent`-Schutz** in `src/app.js`. Wirft ein Handler,
   nachdem die Antwort schon begonnen hat, wird die Verbindung hart geschlossen
   statt sauber beendet. Kein Absturz, daher keine Regression.

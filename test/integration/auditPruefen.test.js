@@ -69,7 +69,7 @@ test('richtige Angaben → 200 "Keine Veränderung festgestellt", druckbar, ohne
   const res = await request(app).get('/audit-pruefen').query({ paket: '1', pruefnummer: paket.paket_sha256 });
   assert.equal(res.status, 200);
   assert.match(res.text, /Keine Veränderung festgestellt/);
-  assert.match(res.text, /window\.print\(\)/);
+  assert.match(res.text, /<button[^>]*data-drucken[^>]*>Drucken/);
   assert.match(res.text, new RegExp(formatierePruefnummer(paket.paket_sha256)));
   assert.doesNotMatch(res.text, /Mustermann|Erika|erika@example\.org/);
 });

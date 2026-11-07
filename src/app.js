@@ -108,7 +108,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // Versions-Parameter für /js/portal.js und /css/portal.css (aus dem Dateistand beim Start): neue
   // Stände werden sofort geladen, und eine im Browser gespeicherte alte Umleitung der nackten URL
   // greift nicht mehr (Rückmeldung 2026-10-27: ERR_TOO_MANY_REDIRECTS auf portal.js).
-  app.locals.assetVersion = ['js/portal.js', 'css/portal.css']
+  app.locals.assetVersion = ['js/portal.js', 'css/portal.css', 'vendor/bootstrap-icons/symbole.svg']
     .map((datei) => Math.trunc(statSync(join(__dirname, '..', 'public', datei)).mtimeMs).toString(36))
     .join('');
   app.use((req, res, next) => {

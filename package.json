@@ -38,6 +38,7 @@
     "pkijs": "3.4.0"
   },
   "devDependencies": {
+    "bootstrap-icons": "1.13.2",
     "pdfkit": "^0.19.1",
     "playwright": "1.63.0",
     "supertest": "^7.0.0",

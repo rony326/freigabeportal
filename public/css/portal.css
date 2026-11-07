@@ -152,11 +152,23 @@
   color: var(--bs-emphasis-color);
   font-weight: 600;
 }
+.symbol {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+  vertical-align: -.125em;
+}
 .portal-symbol {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 1.25rem;
-  text-align: center;
   flex-shrink: 0;
+}
+.portal-symbol .symbol {
+  width: 1.1rem;
+  height: 1.1rem;
+  vertical-align: baseline;
 }
 .portal-label {
   flex-grow: 1;

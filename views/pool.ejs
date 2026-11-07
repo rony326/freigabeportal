@@ -15,13 +15,13 @@
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Aufgaben</h1>
       <div class="seitenkopf-aktionen">
-        <a href="/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden">🔄 Neu laden</a>
+        <a href="/pool" class="btn btn-outline-secondary btn-sm" aria-label="Dashboard neu laden"><%- include('_symbol', { name: 'arrow-clockwise' }) %> Neu laden</a>
         <%- include('_ansicht_umschalter') %>
       </div>
     </div>
 
     <% if (typeof isBuchhaltung !== 'undefined' && (isBuchhaltung || isSuperadmin) && poolJobs.length > 0) { %>
-      <h2 class="h5 mt-4">Pool</h2>
+      <h2 class="h5 mt-4">Pool <span class="abschnitt-zahl"><%= poolJobs.length %></span></h2>
       <%- jobListe({ jobs: poolJobs, idPrefix: 'pool', istPoolArtig: true, kannZuweisen, zielPersonen }) %>
       <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0) { %>
         <form method="post" id="kk-markieren-form" class="d-flex flex-wrap gap-2 align-items-center mt-2">
@@ -48,39 +48,39 @@
     <% } %>
 
     <% if (typeof kannZuweisen !== 'undefined' && kannZuweisen && ruecklaeufer.length > 0) { %>
-      <h2 class="h5 mt-4">Rückläufer</h2>
+      <h2 class="h5 mt-4">Rückläufer <span class="abschnitt-zahl"><%= ruecklaeufer.length %></span></h2>
       <%- jobListe({ jobs: ruecklaeufer, idPrefix: 'ruecklaeufer', istPoolArtig: true, kannZuweisen, zielPersonen }) %>
     <% } %>
 
     <% if (typeof isSuperadmin !== 'undefined' && isSuperadmin) { %>
       <% if (adminEskalierteKontierungen.length > 0) { %>
-        <h2 class="h5 mt-4">An Superadmin eskalierte Kontierungen</h2>
+        <h2 class="h5 mt-4">An Superadmin eskalierte Kontierungen <span class="abschnitt-zahl"><%= adminEskalierteKontierungen.length %></span></h2>
         <%- jobListe({ jobs: adminEskalierteKontierungen, idPrefix: 'admin-eskalation-kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren' }) %>
       <% } %>
 
       <% if (adminEskalierteFreigaben.length > 0) { %>
-        <h2 class="h5 mt-4">An Superadmin eskalierte Freigaben</h2>
+        <h2 class="h5 mt-4">An Superadmin eskalierte Freigaben <span class="abschnitt-zahl"><%= adminEskalierteFreigaben.length %></span></h2>
         <%- jobListe({ jobs: adminEskalierteFreigaben, idPrefix: 'admin-eskalation-freigabe', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben' }) %>
       <% } %>
 
       <% if (adminEskalierteSpesenFreigaben.length > 0) { %>
-        <h2 class="h5 mt-4">An Superadmin eskalierte Spesen-Freigaben</h2>
+        <h2 class="h5 mt-4">An Superadmin eskalierte Spesen-Freigaben <span class="abschnitt-zahl"><%= adminEskalierteSpesenFreigaben.length %></span></h2>
         <%- jobListe({ jobs: adminEskalierteSpesenFreigaben, idPrefix: 'admin-eskalation-spesen-freigabe', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen' }) %>
       <% } %>
     <% } %>
 
     <% if (meineKontierungen.length > 0) { %>
-      <h2 class="h5 mt-4">Meine offenen Kontierungen</h2>
+      <h2 class="h5 mt-4">Meine offenen Kontierungen <span class="abschnitt-zahl"><%= meineKontierungen.length %></span></h2>
       <%- jobListe({ jobs: meineKontierungen, idPrefix: 'kontierung', linkPrefix: '/kontierung', aktionLabel: 'Kontieren' }) %>
     <% } %>
 
     <% if (meineSpesenFreigaben.length > 0) { %>
-      <h2 class="h5 mt-4">Meine offenen Spesen-Freigaben</h2>
+      <h2 class="h5 mt-4">Meine offenen Spesen-Freigaben <span class="abschnitt-zahl"><%= meineSpesenFreigaben.length %></span></h2>
       <%- jobListe({ jobs: meineSpesenFreigaben, idPrefix: 'spesen-freigabe1', linkPrefix: '/spesen-freigabe1', aktionLabel: 'Prüfen' }) %>
     <% } %>
 
     <% if (meineFreigaben.length > 0) { %>
-      <h2 class="h5 mt-4">Meine Freigaben</h2>
+      <h2 class="h5 mt-4">Meine Freigaben <span class="abschnitt-zahl"><%= meineFreigaben.length %></span></h2>
       <%- jobListe({ jobs: meineFreigaben, idPrefix: 'freigabe2', linkPrefix: '/freigabe2', aktionLabel: 'Freigeben' }) %>
     <% } %>
 
@@ -90,7 +90,7 @@
     <% } %>
 
     <% if (meineAbgelehnten.length > 0) { %>
-      <h2 class="h5 mt-4">Meine abgelehnten Jobs</h2>
+      <h2 class="h5 mt-4">Meine abgelehnten Jobs <span class="abschnitt-zahl"><%= meineAbgelehnten.length %></span></h2>
       <%- jobListe({ jobs: meineAbgelehnten, idPrefix: 'abgelehnt', linkPrefix: '/abgelehnt', aktionLabel: 'Ansehen' }) %>
     <% } %>
 
@@ -101,18 +101,39 @@
       <p class="text-muted mt-4">Keine offenen Aufgaben. Abgeschlossene Rechnungen findest du unter <a href="/meine-abgeschlossenen">Abgeschlossene Rechnungen</a>, deine Spesen-Einreichungen unter <a href="/meine-spesen">Meine Spesen</a>.</p>
     <% } %>
 
-    <dialog id="preview-dialog" class="p-0 border-0 rounded">
+    <dialog id="preview-dialog" class="vorschau-dialog p-0 border-0 rounded">
       <div class="d-flex justify-content-end p-2 bg-body border-bottom">
-        <button type="button" id="preview-dialog-close" class="btn btn-outline-secondary btn-sm">Schließen</button>
+        <button type="button" id="preview-dialog-close" class="btn-close" aria-label="Schliessen"></button>
       </div>
       <iframe id="preview-frame" src="" class="pdf-preview" style="width:80vw;height:80vh"></iframe>
     </dialog>
 
+  <% if (meineKontierungen.length > 0) { %>
+    <%- include('_zurueck_in_pool_dialog', { alleKonten }) %>
+    <script>
+      document.querySelectorAll('[data-zurueck-in-pool]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          if (!window.bootstrap) return;
+          e.preventDefault();
+          document.getElementById('zurueck-in-pool-form').action = '/kontierung/' + encodeURIComponent(btn.dataset.zurueckInPool) + '/zurueck-in-pool';
+          window.bootstrap.Modal.getOrCreateInstance(document.getElementById('zurueck-in-pool-modal')).show();
+        });
+      });
+    </script>
+  <% } %>
+
   <script>
     document.querySelectorAll('.beanspruchen-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
+        if (btn.getAttribute('aria-busy') === 'true') return;
         const id = btn.dataset.jobId;
-        const res = await fetch(`/api/pool/${id}/beanspruchen`, { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' } });
+        let res;
+        try {
+          res = await Portal.beschaeftigt(btn, fetch(`/api/pool/${id}/beanspruchen`, { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' } }));
+        } catch (e) {
+          Portal.meldung(btn, 'Netzwerkfehler – bitte erneut versuchen.', 'fehler');
+          return;
+        }
         if (res.ok) {
           window.location.href = `/kontierung/${id}`;
           return;
@@ -140,26 +161,67 @@
       });
     });
 
+    function ersatz(container, text, klasse) {
+      let msg;
+      if (container.tagName === 'TR') {
+        msg = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = container.children.length;
+        cell.className = klasse;
+        cell.textContent = text;
+        msg.appendChild(cell);
+      } else {
+        msg = document.createElement('div');
+        msg.className = 'kachel ' + klasse;
+        msg.textContent = text;
+      }
+      return msg;
+    }
+
     document.querySelectorAll('.zuweisen-form').forEach((form) => {
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const id = form.dataset.jobId;
         const personId = form.querySelector('select[name="personId"]').value;
-        const res = await fetch(`/pool/${id}/zuweisen`, {
+        const knopf = form.querySelector('button[type=submit], button:not([type])');
+        if (knopf && knopf.getAttribute('aria-busy') === 'true') return;
+        const anfrage = fetch(`/pool/${id}/zuweisen`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' },
           body: new URLSearchParams({ personId }),
         });
+        let res;
+        try {
+          res = await (knopf ? Portal.beschaeftigt(knopf, anfrage) : anfrage);
+        } catch (e) {
+          Portal.meldung(knopf || form, 'Netzwerkfehler – bitte erneut versuchen.', 'fehler');
+          return;
+        }
         if (res.ok) {
-          window.location.reload();
+          const option = form.querySelector('select[name="personId"] option:checked');
+          const text = `An ${option ? option.textContent.trim() : 'Person'} gesendet ✓`;
+          // Jede Darstellung dieses Jobs (Zeile und Kachel, Pool und Rückläufer) ersetzen.
+          const ueberschriften = Array.from(document.querySelectorAll('h2'));
+          const betroffen = new Set();
+          document.querySelectorAll('[data-job-container]').forEach((container) => {
+            if (!container.querySelector(`[data-job-id="${id}"]`)) return;
+            // Abschnitt = letzte Überschrift vor diesem Eintrag; Zähler nur einmal je Abschnitt senken.
+            const kopf = ueberschriften.filter((h) => h.compareDocumentPosition(container) & Node.DOCUMENT_POSITION_FOLLOWING).pop();
+            if (kopf) betroffen.add(kopf);
+            container.replaceWith(ersatz(container, text, 'text-success'));
+          });
+          betroffen.forEach((kopf) => {
+            const zahl = kopf.querySelector('.abschnitt-zahl');
+            if (zahl) zahl.textContent = Math.max(0, (parseInt(zahl.textContent, 10) || 0) - 1);
+          });
           return;
         }
         const body = await res.json().catch(() => ({}));
-        alert(body.error || 'Zuweisung fehlgeschlagen.');
+        Portal.meldung(form, body.error || 'Zuweisung fehlgeschlagen.', 'fehler');
       });
     });
 
-    function oeffneVorschau(relativeUrl) {
+    function oeffneVorschau(relativeUrl, quelle) {
       // Rendered via PDF.js (public/vendor/pdfjs), not the browser's native PDF plugin:
       // Chrome's "Download PDFs instead of automatically opening them" setting blocks native
       // inline rendering inside an <iframe> entirely (shows an Open-button placeholder that
@@ -172,7 +234,20 @@
       // location.origin here keeps it a real, absolute, still-relative-to-this-host URL.
       const absoluteUrl = new URL(relativeUrl, window.location.origin).href;
       document.getElementById('preview-frame').src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(absoluteUrl);
-      document.getElementById('preview-dialog').showModal();
+      const dialog = document.getElementById('preview-dialog');
+      // Der Dialog wächst aus dem angeklickten Vorschaubild: transform-origin = dessen Mittelpunkt,
+      // gemessen relativ zum (noch nicht skalierten, bereits zentrierten) Dialog.
+      dialog.style.transformOrigin = '';
+      dialog.showModal();
+      if (quelle) {
+        const bild = quelle.getBoundingClientRect();
+        const feld = dialog.getBoundingClientRect();
+        // Die Mitte des Rechtecks bleibt auch während der Start-Skalierung gleich; offsetWidth/-Height
+        // sind die unskalierten Layoutmasse.
+        const x = bild.left + bild.width / 2 - (feld.left + feld.width / 2) + dialog.offsetWidth / 2;
+        const y = bild.top + bild.height / 2 - (feld.top + feld.height / 2) + dialog.offsetHeight / 2;
+        dialog.style.transformOrigin = `${Math.round(x)}px ${Math.round(y)}px`;
+      }
     }
 
     // Handler am Link (nicht am Bild): so öffnet auch Enter auf dem fokussierten Link den Dialog.
@@ -191,12 +266,15 @@
         // reusing the stale one, falling back to it only if the refresh itself fails.
         fetch(`/downloads/${img.dataset.jobId}/refresh-url`)
           .then((res) => (res.ok ? res.json() : Promise.reject()))
-          .then((data) => oeffneVorschau(data.url))
-          .catch(() => oeffneVorschau(img.dataset.previewUrl));
+          .then((data) => oeffneVorschau(data.url, link))
+          .catch(() => oeffneVorschau(img.dataset.previewUrl, link));
       });
     });
     document.getElementById('preview-dialog-close').addEventListener('click', () => {
       document.getElementById('preview-dialog').close();
+    });
+    // Auch bei Escape: Iframe leeren, sobald der Dialog schliesst.
+    document.getElementById('preview-dialog').addEventListener('close', () => {
       document.getElementById('preview-frame').src = '';
     });
   </script>

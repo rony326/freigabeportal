@@ -1,4 +1,5 @@
 <%- include('_seite_anfang', { titel: 'Spesen-Freigabe 1', rahmen: 'kompakt' }) %>
+<% const ff = locals.feldFehler || {}; const ffAttr = locals.feldFehlerAttr || (() => ''); %>
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Spesen-Freigabe 1: <%- include('_beleg_name', { job }) %> <%- include('_beleg_nr', { jobId: job.id }) %></h1>
     </div>
@@ -17,15 +18,11 @@
         <p><strong>Verwendungszweck:</strong> <%= job.beschreibung %></p>
         <p><strong>Eingereicht von:</strong> <%= eingereichtePerson ? `${eingereichtePerson.vorname} ${eingereichtePerson.nachname}` : 'Unbekannt' %></p>
 
-        <% if (errors.length > 0) { %>
-          <div class="alert alert-danger">
-            <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
-          </div>
-        <% } %>
+        <%- include('_fehler_liste', { errors, feldFehler: locals.feldFehler || {} }) %>
 
         <div class="card">
           <div class="card-body">
-            <form method="post" action="/spesen-freigabe1/<%= job.id %>">
+            <form method="post" action="/spesen-freigabe1/<%= job.id %>" id="spesen-freigabe1-form">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
               <div class="mb-3">
                 <div class="form-check">
@@ -38,8 +35,9 @@
                 </div>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="sf1begruendung">Begründung <span class="text-muted">(bei Interessenskonflikt oder Ablehnung Pflicht)</span></label>
-                <textarea class="form-control" id="sf1begruendung" name="begruendung"><%= values.begruendung || '' %></textarea>
+                <label class="form-label" for="sf1begruendung">Begründung <span class="text-muted" data-begruendung-hinweis><%= values.interessenskonflikt === 'ja' ? '(Pflicht)' : '(bei Ablehnung Pflicht)' %></span></label>
+                <textarea class="form-control<%= ff.sf1begruendung ? ' is-invalid' : '' %>" id="sf1begruendung" name="begruendung" data-begruendung-pflicht-bei="sf1konfliktJa"<%- ffAttr(ff, 'sf1begruendung') %>><%= values.begruendung || '' %></textarea>
+<% if (ff.sf1begruendung) { %><div class="invalid-feedback d-block" id="sf1begruendung-fehler"><%= ff.sf1begruendung %></div><% } %>
               </div>
               <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2">Freigeben</button>
               <button type="submit" name="aktion" value="ablehnen" class="btn btn-outline-danger">Ablehnen</button>
@@ -52,4 +50,5 @@
       </div>
     </div>
 
+<%- include('_ablehnen_dialog', { titel: 'Spesen ablehnen?', formId: 'spesen-freigabe1-form', begruendungId: 'sf1begruendung' }) %>
 <%- include('_seite_ende') %>

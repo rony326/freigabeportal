@@ -40,7 +40,7 @@ function validateFileReferences(db, manifest, zip) {
     const entry = zip.getEntry(`${root}/${name.split(sep).join('/')}`);
     if (required && (!entry || entry.isDirectory)) throw new BackupValidationError('Eine aktive Datenbank-Dateireferenz fehlt im Backup.');
     if (entry && expectedHash && sha256(entry.getData()) !== expectedHash) {
-      throw new BackupValidationError('Belegdatei stimmt nicht mit dem finalen Datenbank-Hash ueberein.');
+      throw new BackupValidationError('Belegdatei stimmt nicht mit dem finalen Datenbank-Hash überein.');
     }
   }
   for (const job of db.prepare('SELECT * FROM jobs').all()) {
@@ -104,11 +104,11 @@ export function buildBackupArchive(db, config) {
       try {
         const opened = fstatSync(fd);
         if (!opened.isFile() || opened.size !== stat.size || opened.ino !== stat.ino || opened.dev !== stat.dev) {
-          throw new BackupValidationError('Datei wurde waehrend der Sicherung ausgetauscht.');
+          throw new BackupValidationError('Datei wurde während der Sicherung ausgetauscht.');
         }
         bytes = readFileSync(fd);
       } finally { closeSync(fd); }
-      if (bytes.length !== stat.size) throw new BackupValidationError('Datei wurde waehrend der Sicherung veraendert.');
+      if (bytes.length !== stat.size) throw new BackupValidationError('Datei wurde während der Sicherung verändert.');
       totalBytes += bytes.length;
       zip.addFile(name, bytes, '', 0o600);
       dateien.push({ pfad: name, groesse: bytes.length, sha256: sha256(bytes) });
@@ -161,7 +161,7 @@ export function buildBackupArchive(db, config) {
 export function validateBackupArchive(buffer) {
   let zip;
   try {
-    if (!Buffer.isBuffer(buffer) || buffer.length > BACKUP_LIMITS.archiveBytes) throw new BackupValidationError('Backup-Archiv ist zu gross oder ungueltig.');
+    if (!Buffer.isBuffer(buffer) || buffer.length > BACKUP_LIMITS.archiveBytes) throw new BackupValidationError('Backup-Archiv ist zu gross oder ungültig.');
     zip = new AdmZip(buffer);
     if (zip.getEntryCount() > BACKUP_LIMITS.entries) throw new BackupValidationError('Zu viele Eintraege im Backup-Archiv.');
     const names = new Map();
@@ -215,7 +215,7 @@ export function validateBackupArchive(buffer) {
   }
 
   if (typeof manifest.erstelltAm !== 'string' || !Number.isFinite(Date.parse(manifest.erstelltAm)) || !Array.isArray(manifest.dateien)) {
-    throw new BackupValidationError('Backup-Manifest ist unvollstaendig.');
+    throw new BackupValidationError('Backup-Manifest ist unvollständig.');
   }
   for (const [praefix, feld] of [
     ['jobs/', 'dateiAnzahlJobs'],
@@ -223,14 +223,14 @@ export function validateBackupArchive(buffer) {
   ]) {
     const deklariert = manifest[feld];
     const tatsaechlich = zaehleDateiEintraege(zip, praefix);
-    if (!Number.isSafeInteger(deklariert) || deklariert !== tatsaechlich) throw new BackupValidationError('Dateianzahl stimmt nicht mit dem Manifest ueberein.');
+    if (!Number.isSafeInteger(deklariert) || deklariert !== tatsaechlich) throw new BackupValidationError('Dateianzahl stimmt nicht mit dem Manifest überein.');
   }
 
   const declared = new Set();
   for (const file of manifest.dateien) {
     if (!file || typeof file.pfad !== 'string' || file.pfad === 'manifest.json' || declared.has(file.pfad) ||
         !Number.isSafeInteger(file.groesse) || file.groesse < 0 || typeof file.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(file.sha256)) {
-      throw new BackupValidationError('Ungueltiger Dateinachweis im Backup-Manifest.');
+      throw new BackupValidationError('Ungültiger Dateinachweis im Backup-Manifest.');
     }
     declared.add(file.pfad);
     const entry = zip.getEntry(file.pfad);
@@ -238,7 +238,7 @@ export function validateBackupArchive(buffer) {
     try {
       const bytes = entry.getData();
       if (bytes.length !== file.groesse || sha256(bytes) !== file.sha256) throw new Error('Hash mismatch');
-    } catch { throw new BackupValidationError('Backup-Datei ist beschaedigt oder stimmt nicht mit ihrem SHA-256 ueberein.'); }
+    } catch { throw new BackupValidationError('Backup-Datei ist beschädigt oder stimmt nicht mit ihrem SHA-256 überein.'); }
   }
   if (zip.getEntries().some((entry) => !entry.isDirectory && entry.entryName !== 'manifest.json' && !declared.has(entry.entryName))) {
     throw new BackupValidationError('Archiv enthaelt Dateien ausserhalb des Manifests.');
@@ -262,7 +262,7 @@ export function validateBackupArchive(buffer) {
       testDb.exec('PRAGMA trusted_schema = OFF');
       const integrity = testDb.prepare('PRAGMA integrity_check').all();
       if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok' || testDb.prepare('PRAGMA foreign_key_check').all().length) {
-        throw new BackupValidationError('Datenbankintegritaet oder Fremdschluesselpruefung fehlgeschlagen.');
+        throw new BackupValidationError('Datenbankintegrität oder Fremdschlüsselprüfung fehlgeschlagen.');
       }
       const tables = new Set(testDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name));
       for (const required of REQUIRED_TABLES) {

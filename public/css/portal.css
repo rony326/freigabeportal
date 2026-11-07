@@ -104,10 +104,10 @@
 @media (min-width: 992px) {
   .portal-seitenleiste {
     position: sticky;
-    top: 1rem;
+    top: calc(var(--portal-oben-hoehe, 0px) + 1rem);
     /* Auf niedrigen Bildschirmen (z. B. 768 px) sonst unerreichbare untere Punkte der
        Admin-Seitenleiste: höchstens bildschirmhoch (abzüglich top und etwas Luft), scrollt selbst. */
-    max-height: calc(100vh - 2rem);
+    max-height: calc(100vh - var(--portal-oben-hoehe, 0px) - 2rem);
     overflow-y: auto;
   }
 }
@@ -152,11 +152,23 @@
   color: var(--bs-emphasis-color);
   font-weight: 600;
 }
+.symbol {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+  vertical-align: -.125em;
+}
 .portal-symbol {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 1.25rem;
-  text-align: center;
   flex-shrink: 0;
+}
+.portal-symbol .symbol {
+  width: 1.1rem;
+  height: 1.1rem;
+  vertical-align: baseline;
 }
 .portal-label {
   flex-grow: 1;
@@ -223,7 +235,8 @@
   min-width: 0;
   margin: 0;
   font-size: calc(1.3rem + .6vw);
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -374,11 +387,17 @@
 .kachel-angaben dd {
   margin-bottom: 0;
 }
+.entscheidung {
+  margin-bottom: 1rem;
+}
+.entscheidung-betrag {
+  font-size: 1.75rem;
+  font-weight: 600;
+}
 /* Belegnummer (#<id>), klein und gedämpft: dieselbe Nummer wie in Auswahlfeldern ("#2 Rechnung.pdf"). */
 .beleg-nr {
   font-size: .8125rem;
   font-weight: normal;
-  font-variant-numeric: tabular-nums;
   color: var(--bs-secondary-color);
   white-space: nowrap;
 }
@@ -400,7 +419,6 @@ h1 .beleg-nr {
 }
 .kachel-betrag {
   font-size: 1.25rem;
-  font-variant-numeric: tabular-nums;
 }
 
 /* Testmodus-Band: schwarz auf gelb, klebt oben, bricht am Handy um. z-index 1035: über
@@ -411,6 +429,34 @@ h1 .beleg-nr {
    auf jeder Seite, scrollt aber mit weg, statt beim Lesen dauernd ein Viertel zu verdecken. */
 @media (max-width: 575.98px) {
   .testmodus-band { position: static; }
+}
+
+/* Band und Kopf stehen zusammen in .portal-oben. Ab Desktop klebt der ganze Block oben (unter
+   Modal/Offcanvas, die ab 1040 liegen); darunter scrollt der Kopf mit weg und das Band klebt wie bisher. */
+.portal-oben { display: contents; }
+.portal-oben .portal-kopf { margin-bottom: 1rem; }
+@media (min-width: 992px) {
+  .portal-oben { display: block; position: sticky; top: 0; z-index: 1030; margin-bottom: 1rem; }
+  .portal-oben .portal-kopf { margin-bottom: 0; }
+  .portal-oben .testmodus-band { position: static; }
+  .portal-oben .portal-kopf {
+    border-bottom: 0 !important;
+    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    backdrop-filter: blur(16px) saturate(180%);
+    box-shadow: 0 1px 0 var(--bs-border-color-translucent);
+  }
+}
+@media (min-width: 992px) and (prefers-reduced-transparency: reduce) {
+  .portal-oben .portal-kopf { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (min-width: 992px) and (prefers-contrast: more) {
+  .portal-oben .portal-kopf {
+    background: var(--bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-bottom: 1px solid var(--bs-emphasis-color) !important;
+  }
 }
 .testmodus-band-zeile { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding-top: .4rem; padding-bottom: .4rem; }
 .testmodus-band-text { font-size: 1rem; margin-right: auto; }
@@ -747,4 +793,57 @@ h1 .beleg-nr {
     width: 100%;
     max-width: 420px;
   }
+}
+
+/* Sendestatus (public/js/portal.js): Knopf arbeitet, weitere Klicks ignorieren. */
+.wird-gesendet { pointer-events: none; opacity: .75; }
+
+.abschnitt-zahl {
+  font-weight: normal;
+  color: var(--bs-secondary-color);
+  margin-left: .25rem;
+}
+
+/* Farbmodus-Wechsel: kurzer, weicher Übergang (JS setzt die Klasse nicht bei reduzierter Bewegung). */
+.farbwechsel, .farbwechsel * { transition: background-color .25s, color .25s, border-color .25s !important; }
+
+/* Zahlen und Zeitangaben: gleich breite Ziffern, damit Spalten sauber untereinander stehen. */
+.betrag, .beleg-nr, .zeitpunkt, .kachel-betrag, .entscheidung-betrag, .abschnitt-zahl {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Antippen, klickbare Kacheln, Vorschau aus dem Bild ---------- */
+/* Nur bei Touch und ohne reduzierte Bewegung: so kann keine Regel mit höherer Spezifität den Verzicht aushebeln. */
+@media (pointer: coarse) and (prefers-reduced-motion: no-preference) {
+  .btn { transition: color .15s ease-in-out, background-color .15s ease-in-out, border-color .15s ease-in-out, box-shadow .15s ease-in-out, transform .1s ease-out; }
+  /* Gestreckte Links ausgenommen: ein transform würde den Knopf zum Bezugsblock des ::after machen. */
+  .btn:active:not(:disabled):not(.stretched-link) { transform: scale(.97); }
+  .kachel-klickbar:active { transform: scale(.985); }
+}
+.kachel-klickbar { transition: border-color .15s, box-shadow .15s; }
+@media (prefers-reduced-motion: no-preference) {
+  .kachel-klickbar { transition: border-color .15s, box-shadow .15s, transform .1s ease-out; }
+}
+.kachel-klickbar:hover { border-color: var(--brand-primary); box-shadow: 0 .25rem .75rem rgb(0 0 0 / .08); }
+.kachel-klickbar:has(.stretched-link:focus-visible) { border-color: var(--brand-primary); box-shadow: 0 0 0 .2rem rgb(var(--bs-primary-rgb) / .35); }
+.vorschau-dialog { opacity: 0; transform: scale(.92); }
+.vorschau-dialog[open] {
+  opacity: 1;
+  transform: none;
+  transition: opacity .2s, transform .25s cubic-bezier(.2, .8, .2, 1), overlay .25s allow-discrete, display .25s allow-discrete;
+}
+.vorschau-dialog::backdrop { background: rgb(0 0 0 / 0); transition: background .25s, overlay .25s allow-discrete, display .25s allow-discrete; }
+.vorschau-dialog[open]::backdrop { background: rgb(0 0 0 / .4); }
+@starting-style {
+  .vorschau-dialog[open] { opacity: 0; transform: scale(.92); }
+  .vorschau-dialog[open]::backdrop { background: rgb(0 0 0 / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vorschau-dialog, .vorschau-dialog[open] { transform: none; }
+  @starting-style { .vorschau-dialog[open] { transform: none; } }
+}
+
+/* Sprungziele (Fehlerlinks, Tastaturfokus) nicht unter der haftenden Kopfleiste verstecken. */
+@media (min-width: 992px) {
+  html { scroll-padding-top: calc(var(--portal-oben-hoehe, 0px) + .5rem); }
 }

@@ -71,6 +71,6 @@ test('Umschalter rendert nur mit Schlüssel und markiert gewählte Ansicht', asy
   const html = await ejs.renderFile('views/_ansicht_umschalter.ejs', { ansichtSchluessel: 'pool', ansicht: 'kacheln', ansichtBasisQuery: 'status=x' });
   assert.match(html, /href="\?status=x&amp;ansicht=kacheln"[^>]*aria-pressed="true"/);
   assert.match(html, /aria-pressed="false"/);
-  assert.match(html, /☰ Tabelle/);
-  assert.match(html, /▦ Kacheln/);
+  assert.match(html, /Tabelle</);
+  assert.match(html, /Kacheln</);
 });

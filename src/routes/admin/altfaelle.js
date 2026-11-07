@@ -43,7 +43,7 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
       const { entscheidung, begruendung, stand, bestaetigung } = req.body;
       const values = { entscheidung, begruendung };
       if (bestaetigung !== 'ja') {
-        return renderAltfall(req, res, 400, altfall, { errors: ['Bitte bestaetigen, dass die angezeigten Daten geprueft wurden.'], values });
+        return renderAltfall(req, res, 400, altfall, { errors: ['Bitte bestätigen, dass die angezeigten Daten geprüft wurden.'], values });
       }
       const anzeige = await altfallAnzeige(db, config, altfall);
       try {
@@ -60,7 +60,7 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
           await pruefeUndFinalisiereSplitGruppe(db, altfall.job.id, config);
         } catch (err) {
           // The split-gruppen-nachholen cron job retries a failed merge.
-          console.error(`Splitgruppen-Finalisierung nach Altfall-Entscheidung fuer ${altfall.job.id} fehlgeschlagen:`, err.message);
+          console.error(`Splitgruppen-Finalisierung nach Altfall-Entscheidung für ${altfall.job.id} fehlgeschlagen:`, err.message);
         }
       }
       res.redirect('/admin/altfaelle?gespeichert=1');

@@ -119,7 +119,7 @@ test('a QR invoice shows its payment data at Freigabe 2 and cannot be approved w
   const { id, pdfPfad, original } = await s.rechnung();
   const { res, stand } = await s.review(id);
   assert.equal(res.status, 200);
-  assert.match(res.text, /Zahlungsempfaenger:<\/strong> <span class="text-break">Muster AG/);
+  assert.match(res.text, /Zahlungsempfänger:<\/strong> <span class="text-break">Muster AG/);
   assert.match(res.text, new RegExp(QR_IBAN));
   assert.match(res.text, /210000000003139471430009017/);
   assert.ok(stand);
@@ -184,7 +184,7 @@ test('an IBAN not stored for the supplier needs a second, explicit acknowledgeme
   const s = await setup(t);
   const { id } = await s.rechnung({ kreditorIbans: [ANDERE_IBAN] });
   const { res, stand } = await s.review(id);
-  assert.match(res.text, /fuer diesen Lieferanten nicht hinterlegt/);
+  assert.match(res.text, /für diesen Lieferanten nicht hinterlegt/);
   assert.match(res.text, /name="zahlungshinweise_bestaetigt"/);
   const ohne = await s.f2(id, { zahlungsdaten_stand: stand, zahlungsdaten_bestaetigt: 'ja' });
   assert.equal(ohne.status, 409);
@@ -205,7 +205,7 @@ test('a supplier IBAN change between review and submission invalidates the confi
   createKreditorIban(s.db, { kreditorId, iban: ANDERE_IBAN });
   const res = await s.f2(id, { zahlungsdaten_stand: stand, zahlungsdaten_bestaetigt: 'ja' });
   assert.equal(res.status, 409);
-  assert.match(res.text, /geaendert/);
+  assert.match(res.text, /geändert/);
   assert.equal(getJobById(s.db, id).freigabe_snapshot, null);
 });
 
@@ -224,7 +224,7 @@ test('invalid QR payment data is never exported as a payment order, but its manu
   const s = await setup(t);
   const { id } = await s.rechnung({ qrIban: 'CH9400762011623852957' });
   const { res, stand } = await s.review(id);
-  assert.match(res.text, /unvollstaendig oder ungueltig/);
+  assert.match(res.text, /unvollständig oder ungültig/);
   assert.equal((await s.f2(id, {})).status, 400);
   assert.equal((await s.f2(id, { zahlungsdaten_stand: stand, zahlungsdaten_bestaetigt: 'ja', zahlungshinweise_bestaetigt: 'ja' })).status, 302);
   const [eintrag] = await s.abholbereit();
@@ -470,7 +470,7 @@ test('legacy Spesen are never filled from ChurchTools silently; without data onl
   const client = setupMockChurchTools(CT.baseUrl);
   client.intercept({ path: '/api/persons/60', method: 'GET' }).reply(500, {}).times(4);
   const seite = await s.altfallSeite(id);
-  assert.match(seite.text, /nicht abrufbar oder ungueltig/);
+  assert.match(seite.text, /nicht abrufbar oder ungültig/);
   assert.match(seite.text, /id="nachbestaetigt"[^>]*disabled/);
   assert.equal((await s.entscheide(id, { entscheidung: 'nachbestaetigt', begruendung: 'x' })).status, 400);
   assert.equal((await s.entscheide(id, { entscheidung: 'nur_archiv', begruendung: 'Ausserhalb des Portals erstattet.' })).status, 302);

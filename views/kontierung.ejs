@@ -1,4 +1,5 @@
 <%- include('_seite_anfang', { titel: 'Kontierung', rahmen: 'kompakt' }) %>
+<% const ff = locals.feldFehler || {}; const ffAttr = locals.feldFehlerAttr || (() => ''); %>
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Kontierung: <%- include('_beleg_name', { job }) %> <%- include('_beleg_nr', { jobId: job.id }) %></h1>
     </div>
@@ -7,7 +8,7 @@
         <% if (typeof kkHinweis !== 'undefined' && kkHinweis) { %>
           <div class="alert <%= kkHinweis.startsWith('Kreditkartenbeleg') ? 'alert-info' : 'alert-warning' %> py-2"><%= kkHinweis %></div>
         <% } %>
-        <p class="text-muted">Vorgangsnummer: <%= job.id %> · Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></p>
+        <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></p>
       </div>
       <div class="w-100"></div>
       <%- include('_beleg_umschalter', { jobId: job.id, pdfUrl: `/downloads/${job.id}/oeffnen`, thumbnailUrl: job.thumbnail_pfad ? `/downloads/${job.id}/thumbnail` : null, refreshUrl: `/downloads/${job.id}/refresh-url`, previewUrl, frameId: 'kontierung-preview-frame', spalte: 'col-lg-7' }) %>
@@ -30,38 +31,37 @@
                 QR-Code deutet auf Lieferant <strong><%= qrInfo.vorschlagKreditor.name %></strong> hin, aktuell zugewiesen: <strong><%= qrInfo.zugewiesenerKreditor.name %></strong> — bitte prüfen.
               </div>
             <% } %>
-            <% if (errors.length > 0) { %>
-              <div class="alert alert-danger">
-                <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
-              </div>
-            <% } %>
+            <%- include('_fehler_liste', { errors, feldFehler: locals.feldFehler || {} }) %>
 
             <form id="kontierung-form" method="post" action="/kontierung/<%= job.id %>" enctype="multipart/form-data">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
               <div class="kontierung-block">
               <div class="mb-3">
                 <label class="form-label" for="kontoId">Konto</label>
-                <select class="form-select" id="kontoId" name="kontoId" required data-searchable>
+                <select class="form-select<%= ff.kontoId ? ' is-invalid' : '' %>" id="kontoId" name="kontoId" required data-searchable<%- ffAttr(ff, 'kontoId') %>>
                   <option value="">— wählen —</option>
                   <% konten.forEach((k) => { %>
                     <option value="<%= k.id %>" <%= String(k.id) === values.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
                   <% }) %>
                 </select>
+<% if (ff.kontoId) { %><div class="invalid-feedback d-block" id="kontoId-fehler"><%= ff.kontoId %></div><% } %>
               </div>
 
               <div class="row g-2 mb-3">
                 <div class="col-12 col-sm-6">
                   <label class="form-label" for="absender">Absender</label>
-                  <input type="text" class="form-control" id="absender" name="absender" value="<%= values.absender || '' %>" required>
+                  <input type="text" class="form-control<%= ff.absender ? ' is-invalid' : '' %>" id="absender" name="absender" value="<%= values.absender || '' %>" required<%- ffAttr(ff, 'absender') %>>
+<% if (ff.absender) { %><div class="invalid-feedback d-block" id="absender-fehler"><%= ff.absender %></div><% } %>
                 </div>
                 <div class="col-12 col-sm-6">
                   <label class="form-label" for="kreditorId">Lieferant</label>
-                  <select class="form-select" id="kreditorId" name="kreditorId" required data-searchable>
+                  <select class="form-select<%= ff.kreditorId ? ' is-invalid' : '' %>" id="kreditorId" name="kreditorId" required data-searchable<%- ffAttr(ff, 'kreditorId') %>>
                     <option value="">— wählen —</option>
                     <% kreditoren.forEach((d) => { %>
                       <option value="<%= d.id %>" <%= String(d.id) === values.kreditorId ? 'selected' : '' %>><%= d.name %></option>
                     <% }) %>
                   </select>
+<% if (ff.kreditorId) { %><div class="invalid-feedback d-block" id="kreditorId-fehler"><%= ff.kreditorId %></div><% } %>
                 </div>
               </div>
 
@@ -94,17 +94,20 @@
               <div class="kontierung-block">
               <div class="mb-3">
                 <label class="form-label" for="rechnungsnummer" id="rechnungsnummer-label">Rechnungsnummer</label>
-                <input type="text" class="form-control" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" required>
+                <input type="text" class="form-control<%= ff.rechnungsnummer ? ' is-invalid' : '' %>" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" required<%- ffAttr(ff, 'rechnungsnummer') %>>
+<% if (ff.rechnungsnummer) { %><div class="invalid-feedback d-block" id="rechnungsnummer-fehler"><%= ff.rechnungsnummer %></div><% } %>
               </div>
 
               <div class="row g-2 mb-3">
                 <div class="col-12 col-sm-6">
                   <label class="form-label" for="betrag">Betrag</label>
-                  <input type="text" inputmode="decimal" class="form-control" id="betrag" name="betrag" value="<%= values.betrag || '' %>" placeholder="z.B. 123.45" required>
+                  <input type="text" inputmode="decimal" class="form-control<%= ff.betrag ? ' is-invalid' : '' %>" id="betrag" name="betrag" value="<%= values.betrag || '' %>" placeholder="z.B. 123.45" required<%- ffAttr(ff, 'betrag') %>>
+<% if (ff.betrag) { %><div class="invalid-feedback d-block" id="betrag-fehler"><%= ff.betrag %></div><% } %>
                 </div>
                 <div class="col-12 col-sm-6">
                   <label class="form-label" for="zahlungsziel">Zahlungsziel</label>
-                  <input type="date" class="form-control" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>" <%= values.typ === 'gutschrift' ? '' : 'required' %>>
+                  <input type="date" class="form-control<%= ff.zahlungsziel ? ' is-invalid' : '' %>" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>" <%= values.typ === 'gutschrift' ? '' : 'required' %><%- ffAttr(ff, 'zahlungsziel') %>>
+<% if (ff.zahlungsziel) { %><div class="invalid-feedback d-block" id="zahlungsziel-fehler"><%= ff.zahlungsziel %></div><% } %>
                 </div>
               </div>
 
@@ -127,8 +130,9 @@
               </div>
 
               <div class="mb-3">
-                <label class="form-label" for="begruendung">Begründung <span class="text-muted">(bei Interessenskonflikt oder Ablehnung Pflicht)</span></label>
-                <textarea class="form-control" id="begruendung" name="begruendung"><%= values.begruendung || '' %></textarea>
+                <label class="form-label" for="begruendung">Begründung <span class="text-muted" data-begruendung-hinweis><%= values.interessenskonflikt === 'ja' ? '(Pflicht)' : '(bei Ablehnung Pflicht)' %></span></label>
+                <textarea class="form-control<%= ff.begruendung ? ' is-invalid' : '' %>" id="begruendung" name="begruendung" data-begruendung-pflicht-bei="konfliktJa"<%- ffAttr(ff, 'begruendung') %>><%= values.begruendung || '' %></textarea>
+<% if (ff.begruendung) { %><div class="invalid-feedback d-block" id="begruendung-fehler"><%= ff.begruendung %></div><% } %>
               </div>
 
               <div class="mb-3">
@@ -156,34 +160,28 @@
               <% } %>
 
             </form>
-            <form id="zurueck-in-pool-form" method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool">
-              <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-            </form>
             <form id="an-gruppe-zurueck-form" method="post" action="/kontierung/<%= job.id %>/an-gruppe-zurueck">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
             </form>
 
-            <div class="d-flex flex-wrap gap-2">
-              <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary btn-sm">Kontieren</button>
-              <button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger btn-sm">Ablehnen</button>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary">Kontieren</button>
+              <button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger">Ablehnen</button>
               <% if (typeof rapportModulAktiv !== 'undefined' && rapportModulAktiv) { %>
-                <button type="submit" form="kontierung-form" name="aktion" value="rapport" id="rapport-btn" class="btn btn-primary btn-sm d-none" disabled>Zur Kenntnis weitergeben</button>
+                <button type="submit" form="kontierung-form" name="aktion" value="rapport" id="rapport-btn" class="btn btn-primary d-none" disabled>Zur Kenntnis weitergeben</button>
               <% } %>
-              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#zurueck-in-pool-modal">Zurück in den Pool legen</button>
-              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#an-gruppe-zurueck-modal">An Gruppe zurücksenden</button>
-              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#aufsplitten-modal">Rechnung aufsplitten</button>
+              <div class="dropdown">
+                <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Weitere Aktionen</button>
+                <ul class="dropdown-menu">
+                  <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#zurueck-in-pool-modal">Zurück in den Pool legen</button></li>
+                  <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#an-gruppe-zurueck-modal">An Gruppe zurücksenden</button></li>
+                  <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#aufsplitten-modal">Rechnung aufsplitten</button></li>
+                  <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0 && !job.aufgesplittet_von) { %>
+                    <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#kk-abrechnung-modal">Als Kreditkartenabrechnung übergeben …</button></li>
+                  <% } %>
+                </ul>
+              </div>
             </div>
-            <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0 && !job.aufgesplittet_von) { %>
-              <form method="post" action="/kontierung/<%= job.id %>/als-kk-abrechnung" class="d-flex flex-wrap gap-2 align-items-center mt-3">
-                <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-                <label class="form-label mb-0" for="kk-karte">Kreditkartenabrechnung für</label>
-                <select class="form-select form-select-sm w-auto" id="kk-karte" name="kreditkarteId" required>
-                  <option value="">— Karte —</option>
-                  <% kkKarten.forEach((k) => { %><option value="<%= k.id %>"><%= k.bezeichnung %><%= k.karte_endziffern ? ` (•••• ${k.karte_endziffern})` : '' %></option><% }) %>
-                </select>
-                <button type="submit" class="btn btn-outline-primary btn-sm">Zum Abgleich übergeben</button>
-              </form>
-            <% } %>
           </div>
         </div>
         <%- include('_audit_log') %>
@@ -191,12 +189,37 @@
       </div>
     </div>
 
+    <% if (typeof kkKarten !== 'undefined' && kkKarten.length > 0 && !job.aufgesplittet_von) { %>
+    <div class="modal fade" id="kk-abrechnung-modal" tabindex="-1" aria-labelledby="kk-abrechnung-modal-label" aria-hidden="true">
+      <div class="modal-dialog">
+        <form class="modal-content" method="post" action="/kontierung/<%= job.id %>/als-kk-abrechnung">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <div class="modal-header">
+            <h5 class="modal-title" id="kk-abrechnung-modal-label">Als Kreditkartenabrechnung übergeben</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+          </div>
+          <div class="modal-body">
+            <label class="form-label" for="kk-karte">Kreditkartenabrechnung für</label>
+            <select class="form-select" id="kk-karte" name="kreditkarteId" required>
+              <option value="">— Karte —</option>
+              <% kkKarten.forEach((k) => { %><option value="<%= k.id %>"><%= k.bezeichnung %><%= k.karte_endziffern ? ` (•••• ${k.karte_endziffern})` : '' %></option><% }) %>
+            </select>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="submit" class="btn btn-primary">Zum Abgleich übergeben</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <% } %>
+
     <div class="modal fade" id="aufsplitten-modal" tabindex="-1" aria-labelledby="aufsplitten-modal-label" aria-hidden="true">
       <div class="modal-dialog modal-xl modal-dialog-scrollable" style="height:90vh">
         <div class="modal-content" style="height:100%">
           <div class="modal-header">
             <h5 class="modal-title" id="aufsplitten-modal-label">Rechnung aufsplitten</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
           </div>
           <div class="modal-body p-0">
             <iframe id="aufsplitten-frame" title="Rechnung aufsplitten" style="width:100%;height:100%;border:0"></iframe>
@@ -205,39 +228,15 @@
       </div>
     </div>
 
-    <div class="modal fade" id="zurueck-in-pool-modal" tabindex="-1" aria-labelledby="zurueck-in-pool-modal-label" aria-hidden="true">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="zurueck-in-pool-modal-label">Zurück in den Pool legen</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
-          </div>
-          <div class="modal-body">
-            <div class="mb-3">
-              <label class="form-label" for="hinweisKontoId">Für welches Konto ist diese Rechnung vermutlich bestimmt? <span class="text-muted">(optional)</span></label>
-              <select class="form-select" id="hinweisKontoId" name="hinweisKontoId" form="zurueck-in-pool-form" data-searchable>
-                <option value="">— kein Hinweis —</option>
-                <% alleKonten.forEach((k) => { %>
-                  <option value="<%= k.id %>"><%= k.kontonummer %> — <%= k.bezeichnung %></option>
-                <% }) %>
-              </select>
-              <div class="form-text">Hilft der zuständigen Person, die Rechnung im Pool zu finden — sie bekommt eine E-Mail.</div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
-            <button type="submit" form="zurueck-in-pool-form" class="btn btn-primary">Zurück in den Pool legen</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <%- include('_zurueck_in_pool_dialog', { alleKonten, zurueckInPoolAction: '/kontierung/' + job.id + '/zurueck-in-pool' }) %>
+    <%- include('_ablehnen_dialog', { formId: 'kontierung-form', begruendungId: 'begruendung' }) %>
 
     <div class="modal fade" id="an-gruppe-zurueck-modal" tabindex="-1" aria-labelledby="an-gruppe-zurueck-modal-label" aria-hidden="true">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="an-gruppe-zurueck-modal-label">An Gruppe zurücksenden</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
           </div>
           <div class="modal-body">
             <div class="mb-3">
@@ -259,7 +258,7 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="neuer-lieferant-modal-label">Neuen Lieferanten anlegen</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
           </div>
           <div class="modal-body">
             <div id="neuer-lieferant-error" class="alert alert-danger d-none"></div>
@@ -292,10 +291,16 @@
     // regardless of which button triggered it. Drop them all the moment Ablehnen is clicked so
     // the browser lets an empty form through; a fresh page load (any validation error re-renders
     // the page) restores the attributes from the template.
-    document.getElementById('ablehnen-btn').addEventListener('click', function () {
+    // Global, damit auch der Ablehnen-Dialog (views/_ablehnen_dialog.ejs) sie vor requestSubmit aufrufen kann.
+    function entferneKontierungsPflicht() {
       ['kontoId', 'absender', 'kreditorId', 'rechnungsnummer', 'betrag', 'zahlungsziel'].forEach(function (id) {
         document.getElementById(id).required = false;
       });
+    }
+    document.getElementById('ablehnen-btn').addEventListener('click', function (e) {
+      // Die defaultPrevented-Prüfung setzt voraus, dass _ablehnen_dialog.ejs vor diesem Skript eingebunden ist (Listener-Reihenfolge).
+      // Mit Dialog-JS fängt _ablehnen_dialog.ejs den Klick ab; die Pflicht fällt erst bei der Bestätigung.
+      if (!e.defaultPrevented) entferneKontierungsPflicht();
     });
     // Eine Gutschrift hat kein Fälligkeitsdatum — Zahlungsziel wird optional, sobald der Typ
     // umgeschaltet wird. Läuft auch einmal beim Laden, damit ein Fehler-Rerender mit bereits
@@ -411,6 +416,18 @@
         input.className = select.className;
         input.setAttribute('autocomplete', 'off');
         input.setAttribute('role', 'combobox');
+        if (select.id) {
+          input.id = select.id + '-suche';
+          // Fehlerlinks auf das versteckte <select> führen stattdessen auf das sichtbare Feld.
+          Array.prototype.forEach.call(document.querySelectorAll('a[href="#' + select.id + '"]'), function (link) {
+            link.setAttribute('href', '#' + input.id);
+            link.addEventListener('click', function (e) { e.preventDefault(); input.focus(); });
+          });
+        }
+        // Fehlerzustand (aria-invalid/-describedby) gehört auf das sichtbare Feld.
+        ['aria-invalid', 'aria-describedby'].forEach(function (attr) {
+          if (select.hasAttribute(attr)) input.setAttribute(attr, select.getAttribute(attr));
+        });
         input.setAttribute('aria-expanded', 'false');
         if (select.disabled) input.disabled = true;
         var placeholderOption = select.querySelector('option[value=""]');
@@ -559,13 +576,15 @@
       });
 
       document.getElementById('neuer-lieferant-speichern').addEventListener('click', function () {
+        var speichern = this;
+        if (speichern.getAttribute('aria-busy') === 'true') return;
         var name = nameInput.value.trim();
         errorBox.classList.add('d-none');
-        fetch('/kontierung/lieferanten', {
+        Portal.beschaeftigt(speichern, fetch('/kontierung/lieferanten', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' },
           body: 'name=' + encodeURIComponent(name) + '&kontoId=' + encodeURIComponent(kontoSelect.value),
-        })
+        }))
           .then(function (res) {
             return res.json().then(function (data) { return { ok: res.ok, data: data }; });
           })

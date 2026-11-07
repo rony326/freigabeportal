@@ -12,7 +12,7 @@ import {
   getJobById,
   assignJobToPerson,
 } from '../db/jobsRepo.js';
-import { getKontoById, listPersonenMitFreigeberRolle } from '../db/kontenRepo.js';
+import { getKontoById, listKonten, listPersonenMitFreigeberRolle } from '../db/kontenRepo.js';
 import { getKreditkarteById, listKreditkarten } from '../db/kreditkartenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { personHasRole } from '../middleware/roles.js';
@@ -68,6 +68,8 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
     // Eine Abfrage für alle Listen der Seite (Anzahl/neu je Vorgang). Pool-Vorgänge (Pool und
     // Rückläufer, beide unzugewiesen) bekommen keine Marke: keine Seite, die der Pool verlinkt, zeigt
     // ihre Kommentare, das "neu" bliebe also bis zur Übernahme stehen (Abschlussprüfung 6).
+    // Das Konto-Dropdown des Pool-Dialogs wird nur gebraucht, wenn es Kontierungen zum Zurücklegen gibt.
+    daten.alleKonten = daten.meineKontierungen.length > 0 ? listKonten(db) : [];
     const listen = [daten.meineKontierungen, daten.meineSpesenFreigaben, daten.meineFreigaben, daten.meineAbgelehnten, daten.meineRapporte, daten.adminEskalierteKontierungen, daten.adminEskalierteFreigaben, daten.adminEskalierteSpesenFreigaben];
     daten.kommentarInfo = kommentarInfoFuer(db, config, req.currentPerson, listen.flat().map((j) => j.id));
     res.render('pool', daten);

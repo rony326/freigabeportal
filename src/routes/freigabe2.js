@@ -24,6 +24,7 @@ import { tsaTrustOptions } from '../services/tsaTrust.js';
 import { kommentarBereich } from './kommentare.js';
 import { listeKommentare } from '../services/kommentare.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { feldFehlerAttr } from '../utils/feldFehler.js';
 
 // Stand der Kommentare eines Vorgangs als "<Anzahl>:<letzte id>". Die Seite schreibt ihn beim
 // Rendern ins Formular; der POST vergleicht ihn vor dem Stempeln (Kommentar während die Seite offen
@@ -107,7 +108,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     return { job, konto };
   }
 
-  function renderForm(req, res, status, { job, konto }, values, errors, paymentReview = null) {
+  function renderForm(req, res, status, { job, konto }, values, errors, paymentReview = null, feldFehler = {}) {
     const freigaben = listFreigabenByJob(db, job.id);
     const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
     if (!freigabe1) {
@@ -136,6 +137,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       values,
       errors,
+      feldFehler,
+      feldFehlerAttr,
       paymentReview,
       auditLog: buildAuditLog(db, job.id),
       kkHinweis: kkHinweisFuerJob(db, job),
@@ -159,7 +162,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const hatKonflikt = interessenskonflikt === 'ja';
 
       if (hatKonflikt && !begruendung) {
-        return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einem Interessenskonflikt ist eine Begründung Pflicht.']);
+        return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einem Interessenskonflikt ist eine Begründung Pflicht.'], null, { f2begruendung: 'Bei einem Interessenskonflikt ist eine Begründung Pflicht.' });
       }
 
       if (hatKonflikt && aktion === 'ablehnen') {
@@ -245,7 +248,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
 
       if (aktion === 'ablehnen') {
         if (!begruendung) {
-          return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einer Ablehnung ist eine Begründung Pflicht.']);
+          return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einer Ablehnung ist eine Begründung Pflicht.'], null, { f2begruendung: 'Bei einer Ablehnung ist eine Begründung Pflicht.' });
         }
         db.exec('BEGIN');
         try {
@@ -338,11 +341,11 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
             const ibanRoh = extractCustomFieldValue(einreicher, config.churchtools.customFieldIban);
             zahlungsdaten = validateSpesenPayment(ibanRoh, extractCustomFieldValue(einreicher, config.churchtools.customFieldKontoinhaber));
           } catch (err) {
-            console.error(`Zahlungsdaten-Abruf fuer Job ${job.id} fehlgeschlagen; Freigabe gesperrt.`);
+            console.error(`Zahlungsdaten-Abruf für Job ${job.id} fehlgeschlagen; Freigabe gesperrt.`);
           }
         }
         if (!zahlungsdaten) {
-          return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Freigabe gesperrt: Eine gueltige Schweizer IBAN und der Kontoinhaber muessen in ChurchTools hinterlegt und abrufbar sein.']);
+          return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Freigabe gesperrt: Eine gültige Schweizer IBAN und der Kontoinhaber müssen in ChurchTools hinterlegt und abrufbar sein.']);
         }
         zahlung = { art: 'spesen', daten: zahlungsdaten, abgleich: null, hinweise: [] };
       } else {
@@ -357,9 +360,11 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           (zahlung.hinweise.length === 0 || req.body.zahlungshinweise_bestaetigt === 'ja');
         if (!bestaetigt) {
           const changed = Boolean(req.body.zahlungsdaten_stand);
+          const standGeaendert = changed && req.body.zahlungsdaten_stand !== review.fingerprint;
+          const text = standGeaendert ? 'Der Zahlungs- oder Vorgangsstand wurde geändert. Bitte erneut prüfen und bestätigen.' : 'Bitte die Zahlungsdaten prüfen und bestätigen.';
+          const feld = standGeaendert ? null : (req.body.zahlungsdaten_bestaetigt !== 'ja' ? 'zahlungsdatenBestaetigt' : (zahlung.hinweise.length > 0 ? 'zahlungshinweiseBestaetigt' : null));
           return renderForm(req, res, changed ? 409 : 400, result, { interessenskonflikt, begruendung },
-            [changed && req.body.zahlungsdaten_stand !== review.fingerprint ? 'Der Zahlungs- oder Vorgangsstand wurde geaendert. Bitte erneut pruefen und bestaetigen.' : 'Bitte die Zahlungsdaten pruefen und bestaetigen.'],
-            review);
+            [text], review, feld ? { [feld]: text } : {});
         }
         zahlungsStand = review.fingerprint;
       }
@@ -459,13 +464,13 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       db.exec('BEGIN');
       try {
         const currentJob = getJobById(db, job.id);
-        if (!readFileSync(job.pdf_pfad).equals(pdfBuffer)) throw new Error('Das Quelldokument wurde waehrend der Freigabe veraendert.');
+        if (!readFileSync(job.pdf_pfad).equals(pdfBuffer)) throw new Error('Das Quelldokument wurde während der Freigabe verändert.');
         const currentKonto = getKontoById(db, konto.id);
         req.currentPerson = getPersonById(db, req.currentPerson.churchtools_person_id);
         if (!req.currentPerson?.aktiv || JSON.stringify(currentJob) !== JSON.stringify(job) || JSON.stringify(currentKonto) !== JSON.stringify(konto)) {
           db.exec('ROLLBACK');
           unlinkSync(tmpPfad);
-          return res.status(409).render('error', { message: 'Der Vorgang wurde inzwischen geaendert. Bitte erneut pruefen.' });
+          return res.status(409).render('error', { message: 'Der Vorgang wurde inzwischen geändert. Bitte erneut prüfen.' });
         }
         if (!loadAuthorized(req, res)) {
           db.exec('ROLLBACK');
@@ -475,7 +480,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         if (job.quelle !== 'spesen' && JSON.stringify(rechnungsZahlung(currentJob)) !== JSON.stringify(zahlung)) {
           db.exec('ROLLBACK');
           unlinkSync(tmpPfad);
-          return res.status(409).render('error', { message: 'Die Zahlungsdaten oder deren Pruefung haben sich inzwischen geaendert. Bitte erneut pruefen.' });
+          return res.status(409).render('error', { message: 'Die Zahlungsdaten oder deren Prüfung haben sich inzwischen geändert. Bitte erneut prüfen.' });
         }
         if (kommentarStandVon(db, job.id) !== stampKommentarStand) {
           db.exec('ROLLBACK');

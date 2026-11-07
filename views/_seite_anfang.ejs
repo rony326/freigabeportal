@@ -43,6 +43,7 @@
 <% } %>
 <main class="container-xxl py-3">
 <% } else { %>
+<div class="portal-oben">
 <% if (locals.testmodus) { %>
 <div class="testmodus-band" role="region" aria-label="Testmodus">
   <div class="container-xxl testmodus-band-zeile">
@@ -69,11 +70,11 @@
   </div>
 </div>
 <% } %>
-<header class="portal-kopf border-bottom mb-3">
+<header class="portal-kopf border-bottom">
   <div class="container-xxl portal-kopf-zeile">
     <div class="portal-kopf-links d-flex align-items-center gap-2">
       <% if (sNavigation) { %>
-        <button type="button" id="seitenleiste-toggle" class="btn btn-outline-secondary btn-sm d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#portal-seitenleiste" aria-controls="portal-seitenleiste" aria-label="Navigation öffnen">☰</button>
+        <button type="button" id="seitenleiste-toggle" class="btn btn-outline-secondary btn-sm d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#portal-seitenleiste" aria-controls="portal-seitenleiste" aria-label="Navigation öffnen"><%- include('_symbol', { name: 'list' }) %></button>
       <% } %>
       <div class="portal-kopf-marke text-start">
         <% if (branding.hasLogo && branding.logoAusrichtung === 'links') { %>
@@ -103,7 +104,14 @@
       <% if (sEingeloggt) { %>
         <span class="text-muted small d-none d-md-inline">Angemeldet als <%= currentPerson.vorname %> <%= currentPerson.nachname %></span>
       <% } %>
-      <button type="button" id="theme-toggle" class="btn btn-outline-secondary btn-sm" aria-label="Farbmodus umschalten">🌓</button>
+      <div class="dropdown farbmodus-menue">
+        <button type="button" id="theme-toggle" class="btn btn-outline-secondary btn-sm" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Farbmodus wählen"><%- include('_symbol', { name: 'circle-half' }) %></button>
+        <ul class="farbmodus-liste dropdown-menu dropdown-menu-end">
+          <% [['hell', 'Hell'], ['dunkel', 'Dunkel'], ['system', 'System']].forEach(function (m) { %>
+            <li><button type="button" class="dropdown-item" data-farbmodus="<%= m[0] %>" aria-pressed="<%= branding.farbmodusWahl === m[0] %>"><%= m[1] %></button></li>
+          <% }); %>
+        </ul>
+      </div>
       <% if (sEingeloggt) { %>
         <form method="post" action="/auth/logout" class="d-inline">
           <%# Abmelden geht an die echte App: im Testmodus deren Token (setzt die Weiche). %>
@@ -114,6 +122,7 @@
     </div>
   </div>
 </header>
+</div>
 <% if (sEingeloggt) { %><%- include('_banner') %><% } %>
 <% if (locals.testmodusEchteSeite) { %>
 <div class="container-xxl"><div class="alert alert-warning testmodus-echt-hinweis" role="status">Testmodus ist an – diese Seite gehört zum echten Betrieb; Änderungen hier wirken echt. <a href="/pool">Zurück in den Testmodus</a></div></div>

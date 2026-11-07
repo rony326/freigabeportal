@@ -410,7 +410,7 @@ for (const mutation of ['child-status', 'child-amount', 'parent-file', 'child-fi
     });
     const result = await pruefeUndFinalisiereSplitGruppe(db, parentId);
     assert.equal(result.status, 'fehler');
-    assert.match(result.error, /geaendert/);
+    assert.match(result.error, /geändert/);
     assert.equal(getJobById(db, parentId).gruppe_pdf_pfad, null);
     assert.equal(getJobById(db, parentId).gruppe_final_datei_hash, null);
     assert.equal(readdirSync(dir).filter((name) => name.startsWith('final-')).length, 0);

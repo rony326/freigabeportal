@@ -155,3 +155,22 @@ test('hasLogoDunkel ist true, sobald Pfad und Mimetype des dunklen Logos gesetzt
   assert.equal(runMiddleware(db, undefined).hasLogoDunkel, true);
   db.close();
 });
+
+test('parseThemeCookie: Cookie "system" ergibt themeAttr null, auch bei Admin-Standard "dunkel", und farbmodusWahl "system"', () => {
+  const db = openDatabase(':memory:');
+  setConfigValue(db, 'branding_theme_default', 'dunkel');
+  const branding = runMiddleware(db, 'theme=system');
+  assert.equal(branding.themeAttr, null);
+  assert.equal(branding.farbmodusWahl, 'system');
+  db.close();
+});
+
+test('farbmodusWahl: Cookie, sonst Admin-Standard, sonst "system"', () => {
+  const db = openDatabase(':memory:');
+  assert.equal(runMiddleware(db, undefined).farbmodusWahl, 'system');
+  assert.equal(runMiddleware(db, 'theme=hell').farbmodusWahl, 'hell');
+  setConfigValue(db, 'branding_theme_default', 'dunkel');
+  assert.equal(runMiddleware(db, undefined).farbmodusWahl, 'dunkel');
+  assert.equal(runMiddleware(db, 'theme=quatsch').farbmodusWahl, 'dunkel');
+  db.close();
+});

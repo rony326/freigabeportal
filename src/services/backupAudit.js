@@ -30,7 +30,7 @@ export function deleteBackupWithAudit(db, path, reason) {
 
 export function listUnresolvedBackupDeletions(db, { before = Number.MAX_SAFE_INTEGER, limit = 50 } = {}) {
   if (!Number.isSafeInteger(before) || before < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
-    throw new Error('Ungueltige Seitengrenzen fuer Backup-Loeschabsichten.');
+    throw new Error('Ungültige Seitengrenzen für Backup-Löschabsichten.');
   }
   return db.prepare(`SELECT i.id, i.zeitpunkt, i.person_name, i.objekt_id AS dateiname,
       json_extract(CASE WHEN json_valid(i.nachher) THEN i.nachher ELSE '{}' END, '$.operationId') AS operation_id
@@ -62,7 +62,7 @@ export function reviewBackupDeletion(db, intentId, observation, reason) {
   db.exec('BEGIN IMMEDIATE');
   try {
     const intent = listUnresolvedBackupDeletions(db, { before: intentId + 1, limit: 1 })[0];
-    if (intent?.id !== intentId) throw new BackupReviewError('Loeschabsicht fehlt oder wurde bereits abgeschlossen/geprueft.', 409);
+    if (intent?.id !== intentId) throw new BackupReviewError('Löschabsicht fehlt oder wurde bereits abgeschlossen/geprüft.', 409);
     const actor = currentAuditActor();
     const result = db.prepare(`INSERT INTO audit_ereignisse
       (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher, begruendung)

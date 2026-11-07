@@ -1,0 +1,61 @@
+<% /* Rückfrage beim Ablehnen. Parameter: titel (optional, Standard "Rechnung ablehnen?"), formId (Formular mit dem Ablehnen-Knopf), begruendungId (Textarea der Seite).
+     Ohne JS bleibt der Ablehnen-Knopf ein normaler Submit-Knopf (aktion=ablehnen). */ %>
+<div class="modal fade" id="ablehnen-dialog" tabindex="-1" aria-labelledby="ablehnen-dialog-titel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ablehnen-dialog-titel"><%= locals.titel || 'Rechnung ablehnen?' %></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label" for="ablehnen-dialog-begruendung">Begründung</label>
+        <textarea class="form-control" id="ablehnen-dialog-begruendung" rows="4" required aria-describedby="ablehnen-dialog-fehler"></textarea>
+        <div class="invalid-feedback" id="ablehnen-dialog-fehler">Bitte eine Begründung angeben.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="ablehnen-dialog-abbrechen">Abbrechen</button>
+        <button type="button" class="btn btn-danger" id="ablehnen-dialog-bestaetigen">Ablehnen</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    var form = document.getElementById(<%- JSON.stringify(formId) %>);
+    var original = document.getElementById(<%- JSON.stringify(begruendungId) %>);
+    // Auf das Formular eingegrenzt (der Knopf kann per form-Attribut ausserhalb des Formulars stehen).
+    var knopf = Array.prototype.filter.call(document.querySelectorAll('button[name="aktion"][value="ablehnen"]'), function (k) { return k.form === form; })[0];
+    var el = document.getElementById('ablehnen-dialog');
+    var feld = document.getElementById('ablehnen-dialog-begruendung');
+    if (!form || !original || !knopf || !el || !window.bootstrap) return;
+    var bestaetigt = false;
+    var dialog = window.bootstrap.Modal.getOrCreateInstance(el);
+    knopf.addEventListener('click', function (e) {
+      e.preventDefault();
+      feld.value = original.value;
+      feld.classList.remove('is-invalid');
+      feld.removeAttribute('aria-invalid');
+      bestaetigt = false;
+      dialog.show();
+    });
+    el.addEventListener('shown.bs.modal', function () { feld.focus(); });
+    // Escape, Schliessen-Kreuz, Hintergrundklick und Abbrechen: getippter Text bleibt erhalten.
+    el.addEventListener('hide.bs.modal', function () {
+      if (!bestaetigt) original.value = feld.value;
+    });
+    feld.addEventListener('input', function () {
+      if (feld.value.trim()) { feld.classList.remove('is-invalid'); feld.removeAttribute('aria-invalid'); }
+    });
+    document.getElementById('ablehnen-dialog-abbrechen').addEventListener('click', function () {
+      dialog.hide();
+    });
+    document.getElementById('ablehnen-dialog-bestaetigen').addEventListener('click', function () {
+      if (!feld.value.trim()) { feld.classList.add('is-invalid'); feld.setAttribute('aria-invalid', 'true'); feld.focus(); return; }
+      bestaetigt = true;
+      original.value = feld.value;
+      if (typeof window.entferneKontierungsPflicht === 'function') window.entferneKontierungsPflicht();
+      dialog.hide();
+      form.requestSubmit(knopf);
+    });
+  })();
+</script>

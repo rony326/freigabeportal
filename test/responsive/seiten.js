@@ -14,7 +14,7 @@
 // - status: erwarteter HTTP-Status (Standard 200; bei fehlerzustand der Status der Antwortseite).
 // - pdf: true für Seiten mit Beleg/Formular-Umschalter: unter 992 px darf weder der PDF.js-Viewer
 //   noch das signierte PDF geladen werden, ab 992 px muss das eingebettete PDF (iframe) geladen sein.
-// - modal: { knopf, modal, iframe? } nach den Seitenprüfungen den Dialog über seinen Knopf öffnen,
+// - modal: { knopf, modal, iframe?, menue? } (menue: Selektor des Dropdown-Knopfs, der den Knopf enthält und zuerst geöffnet wird) nach den Seitenprüfungen den Dialog über seinen Knopf öffnen,
 //   im offenen Dialog Touch/Text/Überlappung prüfen, ob der Schliessen-Knopf frei liegt (nicht vom
 //   Testmodus-Band verdeckt) und — mit iframe — im Dokument des iframes alle Seitenprüfungen
 //   (seitliches Scrollen, Touch …) und dass dort kein Beleg/Formular-Umschalter sichtbar ist.
@@ -38,7 +38,7 @@ export const SEITEN = [
   { name: 'Aufsplitten', view: 'kontierung-aufsplitten', pfad: '/kontierung/{anna}/aufsplitten', als: 'test-1', pdf: true },
   {
     name: 'Aufsplitten im Modal', view: 'kontierung', pfad: '/kontierung/{anna}', als: 'test-1',
-    modal: { knopf: '[data-bs-target="#aufsplitten-modal"]', modal: '#aufsplitten-modal', iframe: '#aufsplitten-frame' },
+    modal: { menue: '.dropdown-toggle:has(+ .dropdown-menu [data-bs-target="#aufsplitten-modal"])', knopf: '[data-bs-target="#aufsplitten-modal"]', modal: '#aufsplitten-modal', iframe: '#aufsplitten-frame' },
   },
   { name: 'KK-Abgleich', view: 'kk-abgleich', pfad: '/kontierung/{kkAbrechnung}/kk-abgleich', als: 'test-1', pdf: true },
   { name: 'Freigabe 2', view: 'freigabe2', pfad: '/freigabe2/{freigabe2}', als: 'test-2', pdf: true },

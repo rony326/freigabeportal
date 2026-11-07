@@ -23,6 +23,7 @@ import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createPoolPageRouter } from '../../src/routes/poolPage.js';
+import { divBereiche } from '../helpers/ansichtParitaet.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 
 function buildTestApp(db, mailer = { async sendMail() {} }) {
@@ -140,7 +141,8 @@ test('GET /pool shows the Kreditor (Lieferant) name in its own column, and an em
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<th>Kreditor<\/th>/);
+  assert.match(res.text, /<th>Lieferant<\/th>/);
+  assert.doesNotMatch(res.text, /<th>Kreditor<\/th>/);
   assert.match(res.text, /ACME Grosshandel/);
   db.close();
 });
@@ -166,7 +168,7 @@ test('GET /pool returns 200 for a logged-in person without the buchhaltung or po
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '77');
   assert.equal(res.status, 200);
-  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Pool<\/h2>/);
+  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Pool <span class="abschnitt-zahl"/);
   // No jobs exist anywhere for this person — every section is empty, so the dashboard shows
   // the summary empty-state instead of a heading with nothing under it.
   assert.doesNotMatch(res.text, /Meine offenen Kontierungen/);
@@ -471,7 +473,7 @@ test('GET /pool no longer shows a "Meine Spesen" section — it moved to its own
   });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '60');
-  assert.doesNotMatch(res.text, /<h2 class="h5 mt-4">Meine Spesen<\/h2>/);
+  assert.doesNotMatch(res.text, /<h2[^>]*>\s*Meine Spesen\b/);
   assert.doesNotMatch(res.text, /Taxi/);
   assert.match(res.text, /href="\/meine-spesen"/);
   db.close();
@@ -688,5 +690,77 @@ test('assigning a Pool Beleg to a person on active Ferienmodus also mails their 
   const zuweisungsMails = mailer.sent.filter((m) => /zur Kontierung zugewiesen/.test(m.text));
   assert.ok(zuweisungsMails.some((m) => m.to === 'p1@example.org'));
   assert.ok(zuweisungsMails.some((m) => m.to === 'p2@example.org'));
+  db.close();
+});
+
+test('poolPage: In-den-Pool-Knopf ohne JS bleibt Formular', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedBuchhaltungPerson(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'k.pdf', pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '50' WHERE id = ?").run(id);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  const m = res.text.match(new RegExp(`<form method="post" action="/kontierung/${id}/zurueck-in-pool"[^>]*>([\\s\\S]*?)</form>`));
+  assert.ok(m, 'Formular mit POST-action vorhanden');
+  assert.match(m[1], /name="_csrf" value="valid-token"/);
+  assert.match(m[1], new RegExp(`data-zurueck-in-pool="${id}"`));
+  assert.match(res.text, /id="zurueck-in-pool-modal"/);
+  db.close();
+});
+
+test('poolPage: ohne eigene Kontierungen kein Pool-Dialog', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedBuchhaltungPerson(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.doesNotMatch(res.text, /id="zurueck-in-pool-modal"/);
+  db.close();
+});
+
+function seedFreigabeJob(db, betrag) {
+  seedBuchhaltungPerson(db, '50');
+  for (const id of ['1', '2', '3']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '50', stellvertreter2Id: '3' });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'freizugeben.pdf', pdfPfad: '/tmp/a.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'freigabe2', betrag = ? WHERE id = ?").run(betrag, id);
+  return id;
+}
+
+test('pool: Abschnitt zeigt Anzahl', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedFreigabeJob(db, '123.45');
+  const res = await request(buildTestApp(db)).get('/pool').set('x-test-person-id', '50');
+  assert.match(res.text, /Meine Freigaben <span class="abschnitt-zahl">1<\/span>/);
+  db.close();
+});
+
+test('pool: Betrag in Tabelle und Kachel', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedFreigabeJob(db, '123.45');
+  const res = await request(buildTestApp(db)).get('/pool').set('x-test-person-id', '50');
+  const tabelle = divBereiche(res.text, 'ansicht-tabelle').join('');
+  const kacheln = divBereiche(res.text, 'ansicht-kacheln').join('');
+  assert.match(tabelle, /<th[^>]*>Betrag<\/th>/);
+  assert.match(tabelle, /<td class="text-end text-nowrap betrag">123\.45<\/td>/);
+  assert.match(kacheln, /<dt>Betrag<\/dt><dd class="betrag">123\.45<\/dd>/);
+  db.close();
+});
+
+test('pool: Spalte heisst Lieferant', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedFreigabeJob(db, null);
+  const res = await request(buildTestApp(db)).get('/pool').set('x-test-person-id', '50');
+  assert.match(res.text, /<th>Lieferant<\/th>/);
+  assert.doesNotMatch(res.text, /<th>Kreditor<\/th>/);
+  assert.match(res.text, /<td class="text-end text-nowrap betrag">—<\/td>/);
   db.close();
 });

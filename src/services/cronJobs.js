@@ -516,7 +516,7 @@ async function runZeitstempelNachholenJobInternal(db, config) {
           if (!current || current.status !== 'abgeschlossen' || current.abgeholt_am ||
               current.pdf_pfad !== job.pdf_pfad || current.zeitstempel_gesetzt_am ||
               !readFileSync(job.pdf_pfad).equals(pdfBuffer)) {
-            throw new Error('Job oder Quelldatei wurde waehrend der Zeitstempel-Anfrage geaendert.');
+            throw new Error('Job oder Quelldatei wurde während der Zeitstempel-Anfrage geändert.');
           }
           const hash = createHash('sha256').update(stamped).digest('hex');
           markZeitstempelGesetzt(db, job.id, new Date().toISOString(), hash);

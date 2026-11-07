@@ -88,6 +88,17 @@ test('GET /spesen-freigabe1/:id 200s and shows Beschreibung/Auslage-Datum/Einger
   db.close();
 });
 
+test('GET /spesen-freigabe1/:id: Ablehnen-Dialog heisst "Spesen ablehnen?", nicht "Rechnung ablehnen?"', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { jobId } = seedGrundlagen(db);
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/spesen-freigabe1/${jobId}`).set('x-test-person-id', '1');
+  assert.match(res.text, /Spesen ablehnen\?/);
+  assert.doesNotMatch(res.text, /Rechnung ablehnen\?/);
+  db.close();
+});
+
 test('GET /spesen-freigabe1/:id shows the Spesenabrechnung Titel when one was given at submission', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
@@ -245,5 +256,22 @@ test('POST /spesen-freigabe1/:id escalates to the admin group when the Stellvert
   const job = getJobById(db, jobId);
   assert.equal(job.freigabe1_eskaliert_an_admin, 1);
   assert.equal(mailer.sent.at(-1).to, 'f1@example.org', 'admin group resolves to person 1, the only seeded member of group 20');
+  db.close();
+});
+
+test('spesenFreigabe1: Begründung bei Ablehnung am Feld', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { jobId } = seedGrundlagen(db);
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app)
+    .post(`/spesen-freigabe1/${jobId}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ _csrf: 'valid-token', interessenskonflikt: 'nein', begruendung: '', aktion: 'ablehnen' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /id="sf1begruendung"[^>]*is-invalid|is-invalid[^>]*id="sf1begruendung"/);
+  assert.match(res.text, /id="sf1begruendung-fehler"/);
+  assert.match(res.text, /href="#sf1begruendung"/);
   db.close();
 });

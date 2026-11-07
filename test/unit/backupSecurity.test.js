@@ -163,7 +163,7 @@ test('foreign-key violations are rejected even with valid file hashes', (t) => {
     file.groesse = bytes.length;
     file.sha256 = createHash('sha256').update(bytes).digest('hex');
   });
-  assert.throws(() => validateBackupArchive(zip.toBuffer()), /Fremdschluessel/);
+  assert.throws(() => validateBackupArchive(zip.toBuffer()), /Fremdschlüssel/);
 });
 
 test('backup creation rejects document bytes that contradict a stored final hash', (t) => {

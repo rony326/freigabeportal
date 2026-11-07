@@ -1,0 +1,12 @@
+<%# Erwartet { errors, feldFehler }. Texte mit Feldzuordnung springen per Link zum Feld. %>
+<% const _ff = locals.feldFehler || {}; const _ids = Object.keys(_ff); %>
+<% if ((locals.errors || []).length > 0) { %>
+  <div class="alert alert-danger" role="alert">
+    <strong>Bitte korrigieren:</strong>
+    <ul class="mb-0">
+      <% errors.forEach((error) => { const _id = _ids.find((k) => _ff[k] === error); %>
+        <li><% if (_id) { %><a href="#<%= _id %>" class="alert-link"><%= error %></a><% } else { %><%= error %><% } %></li>
+      <% }) %>
+    </ul>
+  </div>
+<% } %>

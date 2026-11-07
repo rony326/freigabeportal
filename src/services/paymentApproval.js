@@ -65,7 +65,7 @@ function betragWeichtAb(a, b) {
 // kein Datenlieferant: er wird im Snapshot eingefroren, die IBAN selbst stammt immer aus dem Beleg.
 export function ermittleRechnungsZahlung(db, job, parent = null) {
   if (parent && QR_FELDER.some((feld) => (parent[feld] ?? null) !== (job[feld] ?? null))) {
-    return { fehler: 'Die QR-Zahlungsdaten dieses Teilbelegs weichen von der Gesamtrechnung ab. Bitte ablehnen und die Rechnung pruefen lassen.' };
+    return { fehler: 'Die QR-Zahlungsdaten dieses Teilbelegs weichen von der Gesamtrechnung ab. Bitte ablehnen und die Rechnung prüfen lassen.' };
   }
   const art = bestimmeZahlungsart(job, parent);
   if (art !== 'qr_rechnung') return { art, daten: null, abgleich: null, hinweise: [] };
@@ -83,8 +83,8 @@ export function ermittleRechnungsZahlung(db, job, parent = null) {
 }
 
 export const ZAHLUNGSHINWEIS_TEXT = {
-  qr_ungueltig: 'Die QR-Zahlungsdaten sind unvollstaendig oder ungueltig. Es werden keine Zahlungsdaten exportiert; die Zahlung muss manuell erfasst werden.',
-  iban_abweichung: 'Die QR-IBAN ist fuer diesen Lieferanten nicht hinterlegt.',
+  qr_ungueltig: 'Die QR-Zahlungsdaten sind unvollständig oder ungültig. Es werden keine Zahlungsdaten exportiert; die Zahlung muss manuell erfasst werden.',
+  iban_abweichung: 'Die QR-IBAN ist für diesen Lieferanten nicht hinterlegt.',
   betrag_abweichung: 'Der QR-Betrag weicht vom erfassten Rechnungsbetrag ab.',
 };
 

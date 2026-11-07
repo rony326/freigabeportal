@@ -324,6 +324,8 @@ async function pruefePdf(page, b, pdfAnfragen) {
 async function pruefeModal(page, m, optionen) {
   const verstoesse = [];
   try {
+    // Liegt der Knopf in einem Dropdown (m.menue = Selektor des Dropdown-Knopfs), dieses zuerst öffnen.
+    if (m.menue) await page.locator(m.menue).first().click({ timeout: 3000 });
     await page.locator(m.knopf).first().click({ timeout: 3000 });
     await page.waitForFunction((sel) => {
       const el = document.querySelector(sel);

@@ -157,7 +157,7 @@ for (const phase of ['extracted', 'prepared', 'beforeActivation']) {
 
 test('post-activation failure preserves the selected new generation and the previous state', (t) => {
   const s = setup(t);
-  assert.throws(() => restoreOffline(s.archive, s.target, { ...s.options, onPhase(phase) { if (phase === 'activated') throw new Error('injected failure'); } }), /moeglicherweise bereits umgeschaltet/);
+  assert.throws(() => restoreOffline(s.archive, s.target, { ...s.options, onPhase(phase) { if (phase === 'activated') throw new Error('injected failure'); } }), /möglicherweise bereits umgeschaltet/);
   const current = resolveStorageConfig(s.target);
   assert.notEqual(current.dbPath, s.target.dbPath);
   assert.ok(existsSync(current.dbPath));

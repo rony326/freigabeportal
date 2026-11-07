@@ -2,7 +2,7 @@
      the section, heading included, when a list is empty) — no empty-state branch needed here. */ %>
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>Vorschau</th><th>Beleg</th><th>Quelle</th><th>Absender</th><th>Kreditor</th><th>Konto</th><th>Eingang</th><th></th></tr></thead>
+      <thead><tr><th>Vorschau</th><th>Beleg</th><th>Quelle</th><th>Absender</th><th>Lieferant</th><th>Konto</th><th class="text-end">Betrag</th><th>Eingang</th><th></th></tr></thead>
       <tbody>
         <% jobs.forEach((job) => { %>
           <tr id="<%= idPrefix %>-row-<%= job.id %>" data-job-container>
@@ -18,6 +18,7 @@
             <td><%= job.absender || '—' %></td>
             <td><%= job.lieferant || '—' %></td>
             <td><%= job.kontonummer || (job.hinweisKonto ? `Hinweis: ${job.hinweisKonto.kontonummer} — ${job.hinweisKonto.bezeichnung}` : '—') %></td>
+            <td class="text-end text-nowrap betrag"><%= job.betrag || '—' %></td>
             <td><%- include('_zeitpunkt', { wert: job.eingang_am }) %></td>
             <td>
               <%- include('_job_aktionen', { job }) %>

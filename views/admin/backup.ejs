@@ -32,7 +32,7 @@
       <% if (gespeichert) { %>
         <div class="alert alert-success alert-dismissible alert-kompakt fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">
           Gespeichert.
-          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schliessen"></button>
         </div>
       <% } %>
     </form>
@@ -78,7 +78,7 @@
                   </select>
                   <label class="form-label mt-2" for="begruendung-<%= eintrag.id %>">Prüfergebnis und Begründung</label>
                   <textarea class="form-control form-control-sm" id="begruendung-<%= eintrag.id %>" name="begruendung" minlength="10" maxlength="2000" rows="3" required></textarea>
-                  <button class="btn btn-outline-primary btn-sm mt-2" type="submit">Prüfung abschließen</button>
+                  <button class="btn btn-outline-primary btn-sm mt-2" type="submit">Prüfung abschliessen</button>
                 </form>
               </details></td></tr>
           <% }) %></tbody>
@@ -100,7 +100,7 @@
               <td><%= b.erstelltAm %></td>
               <td class="text-end">
                 <a class="btn btn-outline-secondary btn-sm" href="/admin/backup/dateien/<%= encodeURIComponent(b.dateiname) %>">Download</a>
-                <form method="post" action="/admin/backup/dateien/<%= encodeURIComponent(b.dateiname) %>/loeschen" class="d-inline" onsubmit="return confirm('Backup wirklich löschen?');">
+                <form method="post" action="/admin/backup/dateien/<%= encodeURIComponent(b.dateiname) %>/loeschen" class="d-inline" data-bestaetigen="Backup wirklich löschen?" data-bestaetigen-knopf="Löschen" data-bestaetigen-gefahr>
                   <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                   <button type="submit" class="btn btn-outline-danger btn-sm">Löschen</button>
                 </form>

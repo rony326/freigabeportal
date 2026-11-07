@@ -116,7 +116,7 @@ function laufendeNachholjobs(db) {
 }
 
 export function pruefeVerwaisteFinaleDateien(db, config, { mindestAlterMs: mindestAlterOverride, jetzt = Date.now(), vorTransaktion } = {}) {
-  if (db.isTransaction) throw new Error('Verwaiste-Dateien-Pruefung braucht eine eigene Transaktion.');
+  if (db.isTransaction) throw new Error('Verwaiste-Dateien-Prüfung braucht eine eigene Transaktion.');
   const ergebnis = { status: 'erfolg', geprueft: 0, verschoben: 0, referenziert: 0, historisch: 0, hashBekannt: 0, zuJung: 0, keineRegulaereDatei: 0, fehler: 0 };
   if (laufendeNachholjobs(db)) return { ...ergebnis, status: 'uebersprungen', grund: 'nachholjob_aktiv' };
   const jobsDir = config.jobsDir;
@@ -151,7 +151,7 @@ export function pruefeVerwaisteFinaleDateien(db, config, { mindestAlterMs: minde
         }
         const jetztStat = lstatSync(pfad, { throwIfNoEntry: false });
         if (!jetztStat?.isFile() || jetztStat.ino !== vorher.ino || jetztStat.dev !== verzeichnisStat.dev || jetztStat.size !== vorher.groesse || jetztStat.mtimeMs !== vorher.mtimeMs) {
-          throw new QuarantaeneFehler('Datei wurde waehrend der Pruefung veraendert.', 409);
+          throw new QuarantaeneFehler('Datei wurde während der Prüfung verändert.', 409);
         }
         const bestehend = lstatSync(ziel, { throwIfNoEntry: false });
         if (bestehend) {
@@ -181,7 +181,7 @@ export function pruefeVerwaisteFinaleDateien(db, config, { mindestAlterMs: minde
       }
     } catch (err) {
       ergebnis.fehler += 1;
-      console.error(`Pruefung verwaister Datei ${name} ohne Aenderung abgebrochen:`, err.code || err.message);
+      console.error(`Prüfung verwaister Datei ${name} ohne Änderung abgebrochen:`, err.code || err.message);
     }
   }
   return ergebnis;
@@ -191,7 +191,7 @@ export const runVerwaisteDateienPruefung = auditedJob('verwaiste-dateien', (db, 
   try {
     return pruefeVerwaisteFinaleDateien(db, config, options);
   } catch (err) {
-    console.error('Pruefung verwaister Dateien fehlgeschlagen:', err.message);
+    console.error('Prüfung verwaister Dateien fehlgeschlagen:', err.message);
     return { status: 'fehler', error: err.message };
   }
 });
@@ -204,7 +204,7 @@ function pruefeBegruendung(begruendung) {
 }
 
 function offenerEintrag(db, id) {
-  if (!Number.isSafeInteger(id) || id < 1) throw new QuarantaeneFehler('Ungueltiger Quarantaene-Eintrag.', 400);
+  if (!Number.isSafeInteger(id) || id < 1) throw new QuarantaeneFehler('Ungültiger Quarantäne-Eintrag.', 400);
   const eintrag = db.prepare("SELECT * FROM datei_quarantaene WHERE id = ? AND status = 'quarantaene'").get(id);
   if (!eintrag) throw new QuarantaeneFehler('Eintrag fehlt oder wurde bereits entschieden.', 409);
   return eintrag;
@@ -231,7 +231,7 @@ export function stelleQuarantaeneDateiWiederHer(db, config, id, begruendungRoh) 
     const eintrag = offenerEintrag(db, id);
     const quelle = join(quarantaene, eintrag.dateiname);
     const ziel = join(config.jobsDir, eintrag.dateiname);
-    if (dateiFingerabdruck(quelle).sha256 !== eintrag.sha256) throw new QuarantaeneFehler('Quarantaene-Datei stimmt nicht mehr mit dem gespeicherten Hash ueberein.', 409);
+    if (dateiFingerabdruck(quelle).sha256 !== eintrag.sha256) throw new QuarantaeneFehler('Quarantäne-Datei stimmt nicht mehr mit dem gespeicherten Hash überein.', 409);
     entscheide(db, id, 'wiederhergestellt', begruendung);
     schreibeAudit(db, 'quarantaene_datei_wiederhergestellt', id, { dateiname: eintrag.dateiname, sha256: eintrag.sha256 }, begruendung);
     verschiebeOhneUeberschreiben(quelle, ziel);
@@ -256,13 +256,13 @@ export function loescheQuarantaeneDatei(db, config, id, begruendungRoh) {
   const quarantaene = quarantaeneVerzeichnis(config.jobsDir, false);
   const eintrag = offenerEintrag(db, id);
   const pfad = join(quarantaene, eintrag.dateiname);
-  if (!lstatSync(pfad, { throwIfNoEntry: false })) throw new QuarantaeneFehler('Quarantaene-Datei fehlt; Zustand bitte manuell pruefen.', 409);
-  if (dateiFingerabdruck(pfad).sha256 !== eintrag.sha256) throw new QuarantaeneFehler('Quarantaene-Datei stimmt nicht mehr mit dem gespeicherten Hash ueberein.', 409);
+  if (!lstatSync(pfad, { throwIfNoEntry: false })) throw new QuarantaeneFehler('Quarantäne-Datei fehlt; Zustand bitte manuell prüfen.', 409);
+  if (dateiFingerabdruck(pfad).sha256 !== eintrag.sha256) throw new QuarantaeneFehler('Quarantäne-Datei stimmt nicht mehr mit dem gespeicherten Hash überein.', 409);
   if (dateinameReferenziert(db, eintrag.dateiname) === 'aktiv' || hashBekannt(db, eintrag.sha256)) {
-    throw new QuarantaeneFehler('Datei wird inzwischen referenziert und darf nicht geloescht werden.', 409);
+    throw new QuarantaeneFehler('Datei wird inzwischen referenziert und darf nicht gelöscht werden.', 409);
   }
   if (!loescheDateiMitAudit(db, pfad, { objekt: 'datei_quarantaene', objektId: id, dateiart: 'quarantaene_datei', anlass: begruendung })) {
-    throw new QuarantaeneFehler('Datei konnte nicht geloescht werden.', 409);
+    throw new QuarantaeneFehler('Datei konnte nicht gelöscht werden.', 409);
   }
   db.exec('BEGIN IMMEDIATE');
   try {

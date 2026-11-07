@@ -8,6 +8,9 @@ import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson, getPersonById, setFerienmodus } from '../../src/db/personenRepo.js';
 import { createKonto } from '../../src/db/kontenRepo.js';
+import { setQrDaten, updateKontierungMetadaten } from '../../src/db/jobsRepo.js';
+import { createKreditor } from '../../src/db/kreditorenRepo.js';
+import { createKreditorIban } from '../../src/db/kreditorIbanRepo.js';
 import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob, createSplitJob, createSpesenPosition, listAbholbereitJobs } from '../../src/db/jobsRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
@@ -1458,7 +1461,7 @@ test('GET /freigabe2/:id shows the Spesenabrechnung Titel when one was given at 
   const app = buildTestApp(db);
   const res = await request(app).get(`/freigabe2/${jobId}`).set('x-test-person-id', '3');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<strong>Titel:<\/strong> Reise Zürich 12.–14.8./);
+  assert.match(res.text, /<dt>Titel<\/dt><dd>Reise Zürich 12.–14.8.<\/dd>/);
   db.close();
 });
 
@@ -1923,5 +1926,49 @@ test('Abschlussprüfung 7: Freigabe 2 warnt vor ungespeicherten Angaben beim Abs
   assert.equal(res.status, 200);
   assert.match(res.text, /<form method="post" action="\/freigabe2\/\d+" id="freigabe2-form">/);
   assert.match(res.text, /<form method="post" action="\/kommentare\/\d+" class="kommentar-form" id="kommentar-form-\d+" data-ungespeichert-warnung="freigabe2-form">/);
-  assert.match(res.text, /window\.confirm\('Ungespeicherte Angaben/);
+  assert.match(res.text, /Portal\.bestaetigen\(\{[\s\S]*Ungespeicherte Angaben/);
+});
+
+test('freigabe2: Begründung bei Konflikt am Feld', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+  const res = await request(app)
+    .post(`/freigabe2/${id}`)
+    .set('x-test-person-id', '3')
+    .type('form')
+    .send({ aktion: 'freigeben', interessenskonflikt: 'ja', begruendung: '' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /id="f2begruendung"[^>]*is-invalid|is-invalid[^>]*id="f2begruendung"/);
+  assert.match(res.text, /id="f2begruendung-fehler"/);
+  assert.match(res.text, /href="#f2begruendung"/);
+  db.close();
+});
+
+test('freigabe2: Betrag im Entscheidungsblock', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  db.prepare("UPDATE jobs SET betrag = '1234.50', lieferant = 'Muster AG' WHERE id = ?").run(id);
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<div class="entscheidung">/);
+  assert.match(res.text, /class="entscheidung-betrag"[^>]*>\s*1234\.50\s*</);
+  assert.match(res.text, /<dl class="kachel-angaben">/);
+});
+
+test('freigabe2: IBAN-Abweichung rot', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { id, kontoId } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  createKreditorIban(db, { kreditorId, iban: 'CH5604835012345678009' });
+  updateKontierungMetadaten(db, id, { absender: 'l@example.org', betrag: '120.50', zahlungsziel: '2026-10-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId, typ: 'rechnung' });
+  setQrDaten(db, id, { qrIban: 'CH9300762011623852957', qrReferenz: '210000000003139471430009017', qrBetrag: '120.50', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const app = buildTestApp(db);
+  const res = await request(app).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /<div class="alert alert-danger py-2[^"]*"[^>]*>[^<]*(?:<[^>]+>[^<]*)*?NICHT bei diesem Lieferanten hinterlegt/);
 });

@@ -56,7 +56,7 @@ test('successful alert is logged and audited but never resolves the deletion int
   assert.equal(m.calls.length, 1);
   assert.equal(m.calls[0].to, 'alarm@example.org, zweite@example.org');
   assert.match(m.calls[0].text, new RegExp(`Vorgang ${id}: backup-2026-09-28`));
-  assert.match(m.calls[0].text, /klaert keinen Vorgang/);
+  assert.match(m.calls[0].text, /klärt keinen Vorgang/);
   assert.equal(alarme(db)[0].status, 'versendet');
   assert.equal(db.prepare("SELECT status FROM mail_log WHERE typ = 'sicherheitsalarm'").get().status, 'versendet');
   assert.deepEqual(listUnresolvedBackupDeletions(db).map((row) => row.id), [id]);

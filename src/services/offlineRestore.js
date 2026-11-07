@@ -54,7 +54,7 @@ function restoreOfflineInternal(buffer, config, options) {
   const identity = maintenanceIdentity(options);
   const digest = createHash('sha256').update(buffer).digest('hex');
   if (typeof options.expectedSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(options.expectedSha256) || digest !== options.expectedSha256) {
-    throw new Error('Backup-SHA-256 fehlt oder stimmt nicht mit dem erwarteten Wert ueberein.');
+    throw new Error('Backup-SHA-256 fehlt oder stimmt nicht mit dem erwarteten Wert überein.');
   }
   const lock = acquireStorageLock(config, 'restore');
   let generation;
@@ -142,7 +142,7 @@ function restoreOfflineInternal(buffer, config, options) {
     if (generation && !selected) rmSync(generation, { recursive: true, force: true });
     try { journal(lock, { aktion: 'restore_failed', ...identity, backupSha256: digest, possiblyActivated: Boolean(selected), error: err.message }); }
     catch { /* Preserve the original failure and both data generations if journaling fails. */ }
-    if (selected) err.message += ' Der aktive Datenstand wurde moeglicherweise bereits umgeschaltet; Status vor Neustart pruefen. Beide Datenstaende bleiben erhalten.';
+    if (selected) err.message += ' Der aktive Datenstand wurde möglicherweise bereits umgeschaltet; Status vor Neustart prüfen. Beide Datenstände bleiben erhalten.';
     throw err;
   } finally { lock.release(); }
 }
@@ -155,12 +155,12 @@ function rollbackOfflineInternal(config, options) {
   const lock = acquireStorageLock(config, 'rollback');
   try {
     const pointer = readStoragePointer(config, { requireComplete: false });
-    if (!pointer?.previous) throw new Error('Kein vorheriger Datenstand fuer den Rueckwechsel vorhanden.');
+    if (!pointer?.previous) throw new Error('Kein vorheriger Datenstand für den Rückwechsel vorhanden.');
     const current = pointer.previous;
     if (!['dbPath', 'jobsDir', 'brandingDir'].every((key) => typeof current[key] === 'string' && isAbsolute(current[key]) && existsSync(current[key]))) {
-      throw new Error('Vorheriger Datenstand ist unvollstaendig.');
+      throw new Error('Vorheriger Datenstand ist unvollständig.');
     }
-    if (!statSync(current.dbPath).isFile() || !statSync(current.jobsDir).isDirectory() || !statSync(current.brandingDir).isDirectory()) throw new Error('Vorheriger Datenstand ist ungueltig.');
+    if (!statSync(current.dbPath).isFile() || !statSync(current.jobsDir).isDirectory() || !statSync(current.brandingDir).isDirectory()) throw new Error('Vorheriger Datenstand ist ungültig.');
     const db = new DatabaseSync(current.dbPath, { readOnly: true });
     try { db.exec('PRAGMA trusted_schema = OFF'); assertDatabaseIntegrity(db); } finally { db.close(); }
     const previousDb = openDatabase(current.dbPath);

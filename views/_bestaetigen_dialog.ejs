@@ -1,0 +1,17 @@
+<% /* Gemeinsamer Bestätigungsdialog für Portal.bestaetigen() und form[data-bestaetigen] (public/js/portal.js).
+     Titel, Text und Knopf werden zur Laufzeit gesetzt. Ohne JS bleibt er unsichtbar, Formulare senden normal. */ %>
+<div class="modal fade" id="bestaetigen-dialog" tabindex="-1" aria-labelledby="bestaetigen-dialog-titel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="bestaetigen-dialog-titel">Bitte bestätigen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+      </div>
+      <div class="modal-body" id="bestaetigen-dialog-text"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="bestaetigen-dialog-abbrechen" data-bs-dismiss="modal">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="bestaetigen-dialog-ok">OK</button>
+      </div>
+    </div>
+  </div>
+</div>

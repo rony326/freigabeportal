@@ -203,7 +203,9 @@ test('GET /kontierung/:id drops the Konto select\'s required attribute on click 
   assert.equal(res.status, 200);
   assert.match(res.text, /<select class="form-select" id="kontoId" name="kontoId" required data-searchable>/);
   assert.match(res.text, /<button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn"/);
-  assert.match(res.text, /getElementById\('ablehnen-btn'\)\.addEventListener\('click', function \(\) \{\s*\[[^\]]*'kontoId'[^\]]*\]\.forEach\(function \(id\) \{\s*document\.getElementById\(id\)\.required = false;/);
+  assert.match(res.text, /function entferneKontierungsPflicht\(\) \{\s*\[[^\]]*'kontoId'[^\]]*\]\.forEach\(function \(id\) \{\s*document\.getElementById\(id\)\.required = false;/);
+  assert.match(res.text, /getElementById\('ablehnen-btn'\)\.addEventListener\('click'/);
+  assert.match(res.text, /id="ablehnen-dialog"/);
   db.close();
 });
 
@@ -3336,5 +3338,56 @@ test('POST /kontierung/:id rejects contradicting kreditorId and debitorId withou
   assert.match(res.text, /Widerspruechliche Angaben/);
   assert.deepEqual({ ...getJobById(db, id) }, vorher);
   assert.equal(listFreigabenByJob(db, id).length, 0);
+  db.close();
+});
+
+test('kontierung: Fehler stehen am Feld', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /id="betrag"[^>]*is-invalid|is-invalid[^>]*id="betrag"/);
+  assert.match(res.text, /id="betrag-fehler"[^>]*>\s*Bitte einen Betrag angeben\./);
+  assert.match(res.text, /aria-invalid="true" aria-describedby="betrag-fehler"/);
+  assert.match(res.text, /href="#betrag"/);
+  db.close();
+});
+
+test('kontierung: Nebenaktionen im Menü Weitere Aktionen', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'modul_kreditkarten_aktiv', '1');
+  seedKontoAndPersonen(db);
+  const { createKreditkarte } = await import('../../src/db/kreditkartenRepo.js');
+  createKreditkarte(db, { bezeichnung: 'Visa Jugend', verantwortlichId: '1', erfassungOffen: true });
+  const id = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  const html = res.text;
+  assert.match(html, /dropdown-toggle[^>]*>\s*Weitere Aktionen/);
+  const menue = html.match(/class="dropdown-menu[\s\S]*?<\/ul>/);
+  assert.ok(menue, 'dropdown-menu vorhanden');
+  for (const text of ['Zurück in den Pool legen', 'An Gruppe zurücksenden', 'Rechnung aufsplitten', 'Als Kreditkartenabrechnung übergeben']) {
+    assert.ok(menue[0].includes(text), `${text} im Menü`);
+  }
+  assert.ok(!html.includes('Vorgangsnummer:'));
+  assert.match(html, /<button[^>]*id="ablehnen-btn"[^>]*btn-outline-danger/);
+  assert.doesNotMatch(html, /<button[^>]*value="kontieren"[^>]*btn-sm/);
+  const modal = html.match(/id="kk-abrechnung-modal"[\s\S]*?(?=<div class="modal fade"|<script)/);
+  assert.ok(modal, 'kk-abrechnung-modal vorhanden');
+  assert.ok(modal[0].includes(`action="/kontierung/${id}/als-kk-abrechnung"`));
+  assert.ok(modal[0].includes('name="_csrf"'));
   db.close();
 });

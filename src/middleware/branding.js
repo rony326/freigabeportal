@@ -21,7 +21,7 @@ function parseThemeCookie(cookieHeader) {
     .find((part) => part.startsWith('theme='));
   if (!entry) return null;
   const value = decodeURIComponent(entry.slice('theme='.length));
-  return value === 'hell' || value === 'dunkel' ? value : null;
+  return value === 'hell' || value === 'dunkel' || value === 'system' ? value : null;
 }
 
 export function loadBranding(db) {
@@ -39,13 +39,18 @@ export function loadBranding(db) {
 
     const userTheme = parseThemeCookie(req.headers.cookie);
     let themeAttr;
-    if (userTheme) {
+    if (userTheme === 'system') {
+      themeAttr = null;
+    } else if (userTheme) {
       themeAttr = userTheme;
     } else if (themeDefault === 'hell' || themeDefault === 'dunkel') {
       themeAttr = themeDefault;
     } else {
       themeAttr = null;
     }
+
+    const farbmodusWahl = userTheme
+      || (themeDefault === 'hell' || themeDefault === 'dunkel' ? themeDefault : 'system');
 
     res.locals.branding = {
       primaryColor,
@@ -56,6 +61,7 @@ export function loadBranding(db) {
       logoDunkelUrl: logoUrl('/branding/logo-dunkel', logoDunkelPfad),
       logoAusrichtung,
       themeAttr,
+      farbmodusWahl,
       footerText,
       seitenTitel,
       // Bootstrap 5.3's native dark-mode attribute is a separate value from this app's own

@@ -49,8 +49,20 @@
             arbeitsForm.addEventListener('input', markiere);
             arbeitsForm.addEventListener('change', markiere);
             arbeitsForm.addEventListener('submit', function () { geaendert = false; });
+            var freigegeben = false;
             kommentarForm.addEventListener('submit', function (e) {
-              if (geaendert && !window.confirm('Ungespeicherte Angaben in diesem Formular gehen verloren. Trotzdem Kommentar senden?')) e.preventDefault();
+              if (!geaendert || freigegeben || !window.Portal || !Portal.bestaetigen) return;
+              e.preventDefault();
+              var knopf = e.submitter || null;
+              Portal.bestaetigen({
+                titel: 'Ungespeicherte Angaben',
+                text: 'Ungespeicherte Angaben in diesem Formular gehen verloren. Trotzdem Kommentar senden?',
+                knopf: 'Trotzdem senden'
+              }).then(function (ja) {
+                if (!ja) return;
+                freigegeben = true;
+                kommentarForm.requestSubmit(knopf);
+              });
             });
           }
         })();

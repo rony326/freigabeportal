@@ -17,13 +17,13 @@
   }
   body { background: var(--bg); color: var(--fg); }
   a { color: var(--brand-primary); }
-  button { border-color: var(--brand-secondary); }
   /* Bootstrap's default .border is a light grey (--bs-border-color) that all but disappears
      against a light/white page background, making the PDF preview frame's edges hard to see in
-     light mode. A solid black border fixes that; in dark mode Bootstrap's own border color
-     already reads fine against the dark background, so this only overrides the light case. */
+     light mode. A fine border plus a soft shadow lifts the frame; in dark mode the rules below
+     take over. */
   .pdf-preview {
-    border: 2px solid #000;
+    border: 1px solid var(--bs-border-color);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 4px 12px rgb(0 0 0 / .06);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="hell"]) .pdf-preview {

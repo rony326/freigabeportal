@@ -75,16 +75,42 @@ Middleware, bevor sie den passenden Router erreicht:
 ```mermaid
 flowchart TD
     A["Security-Header<br/>(nosniff, X-Frame-Options: SAMEORIGIN,<br/>Referrer-Policy, CSP)"] --> R["auditRequestContext<br/>serverseitige UUID / X-Request-ID"]
-    R --> B["express.static<br/>(public/)"]
+    R --> B["compression + express.static<br/>(public/; mit ?v= ein Jahr immutable)"]
     B --> C["loadBranding(db)<br/>res.locals.branding auf JEDER Antwort,<br/>auch Fehlerseiten"]
     C --> D["express.json() /<br/>express.urlencoded()"]
     D --> E["express-session<br/>(SqliteSessionStore,<br/>Cookie: httpOnly, sameSite=lax,<br/>secure nur bei https:// PUBLIC_BASE_URL)"]
     E --> CS["cookieParser + attachCsrfToken<br/>(ausser n8n/Cron)"]
     CS --> F["loadCurrentPerson(db)<br/>req.currentPerson aus session.personId"]
     F --> AU["auditContext + zugriffsAuditMiddleware<br/>Akteur / verweigerte Zugriffe"]
-    AU --> G["loadNavFlags(db, config)<br/>res.locals.isBuchhaltung/isSuperadmin/isManager,<br/>res.locals.adminNav (pro Bereich)"]
+    AU --> G["loadNavFlags(db, config)<br/>res.locals.isBuchhaltung/isSuperadmin/isManager,<br/>res.locals.adminNav (pro Bereich);<br/>Banner + Navigation erst beim Rendern"]
     G --> H{"Router-Mount<br/>(eigener Rate-Limiter +<br/>eigene Zugriffsprüfung)"}
 ```
+
+### Leistung
+
+- **Vorlagen-Cache** ist fest eingeschaltet (`app.set('view cache', true)`),
+  unabhängig von `NODE_ENV`. Ohne ihn übersetzt Express jede EJS-Vorlage bei
+  jedem Aufruf neu.
+- **Statische Dateien** werden komprimiert (`compression`). Dateien mit
+  `?v=<assetVersion>` (Bootstrap, `portal.css`, `portal.js`,
+  `belegUmschalter.js`, Symbole) cacht der Browser ein Jahr (`immutable`). Die
+  Version ergibt sich beim Start aus den Änderungszeiten, siehe `assetVersion`
+  in `src/app.js`. Neue statische Dateien, die in Vorlagen eingebunden werden,
+  dort aufnehmen und mit `?v=` verlinken.
+- **`loadBranding`** liest alle Einstellungen in einer Abfrage
+  (`getConfigValues`). Bewusst ohne Zwischenspeicher, weil `admin_config` auch
+  direkt per SQL geändert wird (Testmodus-Trigger, Wiederherstellung).
+- **`loadNavFlags`** setzt `banner`, `navigation`, `zeigeKreditkarteNav` und
+  `kreditkartenModulAktiv` als Getter auf `res.locals`. Sie werden erst beim
+  `res.render` berechnet. Downloads, JSON und Weiterleitungen sparen sich so
+  die Abfragen. Scheitert das Berechnen, gibt es einen Rückfallwert
+  (kein Menü, keine Banner), damit die Fehlerseite noch rendert. `/pool` legt
+  die Summe seiner Listen in `res.locals.offeneAufgabenVorab` ab, damit der
+  Aufgabenzähler nicht nochmals zählt.
+- **SQLite** läuft bewusst weiter im Standard-Journal (kein WAL): Wiederherstellung
+  und Rückwechsel öffnen Datenstände schreibgeschützt und sichern nur die
+  Hauptdatei per fsync. WAL würde zusätzliche `-wal`/`-shm`-Dateien ins Spiel
+  bringen und funktioniert nicht auf Netzlaufwerken.
 
 Danach entscheidet jeder Router-Mount selbst über Rate-Limiting
 (`src/middleware/rateLimit.js`, drei Tarife: `public`, `session`, `machine`)

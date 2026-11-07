@@ -72,6 +72,11 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
     daten.alleKonten = daten.meineKontierungen.length > 0 ? listKonten(db) : [];
     const listen = [daten.meineKontierungen, daten.meineSpesenFreigaben, daten.meineFreigaben, daten.meineAbgelehnten, daten.meineRapporte, daten.adminEskalierteKontierungen, daten.adminEskalierteFreigaben, daten.adminEskalierteSpesenFreigaben];
     daten.kommentarInfo = kommentarInfoFuer(db, config, req.currentPerson, listen.flat().map((j) => j.id));
+    // Für den Aufgabenzähler der Navigation (middleware/nav.js): dieselben Listen wie
+    // zaehleOffeneAufgaben, hier schon geladen. Admin-Listen sind ohne Superadmin leer.
+    res.locals.offeneAufgabenVorab = daten.meineKontierungen.length + daten.meineFreigaben.length
+      + daten.meineSpesenFreigaben.length + daten.meineRapporte.length + daten.adminEskalierteKontierungen.length
+      + daten.adminEskalierteFreigaben.length + daten.adminEskalierteSpesenFreigaben.length;
     res.render('pool', daten);
   });
 

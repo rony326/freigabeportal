@@ -23,6 +23,13 @@ in [`docs/`](docs/README.md).
 3. `npm test` — gesamte Test-Suite; benoetigt das `openssl`-CLI fuer den lokalen Test-TSA
 4. `npm run dev` — Entwicklungsserver mit Autoreload
 
+## Verhaltenstests
+
+`npm run test:verhalten` führt die Browser-Tests in `test/verhalten/*.test.js`
+aus (Playwright, Chromium wie bei `test:responsive`): Sendestatus, Feldfehler,
+Ablehnen-Dialog, Bestätigungsdialoge, Farbmodus u. a. Der Test ist **nicht**
+Teil von `npm test`.
+
 ## Responsive testen
 
 `npm run test:responsive` öffnet jede Seite aus `test/responsive/seiten.js`

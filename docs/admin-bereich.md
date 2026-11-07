@@ -33,6 +33,20 @@ Alle Seiten teilen dasselbe Grundgerüst:
   Hauptaktion, Ansichtsumschalter) auf jeder Seite. Der Titel von `/admin`
   lautet „Übersicht“.
 
+### Farbmodus, Symbole, Kopfleiste
+
+- **Farbmodus-Menü** in der oberen Leiste: Hell, Dunkel, System. Die
+  persönliche Wahl „System“ folgt dem Betriebssystem und überschreibt das
+  Standard-Theme aus dem Erscheinungsbild; ohne Wahl gilt der Admin-Standard.
+- **Symbole** sind SVG aus dem Bootstrap-Icons-Sprite (1.13.2). Das Sprite
+  wird mit `node scripts/baueSymbole.js` neu erzeugt, wenn die Symbolliste
+  sich ändert; es gibt keinen Build-Schritt zur Laufzeit.
+- **Kopfleiste** ab 992 px: haftend und leicht durchscheinend.
+- **Ablehnen** verlangt überall im Dialog eine Begründung; Kontierung zeigt
+  Nebenaktionen unter „Weitere Aktionen“ (siehe
+  [rechnungs-workflow.md](rechnungs-workflow.md)). Bestätigungen (Backup
+  löschen, Prüfnummer senden) laufen über einen Dialog.
+
 ### Kachelansicht
 
 Sieben Listen bieten den Umschalter „☰ Tabelle | ▦ Kacheln“: Aufgaben,

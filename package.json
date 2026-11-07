@@ -46,5 +46,8 @@
     "supertest": "^7.0.0",
     "swissqrbill": "^4.4.1",
     "undici": "^6.19.0"
+  },
+  "overrides": {
+    "qs": "6.16.1"
   }
 }

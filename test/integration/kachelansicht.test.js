@@ -330,3 +330,16 @@ test('/pool zeigt den Eingang lesbar in Ortszeit, in Tabelle und Kacheln', async
   }
   db.close();
 });
+
+test('Pool-Kacheln (istPoolArtig) enthalten kein stretched-link, eigene Kontierungs-Kachel schon', async () => {
+  const db = openDatabase(':memory:');
+  const agent = await loginBuchhaltung(db);
+  const { poolA, eigen } = seed(db);
+  const res = await agent.get('/pool').set('Cookie', 'ansicht_pool=kacheln');
+  const poolKachel = res.text.match(new RegExp(`<div[^>]*id="pool-kachel-${poolA}"[\\s\\S]*?beanspruchen-btn`))[0];
+  assert.doesNotMatch(poolKachel, /stretched-link/);
+  const eigenKachel = res.text.match(new RegExp(`<div[^>]*id="kontierung-kachel-${eigen}"[\\s\\S]*?</form>`))[0];
+  assert.match(eigenKachel, /kachel-klickbar/);
+  assert.match(eigenKachel, /stretched-link/);
+  db.close();
+});

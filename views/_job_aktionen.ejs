@@ -17,9 +17,9 @@
     <div class="text-muted small mt-1">Rückläufer von <%= job.rueckgesendetVonName %>: „<%= job.pool_rueckgesendet_bemerkung %>“</div>
   <% } %>
 <% } else { %>
-  <a href="<%= linkPrefix %>/<%= job.id %>" class="btn btn-outline-primary btn-sm"><%= aktionLabel %></a>
+  <a href="<%= linkPrefix %>/<%= job.id %>" class="btn btn-outline-primary btn-sm<%= locals.kachelAnsicht ? ' stretched-link' : '' %>"><%= aktionLabel %></a>
   <% if (idPrefix === 'kontierung') { %>
-    <form method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool" class="d-inline">
+    <form method="post" action="/kontierung/<%= job.id %>/zurueck-in-pool" class="d-inline<%= locals.kachelAnsicht ? ' position-relative z-2' : '' %>">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary btn-sm" data-zurueck-in-pool="<%= job.id %>">In den Pool legen</button>
     </form>

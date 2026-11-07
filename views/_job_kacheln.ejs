@@ -4,9 +4,10 @@
 <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
   <% jobs.forEach((job) => { %>
     <div class="col">
-      <div class="kachel d-flex flex-column gap-2" id="<%= idPrefix %>-kachel-<%= job.id %>" data-job-container>
+      <% const _klickbar = !(typeof istPoolArtig !== 'undefined' && istPoolArtig); %>
+      <div class="kachel d-flex flex-column gap-2<%= _klickbar ? ' position-relative kachel-klickbar' : '' %>" id="<%= idPrefix %>-kachel-<%= job.id %>" data-job-container>
         <% if (job.thumbnail_pfad) { %>
-          <a href="/downloads/<%= job.id %>/oeffnen" target="_blank" rel="noopener" class="thumbnail-link d-block" aria-label="PDF öffnen: <%- include('_beleg_name', { job }) %>"><img class="thumbnail-preview pdf-preview kachel-vorschau rounded" src="/downloads/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau"></a>
+          <a href="/downloads/<%= job.id %>/oeffnen" target="_blank" rel="noopener" class="thumbnail-link d-block<%= _klickbar ? ' position-relative z-2' : '' %>" aria-label="PDF öffnen: <%- include('_beleg_name', { job }) %>"><img class="thumbnail-preview pdf-preview kachel-vorschau rounded" src="/downloads/<%= job.id %>/thumbnail" data-job-id="<%= job.id %>" data-preview-url="<%= job.previewUrl %>" alt="Vorschau"></a>
         <% } else { %>
           <div class="thumbnail-placeholder kachel-vorschau-leer text-muted small">Keine Vorschau</div>
         <% } %>
@@ -22,7 +23,7 @@
           <dt>Betrag</dt><dd class="betrag"><%= job.betrag || '—' %></dd>
         </dl>
         <div class="mt-auto d-flex flex-wrap gap-1 align-items-start">
-          <%- include('_job_aktionen', { job }) %>
+          <%- include('_job_aktionen', { job, kachelAnsicht: true }) %>
         </div>
       </div>
     </div>

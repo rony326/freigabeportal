@@ -95,9 +95,9 @@
       <p class="text-muted mt-4">Keine offenen Aufgaben. Abgeschlossene Rechnungen findest du unter <a href="/meine-abgeschlossenen">Abgeschlossene Rechnungen</a>, deine Spesen-Einreichungen unter <a href="/meine-spesen">Meine Spesen</a>.</p>
     <% } %>
 
-    <dialog id="preview-dialog" class="p-0 border-0 rounded">
+    <dialog id="preview-dialog" class="vorschau-dialog p-0 border-0 rounded">
       <div class="d-flex justify-content-end p-2 bg-body border-bottom">
-        <button type="button" id="preview-dialog-close" class="btn btn-outline-secondary btn-sm">Schliessen</button>
+        <button type="button" id="preview-dialog-close" class="btn-close" aria-label="Schliessen"></button>
       </div>
       <iframe id="preview-frame" src="" class="pdf-preview" style="width:80vw;height:80vh"></iframe>
     </dialog>
@@ -194,7 +194,7 @@
       });
     });
 
-    function oeffneVorschau(relativeUrl) {
+    function oeffneVorschau(relativeUrl, quelle) {
       // Rendered via PDF.js (public/vendor/pdfjs), not the browser's native PDF plugin:
       // Chrome's "Download PDFs instead of automatically opening them" setting blocks native
       // inline rendering inside an <iframe> entirely (shows an Open-button placeholder that
@@ -207,7 +207,20 @@
       // location.origin here keeps it a real, absolute, still-relative-to-this-host URL.
       const absoluteUrl = new URL(relativeUrl, window.location.origin).href;
       document.getElementById('preview-frame').src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(absoluteUrl);
-      document.getElementById('preview-dialog').showModal();
+      const dialog = document.getElementById('preview-dialog');
+      // Der Dialog wächst aus dem angeklickten Vorschaubild: transform-origin = dessen Mittelpunkt,
+      // gemessen relativ zum (noch nicht skalierten, bereits zentrierten) Dialog.
+      dialog.style.transformOrigin = '';
+      dialog.showModal();
+      if (quelle) {
+        const bild = quelle.getBoundingClientRect();
+        const feld = dialog.getBoundingClientRect();
+        // Die Mitte des Rechtecks bleibt auch während der Start-Skalierung gleich; offsetWidth/-Height
+        // sind die unskalierten Layoutmasse.
+        const x = bild.left + bild.width / 2 - (feld.left + feld.width / 2) + dialog.offsetWidth / 2;
+        const y = bild.top + bild.height / 2 - (feld.top + feld.height / 2) + dialog.offsetHeight / 2;
+        dialog.style.transformOrigin = `${Math.round(x)}px ${Math.round(y)}px`;
+      }
     }
 
     // Handler am Link (nicht am Bild): so öffnet auch Enter auf dem fokussierten Link den Dialog.
@@ -226,8 +239,8 @@
         // reusing the stale one, falling back to it only if the refresh itself fails.
         fetch(`/downloads/${img.dataset.jobId}/refresh-url`)
           .then((res) => (res.ok ? res.json() : Promise.reject()))
-          .then((data) => oeffneVorschau(data.url))
-          .catch(() => oeffneVorschau(img.dataset.previewUrl));
+          .then((data) => oeffneVorschau(data.url, link))
+          .catch(() => oeffneVorschau(img.dataset.previewUrl, link));
       });
     });
     document.getElementById('preview-dialog-close').addEventListener('click', () => {

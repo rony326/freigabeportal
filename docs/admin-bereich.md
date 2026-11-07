@@ -42,7 +42,9 @@ Alle Seiten teilen dasselbe Grundgerüst:
   wird mit `node scripts/baueSymbole.js` neu erzeugt, wenn die Symbolliste
   sich ändert; es gibt keinen Build-Schritt zur Laufzeit.
 - **Kopfleiste** ab 992 px: haftend und leicht durchscheinend.
-- **Ablehnen** verlangt überall im Dialog eine Begründung; Kontierung zeigt
+- **Ablehnen** verlangt überall im Dialog eine Begründung (sonst nur beim
+  Interessenskonflikt Pflicht); der Sendestatus gibt einen Knopf nach 15
+  Sekunden oder bei „Zurück“ wieder frei. Kontierung zeigt
   Nebenaktionen unter „Weitere Aktionen“ (siehe
   [rechnungs-workflow.md](rechnungs-workflow.md)). Bestätigungen (Backup
   löschen, Prüfnummer senden) laufen über einen Dialog.

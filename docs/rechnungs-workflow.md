@@ -270,10 +270,13 @@ oben). Details:
 Was Anwender bei den Schritten sehen:
 
 - **Sendestatus:** Jeder POST-Knopf zeigt nach dem Klick einen Spinner und
-  ist gesperrt, bis die Antwort da ist (kein Doppelabsenden).
+  ist gesperrt, bis die Antwort da ist (kein Doppelabsenden). Kommt nach
+  15 Sekunden keine Antwort (z. B. Netzfehler) oder geht man mit „Zurück“ auf
+  die Seite, wird der Knopf wieder freigegeben.
 - **Fehler im Formular:** Fehler stehen direkt am Feld; oben fasst
   „Bitte korrigieren:“ sie zusammen, jeder Eintrag springt zum Feld. Eine
-  Begründung ist nur beim Interessenskonflikt Pflicht.
+  Begründung ist beim Interessenskonflikt und beim Ablehnen Pflicht (das
+  Feld beschriftet das mit „bei Ablehnung Pflicht“).
 - **Ablehnen** (Kontierung, Freigabe 2, Spesen-Freigabe 1) fragt in einem
   Dialog nach der Begründung.
 - **„In den Pool legen“** aus der Aufgabenliste öffnet denselben
@@ -283,8 +286,8 @@ Was Anwender bei den Schritten sehen:
   Aktionen (Zurück in den Pool, An Gruppe zurücksenden, Aufsplitten,
   KK-Abrechnung übergeben – Letzteres als Dialog) stehen unter
   „Weitere Aktionen“.
-- **Freigabe 2:** Ein Entscheidungsblock zeigt Betrag brutto, Lieferant und
-  Konto; eine IBAN-Abweichung ist rot hervorgehoben.
+- **Freigabe 2:** Ein Entscheidungsblock zeigt Betrag (gross hervorgehoben),
+  Lieferant und Konto; eine IBAN-Abweichung ist rot hervorgehoben.
 - **Aufgabenliste:** Abschnitte mit Zähler, Spalte/Kachelwert „Betrag“,
   Begriff „Lieferant“. Ganze Kacheln sind klickbar; der Vorschau-Dialog
   öffnet über das Vorschaubild.

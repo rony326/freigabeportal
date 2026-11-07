@@ -88,6 +88,17 @@ test('GET /spesen-freigabe1/:id 200s and shows Beschreibung/Auslage-Datum/Einger
   db.close();
 });
 
+test('GET /spesen-freigabe1/:id: Ablehnen-Dialog heisst "Spesen ablehnen?", nicht "Rechnung ablehnen?"', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { jobId } = seedGrundlagen(db);
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get(`/spesen-freigabe1/${jobId}`).set('x-test-person-id', '1');
+  assert.match(res.text, /Spesen ablehnen\?/);
+  assert.doesNotMatch(res.text, /Rechnung ablehnen\?/);
+  db.close();
+});
+
 test('GET /spesen-freigabe1/:id shows the Spesenabrechnung Titel when one was given at submission', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);

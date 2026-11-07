@@ -121,7 +121,13 @@
       btn.addEventListener('click', async () => {
         if (btn.getAttribute('aria-busy') === 'true') return;
         const id = btn.dataset.jobId;
-        const res = await Portal.beschaeftigt(btn, fetch(`/api/pool/${id}/beanspruchen`, { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' } }));
+        let res;
+        try {
+          res = await Portal.beschaeftigt(btn, fetch(`/api/pool/${id}/beanspruchen`, { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' } }));
+        } catch (e) {
+          Portal.meldung(btn, 'Netzwerkfehler – bitte erneut versuchen.', 'fehler');
+          return;
+        }
         if (res.ok) {
           window.location.href = `/kontierung/${id}`;
           return;
@@ -178,14 +184,29 @@
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' },
           body: new URLSearchParams({ personId }),
         });
-        const res = await (knopf ? Portal.beschaeftigt(knopf, anfrage) : anfrage);
+        let res;
+        try {
+          res = await (knopf ? Portal.beschaeftigt(knopf, anfrage) : anfrage);
+        } catch (e) {
+          Portal.meldung(knopf || form, 'Netzwerkfehler – bitte erneut versuchen.', 'fehler');
+          return;
+        }
         if (res.ok) {
           const option = form.querySelector('select[name="personId"] option:checked');
           const text = `An ${option ? option.textContent.trim() : 'Person'} gesendet ✓`;
           // Jede Darstellung dieses Jobs (Zeile und Kachel, Pool und Rückläufer) ersetzen.
+          const ueberschriften = Array.from(document.querySelectorAll('h2'));
+          const betroffen = new Set();
           document.querySelectorAll('[data-job-container]').forEach((container) => {
             if (!container.querySelector(`[data-job-id="${id}"]`)) return;
+            // Abschnitt = letzte Überschrift vor diesem Eintrag; Zähler nur einmal je Abschnitt senken.
+            const kopf = ueberschriften.filter((h) => h.compareDocumentPosition(container) & Node.DOCUMENT_POSITION_FOLLOWING).pop();
+            if (kopf) betroffen.add(kopf);
             container.replaceWith(ersatz(container, text, 'text-success'));
+          });
+          betroffen.forEach((kopf) => {
+            const zahl = kopf.querySelector('.abschnitt-zahl');
+            if (zahl) zahl.textContent = Math.max(0, (parseInt(zahl.textContent, 10) || 0) - 1);
           });
           return;
         }

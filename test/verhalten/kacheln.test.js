@@ -67,3 +67,42 @@ test('Gehaltener Druck auf die Kachelfläche (Touch) navigiert zur Hauptaktion',
   await page.waitForURL((u) => u.pathname === `/freigabe2/${b.server.ids.freigabe2}`);
   await browser.close();
 });
+
+// Gedrückt-Zustand per CDP erzwingen und den berechneten transform lesen (Touch-Kontext = pointer: coarse).
+async function gedrueckterTransform(reducedMotion) {
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch();
+  try {
+    const kontext = await browser.newContext({ viewport: { width: 1280, height: 900 }, hasTouch: true, isMobile: true, reducedMotion });
+    const page = await kontext.newPage();
+    await page.goto(`${b.server.url}/pool?ansicht=kacheln&als=test-2`);
+    assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), true);
+    const cdp = await kontext.newCDPSession(page);
+    await cdp.send('DOM.enable');
+    await cdp.send('CSS.enable');
+    const { root } = await cdp.send('DOM.getDocument');
+    const ergebnis = {};
+    for (const [name, sel] of [['btn', '.btn:not(.stretched-link):not(:disabled)'], ['kachel', '.kachel-klickbar']]) {
+      const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: sel });
+      assert.ok(nodeId, `${sel} gefunden`);
+      await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['active'] });
+      await page.waitForTimeout(300);
+      ergebnis[name] = await page.evaluate((s) => getComputedStyle(document.querySelector(s)).transform, sel);
+    }
+    return ergebnis;
+  } finally {
+    await browser.close();
+  }
+}
+
+test('Gedrückt-Skalierung: bei reduzierter Bewegung kein transform', async () => {
+  const t = await gedrueckterTransform('reduce');
+  assert.equal(t.btn, 'none');
+  assert.equal(t.kachel, 'none');
+});
+
+test('Gedrückt-Skalierung: ohne reduzierte Bewegung Skalierungsmatrix', async () => {
+  const t = await gedrueckterTransform('no-preference');
+  assert.match(t.btn, /^matrix\(0\.97/);
+  assert.match(t.kachel, /^matrix\(0\.985/);
+});

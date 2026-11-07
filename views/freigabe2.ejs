@@ -106,5 +106,5 @@
         <% if (locals.kommentarBereich) { %><%- include('_kommentare', { ...kommentarBereich, ungespeichertesFormular: 'freigabe2-form' }) %><% } %>
       </div>
     </div>
-<%- include('_ablehnen_dialog', { formId: 'freigabe2-form', begruendungId: 'f2begruendung' }) %>
+<%- include('_ablehnen_dialog', { titel: job.quelle === 'spesen' ? 'Spesen ablehnen?' : 'Rechnung ablehnen?', formId: 'freigabe2-form', begruendungId: 'f2begruendung' }) %>
 <%- include('_seite_ende') %>

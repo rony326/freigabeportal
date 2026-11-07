@@ -135,7 +135,10 @@ window.Portal = window.Portal || {};
   window.Portal.bestaetigen = function (opt) {
     var dialog = document.getElementById('bestaetigen-dialog');
     if (!dialog || !window.bootstrap || !window.bootstrap.Modal) {
-      return Promise.resolve(true); // Notfall: Dialog fehlt, Aktion nicht blockieren
+      // Notfall: Dialog fehlt. Harmlose Aktionen laufen weiter; bei Gefahr (Löschen o. Ä.) nie still durchwinken,
+      // sondern als allerletzter Rückfall den Browser-Dialog nehmen (einzige erlaubte Stelle, siehe keineBrowserPopups.test.js).
+      if (opt.gefahr) return Promise.resolve(window.confirm(opt.text || 'Wirklich fortfahren?'));
+      return Promise.resolve(true);
     }
     if (laufend) return laufend;
     var ok = document.getElementById('bestaetigen-dialog-ok');
@@ -157,7 +160,8 @@ window.Portal = window.Portal || {};
       dialog.addEventListener('hidden.bs.modal', beiZu);
       dialog.addEventListener('shown.bs.modal', function fokus() {
         dialog.removeEventListener('shown.bs.modal', fokus);
-        ok.focus();
+        // Bei Gefahr (Löschen o. Ä.) landet ein versehentliches Enter auf "Abbrechen".
+        (opt.gefahr ? document.getElementById('bestaetigen-dialog-abbrechen') || ok : ok).focus();
       });
       modal.show();
     });
@@ -169,14 +173,16 @@ window.Portal = window.Portal || {};
     var form = e.target;
     if (!form || form.tagName !== 'FORM' || !form.hasAttribute('data-bestaetigen')) return;
     if (freigegeben.has(form)) { freigegeben.delete(form); return; }
-    if (!document.getElementById('bestaetigen-dialog') || !window.bootstrap) return;
+    var gefahr = form.hasAttribute('data-bestaetigen-gefahr');
+    // Ohne Dialog/Bootstrap: harmlose Formulare senden normal; Gefahr-Formulare gehen über den Rückfall in Portal.bestaetigen.
+    if (!gefahr && (!document.getElementById('bestaetigen-dialog') || !window.bootstrap)) return;
     e.preventDefault();
     var submitter = e.submitter || null;
     window.Portal.bestaetigen({
       titel: form.getAttribute('data-bestaetigen-titel') || 'Bitte bestätigen',
       text: form.getAttribute('data-bestaetigen'),
       knopf: form.getAttribute('data-bestaetigen-knopf') || 'OK',
-      gefahr: form.hasAttribute('data-bestaetigen-gefahr')
+      gefahr: gefahr
     }).then(function (ja) {
       if (!ja) return;
       freigegeben.add(form);

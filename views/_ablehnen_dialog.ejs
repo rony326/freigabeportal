@@ -1,10 +1,10 @@
-<% /* Rückfrage beim Ablehnen. Parameter: formId (Formular mit dem Ablehnen-Knopf), begruendungId (Textarea der Seite).
+<% /* Rückfrage beim Ablehnen. Parameter: titel (optional, Standard "Rechnung ablehnen?"), formId (Formular mit dem Ablehnen-Knopf), begruendungId (Textarea der Seite).
      Ohne JS bleibt der Ablehnen-Knopf ein normaler Submit-Knopf (aktion=ablehnen). */ %>
 <div class="modal fade" id="ablehnen-dialog" tabindex="-1" aria-labelledby="ablehnen-dialog-titel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="ablehnen-dialog-titel">Rechnung ablehnen?</h5>
+        <h5 class="modal-title" id="ablehnen-dialog-titel"><%= locals.titel || 'Rechnung ablehnen?' %></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
       </div>
       <div class="modal-body">

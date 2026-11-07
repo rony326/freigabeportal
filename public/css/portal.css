@@ -813,16 +813,17 @@ h1 .beleg-nr {
 }
 
 /* ---------- Antippen, klickbare Kacheln, Vorschau aus dem Bild ---------- */
-@media (pointer: coarse) {
+/* Nur bei Touch und ohne reduzierte Bewegung: so kann keine Regel mit höherer Spezifität den Verzicht aushebeln. */
+@media (pointer: coarse) and (prefers-reduced-motion: no-preference) {
   .btn { transition: color .15s ease-in-out, background-color .15s ease-in-out, border-color .15s ease-in-out, box-shadow .15s ease-in-out, transform .1s ease-out; }
   /* Gestreckte Links ausgenommen: ein transform würde den Knopf zum Bezugsblock des ::after machen. */
   .btn:active:not(:disabled):not(.stretched-link) { transform: scale(.97); }
   .kachel-klickbar:active { transform: scale(.985); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .btn, .btn:active:not(:disabled), .kachel-klickbar:active { transform: none; }
+.kachel-klickbar { transition: border-color .15s, box-shadow .15s; }
+@media (prefers-reduced-motion: no-preference) {
+  .kachel-klickbar { transition: border-color .15s, box-shadow .15s, transform .1s ease-out; }
 }
-.kachel-klickbar { transition: border-color .15s, box-shadow .15s, transform .1s ease-out; }
 .kachel-klickbar:hover { border-color: var(--brand-primary); box-shadow: 0 .25rem .75rem rgb(0 0 0 / .08); }
 .kachel-klickbar:has(.stretched-link:focus-visible) { border-color: var(--brand-primary); box-shadow: 0 0 0 .2rem rgb(var(--bs-primary-rgb) / .35); }
 .vorschau-dialog { opacity: 0; transform: scale(.92); }
@@ -840,4 +841,9 @@ h1 .beleg-nr {
 @media (prefers-reduced-motion: reduce) {
   .vorschau-dialog, .vorschau-dialog[open] { transform: none; }
   @starting-style { .vorschau-dialog[open] { transform: none; } }
+}
+
+/* Sprungziele (Fehlerlinks, Tastaturfokus) nicht unter der haftenden Kopfleiste verstecken. */
+@media (min-width: 992px) {
+  html { scroll-padding-top: calc(var(--portal-oben-hoehe, 0px) + .5rem); }
 }

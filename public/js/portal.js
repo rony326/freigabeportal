@@ -197,3 +197,15 @@ window.Portal.meldung = function (ziel, text, art) {
   ziel.insertAdjacentElement('afterend', el);
   return el;
 };
+
+// Höhe von Testmodus-Band + Kopfzeile als CSS-Variable, damit die klebende Seitenleiste darunter bleibt.
+(function () {
+  var oben = document.querySelector('.portal-oben');
+  if (!oben || !window.ResizeObserver) return;
+  var setze = function () {
+    document.documentElement.style.setProperty('--portal-oben-hoehe', oben.getBoundingClientRect().height + 'px');
+  };
+  new ResizeObserver(setze).observe(oben);
+  window.addEventListener('resize', setze); // unter 992 px ist .portal-oben display:contents (Höhe 0)
+  setze();
+})();

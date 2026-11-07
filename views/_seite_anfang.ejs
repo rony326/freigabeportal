@@ -43,6 +43,7 @@
 <% } %>
 <main class="container-xxl py-3">
 <% } else { %>
+<div class="portal-oben">
 <% if (locals.testmodus) { %>
 <div class="testmodus-band" role="region" aria-label="Testmodus">
   <div class="container-xxl testmodus-band-zeile">
@@ -69,7 +70,7 @@
   </div>
 </div>
 <% } %>
-<header class="portal-kopf border-bottom mb-3">
+<header class="portal-kopf border-bottom">
   <div class="container-xxl portal-kopf-zeile">
     <div class="portal-kopf-links d-flex align-items-center gap-2">
       <% if (sNavigation) { %>
@@ -121,6 +122,7 @@
     </div>
   </div>
 </header>
+</div>
 <% if (sEingeloggt) { %><%- include('_banner') %><% } %>
 <% if (locals.testmodusEchteSeite) { %>
 <div class="container-xxl"><div class="alert alert-warning testmodus-echt-hinweis" role="status">Testmodus ist an – diese Seite gehört zum echten Betrieb; Änderungen hier wirken echt. <a href="/pool">Zurück in den Testmodus</a></div></div>

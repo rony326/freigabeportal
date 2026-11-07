@@ -104,10 +104,10 @@
 @media (min-width: 992px) {
   .portal-seitenleiste {
     position: sticky;
-    top: 1rem;
+    top: calc(var(--portal-oben-hoehe, 0px) + 1rem);
     /* Auf niedrigen Bildschirmen (z. B. 768 px) sonst unerreichbare untere Punkte der
        Admin-Seitenleiste: höchstens bildschirmhoch (abzüglich top und etwas Luft), scrollt selbst. */
-    max-height: calc(100vh - 2rem);
+    max-height: calc(100vh - var(--portal-oben-hoehe, 0px) - 2rem);
     overflow-y: auto;
   }
 }
@@ -431,6 +431,34 @@ h1 .beleg-nr {
    auf jeder Seite, scrollt aber mit weg, statt beim Lesen dauernd ein Viertel zu verdecken. */
 @media (max-width: 575.98px) {
   .testmodus-band { position: static; }
+}
+
+/* Band und Kopf stehen zusammen in .portal-oben. Ab Desktop klebt der ganze Block oben (unter
+   Modal/Offcanvas, die ab 1040 liegen); darunter scrollt der Kopf mit weg und das Band klebt wie bisher. */
+.portal-oben { display: contents; }
+.portal-oben .portal-kopf { margin-bottom: 1rem; }
+@media (min-width: 992px) {
+  .portal-oben { display: block; position: sticky; top: 0; z-index: 1030; margin-bottom: 1rem; }
+  .portal-oben .portal-kopf { margin-bottom: 0; }
+  .portal-oben .testmodus-band { position: static; }
+  .portal-oben .portal-kopf {
+    border-bottom: 0 !important;
+    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    backdrop-filter: blur(16px) saturate(180%);
+    box-shadow: 0 1px 0 var(--bs-border-color-translucent);
+  }
+}
+@media (min-width: 992px) and (prefers-reduced-transparency: reduce) {
+  .portal-oben .portal-kopf { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (min-width: 992px) and (prefers-contrast: more) {
+  .portal-oben .portal-kopf {
+    background: var(--bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-bottom: 1px solid var(--bs-emphasis-color) !important;
+  }
 }
 .testmodus-band-zeile { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding-top: .4rem; padding-bottom: .4rem; }
 .testmodus-band-text { font-size: 1rem; margin-right: auto; }

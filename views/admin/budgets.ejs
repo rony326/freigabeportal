@@ -4,6 +4,8 @@
     </div>
     <p class="text-muted">Ein Budget pro Konto und Kalenderjahr. Die Auswertung zeigt, wie viel davon freigegeben ist. Leeres Feld = kein Budget.</p>
     <% if (fehler) { %><div class="alert alert-danger" role="alert"><%= fehler %></div><% } %>
+    <% if (importFehler) { %><div class="alert alert-danger" role="alert">Import: <%= importFehler %></div><% } %>
+    <% if (importiert !== null) { %><div class="alert alert-success" role="status"><%= importiert %> <%= importiert === 1 ? 'Budget' : 'Budgets' %> für <%= jahr %> importiert.</div><% } %>
     <form method="get" action="/admin/budgets" class="filterzeile mb-3">
       <div class="col-auto">
         <label class="visually-hidden" for="jahrWahl">Jahr</label>
@@ -41,4 +43,21 @@
         </div>
       <% } %>
     </form>
+
+    <section class="card mt-5" aria-labelledby="titelImport"><div class="card-body">
+      <h2 class="h5" id="titelImport">Aus Excel oder CSV importieren</h2>
+      <p class="text-body-secondary small">Eine Datei mit einer Spalte Kontonummer und einer Spalte Betrag (erstes Blatt bei Excel). Du siehst vor dem Speichern eine Vorschau; erst nach deiner Bestätigung werden Budgets überschrieben.</p>
+      <form method="post" action="/admin/budgets/import" enctype="multipart/form-data" class="row g-2 align-items-end">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <div class="col-auto">
+          <label class="form-label small mb-1" for="importJahr">Jahr</label>
+          <input type="number" class="form-control" id="importJahr" name="jahr" min="2000" max="2100" value="<%= jahr %>" style="max-width: 7rem">
+        </div>
+        <div class="col-auto">
+          <label class="form-label small mb-1" for="importDatei">Datei (.xlsx oder .csv, max. 2 MB)</label>
+          <input type="file" class="form-control" id="importDatei" name="datei" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+        </div>
+        <div class="col-auto"><button type="submit" class="btn btn-outline-primary">Vorschau anzeigen</button></div>
+      </form>
+    </div></section>
 <%- include('../_seite_ende') %>

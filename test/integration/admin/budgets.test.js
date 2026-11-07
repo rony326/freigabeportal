@@ -118,3 +118,113 @@ test('Budgets erscheinen in der Admin-Navigation nur mit budgets_verwalten', asy
   assert.ok(!ohne.body.includes('/admin/budgets'));
   db.close();
 });
+
+import { baueXlsx } from '../../helpers/xlsxFixture.js';
+
+function appMitSession(db) {
+  const sessions = new Map();
+  const app = express();
+  app.set('view engine', 'ejs');
+  app.set('views', new URL('../../../views', import.meta.url).pathname);
+  app.use((req, res, next) => {
+    res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null };
+    next();
+  });
+  app.use(express.urlencoded({ extended: false }));
+  app.use((req, res, next) => {
+    const id = req.headers['x-test-person-id'];
+    if (!sessions.has(id)) sessions.set(id, { personId: id });
+    req.session = sessions.get(id);
+    next();
+  });
+  const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
+  app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(db, config));
+  app.use('/admin/budgets', requirePermission(db, config, 'budgets_verwalten'), createBudgetsRouter({ db }));
+  return { app, sessions };
+}
+
+const hochladen = (app, inhalt, name, jahr = '2027') => request(app).post('/admin/budgets/import').set('x-test-person-id', '7')
+  .field('jahr', jahr).attach('datei', Buffer.isBuffer(inhalt) ? inhalt : Buffer.from(inhalt, 'utf8'), name);
+
+test('Import: Vorschau zeigt gültige und fehlerhafte Zeilen, nichts gespeichert vor Bestätigung', async () => {
+  const db = openDatabase(':memory:');
+  const { a, b } = seed(db);
+  setzeBudget(db, { kontoId: a, jahr: 2027, betrag: 100, personId: '7' });
+  const { app } = appMitSession(db);
+  const res = await hochladen(app, "Konto;Budget\n4000;12'000.–\n9999;5\n4100;12 000,50\n", 'budget.csv');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Vorschau/);
+  assert.match(res.text, /9999/);
+  assert.match(res.text, /2 Budgets übernehmen/);
+  assert.match(res.text, /CHF 100.00/, 'bisheriger Wert sichtbar');
+  assert.equal(getBudget(db, a, 2027), 100);
+  assert.equal(getBudget(db, b, 2027), null);
+  db.close();
+});
+
+test('Import: Bestätigung speichert nur gültige Zeilen für das gewählte Jahr und leert die Vorschau', async () => {
+  const db = openDatabase(':memory:');
+  const { a, b } = seed(db);
+  const { app, sessions } = appMitSession(db);
+  await hochladen(app, baueXlsx([['Kontonummer', 'Betrag'], [4000, 1500], ['4100', 'abc']]), 'budget.xlsx');
+  const res = await request(app).post('/admin/budgets/import/bestaetigen').set('x-test-person-id', '7').type('form')
+    .send({ spalteKonto: '0', spalteBetrag: '1', kopfzeile: '1' });
+  assert.equal(res.status, 302);
+  assert.match(res.headers.location, /\/admin\/budgets\?jahr=2027&importiert=1/);
+  assert.equal(getBudget(db, a, 2027), 1500);
+  assert.equal(getBudget(db, b, 2027), null);
+  assert.equal(sessions.get('7').budgetImport, undefined);
+  const nochmal = await request(app).post('/admin/budgets/import/bestaetigen').set('x-test-person-id', '7').type('form').send({ spalteKonto: '0', spalteBetrag: '1', kopfzeile: '1' });
+  assert.equal(nochmal.status, 400);
+  assert.match(nochmal.text, /Vorschau ist abgelaufen/);
+  db.close();
+});
+
+test('Import: Spaltenzuordnung in der Vorschau umstellen', async () => {
+  const db = openDatabase(':memory:');
+  seed(db);
+  const { app } = appMitSession(db);
+  await hochladen(app, 'Betrag;Konto\n300;4000\n', 'budget.csv');
+  const res = await request(app).get('/admin/budgets/import/vorschau?spalteKonto=1&spalteBetrag=0&kopfzeile=1').set('x-test-person-id', '7');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /1 Budget übernehmen/);
+  db.close();
+});
+
+test('Import: abgelaufene Vorschau (älter als 15 Minuten) wird nicht gespeichert', async () => {
+  const db = openDatabase(':memory:');
+  const { a } = seed(db);
+  const { app, sessions } = appMitSession(db);
+  await hochladen(app, 'Konto;Budget\n4000;10\n', 'budget.csv');
+  sessions.get('7').budgetImport.erstelltAm = Date.now() - 16 * 60 * 1000;
+  const res = await request(app).post('/admin/budgets/import/bestaetigen').set('x-test-person-id', '7').type('form').send({ spalteKonto: '0', spalteBetrag: '1', kopfzeile: '1' });
+  assert.equal(res.status, 400);
+  assert.equal(getBudget(db, a, 2027), null);
+  db.close();
+});
+
+test('Import: falsche Endung, zu grosse Datei, keine Datei → Meldung auf der Budgets-Seite', async () => {
+  const db = openDatabase(':memory:');
+  seed(db);
+  const { app } = appMitSession(db);
+  const falsch = await hochladen(app, 'x', 'budget.pdf');
+  assert.equal(falsch.status, 400);
+  assert.match(falsch.text, /CSV- oder Excel-Datei/);
+  const gross = await hochladen(app, Buffer.alloc(2 * 1024 * 1024 + 1, 'a'), 'budget.csv');
+  assert.equal(gross.status, 400);
+  assert.match(gross.text, /höchstens 2 MB/);
+  const ohne = await request(app).post('/admin/budgets/import').set('x-test-person-id', '7').field('jahr', '2027');
+  assert.equal(ohne.status, 400);
+  assert.match(ohne.text, /Bitte eine Datei wählen/);
+  db.close();
+});
+
+test('Import: ohne Recht 403', async () => {
+  const db = openDatabase(':memory:');
+  seed(db);
+  const { app } = appMitSession(db);
+  const res = await request(app).post('/admin/budgets/import').set('x-test-person-id', '1').field('jahr', '2027').attach('datei', Buffer.from('4000;1'), 'b.csv');
+  assert.equal(res.status, 403);
+  db.close();
+});

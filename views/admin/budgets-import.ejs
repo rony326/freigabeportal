@@ -1,0 +1,69 @@
+<%- include('../_seite_anfang', { titel: 'Budget-Import' }) %>
+<% const anzahl = ergebnis.gueltig.length; %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Vorschau Budget-Import <%= daten.jahr %></h1>
+    </div>
+    <p class="text-body-secondary">Datei: <%= daten.dateiname %>. Noch ist nichts gespeichert.</p>
+    <% if (ergebnis.fehler.length) { %>
+      <div class="alert alert-warning" role="alert"><%= ergebnis.fehler.length %> <%= ergebnis.fehler.length === 1 ? 'Zeile wird' : 'Zeilen werden' %> nicht übernommen (siehe unten).</div>
+    <% } %>
+    <form method="get" action="/admin/budgets/import/vorschau" class="filterzeile mb-3">
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="spalteKonto">Spalte Kontonummer</label>
+        <select class="form-select" id="spalteKonto" name="spalteKonto">
+          <% spalten.forEach((s) => { %><option value="<%= s.index %>"<%= s.index === zuordnung.spalteKonto ? ' selected' : '' %>><%= s.name %></option><% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="spalteBetrag">Spalte Betrag</label>
+        <select class="form-select" id="spalteBetrag" name="spalteBetrag">
+          <% spalten.forEach((s) => { %><option value="<%= s.index %>"<%= s.index === zuordnung.spalteBetrag ? ' selected' : '' %>><%= s.name %></option><% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="kopfzeile">Erste Zeile</label>
+        <select class="form-select" id="kopfzeile" name="kopfzeile">
+          <option value="1"<%= zuordnung.hatKopfzeile ? ' selected' : '' %>>ist eine Kopfzeile</option>
+          <option value="0"<%= zuordnung.hatKopfzeile ? '' : ' selected' %>>enthält Daten</option>
+        </select>
+      </div>
+      <div class="col-auto align-self-end"><button type="submit" class="btn btn-outline-secondary">Zuordnung anwenden</button></div>
+    </form>
+
+    <h2 class="h5">Wird übernommen</h2>
+    <% if (anzahl === 0) { %>
+      <p class="text-body-secondary">Keine gültige Zeile. Prüfe die Spaltenzuordnung.</p>
+    <% } else { %>
+    <div class="table-responsive">
+      <table class="table">
+        <thead><tr><th>Konto</th><th class="text-end">Bisher</th><th class="text-end">Neu</th></tr></thead>
+        <tbody>
+          <% ergebnis.gueltig.forEach((z) => { %>
+            <tr><td><%= z.kontonummer %></td><td class="text-end"><%= z.bisher === null ? '—' : formatChf(z.bisher) %></td><td class="text-end fw-semibold"><%= formatChf(z.betrag) %></td></tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
+
+    <% if (ergebnis.fehler.length) { %>
+    <h2 class="h5">Wird nicht übernommen</h2>
+    <div class="table-responsive">
+      <table class="table">
+        <thead><tr><th>Zeile</th><th>Grund</th></tr></thead>
+        <tbody>
+          <% ergebnis.fehler.forEach((f) => { %><tr><td><%= f.zeile %></td><td><%= f.grund %></td></tr><% }) %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
+
+    <form method="post" action="/admin/budgets/import/bestaetigen" class="d-flex flex-wrap gap-2 align-items-center">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <input type="hidden" name="spalteKonto" value="<%= zuordnung.spalteKonto %>">
+      <input type="hidden" name="spalteBetrag" value="<%= zuordnung.spalteBetrag %>">
+      <input type="hidden" name="kopfzeile" value="<%= zuordnung.hatKopfzeile ? '1' : '0' %>">
+      <button type="submit" class="btn btn-primary"<%= anzahl === 0 ? ' disabled' : '' %>><%= anzahl %> <%= anzahl === 1 ? 'Budget' : 'Budgets' %> übernehmen</button>
+      <a class="btn btn-link" href="/admin/budgets?jahr=<%= daten.jahr %>">Abbrechen</a>
+    </form>
+<%- include('../_seite_ende') %>

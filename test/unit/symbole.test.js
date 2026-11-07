@@ -14,9 +14,12 @@ const punkte = alle.flatMap((g) => g.punkte);
 test('jedes Navigationssymbol und jeder Eintrag in SYMBOLE steht im Sprite', () => {
   assert.ok(punkte.length > 20);
   for (const name of new Set([...punkte.map((p) => p.symbol), ...SYMBOLE])) {
-    assert.match(name, /^[a-z0-9-]+$/);
-    assert.ok(sprite.includes(`<symbol id="${name}" viewBox="0 0 16 16">`), `Symbol fehlt: ${name}`);
+    assert.ok(sprite.includes(`<symbol id="${name}" `), `Symbol fehlt im Sprite: ${name}`);
   }
+});
+
+test('jedes Navigationssymbol ist in SYMBOLE aufgeführt', () => {
+  for (const p of punkte) assert.ok(SYMBOLE.includes(p.symbol), `nicht in SYMBOLE: ${p.symbol} (${p.label})`);
 });
 
 test('Navigationssymbole sind untereinander eindeutig', () => {

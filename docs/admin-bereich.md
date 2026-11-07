@@ -125,7 +125,9 @@ Rechnungseingang) und **hinterlegte IBANs** je Kreditor (Basis des
 Betrugserkennungs-Abgleichs, siehe
 [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)). Ein
 Kreditor lässt sich auch direkt aus der Kontierungs-Seite heraus neu
-anlegen (`POST /kontierung/lieferanten`).
+anlegen (`POST /kontierung/lieferanten`) — erlaubt für `buchhaltung`, `superadmin`,
+Einzelrecht `kreditoren_verwalten` oder wer selbst eine offene Kontierung bzw.
+Überarbeitung hat (sonst 403).
 
 ## Eskalationszeiten (`/admin/eskalation`)
 

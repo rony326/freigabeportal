@@ -142,7 +142,9 @@ test('audit outage never grants access and leaves status and body of the denial 
   try {
     const nachher = await request(app).get(`/admin/konten?x=${GEHEIM}`);
     assert.equal(nachher.status, 401);
-    assert.equal(nachher.text, vorher.text.replace(vorher.headers['x-request-id'], nachher.headers['x-request-id']));
+    // Request-ID und CSP-Nonce sind pro Antwort neu; sonst muss die Antwort identisch sein.
+    const nonce = (res) => /'nonce-([^']+)'/.exec(res.headers['content-security-policy'])[1];
+    assert.equal(nachher.text, vorher.text.replace(vorher.headers['x-request-id'], nachher.headers['x-request-id']).replaceAll(nonce(vorher), nonce(nachher)));
     const agent = await loginAs(app, client, { id: 8, gruppen: [] });
     assert.equal((await agent.get('/admin/konten')).status, 403);
     const admin = await loginAs(app, client, { id: 9, gruppen: ['20'] });

@@ -38,7 +38,7 @@
         <% } %>
         <button type="submit" class="btn btn-outline-primary btn-sm">Kommentar senden</button>
       </form>
-      <script>
+      <script nonce="<%= locals.cspNonce %>">
         (function () {
           var kommentarForm = document.getElementById('kommentar-form-<%= jobId %>');
           var arbeitsId = kommentarForm && kommentarForm.dataset.ungespeichertWarnung;

@@ -37,7 +37,7 @@
           </select>
           <button type="submit" class="btn btn-outline-primary btn-sm">Zum Abgleich übergeben</button>
         </form>
-        <script>
+        <script nonce="<%= locals.cspNonce %>">
           document.getElementById('kk-markieren-form').addEventListener('submit', function (e) {
             var id = document.getElementById('kk-markieren-job').value;
             if (!id) { e.preventDefault(); return; }
@@ -110,7 +110,7 @@
 
   <% if (meineKontierungen.length > 0) { %>
     <%- include('_zurueck_in_pool_dialog', { alleKonten }) %>
-    <script>
+    <script nonce="<%= locals.cspNonce %>">
       document.querySelectorAll('[data-zurueck-in-pool]').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           if (!window.bootstrap) return;
@@ -122,7 +122,7 @@
     </script>
   <% } %>
 
-  <script>
+  <script nonce="<%= locals.cspNonce %>">
     document.querySelectorAll('.beanspruchen-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (btn.getAttribute('aria-busy') === 'true') return;

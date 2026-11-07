@@ -1,4 +1,4 @@
-<style>
+<style nonce="<%= locals.cspNonce %>">
   :root {
     --brand-primary: <%= branding.primaryColor || '#2f4858' %>;
     --brand-secondary: <%= branding.secondaryColor || '#4d7ea8' %>;
@@ -104,9 +104,9 @@
     --bs-btn-disabled-border-color: color-mix(in srgb, var(--brand-primary) 30%, #fff);
   }
 </style>
-<style>
+<style nonce="<%= locals.cspNonce %>">
   /* Scoped to only render alongside the menu itself: an anonymous visitor gets no menu at all,
-     so this selector must not appear in the unconditional <style> block above. Bootstrap's
+     so this selector must not appear in the unconditional style block above. Bootstrap's
      .dropdown-item.active otherwise falls back to its own default blue, not this app's brand
      color — same reasoning as the .btn-primary/.btn-outline-primary overrides above. */
   .dropdown-item.active, .dropdown-item:active {

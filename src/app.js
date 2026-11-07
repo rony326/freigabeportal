@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { parseEmpfaengerListe } from './services/auditNachweisJobs.js';
 import { feldFehlerAttr } from './utils/feldFehler.js';
 import express from 'express';
@@ -151,21 +152,20 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     // Content-Security-Policy: defense-in-depth backstop, not the primary XSS defense — every EJS
-    // view was audited to only ever use auto-escaping `<%= %>` on user-controlled data. `<%- %>`
-    // (raw output) is used for `include()`s and for two view-local helpers that concatenate
-    // include() results into HTML strings: `jobListe` in views/pool.ejs and `kkListe` in
-    // views/kreditkarte.ejs. Those helpers interpolate nothing but the (self-escaping) partials'
-    // output and fixed CSS class names — headings and other data stay outside, in `<%= %>`; the
-    // "Roh-Ausgabe-Sweep" in test/integration/layoutSweep.test.js enforces this. So there's no
-    // known unescaped-output path today. 'unsafe-inline' is required for script-src/style-src
-    // because several views use inline <script> blocks and style="" attributes without nonces; a
-    // future refactor to nonce-based CSP could drop it. Still meaningfully restricts where a future injection could
-    // load resources from or exfiltrate to, and blocks base-tag/form-action hijacking outright.
-    // img-src allows data: (images only) because Bootstrap's CSS ships its icons as data-URI SVGs
-    // (close X, select arrow, check marks); without it those icons are invisible at every width.
+    // view was audited to only ever use auto-escaping `<%= %>` on user-controlled data (the
+    // "Roh-Ausgabe-Sweep" in test/integration/layoutSweep.test.js enforces this). Inline <script>
+    // and <style> blocks run only with this request's nonce (res.locals.cspNonce, set on every
+    // block in the views — test/integration/cspSweep.test.js enforces it), so an injected script
+    // or style block is blocked even if escaping ever failed. style="" attributes stay allowed
+    // (style-src-attr): many views use them for layout and computed widths, and CSS attributes
+    // cannot run code. img-src allows data: (images only) because Bootstrap's CSS ships its icons
+    // as data-URI SVGs (close X, select arrow, check marks); without it those icons are invisible.
+    const nonce = randomBytes(16).toString('base64');
+    res.locals.cspNonce = nonce;
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+      `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; ` +
+        `style-src-elem 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; ` +
         "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; " +
         "form-action 'self'; frame-ancestors 'self'"
     );

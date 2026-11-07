@@ -122,7 +122,7 @@
     </div>
   </template>
 
-  <script>
+  <script nonce="<%= locals.cspNonce %>">
   (function () {
     var TITEL = { beleg: 'Beleg', nachreichen: 'Beleg nachreichen', eigenbeleg: 'Ohne Beleg (Eigenbeleg)', gebuehr: 'Gebühr / Zins' };
     var zeilenEl = document.getElementById('zeilen');

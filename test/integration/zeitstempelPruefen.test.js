@@ -195,7 +195,7 @@ test('POST /zeitstempel-pruefen with a jobId renders the Prüfbescheinigung dire
   assert.match(res.text, /Prüfbescheinigung/);
   assert.match(res.text, /RE-2026-042/);
   assert.match(res.text, /stimmt nachweislich mit der im Portal archivierten Originaldatei überein/);
-  assert.match(res.text, /window\.print\(\)/);
+  assert.match(res.text, /<button[^>]*data-drucken[^>]*>Drucken/);
   db.close();
 });
 
@@ -452,7 +452,7 @@ test('GET /zeitstempel-pruefen/zertifikat?jobId= renders the Prüfbescheinigung 
   assert.match(res.text, /RE-2026-042/);
   assert.match(res.text, /Muster AG/);
   assert.match(res.text, new RegExp(hash));
-  assert.match(res.text, /window\.print\(\)/);
+  assert.match(res.text, /<button[^>]*data-drucken[^>]*>Drucken/);
   assert.doesNotMatch(res.text, /<img src="\/branding\/logo/, 'no logo configured for this test app — must not render a broken/empty logo tag');
   // Ausdruck als Nachweis: der Titel muss im umrandeten Kasten stehen (nur im Druck sichtbar),
   // der Seitenkopf darüber wird beim Drucken ausgeblendet. Weiterhin genau ein <h1 auf der Seite.

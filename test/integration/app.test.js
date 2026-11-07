@@ -909,3 +909,39 @@ test('Vorlagen-Cache ist auch ohne NODE_ENV=production eingeschaltet', () => {
   assert.equal(app.enabled('view cache'), true);
   db.close();
 });
+
+function cspDirektiven(header) {
+  return Object.fromEntries(header.split(';').map((d) => d.trim()).filter(Boolean).map((d) => {
+    const [name, ...werte] = d.split(/\s+/);
+    return [name, werte];
+  }));
+}
+
+test('CSP: Skripte und <style>-Blöcke nur mit Nonce, kein unsafe-inline für Skripte', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const a = cspDirektiven((await request(app).get('/audit-pruefen')).headers['content-security-policy']);
+  const b = cspDirektiven((await request(app).get('/audit-pruefen')).headers['content-security-policy']);
+  const nonceA = a['script-src'].find((w) => w.startsWith("'nonce-"));
+  assert.ok(nonceA, 'script-src ohne Nonce');
+  assert.ok(!a['script-src'].includes("'unsafe-inline'"), 'script-src erlaubt noch unsafe-inline');
+  assert.deepEqual(a['script-src'], ["'self'", nonceA]);
+  assert.deepEqual(a['style-src-elem'], ["'self'", nonceA]);
+  assert.deepEqual(a['style-src-attr'], ["'unsafe-inline'"]);
+  assert.match(nonceA, /^'nonce-[A-Za-z0-9+/]{22,}={0,2}'$/);
+  assert.notEqual(nonceA, b['script-src'].find((w) => w.startsWith("'nonce-")), 'Nonce muss pro Anfrage neu sein');
+  db.close();
+});
+
+test('CSP: jedes Inline-Skript und jeder <style>-Block der gerenderten Seite trägt die Nonce aus dem Header', async () => {
+  const db = openDatabase(':memory:');
+  const app = createApp({ db, config: testConfig() });
+  const res = await request(app).get('/audit-pruefen');
+  assert.equal(res.status, 200);
+  const nonce = cspDirektiven(res.headers['content-security-policy'])['script-src'][1].slice(7, -1);
+  const inline = [...res.text.matchAll(/<(script|style)\b([^>]*)>/g)].filter((m) => !/\bsrc=/.test(m[2]));
+  assert.ok(inline.length >= 2, 'erwartet Theme-Skript und Markenfarben');
+  for (const m of inline) assert.ok(m[2].includes(`nonce="${nonce}"`), `ohne passende Nonce: ${m[0]}`);
+  assert.doesNotMatch(res.text, /\son[a-z]+="/, 'Inline-Ereignis-Attribut (onclick=…) in der Seite');
+  db.close();
+});

@@ -3,6 +3,7 @@
       <h1 class="seitenkopf-titel">Budgets <%= jahr %></h1>
     </div>
     <p class="text-muted">Ein Budget pro Konto und Kalenderjahr. Die Auswertung zeigt, wie viel davon freigegeben ist. Leeres Feld = kein Budget.</p>
+    <% if (fehler) { %><div class="alert alert-danger" role="alert"><%= fehler %></div><% } %>
     <form method="get" action="/admin/budgets" class="filterzeile mb-3">
       <div class="col-auto">
         <label class="visually-hidden" for="jahrWahl">Jahr</label>
@@ -10,7 +11,6 @@
       </div>
       <div class="col-auto"><button type="submit" class="btn btn-outline-secondary">Jahr wechseln</button></div>
     </form>
-    <% if (fehler) { %><div class="alert alert-danger" role="alert"><%= fehler %></div><% } %>
     <form method="post" action="/admin/budgets">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <input type="hidden" name="jahr" value="<%= jahr %>">

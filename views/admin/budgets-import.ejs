@@ -39,7 +39,7 @@
         <thead><tr><th>Konto</th><th class="text-end">Bisher</th><th class="text-end">Neu</th></tr></thead>
         <tbody>
           <% ergebnis.gueltig.forEach((z) => { %>
-            <tr><td><%= z.kontonummer %></td><td class="text-end"><%= z.bisher === null ? '—' : formatChf(z.bisher) %></td><td class="text-end fw-semibold"><%= formatChf(z.betrag) %></td></tr>
+            <tr><td><%= z.kontonummer %></td><td class="text-end betrag"><%= z.bisher === null ? '—' : formatChf(z.bisher) %></td><td class="text-end fw-semibold betrag"><%= formatChf(z.betrag) %></td></tr>
           <% }) %>
         </tbody>
       </table>

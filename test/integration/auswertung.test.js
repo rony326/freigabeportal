@@ -190,3 +190,13 @@ test('leere Datenbank: Seite rendert mit leeren Zuständen', async () => {
   assert.match(res.text, /mehrere Jahre/);
   db.close();
 });
+
+test('Betragsspalten nutzen gleich breite Ziffern (Klasse betrag)', async () => {
+  const db = openDatabase(':memory:');
+  seed(db);
+  const res = await get(buildTestApp(db), '/auswertung', '7');
+  const zellen = [...res.text.matchAll(/<td class="([^"]*)">CHF /g)].map((m) => m[1]);
+  assert.ok(zellen.length >= 6, 'keine Betragszellen gefunden');
+  for (const klasse of zellen) assert.match(klasse, /\bbetrag\b/, `Betragszelle ohne Klasse betrag: ${klasse}`);
+  db.close();
+});

@@ -228,3 +228,23 @@ test('Import: ohne Recht 403', async () => {
   assert.equal(res.status, 403);
   db.close();
 });
+
+test('Budgets: Fehler steht direkt am Feld (aria-describedby auf die Meldung)', async () => {
+  const db = openDatabase(':memory:');
+  const { b } = seed(db);
+  const app = buildTestApp(db);
+  const res = await request(app).post('/admin/budgets').set('x-test-person-id', '7').type('form').send({ jahr: '2026', [`budget_${b}`]: 'viel' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, new RegExp(`id="budget_${b}"[^>]*aria-describedby="budget_${b}-fehler"`));
+  assert.match(res.text, new RegExp(`<div class="invalid-feedback" id="budget_${b}-fehler">[^<]*Zahl`));
+  db.close();
+});
+
+test('Budgets: Beträge mit gleich breiten Ziffern (Klasse betrag)', async () => {
+  const db = openDatabase(':memory:');
+  const { a } = seed(db);
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/budgets').set('x-test-person-id', '7');
+  assert.match(res.text, new RegExp(`id="budget_${a}"[^>]*class="[^"]*betrag|class="[^"]*betrag[^"]*"[^>]*id="budget_${a}"`));
+  db.close();
+});

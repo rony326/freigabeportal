@@ -39,6 +39,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [audit-paket-haertung-2026-09-29.md](audit-paket-haertung-2026-09-29.md) | Zugriffsverweigerungen, Datei-Quarantäne, Sicherheitsalarme, TSA-Evidenz |
 | [betrieb-und-nutzung.md](betrieb-und-nutzung.md) | Nutzungsdaten, Fehlererfassung und „Problem melden“, Neues-Gerät-Mail, Banner, Datenschutzhinweis, Aufbewahrungsfristen, Recht `betrieb_einsehen` |
 | [testmodus.md](testmodus.md) | Testmodus (Spielwiese) für Superadmin und Manager: Beispieldaten, Abschottung, Test-Postfach, Zurücksetzen |
+| [testdrehbuch/](testdrehbuch/README.md) | Quellen für Testdrehbuch, Go-Live-Checkliste und Testbelege; wie man sie neu baut und pflegt |
 | [statusseite-und-monitoring.md](statusseite-und-monitoring.md) | Statusseite `/admin/betrieb/status`, Dienste und Grenzwerte, `/healthz` mit Überwachungsschlüssel, Uptime-Kuma-Anleitung |
 | [audit-externe-nachweise.md](audit-externe-nachweise.md) | Bedrohungsmodell und lokale Grundlage für externe Audit-Nachweise |
 | [pruefbericht-2026-10.md](pruefbericht-2026-10.md) | Prüfbericht Abschlussprüfung Oktober 2026: Funde, Behebungen, Checklisten für Infomaniak und Geheimnisse |

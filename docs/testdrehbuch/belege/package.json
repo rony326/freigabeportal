@@ -1,0 +1,13 @@
+{
+  "name": "testbelege",
+  "version": "1.0.0",
+  "description": "Erzeugt die Testbelege für das Testdrehbuch",
+  "scripts": {
+    "erzeugen": "node gen.mjs",
+    "pruefen": "node pruefe.mjs && node pruefe-budget.mjs"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "private": true
+}

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="de-CH"><head><meta charset="utf-8"><title>Test-Runbook Freigabeportal</title>
+<style>/*CSS*/</style></head>
+<body>
+
+<!-- ============ Titelblatt ============ -->
+<section class="cover">
+  <div class="kicker">Freigabeportal · Abnahmetest vor dem Launch · Stand 7. November 2026</div>
+  <h1>Test-Runbook</h1>
+  <p class="lead">Szenarien für 4 bis 5 Personen: Rechnungen, Spesen, Kreditkarten, Rapporte, Auswertung und Budgets, mit Spezialfällen und Checklisten zum Abhaken.</p>
+  <table class="kv">
+    <tr><th>Testtermin(e)</th><td class="fill"></td></tr>
+    <tr><th>Testleitung</th><td class="fill"></td></tr>
+    <tr><th>Portal-Version / Datum Aufspielen</th><td class="fill"></td></tr>
+    <tr><th>Umfang</th><td>41 Szenarien in 8 Blöcken · gut 6 Stunden, gut auf zwei Termine verteilbar</td></tr>
+  </table>
+  <div class="howto">
+    <h4>So wird das Runbook benutzt</h4>
+    <ol>
+      <li>Die Testleitung erledigt vor dem Termin die <b>Vorbereitung</b> (Seite 3–4).</li>
+      <li>Jede Person bekommt einen Buchstaben <b>A–E</b>. Die farbigen Marken zeigen in jedem Schritt, wer handelt.</li>
+      <li>Schritt ausführen, mit der Spalte <b>Erwartet</b> vergleichen, <b>ok</b> oder <b>Fehler</b> ankreuzen.</li>
+      <li>Bei jedem Fehler: im Portal <b>Problem melden</b> klicken <i>und</i> eine Zeile im <b>Fehlerprotokoll</b> (hinten) ausfüllen. Uhrzeit notieren — damit lässt sich der Fehler im Protokoll wiederfinden.</li>
+      <li>Nummer des Vorgangs (#…) bei jedem Szenario in «Notizen» eintragen. Sie steht auf Kachel, Liste und Detailseite.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ Rollen ============ -->
+<section class="page">
+  <h2>1 · Rollen und Testkonten</h2>
+  <p>Fünf Personen mit echten ChurchTools-Konten. Person E kann die Testleitung selbst sein. Mit nur vier Personen übernimmt E zusätzlich die Rolle von D.</p>
+  <table class="grid roles">
+    <thead><tr><th></th><th>Rolle im Test</th><th>ChurchTools-Gruppe</th><th>Name</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip" style="--c:#1f6feb">A</span></td><td>Buchhaltung — sieht den Pool, beansprucht und kontiert</td><td>Buchhaltung</td><td class="fill"></td></tr>
+      <tr><td><span class="chip" style="--c:#8250df">B</span></td><td>Freigeber·in Jugend</td><td>keine</td><td class="fill"></td></tr>
+      <tr><td><span class="chip" style="--c:#bf3989">C</span></td><td>Freigeber·in Musik</td><td>keine</td><td class="fill"></td></tr>
+      <tr><td><span class="chip" style="--c:#1a7f37">D</span></td><td>Stellvertretung, verantwortlich für die Test-Kreditkarte</td><td>keine</td><td class="fill"></td></tr>
+      <tr><td><span class="chip" style="--c:#9a6700">E</span></td><td>Testleitung, Superadmin — Admin-Bereich, Eskalationen</td><td>Admin</td><td class="fill"></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Testkonten (unter Admin → Konten anlegen)</h3>
+  <p>Diese Verteilung sorgt dafür, dass jede Sonderregel mindestens einmal vorkommt.</p>
+  <table class="grid matrix">
+    <thead><tr><th>Konto</th><th>Freigeber 1</th><th>Freigeber 2</th><th>Stellvertretung 1</th><th>Stellvertretung 2</th></tr></thead>
+    <tbody>
+      <tr><td><b>T1</b> Test Jugend</td><td>B</td><td>C</td><td>D</td><td>A</td></tr>
+      <tr><td><b>T2</b> Test Musik</td><td>C</td><td>B</td><td>A</td><td>D</td></tr>
+      <tr><td><b>T3</b> Test Buchhaltung</td><td>A</td><td>D</td><td>B</td><td>C</td></tr>
+      <tr><td><b>T4</b> Test Verwaltung</td><td>D</td><td>B</td><td>E</td><td>C</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">Merkhilfe: Kontieren darf man nur auf Konten, auf denen man Freigeber 1 oder Stellvertretung 1 ist.</p>
+
+  <h3>Weitere Stammdaten</h3>
+  <table class="grid">
+    <tbody>
+      <tr><th>Kreditor «Testlieferant AG»</th><td>mit hinterlegter IBAN (dieselbe wie auf den QR-Rechnungen R1, R2, R2b, R6)</td></tr>
+      <tr><th>Kreditor «Zweiter Lieferant GmbH»</th><td><b>ohne</b> IBAN (für S-04)</td></tr>
+      <tr><th>Zuweisungsregeln</th><td>keine für die Testlieferanten — alle Testbelege sollen im Pool landen</td></tr>
+      <tr><th>Kreditkarte «Test-Visa»</th><td>Endziffern 4242, verantwortlich D, «Alle Personen dürfen Belege erfassen» ein</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ Vorbereitung ============ -->
+<section class="page">
+  <h2>2 · Vorbereitung (Testleitung)</h2>
+  <div class="warn"><b>Wichtig vor dem Start:</b> Testrechnungen dürfen nicht in die echte Buchhaltung gelangen. Die n8n-Abholung nach Bexio und Paperless für die Testzeit pausieren oder auf ein Testziel umleiten. Sonst entstehen echte Buchungen oder Zahlungen.</div>
+  <table class="check">
+    <tbody>
+      <tr><td><span class="box"></span></td><td>Aktuellen Stand auf Infomaniak aufspielen. Admin → Betrieb → Status: alles grün.</td></tr>
+      <tr><td><span class="box"></span></td><td><b>Export pausiert</b> (siehe oben). Rechnungs-Postfach → n8n → Portal funktioniert (eine Probe-Rechnung).</td></tr>
+      <tr><td><span class="box"></span></td><td>ChurchTools: A in der Buchhaltungs-Gruppe, E in der Admin-Gruppe, B/C/D in keiner der beiden.</td></tr>
+      <tr><td><span class="box"></span></td><td>ChurchTools: IBAN und Kontoinhaber bei A, B, C eingetragen. Bei D <b>bewusst leer</b> (für SP-04).</td></tr>
+      <tr><td><span class="box"></span></td><td>Alle fünf Personen haben sich einmal angemeldet (erst dann sind sie im Portal wählbar).</td></tr>
+      <tr><td><span class="box"></span></td><td>Konten T1–T4, Kreditoren und Kreditkarte gemäss Seite 2 angelegt.</td></tr>
+      <tr><td><span class="box"></span></td><td>Admin → Module: Spesen <b>ein</b>, Kreditkarten <b>ein</b>, Rapporte <b>ein</b>, strikte Freigeber1-Prüfung <b>aus</b>, Schwelle «länger offen» 14 Tage.</td></tr>
+      <tr><td><span class="box"></span></td><td>Admin → Personen → A: Rechte <b>Auswertung einsehen (alle Konten)</b> und <b>Budgets verwalten</b> geben (A spielt auch den Kassier). B, C, D bekommen diese Rechte <b>nicht</b>.</td></tr>
+      <tr><td><span class="box"></span></td><td>Admin → Eskalationszeiten: für V-03 kurz stellen (z. B. Erinnerung 1 h, Eskalation 2 h, Freigabe 2 gleich; optional Rapporte ebenso). Alte Werte notieren: <span class="fill inline"></span></td></tr>
+      <tr><td><span class="box"></span></td><td>IBAN-Abweichungs-Empfänger: E eingetragen.</td></tr>
+      <tr><td><span class="box"></span></td><td>Mail-Einstellungen: Standard-Benachrichtigung «sofort». Alle Testenden prüfen, dass sie Mails erhalten.</td></tr>
+      <tr><td><span class="box"></span></td><td>Testbelege-Paket entpackt und an die Testenden verteilt (Ordner 2 und 3 auf die Handys, Ordner 5 an A). Ordner 1 und 4 behält die Testleitung zum Versenden.</td></tr>
+      <tr><td><span class="box"></span></td><td>Optional: Abläufe vorher allein im <b>Testmodus</b> durchspielen (Admin → Testmodus).</td></tr>
+      <tr><td><span class="box"></span></td><td>Entscheiden, was nach dem Test mit den Testvorgängen passiert (siehe Aufräumen). Abgeschlossene Vorgänge und das Audit-Log lassen sich bewusst nicht löschen.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ Testbelege ============ -->
+<section class="page">
+  <h2>3 · Testbelege</h2>
+  <p>Alle Dateien liegen im Paket <b>Testbelege-Freigabeportal.zip</b>, in vier Ordnern. Jeder Beleg trägt «TESTBELEG» als Wasserzeichen. Die QR-Codes sind echte Swiss-QR-Codes mit gültigen, aber erfundenen IBANs. Die Testbelege wurden mit den Prüffunktionen des Portals kontrolliert.</p>
+  <div class="warn">IBAN für den Kreditor «Testlieferant AG» hinterlegen: <b class="mono">CH03 0070 0110 0001 2345 6</b>. «Zweiter Lieferant GmbH» bekommt <b>keine</b> IBAN. Diese Zahlen nie für echte Zahlungen verwenden.</div>
+  <table class="grid belege">
+    <thead><tr><th></th><th>Beleg</th><th>Datei / Inhalt</th><th>Für</th></tr></thead>
+    <tbody>
+      <tr><td colspan="4" class="sub">1_Rechnungen</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">R1</td><td>QR-Rechnung 1001, CHF 487.35, IBAN wie hinterlegt</td><td>R-01, S-05</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">R2</td><td>Dieselbe Rechnung 1001 mit Vermerk «KOPIE»</td><td>S-02</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">R2b</td><td>Rechnung 1002, gleicher Betrag und gleiches Zahlungsziel wie R1</td><td>S-03</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">R3</td><td>QR-Rechnung 1003, CHF 312.40, <b>fremde IBAN</b> CH67 0839 …</td><td>S-01</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">R4, R4b–R4f</td><td>Rechnungen 2001–2006 ohne QR-Code, verschiedene Beträge</td><td>R-02 – R-06, R-09</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">R5</td><td>Sammelrechnung 3001, CHF 600.00 = 250 + 200 + 150</td><td>R-08</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">R6</td><td>Gutschrift G-4001, CHF 80.00</td><td>R-07</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">R7a, R7b</td><td>QR-Rechnungen 5001/5002 «Zweiter Lieferant GmbH», gleiche IBAN</td><td>S-04</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">R8</td><td>Rechnung 6001, bleibt im Pool liegen</td><td>V-03</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">RP1, RP2</td><td>Rapport Hauswartung · Rapport Reinigung (keine Rechnungen, nur zur Kenntnis)</td><td>RA-01 – RA-03</td></tr>
+      <tr><td colspan="4" class="sub">2_Kreditkarte</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">KB1–KB4</td><td>Kartenquittungen: Bastelshop 45.20 (JPG) · Musikhaus 120.00 (PDF) · Papeterie EUR 31.95 = CHF 30.10 (PNG) · Rückerstattung −15.00 (JPG)</td><td>K-01</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">KK1</td><td>Monatsabrechnung «Test-Visa» Oktober 2026, Karte **** 4242, Total CHF 204.20</td><td>K-02 – K-04</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">KK2</td><td>Normale Rechnung 7001 (wird fälschlich als Abrechnung markiert)</td><td>K-05</td></tr>
+      <tr><td colspan="4" class="sub">3_Spesen</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">SQ1–SQ4</td><td>Spesenquittungen: Bäckerei 38.60 (JPG) · Bahnbillett 24.80 (PDF) · Parkticket 12.00 (PNG) · Blumen 45.00 (JPG)</td><td>SP-01 – SP-04</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">SQ5, SQ6</td><td>Quittung mit Datum 31.12.2026 · PDF über 20 MB</td><td>SP-05</td></tr>
+      <tr><td colspan="4" class="sub">4_Sonderfaelle</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">X1–X4</td><td>Passwortgeschütztes PDF (Passwort «test») · beschädigtes PDF · PDF ~15 MB · Rechnung als JPG-Foto</td><td>S-05</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">X5</td><td>Rechnung 9001, Dateiname mit «–» und «€» (als Anhang mit genau diesem Namen senden)</td><td>S-05</td></tr>
+      <tr><td colspan="4" class="sub">5_Budgets</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">BU1</td><td>CSV, Budgets 2026 für T1–T4 in Schweizer Schreibweise, dazu eine unbekannte Kontonummer (T9) und ein ungültiger Betrag</td><td>AW-02</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">BU2</td><td>Excel (.xlsx), Budgets 2027 mit drei Spalten: Konto, Bezeichnung, Betrag</td><td>AW-02</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">Nicht im Paket: ein HEIC-Foto (einfach mit einem iPhone fotografieren) und eine Word-Datei (beliebige). KK1 passt nur zusammen, wenn in K-01 genau KB1–KB4 erfasst werden.</p>
+</section>
+
+<!-- ============ Zeitplan ============ -->
+<section class="page">
+  <h2>4 · Ablauf und Übersicht</h2>
+  <table class="grid plan">
+    <thead><tr><th>Runde</th><th>Szenarien</th><th>Dauer</th></tr></thead>
+    <tbody>
+      <tr><td>Start</td><td>Rollen verteilen, alle angemeldet, «Problem melden» zeigen. R8 senden und V-03 starten (läuft nebenher).</td><td>15 min</td></tr>
+      <tr><td>1 · Rechnungen</td><td>R-01, R-02, R-03, R-07, S-01, S-02, S-03, S-04 — zwei Abläufe gleichzeitig möglich</td><td>75 min</td></tr>
+      <tr><td>2 · Spesen</td><td>SP-01 – SP-05, dazu K-01 (Belege vorab)</td><td>50 min</td></tr>
+      <tr><td>3 · Kreditkarten</td><td>K-02 – K-07</td><td>50 min</td></tr>
+      <tr><td>4 · Sonderfälle</td><td>V-01, R-06, R-04, R-05, R-08, V-02, V-04, V-05, R-09, SP-06, S-05, S-06</td><td>80 min</td></tr>
+      <tr><td>5 · Rapporte</td><td>RA-01 – RA-04 (RA-01 kann schon in Runde 1 starten)</td><td>35 min</td></tr>
+      <tr><td>6 · Auswertung</td><td>AW-01 – AW-04, wenn die meisten Vorgänge abgeschlossen sind</td><td>40 min</td></tr>
+      <tr><td>Abschluss</td><td>V-03 auswerten, V-06, G-01 (wenn nicht schon nebenher), Besprechung der Fehler</td><td>30 min</td></tr>
+    </tbody>
+  </table>
+  <h3>Gesamt-Checkliste</h3>
+  <table class="grid overview"><thead><tr><th></th><th>ID</th><th>Szenario</th><th>Beteiligte</th><th>Dauer</th></tr></thead>
+  <tbody><!--UEBERSICHT--></tbody></table>
+</section>
+
+<!-- ============ Szenarien ============ -->
+<section class="scenarios">
+<!--SZENARIEN-->
+</section>
+
+<!-- ============ Fehlerprotokoll ============ -->
+<section class="page">
+  <h2>Fehlerprotokoll</h2>
+  <p>Schwere: <b>1</b> blockiert die Arbeit · <b>2</b> stört, Umweg möglich · <b>3</b> Schönheitsfehler / Text.</p>
+  <table class="grid log">
+    <thead><tr><th>Nr</th><th>Szenario / Schritt</th><th>Wer</th><th>Gerät / Browser</th><th>Uhrzeit</th><th>Was ist passiert? (erwartet → tatsächlich)</th><th>Schwere</th></tr></thead>
+    <tbody>
+      <!--LOGROWS-->
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ Aufräumen ============ -->
+<section class="page">
+  <h2>Aufräumen nach dem Test</h2>
+  <table class="check">
+    <tbody>
+      <tr><td><span class="box"></span></td><td>Eskalationszeiten auf die notierten Werte zurückstellen.</td></tr>
+      <tr><td><span class="box"></span></td><td>Module wie für den Betrieb gewünscht einstellen (Spesen, Kreditkarten, Rapporte). Strikte Freigeber1-Prüfung bewusst entscheiden.</td></tr>
+      <tr><td><span class="box"></span></td><td>Test-Budgets 2026/2027 leeren (Admin → Budgets) und die echten Budgets erfassen oder importieren. Rechte für Auswertung und Budgets den richtigen Personen geben, Test-Rechte bei A entfernen.</td></tr>
+      <tr><td><span class="box"></span></td><td>Ferienmodus aller Testenden beendet. Benachrichtigungen wieder auf die gewünschte Einstellung.</td></tr>
+      <tr><td><span class="box"></span></td><td>Test-Kreditkarte, Testkonten T1–T4 und Testlieferanten <b>deaktivieren</b> (nicht löschbar, bewusst so).</td></tr>
+      <tr><td><span class="box"></span></td><td>Offene Testvorgänge ablehnen und unter Admin → Abgelehnte Rechnungen löschen (durch eine andere Person als die ablehnende).</td></tr>
+      <tr><td><span class="box"></span></td><td>Entscheiden: Testvorgänge im System lassen (bleiben im Audit-Log, klar als TEST erkennbar) oder das Portal vor dem echten Start mit leerem Datenstand neu einrichten.</td></tr>
+      <tr><td><span class="box"></span></td><td>Bankdaten von D in ChurchTools wieder korrekt eintragen.</td></tr>
+      <tr><td><span class="box"></span></td><td>n8n-Export nach Bexio/Paperless wieder einschalten — erst wenn keine Testvorgänge mehr abholbereit sind.</td></tr>
+      <tr><td><span class="box"></span></td><td>Fehlerprotokoll und Meldungen (Admin → Betrieb → Meldungen) gesammelt an die Entwicklung.</td></tr>
+    </tbody>
+  </table>
+  <h3>Abnahme</h3>
+  <table class="kv">
+    <tr><th>Alle Szenarien durchgeführt</th><td><span class="box"></span> ja &nbsp;&nbsp; <span class="box"></span> nein, offen: <span class="fill inline"></span></td></tr>
+    <tr><th>Fehler mit Schwere 1</th><td><span class="box"></span> keine &nbsp;&nbsp; <span class="box"></span> Anzahl: <span class="fill inline short"></span></td></tr>
+    <tr><th>Freigabe für den Launch</th><td><span class="box"></span> ja &nbsp;&nbsp; <span class="box"></span> nach Behebung</td></tr>
+    <tr><th>Datum, Unterschrift</th><td class="fill tall"></td></tr>
+  </table>
+</section>
+</body></html>

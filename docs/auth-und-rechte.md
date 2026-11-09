@@ -89,7 +89,7 @@ Drei ChurchTools-Gruppen werden auf drei Rollen abgebildet
 |---|---|---|---|
 | `buchhaltung` | `CT_GROUP_ID_BUCHHALTUNG` | ja | sieht den unternehmensweiten Pool unzugewiesener Rechnungen, kann Rechnungen beanspruchen |
 | `superadmin` | `CT_GROUP_ID_ADMIN` | ja | voller Zugriff auf den gesamten Admin-Bereich, kann Einzelrechte vergeben, ist Fallback-Empfänger für jede Admin-Eskalation |
-| `manager` | `CT_GROUP_ID_MANAGER` | optional | nur Zugriff auf `/admin/personen` (Übersicht) |
+| `manager` | `CT_GROUP_ID_MANAGER` | optional | erhält alle Einzelrechte ausser `sync_verwalten`, `workflow_eingreifen` und `betrieb_einsehen` (siehe unten) sowie den Testmodus; die sieben superadmin-exklusiven Bereiche bleiben gesperrt |
 
 `personHasRole(person, config, rolle)` prüft, ob die zugehörige
 ChurchTools-Gruppen-ID in `person.gruppen` enthalten ist — dieses Array

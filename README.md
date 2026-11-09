@@ -16,6 +16,15 @@ RFC3161-Zeitstempel, Admin-Bereich, geplante Jobs und der
 ChurchTools-Personen-Sync, jeweils mit Ablauf-/Sequenzdiagrammen — liegt
 in [`docs/`](docs/README.md).
 
+## Version
+
+Aktuelle Version: **1.0.0** (erste produktive Version, 2026-11-09).
+Änderungen je Version: [`CHANGELOG.md`](CHANGELOG.md), ausführliche
+Release Notes in [`docs/releases/`](docs/releases/v1.0.0.md). Die
+Fusszeile im Portal zeigt den laufenden Stand per `git describe` (Tag
+`v1.0.0` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
+Version aus `package.json`.
+
 ## Setup (lokal)
 
 1. `npm install`
@@ -137,8 +146,9 @@ Sperren: [Offline-Wiederherstellung](docs/offline-restore.md).
 - **Ausführungsordner**: Repository-Root (dort liegt `package.json`).
 - **Build-Kommando**: `npm install` (kein separater Build-Schritt nötig).
 - **Start-Kommando**: `npm start`.
-- **Node.js-Version**: ≥22.13.0 — `node:sqlite` benötigt diese Version (kein
-  `--experimental-sqlite`-Flag mehr nötig ab dieser Version). Beim ersten
+- **Node.js-Version**: ≥22.23.4 (siehe `engines` in `package.json`) — `node:sqlite`
+  braucht mindestens 22.13.0, 22.23.4 schliesst zusätzlich bekannte
+  Sicherheitslücken (siehe [Prüfbericht](docs/pruefbericht-2026-10.md)). Beim ersten
   Deploy in der Ausführungskonsole verifizieren, dass die App tatsächlich
   mit dieser Version startet, nicht mit einer älteren Default-LTS.
 - **Port**: wird von Infomaniak automatisch über die Umgebungsvariable
@@ -275,8 +285,10 @@ Schritt für Schritt durch die Einrichtung.
 3. Ein erstes Konto unter `/admin/konten` anlegen (Freigeber 1/2 samt
    Stellvertretern).
 4. Die Cron-Routen (`sync-personen`, `pool-erinnerungen`,
-   `freigabe2-erinnerungen`, `pdf-bereinigung`, `zeitstempel-nachholen`,
-   `split-gruppen-nachholen`, `kk-beleg-erinnerungen`, `mail-zustellung`)
+   `freigabe2-erinnerungen`, `rapport-erinnerungen`, `pdf-bereinigung`,
+   `zeitstempel-nachholen`, `split-gruppen-nachholen`, `kk-beleg-erinnerungen`,
+   `mail-zustellung`; mit `TSA_CRL_AUTO_UPDATE=true` zusätzlich
+   `tsa-crl-aktualisierung`)
    einmal manuell auslösen (z. B. via
    `curl -X POST -H "X-Cron-Secret: <CRON_SECRET>" https://<domain>/internal/cron/sync-personen`)
    und den `200`/`erfolg`-Response prüfen, bevor man sich auf den
@@ -302,6 +314,10 @@ in [`docs/`](docs/README.md):
 - [Admin-Bereich](docs/admin-bereich.md) — alle Admin-Seiten mit Rechte-Matrix
 - [Geplante Jobs und Benachrichtigungen](docs/geplante-jobs-und-benachrichtigungen.md)
 - [ChurchTools-Personen-Sync](docs/personen-sync.md)
+
+Weitere Themen (Auswertung, Kommentare, Testmodus, Statusseite, Backups,
+Offline-Restore, Audit-Nachweise u. a.) sind im
+[Dokumentationsindex](docs/README.md) aufgeführt.
 
 Phasenpläne und historische Design-Dokumente der einzelnen Ausbaustufen
 liegen in `docs/superpowers/specs/`. Der Gesamt-Phasenplan (A:

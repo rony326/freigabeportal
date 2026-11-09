@@ -2,7 +2,7 @@
 
 ## Tech-Stack
 
-- **Laufzeit**: Node.js ≥ 22.13.0 (ESM, `type: module`), kein Build-Schritt.
+- **Laufzeit**: Node.js ≥ 22.23.4 (ESM, `type: module`), kein Build-Schritt.
 - **Web-Framework**: Express 4.
 - **Views**: server-seitig gerenderte EJS-Templates (kein Client-Framework, kein SPA-Bundling).
 - **Datenbank**: SQLite über das eingebaute `node:sqlite` — eine einzelne Datei (`DB_PATH`), kein separater DB-Server.
@@ -167,7 +167,7 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
 | `/admin/testmodus` | session | `superadmin` oder `manager` | Testmodus ein/aus, Zurücksetzen, Personenwechsel |
 | `/testmodus` (nur Test-Instanz) | session | eingeloggt (Beispielperson) | Test-Postfach (`/postfach`) und Jobs (`POST /jobs`) |
 | `/auth` | public | offen | ChurchTools-OAuth2-Login/-Logout |
-| `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen von acht Hintergrund-Jobs (nicht: `datenbank-sicherung`, `mail-digest`, `sicherheitsalarme`) |
+| `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen von zehn Hintergrund-Jobs (nicht: `datenbank-sicherung`, `mail-digest`, `sicherheitsalarme`, `audit-export`, `audit-pruefnummer`, `nutzungsdaten-bereinigung`) |
 | `/healthz` | eigener (120/min/IP) | offen; Details nur mit `X-Monitoring-Key` | `{status:"ok"}`, mit Schlüssel Dienststatus (30 s zwischengespeichert, gemeinsam mit Statusseite und Dashboard), siehe [statusseite-und-monitoring.md](statusseite-und-monitoring.md) |
 | `/` | public | — | leitet auf `/pool` (eingeloggt) oder `/auth/login` (anonym) weiter |
 

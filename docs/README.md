@@ -44,6 +44,26 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [audit-externe-nachweise.md](audit-externe-nachweise.md) | Bedrohungsmodell und lokale Grundlage für externe Audit-Nachweise |
 | [pruefbericht-2026-10.md](pruefbericht-2026-10.md) | Prüfbericht Abschlussprüfung Oktober 2026: Funde, Behebungen, Checklisten für Infomaniak und Geheimnisse |
 
+## Releases
+
+| Version | Datum | Release Notes |
+|---|---|---|
+| 1.0.0 | 2026-11-09 | [releases/v1.0.0.md](releases/v1.0.0.md) |
+
+Kurzfassung aller Versionen: [`CHANGELOG.md`](../CHANGELOG.md).
+
+## Historische Prüf- und Review-Berichte
+
+Momentaufnahmen früherer Prüfungen. Sie beschreiben den Stand zum
+jeweiligen Datum; der aktuelle Stand steht in den Dokumenten oben.
+
+| Dokument | Inhalt |
+|---|---|
+| [audit-review-2026-09-27.md](audit-review-2026-09-27.md) | Audit-Review vom 27.09.2026: Funde |
+| [audit-behebungsplan-2026-09-27.md](audit-behebungsplan-2026-09-27.md) | Behebungsplan zu diesem Review |
+| [audit-umsetzungsstand-2026-09-27.md](audit-umsetzungsstand-2026-09-27.md) | Umsetzungsstand der Behebungen |
+| [review-frischer-blick-2026-09-29.md](review-frischer-blick-2026-09-29.md) | Review „frischer Blick“ vom 29.09.2026 |
+
 Phasenpläne und historische Design-Dokumente der einzelnen Ausbaustufen
 liegen weiterhin in [`superpowers/specs/`](superpowers/specs/) und
 [`superpowers/plans/`](superpowers/plans/) — diese hier beschreiben den

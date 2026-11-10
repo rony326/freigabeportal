@@ -2666,6 +2666,10 @@ test('GET /kontierung/:id marks the Konto and Lieferant dropdowns as searchable 
   assert.match(res.text, /id="neuer-lieferant-name"/);
   // The modal's "Anlegen" button must actually call the new endpoint, not just look like a form.
   assert.match(res.text, /fetch\('\/kontierung\/lieferanten'/);
+  // Neu angelegter Lieferant: Option trägt data-iban-pflicht und löst ein change aus, damit der
+  // IBAN-Kasten (kontierung-iban.js) sofort reagiert. Echtes Verhalten nur im Browser prüfbar.
+  assert.match(res.text, /option\.setAttribute\('data-iban-pflicht'/);
+  assert.match(res.text, /kreditorSelect\.dispatchEvent\(new Event\('change', \{ bubbles: true \}\)\)/);
   db.close();
 });
 

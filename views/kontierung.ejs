@@ -634,10 +634,13 @@
             var option = document.createElement('option');
             option.value = result.data.id;
             option.textContent = result.data.name;
+            // Gleiche Zahlungsart wie im Dialog gewählt: steuert den IBAN-Kasten (kontierung-iban.js).
+            option.setAttribute('data-iban-pflicht', zahlungsartSelect.value === 'ueberweisung' || zahlungsartSelect.value === 'dauerauftrag' ? '1' : '0');
             option.selected = true;
             kreditorSelect.appendChild(option);
             kreditorSelect.value = String(result.data.id);
             if (window.SearchableSelect) window.SearchableSelect.refresh(kreditorSelect);
+            kreditorSelect.dispatchEvent(new Event('change', { bubbles: true }));
             bootstrap.Modal.getOrCreateInstance(modal).hide();
           })
           .catch(function () {

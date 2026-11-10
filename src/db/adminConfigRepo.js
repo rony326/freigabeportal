@@ -1,4 +1,4 @@
-const DEFAULTS = {
+export const DEFAULTS = {
   reminder_stunden: '24',
   eskalation_stunden: '48',
   reminder_empfaenger: 'gruppe:buchhaltung',
@@ -49,8 +49,8 @@ const DEFAULTS = {
   mail_vorlage_reminder_text: 'Diese Rechnung ist seit mehr als %stunden% Stunden unbeansprucht im Pool: %jobDateiname%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_eskalation_betreff: 'Freigabeportal: Eskalation – Rechnung seit langem unbeansprucht',
   mail_vorlage_eskalation_text: 'Diese Rechnung ist seit mehr als %stunden% Stunden unbeansprucht im Pool und wurde eskaliert: %jobDateiname%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
-  mail_vorlage_freigabe2_reminder_betreff: 'Freigabeportal: Offene Freigabe wartet auf Sie',
-  mail_vorlage_freigabe2_reminder_text: 'Hallo %empfaengerName%,\n\ndiese Rechnung wartet seit mehr als %stunden% Stunden auf Ihre Freigabe: %jobDateiname%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
+  mail_vorlage_freigabe2_reminder_betreff: 'Freigabeportal: Offene Freigabe wartet auf dich',
+  mail_vorlage_freigabe2_reminder_text: 'Hallo %empfaengerName%,\n\ndiese Rechnung wartet seit mehr als %stunden% Stunden auf deine Freigabe: %jobDateiname%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_freigabe2_eskalation_betreff: 'Freigabeportal: Eskalation – Freigabe seit langem ausstehend',
   mail_vorlage_freigabe2_eskalation_text: 'Diese Rechnung wartet seit mehr als %stunden% Stunden auf Freigabe 2 und wurde an die Administration übergeben: %jobDateiname%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_ablehnung_betreff: 'Freigabeportal: Rechnung abgelehnt',

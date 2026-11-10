@@ -82,7 +82,9 @@ CREATE TABLE IF NOT EXISTS kreditoren (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   konto_id INTEGER REFERENCES konten(id),
-  aktiv INTEGER NOT NULL DEFAULT 1
+  aktiv INTEGER NOT NULL DEFAULT 1,
+  zahlungsart TEXT NOT NULL DEFAULT 'ueberweisung' CHECK (zahlungsart IN ('ueberweisung', 'dauerauftrag', 'lastschrift', 'kreditkarte')),
+  betrag_schwankt INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS kreditor_ibans (

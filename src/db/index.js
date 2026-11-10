@@ -93,6 +93,19 @@ function migratePersonenTable(db) {
   }
 }
 
+// Zahlungsart und "Beträge schwanken" am Lieferanten. ADD COLUMN erlaubt NOT NULL mit Default und CHECK.
+const KREDITOREN_TABLE_MIGRATIONS = [
+  { column: 'zahlungsart', ddl: "ALTER TABLE kreditoren ADD COLUMN zahlungsart TEXT NOT NULL DEFAULT 'ueberweisung' CHECK (zahlungsart IN ('ueberweisung', 'dauerauftrag', 'lastschrift', 'kreditkarte'))" },
+  { column: 'betrag_schwankt', ddl: 'ALTER TABLE kreditoren ADD COLUMN betrag_schwankt INTEGER NOT NULL DEFAULT 0' },
+];
+
+function migrateKreditorenTable(db) {
+  const existing = new Set(db.prepare('PRAGMA table_info(kreditoren)').all().map((col) => col.name));
+  for (const { column, ddl } of KREDITOREN_TABLE_MIGRATIONS) {
+    if (!existing.has(column)) db.exec(ddl);
+  }
+}
+
 const FREIGABEN_TABLE_VERTRETUNG_MIGRATIONS = [
   { column: 'vertretung_fuer', ddl: 'ALTER TABLE freigaben ADD COLUMN vertretung_fuer TEXT REFERENCES personen(churchtools_person_id)' },
 ];
@@ -1225,6 +1238,7 @@ export function openDatabase(dbPath) {
   migrateMailLogTableFreigabe2(db);
   migrateCronLogTableFreigabe2Erinnerungen(db);
   migratePersonenTable(db);
+  migrateKreditorenTable(db);
   migrateFreigabenTableVertretung(db);
   migrateKreditkartenChecks(db);
   migrateMailLogSicherheitsalarm(db);

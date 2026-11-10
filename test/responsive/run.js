@@ -9,6 +9,7 @@
 // (.alert .btn-close) liegt in seiner Meldung, bei kompakten Meldungen mittig (schliessen). Text in
 // farbig hinterlegten Tabellenzeilen (überfällig/hängt) hat ≥ 4.5:1 Kontrast (kontrast). Ab 1200 px
 // passt die Dateiauswahl ("Datei auswählen | Keine ausgewählt") ungekürzt in ihr Feld (text).
+// Das Logo (links, breit) liegt im Testserver bereit; es steht links und bleibt in seiner Spalte (logo).
 // Farbschema: alle Breiten hell, zusätzlich 360 und 1280 px dunkel (DUNKEL_BREITEN).
 // Aufruf: npm run test:responsive [-- --seite=<Teil des Namens> --breite=360 --farbschema=dunkel]
 // Ausgabe: eine Zeile je Verstoss "Breite Seite Art Selektor Masse", danach Zusammenfassung.
@@ -267,6 +268,18 @@ function pruefeImBrowser({ minTouch, touch, bandMaxAnteil, minKontrast, dateiaus
       verstoesse.push({ art: 'band', selektor: 'main', masse: `Inhalt beginnt bei ${Math.round(main.getBoundingClientRect().top)} ≥ ${vh}` });
     }
   }
+  // 9. Logo "links" (Standard; der Testserver legt ein breites Logo an): es steht in der linken Hälfte und
+  // ragt samt Aussenabstand nicht über seine Spalte hinaus, sonst klebt es am Farbmodus-Knopf rechts daneben.
+  const logo = !wurzel && document.querySelector('.portal-kopf-marke img');
+  if (logo && logo.offsetParent !== null) {
+    const l = logo.getBoundingClientRect();
+    const k = logo.closest('.portal-kopf-marke').getBoundingClientRect();
+    const rand = parseFloat(getComputedStyle(logo).marginRight) || 0;
+    if (l.left >= vw / 2 || l.right + rand > k.right + 0.5) {
+      markiere(logo);
+      verstoesse.push({ art: 'logo', selektor: selektor(logo), masse: `Logo ${Math.round(l.left)}–${Math.round(l.right)} (+${Math.round(rand)} Rand) in Spalte ${Math.round(k.left)}–${Math.round(k.right)}` });
+    }
+  }
   return verstoesse;
 }
 
@@ -480,7 +493,7 @@ function zusammenfassen(verstoesse) {
 }
 
 function tabelle(verstoesse, breiten) {
-  const arten = ['ueberlauf', 'touch', 'text', 'ueberlappung', 'menue', 'band', 'iframe', 'modal', 'schliessen', 'kontrast'];
+  const arten = ['ueberlauf', 'touch', 'text', 'ueberlappung', 'menue', 'band', 'iframe', 'modal', 'schliessen', 'kontrast', 'logo'];
   const zeilen = [['Art', ...breiten.map((b) => String(b.breite)), 'Summe']];
   for (const art of arten) {
     const proBreite = breiten.map((b) => verstoesse.filter((v) => v.art === art && v.breite === b.breite).length);

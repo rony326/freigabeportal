@@ -47,6 +47,12 @@
   font-weight: 600;
 }
 
+/* Logo "links": img hat mx-2 (2 × .5rem Aussenabstand). max-width: 100% allein misst nur die Bildbreite,
+   ein breites Logo ragt dann um den Abstand über seine Spalte und klebt am Farbmodus-Knopf. */
+.portal-kopf-marke img {
+  max-width: calc(100% - 1rem);
+}
+
 /* Handy (unter 576 px): Menüknopf, Titel/Logo und die Knöpfe rechts teilen sich die erste Zeile,
    die Reiter Portal/Admin stehen in einer eigenen zweiten Zeile (ohne Admin-Reiter entfällt sie). Sonst bleibt neben den
    44-px-Touch-Knöpfen kein Platz für den Titel (er würde ganz weggekürzt). */

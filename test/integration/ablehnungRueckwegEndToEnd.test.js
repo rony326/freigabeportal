@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -66,7 +67,7 @@ test('Kontierung → Freigabe 2 Ablehnen → Meine abgelehnten Jobs → Überarb
   upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
 
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
   const createRes = await request(app)
@@ -137,7 +138,7 @@ test('a job rejected twice before final approval carries both rejections in the 
   upsertPerson(db, { id: '1', vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
 
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
   const createRes = await request(app)

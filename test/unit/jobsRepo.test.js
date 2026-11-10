@@ -5,6 +5,7 @@ import { upsertPerson, setFerienmodus, deactivatePerson } from '../../src/db/per
 import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { createZuweisungsregel } from '../../src/db/zuweisungsregelnRepo.js';
 import { createKreditor } from '../../src/db/kreditorenRepo.js';
+import { kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, assignJobToPerson, listPoolRuecklaeufer, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, sendJobBackToGroup, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, listFreigabe2JobsForReminder, markFreigabe2ReminderGesendet, listFreigabe2JobsForEskalation, markFreigabe2EskalationGesendet, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByKreditorUndRechnungsnummer, findMoeglicheDoppelrechnungen, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben, weiterleitenAnEchtenFreigeber1, markiereJobAlsKkAbrechnung, hebeKkMarkierungAuf, setKkAbrechnungKopfdaten, hatZugewieseneKkAbrechnungFuer } from '../../src/db/jobsRepo.js';
@@ -21,7 +22,7 @@ function seedKonto(db) {
 // that the auto-assignment then resolves through. Most tests here just need "a Kreditor pointing
 // at this Konto", so this wraps both steps.
 function seedKreditorMitKonto(db, kontoId, name = 'Muster AG') {
-  return createKreditor(db, { name, kontoId });
+  return kreditorOhneIbanPflicht(db, { name, kontoId });
 }
 
 test('findMatchingZuweisungsregel: exact email address matches', () => {
@@ -181,7 +182,7 @@ test('createJob falls back to the pool when the matched Konto is inactive, but s
 test('createJob leaves a job unzugewiesen when the matching Kreditor has no default Konto, but still fills lieferant', () => {
   const db = openDatabase(':memory:');
   seedKonto(db);
-  const kreditorId = createKreditor(db, { name: 'Kein Konto AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Kein Konto AG', kontoId: null });
   createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
   const id = createJob(db, { eingangAm: '2026-08-14T10:00:00.000Z', quelle: 'lieferant', absender: 'rechnungen@lieferant.ch', dateiname: 'rechnung.pdf', pdfPfad: '/tmp/z.pdf' });
   const job = getJobById(db, id);

@@ -15,6 +15,7 @@ import { listKonten } from '../../db/kontenRepo.js';
 import { createKreditorIban, deleteKreditorIban, getKreditorIbanById, listKreditorIbansAll, listKreditorIbansByKreditor, findKreditorIbanByIban } from '../../db/kreditorIbanRepo.js';
 import { normalizeIban, isValidIbanInternational, ibanKurz } from '../../services/ibanUtils.js';
 import { isValidAbsenderMuster, ABSENDER_MUSTER_FEHLER } from '../../utils/absenderMuster.js';
+import { pruefeNeuenKreditor, legeKreditorAn } from '../../services/kreditorAnlegen.js';
 import { kreditorIdAusEingabe, KreditorFeldKonflikt } from '../../services/kreditorFelder.js';
 
 const IBAN_PFLICHT_FEHLER = 'Bei Überweisung und Dauerauftrag ist mindestens eine IBAN Pflicht.';
@@ -74,18 +75,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     const { name, kontoId, iban } = req.body;
     const zahlungsart = zahlungsartAusEingabe(req.body);
     const betragSchwankt = req.body.betragSchwankt === 'on';
-    const normalizedIban = normalizeIban(iban);
-    const errors = [];
-    if (!name || !name.trim()) errors.push('Name ist ein Pflichtfeld.');
-    if (!ZAHLUNGSARTEN.includes(zahlungsart)) {
-      errors.push('Zahlungsart ist ungültig.');
-    } else if (brauchtIban(zahlungsart) && !normalizedIban) {
-      errors.push(IBAN_PFLICHT_FEHLER);
-    }
-    if (normalizedIban) {
-      if (!isValidIbanInternational(normalizedIban)) errors.push(IBAN_UNGUELTIG_FEHLER);
-      else if (findKreditorIbanByIban(db, normalizedIban)) errors.push('Diese IBAN ist bereits einem Lieferanten zugeordnet.');
-    }
+    const { errors, normalizedIban } = pruefeNeuenKreditor(db, { name, zahlungsart, iban });
 
     if (errors.length > 0) {
       return renderListe(req, res, 400, {
@@ -94,16 +84,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
       });
     }
 
-    // Kreditor und erste IBAN atomar: scheitert die IBAN, bleibt kein IBAN-loser Lieferant zurück.
-    db.exec('BEGIN');
-    try {
-      const id = createKreditor(db, { name: name.trim(), kontoId: kontoId ? Number(kontoId) : null, zahlungsart, betragSchwankt });
-      if (normalizedIban) createKreditorIban(db, { kreditorId: id, iban: normalizedIban, quelle: 'manuell' });
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+    legeKreditorAn(db, { name, kontoId, zahlungsart, betragSchwankt, normalizedIban });
     res.redirect('/admin/kreditoren?gespeichert=1');
   });
 

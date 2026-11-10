@@ -1,7 +1,7 @@
 import { getKontoById } from './kontenRepo.js';
 import { getPersonById } from './personenRepo.js';
 import { listZuweisungsregeln } from './zuweisungsregelnRepo.js';
-import { getKreditorById } from './kreditorenRepo.js';
+import { getKreditorById, istKreditorVollstaendig } from './kreditorenRepo.js';
 
 // Reused by listZugewiesenJobsForPerson/listFreigabe2JobsForPerson/listAbgelehntJobsForPerson
 // below: matches any person whose active Ferienmodus (today falls within
@@ -145,7 +145,7 @@ export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad,
 
   if (regel) {
     const kreditor = getKreditorById(db, regel.kreditor_id);
-    if (kreditor && kreditor.aktiv) {
+    if (kreditor && kreditor.aktiv && istKreditorVollstaendig(db, kreditor)) {
       kreditorId = kreditor.id;
       lieferant = kreditor.name;
       // A Kreditor without its own default Konto still auto-fills Lieferant, but there's no

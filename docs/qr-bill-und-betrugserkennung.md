@@ -38,9 +38,7 @@ Sicherheits-Abgleich:
 ```mermaid
 flowchart TD
     A["Kontierung wird gespeichert,<br/>QR-IBAN vorhanden, Lieferant gewählt"] --> B{"Lieferant hat<br/>hinterlegte IBAN(s)?"}
-    B -- nein --> C{"'IBAN merken'-Checkbox<br/>angehakt UND IBAN gültig?"}
-    C -- ja --> D["IBAN wird als 'bestaetigt'<br/>für diesen Lieferanten übernommen"]
-    C -- nein --> E["kein Abgleich möglich —<br/>keine Warnung"]
+    B -- nein --> E["kein Abgleich möglich —<br/>keine Warnung<br/>(IBANs entstehen nur im Admin)"]
     B -- ja --> F{"QR-IBAN in der<br/>Liste der hinterlegten IBANs?"}
     F -- ja --> G["Match — keine Aktion"]
     F -- nein --> H["MISMATCH:<br/>freigaben-Eintrag 'iban_abweichung'<br/>+ Warn-Mail an Freigeber 1+2,<br/>konfigurierte Empfänger, den Bearbeiter selbst"]
@@ -76,5 +74,14 @@ Lieferant beliebig viele IBANs (`kreditor_ibans`, eindeutig über die
 gesamte Tabelle — eine IBAN kann nur einem Lieferanten zugeordnet sein).
 Validierung einer Schweizer IBAN: `^CH\d{2}[0-9A-Z]{17}$`
 (`src/services/ibanUtils.js`) — dieselbe Prüfung wird an allen drei
-Stellen verwendet (QR-Parser, Admin-Formular, "IBAN merken"), damit keine
+Stellen verwendet (QR-Parser, Admin-Formular, Kontierungs-Schnellanlage), damit keine
 der drei aus der Reihe fällt und dadurch falsche Warnungen erzeugt.
+
+## Nur vollständige Lieferanten wählbar
+
+Lieferanten mit Zahlungsart Überweisung oder Dauerauftrag sind erst wählbar
+(Kontierung, KK-Abgleich, automatische Zuweisung per Regel), wenn mindestens eine
+IBAN hinterlegt ist. Die Checkbox "IBAN merken" entfällt. Neue Lieferanten (inkl.
+Schnellanlage auf der Kontierungsseite) legt nur an, wer Superadmin ist oder das
+Recht `kreditoren_verwalten` hat; Zahlungsart und bei Überweisung/Dauerauftrag die
+IBAN sind dabei Pflicht.

@@ -131,6 +131,7 @@ test('GET /kontierung/:id: eingeklappte Seitenleiste und Aktionszeile Zur√ºck ‚Ü
   const db = openDatabase(':memory:');
   const jobId = seedKontierungsJob(db);
   const agent = await loginBuchhaltung(db);
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
   const res = await agent.get(`/kontierung/${jobId}`);
   assert.equal(res.status, 200);
   assert.match(res.text, /<nav class="portal-seitenleiste eingeklappt/);

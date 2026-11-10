@@ -431,3 +431,21 @@ test('POST kk-abgleich: a receipt description is not re-validated on beleg lines
   assert.equal(listSplitKinder(t.db, t.jobId)[0].rechnungsposition, null);
   t.cleanup();
 });
+
+test('kk-abgleich: unvollständiger Kartenherausgeber ist nicht wählbar; POST mit ihm → 400 ohne Kinder', async () => {
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const t = await setup();
+  const ohneIban = createKreditor(t.db, { name: 'Ohne IBAN Bank', kontoId: null });
+  const b1 = await t.beleg('30.00', 'Papier', t.eigen);
+  const seite = await request(t.app).get(`/kontierung/${t.jobId}/kk-abgleich`).set('x-test-person-id', '1');
+  assert.doesNotMatch(seite.text, /Ohne IBAN Bank/);
+  const res = await post(t, '1', {
+    gesamtbetrag: '30.00',
+    kopf: { rechnungsnummer: 'KK-1', zahlungsziel: '2026-10-20', kreditorId: String(ohneIban) },
+    zeilen: [{ art: 'beleg', belegId: b1, kontoId: t.eigen, betrag: '30.00', beschreibung: 'Papier' }],
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bitte einen gültigen Kartenherausgeber wählen\./);
+  assert.equal(getJobById(t.db, t.jobId).status === 'aufgesplittet', false);
+  t.cleanup();
+});

@@ -7,7 +7,7 @@
   const sPfad = locals.currentPath || '';
   const sAdminBereich = Boolean(sNavigation && sNavigation.bereich === 'admin');
   const sZeigeAktionen = sPfad.startsWith('/kontierung') || sPfad.startsWith('/freigabe2');
-  const sZeigeLieferant = sPfad.startsWith('/kontierung');
+  const sZeigeLieferant = sPfad.startsWith('/kontierung') && Boolean(locals.darfLieferantAnlegen);
   const sEingeloggt = Boolean(locals.currentPerson);
 %><!DOCTYPE html>
 <html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>

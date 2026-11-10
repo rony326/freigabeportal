@@ -28,8 +28,9 @@ import {
   hebeKkMarkierungAuf,
 } from '../db/jobsRepo.js';
 import { getKontoById, listKonten } from '../db/kontenRepo.js';
-import { listKreditoren, getKreditorById, createKreditor } from '../db/kreditorenRepo.js';
-import { findKreditorIbanByIban, createKreditorIban } from '../db/kreditorIbanRepo.js';
+import { listKreditorenWaehlbar, getKreditorById, istKreditorVollstaendig, ZAHLUNGSARTEN, ZAHLUNGSART_LABEL } from '../db/kreditorenRepo.js';
+import { findKreditorIbanByIban } from '../db/kreditorIbanRepo.js';
+import { pruefeNeuenKreditor, legeKreditorAn } from '../services/kreditorAnlegen.js';
 import { kreditorIdAusEingabe, kreditorNameVariablen, KreditorFeldKonflikt } from '../services/kreditorFelder.js';
 import { getKreditkarteById, listKreditkarten } from '../db/kreditkartenRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
@@ -40,7 +41,6 @@ import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger, FRE
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
-import { isValidIban } from '../services/ibanUtils.js';
 import { ladeKontierbarenJob, ermittleStriktesWeiterleitungsZiel, ladeKontenFuerJob as ladeKontenFuerJobService } from '../services/kontierungZugriff.js';
 import { markiereAlsKkAbrechnung } from '../services/kkMarkierung.js';
 import { kkHinweisFuerJob } from '../services/kkStempel.js';
@@ -97,6 +97,12 @@ function buildQrInfo(db, job) {
 export function createKontierungRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  const LIEFERANT_NUR_ADMIN_HINWEIS = 'Neue Lieferanten legt die Administration an.';
+  const darfLieferantenAnlegen = (person) => personHasRole(person, config, 'superadmin')
+    || personHasPermission(db, config, person, 'kreditoren_verwalten');
+
+  const lieferantAnsicht = (req) => ({ darfLieferantAnlegen: darfLieferantenAnlegen(req.currentPerson), ZAHLUNGSARTEN, ZAHLUNGSART_LABEL });
+
   const loadAuthorizedJob = (req, res, optionen) => ladeKontierbarenJob(db, config, req, res, optionen);
   const ladeKontenFuerJob = (req, job) => ladeKontenFuerJobService(db, req, job);
 
@@ -122,7 +128,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       job,
       konten,
       alleKonten: listKonten(db),
-      kreditoren: listKreditoren(db),
+      kreditoren: listKreditorenWaehlbar(db),
+      ...lieferantAnsicht(req),
       kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
       ...rapportAnsicht(job),
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
@@ -149,27 +156,22 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
 
   // Must be registered before the generic /:id routes below — otherwise POST
   // /kontierung/lieferanten would first match /:id (with id="lieferanten", a NaN Number()) and
-  // 404/403 before ever reaching this handler. Open to any logged-in Kontierung user (not just
-  // Portal-Admins), since Kontierung itself is usually done by Buchhaltung, not admins — mirrors
-  // the validation in POST /admin/kreditoren, minus the admin-only gate.
+  // 404/403 before ever reaching this handler. Neue Lieferanten (mit Pflicht-IBAN) legt nur an,
+  // wer Lieferanten verwalten darf; dieselbe Prüfung wie in POST /admin/kreditoren.
   router.post('/lieferanten', csrfProtection, (req, res) => {
-    // Nur wer kontiert: Buchhaltung, Superadmin, Recht kreditoren_verwalten oder eine offene
-    // Kontierung/Überarbeitung bei sich (z. B. als Freigeber 1 weitergeleitet).
     const person = req.currentPerson;
-    const darf = personHasRole(person, config, 'buchhaltung') || personHasRole(person, config, 'superadmin')
-      || personHasPermission(db, config, person, 'kreditoren_verwalten')
-      || Boolean(db.prepare("SELECT 1 FROM jobs WHERE zugewiesen_an = ? AND status IN ('zugewiesen', 'abgelehnt') LIMIT 1").get(person.churchtools_person_id));
-    if (!darf) {
+    if (!darfLieferantenAnlegen(person)) {
       meldeZugriffVerweigert(req, { grund: 'fehlendes_recht', status: 403, recht: 'kreditoren_verwalten' });
-      return res.status(403).json({ error: 'Du darfst keine Lieferanten anlegen.' });
+      return res.status(403).json({ error: LIEFERANT_NUR_ADMIN_HINWEIS });
     }
-    const { name, kontoId } = req.body;
-    const trimmedName = (name || '').trim();
-    if (!trimmedName) {
-      return res.status(400).json({ error: 'Name ist ein Pflichtfeld.' });
+    const { name, kontoId, iban } = req.body;
+    const zahlungsart = req.body.zahlungsart;
+    const { errors, normalizedIban } = pruefeNeuenKreditor(db, { name, zahlungsart, iban });
+    if (errors.length > 0) {
+      return res.status(400).json({ error: errors.join(' ') });
     }
-    const id = createKreditor(db, { name: trimmedName, kontoId: kontoId ? Number(kontoId) : null });
-    res.status(201).json({ id, name: trimmedName });
+    const id = legeKreditorAn(db, { name, kontoId, zahlungsart, normalizedIban });
+    res.status(201).json({ id, name: name.trim() });
   });
 
   router.post('/:id', (req, res, next) => {
@@ -194,7 +196,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           job,
           konten: ladeKontenFuerJob(req, job),
           alleKonten: listKonten(db),
-          kreditoren: listKreditoren(db),
+          kreditoren: listKreditorenWaehlbar(db),
+          ...lieferantAnsicht(req),
           previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
           kkHinweis: kkHinweisFuerJob(db, job),
           kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
@@ -206,7 +209,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         });
       }
       const konten = ladeKontenFuerJob(req, job);
-      const kreditoren = listKreditoren(db);
+      const kreditoren = listKreditorenWaehlbar(db);
       const qrInfo = buildQrInfo(db, job);
       let kreditorId;
       try {
@@ -229,6 +232,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           konten,
           alleKonten: listKonten(db),
           kreditoren,
+          ...lieferantAnsicht(req),
           previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
           kkHinweis: kkHinweisFuerJob(db, job),
           values,
@@ -337,6 +341,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const kreditor = kreditorId ? getKreditorById(db, kreditorId) : null;
       if (!kreditor) {
         errors.add('kreditorId', 'Bitte einen gültigen Lieferanten aus der Liste auswählen.');
+      } else if (!istKreditorVollstaendig(db, kreditor)) {
+        errors.add('kreditorId', 'Dieser Lieferant hat noch keine IBAN. Bitte melde dich bei der Administration.');
       }
       if (!rechnungsnummer) {
         errors.add('rechnungsnummer', 'Bitte eine Rechnungsnummer angeben.');
@@ -498,13 +504,6 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
               },
             });
           }
-        } else if (
-          status === 'kein_abgleich' &&
-          req.body.ibanMerken === 'on' &&
-          isValidIban(job.qr_iban) &&
-          !findKreditorIbanByIban(db, job.qr_iban)
-        ) {
-          createKreditorIban(db, { kreditorId: kreditor.id, iban: job.qr_iban, quelle: 'bestaetigt' });
         }
       }
 
@@ -911,6 +910,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           beleg: belegEintrag ? { buffer: belegEintrag.file.buffer, mimetype: belegEintrag.mimetype } : null,
         });
       });
+
+      // Der Lieferant steht am Beleg (job.kreditor_id), nicht pro Zeile; ohne IBAN darf nicht aufgeteilt werden.
+      const jobKreditor = job.kreditor_id ? getKreditorById(db, job.kreditor_id) : null;
+      if (jobKreditor && !istKreditorVollstaendig(db, jobKreditor)) {
+        errors.push('Dieser Lieferant hat noch keine IBAN. Bitte melde dich bei der Administration.');
+      }
 
       if (errors.length === 0) {
         const summe = aufgeloesteTeile.reduce((sum, t) => sum + Number(t.betrag), 0);

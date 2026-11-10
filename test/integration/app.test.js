@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
@@ -733,6 +734,7 @@ test('on /kontierung, a "+ Lieferant" button sits in the action row after Zurüc
   const state = new URL(loginRes.headers.location).searchParams.get('state');
   await agent.get('/auth/callback').query({ code: 'the-code', state });
 
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
   const res = await agent.get(`/kontierung/${jobId}`);
   assert.equal(res.status, 200);
   const aktionen = res.text.match(/<div class="portal-aktionen[^"]*">[\s\S]*?<\/div>/);

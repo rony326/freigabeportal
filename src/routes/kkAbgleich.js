@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { getKreditkarteById } from '../db/kreditkartenRepo.js';
 import { listOffeneKkBelegeFuerKarte, getKkBelegById, ordneKkBelegZu, createKkBeleg, logKkBelegEreignis } from '../db/kkBelegeRepo.js';
 import { listKonten, getKontoById } from '../db/kontenRepo.js';
-import { listKreditoren, getKreditorById } from '../db/kreditorenRepo.js';
+import { listKreditorenWaehlbar, getKreditorById, istKreditorVollstaendig } from '../db/kreditorenRepo.js';
 import { kreditorIdAusEingabe, KreditorFeldKonflikt } from '../services/kreditorFelder.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
@@ -90,7 +90,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
       belege: offeneBelege(karte.id, analyse),
       alleKonten: listKonten(db),
       eigeneKontoIds: ladeKontenFuerJob(db, req, job).map((k) => k.id),
-      kreditoren: listKreditoren(db),
+      kreditoren: listKreditorenWaehlbar(db),
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       werte,
       zeilen,
@@ -169,7 +169,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           if (!KK_BETRAG_PATTERN.test(werte.gesamtbetrag)) errors.push('Bitte ein gültiges Abrechnungstotal angeben.');
           if (werte.zahlungsziel && !DATUM_PATTERN.test(werte.zahlungsziel)) errors.push('Zahlungsziel ist kein gültiges Datum.');
           const kreditor = werte.kreditorId ? getKreditorById(db, werte.kreditorId) : null;
-          if (werte.kreditorId && !kreditor) errors.push('Bitte einen gültigen Kartenherausgeber wählen.');
+          if (werte.kreditorId && (!kreditor || !istKreditorVollstaendig(db, kreditor))) errors.push('Bitte einen gültigen Kartenherausgeber wählen.');
           if (zeilen.length === 0) errors.push('Mindestens eine Position ist nötig.');
 
           // Nachgereichte Dateien müssen sich öffnen lassen, sonst scheitert erst die Dateiarbeit

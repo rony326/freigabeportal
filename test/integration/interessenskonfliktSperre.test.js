@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
@@ -83,7 +84,7 @@ function freigabe(db, jobId, personId, rolle) {
 
 async function kreditor(db) {
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  return createKreditor(db, { name: 'Muster AG', kontoId: null });
+  return kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
 }
 
 function kontierungsForm(kontoId, kreditorId) {

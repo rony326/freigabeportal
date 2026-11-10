@@ -62,6 +62,7 @@
                     <% }) %>
                   </select>
 <% if (ff.kreditorId) { %><div class="invalid-feedback d-block" id="kreditorId-fehler"><%= ff.kreditorId %></div><% } %>
+<% if (!locals.darfLieferantAnlegen) { %><div class="form-text">Neue Lieferanten legt die Administration an.</div><% } %>
                 </div>
               </div>
 
@@ -110,13 +111,6 @@
 <% if (ff.zahlungsziel) { %><div class="invalid-feedback d-block" id="zahlungsziel-fehler"><%= ff.zahlungsziel %></div><% } %>
                 </div>
               </div>
-
-              <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.iban && (!qrInfo.abgleich || qrInfo.abgleich.status !== 'match')) { %>
-                <div class="form-check mb-3">
-                  <input class="form-check-input" type="checkbox" id="ibanMerken" name="ibanMerken" checked>
-                  <label class="form-check-label" for="ibanMerken">IBAN <%= qrInfo.iban %> künftig automatisch <%= qrInfo.kreditorFuerAbgleich ? qrInfo.kreditorFuerAbgleich.name : 'dem ausgewählten Lieferanten' %> zuordnen</label>
-                </div>
-              <% } %>
 
               <div class="mb-3">
                 <div class="form-check">
@@ -253,6 +247,7 @@
       </div>
     </div>
 
+    <% if (locals.darfLieferantAnlegen) { %>
     <div class="modal fade" id="neuer-lieferant-modal" tabindex="-1" aria-labelledby="neuer-lieferant-modal-label" aria-hidden="true">
       <div class="modal-dialog">
         <div class="modal-content">
@@ -265,6 +260,19 @@
             <div class="mb-3">
               <label class="form-label" for="neuer-lieferant-name">Name</label>
               <input type="text" class="form-control" id="neuer-lieferant-name">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="neuer-lieferant-zahlungsart">Zahlungsart</label>
+              <select class="form-select" id="neuer-lieferant-zahlungsart">
+                <% (locals.ZAHLUNGSARTEN || []).forEach((z) => { %>
+                  <option value="<%= z %>"><%= ZAHLUNGSART_LABEL[z] || z %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="mb-3" id="neuer-lieferant-iban-gruppe">
+              <label class="form-label" for="neuer-lieferant-iban">IBAN</label>
+              <input type="text" class="form-control" id="neuer-lieferant-iban" autocomplete="off" placeholder="z.B. CH93 0076 2011 6238 5295 7">
+              <div class="form-text">Pflicht bei Überweisung und Dauerauftrag.</div>
             </div>
             <div class="mb-3">
               <label class="form-label" for="neuer-lieferant-konto">Konto (optional)</label>
@@ -283,6 +291,7 @@
         </div>
       </div>
     </div>
+    <% } %>
   <script nonce="<%= locals.cspNonce %>">
     // Eingebettetes PDF, "Vorschau neu laden" und Beleg/Formular-Umschalter: public/js/belegUmschalter.js.
     // Ablehnen deliberately needs none of these fields filled in (the server-side handler skips
@@ -563,6 +572,14 @@
     // already the supplier's address/name lifted straight off the invoice.
     (function () {
       var modal = document.getElementById('neuer-lieferant-modal');
+      if (!modal) return; // Nur Superadmin / Recht kreditoren_verwalten sehen die Schnellanlage.
+      var zahlungsartSelect = document.getElementById('neuer-lieferant-zahlungsart');
+      var ibanInput = document.getElementById('neuer-lieferant-iban');
+      var ibanGruppe = document.getElementById('neuer-lieferant-iban-gruppe');
+      function ibanSichtbarkeit() {
+        ibanGruppe.classList.toggle('d-none', zahlungsartSelect.value !== 'ueberweisung' && zahlungsartSelect.value !== 'dauerauftrag');
+      }
+      zahlungsartSelect.addEventListener('change', ibanSichtbarkeit);
       var nameInput = document.getElementById('neuer-lieferant-name');
       var kontoSelect = document.getElementById('neuer-lieferant-konto');
       var errorBox = document.getElementById('neuer-lieferant-error');
@@ -572,6 +589,9 @@
         errorBox.classList.add('d-none');
         nameInput.value = document.getElementById('absender').value || '';
         kontoSelect.value = '';
+        zahlungsartSelect.value = 'ueberweisung';
+        ibanInput.value = '';
+        ibanSichtbarkeit();
         if (window.SearchableSelect) window.SearchableSelect.refresh(kontoSelect);
       });
 
@@ -583,7 +603,8 @@
         Portal.beschaeftigt(speichern, fetch('/kontierung/lieferanten', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' },
-          body: 'name=' + encodeURIComponent(name) + '&kontoId=' + encodeURIComponent(kontoSelect.value),
+          body: 'name=' + encodeURIComponent(name) + '&kontoId=' + encodeURIComponent(kontoSelect.value)
+            + '&zahlungsart=' + encodeURIComponent(zahlungsartSelect.value) + '&iban=' + encodeURIComponent(ibanInput.value),
         }))
           .then(function (res) {
             return res.json().then(function (data) { return { ok: res.ok, data: data }; });

@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -82,7 +83,7 @@ test('every Zuweisungs-Mail trigger across the full workflow logs a mail_log att
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
 
   // 1. Job creation with a matching Zuweisungsregel -> auto-assignment mail to freigeber1.

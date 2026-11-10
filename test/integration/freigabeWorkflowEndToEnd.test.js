@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -73,7 +74,7 @@ test('Pool → Beanspruchen → Kontierung → Freigabe 2 completes the job with
   upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
 
   const pdf = await buildPdfFixture(['Rechnung Seite 1', 'Visum / Rechnungsfreigabe']);
   const createRes = await request(app)
@@ -134,7 +135,7 @@ test('a scanned QR invoice runs intake → Kontierung → confirmed payment at F
   upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
 
   const pdf = await buildQrBillPdfFixture({
     amount: 1949.75,

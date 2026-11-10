@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { kreditorOhneIbanPflicht } from '../../helpers/kreditor.js';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
@@ -295,7 +296,7 @@ test('POST /api/n8n/jobs applies Zuweisungsregel matching and reports the result
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
 
   const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
@@ -728,7 +729,7 @@ test('POST /api/n8n/jobs with a matching Zuweisungsregel sends a Zuweisungs-Mail
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
 
   const config = { ...testConfig(jobsDir), publicBaseUrl: 'https://portal.example.org' };
@@ -1207,7 +1208,7 @@ test('the automatic Zuweisungsregel-assignment mail also reaches the Freigeber1\
     upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
   }
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
   setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
 
@@ -1429,4 +1430,42 @@ test('Rapport erscheint nicht in /admin/altfaelle', async (t) => {
   assert.equal(getJobById(s.db, id).status, 'abgeschlossen');
   assert.deepEqual(listAltfaelle(s.db), []);
   assert.equal(getAltfall(s.db, id), null);
+});
+
+test('POST /api/n8n/jobs: Zuweisungsregel auf einen Lieferanten ohne IBAN weist nicht zu, Job landet im Pool', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { upsertPerson } = await import('../../../src/db/personenRepo.js');
+  const { createKonto } = await import('../../../src/db/kontenRepo.js');
+  const { createKreditor } = await import('../../../src/db/kreditorenRepo.js');
+  const { createZuweisungsregel } = await import('../../../src/db/zuweisungsregelnRepo.js');
+  const { getJobById } = await import('../../../src/db/jobsRepo.js');
+
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  for (const id of ['1', '2', '3', '4']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  }
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const kreditorId = createKreditor(db, { name: 'Ohne IBAN AG', kontoId });
+  createZuweisungsregel(db, { absenderMuster: 'lieferant.ch', kreditorId });
+
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'lieferant')
+    .field('absender', 'rechnungen@lieferant.ch')
+    .field('dateiname', 'rechnung.pdf')
+    .attach('pdf', PDF_BYTES, { filename: 'rechnung.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 201);
+  assert.equal(res.body.status, 'unzugewiesen');
+  const job = getJobById(db, res.body.id);
+  assert.equal(job.kreditor_id, null);
+  assert.equal(job.zugewiesen_an, null);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
 });

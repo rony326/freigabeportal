@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { upsertPerson } from '../../db/personenRepo.js';
 import { createKonto } from '../../db/kontenRepo.js';
 import { createKreditor } from '../../db/kreditorenRepo.js';
+import { createKreditorIban } from '../../db/kreditorIbanRepo.js';
 import {
   createJob, claimJob, setKontierung, updateKontierungMetadaten, abschliessenFreigabe1,
   abschliessenFreigabe2, ablehnenJob, setThumbnailPfad, createSpesenPosition,
@@ -89,6 +90,9 @@ export async function spieleBeispieldatenEin(db, testConfig) {
   const konto2 = createKonto(db, { kontonummer: '6000', bezeichnung: 'Verwaltung', freigeber1Id: 'test-1', stellvertreter1Id: 'test-5', freigeber2Id: 'test-4', stellvertreter2Id: 'test-2' });
   const k1 = createKreditor(db, { name: 'Muster Druck AG', kontoId: konto1 });
   const k2 = createKreditor(db, { name: 'Beispiel Büro GmbH', kontoId: konto2 });
+  // Lieferanten sind erst mit hinterlegter IBAN wählbar.
+  createKreditorIban(db, { kreditorId: k1, iban: 'CH3908704016075473007', quelle: 'manuell' });
+  createKreditorIban(db, { kreditorId: k2, iban: 'CH5604835012345678009', quelle: 'manuell' });
 
   // Pool
   await neuerJob(db, testConfig, 'Rechnung im Pool', 'Muster Druck AG', '120.00');

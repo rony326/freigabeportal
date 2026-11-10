@@ -5,6 +5,7 @@ import request from 'supertest';
 import { openDatabase } from '../../../src/db/index.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
 import { createKonto } from '../../../src/db/kontenRepo.js';
+import { kreditorOhneIbanPflicht, kreditorMitIban } from '../../helpers/kreditor.js';
 import { createKreditor, getKreditorById } from '../../../src/db/kreditorenRepo.js';
 import { createZuweisungsregel, getZuweisungsregelById } from '../../../src/db/zuweisungsregelnRepo.js';
 import { loadCurrentPerson } from '../../../src/middleware/roles.js';
@@ -83,7 +84,7 @@ test('POST /admin/kreditoren creates a Kreditor with an optional Standard-Konto'
     .post('/admin/kreditoren')
     .set('x-test-person-id', '99')
     .type('form')
-    .send({ name: 'Muster AG', kontoId: String(kontoId) });
+    .send({ name: 'Muster AG', kontoId: String(kontoId), zahlungsart: 'lastschrift' });
 
   assert.equal(res.status, 302);
   assert.equal(res.headers.location, '/admin/kreditoren?gespeichert=1');
@@ -117,7 +118,7 @@ test('GET /admin/kreditoren lists Kreditoren with their Standard-Konto resolved'
 test('POST /admin/kreditoren/:id updates a Kreditor, POST .../deaktivieren deactivates it', async () => {
   const db = openDatabase(':memory:');
   seedAdmin(db);
-  const kreditorId = createKreditor(db, { name: 'Alt AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Alt AG' });
   const app = buildTestApp(db);
 
   const updateRes = await request(app)
@@ -245,7 +246,7 @@ test('POST /admin/kreditoren/ibans creates a mapping with quelle manuell, listed
   assert.equal(rows[0].quelle, 'manuell');
 
   const listRes = await request(app).get('/admin/kreditoren').set('x-test-person-id', '99');
-  assert.match(listRes.text, /CH4431999123000889012/);
+  assert.match(listRes.text, /CH44 … 9012/);
   db.close();
 });
 
@@ -263,7 +264,7 @@ test('POST /admin/kreditoren/ibans rejects an invalid IBAN', async () => {
     .send({ iban: 'NICHT-EINE-IBAN', kreditorId: String(kreditorId) });
 
   assert.equal(res.status, 400);
-  assert.match(res.text, /gültige Schweizer IBAN/);
+  assert.match(res.text, /IBAN ist ungültig \(Prüfziffer oder Länge stimmt nicht\)\./);
   db.close();
 });
 
@@ -292,7 +293,7 @@ test('POST /admin/kreditoren/ibans/:id/loeschen removes the mapping', async () =
   const db = openDatabase(':memory:');
   seedAdmin(db);
   const kontoId = seedKonto(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   const { createKreditorIban, getKreditorIbanById } = await import('../../../src/db/kreditorIbanRepo.js');
   const ibanId = createKreditorIban(db, { kreditorId, iban: 'CH4431999123000889012' });
   const app = buildTestApp(db);
@@ -323,5 +324,111 @@ test('GET /admin/kreditoren returns 200 for a plain person with exactly this ind
   setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
   const res2 = await request(app).get('/admin/kreditoren').set('x-test-person-id', '1');
   assert.equal(res2.status, 200);
+  db.close();
+});
+
+const post = (app, url, body) => request(app).post(url).set('x-test-person-id', '99').type('form').send(body);
+
+test('POST /admin/kreditoren: Überweisung ohne IBAN wird abgelehnt, nichts angelegt', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await post(app, '/admin/kreditoren', { name: 'Neu AG', zahlungsart: 'ueberweisung' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bei Überweisung und Dauerauftrag ist mindestens eine IBAN Pflicht\./);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kreditoren').get().n, 0);
+  db.close();
+});
+
+test('POST /admin/kreditoren: Überweisung mit ausländischer IBAN legt Kreditor und IBAN an', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await post(app, '/admin/kreditoren', { name: 'Neu AG', zahlungsart: 'ueberweisung', iban: 'DE89 3704 0044 0532 0130 00' });
+  assert.equal(res.status, 302);
+  const k = db.prepare("SELECT * FROM kreditoren WHERE name = 'Neu AG'").get();
+  assert.ok(k);
+  const ibans = db.prepare('SELECT * FROM kreditor_ibans WHERE kreditor_id = ?').all(k.id);
+  assert.equal(ibans.length, 1);
+  assert.equal(ibans[0].iban, 'DE89370400440532013000');
+  assert.equal(ibans[0].quelle, 'manuell');
+  db.close();
+});
+
+test('POST /admin/kreditoren: ungültige oder doppelte IBAN legt keinen Kreditor an', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  kreditorMitIban(db, { name: 'Bestehend AG' });
+  const app = buildTestApp(db);
+  const a = await post(app, '/admin/kreditoren', { name: 'X AG', zahlungsart: 'ueberweisung', iban: 'CH00 0000 0000 0000 0000 0' });
+  assert.equal(a.status, 400);
+  const b = await post(app, '/admin/kreditoren', { name: 'Y AG', zahlungsart: 'ueberweisung', iban: 'CH93 0076 2011 6238 5295 7' });
+  assert.equal(b.status, 400);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kreditoren').get().n, 1);
+  db.close();
+});
+
+test('POST /admin/kreditoren: Lastschrift ohne IBAN ist erlaubt', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const res = await post(app, '/admin/kreditoren', { name: 'Last AG', zahlungsart: 'lastschrift' });
+  assert.equal(res.status, 302);
+  assert.equal(db.prepare("SELECT zahlungsart FROM kreditoren WHERE name = 'Last AG'").get().zahlungsart, 'lastschrift');
+  db.close();
+});
+
+test('POST /admin/kreditoren/ibans: ungültige Prüfziffer wird abgelehnt', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const id = kreditorOhneIbanPflicht(db, { name: 'Last AG' });
+  const app = buildTestApp(db);
+  const res = await post(app, '/admin/kreditoren/ibans', { iban: 'CH00 0000 0000 0000 0000 0', kreditorId: String(id) });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /IBAN ist ungültig \(Prüfziffer oder Länge stimmt nicht\)\./);
+  db.close();
+});
+
+test('IBAN löschen: letzte IBAN eines Überweisungs-Lieferanten bleibt, sonst weg', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const id = kreditorMitIban(db, { name: 'Ueb AG' });
+  const app = buildTestApp(db);
+  const row = db.prepare('SELECT id FROM kreditor_ibans WHERE kreditor_id = ?').get(id);
+  const res = await post(app, `/admin/kreditoren/ibans/${row.id}/loeschen`, {});
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Die letzte IBAN kann nicht gelöscht werden, solange der Lieferant per Überweisung oder Dauerauftrag bezahlt wird\./);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kreditor_ibans WHERE kreditor_id = ?').get(id).n, 1);
+  db.close();
+});
+
+test('POST /admin/kreditoren/:id: Wechsel auf Dauerauftrag ohne IBAN abgelehnt; betragSchwankt gespeichert', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const id = kreditorOhneIbanPflicht(db, { name: 'Last AG' });
+  const app = buildTestApp(db);
+  const bad = await post(app, `/admin/kreditoren/${id}`, { name: 'Last AG', kontoId: '', zahlungsart: 'dauerauftrag' });
+  assert.equal(bad.status, 400);
+  assert.equal(getKreditorById(db, id).zahlungsart, 'lastschrift');
+  const ok = await post(app, `/admin/kreditoren/${id}`, { name: 'Last AG', kontoId: '', zahlungsart: 'lastschrift', betragSchwankt: 'on' });
+  assert.equal(ok.status, 302);
+  assert.equal(getKreditorById(db, id).betrag_schwankt, 1);
+  db.close();
+});
+
+test('GET /admin/kreditoren: Badge IBAN fehlt, Zähler, Zahlungsart-Spalte', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  createKreditor(db, { name: 'Ohne AG', kontoId: null });
+  kreditorMitIban(db, { name: 'Mit AG', zahlungsart: 'dauerauftrag', iban: 'CH4431999123000889012' });
+  const app = buildTestApp(db);
+  let res = await request(app).get('/admin/kreditoren').set('x-test-person-id', '99');
+  assert.match(res.text, /IBAN fehlt/);
+  assert.match(res.text, /1 Lieferant ohne IBAN/);
+  assert.match(res.text, /Dauerauftrag/);
+  assert.match(res.text, /CH44 … 9012/);
+  createKreditor(db, { name: 'Noch eine AG', kontoId: null });
+  res = await request(app).get('/admin/kreditoren').set('x-test-person-id', '99');
+  assert.match(res.text, /2 Lieferanten ohne IBAN/);
   db.close();
 });

@@ -1,5 +1,8 @@
 import { Router } from 'express';
-import { createKreditor, updateKreditor, deactivateKreditor, activateKreditor, getKreditorById, listKreditoren } from '../../db/kreditorenRepo.js';
+import {
+  createKreditor, updateKreditor, deactivateKreditor, activateKreditor, getKreditorById, listKreditoren,
+  ZAHLUNGSARTEN, ZAHLUNGSART_LABEL, brauchtIban, istKreditorVollstaendig,
+} from '../../db/kreditorenRepo.js';
 import {
   createZuweisungsregel,
   updateZuweisungsregel,
@@ -9,20 +12,31 @@ import {
   findZuweisungsregelByMuster,
 } from '../../db/zuweisungsregelnRepo.js';
 import { listKonten } from '../../db/kontenRepo.js';
-import { createKreditorIban, deleteKreditorIban, listKreditorIbansAll, findKreditorIbanByIban } from '../../db/kreditorIbanRepo.js';
-import { normalizeIban, isValidIban } from '../../services/ibanUtils.js';
+import { createKreditorIban, deleteKreditorIban, getKreditorIbanById, listKreditorIbansAll, listKreditorIbansByKreditor, findKreditorIbanByIban } from '../../db/kreditorIbanRepo.js';
+import { normalizeIban, isValidIbanInternational, ibanKurz } from '../../services/ibanUtils.js';
 import { isValidAbsenderMuster, ABSENDER_MUSTER_FEHLER } from '../../utils/absenderMuster.js';
 import { kreditorIdAusEingabe, KreditorFeldKonflikt } from '../../services/kreditorFelder.js';
 
+const IBAN_PFLICHT_FEHLER = 'Bei Überweisung und Dauerauftrag ist mindestens eine IBAN Pflicht.';
+const IBAN_UNGUELTIG_FEHLER = 'IBAN ist ungültig (Prüfziffer oder Länge stimmt nicht).';
+const LETZTE_IBAN_FEHLER = 'Die letzte IBAN kann nicht gelöscht werden, solange der Lieferant per Überweisung oder Dauerauftrag bezahlt wird.';
+
 export function createKreditorenRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
+
+  function zahlungsartAusEingabe(body) {
+    return body.zahlungsart || 'ueberweisung';
+  }
 
   function renderListe(req, res, status, overrides = {}) {
     const konten = listKonten(db, { includeInactive: true });
     const kreditoren = listKreditoren(db, { includeInactive: true }).map((kreditor) => ({
       ...kreditor,
       konto: kreditor.konto_id ? konten.find((k) => k.id === kreditor.konto_id) : null,
+      zahlungsartLabel: ZAHLUNGSART_LABEL[kreditor.zahlungsart] || kreditor.zahlungsart,
+      unvollstaendig: kreditor.aktiv && !istKreditorVollstaendig(db, kreditor),
     }));
+    const ohneIbanAnzahl = kreditoren.filter((k) => k.unvollstaendig).length;
     const regeln = listZuweisungsregeln(db).map((regel) => ({
       ...regel,
       kreditor: getKreditorById(db, regel.kreditor_id),
@@ -33,12 +47,16 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     }));
     res.status(status).render('admin/kreditoren-liste', {
       kreditoren,
+      ohneIbanAnzahl,
+      ZAHLUNGSARTEN,
+      ZAHLUNGSART_LABEL,
+      ibanKurz,
       regeln,
       ibans,
       konten: listKonten(db),
       aktiveKreditoren: listKreditoren(db),
       kreditorErrors: [],
-      kreditorValues: {},
+      kreditorValues: { zahlungsart: 'ueberweisung' },
       regelErrors: [],
       regelValues: {},
       ibanErrors: [],
@@ -53,15 +71,39 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
   });
 
   router.post('/', csrfProtection, (req, res) => {
-    const { name, kontoId } = req.body;
+    const { name, kontoId, iban } = req.body;
+    const zahlungsart = zahlungsartAusEingabe(req.body);
+    const betragSchwankt = req.body.betragSchwankt === 'on';
+    const normalizedIban = normalizeIban(iban);
     const errors = [];
     if (!name || !name.trim()) errors.push('Name ist ein Pflichtfeld.');
-
-    if (errors.length > 0) {
-      return renderListe(req, res, 400, { kreditorErrors: errors, kreditorValues: { name, kontoId } });
+    if (!ZAHLUNGSARTEN.includes(zahlungsart)) {
+      errors.push('Zahlungsart ist ungültig.');
+    } else if (brauchtIban(zahlungsart) && !normalizedIban) {
+      errors.push(IBAN_PFLICHT_FEHLER);
+    }
+    if (normalizedIban) {
+      if (!isValidIbanInternational(normalizedIban)) errors.push(IBAN_UNGUELTIG_FEHLER);
+      else if (findKreditorIbanByIban(db, normalizedIban)) errors.push('Diese IBAN ist bereits einem Lieferanten zugeordnet.');
     }
 
-    createKreditor(db, { name: name.trim(), kontoId: kontoId ? Number(kontoId) : null });
+    if (errors.length > 0) {
+      return renderListe(req, res, 400, {
+        kreditorErrors: errors,
+        kreditorValues: { name, kontoId, iban, zahlungsart, betragSchwankt },
+      });
+    }
+
+    // Kreditor und erste IBAN atomar: scheitert die IBAN, bleibt kein IBAN-loser Lieferant zurück.
+    db.exec('BEGIN');
+    try {
+      const id = createKreditor(db, { name: name.trim(), kontoId: kontoId ? Number(kontoId) : null, zahlungsart, betragSchwankt });
+      if (normalizedIban) createKreditorIban(db, { kreditorId: id, iban: normalizedIban, quelle: 'manuell' });
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
     res.redirect('/admin/kreditoren?gespeichert=1');
   });
 
@@ -145,8 +187,8 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     const errors = [];
     if (!normalizedIban) {
       errors.push('IBAN ist ein Pflichtfeld.');
-    } else if (!isValidIban(normalizedIban)) {
-      errors.push('IBAN muss eine gültige Schweizer IBAN sein (z. B. "CH93 0076 2011 6238 5295 7").');
+    } else if (!isValidIbanInternational(normalizedIban)) {
+      errors.push(IBAN_UNGUELTIG_FEHLER);
     } else if (findKreditorIbanByIban(db, normalizedIban)) {
       errors.push('Diese IBAN ist bereits einem Lieferanten zugeordnet.');
     }
@@ -161,7 +203,14 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
   });
 
   router.post('/ibans/:id/loeschen', csrfProtection, (req, res) => {
-    deleteKreditorIban(db, Number(req.params.id));
+    const row = getKreditorIbanById(db, Number(req.params.id));
+    if (row) {
+      const kreditor = getKreditorById(db, row.kreditor_id);
+      if (kreditor && brauchtIban(kreditor.zahlungsart) && listKreditorIbansByKreditor(db, kreditor.id).length <= 1) {
+        return renderListe(req, res, 400, { ibanErrors: [LETZTE_IBAN_FEHLER] });
+      }
+      deleteKreditorIban(db, row.id);
+    }
     res.redirect('/admin/kreditoren');
   });
 
@@ -172,9 +221,16 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     }
     res.render('admin/kreditoren-form', {
       kreditor,
-      values: { name: kreditor.name, kontoId: kreditor.konto_id ? String(kreditor.konto_id) : '' },
+      values: {
+        name: kreditor.name,
+        kontoId: kreditor.konto_id ? String(kreditor.konto_id) : '',
+        zahlungsart: kreditor.zahlungsart,
+        betragSchwankt: !!kreditor.betrag_schwankt,
+      },
       errors: [],
       konten: listKonten(db),
+      ZAHLUNGSARTEN,
+      ZAHLUNGSART_LABEL,
     });
   });
 
@@ -185,14 +241,23 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
       return res.status(404).render('error', { message: 'Kreditor nicht gefunden.' });
     }
     const { name, kontoId } = req.body;
+    const zahlungsart = req.body.zahlungsart || kreditor.zahlungsart;
+    const betragSchwankt = req.body.betragSchwankt === 'on';
     const errors = [];
     if (!name || !name.trim()) errors.push('Name ist ein Pflichtfeld.');
-
-    if (errors.length > 0) {
-      return res.status(400).render('admin/kreditoren-form', { kreditor, values: { name, kontoId }, errors, konten: listKonten(db) });
+    if (!ZAHLUNGSARTEN.includes(zahlungsart)) {
+      errors.push('Zahlungsart ist ungültig.');
+    } else if (brauchtIban(zahlungsart) && listKreditorIbansByKreditor(db, id).length === 0) {
+      errors.push(IBAN_PFLICHT_FEHLER);
     }
 
-    updateKreditor(db, id, { name: name.trim(), kontoId: kontoId ? Number(kontoId) : null });
+    if (errors.length > 0) {
+      return res.status(400).render('admin/kreditoren-form', {
+        kreditor, values: { name, kontoId, zahlungsart, betragSchwankt }, errors, konten: listKonten(db), ZAHLUNGSARTEN, ZAHLUNGSART_LABEL,
+      });
+    }
+
+    updateKreditor(db, id, { name: name.trim(), kontoId: kontoId ? Number(kontoId) : null, zahlungsart, betragSchwankt });
     res.redirect('/admin/kreditoren?gespeichert=1');
   });
 

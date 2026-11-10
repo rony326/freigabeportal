@@ -9,7 +9,7 @@
 // (.alert .btn-close) liegt in seiner Meldung, bei kompakten Meldungen mittig (schliessen). Text in
 // farbig hinterlegten Tabellenzeilen (überfällig/hängt) hat ≥ 4.5:1 Kontrast (kontrast). Ab 1200 px
 // passt die Dateiauswahl ("Datei auswählen | Keine ausgewählt") ungekürzt in ihr Feld (text).
-// Das Logo (links, breit) liegt im Testserver bereit; es steht links und bleibt in seiner Spalte (logo).
+// Das Logo (links, im Seitenverhältnis des echten Logos) liegt im Testserver bereit; es steht links und bleibt in seiner Spalte (logo).
 // Farbschema: alle Breiten hell, zusätzlich 360 und 1280 px dunkel (DUNKEL_BREITEN).
 // Aufruf: npm run test:responsive [-- --seite=<Teil des Namens> --breite=360 --farbschema=dunkel]
 // Ausgabe: eine Zeile je Verstoss "Breite Seite Art Selektor Masse", danach Zusammenfassung.
@@ -268,16 +268,19 @@ function pruefeImBrowser({ minTouch, touch, bandMaxAnteil, minKontrast, dateiaus
       verstoesse.push({ art: 'band', selektor: 'main', masse: `Inhalt beginnt bei ${Math.round(main.getBoundingClientRect().top)} ≥ ${vh}` });
     }
   }
-  // 9. Logo "links" (Standard; der Testserver legt ein breites Logo an): es steht in der linken Hälfte und
-  // ragt samt Aussenabstand nicht über seine Spalte hinaus, sonst klebt es am Farbmodus-Knopf rechts daneben.
+  // 9. Logo "links" (Standard; der Testserver legt ein Logo im Seitenverhältnis 2850:762 an wie das echte): es steht in der
+  // linken Hälfte, ragt samt Aussenabstand nicht über seine Spalte hinaus und hält mindestens 12 px Abstand zum
+  // ersten Knopf rechts (Farbmodus), sonst klebt es daran. `!wurzel`: nur die Seite als Ganzes prüfen, nicht das geöffnete Menü.
   const logo = !wurzel && document.querySelector('.portal-kopf-marke img');
   if (logo && logo.offsetParent !== null) {
     const l = logo.getBoundingClientRect();
     const k = logo.closest('.portal-kopf-marke').getBoundingClientRect();
     const rand = parseFloat(getComputedStyle(logo).marginRight) || 0;
-    if (l.left >= vw / 2 || l.right + rand > k.right + 0.5) {
+    const knopf = [...document.querySelectorAll('.portal-kopf-rechts button, .portal-kopf-rechts a')].find((e) => e.offsetParent !== null);
+    const luecke = knopf ? knopf.getBoundingClientRect().left - l.right : Infinity;
+    if (l.left >= vw / 2 || l.right + rand > k.right + 0.5 || luecke < 12) {
       markiere(logo);
-      verstoesse.push({ art: 'logo', selektor: selektor(logo), masse: `Logo ${Math.round(l.left)}–${Math.round(l.right)} (+${Math.round(rand)} Rand) in Spalte ${Math.round(k.left)}–${Math.round(k.right)}` });
+      verstoesse.push({ art: 'logo', selektor: selektor(logo), masse: `Logo ${Math.round(l.left)}–${Math.round(l.right)} (+${Math.round(rand)} Rand) in Spalte ${Math.round(k.left)}–${Math.round(k.right)}, Abstand zum Knopf rechts ${Math.round(luecke)} < 12` });
     }
   }
   return verstoesse;

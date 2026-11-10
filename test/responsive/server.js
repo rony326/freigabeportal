@@ -130,9 +130,9 @@ export async function starteResponsiveServer({ port = 0 } = {}) {
   seedDefaults(echteDb);
   const sp = await erstelleSpielwiese(echteDb, config, { neu: true });
   const ids = await ergaenzeDaten(sp.db, sp.config);
-  // Breites Logo "links" (Standard-Ausrichtung): Kopfzeilen-Layout muss auch damit halten (Prüfung "logo").
+  // Logo im Seitenverhältnis des echten (2850×762) "links" (Standard-Ausrichtung): Kopfzeilen-Layout muss auch damit halten (Prüfung "logo").
   const logoPfad = join(dir, 'branding', 'logo-breit.svg');
-  writeFileSync(logoPfad, '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="48"><rect width="160" height="48" fill="#c33"/></svg>');
+  writeFileSync(logoPfad, '<svg xmlns="http://www.w3.org/2000/svg" width="374" height="100"><rect width="374" height="100" fill="#c33"/></svg>');
   setConfigValue(sp.db, 'branding_logo_pfad', logoPfad);
   setConfigValue(sp.db, 'branding_logo_mimetype', 'image/svg+xml');
   const mailer = createTestMailer();

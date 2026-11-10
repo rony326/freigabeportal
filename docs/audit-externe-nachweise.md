@@ -74,6 +74,8 @@ oder Serverzugriff das Audit-Log im Nachhinein veraendert?* Spec:
    (aelteste zuerst, keine verzweigte Kette). Ist das aelteste Paket ohne Zeitstempel laenger als
    `audit_zeitstempel_alarm_tage` (Default 3) offen, geht hoechstens alle 24 h eine Mail
    (`mail_log.typ = 'sicherheitsalarm'`) an `sicherheitsalarm_empfaenger`. Ohne konfigurierte TSA-URL wird kein Alarm gesendet; Pakete ohne Zeitstempel bleiben dann auf der Admin-Seite sichtbar.
+   Auf Knopfdruck sofort: Superadmin, `POST /admin/zeitstempel/audit-export-jetzt` (zeigt den
+   Fehlergrund direkt an).
 4. Job `audit-pruefnummer` (taeglich, Default 07:00) verschickt nur am konfigurierten Versandtag
    (Rhythmus monatlich/quartalsweise/jaehrlich, Tag 1-28) die Mail `audit-pruefnummer` an
    `audit_revision_empfaenger`: Paketnummer, Pruefnummer, Zeitraum, Anzahl Ereignisse, Zeitstempel,

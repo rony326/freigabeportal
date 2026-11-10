@@ -147,3 +147,71 @@ test('GET /admin/audit-log renders the disabled "Zurück" pagination control as 
   assert.doesNotMatch(res.text, /<a[^>]*>Zurück<\/a>/, 'a disabled "Zurück" link must not remain a focusable/operable <a>');
   db.close();
 });
+
+// --- Filter der Änderungshistorie (Parameter h_*) ---
+import { auditedJob } from '../../../src/services/auditOperation.js';
+
+async function seedLaeufe(db) {
+  await auditedJob('audit-export', () => ({ status: 'fehler' }))(db);
+  await auditedJob('zeitstempel-nachholen', () => ({ status: 'erfolg' }))(db);
+  db.prepare(`INSERT INTO audit_ereignisse (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher)
+    VALUES ('2026-01-05T10:00:00.000Z', '528', 'Rony Spitzer', 'admin_config', 'audit_zeitstempel_alarm_tage', 'UPDATE', '{"value":"3"}')`).run();
+}
+
+test('Änderungshistorie: h_lauf zeigt nur Einträge dieses Laufs', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  await seedLaeufe(db);
+  const res = await request(buildTestApp(db)).get('/admin/audit-log?h_lauf=audit-export').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Lauf: audit-export/);
+  assert.doesNotMatch(res.text, /Lauf: zeitstempel-nachholen/);
+  assert.doesNotMatch(res.text, /audit_zeitstempel_alarm_tage #|admin_config #audit_zeitstempel_alarm_tage/);
+  // Auswahl bietet die vorhandenen Lauf-Typen an
+  assert.match(res.text, /<option value="zeitstempel-nachholen"/);
+  db.close();
+});
+
+test('Änderungshistorie: h_objekt, h_aktion, h_person und h_q filtern', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  await seedLaeufe(db);
+  const app = buildTestApp(db);
+  let res = await request(app).get('/admin/audit-log?h_objekt=admin_config').set('x-test-person-id', '99');
+  assert.match(res.text, /admin_config #audit_zeitstempel_alarm_tage/);
+  assert.doesNotMatch(res.text, /Lauf: audit-export/);
+
+  res = await request(app).get('/admin/audit-log?h_aktion=lauf_beendet&h_q=fehler').set('x-test-person-id', '99');
+  assert.match(res.text, /Lauf: audit-export/);
+  assert.doesNotMatch(res.text, /Lauf: zeitstempel-nachholen/);
+
+  res = await request(app).get('/admin/audit-log?h_person=spitzer').set('x-test-person-id', '99');
+  assert.match(res.text, /admin_config #audit_zeitstempel_alarm_tage/);
+  assert.doesNotMatch(res.text, /Lauf: audit-export/);
+  db.close();
+});
+
+test('Änderungshistorie: Zeitraum filtert inklusive Bis-Tag; leeres Ergebnis zeigt Hinweis', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  await seedLaeufe(db);
+  const app = buildTestApp(db);
+  let res = await request(app).get('/admin/audit-log?h_von=2026-01-05&h_bis=2026-01-05').set('x-test-person-id', '99');
+  assert.match(res.text, /admin_config #audit_zeitstempel_alarm_tage/);
+  assert.doesNotMatch(res.text, /Lauf: audit-export/);
+  res = await request(app).get('/admin/audit-log?h_q=gibtesnicht%25').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Keine Änderungen gefunden/);
+  db.close();
+});
+
+test('Änderungshistorie: "Ältere Änderungen" behält die Filter', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  for (let i = 0; i < 55; i += 1) await auditedJob('audit-export', () => ({ status: 'erfolg' }))(db);
+  const res = await request(buildTestApp(db)).get('/admin/audit-log?h_lauf=audit-export').set('x-test-person-id', '99');
+  const link = res.text.match(/href="\?([^"]*vor=\d+[^"]*)">Ältere Änderungen/);
+  assert.ok(link, 'Link auf ältere Änderungen fehlt');
+  assert.match(link[1].replace(/&amp;/g, '&'), /h_lauf=audit-export/);
+  db.close();
+});

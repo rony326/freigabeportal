@@ -3,7 +3,7 @@ import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listActivePersonsInGroup } from '../../db/personenRepo.js';
 import {
   parseEmpfaengerListe, sendeAuditPruefnummer, meldeAuditEmpfaengerWechsel,
-  meldeAuditNachweisAenderung, listPaketeOhneZeitstempel,
+  meldeAuditNachweisAenderung, listPaketeOhneZeitstempel, runAuditExportJob,
 } from '../../services/auditNachweisJobs.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 
@@ -26,7 +26,27 @@ const VERSAND_HINWEISE = {
   kein_paket: { art: 'warning', text: 'Nichts versendet: es existiert noch kein Audit-Paket.' },
 };
 
-export function createZeitstempelAdminRouter({ db, config = null, mailer = null, csrfProtection = (req, res, next) => next() }) {
+const plural = (n, einzahl, mehrzahl) => `${n} ${n === 1 ? einzahl : mehrzahl}`;
+
+// Ergebnis von runAuditExportJob als Hinweis für die Seite.
+export function exportHinweis(ergebnis, tsaKonfiguriert) {
+  if (ergebnis.status === 'uebersprungen') {
+    return { art: 'warning', text: 'Nichts exportiert: der Audit-Nachweis ist ausgeschaltet. Bitte oben einschalten und speichern.' };
+  }
+  const zusammenfassung = `${plural(ergebnis.neuePakete ?? 0, 'neues Paket', 'neue Pakete')} erstellt, ${ergebnis.gestempelt ?? 0} gestempelt, `
+    + `${plural(ergebnis.ohneZeitstempel ?? 0, 'Paket', 'Pakete')} noch ohne Zeitstempel.`;
+  if (ergebnis.status === 'fehler') {
+    return { art: 'danger', text: `Zeitstempel fehlgeschlagen: ${ergebnis.error}. ${zusammenfassung}` };
+  }
+  if (!tsaKonfiguriert && (ergebnis.ohneZeitstempel ?? 0) > 0) {
+    return { art: 'warning', text: `Keine TSA-URL eingetragen, deshalb wurde nicht gestempelt. ${zusammenfassung}` };
+  }
+  return { art: 'success', text: zusammenfassung };
+}
+
+export function createZeitstempelAdminRouter({
+  db, config = null, mailer = null, csrfProtection = (req, res, next) => next(), runAuditExport = runAuditExportJob,
+}) {
   const router = Router();
 
   function auditState() {
@@ -56,7 +76,7 @@ export function createZeitstempelAdminRouter({ db, config = null, mailer = null,
     };
   }
 
-  function renderSeite(res, status, state, { errors = [], gespeichert = false, versand = null } = {}) {
+  function renderSeite(res, status, state, { errors = [], gespeichert = false, versand = null, exportErgebnis = null } = {}) {
     const { adressen } = parseEmpfaengerListe(state.auditRevisionEmpfaenger);
     res.status(status).render('admin/zeitstempel-form', {
       ...state,
@@ -64,6 +84,7 @@ export function createZeitstempelAdminRouter({ db, config = null, mailer = null,
       gespeichert,
       rhythmen: RHYTHMEN,
       versandHinweis: VERSAND_HINWEISE[versand] ?? null,
+      exportHinweis: exportErgebnis,
       adminAdressen: adminAdressen(adressen),
       empfaengerFehlt: adressen.length === 0,
       letztesPaket: db.prepare('SELECT * FROM audit_export_pakete ORDER BY id DESC LIMIT 1').get() ?? null,
@@ -169,6 +190,21 @@ export function createZeitstempelAdminRouter({ db, config = null, mailer = null,
       return res.status(500).render('error', { message: 'Der Versand der Prüfnummer ist fehlgeschlagen.' });
     }
     res.redirect(`/admin/zeitstempel?versand=${status}`);
+  }));
+
+  // Gleicher Lauf wie nachts um 03:15: Pakete erstellen und alle offenen stempeln. Das Ergebnis
+  // (inkl. Fehlergrund) wird direkt angezeigt, weil das Audit-Log nur den Status festhält.
+  router.post('/audit-export-jetzt', csrfProtection, asyncHandler(async (req, res) => {
+    let ergebnis;
+    try {
+      ergebnis = await runAuditExport(db, config, mailer);
+    } catch (err) {
+      console.error('Audit-Export: manueller Lauf fehlgeschlagen', err);
+      return res.status(500).render('error', { message: `Der Audit-Export ist fehlgeschlagen: ${err.message}` });
+    }
+    if (ergebnis.status === 'fehler') console.error('Audit-Export: manueller Lauf mit Fehler', ergebnis.error);
+    const tsaKonfiguriert = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
+    renderSeite(res, 200, currentState(), { exportErgebnis: exportHinweis(ergebnis, tsaKonfiguriert) });
   }));
 
   return router;

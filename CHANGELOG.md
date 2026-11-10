@@ -3,6 +3,13 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unveröffentlicht]
+
+- Audit-Log: Filter für die Änderungshistorie (Objekt, Hintergrundlauf,
+  Aktion, Person, Zeitraum, Freitext).
+- Admin → Zeitstempel: Knopf „Jetzt exportieren und stempeln“ zeigt das
+  Ergebnis des Audit-Exports samt Fehlergrund sofort an.
+
 ## [1.0.0] – 2026-11-09
 
 Erste produktive Version. Ausführliche Release Notes:

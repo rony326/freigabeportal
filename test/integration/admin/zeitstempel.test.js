@@ -9,7 +9,7 @@ import { loadCurrentPerson, requireRole } from '../../../src/middleware/roles.js
 import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { createZeitstempelAdminRouter } from '../../../src/routes/admin/zeitstempel.js';
 
-function buildTestApp(db, mails = []) {
+function buildTestApp(db, mails = [], optionen = {}) {
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../../views', import.meta.url).pathname);
@@ -26,7 +26,7 @@ function buildTestApp(db, mails = []) {
   const mailer = { async sendMail(mail) { mails.push(mail); } };
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, config));
-  app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db, config, mailer }));
+  app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db, config, mailer, ...optionen }));
   return app;
 }
 
@@ -38,6 +38,7 @@ const ZEITSTEMPEL_ROUTES = [
   { method: 'get', path: '/admin/zeitstempel' },
   { method: 'post', path: '/admin/zeitstempel' },
   { method: 'post', path: '/admin/zeitstempel/audit-pruefnummer-senden' },
+  { method: 'post', path: '/admin/zeitstempel/audit-export-jetzt' },
 ];
 
 test('every Zeitstempel route returns 401 without any session, and config is untouched', async () => {
@@ -412,4 +413,70 @@ test('http:// TSA-URL wird mit Zugangsdaten abgelehnt, ohne Zugangsdaten erlaubt
   res = await post({ tsaUrl: 'http://tsa.example.org/tsr', tsaPasswortEntfernen: '1' });
   assert.equal(res.status, 302);
   db.close();
+});
+
+// --- „Jetzt exportieren und stempeln“ ---
+async function exportSetup(t, runAuditExport) {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  seedDefaults(db);
+  seedAdmin(db);
+  const aufrufe = [];
+  const app = buildTestApp(db, [], {
+    runAuditExport: async (...args) => { aufrufe.push(args); return runAuditExport(...args); },
+  });
+  return { db, app, aufrufe };
+}
+
+const exportJetzt = (app) => request(app).post('/admin/zeitstempel/audit-export-jetzt').set('x-test-person-id', '99');
+
+test('Jetzt exportieren: Erfolg zeigt neue und gestempelte Pakete', async (t) => {
+  const { app, aufrufe } = await exportSetup(t, async () => ({ status: 'erfolg', neuePakete: 2, gestempelt: 2, ohneZeitstempel: 0 }));
+  const res = await exportJetzt(app);
+  assert.equal(res.status, 200);
+  assert.equal(aufrufe.length, 1);
+  assert.match(res.text, /alert-success[^>]*>[^<]*2 neue Pakete erstellt, 2 gestempelt/);
+});
+
+test('Jetzt exportieren: Fehler des Laufs wird mit Grund angezeigt', async (t) => {
+  const { app } = await exportSetup(t, async () => ({ status: 'fehler', neuePakete: 1, gestempelt: 0, ohneZeitstempel: 1, error: 'Paket 1: TSA nicht erreichbar' }));
+  const res = await exportJetzt(app);
+  assert.equal(res.status, 200);
+  assert.match(res.text, /alert-danger[^>]*>[^<]*Paket 1: TSA nicht erreichbar/);
+});
+
+test('Jetzt exportieren: ausgeschalteter Audit-Nachweis wird erklärt', async (t) => {
+  const { app } = await exportSetup(t, async () => ({ status: 'uebersprungen' }));
+  const res = await exportJetzt(app);
+  assert.match(res.text, /Audit-Nachweis ist ausgeschaltet/);
+});
+
+test('Jetzt exportieren: ohne TSA-URL Hinweis, dass nicht gestempelt wurde', async (t) => {
+  const { app } = await exportSetup(t, async () => ({ status: 'erfolg', neuePakete: 1, gestempelt: 0, ohneZeitstempel: 1 }));
+  const res = await exportJetzt(app);
+  assert.match(res.text, /alert-warning[^>]*>[^<]*Keine TSA-URL eingetragen/);
+});
+
+test('Jetzt exportieren: Ausnahme im Lauf führt zu Fehlermeldung statt Absturz', async (t) => {
+  const { app } = await exportSetup(t, async () => { throw new Error('kaputt'); });
+  const res = await exportJetzt(app);
+  assert.equal(res.status, 500);
+  assert.match(res.text, /kaputt/);
+});
+
+test('Jetzt exportieren: echter Lauf erstellt Paket, Seite zeigt den Button', async (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  seedDefaults(db);
+  seedAdmin(db);
+  setConfigValue(db, 'modul_audit_nachweis_aktiv', '1');
+  const app = buildTestApp(db);
+  const seite = await request(app).get('/admin/zeitstempel').set('x-test-person-id', '99');
+  assert.match(seite.text, /action="\/admin\/zeitstempel\/audit-export-jetzt"/);
+  const res = await exportJetzt(app);
+  assert.equal(res.status, 200);
+  assert.ok(db.prepare('SELECT COUNT(*) AS n FROM audit_export_pakete').get().n >= 1);
+  assert.match(res.text, /Keine TSA-URL eingetragen/);
+  const lauf = db.prepare("SELECT 1 FROM audit_lauf_zuordnung WHERE lauf_typ = 'audit-export'").get();
+  assert.ok(lauf, 'Lauf soll im Audit-Log stehen');
 });

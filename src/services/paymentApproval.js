@@ -1,15 +1,8 @@
 import { createHash } from 'node:crypto';
-import { normalizeIban, isValidIban } from './ibanUtils.js';
+import { normalizeIban, isValidIban, ibanChecksumValid } from './ibanUtils.js';
 import { listKreditorIbansByKreditor } from '../db/kreditorIbanRepo.js';
 
 const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
-
-function ibanChecksumValid(iban) {
-  const digits = (iban.slice(4) + iban.slice(0, 4)).replace(/[A-Z]/g, (letter) => String(letter.charCodeAt(0) - 55));
-  let remainder = 0;
-  for (const digit of digits) remainder = (remainder * 10 + Number(digit)) % 97;
-  return remainder === 1;
-}
 
 function cleanName(value) {
   const name = typeof value === 'string' ? value.trim() : '';

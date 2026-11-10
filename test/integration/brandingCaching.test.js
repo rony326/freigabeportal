@@ -66,7 +66,7 @@ test('Seiten verlinken das Logo mit Versionsparameter; versionierte Abrufe sind 
   const { app, pfad, aufraeumen } = mitLogo();
   try {
     const seite = await request(app).get('/nonexistent-route-xyz');
-    const m = /<img src="\/branding\/logo\?v=([a-z0-9]+)" alt="Logo"/.exec(seite.text);
+    const m = /<img src="\/branding\/logo\?v=([a-z0-9]+)" alt=""/.exec(seite.text);
     assert.ok(m, 'Logo-URL ohne ?v=');
     const res = await request(app).get(`/branding/logo?v=${m[1]}`);
     assert.equal(res.status, 200);

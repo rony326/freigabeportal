@@ -68,14 +68,29 @@ test('obere Leiste: mit dunklem Logo zwei Bilder (hell/dunkel), ohne nur das hel
   setConfigValue(db, 'branding_logo_mimetype', 'image/png');
   const app = createApp({ db, config: testConfig() });
   let res = await request(app).get('/nonexistent-route-xyz');
-  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo"[^>]*class="[^"]*logo-hell/);
+  assert.match(res.text, /<img src="\/branding\/logo" alt=""[^>]*class="[^"]*logo-hell/);
   assert.doesNotMatch(res.text, /\/branding\/logo-dunkel/);
 
   setConfigValue(db, 'branding_logo_dunkel_pfad', '/tmp/logo-dunkel.png');
   setConfigValue(db, 'branding_logo_dunkel_mimetype', 'image/png');
   res = await request(app).get('/nonexistent-route-xyz');
-  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo"[^>]*class="[^"]*logo-hell/);
-  assert.match(res.text, /<img src="\/branding\/logo-dunkel" alt="Logo"[^>]*class="[^"]*logo-dunkel/);
+  assert.match(res.text, /<img src="\/branding\/logo" alt=""[^>]*class="[^"]*logo-hell/);
+  assert.match(res.text, /<img src="\/branding\/logo-dunkel" alt=""[^>]*class="[^"]*logo-dunkel/);
+  db.close();
+});
+
+test('Logo ist ein Link auf die Startseite', async () => {
+  const db = openDatabase(':memory:');
+  setConfigValue(db, 'branding_logo_pfad', '/tmp/logo.png');
+  setConfigValue(db, 'branding_logo_mimetype', 'image/png');
+  const app = createApp({ db, config: testConfig() });
+  let res = await request(app).get('/nonexistent-route-xyz');
+  assert.match(res.text, /<a href="\/" [^>]*aria-label="Zur Startseite"[^>]*>\s*<img[^>]+alt=""/);
+
+  setConfigValue(db, 'branding_logo_dunkel_pfad', '/tmp/logo-dunkel.png');
+  setConfigValue(db, 'branding_logo_dunkel_mimetype', 'image/png');
+  res = await request(app).get('/nonexistent-route-xyz');
+  assert.match(res.text, /<a href="\/" [^>]*aria-label="Zur Startseite"[^>]*>\s*<img[^>]+logo-hell[^>]*>\s*<img[^>]+logo-dunkel[^>]*>\s*<\/a>/);
   db.close();
 });
 

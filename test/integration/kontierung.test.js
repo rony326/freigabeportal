@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
-import { kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
+import { kreditorOhneIbanPflicht, kreditorMitIban } from '../helpers/kreditor.js';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
@@ -2739,7 +2739,7 @@ test('GET /kontierung/:id pre-selects a Lieferant found via QR-IBAN when no Abse
 
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, new RegExp(`<option value="${kreditorId}" selected>Erkannte AG</option>`));
+  assert.match(res.text, new RegExp(`<option value="${kreditorId}" data-iban-pflicht="[01]" selected>Erkannte AG</option>`));
   db.close();
 });
 
@@ -3418,4 +3418,91 @@ test('POST /kontierung/:id/aufsplitten mit einem Lieferanten ohne IBAN am Beleg 
   assert.match(res.text, /Dieser Lieferant hat noch keine IBAN\. Bitte melde dich bei der Administration\./);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 1);
   db.close();
+});
+
+
+// --- Manuelle IBAN-Kontrolle ohne QR-Code ---------------------------------------------------
+
+function ibanTestAufbau({ zahlungsart = 'ueberweisung', qr = false } = {}) {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  const kreditorId = kreditorMitIban(db, { name: 'Muster AG', zahlungsart });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  if (qr) db.prepare("UPDATE jobs SET qr_iban = 'CH9300762011623852957', qr_erkannt_am = '2026-08-15T08:00:00.000Z' WHERE id = ?").run(id);
+  const form = { kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' };
+  return { db, id, kreditorId, form, app: buildTestApp(db, createStubMailer()) };
+}
+
+test('GET /kontierung/:id ohne QR-Code zeigt den IBAN-Kasten, aber nie die hinterlegte IBAN-Endung', async () => {
+  const { db, id, kreditorId, app } = ibanTestAufbau();
+  db.prepare('UPDATE jobs SET kreditor_id = ? WHERE id = ?').run(kreditorId, id);
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Kein QR-Code: IBAN bitte von Hand prüfen/);
+  assert.match(res.text, /name="ibanEndung"/);
+  assert.match(res.text, /Letzte 4 Zeichen der IBAN/);
+  assert.doesNotMatch(res.text, /id="iban-manuell-kasten"[^>]*d-none/);
+  assert.match(res.text, /data-iban-pflicht="1"/);
+  assert.ok(!res.text.includes('2957'), 'die hinterlegte IBAN-Endung darf nicht in der Antwort stehen');
+  db.close();
+});
+
+test('GET /kontierung/:id mit QR-Code rendert keinen IBAN-Kasten', async () => {
+  const { db, id, app } = ibanTestAufbau({ qr: true });
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /name="ibanEndung"/);
+  db.close();
+});
+
+test('POST /kontierung/:id ohne ibanEndung wird mit Feldfehler abgewiesen und speichert nichts', async () => {
+  const { db, id, form, app } = ibanTestAufbau();
+  const res = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send(form);
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bitte gib die letzten 4 Zeichen der IBAN auf der Rechnung ein\./);
+  assert.match(res.text, /id="ibanEndung-fehler"/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id mit ungültiger ibanEndung (falsche Länge) wird ebenfalls abgewiesen', async () => {
+  const { db, id, form, app } = ibanTestAufbau();
+  const res = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send({ ...form, ibanEndung: '295' });
+  assert.equal(res.status, 400);
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id mit passender ibanEndung protokolliert iban_manuell_geprueft', async () => {
+  const { db, id, form, app } = ibanTestAufbau();
+  const res = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send({ ...form, ibanEndung: ' 2957' });
+  assert.equal(res.status, 302);
+  const eintrag = listFreigabenByJob(db, id).find((f) => f.rolle === 'iban_manuell_geprueft');
+  assert.ok(eintrag);
+  assert.equal(eintrag.kommentar, 'IBAN manuell geprüft: Übereinstimmung (Eingabe 2957)');
+  assert.ok(buildAuditLog(db, id).some((e) => e.ereignis === 'IBAN von Hand geprüft'));
+  db.close();
+});
+
+test('POST /kontierung/:id mit falscher ibanEndung speichert trotzdem, Kommentar „keine Übereinstimmung“', async () => {
+  const { db, id, form, app } = ibanTestAufbau();
+  const res = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send({ ...form, ibanEndung: '1111' });
+  assert.equal(res.status, 302);
+  const eintrag = listFreigabenByJob(db, id).find((f) => f.rolle === 'iban_manuell_geprueft');
+  assert.equal(eintrag.kommentar, 'IBAN manuell geprüft: keine Übereinstimmung (Eingabe 1111)');
+  db.close();
+});
+
+test('POST /kontierung/:id verlangt keine ibanEndung bei QR-Code, Lastschrift oder Gutschrift', async () => {
+  for (const variante of ['qr', 'lastschrift', 'gutschrift']) {
+    const { db, id, form, app } = ibanTestAufbau({ qr: variante === 'qr', zahlungsart: variante === 'lastschrift' ? 'lastschrift' : 'ueberweisung' });
+    const body = variante === 'gutschrift' ? { ...form, typ: 'gutschrift' } : form;
+    const res = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send(body);
+    assert.equal(res.status, 302, variante);
+    assert.ok(!listFreigabenByJob(db, id).some((f) => f.rolle === 'iban_manuell_geprueft'), variante);
+    db.close();
+  }
 });

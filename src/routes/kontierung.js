@@ -30,6 +30,8 @@ import {
 import { getKontoById, listKonten } from '../db/kontenRepo.js';
 import { listKreditorenWaehlbar, getKreditorById, istKreditorVollstaendig, ZAHLUNGSARTEN, ZAHLUNGSART_LABEL } from '../db/kreditorenRepo.js';
 import { findKreditorIbanByIban } from '../db/kreditorIbanRepo.js';
+import { brauchtManuelleIbanPruefung, ibanEndungPasst } from '../services/betrugspruefung.js';
+import { normalizeIban } from '../services/ibanUtils.js';
 import { pruefeNeuenKreditor, legeKreditorAn } from '../services/kreditorAnlegen.js';
 import { kreditorIdAusEingabe, kreditorNameVariablen, KreditorFeldKonflikt } from '../services/kreditorFelder.js';
 import { getKreditkarteById, listKreditkarten } from '../db/kreditkartenRepo.js';
@@ -59,6 +61,8 @@ import { neueFehler, feldFehlerAttr } from '../utils/feldFehler.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const IBAN_ENDUNG_PATTERN = /^[A-Z0-9]{4}$/;
+const IBAN_ENDUNG_FEHLER = 'Bitte gib die letzten 4 Zeichen der IBAN auf der Rechnung ein.';
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 // Aufsplitten sends one optional beleg file per Teil row (teilBeleg_<i>) via uploadBeleg.any(),
 // which has no field-name allowlist — without a files cap, a request forging many parts could
@@ -221,7 +225,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       }
       const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, aktion, typ } = req.body;
       const jobTyp = typ === 'gutschrift' ? 'gutschrift' : 'rechnung';
-      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, kreditorId, typ: jobTyp };
+      const ibanEndung = normalizeIban(typeof req.body.ibanEndung === 'string' ? req.body.ibanEndung : '');
+      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, kreditorId, typ: jobTyp, ibanEndung };
 
       // `messages`: Text oder neueFehler()-Sammler; `feld` ordnet einen einzelnen Text einem Feld zu.
       const renderFehler = (messages, status = 400, feld = null) => {
@@ -343,6 +348,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         errors.add('kreditorId', 'Bitte einen gültigen Lieferanten aus der Liste auswählen.');
       } else if (!istKreditorVollstaendig(db, kreditor)) {
         errors.add('kreditorId', 'Dieser Lieferant hat noch keine IBAN. Bitte melde dich bei der Administration.');
+      }
+      // Ohne QR-Code kann die IBAN nicht automatisch geprüft werden: die kontierende Person liest die
+      // letzten 4 Zeichen von der Rechnung ab. Die hinterlegte IBAN wird nie angezeigt.
+      const ibanManuellNoetig = Boolean(kreditor) && brauchtManuelleIbanPruefung(job, kreditor, jobTyp);
+      if (ibanManuellNoetig && !IBAN_ENDUNG_PATTERN.test(ibanEndung)) {
+        errors.add('ibanEndung', IBAN_ENDUNG_FEHLER);
       }
       if (!rechnungsnummer) {
         errors.add('rechnungsnummer', 'Bitte eine Rechnungsnummer angeben.');
@@ -470,6 +481,20 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         // Merge first, count second -- see the identical comment at the Ablehnungs-Pfad above.
         await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
         addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
+      }
+
+      if (ibanManuellNoetig) {
+        const passt = ibanEndungPasst(db, kreditor.id, ibanEndung);
+        createFreigabe(db, {
+          jobId: job.id,
+          personId: req.currentPerson.churchtools_person_id,
+          rolle: 'iban_manuell_geprueft',
+          zeitpunkt: new Date().toISOString(),
+          ip: req.ip,
+          interessenskonflikt: false,
+          kommentar: `IBAN manuell geprüft: ${passt ? 'Übereinstimmung' : 'keine Übereinstimmung'} (Eingabe ${ibanEndung})`,
+          eskaliertVon: null,
+        });
       }
 
       if (job.qr_iban && kreditor) {

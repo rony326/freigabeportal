@@ -58,7 +58,7 @@
                   <select class="form-select<%= ff.kreditorId ? ' is-invalid' : '' %>" id="kreditorId" name="kreditorId" required data-searchable<%- ffAttr(ff, 'kreditorId') %>>
                     <option value="">— wählen —</option>
                     <% kreditoren.forEach((d) => { %>
-                      <option value="<%= d.id %>" <%= String(d.id) === values.kreditorId ? 'selected' : '' %>><%= d.name %></option>
+                      <option value="<%= d.id %>" data-iban-pflicht="<%= d.zahlungsart === 'ueberweisung' || d.zahlungsart === 'dauerauftrag' ? '1' : '0' %>" <%= String(d.id) === values.kreditorId ? 'selected' : '' %>><%= d.name %></option>
                     <% }) %>
                   </select>
 <% if (ff.kreditorId) { %><div class="invalid-feedback d-block" id="kreditorId-fehler"><%= ff.kreditorId %></div><% } %>
@@ -91,6 +91,19 @@
                   </div>
                 <% } %>
               </div>
+
+              <% if (!job.qr_iban) {
+                const gewaehlterKreditor = kreditoren.find((k) => String(k.id) === String(values.kreditorId));
+                const ibanKastenSichtbar = Boolean(gewaehlterKreditor) && (gewaehlterKreditor.zahlungsart === 'ueberweisung' || gewaehlterKreditor.zahlungsart === 'dauerauftrag') && (values.typ || 'rechnung') === 'rechnung';
+              %>
+                <div class="alert alert-warning<%= ibanKastenSichtbar ? '' : ' d-none' %>" id="iban-manuell-kasten">
+                  <h2 class="h5 alert-heading">Kein QR-Code: IBAN bitte von Hand prüfen</h2>
+                  <p class="mb-2">Auf dieser Rechnung wurde kein QR-Code erkannt. Lies auf der Rechnung die IBAN des Lieferanten ab und gib die letzten 4 Zeichen ein. Die hinterlegte IBAN siehst du hier bewusst nicht.</p>
+                  <label class="form-label" for="ibanEndung">Letzte 4 Zeichen der IBAN</label>
+                  <input type="text" class="form-control w-auto<%= ff.ibanEndung ? ' is-invalid' : '' %>" id="ibanEndung" name="ibanEndung" value="<%= values.ibanEndung || '' %>" maxlength="9" autocomplete="off" spellcheck="false"<%= ibanKastenSichtbar ? ' required' : '' %><%- ffAttr(ff, 'ibanEndung') %>>
+<% if (ff.ibanEndung) { %><div class="invalid-feedback d-block" id="ibanEndung-fehler"><%= ff.ibanEndung %></div><% } %>
+                </div>
+              <% } %>
 
               <div class="kontierung-block">
               <div class="mb-3">
@@ -292,6 +305,7 @@
       </div>
     </div>
     <% } %>
+  <script src="/js/kontierung-iban.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <script nonce="<%= locals.cspNonce %>">
     // Eingebettetes PDF, "Vorschau neu laden" und Beleg/Formular-Umschalter: public/js/belegUmschalter.js.
     // Ablehnen deliberately needs none of these fields filled in (the server-side handler skips
@@ -305,6 +319,8 @@
       ['kontoId', 'absender', 'kreditorId', 'rechnungsnummer', 'betrag', 'zahlungsziel'].forEach(function (id) {
         document.getElementById(id).required = false;
       });
+      var ibanEndungFeld = document.getElementById('ibanEndung'); // nur ohne QR-Code vorhanden
+      if (ibanEndungFeld) ibanEndungFeld.required = false;
     }
     document.getElementById('ablehnen-btn').addEventListener('click', function (e) {
       // Die defaultPrevented-Prüfung setzt voraus, dass _ablehnen_dialog.ejs vor diesem Skript eingebunden ist (Listener-Reihenfolge).

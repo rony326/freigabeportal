@@ -1126,6 +1126,30 @@ function migrateRapporteSchema(db) {
   BEGIN SELECT RAISE(ABORT, 'kenntnisnahmen ist unveraenderlich'); END;`);
 }
 
+// Betrugserkennung: manuelle IBAN-Kontrolle und bestätigte Auffälligkeiten als freigaben-Rollen.
+// Läuft nach migrateRapportChecks und vor migrateSecuritySchema (das die Audit-Trigger neu anlegt).
+function migrateBetrugserkennungChecks(db) {
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'freigaben',
+    marker: 'auffaelligkeiten_bestaetigt',
+    createSql: `CREATE TABLE freigaben (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL REFERENCES jobs(id),
+      person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
+      rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung', 'kk_abrechnung_markiert', 'kk_markierung_aufgehoben', 'kk_abgleich', 'admin_umzuweisung', 'duplikat_verdacht', 'rapport_markiert', 'rapport_bestaetigt', 'rapport_empfaenger_ersetzt', 'rapport_empfaenger_entfernt', 'rapport_markierung_aufgehoben', 'iban_manuell_geprueft', 'auffaelligkeiten_bestaetigt')),
+      zeitpunkt TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      interessenskonflikt INTEGER NOT NULL DEFAULT 0,
+      kommentar TEXT,
+      eskaliert_von TEXT REFERENCES personen(churchtools_person_id),
+      vertretung_fuer TEXT REFERENCES personen(churchtools_person_id),
+      vorher_zustaendig TEXT REFERENCES personen(churchtools_person_id),
+      ziel_person_id TEXT REFERENCES personen(churchtools_person_id)
+    )`,
+    spalten: ['id', 'job_id', 'person_id', 'rolle', 'zeitpunkt', 'ip', 'interessenskonflikt', 'kommentar', 'eskaliert_von', 'vertretung_fuer', 'vorher_zustaendig', 'ziel_person_id'],
+  });
+}
+
 // Rapporte: neue freigaben-Rollen, Mail-Typen und cron_log-Job. Gleiches Rebuild-Muster wie
 // migrateKommentarMailTyp/migrateDuplikatVerdacht, läuft danach und vor migrateSecuritySchema.
 function migrateRapportChecks(db) {
@@ -1252,6 +1276,7 @@ export function openDatabase(dbPath) {
   migrateKommentareSchema(db);
   migrateRapporteSchema(db);
   migrateRapportChecks(db);
+  migrateBetrugserkennungChecks(db);
   migrateBenachrichtigungEinstellung(db);
   migrateBetriebSchema(db);
   // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)

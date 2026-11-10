@@ -93,7 +93,7 @@ async function rundreise(u) {
   assert.equal((await u.agent.post(`/api/pool/${job.id}/beanspruchen`).type('form').send({ _csrf: token })).status, 200);
   const kont = await u.agent.post(`/kontierung/${job.id}`).type('form').send({
     kontoId: String(konto.id), kreditorId: String(kreditor.id), absender: 'Muster Druck AG', rechnungsnummer: 'BSP-RT',
-    betrag: '120.00', zahlungsziel: '2026-12-31', interessenskonflikt: 'nein', begruendung: '', _csrf: token,
+    betrag: '120.00', zahlungsziel: '2026-12-31', interessenskonflikt: 'nein', begruendung: '', ibanEndung: '3007', _csrf: token,
   });
   assert.equal(kont.status, 302);
   assert.equal(u.db.prepare('SELECT status FROM jobs WHERE id = ?').get(job.id).status, 'freigabe2');

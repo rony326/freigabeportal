@@ -132,6 +132,12 @@ export const DEFAULTS = {
   einrichtung_ohne_zeitstempel: '0',
   // Auswertung: ab wie vielen Tagen eine offene Rechnung als "länger offen" zählt (1–365).
   auswertung_offen_schwelle_tage: '14',
+  // Auffälligkeiten bei der Kontierung (betrugspruefung.js): Schwellen der Betragsprüfungen.
+  pruefung_betrag_min_rechnungen: '5',
+  pruefung_betrag_faktor: '3',
+  pruefung_betrag_minimum: '500',
+  pruefung_neuer_kreditor_betrag: '2000',
+  pruefung_gleicher_betrag_tage: '30',
 };
 
 export function seedDefaults(db) {

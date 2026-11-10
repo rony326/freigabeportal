@@ -179,6 +179,8 @@ Abschnitt **Audit-Nachweis für die Revision** (nur Superadmin, Hintergrund in
 - Uhrzeit des nächtlichen Exports (`cron_audit_export_stunde`/`_minute`, Default 03:15) und des
   Mailversands (`cron_audit_pruefnummer_stunde`/`_minute`, Default 07:00), wirksam ohne Neustart.
 - Alarmschwelle (`audit_zeitstempel_alarm_tage`, 1–30, Default 3).
+- Knopf „Jetzt exportieren und stempeln“ (`POST /admin/zeitstempel/audit-export-jetzt`): führt
+  den nächtlichen Lauf `audit-export` sofort aus und zeigt das Ergebnis samt Fehlergrund an.
 - Knopf „Prüfnummer jetzt senden“ (`POST /admin/zeitstempel/audit-pruefnummer-senden`).
 - Anzeige des letzten Pakets.
 
@@ -338,7 +340,12 @@ dieselbe additive Vergabe wie bei den übrigen vergebbaren Bereichen
 
 Zusätzlich zeigt die ungefilterte Seite die zentralen Änderungen aus
 `audit_ereignisse` mit Vorher-/Nachher-Daten, Akteur sowie Request- und
-Lauf-ID an (50 Einträge je Cursor-Seite). Sobald ein fachlicher Filter
-gesetzt ist, wird dieser separate Änderungsbereich ausgeblendet; die
-Filter der Zeitleiste durchsuchen ihn nicht. Lokale Audit-Exportpakete
+Lauf-ID an (50 Einträge je Cursor-Seite). Der Bereich hat eigene Filter
+(Parameter `h_*`): Objekt, Hintergrundlauf (`lauf_typ`, z. B. `audit-export`),
+Aktion, Person (Name oder ID), Zeitraum und Freitext über Objekt-ID,
+Vorher/Nachher, Begründung, Request- und Lauf-ID. „Ältere Änderungen“ behält
+die Filter. Ist nur ein Filter der Zeitleiste gesetzt, wird der
+Änderungsbereich ausgeblendet; die beiden Filter sind voneinander unabhängig.
+Laufeinträge (`hintergrundlauf`) halten nur den Status fest, nicht den
+Fehlergrund. Lokale Audit-Exportpakete
 werden über die CLI erzeugt, siehe [externe Audit-Nachweise](audit-externe-nachweise.md).

@@ -2,8 +2,61 @@
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Globales Audit-Log</h1>
     </div>
-    <% if (aenderungen.length) { %>
+    <% const hw = historie.werte; %>
+    <% if (aenderungen.length || historie.gefiltert) { %>
     <h2 class="h5">Änderungshistorie</h2>
+    <form method="get" class="filterzeile" aria-label="Änderungshistorie filtern">
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="h_objekt">Objekt</label>
+        <select class="form-select" id="h_objekt" name="h_objekt">
+          <option value="">Alle Objekte</option>
+          <% historie.objekte.forEach((o) => { %>
+            <option value="<%= o %>" <%= hw.h_objekt === o ? 'selected' : '' %>><%= objektLabel(o) %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="h_lauf">Hintergrundlauf</label>
+        <select class="form-select" id="h_lauf" name="h_lauf">
+          <option value="">Alle Läufe</option>
+          <% historie.laeufe.forEach((l) => { %>
+            <option value="<%= l %>" <%= hw.h_lauf === l ? 'selected' : '' %>><%= l %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="h_aktion">Aktion</label>
+        <select class="form-select" id="h_aktion" name="h_aktion">
+          <option value="">Alle Aktionen</option>
+          <% historie.aktionen.forEach((a) => { %>
+            <option value="<%= a %>" <%= hw.h_aktion === a ? 'selected' : '' %>><%= a %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="h_person">Person</label>
+        <input type="text" class="form-control" id="h_person" name="h_person" value="<%= hw.h_person || '' %>" placeholder="Name oder ID">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="h_von">Von</label>
+        <input type="date" class="form-control" id="h_von" name="h_von" value="<%= hw.h_von || '' %>">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="h_bis">Bis</label>
+        <input type="date" class="form-control" id="h_bis" name="h_bis" value="<%= hw.h_bis || '' %>">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="h_q">Suche</label>
+        <input type="text" class="form-control" id="h_q" name="h_q" value="<%= hw.h_q || '' %>" placeholder="ID, Inhalt, Request, Lauf">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-outline-primary">Filtern</button>
+        <% if (historie.gefiltert) { %><a class="btn btn-link" href="/admin/audit-log">Zurücksetzen</a><% } %>
+      </div>
+    </form>
+    <% if (!aenderungen.length) { %>
+      <p>Keine Änderungen gefunden.</p>
+    <% } else { %>
     <div class="table-responsive">
       <table class="table">
         <thead><tr><th>Zeitpunkt</th><th>Person</th><th>Objekt</th><th>Aktion</th><th>Änderung</th></tr></thead>
@@ -21,8 +74,9 @@
         </tbody>
       </table>
     </div>
-    <p><a href="/admin/audit-log">Neueste Änderungen</a>
-      <% if (aenderungen.length === 50) { %> · <a href="?vor=<%= aenderungen[aenderungen.length - 1].id %>">Ältere Änderungen</a><% } %>
+    <% } %>
+    <p><a href="/admin/audit-log<%= historie.gefiltert ? '?' + new URLSearchParams(hw).toString() : '' %>">Neueste Änderungen</a>
+      <% if (historie.naechsteSeite && aenderungen.length) { %> · <a href="?<%= historie.naechsteSeite %>">Ältere Änderungen</a><% } %>
     </p>
     <% } %>
     <h2 class="h5">Freigaben und Löschungen</h2>

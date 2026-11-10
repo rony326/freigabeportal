@@ -106,14 +106,23 @@
     <% if (versandHinweis) { %>
       <div class="alert alert-<%= versandHinweis.art %>"><%= versandHinweis.text %></div>
     <% } %>
+    <% if (locals.exportHinweis) { %>
+      <div class="alert alert-<%= exportHinweis.art %>" role="status"><%= exportHinweis.text %></div>
+    <% } %>
     <% if (letztesPaket) { %>
       <p class="mb-1">Letztes Paket: Nr. <%= letztesPaket.id %> vom <%= letztesPaket.erstellt_am %> (<%= letztesPaket.anzahl %> Ereignisse).</p>
     <% } else { %>
       <p class="mb-1">Noch kein Paket erzeugt.</p>
     <% } %>
     <p><%= paketeOhneZeitstempel %> Paket<%= paketeOhneZeitstempel === 1 ? '' : 'e' %> noch ohne Zeitstempel.</p>
+    <div class="d-flex flex-wrap gap-2">
+    <form method="post" action="/admin/zeitstempel/audit-export-jetzt" data-bestaetigen="Audit-Log jetzt exportieren und alle offenen Pakete stempeln?" data-bestaetigen-knopf="Exportieren">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <button type="submit" class="btn btn-outline-primary">Jetzt exportieren und stempeln</button>
+    </form>
     <form method="post" action="/admin/zeitstempel/audit-pruefnummer-senden" data-bestaetigen="Prüfnummer des letzten Pakets jetzt an die Revision senden?" data-bestaetigen-knopf="Senden">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button type="submit" class="btn btn-outline-secondary">Prüfnummer jetzt senden</button>
     </form>
+    </div>
 <%- include('../_seite_ende') %>

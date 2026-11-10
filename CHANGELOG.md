@@ -3,6 +3,16 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.0.1] – 2026-11-10
+
+Wartungsversion. Release Notes:
+[docs/releases/v1.0.1.md](docs/releases/v1.0.1.md).
+
+- Audit-Log: Filter für die Änderungshistorie (Objekt, Hintergrundlauf,
+  Aktion, Person, Zeitraum, Freitext).
+- Admin → Zeitstempel: Knopf „Jetzt exportieren und stempeln“ zeigt das
+  Ergebnis des Audit-Exports samt Fehlergrund sofort an.
+
 ## [1.0.0] – 2026-11-09
 
 Erste produktive Version. Ausführliche Release Notes:
@@ -28,5 +38,6 @@ Erste produktive Version. Ausführliche Release Notes:
 Release-Kandidat: Fundament mit ChurchTools-Login, Admin-Bereich,
 n8n-Schnittstelle, Freigabe-Workflow und Datenbank-Backup.
 
+[1.0.1]: https://github.com/rony326/freigabeportal/releases/tag/v1.0.1
 [1.0.0]: https://github.com/rony326/freigabeportal/releases/tag/v1.0.0
 [0.1.0-rc.1]: https://github.com/rony326/freigabeportal/releases/tag/v0.1.0-rc.1

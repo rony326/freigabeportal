@@ -7,6 +7,7 @@
   <div class="alert alert-warning mb-2" data-banner-art="wartungsmodus">
     Wartungsmodus aktiv – normale Personen sehen nur die Wartungsseite, Mails werden zurückgehalten und es werden keine Rechnungen angenommen.
     <a href="/admin/wartungsmodus" class="alert-link">Zum Wartungsmodus</a>
+    <% if (locals.wartungsmodusLang) { %><div class="mt-1"><strong>Seit mehr als 4 Stunden aktiv.</strong> Auch Sicherheitsalarme werden zurückgehalten – bitte prüfen, ob der Wartungsmodus noch gebraucht wird.</div><% } %>
   </div>
 </div>
 <% } %><% if (bBanner.length) { %>

@@ -77,7 +77,8 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           await pruefeEingangsPdf(req.file.buffer);
         } catch (err) {
           if (!(err instanceof PdfEingangFehler)) throw err;
-          console.warn(`PDF-Eingang abgelehnt (${err.code}): ${req.body?.dateiname || '(ohne Dateiname)'}`);
+          // Dateiname stammt aus dem Request: als JSON-String loggen, damit Zeilenumbrüche keine Logzeilen fälschen.
+          console.warn(`PDF-Eingang abgelehnt (${err.code}): ${JSON.stringify(String(req.body?.dateiname || '(ohne Dateiname)').slice(0, 200))}`);
           return res.status(422).json({ error: err.message, code: err.code });
         }
 

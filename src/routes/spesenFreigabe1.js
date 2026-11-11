@@ -1,3 +1,4 @@
+import { personHasRole } from '../middleware/roles.js';
 import { Router } from 'express';
 import { feldFehlerAttr } from '../utils/feldFehler.js';
 import {
@@ -25,7 +26,7 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
   const router = Router();
 
   function isSuperadmin(person) {
-    return Boolean(person && person.gruppen.includes(String(config.churchtools.groupIdAdmin)));
+    return personHasRole(person, config, 'superadmin');
   }
 
   function loadAuthorized(req, res) {

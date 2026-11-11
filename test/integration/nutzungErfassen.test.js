@@ -129,7 +129,8 @@ test('Geräte-Cookie ist Secure, wenn die Session-Cookies Secure sind', async ()
   const state = new URL(loginRes.headers.location).searchParams.get('state');
   const cb = await request(app).get('/auth/callback').query({ code: 'c', state }).set('X-Forwarded-Proto', 'https').set('Cookie', cookies1.join('; '));
   assert.equal(cb.status, 302);
-  const sid = [].concat(cb.headers['set-cookie']).map((c) => c.split(';')[0]).find((c) => c.startsWith('connect.sid='));
+  const sid = [].concat(cb.headers['set-cookie']).map((c) => c.split(';')[0]).find((c) => c.startsWith('__Host-portal.sid='));
+  assert.ok(sid, 'hinter HTTPS heisst das Sitzungs-Cookie __Host-portal.sid');
   const res = await request(app).get('/pool').set('X-Forwarded-Proto', 'https').set('Cookie', sid);
   assert.equal(res.status, 200);
   const header = [].concat(res.headers['set-cookie']).find((c) => c.startsWith('fp_geraet='));

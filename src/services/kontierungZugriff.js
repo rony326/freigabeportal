@@ -1,3 +1,4 @@
+import { personHasRole } from '../middleware/roles.js';
 import { getJobById } from '../db/jobsRepo.js';
 import { listKontenForPerson, getKontoById } from '../db/kontenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -5,7 +6,7 @@ import { listKonfliktmelder } from '../db/freigabenRepo.js';
 import { istAktiveVertretungFuer } from './vertretung.js';
 
 function isSuperadmin(config, person) {
-  return Boolean(person && person.gruppen.includes(String(config.churchtools.groupIdAdmin)));
+  return personHasRole(person, config, 'superadmin');
 }
 
 // zurueckgeben: nur für "zurück in den Pool"/"an die Gruppe zurück". Ein Konfliktmelder kann

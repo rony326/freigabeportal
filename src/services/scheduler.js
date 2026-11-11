@@ -1,4 +1,5 @@
 import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runFreigabe2ErinnerungenJob, runRapportErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from './cronJobs.js';
+import { istWartungsmodusAktiv } from './wartungsmodus.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { runSicherheitsalarmeJob } from './sicherheitsalarme.js';
 import { runTsaCrlAktualisierungJob } from './tsaCrlUpdate.js';
@@ -41,7 +42,7 @@ function zahlOderStandard(wert, standard) {
 
 // stundeGetter/minuteGetter (not fixed numbers) so a schedule change saved in
 // /admin/geplante-jobs takes effect from the next tick onward, without a process restart.
-function scheduleDaily(stundeGetter, minuteGetter, aufgabe) {
+function planeTaeglich(stundeGetter, minuteGetter, aufgabe) {
   let laeuft = false;
   async function tick() {
     if (!laeuft) {
@@ -61,7 +62,7 @@ function scheduleDaily(stundeGetter, minuteGetter, aufgabe) {
 
 // intervallMsGetter is re-read before every reschedule (recursive setTimeout, not setInterval)
 // for the same reason as scheduleDaily above: a saved interval change applies to the next tick.
-function scheduleInterval(intervallMsGetter, aufgabe) {
+function planeIntervall(intervallMsGetter, aufgabe) {
   let laeuft = false;
   function schedule() {
     setTimeout(async () => {
@@ -131,6 +132,15 @@ export function startScheduler({
     runNutzungsdatenBereinigungJob,
   },
 }) {
+  // Wartungsmodus: alle geplanten Jobs pausieren (verpasste Läufe verfallen; Intervalljobs laufen beim
+  // nächsten Tick, tägliche zur nächsten Fälligkeit). Ausnahme: die Datenbank-Sicherung, sie liest nur.
+  const mitWartung = (aufgabe, trotzWartung) => async () => {
+    if (!trotzWartung && istWartungsmodusAktiv(db)) return;
+    return aufgabe();
+  };
+  const scheduleDaily = (stunde, minute, aufgabe, { trotzWartung = false } = {}) => planeTaeglich(stunde, minute, mitWartung(aufgabe, trotzWartung));
+  const scheduleInterval = (intervall, aufgabe, { trotzWartung = false } = {}) => planeIntervall(intervall, mitWartung(aufgabe, trotzWartung));
+
   scheduleDaily(
     () => zahlOderStandard(getConfigValue(db, 'cron_sync_personen_stunde'), 2),
     () => zahlOderStandard(getConfigValue(db, 'cron_sync_personen_minute'), 0),
@@ -195,7 +205,8 @@ export function startScheduler({
     () => {
       const result = sicherungJob(db, config);
       if (result.status === 'fehler') console.error('Geplanter datenbank-sicherung-Lauf fehlgeschlagen:', result.error);
-    }
+    },
+    { trotzWartung: true }
   );
 
   scheduleDaily(

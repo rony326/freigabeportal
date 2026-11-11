@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { istWartungsmodusAktiv } from './wartungsmodus.js';
 import { currentAuditActor } from './auditContext.js';
 import { auditedJob } from './auditOperation.js';
 import { listUnresolvedBackupDeletions } from './backupAudit.js';
@@ -116,6 +117,8 @@ function fehlerCode(err) {
 
 // Schritt 2: faellige Alarme beanspruchen und gebuendelt versenden.
 export async function versendeFaelligeAlarme(db, config, mailer, { jetzt = Date.now() } = {}) {
+  // Wartungsmodus: nichts beanspruchen und nichts versenden; die Alarme bleiben offen.
+  if (istWartungsmodusAktiv(db)) return { versendet: 0, fehlgeschlagen: 0, erledigt: 0, zurueckgehalten: true };
   const { token, alarme } = beanspruche(db, jetzt);
   if (!alarme.length) return { versendet: 0, fehlgeschlagen: 0, erledigt: 0 };
   // Vor dem Versand erneut pruefen: zwischenzeitlich geklaerte Absichten nicht mehr melden.

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { getVorlage, renderTemplate } from './mailTemplates.js';
 import { benachrichtigungFuer } from './benachrichtigung.js';
+import { istWartungsmodusAktiv } from './wartungsmodus.js';
 
 // Persistente Zustellung aller Benachrichtigungen über mail_log (Outbox-Muster).
 //
@@ -113,6 +114,8 @@ function fehlerText(err) {
 // Ein Versuch für genau eine 'eingereiht'-Zeile. Ist die Zeile gerade von einem anderen Auslöser
 // beansprucht oder schon erledigt, wird nichts versendet und der aktuelle Status gemeldet.
 export async function stelleMailZu(db, mailer, id, { jetzt = Date.now() } = {}) {
+  // Wartungsmodus: nichts versenden, die Zeile nicht beanspruchen und keinen Versuch zählen.
+  if (istWartungsmodusAktiv(db)) return { id, status: 'eingereiht', beansprucht: false, zurueckgehalten: true };
   const { token, zeilen } = beanspruche(db, [id], 'eingereiht', jetzt);
   if (!zeilen.length) {
     const aktuell = db.prepare('SELECT status FROM mail_log WHERE id = ?').get(id);
@@ -217,6 +220,8 @@ export async function stelleWartendeSofortZu(db, config, mailer, email, { vorher
 // Ein Digest-Versuch für einen Empfänger über die übergebenen 'geplant'-Zeilen. Liefert
 // 'versendet' | 'geplant' (Wiederholung vorgesehen) | 'fehlgeschlagen' | null (nichts beansprucht).
 export async function stelleDigestZu(db, config, mailer, { empfaenger, ids, vorlage, jetzt = Date.now(), zusammenfassung = null }) {
+  // Wartungsmodus: wie "nichts beansprucht" -- die Zeilen bleiben 'geplant' und gehen später raus.
+  if (istWartungsmodusAktiv(db)) return null;
   const { token, zeilen } = beanspruche(db, ids, 'geplant', jetzt);
   if (!zeilen.length) return null;
   const variablen = {

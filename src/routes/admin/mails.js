@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { istWartungsmodusAktiv } from '../../services/wartungsmodus.js';
 import { listMailLog, getMailLogById } from '../../db/mailLogRepo.js';
 import { sendRenderedMail } from '../../services/notify.js';
 import { stelleMailZu } from '../../services/mailZustellung.js';
@@ -8,11 +9,13 @@ export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next
   const router = Router();
 
   router.get('/', (req, res) => {
-    res.render('admin/mails', { mails: listMailLog(db), gespeichert: req.query.gespeichert === '1' });
+    res.render('admin/mails', { mails: listMailLog(db), gespeichert: req.query.gespeichert === '1', zurueckgehalten: req.query.zurueckgehalten === '1' });
   });
 
   router.post('/:id/erneut-versenden', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
+      // Wartungsmodus: nichts versenden und keine neue Zeile anlegen.
+      if (istWartungsmodusAktiv(db)) return res.redirect('/admin/mails?zurueckgehalten=1');
       const eintrag = getMailLogById(db, Number(req.params.id));
       if (!eintrag) {
         return res.status(404).render('error', { message: 'Mail-Eintrag nicht gefunden.' });

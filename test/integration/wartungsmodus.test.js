@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { createApp } from '../../src/app.js';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
+import { fetchCsrfToken } from '../helpers/csrf.js';
 import { setzeWartungsmodus } from '../../src/services/wartungsmodus.js';
 import { setGruppenBerechtigungen } from '../../src/db/gruppenBerechtigungenRepo.js';
 
@@ -122,4 +123,19 @@ test('Modus an: n8n-Eingang und Cron antworten 503 mit Retry-After, Backup-Route
   assert.equal((await request(app).get('/api/n8n/rapporte/abholbereit').set('X-API-Key', 'n8n-key')).status, 503);
   assert.equal((await request(app).post('/internal/cron/sync-personen').set('X-Cron-Secret', 'cron-secret')).status, 503);
   assert.notEqual((await request(app).get('/api/n8n/backup/latest').set('X-API-Key', 'n8n-key')).status, 503);
+});
+
+test('Modus an: «Erneut versenden» im Mail-Protokoll sendet nichts und zeigt einen Hinweis', async (t) => {
+  const { db, app, client } = setup(t);
+  const agent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'a@example.org', gruppen: ['20'] });
+  db.prepare(`INSERT INTO mail_log (typ, empfaenger, betreff, text, status, versucht_am) VALUES ('testmail', 'x@example.org', 'B', 'T', 'fehlgeschlagen', ?)`).run(new Date().toISOString());
+  const id = db.prepare('SELECT id FROM mail_log').get().id;
+  setzeWartungsmodus(db, true);
+  const token = await fetchCsrfToken(agent, '/admin/mails');
+  const res = await agent.post(`/admin/mails/${id}/erneut-versenden`).type('form').send({ _csrf: token });
+  assert.equal(res.status, 302);
+  assert.match(res.headers.location, /zurueckgehalten=1/);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM mail_log').get().n, 1);
+  const seite = await agent.get('/admin/mails?zurueckgehalten=1');
+  assert.match(seite.text, /Wartungsmodus/);
 });

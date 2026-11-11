@@ -2,6 +2,9 @@
     <div class="seitenkopf">
       <h1 class="seitenkopf-titel">Mail-Protokoll</h1>
     </div>
+    <% if (locals.zurueckgehalten) { %>
+      <div class="alert alert-warning" role="alert">Der Wartungsmodus ist aktiv: Mails werden zurückgehalten und nach dem Ausschalten automatisch zugestellt. Es wurde nichts versendet.</div>
+    <% } %>
     <% if (gespeichert) { %>
       <div class="alert alert-success alert-dismissible fade show" role="alert">
         Erneut gesendet.

@@ -497,7 +497,7 @@ test('Sweep (gerendert): auf Seiten der Test-Instanz steht das echte Token nur i
   const sandbox = (await u.steuerung.hole()).db;
   const annaJob = sandbox.prepare("SELECT id FROM jobs WHERE dateiname = 'Rechnung bei Anna.pdf'").get().id;
   const seiten = {
-    'test-4': ['/pool', '/admin', '/admin/module', '/admin/erscheinungsbild', '/admin/konten', '/admin/mail-einstellungen', '/admin/vorgaenge', '/meine-spesen', '/spesen/neu', '/ferienmodus', '/fehler-melden', '/gibt-es-nicht'],
+    'test-4': ['/pool', '/admin', '/admin/module', '/admin/erscheinungsbild', '/admin/konten', '/admin/benachrichtigungen/zusammenfassung', '/admin/vorgaenge', '/meine-spesen', '/spesen/neu', '/ferienmodus', '/fehler-melden', '/gibt-es-nicht'],
     'test-1': ['/pool', `/kontierung/${annaJob}`, '/admin'],
   };
   let geprueft = 0;

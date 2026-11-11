@@ -11,6 +11,7 @@
             <% if (typeof kkHinweis !== 'undefined' && kkHinweis) { %>
               <div class="alert <%= kkHinweis.startsWith('Kreditkartenbeleg') ? 'alert-info' : 'alert-warning' %> py-2"><%= kkHinweis %></div>
             <% } %>
+            <%- include('_auffaelligkeiten_bestaetigt', { kasten: locals.auffaelligkeitenBestaetigt }) %>
             <div class="entscheidung">
               <div class="entscheidung-betrag"><%= job.betrag || '—' %><% if (job.typ === 'gutschrift') { %> <span class="badge text-bg-secondary fs-6 fw-normal align-middle">Gutschrift</span><% } %></div>
               <% if (job.quelle === 'spesen') { %>

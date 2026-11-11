@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -70,7 +71,7 @@ test('a doubly-conflicted Freigabe-1 handoff reaches an admin, who takes it all 
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const pdfPfad = join(jobsDir, 'e2e-sync-robustheit.pdf');
   writeFileSync(pdfPfad, await buildPdfFixture(['Rechnung', 'Visum']));
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad });

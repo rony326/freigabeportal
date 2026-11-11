@@ -1,0 +1,47 @@
+<%# Prüf-Popup bei Kontierung und Aufsplitten (Spec B6). Steht ohne JS als normaler Block über dem
+    Formular; public/js/auffaelligkeiten.js macht daraus beim Laden ein geöffnetes Bootstrap-Modal.
+    Alle Felder gehören per form="<formId>" zum Formular der Seite.
+    Parameter: auffaelligkeiten { befunde, hash, zeigeTelefonHinweis, belegFelder: [{ id, name, label }] },
+    values (pruefBemerkung), formId (Standard kontierung-form), submitName/submitValue (optional, für den
+    Bestätigen-Knopf, z. B. aktion=kontieren). %>
+<%
+  const mFormId = locals.formId || 'kontierung-form';
+  const mSubmitAttr = locals.submitName ? ` name="${submitName}" value="${submitValue}"` : '';
+%>
+<div class="modal auffaelligkeiten-modal-ohne-js mb-3" id="auffaelligkeiten-modal" tabindex="-1" aria-labelledby="auffaelligkeiten-modal-label" data-auffaelligkeiten-modal>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content border-danger">
+      <div class="modal-header">
+        <h2 class="h5 modal-title text-danger" id="auffaelligkeiten-modal-label">Bitte Rechnung nochmals prüfen</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+      </div>
+      <div class="modal-body">
+        <p>Beim Speichern sind diese Auffälligkeiten aufgefallen:</p>
+        <ul class="list-unstyled">
+          <% auffaelligkeiten.befunde.forEach((befund) => { %>
+            <li class="alert <%= befund.schwere === 'rot' ? 'alert-danger' : 'alert-warning' %> py-2 mb-2">
+              <strong><%= befund.titel %></strong><br><%= befund.text %>
+            </li>
+          <% }) %>
+        </ul>
+        <% if (auffaelligkeiten.zeigeTelefonHinweis) { %>
+          <div class="alert alert-info py-2">Prüfe die Bankverbindung <strong>telefonisch beim Lieferanten</strong>, mit der Nummer aus deinen eigenen Unterlagen, nicht mit der auf der Rechnung.</div>
+        <% } %>
+        <% (auffaelligkeiten.belegFelder || []).forEach((feld) => { %>
+          <div class="alert alert-warning py-2">
+            <label class="form-label" for="<%= feld.id %>"><%= feld.label %></label>
+            <input type="file" class="form-control" id="<%= feld.id %>" name="<%= feld.name %>" form="<%= mFormId %>" accept="application/pdf,image/png,image/jpeg">
+          </div>
+        <% }) %>
+        <input type="hidden" name="auffaelligkeitenHash" form="<%= mFormId %>" value="<%= auffaelligkeiten.hash %>" data-hash="<%= auffaelligkeiten.hash %>" data-auffaelligkeiten-hash>
+        <label class="form-label" for="pruefBemerkung">Wie hast du geprüft? <span class="text-muted">(optional, erscheint im Audit-Log)</span></label>
+        <input type="text" class="form-control" id="pruefBemerkung" name="pruefBemerkung" form="<%= mFormId %>" maxlength="500" value="<%= values.pruefBemerkung || '' %>" placeholder="z. B. telefonisch beim Lieferanten bestätigt">
+        <p class="text-muted small mt-3 mb-0">Beim Speichern werden Freigeber 1 und 2 per Mail informiert.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+        <button type="submit" form="<%= mFormId %>"<%- mSubmitAttr %> class="btn btn-danger" data-auffaelligkeiten-bestaetigen>Geprüft, trotzdem speichern</button>
+      </div>
+    </div>
+  </div>
+</div>

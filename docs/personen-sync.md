@@ -87,12 +87,13 @@ flowchart TD
   - Eine einzelne Person, die als einzige aktive Person austritt, ist
     davon ausgenommen — das ist ein normaler Vorgang, kein Fehlersignal.
   - Ein abgebrochener Lauf löst eine `sync-fehler`-Mail an die unter
-    **Admin → Betrieb → Sync-Übersicht** konfigurierten Empfänger aus.
+    unter **Admin → Einstellungen → Benachrichtigungen** (Ereignis „Sync-Fehler“) konfigurierten Empfänger aus.
 - **Nicht auflösbare Personen** werden als `ct_person_unresolved` markiert,
   nicht gelöscht oder deaktiviert — ihre historischen Freigaben/Rechnungen
   bleiben nachvollziehbar zuordenbar.
 - Die Konfiguration (Prozent-/Anzahl-Schwelle, Fehler-Empfänger) ist unter
-  **Admin → Betrieb → Sync-Übersicht** (Recht `sync_einsehen`) einstellbar.
+  **Admin → Betrieb → Sync-Übersicht** (Recht `sync_einsehen`) einstellbar; die Fehler-Empfänger stehen unter
+  **Admin → Einstellungen → Benachrichtigungen**.
 - Der Sync ruft je aktiver Person das ChurchTools-Profil ab; die Laufzeit
   wächst damit linear mit der Zahl der Portalnutzer.
 

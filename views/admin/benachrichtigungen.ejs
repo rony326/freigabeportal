@@ -1,0 +1,277 @@
+<%- include('../_seite_anfang', { titel: 'Benachrichtigungen' }) %>
+<%
+  const hatVorlage = Boolean(ereignis.vorlagenTyp);
+  const hatWer = Boolean(ereignis.automatisch || ereignis.empfaengerKey);
+  const istZusammenfassung = ereignis.id === 'zusammenfassung';
+  const nurEmail = ereignis.empfaengerArt === 'nurEmail';
+  let nummer = 0;
+  const digestFehlt = istZusammenfassung
+    ? ['%zusammenfassung%', '%einstellungenLink%'].filter((v) => !String(werte.text).includes(v))
+    : [];
+%>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Benachrichtigungen</h1>
+    </div>
+    <p class="text-muted">Wähle ein Ereignis: Hier stellst du ein, wann die Mail kommt, wer sie bekommt und was drinsteht.</p>
+
+    <div class="row g-4">
+      <nav class="col-12 col-lg-3 order-2 order-lg-1 benachrichtigung-liste" aria-label="Ereignisse">
+        <% bereiche.forEach((bereich) => { %>
+          <h2 class="h5 benachrichtigung-bereich"><%= bereich.name %></h2>
+          <div class="list-group list-group-flush mb-2">
+            <% bereich.ereignisse.forEach((e) => { %>
+              <a href="/admin/benachrichtigungen/<%= e.id %>" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-2<%= e.id === ereignis.id ? ' active' : '' %>"<% if (e.id === ereignis.id) { %> aria-current="page"<% } %>>
+                <span><%= e.titel %></span>
+                <% if (e.angepasst) { %><span class="badge rounded-pill text-bg-light border">angepasst</span><% } %>
+              </a>
+            <% }) %>
+          </div>
+        <% }) %>
+      </nav>
+
+      <div class="col-12 col-lg-9 order-1 order-lg-2">
+        <h2 class="h5 mb-1"><%= ereignis.bereich %> · <%= ereignis.titel %></h2>
+        <p class="text-muted"><%= ereignis.beschreibung %></p>
+
+        <% if (errors.length > 0) { %>
+          <div class="alert alert-danger">
+            <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+          </div>
+        <% } %>
+        <% if (zurueckgesetzt) { %>
+          <div class="alert alert-success">Betreff und Text wurden auf den Standard zurückgesetzt.</div>
+        <% } %>
+        <% if (testmailHinweis) { %>
+          <div class="alert alert-<%= testmailHinweis.art %>"><%= testmailHinweis.text %></div>
+        <% } %>
+
+        <form method="post" action="/admin/benachrichtigungen/<%= ereignis.id %>" id="ereignisForm"<% if (errors.length > 0) { %> data-ungespeichert<% } %>>
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+
+          <section class="card mb-3">
+            <div class="card-body">
+              <h2 class="h5 card-title d-flex align-items-center gap-2"><span class="benachrichtigung-nummer"><%= ++nummer %></span> Wann</h2>
+              <% if (istZusammenfassung) { %>
+                <p class="text-muted small">Standard für alle, die in „Meine Benachrichtigungen“ keine eigene Wahl getroffen haben.</p>
+                <div class="row g-2 mb-2">
+                  <div class="col-12 col-md-6">
+                    <label class="form-label" for="zeit_mail_standard_benachrichtigung">Standard</label>
+                    <select class="form-select" id="zeit_mail_standard_benachrichtigung" name="zeit_mail_standard_benachrichtigung">
+                      <% standardWahl.forEach(([wert, text]) => { %>
+                        <option value="<%= wert %>"<%= werte.zeit.mail_standard_benachrichtigung === wert ? ' selected' : '' %>><%= text %></option>
+                      <% }) %>
+                    </select>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label class="form-label" for="zeit_mail_digest_wochentag">Wochentag der wöchentlichen Zusammenfassung</label>
+                    <select class="form-select" id="zeit_mail_digest_wochentag" name="zeit_mail_digest_wochentag">
+                      <% wochentagNamen.forEach((name, idx) => { %>
+                        <option value="<%= idx + 1 %>"<%= Number(werte.zeit.mail_digest_wochentag) === idx + 1 ? ' selected' : '' %>><%= name %></option>
+                      <% }) %>
+                    </select>
+                  </div>
+                </div>
+                <div class="row g-2">
+                  <div class="col-6 col-md-3">
+                    <label class="form-label" for="zeit_mail_batching_stunde">Versandzeit – Stunde</label>
+                    <input type="number" min="0" max="23" class="form-control" id="zeit_mail_batching_stunde" name="zeit_mail_batching_stunde" value="<%= werte.zeit.mail_batching_stunde %>" required>
+                  </div>
+                  <div class="col-6 col-md-3">
+                    <label class="form-label" for="zeit_mail_batching_minute">Versandzeit – Minute</label>
+                    <input type="number" min="0" max="59" class="form-control" id="zeit_mail_batching_minute" name="zeit_mail_batching_minute" value="<%= werte.zeit.mail_batching_minute %>" required>
+                  </div>
+                </div>
+                <p class="text-muted small mt-2 mb-0">Die Versandzeit gilt für tägliche und wöchentliche Zusammenfassungen. Erinnerungen, Eskalationen, Warnungen und Sicherheitsmeldungen gehen immer sofort raus.</p>
+              <% } else { %>
+                <% if (ereignis.zeitKeys.length > 0) { %>
+                  <div class="row g-2 mb-2">
+                    <% ereignis.zeitKeys.forEach(({ key, label, einheit }) => { const dezimal = einheit === 'Faktor' || einheit === 'CHF'; %>
+                      <div class="col-12 col-md-6">
+                        <label class="form-label" for="zeit_<%= key %>"><%= label %></label>
+                        <div class="input-group">
+                          <% if (einheit === 'CHF') { %><span class="input-group-text">CHF</span><% } %>
+                          <input <% if (dezimal) { %>type="text" inputmode="decimal"<% } else { %>type="number" min="1" step="1"<% } %> class="form-control" id="zeit_<%= key %>" name="zeit_<%= key %>" value="<%= werte.zeit[key] %>" required>
+                          <% if (einheit === 'Stunden' || einheit === 'Tage') { %><span class="input-group-text"><%= einheit %></span><% } %>
+                          <% if (einheit === 'Faktor') { %><span class="input-group-text">× Durchschnitt</span><% } %>
+                        </div>
+                      </div>
+                    <% }) %>
+                  </div>
+                <% } %>
+                <% if (ereignis.sofort) { %>
+                  <p class="text-muted small mb-0">Wird sofort verschickt, auch wenn jemand Zusammenfassungen gewählt hat.</p>
+                <% } else { %>
+                  <p class="text-muted small mb-0">Wird sofort verschickt oder gebündelt, je nachdem, was die empfangende Person gewählt hat (siehe <a href="/admin/benachrichtigungen/zusammenfassung">Zusammenfassung &amp; Versandzeit</a>).</p>
+                <% } %>
+              <% } %>
+            </div>
+          </section>
+
+          <% if (hatWer) { %>
+          <section class="card mb-3">
+            <div class="card-body">
+              <h2 class="h5 card-title d-flex align-items-center gap-2"><span class="benachrichtigung-nummer"><%= ++nummer %></span> Wer bekommt die Mail</h2>
+              <% if (ereignis.automatisch) { %>
+                <p class="mb-2">Automatisch: <strong><%= ereignis.automatisch %></strong></p>
+              <% } %>
+              <% if (ereignis.empfaengerKey) { %>
+                <% if (nurEmail && adminAdressen.length > 0) { %>
+                  <div class="alert alert-warning">Die Adresse <%= adminAdressen.join(', ') %> gehört einer Person mit Admin-Rechten. Für eine unabhängige Prüfung sollte die Revision eine eigene Adresse haben.</div>
+                <% } %>
+                <% const leerText = nurEmail ? 'Noch keine Adresse eingetragen.' : (ereignis.empfaengerLeerErlaubt ? 'Keine Zusatzempfänger – die Mail geht an die Gruppe Admin.' : 'Noch keine Empfänger.'); %>
+                <% if (!nurEmail) { %>
+                  <p class="mb-1"><%= ereignis.automatisch ? 'Zusätzlich:' : 'Empfänger:' %></p>
+                  <div data-empfaenger-ohne-js>
+                    <% if (empfaengerListe.length > 0) { %>
+                      <ul class="list-unstyled d-flex flex-wrap gap-2 mb-2">
+                        <% empfaengerListe.forEach((e) => { %>
+                          <li class="badge rounded-pill text-bg-light border fw-normal benachrichtigung-ziel">
+                            <% if (e.art === 'gruppe') { %><%- include('../_symbol', { name: 'people' }) %><% } %>
+                            <%= e.label %>
+                            <% if (e.unbekannt) { %><span class="badge text-bg-warning ms-1">unbekannt</span><% } else if (e.inaktiv) { %><span class="badge text-bg-secondary ms-1">inaktiv</span><% } %>
+                          </li>
+                        <% }) %>
+                      </ul>
+                    <% } else { %>
+                      <p class="text-muted small mb-2"><%= leerText %></p>
+                    <% } %>
+                  </div>
+                <% } %>
+                <%# Mit JS (public/js/benachrichtigungen.js): Kärtchen + Suche statt Textfeld. Das Textfeld bleibt das gesendete Feld. %>
+                <div class="zielwahl" data-empfaenger-picker hidden>
+                  <% if (nurEmail) { %><p class="mb-1">Empfänger:</p><% } %>
+                  <ul class="list-unstyled d-flex flex-wrap gap-2 mb-2" data-empfaenger-kaertchen aria-label="Gewählte Empfänger"></ul>
+                  <p class="text-muted small mb-2" data-empfaenger-leer hidden><%= leerText %></p>
+                  <label class="form-label" for="empfaengerSuche"><%= nurEmail ? 'E-Mail-Adresse hinzufügen' : 'Person, Gruppe oder E-Mail hinzufügen' %></label>
+                  <div class="position-relative zielwahl-suche">
+                    <input type="text" class="form-control" id="empfaengerSuche" data-empfaenger-suche role="combobox" aria-expanded="false" aria-controls="empfaengerVorschlaege" aria-autocomplete="list" autocomplete="off" spellcheck="false"<% if (nurEmail) { %> inputmode="email"<% } %> aria-describedby="empfaengerSucheMeldung">
+                    <div class="dropdown-menu zielwahl-liste" id="empfaengerVorschlaege" role="listbox" aria-label="Vorschläge" data-empfaenger-vorschlaege></div>
+                  </div>
+                  <div class="form-text" id="empfaengerSucheMeldung" data-empfaenger-meldung aria-live="polite"></div>
+                </div>
+                <template id="empfaengerSymbole">
+                  <span data-art="gruppe"><%- include('../_symbol', { name: 'people' }) %></span>
+                  <span data-art="person"><%- include('../_symbol', { name: 'person' }) %></span>
+                  <span data-art="mail"><%- include('../_symbol', { name: 'envelope-at' }) %></span>
+                </template>
+                <div data-empfaenger-ohne-js>
+                  <label class="form-label" for="empfaenger"><%= nurEmail ? 'Empfänger (E-Mail-Adressen)' : (ereignis.automatisch ? 'Zusätzliche Empfänger bearbeiten' : 'Empfänger bearbeiten') %></label>
+                  <textarea class="form-control" id="empfaenger" name="empfaenger" rows="3" aria-describedby="empfaengerHilfe"><%= werte.empfaenger %></textarea>
+                  <% if (nurEmail) { %>
+                    <div class="form-text" id="empfaengerHilfe">Eine Zeile pro E-Mail-Adresse.</div>
+                  <% } else { %>
+                    <div class="form-text" id="empfaengerHilfe">Eine Zeile pro Empfänger: gruppe:buchhaltung, gruppe:admin, person:ID oder E-Mail-Adresse<%= ereignis.empfaengerLeerErlaubt ? ' (leer = Gruppe Admin)' : '' %>.</div>
+                  <% } %>
+                </div>
+                <% if (nurEmail) { %>
+                  <div class="form-text">Externe Revisoren haben kein Konto, darum sind hier nur E-Mail-Adressen möglich. Bei einer Änderung erhalten alte und neue Adressen eine Benachrichtigung.</div>
+                <% } %>
+              <% } %>
+            </div>
+          </section>
+          <% } %>
+
+          <% if (hatVorlage) { %>
+          <section class="card mb-3">
+            <div class="card-body">
+              <h2 class="h5 card-title d-flex align-items-center gap-2"><span class="benachrichtigung-nummer"><%= ++nummer %></span> Was steht drin</h2>
+              <div class="row g-3">
+                <div class="col-12 col-xl-7">
+                  <div class="mb-2">
+                    <label class="form-label" for="betreff">Betreff</label>
+                    <input type="text" class="form-control" id="betreff" name="betreff" value="<%= werte.betreff %>" required>
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label" for="text">Text</label>
+                    <textarea class="form-control" id="text" name="text" rows="8" required><%= werte.text %></textarea>
+                  </div>
+                  <% if (digestFehlt.length > 0) { %>
+                    <div class="alert alert-warning py-2 small" id="digestVorlageHinweis">Die Vorlage nennt nicht <%= digestFehlt.join(' und ') %>: Empfänger erfahren dann nicht den Rhythmus bzw. finden keinen Link zu ihren Einstellungen.</div>
+                  <% } %>
+                  <p class="small mb-1" id="variablenTitel">Platzhalter einfügen:</p>
+                  <div class="d-flex flex-wrap gap-2 benachrichtigung-variablen" role="group" aria-labelledby="variablenTitel">
+                    <% ereignis.variablen.forEach((v) => { %>
+                      <button type="button" class="btn btn-sm btn-outline-secondary var" data-var="<%= v.name %>"><%= v.label %> <span class="var-platzhalter">%<%= v.name %>%</span></button>
+                    <% }) %>
+                  </div>
+                </div>
+                <div class="col-12 col-xl-5">
+                  <p class="small mb-1">Vorschau <span class="text-muted" id="vorschauQuelle">(<%= vorschauAusEingabe ? 'eingegebener, noch nicht gespeicherter Text' : 'gespeicherter Text' %> mit Beispieldaten)</span></p>
+                  <div class="border rounded p-2 small benachrichtigung-vorschau">
+                    <p class="fw-semibold mb-2 benachrichtigung-vorschau-text" id="vorschauBetreff"><%= vorschau.subject %></p>
+                    <div class="benachrichtigung-vorschau-text" id="vorschauText"><%= vorschau.text %></div>
+                  </div>
+                  <ul class="list-unstyled small text-warning-emphasis mt-2 mb-0" id="vorschauWarnungen" hidden></ul>
+                </div>
+              </div>
+            </div>
+          </section>
+          <% } %>
+
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
+            <button type="submit" class="btn btn-primary">Speichern</button>
+            <% if (hatVorlage) { %>
+              <button type="submit" class="btn btn-outline-secondary" form="testmailForm" aria-describedby="testmailHinweis">Test-Mail an mich</button>
+              <span class="text-muted small" id="testmailHinweis">Die Test-Mail verwendet den gespeicherten Text.</span>
+            <% } %>
+            <% if (gespeichert) { %>
+              <div class="alert alert-success alert-dismissible alert-kompakt fade show d-inline-flex align-items-center py-1 ps-2 mb-0" role="alert">
+                Gespeichert.
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schliessen"></button>
+              </div>
+            <% } %>
+          </div>
+        </form>
+
+        <% if (hatVorlage) { %>
+          <form method="post" action="/admin/benachrichtigungen/<%= ereignis.id %>/test-mail" id="testmailForm">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          </form>
+          <details class="mb-4">
+            <summary class="text-muted">Text auf Standard zurücksetzen<%= angepasst ? '' : ' (entspricht bereits dem Standard)' %></summary>
+            <form method="post" action="/admin/benachrichtigungen/<%= ereignis.id %>/zuruecksetzen" class="mt-2">
+              <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+              <p class="small mb-2">Betreff und Text werden durch den Standardtext ersetzt. Deine Anpassungen gehen verloren.</p>
+              <button type="submit" class="btn btn-outline-danger btn-sm">Ja, auf Standard zurücksetzen</button>
+            </form>
+          </details>
+        <% } %>
+
+        <% if (istZusammenfassung) { %>
+          <h2 class="h5 mt-4">Zusammenfassung – Verlauf</h2>
+          <form method="post" action="/admin/benachrichtigungen/zusammenfassung/jetzt-ausfuehren" class="mb-2">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <button type="submit" class="btn btn-outline-secondary btn-sm">Jetzt ausführen</button>
+          </form>
+          <p class="text-muted small">Wöchentliche Zusammenfassungen gehen nur am gewählten Wochentag hinaus (oder wenn die älteste wartende Mail mindestens 7 Tage alt ist).</p>
+          <% if (zurueckgestellt > 0) { %>
+            <div class="alert alert-info"><%= zurueckgestellt %> wöchentliche<%= zurueckgestellt === 1 ? 'r Empfänger wurde' : ' Empfänger wurden' %> bis <%= wochentagNamen[Number(werte.zeit.mail_digest_wochentag) - 1] %> zurückgehalten.</div>
+          <% } %>
+          <% if (getriggert && digestLog.length > 0) { %>
+            <% const letzterLauf = digestLog[0]; %>
+            <div class="alert <%= letzterLauf.status === 'erfolg' ? 'alert-success' : 'alert-danger' %>">
+              <%= letzterLauf.status === 'erfolg' ? 'Erfolgreich ausgeführt. ' + (letzterLauf.details || '') : 'Fehlgeschlagen: ' + letzterLauf.details %>
+            </div>
+          <% } %>
+          <div class="table-responsive">
+            <table class="table align-middle">
+              <thead><tr><th>Gestartet</th><th>Beendet</th><th>Status</th><th>Details</th></tr></thead>
+              <tbody>
+                <% digestLog.forEach((eintrag) => { %>
+                  <tr>
+                    <td><%= eintrag.gestartet_am %></td>
+                    <td><%= eintrag.beendet_am %></td>
+                    <td><%= eintrag.status %></td>
+                    <td><%= eintrag.details || '' %></td>
+                  </tr>
+                <% }) %>
+                <% if (digestLog.length === 0) { %><tr><td colspan="4">Noch keine Läufe.</td></tr><% } %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </div>
+    <script type="application/json" id="benachrichtigungDaten" nonce="<%= locals.cspNonce %>"><%- browserDaten %></script>
+    <script src="/js/benachrichtigungen.js?v=<%= locals.assetVersion || 0 %>" defer></script>
+<%- include('../_seite_ende') %>

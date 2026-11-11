@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
@@ -124,7 +125,7 @@ test('GET /pool renders the logo in the centered header cell when logoAusrichtun
 
   const res = await agent.get('/pool');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<div class="portal-kopf-mitte text-center">\s*<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2 logo-hell">/);
+  assert.match(res.text, /<div class="portal-kopf-mitte text-center">\s*<a href="\/" class="portal-logo-link" aria-label="Zur Startseite">\s*<img src="\/branding\/logo" alt="" height="48" class="mt-2 mx-2 logo-hell">/);
   assert.doesNotMatch(res.text, /<div class="text-start">\s*<img/, 'the left cell should stay empty when alignment is "mitte"');
   db.close();
 });
@@ -137,7 +138,7 @@ test('GET /nonexistent-route-xyz renders the logo in the right header cell along
   const app = createApp({ db, config: testConfig() });
   const res = await request(app).get('/nonexistent-route-xyz');
   assert.equal(res.status, 404);
-  assert.match(res.text, /<img src="\/branding\/logo" alt="Logo" height="48" class="mt-2 mx-2 logo-hell">\s*<div class="dropdown farbmodus-menue">\s*<button type="button" id="theme-toggle"/);
+  assert.match(res.text, /<img src="\/branding\/logo" alt="" height="48" class="mt-2 mx-2 logo-hell">\s*<\/a>\s*<div class="dropdown farbmodus-menue">\s*<button type="button" id="theme-toggle"/);
   db.close();
 });
 
@@ -505,7 +506,7 @@ test('GET /admin renders a dashboard with links to all eleven admin areas for a 
 
   const res = await agent.get('/admin');
   assert.equal(res.status, 200);
-  for (const path of ['/admin/konten', '/admin/kreditoren', '/admin/eskalation', '/admin/erscheinungsbild', '/admin/zeitstempel', '/admin/personen', '/admin/mails', '/admin/sync', '/admin/geplante-jobs', '/admin/abgelehnt', '/admin/audit-log']) {
+  for (const path of ['/admin/konten', '/admin/kreditoren', '/admin/benachrichtigungen', '/admin/erscheinungsbild', '/admin/zeitstempel', '/admin/personen', '/admin/mails', '/admin/sync', '/admin/geplante-jobs', '/admin/abgelehnt', '/admin/audit-log']) {
     assert.match(res.text, new RegExp(`href="${path}"`), `expected a link to ${path}`);
   }
   db.close();
@@ -733,6 +734,7 @@ test('on /kontierung, a "+ Lieferant" button sits in the action row after Zurüc
   const state = new URL(loginRes.headers.location).searchParams.get('state');
   await agent.get('/auth/callback').query({ code: 'the-code', state });
 
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
   const res = await agent.get(`/kontierung/${jobId}`);
   assert.equal(res.status, 200);
   const aktionen = res.text.match(/<div class="portal-aktionen[^"]*">[\s\S]*?<\/div>/);

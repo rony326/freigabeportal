@@ -1,4 +1,7 @@
-<% /* Logo der oberen Leiste. Mit dunklem Logo werden beide gerendert; portal.css zeigt je nach
-     data-theme das passende (Druck immer hell). */ %>
-<img src="<%= branding.logoUrl || '/branding/logo' %>" alt="Logo" height="48" class="mt-2 mx-2 logo-hell<%= branding.hasLogoDunkel ? ' hat-dunkel' : '' %>">
-<% if (branding.hasLogoDunkel) { %><img src="<%= branding.logoDunkelUrl || '/branding/logo-dunkel' %>" alt="Logo" height="48" class="mt-2 mx-2 logo-dunkel"><% } %>
+<% /* Logo der oberen Leiste, verlinkt auf die Startseite. Mit dunklem Logo werden beide gerendert;
+     portal.css zeigt je nach data-theme das passende (Druck immer hell). alt="" weil der Link
+     selbst per aria-label benannt ist. */ %>
+<a href="/" class="portal-logo-link" aria-label="Zur Startseite">
+<img src="<%= branding.logoUrl || '/branding/logo' %>" alt="" height="48" class="mt-2 mx-2 logo-hell<%= branding.hasLogoDunkel ? ' hat-dunkel' : '' %>">
+<% if (branding.hasLogoDunkel) { %><img src="<%= branding.logoDunkelUrl || '/branding/logo-dunkel' %>" alt="" height="48" class="mt-2 mx-2 logo-dunkel"><% } %>
+</a>

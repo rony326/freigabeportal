@@ -10,8 +10,8 @@ import { createFreigabe } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getKreditorById } from '../db/kreditorenRepo.js';
 import { listKreditorIbansByKreditor } from '../db/kreditorIbanRepo.js';
-import { kreditorNameVariablen } from './kreditorFelder.js';
-import { getConfigValue } from '../db/adminConfigRepo.js';
+import { sendeAuffaelligkeitenWarnung } from './auffaelligkeitenWarnung.js';
+import { ibanBefund } from './betrugspruefung.js';
 import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from './notify.js';
 
 // teilPosition landet später wörtlich auf der gemeinsamen Stempelseite der Splitgruppe
@@ -268,50 +268,44 @@ export async function benachrichtigeNachAufsplitten(db, mailer, config, { job, e
   }
 }
 
-export async function pruefeIbanNachAufsplitten(db, mailer, config, { job, teile, konten, person, ip }) {
-  // The main Kontierung submission runs this same check inline (see kontierung.js) — Aufsplitten
-  // used to bypass it entirely, since splitting never used to touch job.kreditor_id/qr_iban
-  // at all. Run it once against the parent (which stays in the DB as a historical reference,
-  // see markJobAufgesplittet), not per split child: the mismatch is a property of the
-  // original invoice's IBAN vs. its Lieferant, not of any one Teil-Konto.
-  if (job.qr_iban && job.kreditor_id) {
-    const kreditor = getKreditorById(db, job.kreditor_id);
-    if (kreditor) {
-      const { status } = pruefeIbanAbgleich(db, kreditor.id, job.qr_iban);
-      if (status === 'mismatch') {
-        createFreigabe(db, {
-          jobId: job.id,
-          personId: person.churchtools_person_id,
-          rolle: 'iban_abweichung',
-          zeitpunkt: new Date().toISOString(),
-          ip,
-          interessenskonflikt: false,
-          kommentar: `QR-IBAN ${job.qr_iban} weicht von der/den für ${kreditor.name} hinterlegten IBAN(s) ab.`,
-          eskaliertVon: null,
-        });
-        const zusatzEmpfaenger = new Set(resolveEmpfaenger(db, config, getConfigValue(db, 'iban_abweichung_empfaenger')));
-        zusatzEmpfaenger.add(person.email);
-        for (const teil of teile) {
-          if (!konten.some((k) => k.id === teil.konto.id)) continue;
-          const freigeber1 = getPersonById(db, teil.konto.freigeber1_id);
-          const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(job, teil.konto));
-          if (freigeber1) zusatzEmpfaenger.add(freigeber1.email);
-          if (freigeber2) zusatzEmpfaenger.add(freigeber2.email);
-        }
-        for (const email of zusatzEmpfaenger) {
-          await sendNotification(db, mailer, {
-            to: email,
-            typ: 'iban-warnung',
-            jobId: job.id,
-            variablen: {
-              jobDateiname: job.dateiname,
-              ...kreditorNameVariablen(kreditor.name),
-              tatsaechlicheIban: job.qr_iban,
-              link: `${config.publicBaseUrl}/kontierung/${job.id}`,
-            },
-          });
-        }
-      }
-    }
+// Alle Kind-IDs eines erzeugeTeilJobs-Ergebnisses, aufsteigend. erzeugeTeilJobs legt die Kinder in
+// Eingabereihenfolge an; die Reihenfolge entspricht deshalb 1:1 der der Teile.
+export function alleKindIds(ergebnis) {
+  return [
+    ...ergebnis.selbstFreigegeben, ...ergebnis.eskaliert, ...ergebnis.eskaliertAnAdmin, ...ergebnis.fremdeKonten, ...ergebnis.anFreigeber1,
+  ].map((e) => e.id).sort((a, b) => a - b);
+}
+
+// Nur noch für den Kreditkarten-Abgleich: das Aufsplitten selbst prüft vorher per Prüf-Popup
+// (kontierung.js). Der Abgleich hat kein Popup, deshalb bleibt hier die nachträgliche Warnung mit
+// dem IBAN-Befund aus betrugspruefung.js und dem iban_abweichung-Eintrag am Elternjob.
+export async function pruefeIbanNachKkAbgleich(db, mailer, config, { job, teile, konten, person, ip }) {
+  if (!job.qr_iban || !job.kreditor_id) return;
+  const kreditor = getKreditorById(db, job.kreditor_id);
+  if (!kreditor) return;
+  // Wie bisher unabhängig von der Zahlungsart (Kartenherausgeber zieht meist per Lastschrift ein);
+  // ohne hinterlegte IBAN kein Abgleich.
+  if (listKreditorIbansByKreditor(db, kreditor.id).length === 0) return;
+  const befund = ibanBefund(db, kreditor, job.qr_iban);
+  if (!befund) return;
+  const befunde = [befund];
+  createFreigabe(db, {
+    jobId: job.id,
+    personId: person.churchtools_person_id,
+    rolle: 'iban_abweichung',
+    zeitpunkt: new Date().toISOString(),
+    ip,
+    interessenskonflikt: false,
+    kommentar: `QR-IBAN ${job.qr_iban} weicht von der/den für ${kreditor.name} hinterlegten IBAN(s) ab.`,
+    eskaliertVon: null,
+  });
+  const freigeberIds = [];
+  for (const teil of teile) {
+    if (!konten.some((k) => k.id === teil.konto.id)) continue;
+    freigeberIds.push(teil.konto.freigeber1_id, getEffectiveFreigeber2Id(job, teil.konto));
   }
+  await sendeAuffaelligkeitenWarnung(db, mailer, config, {
+    job, kreditor, befunde, bemerkung: null, person, freigeberIds,
+    link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+  });
 }

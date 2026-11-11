@@ -74,7 +74,7 @@ Beim Aufbau (und nach jedem Zurücksetzen) legt das System Folgendes an:
 - **Rapporte:** ein offener Rapport «Rapport zur Kenntnis» für Ben und Carla, von Ben bereits bestätigt (Status `kenntnisnahme`, 1 von 2), und ein abgeschlossener Rapport für Ben. Beide sind von Anna markiert. Neue Rapporte lassen sich in der Spielwiese nur markieren, wenn das Rapporte-Modul in den kopierten Einstellungen eingeschaltet ist.
 - **Spesen:** eine Position von Carla (23.40, „Beispiel-Spesen“), zugewiesen an Anna.
 
-Alle Einstellungen der echten App (Eskalationszeiten, Mail-Vorlagen, Module,
+Alle Einstellungen der echten App (Benachrichtigungen, Mail-Vorlagen, Module,
 Erscheinungsbild und so weiter) werden beim Aufbau **kopiert**. Nicht kopiert
 werden Geheimnisse (alles mit `secret`, `token`, `pass` oder `key` im Namen),
 die Zeitstempel-Zugangsdaten, der Überwachungsschlüssel und die

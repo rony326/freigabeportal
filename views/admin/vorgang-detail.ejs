@@ -4,6 +4,7 @@
     </div>
     <p><a href="/admin/vorgaenge">← Laufende Vorgänge</a></p>
 
+    <%- include('../_auffaelligkeiten_bestaetigt', { kasten: locals.auffaelligkeitenBestaetigt }) %>
     <% if (umgehaengt) { %>
       <div class="alert alert-success">Vorgang umgehängt. Die beteiligten Personen wurden per Mail informiert.</div>
     <% } %>

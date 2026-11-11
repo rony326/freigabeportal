@@ -244,7 +244,7 @@ test('Erinnerungen, Eskalationen und Warnungen gehen bei "wöchentlich" immer so
   person(db, '1', 'woche@example.org', 'woechentlich');
   const typen = [
     'reminder', 'eskalation', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-beleg-erinnerung',
-    'sicherheitsalarm', 'duplikat-warnung', 'rechnungsnummer-warnung', 'iban-warnung', 'sync-fehler',
+    'sicherheitsalarm', 'duplikat-warnung', 'rechnungsnummer-warnung', 'auffaelligkeiten-warnung', 'sync-fehler',
     'admin-umzuweisung', 'kk-beleg-eingegangen', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail',
   ];
   for (const typ of typen) {

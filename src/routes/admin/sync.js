@@ -3,7 +3,6 @@ import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentSyncLogs } from '../../db/syncLogRepo.js';
 import { listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin } from '../../db/jobsRepo.js';
 import { getPersonById } from '../../db/personenRepo.js';
-import { validateEmpfaengerListe } from './eskalation.js';
 import { requirePermission, personHasPermission } from '../../middleware/permissions.js';
 
 function ladeStalledJobsMitNamen(db) {
@@ -29,7 +28,6 @@ export function createSyncRouter({ db, config = { churchtools: {} }, csrfProtect
     res.render('admin/sync', {
       maxDeaktivierungProzent: getConfigValue(db, 'sync_max_deaktivierung_prozent'),
       maxDeaktivierungAnzahl: getConfigValue(db, 'sync_max_deaktivierung_anzahl'),
-      syncFehlerEmpfaenger: getConfigValue(db, 'sync_fehler_empfaenger'),
       syncLog: listRecentSyncLogs(db, 20),
       stalledJobs: ladeStalledJobsMitNamen(db),
       errors: [],
@@ -38,7 +36,7 @@ export function createSyncRouter({ db, config = { churchtools: {} }, csrfProtect
   });
 
   router.post('/', requirePermission(db, config, 'sync_verwalten'), csrfProtection, (req, res, next) => {
-    const { maxDeaktivierungProzent, maxDeaktivierungAnzahl, syncFehlerEmpfaenger } = req.body;
+    const { maxDeaktivierungProzent, maxDeaktivierungAnzahl } = req.body;
     const errors = [];
 
     const prozentNum = Number(maxDeaktivierungProzent);
@@ -49,13 +47,11 @@ export function createSyncRouter({ db, config = { churchtools: {} }, csrfProtect
     if (!Number.isInteger(anzahlNum) || anzahlNum <= 0) {
       errors.push('Max. Deaktivierungs-Anzahl muss eine positive Ganzzahl sein.');
     }
-    validateEmpfaengerListe(syncFehlerEmpfaenger, 'Sync-Fehler-Empfänger', errors);
 
     if (errors.length > 0) {
       return res.status(400).render('admin/sync', {
         maxDeaktivierungProzent,
         maxDeaktivierungAnzahl,
-        syncFehlerEmpfaenger,
         syncLog: listRecentSyncLogs(db, 20),
         stalledJobs: ladeStalledJobsMitNamen(db),
         errors,
@@ -67,7 +63,6 @@ export function createSyncRouter({ db, config = { churchtools: {} }, csrfProtect
     try {
       setConfigValue(db, 'sync_max_deaktivierung_prozent', String(prozentNum));
       setConfigValue(db, 'sync_max_deaktivierung_anzahl', String(anzahlNum));
-      setConfigValue(db, 'sync_fehler_empfaenger', syncFehlerEmpfaenger.trim());
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');

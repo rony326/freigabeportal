@@ -18,11 +18,11 @@ in [`docs/`](docs/README.md).
 
 ## Version
 
-Aktuelle Version: **1.0.1** (2026-11-10).
+Aktuelle Version: **1.1.0** (2026-11-11).
 Änderungen je Version: [`CHANGELOG.md`](CHANGELOG.md), ausführliche
-Release Notes in [`docs/releases/`](docs/releases/v1.0.1.md). Die
+Release Notes in [`docs/releases/`](docs/releases/v1.1.0.md). Die
 Fusszeile im Portal zeigt den laufenden Stand per `git describe` (Tag
-`v1.0.1` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
+`v1.1.0` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
 Version aus `package.json`.
 
 ## Setup (lokal)
@@ -243,7 +243,7 @@ jeden davon manuell sofort auslösen, und den Verlauf der letzten Läufe
 (Erfolg/Fehler samt Details) einsehen — sowohl geplante als auch manuell
 ausgelöste Läufe landen im selben Verlauf. `datenbank-sicherung` wird unter
 **Admin → Betrieb → Datenbank-Backup**, `mail-digest` unter **Admin → Einstellungen →
-Mail-Einstellungen** eingestellt; `sicherheitsalarme` nur über `admin_config`.
+Benachrichtigungen** eingestellt; `sicherheitsalarme` nur über `admin_config`.
 Details zu allen sechzehn Jobs:
 [docs/geplante-jobs-und-benachrichtigungen.md](docs/geplante-jobs-und-benachrichtigungen.md).
 

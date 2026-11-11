@@ -136,16 +136,16 @@ test('sendNotification ignores the batching switch for sync-fehler and always se
   db.close();
 });
 
-test('sendNotification ignores the batching switch for iban-warnung and always sends immediately', async () => {
+test('sendNotification ignores the batching switch for auffaelligkeiten-warnung and always sends immediately', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   setConfigValue(db, 'mail_standard_benachrichtigung', 'taeglich');
   const mailer = createStubMailer();
   await sendNotification(db, mailer, {
     to: 'a@example.org',
-    typ: 'iban-warnung',
+    typ: 'auffaelligkeiten-warnung',
     jobId: null,
-    variablen: { jobDateiname: 'a.pdf', kreditorName: 'ACME', tatsaechlicheIban: 'CH00', link: 'L' },
+    variablen: { jobDateiname: 'a.pdf', kreditorName: 'ACME', auffaelligkeiten: '- IBAN nicht hinterlegt: x', bestaetigtVon: 'Erika Muster', bemerkung: '–', link: 'L' },
   });
   assert.equal(mailer.sent.length, 1);
   assert.equal(listMailLog(db)[0].status, 'versendet');
@@ -315,5 +315,33 @@ test('admin-umzuweisung wird auch bei aktivem Batching sofort eingereiht', () =>
     variablen: { empfaengerName: 'X', grund: 'G', jobDateiname: 'a.pdf', adminName: 'A', bemerkung: 'B', link: 'L' },
   });
   assert.equal(eintrag.status, 'eingereiht');
+  db.close();
+});
+
+test('resolveEmpfaenger resolves person:<id> to the current mail of an active person', () => {
+  const db = openDatabase(':memory:');
+  const config = { churchtools: { groupIdBuchhaltung: '10' } };
+  upsertPerson(db, { id: '1', vorname: 'A', nachname: 'B', email: 'p1@example.org', gruppen: [], loggedInNow: false });
+  assert.deepEqual(resolveEmpfaenger(db, config, 'person:1'), ['p1@example.org']);
+  db.close();
+});
+
+test('resolveEmpfaenger silently skips person:<id> for inactive, unknown or mail-less persons', () => {
+  const db = openDatabase(':memory:');
+  const config = { churchtools: { groupIdBuchhaltung: '10' } };
+  upsertPerson(db, { id: '1', vorname: 'A', nachname: 'B', email: 'p1@example.org', gruppen: [], loggedInNow: false });
+  upsertPerson(db, { id: '2', vorname: 'C', nachname: 'D', email: '', gruppen: [], loggedInNow: false });
+  db.prepare('UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = ?').run('1');
+  assert.deepEqual(resolveEmpfaenger(db, config, 'person:1\nperson:2\nperson:999'), []);
+  db.close();
+});
+
+test('resolveEmpfaenger deduplicates a mixed list of person, group and literal lines', () => {
+  const db = openDatabase(':memory:');
+  const config = { churchtools: { groupIdBuchhaltung: '10' } };
+  upsertPerson(db, { id: '1', vorname: 'A', nachname: 'B', email: 'p1@example.org', gruppen: ['10'], loggedInNow: false });
+  upsertPerson(db, { id: '3', vorname: 'E', nachname: 'F', email: 'p3@example.org', gruppen: [], loggedInNow: false });
+  const result = resolveEmpfaenger(db, config, 'person:1\ngruppe:buchhaltung\np1@example.org\nperson:3');
+  assert.deepEqual(result.sort(), ['p1@example.org', 'p3@example.org']);
   db.close();
 });

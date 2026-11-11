@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { getKreditkarteById } from '../db/kreditkartenRepo.js';
 import { listOffeneKkBelegeFuerKarte, getKkBelegById, ordneKkBelegZu, createKkBeleg, logKkBelegEreignis } from '../db/kkBelegeRepo.js';
 import { listKonten, getKontoById } from '../db/kontenRepo.js';
-import { listKreditoren, getKreditorById } from '../db/kreditorenRepo.js';
+import { listKreditorenWaehlbar, getKreditorById, istKreditorVollstaendig } from '../db/kreditorenRepo.js';
 import { kreditorIdAusEingabe, KreditorFeldKonflikt } from '../services/kreditorFelder.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
@@ -15,7 +15,7 @@ import { markJobAufgesplittet, setJobBetrag, setKkAbrechnungKopfdaten, setKkText
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
-import { bereiteTeilDateienVor, erzeugeTeilJobs, benachrichtigeNachAufsplitten, pruefeIbanNachAufsplitten, POSITION_PATTERN } from '../services/aufsplitten.js';
+import { bereiteTeilDateienVor, erzeugeTeilJobs, benachrichtigeNachAufsplitten, pruefeIbanNachKkAbgleich, alleKindIds, POSITION_PATTERN } from '../services/aufsplitten.js';
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
 import { extrahierePdfText } from '../services/pdfText.js';
 import { analysiereText, LEERE_ANALYSE, berechneVorschlaege } from '../services/kkTextAnalyse.js';
@@ -90,7 +90,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
       belege: offeneBelege(karte.id, analyse),
       alleKonten: listKonten(db),
       eigeneKontoIds: ladeKontenFuerJob(db, req, job).map((k) => k.id),
-      kreditoren: listKreditoren(db),
+      kreditoren: listKreditorenWaehlbar(db),
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       werte,
       zeilen,
@@ -169,7 +169,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           if (!KK_BETRAG_PATTERN.test(werte.gesamtbetrag)) errors.push('Bitte ein gültiges Abrechnungstotal angeben.');
           if (werte.zahlungsziel && !DATUM_PATTERN.test(werte.zahlungsziel)) errors.push('Zahlungsziel ist kein gültiges Datum.');
           const kreditor = werte.kreditorId ? getKreditorById(db, werte.kreditorId) : null;
-          if (werte.kreditorId && !kreditor) errors.push('Bitte einen gültigen Kartenherausgeber wählen.');
+          if (werte.kreditorId && (!kreditor || !istKreditorVollstaendig(db, kreditor))) errors.push('Bitte einen gültigen Kartenherausgeber wählen.');
           if (zeilen.length === 0) errors.push('Mindestens eine Position ist nötig.');
 
           // Nachgereichte Dateien müssen sich öffnen lassen, sonst scheitert erst die Dateiarbeit
@@ -286,6 +286,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           const personId = req.currentPerson.churchtools_person_id;
           const total = normalisiereBetrag(werte.gesamtbetrag);
           let ergebnis;
+          let parent;
           db.exec('BEGIN');
           try {
             setJobBetrag(db, job.id, total);
@@ -296,7 +297,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
               zahlungsziel: werte.zahlungsziel || job.zahlungsziel,
             });
             if (!markJobAufgesplittet(db, job.id)) throw new AbgleichKonflikt('Diese Abrechnung wurde inzwischen bereits bearbeitet.');
-            const parent = { ...job, betrag: total, ...db.prepare('SELECT kreditor_id, lieferant, rechnungsnummer, zahlungsziel FROM jobs WHERE id = ?').get(job.id) };
+            parent = { ...job, betrag: total, ...db.prepare('SELECT kreditor_id, lieferant, rechnungsnummer, zahlungsziel FROM jobs WHERE id = ?').get(job.id) };
             ergebnis = erzeugeTeilJobs(db, {
               job: parent,
               teile: vorbereitet,
@@ -307,11 +308,8 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
               fremdKontoModus: 'freigeber1',
               istVertretung: !job.freigabe1_eskaliert_an_admin && istAktiveVertretungFuer(db, personId, job.zugewiesen_an),
             });
-            // erzeugeTeilJobs legt die Kinder in Eingabereihenfolge an; die IDs aller Ergebnislisten
-            // zusammen, aufsteigend sortiert, entsprechen deshalb 1:1 der Reihenfolge von `vorbereitet`.
-            const kindIds = [
-              ...ergebnis.selbstFreigegeben, ...ergebnis.eskaliert, ...ergebnis.eskaliertAnAdmin, ...ergebnis.fremdeKonten, ...ergebnis.anFreigeber1,
-            ].map((e) => e.id).sort((a, c) => a - c);
+            // Aufsteigend sortiert entsprechen die Kind-IDs 1:1 der Reihenfolge von `vorbereitet`.
+            const kindIds = alleKindIds(ergebnis);
             if (kindIds.length !== vorbereitet.length) throw new Error('Teil-Job-Anzahl stimmt nicht');
             vorbereitet.forEach((teil, i) => {
               const kindId = kindIds[i];
@@ -345,7 +343,9 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           }
 
           await benachrichtigeNachAufsplitten(db, mailer, config, { job, ergebnis, person: req.currentPerson });
-          await pruefeIbanNachAufsplitten(db, mailer, config, { job, teile: vorbereitet, konten, person: req.currentPerson, ip: req.ip });
+          // Mit dem nachgeladenen Elternjob: der Kartenherausgeber wird oft erst in diesem Formular
+          // gewählt (setKkAbrechnungKopfdaten), das vor dem Speichern geladene `job` kennt ihn nicht.
+          await pruefeIbanNachKkAbgleich(db, mailer, config, { job: parent, teile: vorbereitet, konten, person: req.currentPerson, ip: req.ip });
           res.redirect('/pool');
         } catch (err) {
           if (err instanceof KreditorFeldKonflikt) return res.status(400).render('error', { message: err.message });

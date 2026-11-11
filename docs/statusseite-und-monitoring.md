@@ -92,7 +92,7 @@ Mit gültigem Header `X-Monitoring-Key: <schluessel>` das volle JSON:
 {
   "status": "warnung",
   "geprueft_am": "2026-10-25T08:00:00.000Z",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "dienste": {
     "datenbank": { "status": "ok", "grund": "erreichbar" },
     "sicherung": { "status": "warnung", "grund": "letzter Erfolg vor mehr als 26 Stunden", "seit": "2026-10-23T02:00:00.000Z" },

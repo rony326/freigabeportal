@@ -82,7 +82,9 @@ CREATE TABLE IF NOT EXISTS kreditoren (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   konto_id INTEGER REFERENCES konten(id),
-  aktiv INTEGER NOT NULL DEFAULT 1
+  aktiv INTEGER NOT NULL DEFAULT 1,
+  zahlungsart TEXT NOT NULL DEFAULT 'ueberweisung' CHECK (zahlungsart IN ('ueberweisung', 'dauerauftrag', 'lastschrift', 'kreditkarte')),
+  betrag_schwankt INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS kreditor_ibans (
@@ -227,7 +229,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id INTEGER NOT NULL REFERENCES jobs(id),
   person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung', 'kk_abrechnung_markiert', 'kk_markierung_aufgehoben', 'kk_abgleich', 'admin_umzuweisung', 'duplikat_verdacht', 'rapport_markiert', 'rapport_bestaetigt', 'rapport_empfaenger_ersetzt', 'rapport_empfaenger_entfernt', 'rapport_markierung_aufgehoben')),
+  rolle TEXT NOT NULL CHECK (rolle IN ('freigeber1', 'freigeber2', 'ablehnung', 'freigabe1_eskalation', 'freigabe2_eskalation', 'iban_abweichung', 'rechnungsnummer_duplikat', 'pool_zuweisung', 'pool_ruecksendung', 'freigabe1_weiterleitung', 'kk_abrechnung_markiert', 'kk_markierung_aufgehoben', 'kk_abgleich', 'admin_umzuweisung', 'duplikat_verdacht', 'rapport_markiert', 'rapport_bestaetigt', 'rapport_empfaenger_ersetzt', 'rapport_empfaenger_entfernt', 'rapport_markierung_aufgehoben', 'iban_manuell_geprueft', 'auffaelligkeiten_bestaetigt')),
   zeitpunkt TEXT NOT NULL,
   ip TEXT NOT NULL,
   interessenskonflikt INTEGER NOT NULL DEFAULT 0,
@@ -240,7 +242,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
 
 CREATE TABLE IF NOT EXISTS mail_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation')),
+  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation', 'auffaelligkeiten-warnung')),
   job_id INTEGER REFERENCES jobs(id),
   empfaenger TEXT NOT NULL,
   betreff TEXT NOT NULL,
@@ -355,3 +357,19 @@ CREATE TABLE IF NOT EXISTS konto_budgets (
   geaendert_am TEXT NOT NULL,
   PRIMARY KEY (konto_id, jahr)
 );
+
+-- Bewusst bestätigte Auffälligkeiten bei der Kontierung (Prüf-Popup, services/betrugspruefung.js).
+-- befunde_json: die bestätigten Befunde [{code, schwere, titel, text}]. Append-only.
+CREATE TABLE IF NOT EXISTS kontierung_auffaelligkeiten (
+  id INTEGER PRIMARY KEY,
+  job_id INTEGER NOT NULL REFERENCES jobs(id),
+  person_id TEXT NOT NULL,
+  zeitpunkt TEXT NOT NULL,
+  befunde_json TEXT NOT NULL,
+  bemerkung TEXT
+);
+CREATE INDEX IF NOT EXISTS kontierung_auffaelligkeiten_job_idx ON kontierung_auffaelligkeiten(job_id);
+CREATE TRIGGER IF NOT EXISTS kontierung_auffaelligkeiten_no_update BEFORE UPDATE ON kontierung_auffaelligkeiten
+BEGIN SELECT RAISE(ABORT, 'kontierung_auffaelligkeiten ist unveraenderlich'); END;
+CREATE TRIGGER IF NOT EXISTS kontierung_auffaelligkeiten_no_delete BEFORE DELETE ON kontierung_auffaelligkeiten
+BEGIN SELECT RAISE(ABORT, 'kontierung_auffaelligkeiten ist unveraenderlich'); END;

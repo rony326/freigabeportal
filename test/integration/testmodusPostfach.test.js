@@ -67,7 +67,7 @@ test('Postfach zeigt die beim Freigeben entstandene Mail', async () => {
   const token = csrfAus((await u.agent.get('/pool')).text);
   await u.agent.post(`/api/pool/${job.id}/beanspruchen`).type('form').send({ _csrf: token });
   const kont = await u.agent.post(`/kontierung/${job.id}`).type('form').send({
-    kontoId: String(konto.id), kreditorId: String(kreditor.id), absender: 'Muster Druck AG', rechnungsnummer: 'BSP-PF',
+    kontoId: String(konto.id), kreditorId: String(kreditor.id), absender: 'Muster Druck AG', rechnungsnummer: 'BSP-PF', ibanEndung: '3007',
     betrag: '120.00', zahlungsziel: '2026-12-31', interessenskonflikt: 'nein', begruendung: '', _csrf: token,
   });
   assert.equal(kont.status, 302);

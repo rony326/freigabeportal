@@ -20,7 +20,7 @@
       <% } %>
       <% if (typeof auditRevisionEmpfaengerFehlt !== 'undefined' && auditRevisionEmpfaengerFehlt) { %>
         <div class="alert alert-warning">
-          Für den Audit-Nachweis ist kein Revisions-Empfänger festgelegt — <a href="/admin/zeitstempel">Empfänger eintragen</a>.
+          Für den Audit-Nachweis ist kein Revisions-Empfänger festgelegt — <a href="/admin/benachrichtigungen/audit-pruefnummer">Empfänger eintragen</a>.
         </div>
       <% } %>
     <% } %>
@@ -65,12 +65,12 @@
         </a>
       </div>
       <% } %>
-      <% if (adminNav.eskalation) { %>
+      <% if (adminNav.benachrichtigungen) { %>
       <div class="col">
-        <a href="/admin/eskalation" class="card text-decoration-none h-100">
+        <a href="/admin/benachrichtigungen" class="card text-decoration-none h-100">
           <div class="card-body">
-            <h2 class="h5 card-title">Eskalationszeiten</h2>
-            <p class="card-text text-body-secondary">Reminder- und Eskalationsfristen einstellen.</p>
+            <h2 class="h5 card-title">Benachrichtigungen</h2>
+            <p class="card-text text-body-secondary">Pro Ereignis: wann die Mail kommt, wer sie bekommt und was drinsteht.</p>
           </div>
         </a>
       </div>
@@ -121,16 +121,6 @@
           <div class="card-body">
             <h2 class="h5 card-title">Mail-Protokoll</h2>
             <p class="card-text text-body-secondary">Versendete und fehlgeschlagene E-Mails.</p>
-          </div>
-        </a>
-      </div>
-      <% } %>
-      <% if (adminNav.mailEinstellungen) { %>
-      <div class="col">
-        <a href="/admin/mail-einstellungen" class="card text-decoration-none h-100">
-          <div class="card-body">
-            <h2 class="h5 card-title">Mail-Einstellungen</h2>
-            <p class="card-text text-body-secondary">Mail-Vorlagen bearbeiten und Versand-Batching einstellen.</p>
           </div>
         </a>
       </div>

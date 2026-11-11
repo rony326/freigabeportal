@@ -15,14 +15,20 @@
         <ul class="mb-0"><% kreditorErrors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
       </div>
     <% } %>
+    <% if (ohneIbanAnzahl > 0) { %>
+      <div class="alert alert-warning">
+        <%= ohneIbanAnzahl %> <%= ohneIbanAnzahl === 1 ? 'Lieferant' : 'Lieferanten' %> ohne IBAN
+      </div>
+    <% } %>
     <div class="table-responsive mb-3">
       <table class="table align-middle">
-        <thead><tr><th>Name</th><th>Standard-Konto</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Standard-Konto</th><th>Zahlungsart</th><th>Status</th><th></th></tr></thead>
         <tbody>
           <% kreditoren.forEach((kreditor) => { %>
             <tr>
-              <td><%= kreditor.name %></td>
+              <td><%= kreditor.name %><% if (kreditor.unvollstaendig) { %> <span class="badge text-bg-warning">IBAN fehlt</span><% } %></td>
               <td><%= kreditor.konto ? `${kreditor.konto.kontonummer} — ${kreditor.konto.bezeichnung}` : '—' %></td>
+              <td><%= kreditor.zahlungsartLabel %><% if (kreditor.betrag_schwankt) { %> <span class="badge text-bg-secondary">Beträge schwanken</span><% } %></td>
               <td><%= kreditor.aktiv ? 'Aktiv' : 'Inaktiv' %></td>
               <td>
                 <a href="/admin/kreditoren/<%= kreditor.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
@@ -43,7 +49,7 @@
         </tbody>
       </table>
     </div>
-    <form method="post" action="/admin/kreditoren" class="row g-2 align-items-end mb-4">
+    <form method="post" action="/admin/kreditoren" class="row g-3 align-items-start mb-4">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="col-auto">
         <label class="form-label" for="kreditorName">Name</label>
@@ -59,6 +65,28 @@
         </select>
       </div>
       <div class="col-auto">
+        <label class="form-label" for="kreditorIban">IBAN</label>
+        <input type="text" class="form-control" id="kreditorIban" name="iban" value="<%= kreditorValues.iban || '' %>" placeholder="z.B. CH93 0076 2011 6238 5295 7">
+      </div>
+      <div class="col-12">
+        <span class="form-label d-block">Zahlungsart</span>
+        <% ZAHLUNGSARTEN.forEach((art) => { %>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="zahlungsart" id="kreditorZahlungsart-<%= art %>" value="<%= art %>" <%= (kreditorValues.zahlungsart || 'ueberweisung') === art ? 'checked' : '' %>>
+            <label class="form-check-label" for="kreditorZahlungsart-<%= art %>"><%= ZAHLUNGSART_LABEL[art] %></label>
+          </div>
+        <% }) %>
+        <div class="form-text">Überweisung und Dauerauftrag: mindestens eine IBAN ist Pflicht.</div>
+      </div>
+      <div class="col-12">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="betragSchwankt" id="kreditorBetragSchwankt" <%= kreditorValues.betragSchwankt ? 'checked' : '' %>>
+          <label class="form-check-label" for="kreditorBetragSchwankt">Beträge schwanken stark: keine Warnung bei ungewöhnlich hohem Betrag</label>
+        </div>
+        <div class="form-text">z. B. bei Handwerkern oder Projekt-Lieferanten. Alle IBAN- und Duplikat-Prüfungen bleiben aktiv.</div>
+      </div>
+      <div class="col-12 text-muted small">Neue IBANs bitte nur aus einer unabhängigen Quelle übernehmen (Vertrag, Telefonat), nicht von einer Rechnung. Ausländische IBANs sind erlaubt.</div>
+      <div class="col-12">
         <button type="submit" class="btn btn-primary">Kreditor anlegen</button>
       </div>
     </form>
@@ -112,6 +140,7 @@
 
     <h2 class="h5 mt-4">Lieferanten-IBANs</h2>
     <p class="text-muted">Hinterlegt pro Lieferant die erwartete(n) IBAN(s). Weicht die im QR-Code einer Rechnung gefundene IBAN davon ab, warnt das Portal bei der Kontierung.</p>
+    <p class="text-muted small">Neue IBANs bitte nur aus einer unabhängigen Quelle übernehmen (Vertrag, Telefonat), nicht von einer Rechnung. Ausländische IBANs sind erlaubt.</p>
     <% if (ibanErrors.length > 0) { %>
       <div class="alert alert-danger">
         <ul class="mb-0"><% ibanErrors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
@@ -123,7 +152,7 @@
         <tbody>
           <% ibans.forEach((row) => { %>
             <tr>
-              <td><%= row.iban %></td>
+              <td><%= ibanKurz(row.iban) %></td>
               <td><%= row.kreditor ? row.kreditor.name : '—' %></td>
               <td><span class="badge <%= row.quelle === 'bestaetigt' ? 'text-bg-info' : 'text-bg-secondary' %>"><%= row.quelle === 'bestaetigt' ? 'bestätigt' : 'manuell' %></span></td>
               <td>

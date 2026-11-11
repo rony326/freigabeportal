@@ -1972,3 +1972,60 @@ test('freigabe2: IBAN-Abweichung rot', async () => {
   assert.equal(res.status, 200);
   assert.match(res.text, /<div class="alert alert-danger py-2[^"]*"[^>]*>[^<]*(?:<[^>]+>[^<]*)*?NICHT bei diesem Lieferanten hinterlegt/);
 });
+
+function legeBestaetigungAn(db, jobId, { personId = '1', zeitpunkt, befunde, bemerkung = null }) {
+  db.prepare('INSERT INTO kontierung_auffaelligkeiten (job_id, person_id, zeitpunkt, befunde_json, bemerkung) VALUES (?, ?, ?, ?, ?)')
+    .run(jobId, personId, zeitpunkt, JSON.stringify(befunde), bemerkung);
+}
+const BEFUND_A = { code: 'iban_neu', schwere: 'rot', titel: 'IBAN nicht hinterlegt', text: 'CH93 … 5295 7' };
+const BEFUND_B = { code: 'betrag_hoch', schwere: 'gelb', titel: 'Ungewöhnlich hoch', text: '5-mal der Durchschnitt' };
+
+test('GET /freigabe2/:id zeigt den Kasten mit bestätigten Auffälligkeiten, Person, Zeit und Bemerkung', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  legeBestaetigungAn(db, id, { zeitpunkt: '2026-11-10T13:32:00.000Z', befunde: [BEFUND_A, BEFUND_B], bemerkung: 'telefonisch <b>bestätigt</b>' });
+  const res = await request(buildTestApp(db)).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /2 Auffälligkeiten, bewusst bestätigt/);
+  assert.match(res.text, /IBAN nicht hinterlegt/);
+  assert.match(res.text, /Ungewöhnlich hoch/);
+  assert.match(res.text, /Bestätigt von <strong>Person1 Muster<\/strong> am 10\.11\.2026, 14:32/);
+  assert.match(res.text, /Wie geprüft:<\/span> «telefonisch &lt;b&gt;bestätigt&lt;\/b&gt;»/);
+  db.close();
+});
+
+test('GET /freigabe2/:id: Singular bei einer Auffälligkeit, ohne Bemerkung kein "Wie geprüft"', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  legeBestaetigungAn(db, id, { zeitpunkt: '2026-11-10T13:32:00.000Z', befunde: [BEFUND_A] });
+  const res = await request(buildTestApp(db)).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.match(res.text, /1 Auffälligkeit, bewusst bestätigt/);
+  assert.doesNotMatch(res.text, /Wie geprüft/);
+  db.close();
+});
+
+test('GET /freigabe2/:id ohne Bestätigung zeigt keinen Kasten', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const res = await request(buildTestApp(db)).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /bewusst bestätigt/);
+  db.close();
+});
+
+test('GET /freigabe2/:id zeigt bei zwei Bestätigungen (Überarbeitung) nur die jüngste', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  legeBestaetigungAn(db, id, { personId: '2', zeitpunkt: '2026-11-01T08:00:00.000Z', befunde: [BEFUND_A, BEFUND_B], bemerkung: 'alte Prüfung' });
+  legeBestaetigungAn(db, id, { personId: '1', zeitpunkt: '2026-11-05T08:00:00.000Z', befunde: [BEFUND_B], bemerkung: 'neue Prüfung' });
+  const res = await request(buildTestApp(db)).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.match(res.text, /1 Auffälligkeit, bewusst bestätigt/);
+  assert.match(res.text, /neue Prüfung/);
+  assert.doesNotMatch(res.text, /alte Prüfung/);
+  assert.doesNotMatch(res.text, /IBAN nicht hinterlegt/);
+  db.close();
+});

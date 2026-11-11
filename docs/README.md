@@ -26,10 +26,10 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [tsa-vertrauensanker.md](tsa-vertrauensanker.md) | Deployment von Root-CAs und CRLs, Prüfprofil und Grenzen |
 | [audit-paket-request-korrelation.md](audit-paket-request-korrelation.md) | Request-/Lauf-IDs und protokollierte Backup-Löschungen |
 | [export-und-zahlungsintegritaet.md](export-und-zahlungsintegritaet.md) | Snapshot-gebundener Export, Zahlungsbestätigung je Belegart, Altfälle ohne Freigabenachweis |
-| [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md) | Swiss-QR-Bill-Erkennung und IBAN-Abgleich gegen hinterlegte Lieferanten-IBANs |
+| [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md) | Pflicht-IBAN und Zahlungsart pro Lieferant, Swiss-QR-Bill-Erkennung, Prüfungen und Prüf-Popup bei der Kontierung, manuelle IBAN-Kontrolle |
 | [zeitstempel-und-pruefbescheinigung.md](zeitstempel-und-pruefbescheinigung.md) | RFC3161-Zeitstempel, Nachhol-Mechanismus, Verifikations- und Zertifikatsseite |
 | [ersteinrichtung.md](ersteinrichtung.md) | Geführter Einrichtungsassistent `/admin/ersteinrichtung`: 14 Schritte, Messregeln, Tests, Dashboard-Hinweis, Statusdienst `einrichtung` |
-| [admin-bereich.md](admin-bereich.md) | Alle Admin-Seiten mit den jeweils benötigten Rechten |
+| [admin-bereich.md](admin-bereich.md) | Alle Admin-Seiten mit den jeweils benötigten Rechten, inkl. Seite Benachrichtigungen (Wann/Wer/Was pro Ereignis) |
 | [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md) | Die sechzehn automatischen Hintergrund-Jobs, persistente Mailzustellung mit Wiederholung, Eskalationslogik, Verhalten nach Neustart |
 | [personen-sync.md](personen-sync.md) | Nächtlicher ChurchTools-Personen-/Gruppen-Sync: Zugangsmodell (Gruppenaustritt vs. entzogener Zugang vs. Ausfall), Schutzmechanismen, "stalled jobs" |
 | [backup-verschluesselung.md](backup-verschluesselung.md) | **Verbindlich:** verschlüsselte `.fpbak`-Sicherungen, Schlüsselbund und Schlüsselaufbewahrung, Rotation, n8n-Abholung, Altsicherungen |
@@ -48,6 +48,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 
 | Version | Datum | Release Notes |
 |---|---|---|
+| 1.1.0 | 2026-11-11 | [releases/v1.1.0.md](releases/v1.1.0.md) |
 | 1.0.1 | 2026-11-10 | [releases/v1.0.1.md](releases/v1.0.1.md) |
 | 1.0.0 | 2026-11-09 | [releases/v1.0.0.md](releases/v1.0.0.md) |
 

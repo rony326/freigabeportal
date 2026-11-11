@@ -46,7 +46,7 @@ test('Kreditoren are created and listed under the correct name; the former path 
   const { db, app, client } = setup(t);
   const admin = await loginAs(app, client, 1, ['20']);
   const token = await fetchCsrfToken(admin, '/admin/kreditoren');
-  assert.equal((await admin.post('/admin/kreditoren').type('form').send({ _csrf: token, name: 'Papier AG' })).status, 302);
+  assert.equal((await admin.post('/admin/kreditoren').type('form').send({ _csrf: token, name: 'Papier AG', zahlungsart: 'lastschrift' })).status, 302);
   const liste = await admin.get('/admin/kreditoren');
   assert.equal(liste.status, 200);
   assert.match(liste.text, /<h1 class="seitenkopf-titel">Kreditoren<\/h1>/);
@@ -71,8 +71,8 @@ test('legacy debitorId form fields still work; contradicting values are rejected
   const { db, app, client } = setup(t);
   const admin = await loginAs(app, client, 1, ['20']);
   const token = await fetchCsrfToken(admin, '/admin/kreditoren');
-  await admin.post('/admin/kreditoren').type('form').send({ _csrf: token, name: 'A AG' });
-  await admin.post('/admin/kreditoren').type('form').send({ _csrf: token, name: 'B AG' });
+  await admin.post('/admin/kreditoren').type('form').send({ _csrf: token, name: 'A AG', zahlungsart: 'lastschrift' });
+  await admin.post('/admin/kreditoren').type('form').send({ _csrf: token, name: 'B AG', zahlungsart: 'lastschrift' });
   const [a, b] = db.prepare('SELECT id FROM kreditoren ORDER BY id').all().map((r) => r.id);
 
   assert.equal((await admin.post('/admin/kreditoren/regeln').type('form').send({ _csrf: token, absenderMuster: 'a.example', debitorId: String(a) })).status, 302);

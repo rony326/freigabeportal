@@ -16,8 +16,8 @@ export const SYMBOLE = [
   'envelope-at', 'palette', 'grid-3x3-gap', 'clock-history', 'list-check', 'database', 'shield-exclamation',
   'envelope-paper', 'arrow-repeat', 'calendar-check', 'card-list', 'speedometer2', 'cone-striped', 'piggy-bank',
   'bar-chart-line',
-  // Sonstige: Menü, Farbmodus, Neu laden, Tabelle, Kacheln
-  'list', 'circle-half', 'arrow-clockwise', 'table', 'grid',
+  // Sonstige: Menü, Farbmodus, Neu laden, Tabelle, Kacheln, Empfänger-Kärtchen (Person)
+  'list', 'circle-half', 'arrow-clockwise', 'table', 'grid', 'person',
 ];
 
 // flag: Schlüssel in adminNav bzw. Portal-Option (null = immer sichtbar)
@@ -59,8 +59,7 @@ const ADMIN = [
     { label: 'Personen', href: '/admin/personen', symbol: 'people', flag: 'personen' },
   ] },
   { titel: 'Einstellungen', punkte: [
-    { label: 'Eskalationszeiten', href: '/admin/eskalation', symbol: 'alarm', flag: 'eskalation' },
-    { label: 'Mail-Einstellungen', href: '/admin/mail-einstellungen', symbol: 'envelope-at', flag: 'mailEinstellungen' },
+    { label: 'Benachrichtigungen', href: '/admin/benachrichtigungen', symbol: 'envelope-at', flag: 'benachrichtigungen' },
     { label: 'Erscheinungsbild', href: '/admin/erscheinungsbild', symbol: 'palette', flag: 'erscheinungsbild' },
     { label: 'Module', href: '/admin/module', symbol: 'grid-3x3-gap', flag: 'module' },
     { label: 'Zeitstempel', href: '/admin/zeitstempel', symbol: 'clock-history', flag: 'zeitstempel' },

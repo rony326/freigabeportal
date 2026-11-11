@@ -15,7 +15,7 @@ export const SCHRITTE = [
   { id: 'branding', titel: 'Erscheinungsbild', beschreibung: 'Passe Titel, Logo und Farben des Portals an deine Organisation an.', pflicht: false, link: '/admin/erscheinungsbild', manuell: false },
   { id: 'kreditoren', titel: 'Lieferanten erfassen', beschreibung: 'Erfasse die wichtigsten Lieferanten (Kreditoren), damit Rechnungen schneller zugeordnet werden.', pflicht: false, link: '/admin/kreditoren', manuell: false },
   { id: 'module', titel: 'Module prüfen', beschreibung: 'Schalte Module wie Spesen oder Kreditkarten ein oder aus.', pflicht: false, link: '/admin/module', manuell: true },
-  { id: 'mailvorlagen', titel: 'Mail-Vorlagen prüfen', beschreibung: 'Kontrolliere die Texte der automatischen Mails und passe sie bei Bedarf an.', pflicht: false, link: '/admin/mail-einstellungen', manuell: true },
+  { id: 'mailvorlagen', titel: 'Mail-Vorlagen prüfen', beschreibung: 'Kontrolliere die Texte der automatischen Mails und passe sie bei Bedarf an.', pflicht: false, link: '/admin/benachrichtigungen', manuell: true },
   { id: 'monitoring', titel: 'Überwachung einrichten', beschreibung: 'Erzeuge einen Schlüssel, damit ein Überwachungsdienst den Zustand des Portals prüfen kann.', pflicht: false, link: '/admin/betrieb/status', manuell: false },
   { id: 'jobs', titel: 'Geplante Jobs prüfen', beschreibung: 'Die wichtigsten automatischen Aufgaben sollen mindestens einmal gelaufen sein.', pflicht: false, link: '/admin/geplante-jobs', manuell: false },
 ];

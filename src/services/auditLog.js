@@ -11,6 +11,8 @@ export const EREIGNIS_LABEL = {
   iban_abweichung: 'IBAN-Abweichung festgestellt',
   rechnungsnummer_duplikat: 'Doppelte Rechnungsnummer festgestellt',
   duplikat_verdacht: 'Mögliche doppelte Rechnung festgestellt',
+  iban_manuell_geprueft: 'IBAN von Hand geprüft',
+  auffaelligkeiten_bestaetigt: 'Auffälligkeiten bestätigt',
   pool_zuweisung: 'An Person weitergeleitet',
   pool_ruecksendung: 'An Gruppe zurückgesendet',
   freigabe1_weiterleitung: 'An Freigeber 1 weitergeleitet (Kontierung durch andere Person)',

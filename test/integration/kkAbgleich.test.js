@@ -431,3 +431,81 @@ test('POST kk-abgleich: a receipt description is not re-validated on beleg lines
   assert.equal(listSplitKinder(t.db, t.jobId)[0].rechnungsposition, null);
   t.cleanup();
 });
+
+test('kk-abgleich: unvollständiger Kartenherausgeber ist nicht wählbar; POST mit ihm → 400 ohne Kinder', async () => {
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const t = await setup();
+  const ohneIban = createKreditor(t.db, { name: 'Ohne IBAN Bank', kontoId: null });
+  const b1 = await t.beleg('30.00', 'Papier', t.eigen);
+  const seite = await request(t.app).get(`/kontierung/${t.jobId}/kk-abgleich`).set('x-test-person-id', '1');
+  assert.doesNotMatch(seite.text, /Ohne IBAN Bank/);
+  const res = await post(t, '1', {
+    gesamtbetrag: '30.00',
+    kopf: { rechnungsnummer: 'KK-1', zahlungsziel: '2026-10-20', kreditorId: String(ohneIban) },
+    zeilen: [{ art: 'beleg', belegId: b1, kontoId: t.eigen, betrag: '30.00', beschreibung: 'Papier' }],
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bitte einen gültigen Kartenherausgeber wählen\./);
+  assert.equal(getJobById(t.db, t.jobId).status === 'aufgesplittet', false);
+  t.cleanup();
+});
+
+// IBAN-Abgleich nach dem Kreditkarten-Abgleich (kein Prüf-Popup): wie bisher unabhängig von der
+// Zahlungsart, sobald für den Kartenherausgeber mindestens eine IBAN hinterlegt ist.
+async function kkIbanAufbau({ hinterlegteIban, vorbelegt = true }) {
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const { createKreditorIban } = await import('../../src/db/kreditorIbanRepo.js');
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const t = await setup();
+  setConfigValue(t.db, 'iban_abweichung_empfaenger', 'revision@example.org');
+  const kreditorId = createKreditor(t.db, { name: 'Karten Bank', kontoId: null, zahlungsart: 'lastschrift' });
+  if (hinterlegteIban) createKreditorIban(t.db, { kreditorId, iban: hinterlegteIban, quelle: 'manuell' });
+  // vorbelegt: false = Normalfall, der Kartenherausgeber wird erst im Abgleich-Formular gewählt.
+  if (vorbelegt) t.db.prepare('UPDATE jobs SET kreditor_id = ? WHERE id = ?').run(kreditorId, t.jobId);
+  setQrDaten(t.db, t.jobId, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '30.00', qrWaehrung: 'CHF', qrCreditorName: 'Karten Bank' });
+  const b1 = await t.beleg('30.00', 'Papier', t.eigen);
+  const res = await post(t, '1', {
+    gesamtbetrag: '30.00',
+    kopf: { rechnungsnummer: 'KK-1', zahlungsziel: '2026-10-20', kreditorId: String(kreditorId) },
+    zeilen: [{ art: 'beleg', belegId: b1, kontoId: t.eigen, betrag: '30.00', beschreibung: 'Papier' }],
+  });
+  assert.equal(res.status, 302, res.text);
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  return {
+    t,
+    abweichungen: t.db.prepare("SELECT * FROM freigaben WHERE job_id = ? AND rolle = 'iban_abweichung'").all(t.jobId),
+    warnungen: listMailLog(t.db).filter((m) => m.typ === 'auffaelligkeiten-warnung'),
+  };
+}
+
+test('kk-abgleich: abweichende QR-IBAN beim Lastschrift-Kartenherausgeber mit hinterlegter IBAN → iban_abweichung am Elternjob + eine Warn-Mail-Runde', async () => {
+  const { t, abweichungen, warnungen } = await kkIbanAufbau({ hinterlegteIban: 'CH9300762011623852957' });
+  assert.equal(abweichungen.length, 1);
+  assert.match(abweichungen[0].kommentar, /CH4431999123000889012/);
+  assert.deepEqual(warnungen.map((m) => m.empfaenger).sort(), ['p1@example.org', 'p3@example.org', 'revision@example.org']);
+  assert.ok(warnungen.every((m) => m.job_id === t.jobId && m.text.includes('- IBAN nicht hinterlegt: ')));
+  t.cleanup();
+});
+
+test('kk-abgleich: Kartenherausgeber nur im Formular gewählt → abweichende QR-IBAN wird trotzdem erkannt', async () => {
+  const { t, abweichungen, warnungen } = await kkIbanAufbau({ hinterlegteIban: 'CH9300762011623852957', vorbelegt: false });
+  assert.equal(getJobById(t.db, t.jobId).kreditor_id !== null, true);
+  assert.equal(abweichungen.length, 1);
+  assert.match(abweichungen[0].kommentar, /CH4431999123000889012/);
+  assert.deepEqual(warnungen.map((m) => m.empfaenger).sort(), ['p1@example.org', 'p3@example.org', 'revision@example.org']);
+  t.cleanup();
+});
+
+test('kk-abgleich: passende QR-IBAN → kein iban_abweichung, keine Warn-Mail', async () => {
+  const { t, abweichungen, warnungen } = await kkIbanAufbau({ hinterlegteIban: 'CH44 3199 9123 0008 8901 2' });
+  assert.equal(abweichungen.length, 0);
+  assert.equal(warnungen.length, 0);
+  t.cleanup();
+});
+
+test('kk-abgleich: Kartenherausgeber ohne hinterlegte IBAN → keine Warnung', async () => {
+  const { t, abweichungen, warnungen } = await kkIbanAufbau({ hinterlegteIban: null });
+  assert.equal(abweichungen.length, 0);
+  assert.equal(warnungen.length, 0);
+  t.cleanup();
+});

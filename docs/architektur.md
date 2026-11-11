@@ -60,7 +60,7 @@ Siehe [n8n-schnittstelle.md](n8n-schnittstelle.md).
    über `<DB_PATH>.active.json` auf. `openDatabase(config.dbPath)` öffnet/erstellt
    die SQLite-Datei und wendet `schema.sql` sowie die additiven Migrationen an.
 3. `seedDefaults(db)` — schreibt Default-Werte in `admin_config`, falls noch
-   nicht vorhanden (Eskalationszeiten, Cron-Zeitpläne, Sync-Schwellen, …).
+   nicht vorhanden (Benachrichtigungen, Cron-Zeitpläne, Sync-Schwellen, …).
 4. `createApp({ db, config })` — baut die Express-App (siehe unten).
 5. `startScheduler({ db, config, mailer })` — startet die sechzehn
    In-Process-Hintergrund-Jobs (siehe

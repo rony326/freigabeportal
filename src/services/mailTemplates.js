@@ -1,12 +1,12 @@
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
-const TYP_ZU_KEY_INFIX = {
+export const TYP_ZU_KEY_INFIX = {
   zuweisung: 'zuweisung',
   reminder: 'reminder',
   eskalation: 'eskalation',
   ablehnung: 'ablehnung',
   'sync-fehler': 'sync_fehler',
-  'iban-warnung': 'iban_warnung',
+  'auffaelligkeiten-warnung': 'auffaelligkeiten_warnung',
   'rechnungsnummer-warnung': 'rechnungsnummer_warnung',
   digest: 'digest',
   'freigabe2-reminder': 'freigabe2_reminder',

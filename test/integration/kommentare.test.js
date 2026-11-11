@@ -329,12 +329,12 @@ test('Spesen-Einreicherin kommentiert über /zeitstempel-pruefen?jobId=…', asy
   await u.aufraeumen();
 });
 
-test('/admin/mail-einstellungen zeigt die Vorlage kommentar zum Bearbeiten', async () => {
+test('/admin/benachrichtigungen/kommentar zeigt die Vorlage kommentar zum Bearbeiten', async () => {
   const u = umgebung();
-  const res = await u.als('6').get('/admin/mail-einstellungen');
+  const res = await u.als('6').get('/admin/benachrichtigungen/kommentar');
   assert.equal(res.status, 200);
-  assert.match(res.text, /name="kommentarBetreff"/);
-  assert.match(res.text, /name="kommentarText"/);
+  assert.match(res.text, /name="betreff" value="[^"]*Kommentar/);
+  assert.match(res.text, /name="text"/);
   await u.aufraeumen();
 });
 

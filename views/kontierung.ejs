@@ -8,6 +8,7 @@
         <% if (typeof kkHinweis !== 'undefined' && kkHinweis) { %>
           <div class="alert <%= kkHinweis.startsWith('Kreditkartenbeleg') ? 'alert-info' : 'alert-warning' %> py-2"><%= kkHinweis %></div>
         <% } %>
+        <%- include('_auffaelligkeiten_bestaetigt', { kasten: locals.auffaelligkeitenBestaetigt }) %>
         <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></p>
       </div>
       <div class="w-100"></div>
@@ -32,6 +33,7 @@
               </div>
             <% } %>
             <%- include('_fehler_liste', { errors, feldFehler: locals.feldFehler || {} }) %>
+            <% if (locals.auffaelligkeiten) { %><%- include('_auffaelligkeiten_modal', { auffaelligkeiten, values, formId: 'kontierung-form', submitName: 'aktion', submitValue: 'kontieren' }) %><% } %>
 
             <form id="kontierung-form" method="post" action="/kontierung/<%= job.id %>" enctype="multipart/form-data">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
@@ -58,10 +60,11 @@
                   <select class="form-select<%= ff.kreditorId ? ' is-invalid' : '' %>" id="kreditorId" name="kreditorId" required data-searchable<%- ffAttr(ff, 'kreditorId') %>>
                     <option value="">— wählen —</option>
                     <% kreditoren.forEach((d) => { %>
-                      <option value="<%= d.id %>" <%= String(d.id) === values.kreditorId ? 'selected' : '' %>><%= d.name %></option>
+                      <option value="<%= d.id %>" data-iban-pflicht="<%= d.zahlungsart === 'ueberweisung' || d.zahlungsart === 'dauerauftrag' ? '1' : '0' %>" <%= String(d.id) === values.kreditorId ? 'selected' : '' %>><%= d.name %></option>
                     <% }) %>
                   </select>
 <% if (ff.kreditorId) { %><div class="invalid-feedback d-block" id="kreditorId-fehler"><%= ff.kreditorId %></div><% } %>
+<% if (!locals.darfLieferantAnlegen) { %><div class="form-text">Neue Lieferanten legt die Administration an.</div><% } %>
                 </div>
               </div>
 
@@ -91,6 +94,19 @@
                 <% } %>
               </div>
 
+              <% if (!job.qr_iban) {
+                const gewaehlterKreditor = kreditoren.find((k) => String(k.id) === String(values.kreditorId));
+                const ibanKastenSichtbar = Boolean(gewaehlterKreditor) && (gewaehlterKreditor.zahlungsart === 'ueberweisung' || gewaehlterKreditor.zahlungsart === 'dauerauftrag') && (values.typ || 'rechnung') === 'rechnung';
+              %>
+                <div class="alert alert-warning<%= ibanKastenSichtbar ? '' : ' d-none' %>" id="iban-manuell-kasten">
+                  <h2 class="h5 alert-heading">Kein QR-Code: IBAN bitte von Hand prüfen</h2>
+                  <p class="mb-2">Auf dieser Rechnung wurde kein QR-Code erkannt. Lies auf der Rechnung die IBAN des Lieferanten ab und gib die letzten 4 Zeichen ein. Die hinterlegte IBAN siehst du hier bewusst nicht.</p>
+                  <label class="form-label" for="ibanEndung">Letzte 4 Zeichen der IBAN</label>
+                  <input type="text" class="form-control w-auto<%= ff.ibanEndung ? ' is-invalid' : '' %>" id="ibanEndung" name="ibanEndung" value="<%= values.ibanEndung || '' %>" maxlength="9" autocomplete="off" spellcheck="false"<%= ibanKastenSichtbar ? ' required' : '' %><%- ffAttr(ff, 'ibanEndung') %>>
+<% if (ff.ibanEndung) { %><div class="invalid-feedback d-block" id="ibanEndung-fehler"><%= ff.ibanEndung %></div><% } %>
+                </div>
+              <% } %>
+
               <div class="kontierung-block">
               <div class="mb-3">
                 <label class="form-label" for="rechnungsnummer" id="rechnungsnummer-label">Rechnungsnummer</label>
@@ -110,13 +126,6 @@
 <% if (ff.zahlungsziel) { %><div class="invalid-feedback d-block" id="zahlungsziel-fehler"><%= ff.zahlungsziel %></div><% } %>
                 </div>
               </div>
-
-              <% if (typeof qrInfo !== 'undefined' && qrInfo && qrInfo.iban && (!qrInfo.abgleich || qrInfo.abgleich.status !== 'match')) { %>
-                <div class="form-check mb-3">
-                  <input class="form-check-input" type="checkbox" id="ibanMerken" name="ibanMerken" checked>
-                  <label class="form-check-label" for="ibanMerken">IBAN <%= qrInfo.iban %> künftig automatisch <%= qrInfo.kreditorFuerAbgleich ? qrInfo.kreditorFuerAbgleich.name : 'dem ausgewählten Lieferanten' %> zuordnen</label>
-                </div>
-              <% } %>
 
               <div class="mb-3">
                 <div class="form-check">
@@ -253,6 +262,7 @@
       </div>
     </div>
 
+    <% if (locals.darfLieferantAnlegen) { %>
     <div class="modal fade" id="neuer-lieferant-modal" tabindex="-1" aria-labelledby="neuer-lieferant-modal-label" aria-hidden="true">
       <div class="modal-dialog">
         <div class="modal-content">
@@ -265,6 +275,19 @@
             <div class="mb-3">
               <label class="form-label" for="neuer-lieferant-name">Name</label>
               <input type="text" class="form-control" id="neuer-lieferant-name">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="neuer-lieferant-zahlungsart">Zahlungsart</label>
+              <select class="form-select" id="neuer-lieferant-zahlungsart">
+                <% (locals.ZAHLUNGSARTEN || []).forEach((z) => { %>
+                  <option value="<%= z %>"><%= ZAHLUNGSART_LABEL[z] || z %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="mb-3" id="neuer-lieferant-iban-gruppe">
+              <label class="form-label" for="neuer-lieferant-iban">IBAN</label>
+              <input type="text" class="form-control" id="neuer-lieferant-iban" autocomplete="off" placeholder="z.B. CH93 0076 2011 6238 5295 7">
+              <div class="form-text">Pflicht bei Überweisung und Dauerauftrag.</div>
             </div>
             <div class="mb-3">
               <label class="form-label" for="neuer-lieferant-konto">Konto (optional)</label>
@@ -283,6 +306,9 @@
         </div>
       </div>
     </div>
+    <% } %>
+  <script src="/js/kontierung-iban.js?v=<%= locals.assetVersion || 0 %>" defer></script>
+  <% if (locals.auffaelligkeiten) { %><script src="/js/auffaelligkeiten.js?v=<%= locals.assetVersion || 0 %>" defer></script><% } %>
   <script nonce="<%= locals.cspNonce %>">
     // Eingebettetes PDF, "Vorschau neu laden" und Beleg/Formular-Umschalter: public/js/belegUmschalter.js.
     // Ablehnen deliberately needs none of these fields filled in (the server-side handler skips
@@ -296,6 +322,8 @@
       ['kontoId', 'absender', 'kreditorId', 'rechnungsnummer', 'betrag', 'zahlungsziel'].forEach(function (id) {
         document.getElementById(id).required = false;
       });
+      var ibanEndungFeld = document.getElementById('ibanEndung'); // nur ohne QR-Code vorhanden
+      if (ibanEndungFeld) ibanEndungFeld.required = false;
     }
     document.getElementById('ablehnen-btn').addEventListener('click', function (e) {
       // Die defaultPrevented-Prüfung setzt voraus, dass _ablehnen_dialog.ejs vor diesem Skript eingebunden ist (Listener-Reihenfolge).
@@ -367,8 +395,12 @@
           var betrag = betragFeld ? betragFeld.value.trim() : '';
           // Same for the Typ radio, so a Gutschrift chosen here stays a Gutschrift in the split.
           var typFeld = document.querySelector('input[name="typ"]:checked');
+          // Und der gewählte Lieferant: das Aufsplitten prüft gegen ihn und verlangt ihn.
+          var kreditorFeld = document.getElementById('kreditorId');
+          var kreditorId = kreditorFeld ? kreditorFeld.value : '';
           var params = [];
           if (betrag) params.push('betrag=' + encodeURIComponent(betrag));
+          if (kreditorId) params.push('kreditorId=' + encodeURIComponent(kreditorId));
           if (typFeld) params.push('typ=' + encodeURIComponent(typFeld.value));
           frame.src = params.length ? frameUrl + '?' + params.join('&') : frameUrl;
         }
@@ -563,6 +595,14 @@
     // already the supplier's address/name lifted straight off the invoice.
     (function () {
       var modal = document.getElementById('neuer-lieferant-modal');
+      if (!modal) return; // Nur Superadmin / Recht kreditoren_verwalten sehen die Schnellanlage.
+      var zahlungsartSelect = document.getElementById('neuer-lieferant-zahlungsart');
+      var ibanInput = document.getElementById('neuer-lieferant-iban');
+      var ibanGruppe = document.getElementById('neuer-lieferant-iban-gruppe');
+      function ibanSichtbarkeit() {
+        ibanGruppe.classList.toggle('d-none', zahlungsartSelect.value !== 'ueberweisung' && zahlungsartSelect.value !== 'dauerauftrag');
+      }
+      zahlungsartSelect.addEventListener('change', ibanSichtbarkeit);
       var nameInput = document.getElementById('neuer-lieferant-name');
       var kontoSelect = document.getElementById('neuer-lieferant-konto');
       var errorBox = document.getElementById('neuer-lieferant-error');
@@ -572,6 +612,9 @@
         errorBox.classList.add('d-none');
         nameInput.value = document.getElementById('absender').value || '';
         kontoSelect.value = '';
+        zahlungsartSelect.value = 'ueberweisung';
+        ibanInput.value = '';
+        ibanSichtbarkeit();
         if (window.SearchableSelect) window.SearchableSelect.refresh(kontoSelect);
       });
 
@@ -583,7 +626,8 @@
         Portal.beschaeftigt(speichern, fetch('/kontierung/lieferanten', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': '<%= locals.csrfToken || '' %>' },
-          body: 'name=' + encodeURIComponent(name) + '&kontoId=' + encodeURIComponent(kontoSelect.value),
+          body: 'name=' + encodeURIComponent(name) + '&kontoId=' + encodeURIComponent(kontoSelect.value)
+            + '&zahlungsart=' + encodeURIComponent(zahlungsartSelect.value) + '&iban=' + encodeURIComponent(ibanInput.value),
         }))
           .then(function (res) {
             return res.json().then(function (data) { return { ok: res.ok, data: data }; });
@@ -597,10 +641,13 @@
             var option = document.createElement('option');
             option.value = result.data.id;
             option.textContent = result.data.name;
+            // Gleiche Zahlungsart wie im Dialog gewählt: steuert den IBAN-Kasten (kontierung-iban.js).
+            option.setAttribute('data-iban-pflicht', zahlungsartSelect.value === 'ueberweisung' || zahlungsartSelect.value === 'dauerauftrag' ? '1' : '0');
             option.selected = true;
             kreditorSelect.appendChild(option);
             kreditorSelect.value = String(result.data.id);
             if (window.SearchableSelect) window.SearchableSelect.refresh(kreditorSelect);
+            kreditorSelect.dispatchEvent(new Event('change', { bubbles: true }));
             bootstrap.Modal.getOrCreateInstance(modal).hide();
           })
           .catch(function () {

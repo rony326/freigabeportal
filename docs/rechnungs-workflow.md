@@ -169,19 +169,19 @@ Zusätzlich, unabhängig vom Ausgang: ein optional mit hochgeladener
 `mergeBelegInPdf` (`src/services/belegAnhaengen.js`) als zusätzliche
 Seite(n) in die bestehende Rechnungs-PDF eingefügt — als PDF durch
 Seiten-Kopie, als Bild durch eine neue, bildgrosse Seite. Beim Kontieren
-mit hinterlegtem Kreditor laufen ausserdem drei nicht-blockierende
-Prüfungen: der IBAN-Abgleich gegen den gescannten
-QR-Code (siehe
-[qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)) sowie
-ein Duplikat-Check auf **Kreditor + Rechnungsnummer** — stimmt die
+läuft zuerst die **Betrugserkennung** (Prüfungen gegen die Lieferanten-Stammdaten,
+Prüf-Popup, bei Bestätigung genau eine Warn-Mail an Freigeber 1 + 2; ohne QR-Code
+die manuelle IBAN-Kontrolle mit den letzten 4 Zeichen; Lieferanten ohne
+hinterlegte IBAN sind bei Überweisung/Dauerauftrag nicht wählbar — Details in
+[qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)). Danach laufen
+mit hinterlegtem Kreditor zwei weitere nicht-blockierende Prüfungen: ein Duplikat-Check auf **Kreditor + Rechnungsnummer** — stimmt die
 eingegebene Rechnungsnummer mit einem bereits vorhandenen Job desselben
 Kreditors überein (auch ein `abgelehnter`, aber kein `geloescht`-Job zählt
 mit), wird ein `freigaben`-Eintrag `rechnungsnummer_duplikat` geschrieben
 und Freigeber 1+2 des gewählten Kontos sowie die kontierende Person per
 Mail informiert (`typ: 'rechnungsnummer-warnung'`, siehe
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)) —
-die Kontierung wird dadurch nicht blockiert, gleiches Muster wie bei der
-IBAN-Abweichung. Schlägt diese Prüfung nicht an, folgt ein
+die Kontierung wird dadurch nicht blockiert. Schlägt diese Prüfung nicht an, folgt ein
 **Doppelscan-Check** (`findMoeglicheDoppelrechnungen`): gleicher Kreditor,
 gleicher Betrag (numerisch) und gleiches Zahlungsziel bei einem Job, der
 höchstens 14 Tage vorher oder nachher eingegangen ist
@@ -340,13 +340,25 @@ verteilt werden müssen (`GET/POST /kontierung/:id/aufsplitten`):
    dem Ursprungs-Job und auf jedem Teil-Job gespeichert — eine Mischung
    innerhalb eines Belegs gibt es nicht. Der Typ des Ursprungs-Jobs ist
    massgeblich für die Zahlungsart der Splitgruppe.
+   Der **Lieferant** ist Pflicht (ein Feld für alle Teile, nur aktive und
+   vollständige Lieferanten; vorgewählt aus dem Kontierungsformular bzw.
+   `job.kreditor_id`) und wird vor dem Anlegen der Kinder am Ursprungs-Job
+   gespeichert, die Teil-Jobs übernehmen ihn.
+   Vor dem Anlegen läuft die Betrugserkennung **einmal pro Rechnung**: Lieferant
+   ist der gewählte, Betrag der **Gesamtbetrag**, und es gibt
+   höchstens eine IBAN-Endung (ohne QR-Code, bei Typ Rechnung und IBAN-pflichtigem
+   Lieferanten). Ohne Bestätigung im Prüf-Popup wird nichts angelegt; danach geht
+   **eine** Warn-Mail an Freigeber 1 + 2 aller Teil-Konten und die splittende
+   Person, und jedes Kind bekommt die bestätigten Auffälligkeiten. Beim
+   Kreditkarten-Abgleich gibt es kein Popup, nur eine nicht blockierende
+   IBAN-Warnung, unabhängig von der Zahlungsart. Siehe
+   [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md#aufsplitten).
 2. Der Ursprungs-Job wird auf `aufgesplittet` gesetzt und bleibt als
    historische Referenz stehen — er selbst gilt nie als freigegeben oder
    abgelehnt.
 3. Für **jeden Teil** entsteht ein komplett unabhängiger neuer Job (eigene
-   PDF-Kopie, eigener Freigabe-Verlauf), inkl. desselben IBAN-Abgleichs und
-   Rechnungsnummer-Duplikat-Checks wie im normalen Kontierungsformular
-   (Abschnitt 2):
+   PDF-Kopie, eigener Freigabe-Verlauf), inkl. des Rechnungsnummer-Duplikat-Checks
+   wie im normalen Kontierungsformular (Abschnitt 2):
    - Konto gehört der aufsplittenden Person selbst → sofort Freigabe 1
      erteilt, direkt Status `freigabe2` (analog zum Normalfall ohne
      Konflikt).
@@ -355,9 +367,6 @@ verteilt werden müssen (`GET/POST /kontierung/:id/aufsplitten`):
    - Konto gehört ihr **nicht** → landet als `unzugewiesen`-Teil-Job mit
      Hinweis-Konto zurück im Pool (Freigeber 1 des Ziel-Kontos bekommt
      eine Hinweis-Mail).
-
-> **Bekannte Lücke**: `typ` (Rechnung/Gutschrift, siehe Abschnitt 2) wird
-> nicht an die Teil-Jobs weitergegeben — siehe oben.
 
 ## 6. Splitgruppen — kombinierter Export statt N Einzel-Buchungen
 
@@ -509,7 +518,7 @@ offenen Person nach `rapport_reminder_stunden` (Default 72) einen Reminder
 `rapport_eskalation_stunden` (Default 168) an `rapport_eskalation_empfaenger`
 (leer = Admin-Gruppe; Mail `rapport-eskalation`). Inaktive oder nicht
 auflösbare Empfänger:innen werden nicht erinnert, aber sofort eskaliert.
-Einstellungen: **Admin → Eskalationszeiten**. Details:
+Einstellungen: **Admin → Einstellungen → Benachrichtigungen**. Details:
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#rapport-erinnerungen).
 
 **Admin-Eingriff.** Unter **Admin → Vorgänge** (`/admin/vorgaenge`) tragen

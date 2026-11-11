@@ -88,7 +88,7 @@ export const SEITEN = [
   { name: 'Admin Kreditkarte neu', view: 'admin/kreditkarten-form', pfad: '/admin/kreditkarten/neu' },
   { name: 'Admin Kreditkarte bearbeiten', view: 'admin/kreditkarten-form', pfad: '/admin/kreditkarten/{karte}/bearbeiten' },
   { name: 'Admin Personen', view: 'admin/personen-liste', pfad: '/admin/personen' },
-  { name: 'Admin Eskalation', view: 'admin/eskalation-form', pfad: '/admin/eskalation' },
+  { name: 'Admin Benachrichtigungen', view: 'admin/benachrichtigungen', pfad: '/admin/benachrichtigungen/reminder' },
   { name: 'Admin Erscheinungsbild', view: 'admin/erscheinungsbild-form', pfad: '/admin/erscheinungsbild' },
   { name: 'Admin Ersteinrichtung', view: 'admin/ersteinrichtung', pfad: '/admin/ersteinrichtung' },
   { name: 'Admin Zeitstempel', view: 'admin/zeitstempel-form', pfad: '/admin/zeitstempel' },
@@ -97,7 +97,7 @@ export const SEITEN = [
   { name: 'Auswertung', view: 'auswertung', pfad: '/auswertung' },
   // Kompakte Erfolgsmeldung "Gespeichert." mit ✕ neben dem Speichern-Knopf (Prüfung schliessen).
   { name: 'Admin Module gespeichert', view: 'admin/module-form', pfad: '/admin/module?gespeichert=1' },
-  { name: 'Admin Mail-Einstellungen', view: 'admin/mail-einstellungen-form', pfad: '/admin/mail-einstellungen' },
+  { name: 'Admin Benachrichtigungen Zusammenfassung', view: 'admin/benachrichtigungen', pfad: '/admin/benachrichtigungen/zusammenfassung' },
   { name: 'Admin Mails', view: 'admin/mails', pfad: '/admin/mails' },
   { name: 'Admin Sync', view: 'admin/sync', pfad: '/admin/sync' },
   { name: 'Admin Geplante Jobs', view: 'admin/geplante-jobs', pfad: '/admin/geplante-jobs' },

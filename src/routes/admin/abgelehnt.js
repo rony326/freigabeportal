@@ -23,7 +23,7 @@ export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, 
       return res.status(404).render('error', { message: 'Diese Rechnung ist nicht (mehr) abgelehnt oder existiert nicht.' });
     }
     if (job.abgelehnt_von === req.currentPerson.churchtools_person_id) {
-      return res.status(403).render('error', { message: 'Sie haben diese Rechnung selbst abgelehnt und können sie daher nicht selbst löschen.' });
+      return res.status(403).render('error', { message: 'Du hast diese Rechnung selbst abgelehnt und kannst sie daher nicht selbst löschen.' });
     }
     res.render('admin/abgelehnt-loeschen', { job, errors: [], begruendung: '' });
   });
@@ -35,7 +35,7 @@ export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, 
         return res.status(404).render('error', { message: 'Diese Rechnung ist nicht (mehr) abgelehnt oder existiert nicht.' });
       }
       if (job.abgelehnt_von === req.currentPerson.churchtools_person_id) {
-        return res.status(403).render('error', { message: 'Sie haben diese Rechnung selbst abgelehnt und können sie daher nicht selbst löschen.' });
+        return res.status(403).render('error', { message: 'Du hast diese Rechnung selbst abgelehnt und kannst sie daher nicht selbst löschen.' });
       }
 
       const { begruendung, bestaetigung } = req.body;

@@ -20,10 +20,7 @@
         <label class="form-label" for="maxDeaktivierungAnzahl">Max. Deaktivierung (absolute Anzahl)</label>
         <input type="number" class="form-control" id="maxDeaktivierungAnzahl" name="maxDeaktivierungAnzahl" value="<%= maxDeaktivierungAnzahl %>" required>
       </div>
-      <div class="mb-3">
-        <label class="form-label" for="syncFehlerEmpfaenger">Sync-Fehler-Empfänger (ein Ziel pro Zeile: E-Mail-Adresse oder "gruppe:admin")</label>
-        <textarea class="form-control" id="syncFehlerEmpfaenger" name="syncFehlerEmpfaenger" rows="4"><%= syncFehlerEmpfaenger || '' %></textarea>
-      </div>
+      <p class="text-muted small">Wer bei einem Sync-Fehler eine Mail bekommt, legt eine Superadmin-Person unter „Benachrichtigungen“ fest.<% if (locals.isSuperadmin) { %> <a href="/admin/benachrichtigungen/sync-fehler">Empfänger einstellen → Benachrichtigungen</a><% } %></p>
       <button type="submit" class="btn btn-primary">Speichern</button>
       <% if (gespeichert) { %>
         <div class="alert alert-success alert-dismissible alert-kompakt fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">

@@ -32,7 +32,7 @@ const ERSTE_SEGMENTE = new Set([
 ]);
 const ZWEITE_SEGMENTE = {
   admin: new Set([
-    'konten', 'kreditoren', 'debitoren', 'kreditkarten', 'eskalation', 'erscheinungsbild', 'zeitstempel',
+    'konten', 'kreditoren', 'debitoren', 'kreditkarten', 'eskalation', 'benachrichtigungen', 'erscheinungsbild', 'zeitstempel',
     'personen', 'mails', 'sync', 'abgelehnt', 'audit-log', 'geplante-jobs', 'backup', 'module',
     'mail-einstellungen', 'altfaelle', 'dateiquarantaene', 'testmodus',
   ]),

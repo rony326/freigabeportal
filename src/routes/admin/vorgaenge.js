@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { auffaelligkeitenKasten } from '../../services/auffaelligkeitenAnzeige.js';
 import { getJobById } from '../../db/jobsRepo.js';
 import { getKontoById } from '../../db/kontenRepo.js';
 import { getPersonById } from '../../db/personenRepo.js';
@@ -73,6 +74,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     res.status(status).render('admin/vorgang-detail', {
       vorgang: beschreibeVorgang(db, job),
       auditLog: buildAuditLog(db, job.id),
+      auffaelligkeitenBestaetigt: auffaelligkeitenKasten(db, job.id),
       pdfUrl: canViewJobPdf(db, config, req.currentPerson, job) ? buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS) : null,
       darfEingreifen,
       ziele: darfEingreifen ? listUmhaengenZiele(db, job) : [],

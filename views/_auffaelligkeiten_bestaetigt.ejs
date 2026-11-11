@@ -1,0 +1,20 @@
+<%# Bewusst bestätigte Auffälligkeiten (Board 4). Parameter: kasten { befunde, vonName, zeitpunkt, bemerkung } oder null. %>
+<% if (locals.kasten) { %>
+<section class="card border-danger mb-3" aria-labelledby="auffaelligkeiten-bestaetigt-titel" data-auffaelligkeiten-bestaetigt>
+  <div class="card-header bg-danger-subtle text-danger-emphasis d-flex align-items-center gap-2">
+    <%- include('_symbol', { name: 'shield-exclamation' }) %>
+    <h2 class="h5 mb-0" id="auffaelligkeiten-bestaetigt-titel"><%= kasten.befunde.length === 1 ? '1 Auffälligkeit' : `${kasten.befunde.length} Auffälligkeiten` %>, bewusst bestätigt</h2>
+  </div>
+  <div class="card-body small">
+    <ul class="list-unstyled mb-2">
+      <% kasten.befunde.forEach((befund) => { %>
+        <li class="mb-1"><strong><%= befund.titel %>:</strong> <%= befund.text %></li>
+      <% }) %>
+    </ul>
+    <div class="bg-body-tertiary rounded p-2">
+      Bestätigt von <strong><%= kasten.vonName %></strong> am <%= kasten.zeitpunkt %>
+      <% if (kasten.bemerkung) { %><br><span class="text-muted">Wie geprüft:</span> «<%= kasten.bemerkung %>»<% } %>
+    </div>
+  </div>
+</section>
+<% } %>

@@ -3,6 +3,23 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.1.0] – 2026-11-11
+
+Release Notes: [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md).
+
+- Betrugserkennung: Zahlungsart und Pflicht-IBAN pro Lieferant (Lieferanten
+  ohne IBAN sind bei der Kontierung nicht wählbar), internationale IBANs in den
+  Stammdaten, „IBAN merken“ entfernt.
+- Prüf-Popup vor dem Speichern der Kontierung und beim Aufsplitten
+  (Auffälligkeiten A–G, eine gemeinsame Warn-Mail `auffaelligkeiten-warnung`,
+  ersetzt `iban-warnung`), manuelle IBAN-Kontrolle ohne QR-Code,
+  Anzeige bestätigter Auffälligkeiten für Freigeber und Admin.
+- Admin → Benachrichtigungen pro Ereignis (Wann/Wer/Was, Empfänger-Auswahl,
+  Variablen-Knöpfe, Live-Vorschau, Test-Mail) ersetzt Eskalationszeiten und
+  Mail-Einstellungen; alte URLs leiten weiter.
+- Du-Form auf `/audit-pruefen` und in allen Standard-Mailtexten, Logo
+  verlinkt auf die Startseite und bleibt mobil links.
+
 ## [1.0.1] – 2026-11-10
 
 Wartungsversion. Release Notes:
@@ -38,6 +55,7 @@ Erste produktive Version. Ausführliche Release Notes:
 Release-Kandidat: Fundament mit ChurchTools-Login, Admin-Bereich,
 n8n-Schnittstelle, Freigabe-Workflow und Datenbank-Backup.
 
+[1.1.0]: https://github.com/rony326/freigabeportal/releases/tag/v1.1.0
 [1.0.1]: https://github.com/rony326/freigabeportal/releases/tag/v1.0.1
 [1.0.0]: https://github.com/rony326/freigabeportal/releases/tag/v1.0.0
 [0.1.0-rc.1]: https://github.com/rony326/freigabeportal/releases/tag/v0.1.0-rc.1

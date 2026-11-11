@@ -1,4 +1,6 @@
 import { test } from 'node:test';
+import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
+import { kreditorOhneIbanPflicht, kreditorMitIban } from '../helpers/kreditor.js';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
@@ -337,7 +339,7 @@ test('POST /kontierung/:id without a conflict creates the Freigabe-1 row and adv
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -365,7 +367,7 @@ test('POST /kontierung/:id without a conflict still saves an optional Begründun
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -387,7 +389,7 @@ test('POST /kontierung/:id persists an edited absender plus betrag, zahlungsziel
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'alt@example.org', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -467,7 +469,7 @@ test('POST /kontierung/:id with typ=gutschrift does not require a Zahlungsziel a
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -491,7 +493,7 @@ test('POST /kontierung/:id defaults typ to rechnung when omitted, so Zahlungszie
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -574,7 +576,7 @@ test('POST /kontierung/:id with a conflict reassigns to stellvertreter1 and reco
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -613,7 +615,7 @@ test('POST /kontierung/:id from an already-escalated stellvertreter1 declaring a
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   eskalierenFreigabe1(db, id, { eskaliertVon: '1', grund: 'Erster Konflikt', stellvertreterId: '2' });
@@ -647,7 +649,7 @@ test('POST /kontierung/:id declaring a conflict while already being the Konto\'s
   // current owner of this cycle's job, e.g. after reopening a rejected job they reworked.
   claimJob(db, id, '2');
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const app = buildTestApp(db, createStubMailer());
 
   const res = await request(app)
@@ -710,7 +712,7 @@ test('POST /kontierung/:id: toggle off (default) — a non-Freigeber1 person sti
   seedKontoAndPersonen(db); // Konto 3000: freigeber1=1, stellvertreter1=2, freigeber2=3, stellvertreter2=4
   upsertPerson(db, { id: '99', vorname: 'Ohne', nachname: 'Rolle', email: 'ohne@example.org', gruppen: ['10'], loggedInNow: true });
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: 1 });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: 1 });
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, jobId, '99');
   // Person '99' holds no freigeber1/stellvertreter1 role on Konto 1 at all, so the Kontierung
@@ -740,7 +742,7 @@ test('POST /kontierung/:id: toggle on — the real Freigeber1 kontiert grants Fr
   seedKontoAndPersonen(db);
   setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: 1 });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: 1 });
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, jobId, '1'); // person '1' IS Konto 3000's freigeber1
   const app = buildTestApp(db, { async sendMail() {} });
@@ -764,7 +766,7 @@ test('POST /kontierung/:id: toggle on — a person who only holds Freigeber2 on 
   seedKontoAndPersonen(db);
   setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: 1 });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: 1 });
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, jobId, '3'); // person '3' is Konto 3000's freigeber2, NOT freigeber1
   // Same reasoning as the toggle-off test above: person '3' holds no freigeber1/stellvertreter1
@@ -806,7 +808,7 @@ test('POST /kontierung/:id: toggle on — nach Konfliktmeldung von Freigeber1 ge
   seedKontoAndPersonen(db);
   setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: 1 });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: 1 });
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, jobId, '3');
   setKontierung(db, jobId, 1);
@@ -836,7 +838,7 @@ test('POST /kontierung/:id with a Beleg PDF attached merges it into the job\'s P
   const jobsDir = mkdtempSync(join(tmpdir(), 'beleg-test-'));
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const pdfPfad = join(jobsDir, 'original.pdf');
   writeFileSync(pdfPfad, await buildPdfFixture(['Kreditkartenabrechnung']));
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad });
@@ -932,7 +934,7 @@ test('POST /kontierung/:id on a Split-Kind with a newly attached Beleg accumulat
   const dir = mkdtempSync(join(tmpdir(), 'split-kontierung-beleg-test-'));
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
 
   // The parent invoice has 1 page — every Split-Kind's own PDF starts as a copy of exactly those
   // pages (see splitGruppenExport.js's basisSeitenzahl, derived from the parent's PDF).
@@ -1236,7 +1238,7 @@ test('POST /kontierung/:id with a conflict sends a Zuweisungs-Mail to stellvertr
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const mailer = createStubMailer();
@@ -1261,7 +1263,7 @@ test('POST /kontierung/:id without a conflict sends a Zuweisungs-Mail to freigeb
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const mailer = createStubMailer();
@@ -1285,7 +1287,7 @@ test('POST /kontierung/:id after a Freigabe-2 conflict + rejection + rework emai
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4'
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'rechnung.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
 
@@ -1346,7 +1348,7 @@ test('a Stellvertreter1 who is escalated to and ALSO has a conflict escalates to
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
 
@@ -1402,7 +1404,7 @@ test('a plain, non-conflict resubmission after a prior escalation succeeds norma
   upsertPerson(db, { id: '3', vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '1' WHERE id = ?").run(jobId);
 
@@ -1442,7 +1444,7 @@ test('a person who picks a Konto where they are themselves the stellvertreter1 a
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2' WHERE id = ?").run(jobId);
 
@@ -1477,7 +1479,7 @@ test('a job admin-escalated in Freigabe 1, then rejected in Freigabe 2 and reope
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   // Person 2 is the Konto's own stellvertreter1, so their first-ever conflict declaration on
   // this Konto escalates straight to admin (the same case covered above).
@@ -1547,7 +1549,7 @@ test('a Portal-Admin authorized via the freigabe1_eskaliert_an_admin flag can re
   upsertPerson(db, { id: '4', vorname: 'Stellvertreter', nachname: 'Zwei', email: 's2@example.org', gruppen: ['10'], loggedInNow: false });
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2' WHERE id = ?").run(jobId);
 
@@ -1601,7 +1603,7 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
   // freigeber1/stellvertreter1/freigeber2/stellvertreter2 role on the Konto below.
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
   const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   db.prepare("UPDATE jobs SET status = 'zugewiesen', zugewiesen_an = '2' WHERE id = ?").run(jobId);
 
@@ -1635,6 +1637,16 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
   assert.equal(job.konto_id, kontoId);
   db.close();
 });
+
+// Aufsplitten verlangt einen vollständigen, aktiven Lieferanten aus dem Formular (Abschluss-Review
+// 2026-11-11). Für Tests, die nicht den Lieferanten selbst prüfen: der erste wählbare, sonst ein
+// neuer Lastschrift-Lieferant «Muster AG» (braucht keine IBAN).
+function splitLieferant(db) {
+  const vorhanden = db.prepare(`SELECT k.id FROM kreditoren k WHERE k.aktiv = 1
+    AND (k.zahlungsart NOT IN ('ueberweisung', 'dauerauftrag') OR EXISTS (SELECT 1 FROM kreditor_ibans i WHERE i.kreditor_id = k.id))
+    ORDER BY k.id LIMIT 1`).get();
+  return String(vorhanden ? vorhanden.id : kreditorOhneIbanPflicht(db, { name: 'Muster AG' }));
+}
 
 function seedJobMitDateien(db, jobsDir, { betrag = '200.00' } = {}) {
   const kontoId = seedKontoAndPersonen(db);
@@ -1749,7 +1761,7 @@ test('POST /kontierung/:id/aufsplitten creates independent split jobs, each with
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
     });
@@ -1795,7 +1807,7 @@ test('POST /kontierung/:id/aufsplitten persists teilPosition as rechnungspositio
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['60.00', '40.00'],
       teilPosition: ['Pos. 1', 'Pos. 2'],
@@ -1864,7 +1876,7 @@ test('POST /kontierung/:id/aufsplitten with typ=gutschrift marks every split chi
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
+    .send({ kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
 
   assert.equal(res.status, 302);
   assert.equal(getJobById(db, id).typ, 'gutschrift');
@@ -1889,7 +1901,7 @@ test('POST /kontierung/:id/aufsplitten without (or with an unknown) typ saves th
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ gesamtbetrag: '100.00', typ: 'quatsch', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
+    .send({ kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'quatsch', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
 
   assert.equal(res.status, 302);
   assert.equal(getJobById(db, id).typ, 'rechnung');
@@ -1909,7 +1921,7 @@ test('POST /kontierung/:id/aufsplitten keeps the Gutschrift selection when the f
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '30.00'] });
+    .send({ kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '30.00'] });
 
   assert.equal(res.status, 400);
   assert.match(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
@@ -1933,7 +1945,7 @@ test('POST /kontierung/:id/aufsplitten rejects a teilPosition with characters th
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['60.00', '40.00'],
       teilPosition: ['Pos. 1 \u{1F600}', 'Pos. 2'],
@@ -1959,7 +1971,7 @@ test('POST /kontierung/:id/aufsplitten accepts a teilPosition with German letter
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['60.00', '40.00'],
       teilPosition: ['Pos. 3.1 (Gebäude-Unterhalt), Nr. 7/8 – Zuschlag', 'Pos. 2'],
@@ -1988,7 +2000,7 @@ test('POST /kontierung/:id/aufsplitten accepts teilPosition characters the old \
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: positionen.map(() => String(kontoId)),
       teilBetrag: positionen.map(() => '20.00'),
       teilPosition: positionen,
@@ -2026,7 +2038,7 @@ test('POST /kontierung/:id/aufsplitten rejects teilPosition characters that woul
       .set('x-test-person-id', '1')
       .type('form')
       .send({
-        gesamtbetrag: '100.00',
+        kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
         teilKontoId: [String(kontoId), String(kontoId)],
         teilBetrag: ['60.00', '40.00'],
         teilPosition: [wert, 'Pos. 2'],
@@ -2051,7 +2063,7 @@ test('POST /kontierung/:id/aufsplitten records the Beleg page count on the split
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .field('gesamtbetrag', '200.00')
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
     .field('teilKontoId', String(kontoId))
     .field('teilKontoId', String(kontoId))
     .field('teilBetrag', '120.00')
@@ -2077,7 +2089,7 @@ test('POST /kontierung/:id/aufsplitten merges a per-Zeile Beleg into just that s
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .field('gesamtbetrag', '200.00')
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
     .field('teilKontoId', String(kontoId))
     .field('teilKontoId', String(kontoId))
     .field('teilBetrag', '120.00')
@@ -2107,7 +2119,7 @@ test('POST /kontierung/:id/aufsplitten rejects an invalid per-Zeile Beleg, nothi
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .field('gesamtbetrag', '200.00')
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
     .field('teilKontoId', String(kontoId))
     .field('teilKontoId', String(kontoId))
     .field('teilBetrag', '120.00')
@@ -2135,7 +2147,7 @@ test('POST /kontierung/:id/aufsplitten rejects a request carrying more attached 
   let req = request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .field('gesamtbetrag', '200.00')
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
     .field('teilKontoId', String(kontoId))
     .field('teilKontoId', String(kontoId))
     .field('teilBetrag', '120.00')
@@ -2165,7 +2177,7 @@ test('POST /kontierung/:id/aufsplitten rejects Teilbeträge that do not sum to t
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '90.00'],
     });
@@ -2190,7 +2202,7 @@ test('POST /kontierung/:id/aufsplitten rejects a missing or invalid Gesamtbetrag
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '',
+      kreditorId: splitLieferant(db), gesamtbetrag: '',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
     });
@@ -2220,7 +2232,7 @@ test('POST /kontierung/:id/aufsplitten succeeds for a job that never had a Betra
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '150.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '150.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['100.00', '50.00'],
     });
@@ -2247,7 +2259,7 @@ test('POST /kontierung/:id/aufsplitten rejects fewer than two Teilbeträge', asy
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId)],
       teilBetrag: ['200.00'],
     });
@@ -2274,7 +2286,7 @@ test('POST /kontierung/:id/aufsplitten sends a part on a Konto the person is not
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(fremdKontoId)],
       teilBetrag: ['100.00', '100.00'],
     });
@@ -2316,7 +2328,7 @@ test('POST /kontierung/:id/aufsplitten escalates a part with a declared Interess
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
       teilInteressenskonflikt: ['false', 'true'],
@@ -2362,7 +2374,7 @@ test('POST /kontierung/:id/aufsplitten escalates to Portal-Admin, not back to th
     .set('x-test-person-id', '2')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
       teilInteressenskonflikt: ['false', 'true'],
@@ -2398,7 +2410,7 @@ test('POST /kontierung/:id/aufsplitten keeps escalating to Portal-Admin on a Zei
     .set('x-test-person-id', '99')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
       teilInteressenskonflikt: ['false', 'true'],
@@ -2432,7 +2444,7 @@ test('POST /kontierung/:id/aufsplitten requires a Begründung when any Zeile dec
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
       teilInteressenskonflikt: ['false', 'true'],
@@ -2461,7 +2473,7 @@ test('POST /kontierung/:id/aufsplitten handles all three outcomes in a single mi
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '300.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '300.00',
       teilKontoId: [String(kontoId), String(kontoId), String(fremdKontoId)],
       teilBetrag: ['100.00', '100.00', '100.00'],
       teilInteressenskonflikt: ['false', 'true', 'false'],
@@ -2506,7 +2518,7 @@ test('POST /kontierung/:id/aufsplitten lets an admin-escalated Portal-Admin stil
     .set('x-test-person-id', '99')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
     });
@@ -2522,50 +2534,249 @@ test('POST /kontierung/:id/aufsplitten lets an admin-escalated Portal-Admin stil
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('POST /kontierung/:id/aufsplitten sends an IBAN-Abweichung warning mail and logs it on the parent job when the QR-IBAN mismatches, without blocking the split', async () => {
+// --- Prüf-Popup beim Aufsplitten --------------------------------------------------------
+// Der Lieferant steht am Elternjob (kein Lieferant pro Zeile): Befunde werden einmal für
+// job.kreditor_id mit dem Gesamtbetrag berechnet, ein Hash, ein ibanEndung-Feld.
+
+async function splitPopupAufbau({ qr = true, zahlungsart = 'ueberweisung', iban = 'CH0000000000000000000', kontoFremd = false, lieferantAmBeleg = true } = {}) {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
-  const { createKreditorIban } = await import('../../src/db/kreditorIbanRepo.js');
-  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
   const db = openDatabase(':memory:');
   seedDefaults(db);
+  setConfigValue(db, 'iban_abweichung_empfaenger', 'revision@example.org');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
-  const kontoId = seedKontoAndPersonen(db); // freigeber1Id:'1', freigeber2Id:'3'
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
-  createKreditorIban(db, { kreditorId, iban: 'CH0000000000000000000' }); // hinterlegte IBAN weicht ab
+  const kontoId = seedKontoAndPersonen(db); // Freigeber 1 = '1' (splittet selbst), Freigeber 2 = '3'
+  let zweitesKontoId = kontoId;
+  if (kontoFremd) {
+    // Ein Konto, auf dem die splittende Person keine Rolle hat: der Teil geht in den Pool.
+    for (const pid of ['5', '6']) {
+      upsertPerson(db, { id: pid, vorname: `Person${pid}`, nachname: 'Muster', email: `p${pid}@example.org`, gruppen: ['10'], loggedInNow: true });
+    }
+    zweitesKontoId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '5', stellvertreter1Id: '5', freigeber2Id: '6', stellvertreter2Id: '5' });
+  }
+  const kreditorId = zahlungsart === 'lastschrift'
+    ? kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId })
+    : kreditorMitIban(db, { name: 'Muster AG', kontoId, iban, zahlungsart });
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
   writeFileSync(pdfPfad, ECHTES_PDF);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
   claimJob(db, id, '1');
-  updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
-  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  // lieferantAmBeleg: false ist der Normalfall aus dem Pool (n8n setzt kreditor_id nur über eine
+  // Zuweisungsregel) — der Lieferant kommt dann allein aus dem Formular.
+  updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: lieferantAmBeleg ? 'Muster AG' : null, kreditorId: lieferantAmBeleg ? kreditorId : null });
+  if (qr) setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
   const mailer = createStubMailer();
   const app = buildTestAppMitDateien(db, mailer, jobsDir);
+  const form = { kreditorId: String(kreditorId), gesamtbetrag: '200.00', teilKontoId: [String(kontoId), String(zweitesKontoId)], teilBetrag: ['120.00', '80.00'] };
+  const senden = (body) => request(app).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form').send(body);
+  const aufraeumen = () => { db.close(); rmSync(jobsDir, { recursive: true, force: true }); };
+  return { db, app, id, kontoId, kreditorId, zweitesKontoId, mailer, form, senden, aufraeumen };
+}
 
+test('GET /kontierung/:id/aufsplitten zeigt ohne QR-Code bei einem Überweisungs-Lieferanten ein Feld für die letzten 4 Zeichen der IBAN, ohne die hinterlegte IBAN', async () => {
+  const { app, id, aufraeumen } = await splitPopupAufbau({ qr: false, iban: 'CH9300762011623852957' });
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="iban-manuell-kasten"/);
+  assert.match(res.text, /name="ibanEndung"/);
+  assert.doesNotMatch(res.text, /name="ibanEndung_\d+"/, 'nur ein Feld, nicht eins pro Zeile');
+  assert.doesNotMatch(res.text, /2957|CH93/, 'die hinterlegte IBAN erscheint nie, auch nicht teilweise');
+  aufraeumen();
+});
+
+test('GET /kontierung/:id/aufsplitten zeigt mit QR-Code kein IBAN-Feld, bei Lastschrift-Lieferant nur verborgen und nicht Pflicht', async () => {
+  const mitQr = await splitPopupAufbau({ qr: true });
+  const res = await request(mitQr.app).get(`/kontierung/${mitQr.id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /name="ibanEndung"/);
+  mitQr.aufraeumen();
+
+  // Ohne QR-Code steht der Kasten im Formular, damit er beim Wechsel auf einen Überweisungs-
+  // Lieferanten erscheinen kann (kontierung-iban.js); für den vorgewählten Lastschrift-Lieferanten verborgen.
+  const lastschrift = await splitPopupAufbau({ qr: false, zahlungsart: 'lastschrift' });
+  const res2 = await request(lastschrift.app).get(`/kontierung/${lastschrift.id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res2.status, 200);
+  assert.match(res2.text, /class="alert alert-warning d-none" id="iban-manuell-kasten"/);
+  assert.doesNotMatch(res2.text, /name="ibanEndung"[^>]*required/);
+  assert.match(res2.text, /src="\/js\/kontierung-iban\.js/);
+  lastschrift.aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten mit fremder QR-IBAN und ohne Bestätigung zeigt das Prüf-Popup, legt keine Kinder an und lässt den Elternjob unverändert', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, mailer, form, senden, aufraeumen } = await splitPopupAufbau();
+
+  const res = await senden(form);
+
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /IBAN nicht hinterlegt/);
+  assert.doesNotMatch(res.text, /Teil \d+ ·/, 'kein Teil-Präfix: die Befunde gelten für die ganze Rechnung');
+  assert.match(res.text, /<form id="aufsplitten-form"/);
+  assert.match(res.text, /name="auffaelligkeitenHash" form="aufsplitten-form"/);
+  assert.match(res.text, /name="pruefBemerkung" form="aufsplitten-form"/);
+  assert.match(res.text, /type="submit" form="aufsplitten-form" class="btn btn-danger"[^>]*>Geprüft, trotzdem speichern/);
+  assert.doesNotMatch(res.text, /form="kontierung-form"/);
+  assert.match(res.text, /name="teilBetrag" value="120\.00"/, 'Zeilenwerte bleiben erhalten');
+  assert.match(res.text, /src="\/js\/auffaelligkeiten\.js/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listSplitKinder(db, id).length, 0);
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten').get().n, 0);
+  assert.equal(listMailLog(db).length, 0);
+  assert.equal(mailer.sent.length, 0);
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten mit passendem Hash legt die Kinder an, protokolliert die Bestätigung je Kind und schickt eine Mail-Runde', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ kontoFremd: true });
+  const hash = hashAusAntwort((await senden(form)).text);
+
+  const res = await senden({ ...form, auffaelligkeitenHash: hash, pruefBemerkung: 'telefonisch bestätigt' });
+
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+  assert.equal(getJobById(db, id).status, 'aufgesplittet');
+  const kinder = listSplitKinder(db, id).sort((a, b) => a.id - b.id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) {
+    const zeilen = db.prepare('SELECT * FROM kontierung_auffaelligkeiten WHERE job_id = ?').all(kind.id);
+    assert.equal(zeilen.length, 1, `Bestätigung an Kind #${kind.id}`);
+    assert.equal(zeilen[0].bemerkung, 'telefonisch bestätigt');
+    assert.equal(zeilen[0].person_id, '1');
+    assert.deepEqual(JSON.parse(zeilen[0].befunde_json).map((b) => b.code), ['iban_fremd']);
+    const bestaetigt = listFreigabenByJob(db, kind.id).filter((f) => f.rolle === 'auffaelligkeiten_bestaetigt');
+    assert.equal(bestaetigt.length, 1);
+    assert.equal(bestaetigt[0].kommentar, 'IBAN nicht hinterlegt — Wie geprüft: telefonisch bestätigt');
+  }
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM freigaben WHERE rolle = 'iban_abweichung'").get().n, 0, 'der alte iban_abweichung-Eintrag entfällt');
+
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.deepEqual(warnungen.map((m) => m.empfaenger).sort(),
+    ['p1@example.org', 'p3@example.org', 'p5@example.org', 'p6@example.org', 'revision@example.org'],
+    'eine Mail pro Empfänger: Freigeber 1 + 2 aller Teil-Konten, die splittende Person, Revision');
+  assert.ok(warnungen.every((m) => m.job_id === id), 'protokolliert am Elternjob (Originalrechnung)');
+  assert.ok(warnungen.every((m) => m.text.includes('- IBAN nicht hinterlegt: ') && m.text.includes('Wie geprüft: telefonisch bestätigt')));
+  assert.ok(warnungen.every((m) => m.text.includes(`https://portal.example.org/freigabe2/${kinder[0].id}`)), 'Link aufs erste Kind');
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten mit veraltetem Hash zeigt das Popup erneut und legt nichts an', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+  const res = await senden({ ...form, gesamtbetrag: '210.00', teilBetrag: ['130.00', '80.00'], auffaelligkeitenHash: hash });
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Betrag weicht ab/);
+  assert.notEqual(hashAusAntwort(res.text), hash);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten vergleicht den QR-Betrag mit dem Gesamtbetrag, nicht mit den Teilbeträgen', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ iban: 'CH4431999123000889012' }); // QR-IBAN hinterlegt
+  const res = await senden(form); // QR 200.00 = Gesamtbetrag, Teile 120/80
+  assert.equal(res.status, 302, 'keine Auffälligkeit, kein Popup');
+  assert.equal(listSplitKinder(db, id).length, 2);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten').get().n, 0);
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten ohne QR-Code und ohne ibanEndung bei Überweisungs-Lieferant → 400, nichts angelegt', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ qr: false, iban: 'CH9300762011623852957' });
+  const res = await senden(form);
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bitte gib die letzten 4 Zeichen der IBAN auf der Rechnung ein\./);
+  assert.match(res.text, /name="teilBetrag" value="120\.00"/);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten als Gutschrift ohne QR-Code braucht keine ibanEndung', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ qr: false, iban: 'CH9300762011623852957' });
+  const res = await senden({ ...form, typ: 'gutschrift' });
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  assert.ok(kinder.every((k) => !listFreigabenByJob(db, k.id).some((f) => f.rolle === 'iban_manuell_geprueft')));
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten mit passender ibanEndung splittet ohne Popup und protokolliert die manuelle Prüfung je Kind', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ qr: false, iban: 'CH9300762011623852957' });
+  const res = await senden({ ...form, ibanEndung: '2957' });
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) {
+    const zeilen = listFreigabenByJob(db, kind.id).filter((f) => f.rolle === 'iban_manuell_geprueft');
+    assert.equal(zeilen.length, 1);
+    assert.equal(zeilen[0].kommentar, 'IBAN manuell geprüft: Übereinstimmung (Eingabe 2957)');
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten').get().n, 0);
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten mit falscher ibanEndung zeigt das Popup; nach Bestätigung je Kind „keine Übereinstimmung“', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ qr: false, iban: 'CH9300762011623852957' });
+  const erste = await senden({ ...form, ibanEndung: '0000' });
+  assert.equal(erste.status, 200);
+  assert.match(erste.text, /IBAN nicht hinterlegt \(manuelle Prüfung\)/);
+  assert.match(erste.text, /name="ibanEndung"[^>]*value="0000"/, 'die Eingabe bleibt erhalten');
+  assert.equal(listSplitKinder(db, id).length, 0);
+
+  const res = await senden({ ...form, ibanEndung: '0000', auffaelligkeitenHash: hashAusAntwort(erste.text) });
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) {
+    const freigaben = listFreigabenByJob(db, kind.id);
+    assert.equal(freigaben.find((f) => f.rolle === 'iban_manuell_geprueft').kommentar, 'IBAN manuell geprüft: keine Übereinstimmung (Eingabe 0000)');
+    assert.ok(freigaben.some((f) => f.rolle === 'auffaelligkeiten_bestaetigt'));
+  }
+  assert.ok(listMailLog(db).some((m) => m.typ === 'auffaelligkeiten-warnung' && m.text.includes('IBAN nicht hinterlegt (manuelle Prüfung)')));
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten mit Zeilen-Beleg in der Popup-Runde bietet im Modal ein Feld für genau diese Zeile an', async () => {
+  const { db, app, id, kontoId, aufraeumen } = await splitPopupAufbau();
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .type('form')
-    .send({
-      gesamtbetrag: '200.00',
-      teilKontoId: [String(kontoId), String(kontoId)],
-      teilBetrag: ['120.00', '80.00'],
-    });
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
+    .field('teilKontoId', String(kontoId))
+    .field('teilKontoId', String(kontoId))
+    .field('teilBetrag', '120.00')
+    .field('teilBetrag', '80.00')
+    .attach('teilBeleg_1', PNG_1X1, { filename: 'beleg.png', contentType: 'image/png' });
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /Einen Beleg für Zeile 2 hast du noch nicht gespeichert/);
+  assert.match(res.text, /name="teilBeleg_1" form="aufsplitten-form"/);
+  assert.doesNotMatch(res.text, /name="teilBeleg_0"/);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  aufraeumen();
+});
 
-  assert.equal(res.status, 302, 'the split must still complete despite the mismatch');
-  assert.equal(res.headers.location, '/pool');
-
-  const auditEintrag = db.prepare("SELECT * FROM freigaben WHERE job_id = ? AND rolle = 'iban_abweichung'").get(id);
-  assert.ok(auditEintrag, 'expected an iban_abweichung freigaben row on the parent job');
-
-  const mailLog = listMailLog(db).filter((m) => m.typ === 'iban-warnung');
-  assert.ok(mailLog.length > 0, 'expected at least one iban-warnung mail to be logged');
-  assert.ok(mailer.sent.some((m) => /IBAN-Abweichung/.test(m.subject)));
-
-  const kinder = listSplitKinder(db, id);
-  assert.equal(kinder.length, 2, 'the split itself must still go through');
-  db.close();
-  rmSync(jobsDir, { recursive: true, force: true });
+test('POST /kontierung/:id/aufsplitten: ein im Modal nochmals gewählter Zeilen-Beleg landet im PDF genau dieses Kindes', async () => {
+  const { db, app, id, kontoId, form, senden, aufraeumen } = await splitPopupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
+    .field('teilKontoId', String(kontoId))
+    .field('teilKontoId', String(kontoId))
+    .field('teilBetrag', '120.00')
+    .field('teilBetrag', '80.00')
+    .field('auffaelligkeitenHash', hash)
+    .attach('teilBeleg_1', PNG_1X1, { filename: 'beleg.png', contentType: 'image/png' });
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id).sort((a, b) => a.id - b.id);
+  assert.equal(kinder[0].beleg_seitenzahl ?? 0, 0);
+  assert.equal(kinder[1].beleg_seitenzahl, 1);
+  aufraeumen();
 });
 
 test('POST /kontierung/:id/aufsplitten sends no IBAN-Abweichung mail when the QR-IBAN matches the hinterlegte IBAN', async () => {
@@ -2593,13 +2804,13 @@ test('POST /kontierung/:id/aufsplitten sends no IBAN-Abweichung mail when the QR
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
     });
 
   assert.equal(res.status, 302);
-  const mailLog = listMailLog(db).filter((m) => m.typ === 'iban-warnung');
+  const mailLog = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
   assert.equal(mailLog.length, 0);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM freigaben WHERE job_id = ? AND rolle = 'iban_abweichung'").get(id).n, 0);
   db.close();
@@ -2619,13 +2830,14 @@ test("POST /kontierung/:id/aufsplitten copies the parent's QR-decoded data onto 
   updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId: null });
   setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: 'REF-1', qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+  const kreditorId = kreditorMitIban(db, { name: 'Muster AG', iban: 'CH4431999123000889012' }); // QR-IBAN hinterlegt: kein Popup
 
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: String(kreditorId), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
     });
@@ -2649,63 +2861,25 @@ test('GET /kontierung/:id marks the Konto and Lieferant dropdowns as searchable 
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedKontoAndPersonen(db);
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
+  assert.match(res.text, /id="neuer-lieferant-zahlungsart"/);
+  assert.match(res.text, /id="neuer-lieferant-iban"/);
+  assert.doesNotMatch(res.text, /Neue Lieferanten legt die Administration an\./);
   assert.match(res.text, /<select class="form-select" id="kreditorId" name="kreditorId" required data-searchable>/);
   assert.match(res.text, /data-bs-target="#neuer-lieferant-modal"/);
   assert.match(res.text, /id="neuer-lieferant-modal"/);
   assert.match(res.text, /id="neuer-lieferant-name"/);
   // The modal's "Anlegen" button must actually call the new endpoint, not just look like a form.
   assert.match(res.text, /fetch\('\/kontierung\/lieferanten'/);
-  db.close();
-});
-
-test('POST /kontierung/lieferanten creates a Kreditor and returns it as JSON, for any logged-in Kontierung user (not just Portal-Admins)', async () => {
-  const db = openDatabase(':memory:');
-  seedDefaults(db);
-  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
-  // Ohne Buchhaltungsgruppe, aber mit einer offenen Kontierung (z. B. weitergeleitet als Freigeber 1).
-  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
-  claimJob(db, jobId, '1');
-  const app = buildTestApp(db, createStubMailer());
-
-  const res = await request(app)
-    .post('/kontierung/lieferanten')
-    .set('x-test-person-id', '1')
-    .type('form')
-    .send({ name: 'Neue Firma AG' });
-
-  assert.equal(res.status, 201);
-  assert.equal(res.body.name, 'Neue Firma AG');
-  assert.ok(res.body.id);
-  const { getKreditorById } = await import('../../src/db/kreditorenRepo.js');
-  const kreditor = getKreditorById(db, res.body.id);
-  assert.equal(kreditor.name, 'Neue Firma AG');
-  assert.equal(kreditor.konto_id, null);
-  assert.equal(kreditor.aktiv, 1);
-  db.close();
-});
-
-test('POST /kontierung/lieferanten trims the name and stores the optional Konto', async () => {
-  const db = openDatabase(':memory:');
-  seedDefaults(db);
-  const kontoId = seedKontoAndPersonen(db);
-  const app = buildTestApp(db, createStubMailer());
-
-  const res = await request(app)
-    .post('/kontierung/lieferanten')
-    .set('x-test-person-id', '1')
-    .type('form')
-    .send({ name: '  Muster AG  ', kontoId: String(kontoId) });
-
-  assert.equal(res.status, 201);
-  const { getKreditorById } = await import('../../src/db/kreditorenRepo.js');
-  const kreditor = getKreditorById(db, res.body.id);
-  assert.equal(kreditor.name, 'Muster AG');
-  assert.equal(kreditor.konto_id, kontoId);
+  // Neu angelegter Lieferant: Option trägt data-iban-pflicht und löst ein change aus, damit der
+  // IBAN-Kasten (kontierung-iban.js) sofort reagiert. Echtes Verhalten nur im Browser prüfbar.
+  assert.match(res.text, /option\.setAttribute\('data-iban-pflicht'/);
+  assert.match(res.text, /kreditorSelect\.dispatchEvent\(new Event\('change', \{ bubbles: true \}\)\)/);
   db.close();
 });
 
@@ -2745,25 +2919,6 @@ test('GET /kontierung/:id renders the An-Gruppe-zurücksenden form', async () =>
   db.close();
 });
 
-test('POST /kontierung/lieferanten rejects a missing name, nothing created', async () => {
-  const db = openDatabase(':memory:');
-  seedDefaults(db);
-  seedKontoAndPersonen(db);
-  const app = buildTestApp(db, createStubMailer());
-
-  const res = await request(app)
-    .post('/kontierung/lieferanten')
-    .set('x-test-person-id', '1')
-    .type('form')
-    .send({ name: '   ' });
-
-  assert.equal(res.status, 400);
-  assert.equal(res.body.error, 'Name ist ein Pflichtfeld.');
-  const { listKreditoren } = await import('../../src/db/kreditorenRepo.js');
-  assert.equal(listKreditoren(db).length, 0);
-  db.close();
-});
-
 test('GET /kontierung/:id shows the QR-decoded suggestion and prefills Betrag when no Betrag is saved yet', async () => {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
   const db = openDatabase(':memory:');
@@ -2798,7 +2953,7 @@ test('GET /kontierung/:id pre-selects a Lieferant found via QR-IBAN when no Abse
 
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, new RegExp(`<option value="${kreditorId}" selected>Erkannte AG</option>`));
+  assert.match(res.text, new RegExp(`<option value="${kreditorId}" data-iban-pflicht="[01]" selected>Erkannte AG</option>`));
   db.close();
 });
 
@@ -2809,7 +2964,7 @@ test('GET /kontierung/:id warns when the QR-IBAN resolves to a different Liefera
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
-  const zugewiesenerKreditor = createKreditor(db, { name: 'Zugewiesen AG', kontoId });
+  const zugewiesenerKreditor = kreditorOhneIbanPflicht(db, { name: 'Zugewiesen AG', kontoId });
   const erkannterKreditor = createKreditor(db, { name: 'Erkannte AG', kontoId: null });
   createKreditorIban(db, { kreditorId: erkannterKreditor, iban: 'CH4431999123000889012' });
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -2840,7 +2995,7 @@ test('GET /kontierung/:id shows no QR box at all when no QR-Code was decoded', a
   db.close();
 });
 
-test('GET /kontierung/:id shows the IBAN as its own field and offers to remember it, even for a brand-new Lieferant with no existing IBAN mapping and no pre-assigned kreditor', async () => {
+test('GET /kontierung/:id shows the IBAN as its own field but no longer offers to remember it (IBANs entstehen nur im Admin)', async () => {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
   const db = openDatabase(':memory:');
   seedDefaults(db);
@@ -2854,40 +3009,206 @@ test('GET /kontierung/:id shows the IBAN as its own field and offers to remember
   assert.equal(res.status, 200);
   assert.match(res.text, /IBAN \(aus QR-Code\)/);
   assert.match(res.text, /id="qrIban"[^>]*value="CH4431999123000889012"/);
-  assert.match(res.text, /id="ibanMerken"/);
-  assert.match(res.text, /dem ausgewählten Lieferanten/);
+  assert.doesNotMatch(res.text, /name="ibanMerken"/);
+  assert.doesNotMatch(res.text, /künftig automatisch/);
   db.close();
 });
 
-test('POST /kontierung/:id sends an IBAN-Abweichung warning mail and logs it to the audit log on mismatch', async () => {
+// --- Prüf-Popup (Auffälligkeiten) ---------------------------------------------------------
+
+function hashAusAntwort(text) {
+  const treffer = text.match(/name="auffaelligkeitenHash"[^>]*value="([0-9a-f]{64})"/);
+  assert.ok(treffer, 'erwartet ein auffaelligkeitenHash-Feld mit Hash im Modal');
+  return treffer[1];
+}
+
+async function popupAufbau() {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
-  const { createKreditorIban } = await import('../../src/db/kreditorIbanRepo.js');
-  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
   const db = openDatabase(':memory:');
   seedDefaults(db);
-  const kontoId = seedKontoAndPersonen(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
-  createKreditorIban(db, { kreditorId, iban: 'CH0000000000000000000' }); // hinterlegte IBAN weicht ab
+  setConfigValue(db, 'iban_abweichung_empfaenger', 'revision@example.org');
+  const kontoId = seedKontoAndPersonen(db); // Freigeber 1 = '1' (kontiert selbst), Freigeber 2 = '3'
+  const kreditorId = kreditorMitIban(db, { name: 'Muster AG', kontoId, iban: 'CH0000000000000000000' }); // hinterlegte IBAN weicht ab
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
   const mailer = createStubMailer();
   const app = buildTestApp(db, mailer);
+  const form = { kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' };
+  const senden = (body) => request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send(body);
+  return { db, id, mailer, form, senden };
+}
 
-  const res = await request(app)
-    .post(`/kontierung/${id}`)
-    .set('x-test-person-id', '1')
-    .type('form')
-    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+function anzahlBestaetigungen(db, id) {
+  return db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten WHERE job_id = ?').get(id).n;
+}
 
-  assert.equal(res.status, 302, 'Kontierung must still complete despite the mismatch');
-  const mailLog = listMailLog(db).filter((m) => m.typ === 'iban-warnung');
-  assert.ok(mailLog.length > 0, 'expected at least one iban-warnung mail to be logged');
-  assert.ok(mailer.sent.some((m) => /IBAN-Abweichung/.test(m.subject)));
+test('POST /kontierung/:id mit fremder QR-IBAN und ohne Bestätigung zeigt das Prüf-Popup und speichert nichts', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, mailer, form, senden } = await popupAufbau();
 
-  const auditEintrag = db.prepare("SELECT * FROM freigaben WHERE job_id = ? AND rolle = 'iban_abweichung'").get(id);
-  assert.ok(auditEintrag, 'expected an iban_abweichung freigaben row');
+  const res = await senden(form);
+
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /Bitte Rechnung nochmals prüfen/);
+  assert.match(res.text, /IBAN nicht hinterlegt/);
+  assert.match(res.text, /Prüfe die Bankverbindung <strong>telefonisch beim Lieferanten<\/strong>/);
+  assert.match(res.text, /Wie hast du geprüft\?/);
+  assert.match(res.text, /Beim Speichern werden Freigeber 1 und 2 per Mail informiert\./);
+  assert.match(res.text, /name="pruefBemerkung"[^>]*form="kontierung-form"|form="kontierung-form"[^>]*name="pruefBemerkung"/);
+  assert.match(res.text, /type="submit" form="kontierung-form" name="aktion" value="kontieren"[^>]*>Geprüft, trotzdem speichern/);
+  assert.doesNotMatch(res.text, /Einen angehängten Beleg/);
+  assert.match(res.text, /name="absender" value="Muster AG"/, 'Formularwerte bleiben erhalten');
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(getJobById(db, id).konto_id, null);
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  assert.equal(anzahlBestaetigungen(db, id), 0);
+  assert.equal(listMailLog(db).length, 0);
+  assert.equal(mailer.sent.length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id mit passendem Hash speichert, protokolliert die Bestätigung und schickt eine Warn-Mail pro Empfänger', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, mailer, form, senden } = await popupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+
+  const res = await senden({ ...form, auffaelligkeitenHash: hash, pruefBemerkung: 'telefonisch bestätigt' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).status, 'freigabe2');
+  const zeilen = db.prepare('SELECT * FROM kontierung_auffaelligkeiten WHERE job_id = ?').all(id);
+  assert.equal(zeilen.length, 1);
+  assert.equal(zeilen[0].bemerkung, 'telefonisch bestätigt');
+  assert.equal(zeilen[0].person_id, '1');
+  assert.equal(JSON.parse(zeilen[0].befunde_json)[0].code, 'iban_fremd');
+  const bestaetigt = listFreigabenByJob(db, id).filter((f) => f.rolle === 'auffaelligkeiten_bestaetigt');
+  assert.equal(bestaetigt.length, 1);
+  assert.equal(bestaetigt[0].kommentar, 'IBAN nicht hinterlegt — Wie geprüft: telefonisch bestätigt');
+  assert.ok(!listFreigabenByJob(db, id).some((f) => f.rolle === 'iban_abweichung'), 'der alte iban_abweichung-Eintrag entfällt');
+  assert.ok(buildAuditLog(db, id).some((e) => e.ereignis === 'Auffälligkeiten bestätigt'));
+
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.deepEqual(warnungen.map((m) => m.empfaenger).sort(), ['p1@example.org', 'p3@example.org', 'revision@example.org']);
+  assert.ok(warnungen.every((m) => /Auffälligkeiten/.test(m.betreff)));
+  assert.ok(warnungen.every((m) => m.text.includes('- IBAN nicht hinterlegt: ') && m.text.includes('Wie geprüft: telefonisch bestätigt') && m.text.includes('Person1 Muster hat die Rechnung "a.pdf" (Lieferant: Muster AG)')));
+  assert.ok(warnungen.every((m) => m.text.includes(`https://portal.example.org/freigabe2/${id}`)));
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'iban-warnung').length, 0);
+  assert.ok(mailer.sent.length >= 3);
+  db.close();
+});
+
+test('POST /kontierung/:id ohne Bemerkung schreibt „–“ in die Warn-Mail', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, form, senden } = await popupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+  const res = await senden({ ...form, auffaelligkeitenHash: hash, pruefBemerkung: '  ' });
+  assert.equal(res.status, 302);
+  assert.equal(db.prepare('SELECT bemerkung FROM kontierung_auffaelligkeiten WHERE job_id = ?').get(id).bemerkung, null);
+  assert.equal(listFreigabenByJob(db, id).find((f) => f.rolle === 'auffaelligkeiten_bestaetigt').kommentar, 'IBAN nicht hinterlegt');
+  assert.ok(listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung').every((m) => m.text.includes('Wie geprüft: –')));
+  db.close();
+});
+
+test('POST /kontierung/:id mit veraltetem Hash (Betrag geändert, neuer Befund) zeigt das Popup erneut und speichert nichts', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, form, senden } = await popupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+
+  const res = await senden({ ...form, betrag: '120.00', auffaelligkeitenHash: hash, pruefBemerkung: 'telefonisch bestätigt' });
+
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /Betrag weicht ab/);
+  assert.notEqual(hashAusAntwort(res.text), hash);
+  assert.match(res.text, /telefonisch bestätigt/, 'die Bemerkung bleibt im Feld erhalten');
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  assert.equal(anzahlBestaetigungen(db, id), 0);
+  assert.equal(listMailLog(db).length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id mit Beleg in der Popup-Runde weist im Modal auf den nicht gespeicherten Beleg hin', async () => {
+  const { db, id, form } = await popupAufbau();
+  const app = buildTestApp(db, createStubMailer());
+  let req = request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1');
+  for (const [k, v] of Object.entries(form)) req = req.field(k, v);
+  const res = await req.attach('beleg', PNG_1X1, { filename: 'beleg.png', contentType: 'image/png' });
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /Einen angehängten Beleg/);
+  assert.match(res.text, /id="auffaelligkeiten-beleg"[^>]*name="beleg"[^>]*form="kontierung-form"|form="kontierung-form"[^>]*name="beleg"/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  db.close();
+});
+
+test('POST /kontierung/:id mit Interessenskonflikt zeigt bei Auffälligkeiten ebenfalls das Popup, mit Hash wird eskaliert und bestätigt', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, form, senden } = await popupAufbau();
+  const konflikt = { ...form, interessenskonflikt: 'ja', begruendung: 'Mein Bruder' };
+  const erste = await senden(konflikt);
+  assert.equal(erste.status, 200);
+  assert.match(erste.text, /id="auffaelligkeiten-modal"/);
+  assert.equal(getJobById(db, id).freigabe1_eskaliert_von, null);
+
+  const res = await senden({ ...konflikt, auffaelligkeitenHash: hashAusAntwort(erste.text) });
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).freigabe1_eskaliert_von, '1');
+  assert.equal(anzahlBestaetigungen(db, id), 1);
+  assert.ok(listFreigabenByJob(db, id).some((f) => f.rolle === 'auffaelligkeiten_bestaetigt'));
+  assert.ok(listMailLog(db).some((m) => m.typ === 'auffaelligkeiten-warnung'));
+  db.close();
+});
+
+test('POST /kontierung/:id Ablehnen mit Auffälligkeiten zeigt kein Popup', async () => {
+  const { db, id, form, senden } = await popupAufbau();
+  const res = await senden({ ...form, aktion: 'ablehnen', begruendung: 'Falsche Rechnung' });
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).status, 'abgelehnt');
+  assert.equal(anzahlBestaetigungen(db, id), 0);
+  db.close();
+});
+
+test('POST /kontierung/:id mit strikter Freigeber-1-Prüfung: Auffälligkeiten zeigen das Popup, mit Hash wird weitergeleitet, bestätigt und gewarnt', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'iban_abweichung_empfaenger', 'revision@example.org');
+  setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
+  const kontoId = seedKontoAndPersonen(db);
+  const kreditorId = kreditorMitIban(db, { name: 'Muster AG', kontoId, iban: 'CH0000000000000000000' });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '3'); // Freigeber 2, nicht Freigeber 1 → strikte Weiterleitung an '1'
+  setKontierung(db, id, kontoId);
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const app = buildTestApp(db, createStubMailer());
+  const form = { kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' };
+  const senden = (body) => request(app).post(`/kontierung/${id}`).set('x-test-person-id', '3').type('form').send(body);
+
+  const erste = await senden(form);
+  assert.equal(erste.status, 200);
+  assert.match(erste.text, /id="auffaelligkeiten-modal"/);
+  assert.equal(getJobById(db, id).zugewiesen_an, '3', 'nichts weitergeleitet');
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  assert.equal(anzahlBestaetigungen(db, id), 0);
+  assert.equal(listMailLog(db).length, 0);
+
+  const res = await senden({ ...form, auffaelligkeitenHash: hashAusAntwort(erste.text), pruefBemerkung: 'Rückruf' });
+  assert.equal(res.status, 302);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.zugewiesen_an, '1', 'an den echten Freigeber 1 weitergeleitet');
+  const rollen = listFreigabenByJob(db, id).map((f) => f.rolle);
+  assert.ok(rollen.includes('freigabe1_weiterleitung'));
+  assert.ok(rollen.includes('auffaelligkeiten_bestaetigt'));
+  assert.ok(!rollen.includes('freigeber1'));
+  assert.equal(anzahlBestaetigungen(db, id), 1);
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.deepEqual(warnungen.map((m) => m.empfaenger).sort(), ['p1@example.org', 'p3@example.org', 'revision@example.org']);
+  assert.ok(warnungen.every((m) => m.text.includes(`https://portal.example.org/kontierung/${id}`)), 'noch nicht in Freigabe 2: Link auf die Kontierung');
   db.close();
 });
 
@@ -2913,7 +3234,9 @@ test('POST /kontierung/:id sends no IBAN-Abweichung mail when the QR-IBAN matche
     .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
 
   assert.equal(res.status, 302);
-  assert.equal(listMailLog(db).filter((m) => m.typ === 'iban-warnung').length, 0);
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung').length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten WHERE job_id = ?').get(id).n, 0);
+  assert.ok(!listFreigabenByJob(db, id).some((f) => f.rolle === 'auffaelligkeiten_bestaetigt'));
   db.close();
 });
 
@@ -2923,7 +3246,7 @@ test('POST /kontierung/:id warns when the Rechnungsnummer is already recorded fo
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   const bestehenderId = createJob(db, { eingangAm: '2026-08-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/alt.pdf' });
   updateKontierungMetadaten(db, bestehenderId, { absender: 'Muster AG', betrag: '50.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -2956,7 +3279,7 @@ test('POST /kontierung/:id warns about a possible double scan (same Kreditor, Be
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   const bestehenderId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'scan1.pdf', pdfPfad: '/tmp/scan1.pdf' });
   updateKontierungMetadaten(db, bestehenderId, { absender: 'Muster AG', betrag: '100.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'scan2.pdf', pdfPfad: '/tmp/scan2.pdf' });
@@ -2987,7 +3310,7 @@ test('POST /kontierung/:id gives no double-scan warning for a monthly invoice wi
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   const alt = createJob(db, { eingangAm: '2026-07-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'juli.pdf', pdfPfad: '/tmp/juli.pdf' });
   updateKontierungMetadaten(db, alt, { absender: 'Muster AG', betrag: '100.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-7', lieferant: 'Muster AG', kreditorId });
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'aug.pdf', pdfPfad: '/tmp/aug.pdf' });
@@ -3006,7 +3329,7 @@ test('POST /kontierung/:id sends only the Rechnungsnummer warning when both chec
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   const bestehenderId = createJob(db, { eingangAm: '2026-08-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/alt.pdf' });
   updateKontierungMetadaten(db, bestehenderId, { absender: 'Muster AG', betrag: '100.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -3027,7 +3350,7 @@ test('POST /kontierung/:id sends no Rechnungsnummer-Duplikat warning when the Re
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -3050,7 +3373,7 @@ test('POST /kontierung/:id sends no Rechnungsnummer-Duplikat warning when the on
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   const geloeschtId = createJob(db, { eingangAm: '2026-08-20T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'alt.pdf', pdfPfad: '/tmp/alt.pdf' });
   updateKontierungMetadaten(db, geloeschtId, { absender: 'Muster AG', betrag: '50.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
   db.prepare("UPDATE jobs SET status = 'geloescht' WHERE id = ?").run(geloeschtId);
@@ -3070,81 +3393,29 @@ test('POST /kontierung/:id sends no Rechnungsnummer-Duplikat warning when the on
   db.close();
 });
 
-test('POST /kontierung/:id with ibanMerken checked creates a bestaetigt kreditor_ibans row for a Lieferant with no IBAN on file yet', async () => {
+test('POST /kontierung/:id with a stale ibanMerken=on creates no kreditor_ibans row', async () => {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
-  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
   const { listKreditorIbansByKreditor } = await import('../../src/db/kreditorIbanRepo.js');
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId });
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
   const app = buildTestApp(db, createStubMailer());
 
+  const body = { kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', ibanMerken: 'on' };
+  // Lastschrift-Lieferant mit Einzahlungsschein: Auffälligkeit „zahlungsart_ohne_iban“, also erst bestätigen.
+  const popup = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send(body);
+  assert.equal(popup.status, 200);
   const res = await request(app)
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', ibanMerken: 'on' });
+    .send({ ...body, auffaelligkeitenHash: hashAusAntwort(popup.text) });
 
   assert.equal(res.status, 302);
-  const rows = listKreditorIbansByKreditor(db, kreditorId);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].iban, 'CH4431999123000889012');
-  assert.equal(rows[0].quelle, 'bestaetigt');
-  db.close();
-});
-
-test('POST /kontierung/:id without ibanMerken checked creates no kreditor_ibans row', async () => {
-  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
-  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const { listKreditorIbansByKreditor } = await import('../../src/db/kreditorIbanRepo.js');
-  const db = openDatabase(':memory:');
-  seedDefaults(db);
-  const kontoId = seedKontoAndPersonen(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
-  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
-  claimJob(db, id, '1');
-  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
-  const app = buildTestApp(db, createStubMailer());
-
-  const res = await request(app)
-    .post(`/kontierung/${id}`)
-    .set('x-test-person-id', '1')
-    .type('form')
-    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
-
-  assert.equal(res.status, 302);
-  assert.equal(listKreditorIbansByKreditor(db, kreditorId).length, 0);
-  db.close();
-});
-
-test('POST /kontierung/:id with ibanMerken checked skips the save when the decoded qr_iban is not IBAN-shaped', async () => {
-  // job.qr_iban comes from a QR-code decode with no shape validation of its own (unlike the
-  // admin route, which validates against IBAN_PATTERN before accepting an IBAN) — a malformed or
-  // adversarial "IBAN" must not silently become a supplier's trusted expected IBAN just because
-  // the (default-checked) ibanMerken box was submitted checked.
-  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
-  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const { listKreditorIbansByKreditor } = await import('../../src/db/kreditorIbanRepo.js');
-  const db = openDatabase(':memory:');
-  seedDefaults(db);
-  const kontoId = seedKontoAndPersonen(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
-  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
-  claimJob(db, id, '1');
-  setQrDaten(db, id, { qrIban: 'NICHT-EINE-IBAN', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
-  const app = buildTestApp(db, createStubMailer());
-
-  const res = await request(app)
-    .post(`/kontierung/${id}`)
-    .set('x-test-person-id', '1')
-    .type('form')
-    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', ibanMerken: 'on' });
-
-  assert.equal(res.status, 302, 'Kontierung must still complete even though the opt-in save is skipped');
   assert.equal(listKreditorIbansByKreditor(db, kreditorId).length, 0);
   db.close();
 });
@@ -3155,7 +3426,7 @@ test('a Ferienmodus-Stellvertreter can open and submit /kontierung/:id for the a
   seedDefaults(db);
   const mailer = createStubMailer();
   const kontoId = seedKontoAndPersonen(db); // freigeber1Id: '1', freigeber2Id: '3'
-  const kreditorId = createKreditor(db, { name: 'Lieferant AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Lieferant AG', kontoId: null });
   setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
   const app = buildTestApp(db, mailer);
   const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'x@example.org', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -3187,7 +3458,7 @@ test('the Freigabe-2-fällig mail also reaches the Freigeber2\'s active Stellver
   seedDefaults(db);
   const mailer = createStubMailer();
   const kontoId = seedKontoAndPersonen(db); // freigeber2Id: '3'
-  const kreditorId = createKreditor(db, { name: 'Lieferant AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Lieferant AG', kontoId: null });
   setFerienmodus(db, '3', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '4' });
   const app = buildTestApp(db, mailer);
   const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'x@example.org', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
@@ -3230,7 +3501,7 @@ test('a Ferienmodus-Stellvertreter can aufsplitten the absent person\'s job; eac
     .set('x-test-person-id', '2')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['60.00', '40.00'],
     });
@@ -3261,7 +3532,7 @@ test('a split child\'s Freigabe-2-fällig mail also reaches the target Konto\'s 
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['60.00', '40.00'],
     });
@@ -3282,7 +3553,7 @@ test('POST /kontierung/:id: toggle on — the strikte-Freigeber1-Prüfung forwar
   setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
   setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: 1 });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: 1 });
   const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, jobId, '3'); // person '3' is Konto 3000's freigeber2, NOT freigeber1
   setKontierung(db, jobId, 1);
@@ -3309,7 +3580,7 @@ test('POST /kontierung/:id accepts the legacy debitorId field and stores the Kre
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Alt-Formular AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Alt-Formular AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const res = await request(buildTestApp(db, createStubMailer()))
@@ -3329,8 +3600,8 @@ test('POST /kontierung/:id rejects contradicting kreditorId and debitorId withou
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const a = createKreditor(db, { name: 'A AG', kontoId: null });
-  const b = createKreditor(db, { name: 'B AG', kontoId: null });
+  const a = kreditorOhneIbanPflicht(db, { name: 'A AG', kontoId: null });
+  const b = kreditorOhneIbanPflicht(db, { name: 'B AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const vorher = { ...getJobById(db, id) };
@@ -3349,7 +3620,7 @@ test('kontierung: Fehler stehen am Feld', async () => {
   seedDefaults(db);
   const kontoId = seedKontoAndPersonen(db);
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
@@ -3395,14 +3666,500 @@ test('kontierung: Nebenaktionen im Menü Weitere Aktionen', async () => {
   db.close();
 });
 
-test('POST /kontierung/lieferanten: Person ohne Buchhaltung, Recht oder offene Kontierung → 403, nichts angelegt', async () => {
+
+test('GET /kontierung/:id zeigt Buchhaltung ohne Recht keine Schnellanlage, sondern den Hinweis', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
-  upsertPerson(db, { id: '7', vorname: 'Nur', nachname: 'Spesen', email: 'spesen@example.org', gruppen: [], loggedInNow: true });
+  seedKontoAndPersonen(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
   const app = buildTestApp(db, createStubMailer());
-  const res = await request(app).post('/kontierung/lieferanten').set('x-test-person-id', '7').type('form').send({ name: 'Fremde AG' });
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /id="neuer-lieferant-modal"/);
+  assert.doesNotMatch(res.text, /data-bs-target="#neuer-lieferant-modal"/);
+  assert.match(res.text, /Neue Lieferanten legt die Administration an\./);
+  db.close();
+});
+
+test('POST /kontierung/lieferanten: Buchhaltung ohne Recht kreditoren_verwalten → 403, nichts angelegt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedKontoAndPersonen(db); // Person 1 in der Buchhaltungsgruppe, mit offener Kontierung
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).post('/kontierung/lieferanten').set('x-test-person-id', '1').type('form')
+    .send({ name: 'Fremde AG', zahlungsart: 'ueberweisung', iban: 'CH9300762011623852957' });
   assert.equal(res.status, 403);
+  assert.equal(res.body.error, 'Neue Lieferanten legt die Administration an.');
   const { listKreditoren } = await import('../../src/db/kreditorenRepo.js');
   assert.equal(listKreditoren(db).length, 0);
   db.close();
+});
+
+test('POST /kontierung/lieferanten: Recht kreditoren_verwalten ohne IBAN bei Überweisung → 400, nichts angelegt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedKontoAndPersonen(db);
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).post('/kontierung/lieferanten').set('x-test-person-id', '1').type('form')
+    .send({ name: 'Neue AG', zahlungsart: 'ueberweisung' });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /IBAN Pflicht/);
+  const { listKreditoren } = await import('../../src/db/kreditorenRepo.js');
+  assert.equal(listKreditoren(db).length, 0);
+  db.close();
+});
+
+test('POST /kontierung/lieferanten: ohne oder mit ungültiger Zahlungsart, ungültiger oder doppelter IBAN → 400', async () => {
+  const { kreditorMitIban } = await import('../helpers/kreditor.js');
+  const { listKreditoren } = await import('../../src/db/kreditorenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedKontoAndPersonen(db);
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
+  kreditorMitIban(db, { name: 'Bestand AG' });
+  const app = buildTestApp(db, createStubMailer());
+  const post = (body) => request(app).post('/kontierung/lieferanten').set('x-test-person-id', '1').type('form').send(body);
+  assert.equal((await post({ name: 'A AG', iban: 'CH9300762011623852957' })).status, 400);
+  assert.equal((await post({ name: 'A AG', zahlungsart: 'bar', iban: 'CH9300762011623852957' })).status, 400);
+  assert.equal((await post({ name: 'A AG', zahlungsart: 'ueberweisung', iban: 'CH0000000000000000000' })).status, 400);
+  assert.equal((await post({ name: 'A AG', zahlungsart: 'ueberweisung', iban: 'CH93 0076 2011 6238 5295 7' })).status, 400, 'IBAN bereits vergeben');
+  assert.equal((await post({ name: '   ', zahlungsart: 'lastschrift' })).status, 400);
+  assert.equal(listKreditoren(db).length, 1);
+  db.close();
+});
+
+test('POST /kontierung/lieferanten: Recht kreditoren_verwalten mit gültiger IBAN → 201, Kreditor + IBAN (manuell) angelegt und wählbar', async () => {
+  const { getKreditorById } = await import('../../src/db/kreditorenRepo.js');
+  const { listKreditorIbansByKreditor } = await import('../../src/db/kreditorIbanRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
+  const jobId = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).post('/kontierung/lieferanten').set('x-test-person-id', '1').type('form')
+    .send({ name: '  Neue Firma AG  ', zahlungsart: 'ueberweisung', iban: 'CH93 0076 2011 6238 5295 7', kontoId: String(kontoId) });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.name, 'Neue Firma AG');
+  const kreditor = getKreditorById(db, res.body.id);
+  assert.equal(kreditor.zahlungsart, 'ueberweisung');
+  assert.equal(kreditor.konto_id, kontoId);
+  const ibans = listKreditorIbansByKreditor(db, res.body.id);
+  assert.equal(ibans.length, 1);
+  assert.equal(ibans[0].iban, 'CH9300762011623852957');
+  assert.equal(ibans[0].quelle, 'manuell');
+  const seite = await request(app).get(`/kontierung/${jobId}`).set('x-test-person-id', '1');
+  assert.match(seite.text, new RegExp(`<option value="${res.body.id}"[^>]*>Neue Firma AG</option>`));
+  db.close();
+});
+
+test('POST /kontierung/lieferanten: Lastschrift braucht keine IBAN; Superadmin darf ohne Einzelrecht anlegen', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  upsertPerson(db, { id: '9', vorname: 'Super', nachname: 'Admin', email: 'sa@example.org', gruppen: ['20'], loggedInNow: true });
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).post('/kontierung/lieferanten').set('x-test-person-id', '9').type('form')
+    .send({ name: 'Abo AG', zahlungsart: 'lastschrift' });
+  assert.equal(res.status, 201);
+  db.close();
+});
+
+test('GET /kontierung/:id listet einen Lieferanten ohne IBAN nicht im Dropdown; POST mit ihm → 400 und nichts gespeichert', async () => {
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  const unvollstaendig = createKreditor(db, { name: 'Ohne IBAN AG', kontoId });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const seite = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.doesNotMatch(seite.text, /Ohne IBAN AG/);
+  const res = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form')
+    .send({ kontoId: String(kontoId), kreditorId: String(unvollstaendig), absender: 'X', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Dieser Lieferant hat noch keine IBAN\. Bitte melde dich bei der Administration\./);
+  assert.equal(db.prepare('SELECT status, kreditor_id FROM jobs WHERE id = ?').get(id).kreditor_id, null);
+  db.close();
+});
+
+test('POST /kontierung/:id/aufsplitten mit einem gewählten Lieferanten ohne IBAN → 400, nichts aufgeteilt', async () => {
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  const unvollstaendig = createKreditor(db, { name: 'Ohne IBAN AG', kontoId });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  db.prepare('UPDATE jobs SET kreditor_id = ? WHERE id = ?').run(unvollstaendig, id);
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form')
+    .send({ kreditorId: String(unvollstaendig), gesamtbetrag: '200.00', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['100.00', '100.00'] });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Dieser Lieferant hat noch keine IBAN\. Bitte melde dich bei der Administration\./);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 1);
+  db.close();
+});
+
+
+// --- Manuelle IBAN-Kontrolle ohne QR-Code ---------------------------------------------------
+
+function ibanTestAufbau({ zahlungsart = 'ueberweisung', qr = false } = {}) {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  const kreditorId = kreditorMitIban(db, { name: 'Muster AG', zahlungsart });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  if (qr) db.prepare("UPDATE jobs SET qr_iban = 'CH9300762011623852957', qr_erkannt_am = '2026-08-15T08:00:00.000Z' WHERE id = ?").run(id);
+  const form = { kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '' };
+  return { db, id, kreditorId, form, app: buildTestApp(db, createStubMailer()) };
+}
+
+test('GET /kontierung/:id ohne QR-Code zeigt den IBAN-Kasten, aber nie die hinterlegte IBAN-Endung', async () => {
+  const { db, id, kreditorId, app } = ibanTestAufbau();
+  db.prepare('UPDATE jobs SET kreditor_id = ? WHERE id = ?').run(kreditorId, id);
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Kein QR-Code: IBAN bitte von Hand prüfen/);
+  assert.match(res.text, /name="ibanEndung"/);
+  assert.match(res.text, /Letzte 4 Zeichen der IBAN/);
+  assert.doesNotMatch(res.text, /id="iban-manuell-kasten"[^>]*d-none/);
+  assert.match(res.text, /data-iban-pflicht="1"/);
+  assert.ok(!res.text.includes('2957'), 'die hinterlegte IBAN-Endung darf nicht in der Antwort stehen');
+  db.close();
+});
+
+test('GET /kontierung/:id mit QR-Code rendert keinen IBAN-Kasten', async () => {
+  const { db, id, app } = ibanTestAufbau({ qr: true });
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /name="ibanEndung"/);
+  db.close();
+});
+
+test('POST /kontierung/:id ohne ibanEndung wird mit Feldfehler abgewiesen und speichert nichts', async () => {
+  const { db, id, form, app } = ibanTestAufbau();
+  const res = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send(form);
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bitte gib die letzten 4 Zeichen der IBAN auf der Rechnung ein\./);
+  assert.match(res.text, /id="ibanEndung-fehler"/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id mit ungültiger ibanEndung (falsche Länge) wird ebenfalls abgewiesen', async () => {
+  const { db, id, form, app } = ibanTestAufbau();
+  const res = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send({ ...form, ibanEndung: '295' });
+  assert.equal(res.status, 400);
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id mit passender ibanEndung protokolliert iban_manuell_geprueft', async () => {
+  const { db, id, form, app } = ibanTestAufbau();
+  const res = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send({ ...form, ibanEndung: ' 2957' });
+  assert.equal(res.status, 302);
+  const eintrag = listFreigabenByJob(db, id).find((f) => f.rolle === 'iban_manuell_geprueft');
+  assert.ok(eintrag);
+  assert.equal(eintrag.kommentar, 'IBAN manuell geprüft: Übereinstimmung (Eingabe 2957)');
+  assert.ok(buildAuditLog(db, id).some((e) => e.ereignis === 'IBAN von Hand geprüft'));
+  db.close();
+});
+
+test('POST /kontierung/:id mit falscher ibanEndung zeigt das Popup; nach Bestätigung speichert es, Kommentar „keine Übereinstimmung“', async () => {
+  const { db, id, form, app } = ibanTestAufbau();
+  const senden = (body) => request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send(body);
+  const erste = await senden({ ...form, ibanEndung: '0000', aktion: 'kontieren' });
+  assert.equal(erste.status, 200);
+  assert.match(erste.text, /id="auffaelligkeiten-modal"/);
+  assert.match(erste.text, /IBAN nicht hinterlegt \(manuelle Prüfung\)/);
+  assert.match(erste.text, /telefonisch beim Lieferanten/);
+  assert.match(erste.text, /name="ibanEndung"[^>]*value="0000"/);
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+
+  const res = await senden({ ...form, ibanEndung: '0000', aktion: 'kontieren', auffaelligkeitenHash: hashAusAntwort(erste.text) });
+  assert.equal(res.status, 302);
+  const eintrag = listFreigabenByJob(db, id).find((f) => f.rolle === 'iban_manuell_geprueft');
+  assert.equal(eintrag.kommentar, 'IBAN manuell geprüft: keine Übereinstimmung (Eingabe 0000)');
+  assert.ok(listFreigabenByJob(db, id).some((f) => f.rolle === 'auffaelligkeiten_bestaetigt'));
+  db.close();
+});
+
+test('POST /kontierung/:id verlangt keine ibanEndung bei QR-Code, Lastschrift oder Gutschrift', async () => {
+  for (const variante of ['qr', 'lastschrift', 'gutschrift']) {
+    const { db, id, form, app } = ibanTestAufbau({ qr: variante === 'qr', zahlungsart: variante === 'lastschrift' ? 'lastschrift' : 'ueberweisung' });
+    const body = variante === 'gutschrift' ? { ...form, typ: 'gutschrift' } : form;
+    const res = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send(body);
+    assert.equal(res.status, 302, variante);
+    assert.ok(!listFreigabenByJob(db, id).some((f) => f.rolle === 'iban_manuell_geprueft'), variante);
+    db.close();
+  }
+});
+
+test('GET /kontierung/:id zeigt bei erneuter Kontierung die bestätigten Auffälligkeiten der letzten Kontierung', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const ohne = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.doesNotMatch(ohne.text, /bewusst bestätigt/);
+  db.prepare('INSERT INTO kontierung_auffaelligkeiten (job_id, person_id, zeitpunkt, befunde_json, bemerkung) VALUES (?, ?, ?, ?, ?)')
+    .run(id, '1', '2026-11-10T13:32:00.000Z', JSON.stringify([{ code: 'iban_neu', schwere: 'rot', titel: 'IBAN nicht hinterlegt', text: 'CH93' }]), null);
+  const mit = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.match(mit.text, /1 Auffälligkeit, bewusst bestätigt/);
+  assert.match(mit.text, /Bestätigt von <strong>Frei Geber<\/strong> am 10\.11\.2026, 14:32/);
+  db.close();
+});
+
+test('POST /kontierung/:id: der Kasten mit bestätigten Auffälligkeiten bleibt nach einem Validierungsfehler sichtbar', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedKontoAndPersonen(db);
+  const { speichereBestaetigung } = await import('../../src/db/auffaelligkeitenRepo.js');
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  speichereBestaetigung(db, { jobId, personId: '1', befunde: [{ code: 'x', titel: 'Betrag ungewöhnlich', text: 'Mehr als üblich.' }], bemerkung: 'Telefonisch geprüft' });
+  const app = buildTestApp(db, { async sendMail() {} });
+
+  const res = await request(app)
+    .post(`/kontierung/${jobId}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ aktion: 'kontieren', kontoId: '', absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '10.00', zahlungsziel: '2026-10-01', typ: 'rechnung', interessenskonflikt: '' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /data-auffaelligkeiten-bestaetigt/);
+  assert.match(res.text, /Telefonisch geprüft/);
+  db.close();
+});
+
+// --- Abschluss-Review 2026-11-11 ---------------------------------------------------------
+// Aufsplitten verlangt einen vollständigen Lieferanten aus dem Formular (der Normalfall aus dem
+// Pool hat keinen am Beleg); geprüft wird gegen diesen Lieferanten.
+
+test('Aufsplitten ohne Lieferant am Beleg: gewählter Lieferant mit fremder QR-IBAN → Prüf-Popup, nichts angelegt', async () => {
+  const { db, id, mailer, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false });
+  assert.equal(getJobById(db, id).kreditor_id, null);
+  const res = await senden(form);
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /IBAN nicht hinterlegt/);
+  assert.match(res.text, new RegExp(`<option value="${form.kreditorId}"[^>]*selected`), 'der gewählte Lieferant bleibt im Modal-Durchgang gewählt');
+  assert.equal(listSplitKinder(db, id).length, 0);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(getJobById(db, id).kreditor_id, null);
+  assert.equal(mailer.sent.length, 0);
+  aufraeumen();
+});
+
+test('Aufsplitten ohne Lieferant am Beleg: mit Hash → Kinder mit kreditor_id, Bestätigung je Kind, eine Mail-Runde', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, kreditorId, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false });
+  const hash = hashAusAntwort((await senden(form)).text);
+  const res = await senden({ ...form, auffaelligkeitenHash: hash, pruefBemerkung: 'telefonisch bestätigt' });
+  assert.equal(res.status, 302);
+  const eltern = getJobById(db, id);
+  assert.equal(eltern.status, 'aufgesplittet');
+  assert.equal(eltern.kreditor_id, kreditorId, 'der gewählte Lieferant wird am Elternjob gespeichert');
+  assert.equal(eltern.lieferant, 'Muster AG');
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) {
+    assert.equal(kind.kreditor_id, kreditorId, `Kind #${kind.id} erbt den Lieferanten`);
+    assert.equal(kind.lieferant, 'Muster AG');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten WHERE job_id = ?').get(kind.id).n, 1);
+    assert.equal(listFreigabenByJob(db, kind.id).filter((f) => f.rolle === 'auffaelligkeiten_bestaetigt').length, 1);
+  }
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.deepEqual(warnungen.map((m) => m.empfaenger).sort(), ['p1@example.org', 'p3@example.org', 'revision@example.org'], 'eine Mail-Runde');
+  aufraeumen();
+});
+
+test('Aufsplitten ohne gewählten Lieferanten → Feldfehler, nichts angelegt', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false, iban: 'CH4431999123000889012' });
+  const { kreditorId: _weg, ...ohne } = form;
+  for (const body of [ohne, { ...form, kreditorId: '' }, { ...form, kreditorId: '99999' }]) {
+    const res = await senden(body);
+    assert.equal(res.status, 400);
+    assert.match(res.text, /Bitte einen gültigen Lieferanten aus der Liste auswählen\./);
+    assert.match(res.text, /name="teilBetrag" value="120\.00"/);
+  }
+  assert.equal(listSplitKinder(db, id).length, 0);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  aufraeumen();
+});
+
+test('Aufsplitten mit unvollständigem Lieferanten (Überweisung ohne IBAN) → Fehler, nichts angelegt', async () => {
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false });
+  const unvollstaendig = createKreditor(db, { name: 'Ohne IBAN AG', kontoId: null, zahlungsart: 'ueberweisung' });
+  const res = await senden({ ...form, kreditorId: String(unvollstaendig) });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Dieser Lieferant hat noch keine IBAN\. Bitte melde dich bei der Administration\./);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  aufraeumen();
+});
+
+test('Aufsplitten mit deaktiviertem Lieferanten → Fehler, nichts angelegt', async () => {
+  const { deactivateKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const { db, id, kreditorId, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false, iban: 'CH4431999123000889012' });
+  deactivateKreditor(db, kreditorId);
+  const res = await senden(form);
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bitte einen gültigen Lieferanten aus der Liste auswählen\./);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  aufraeumen();
+});
+
+test('Kontierung mit deaktiviertem Lieferanten → Feldfehler, nichts gespeichert', async () => {
+  const { deactivateKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const { db, id, form, senden } = await popupAufbau();
+  deactivateKreditor(db, Number(form.kreditorId));
+  const res = await senden(form);
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bitte einen gültigen Lieferanten aus der Liste auswählen\./);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  db.close();
+});
+
+test('GET /kontierung/:id/aufsplitten bietet nur wählbare Lieferanten an; ?kreditorId hat Vorrang vor dem Lieferanten am Beleg', async () => {
+  const { createKreditor, deactivateKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const { db, app, id, kreditorId, aufraeumen } = await splitPopupAufbau();
+  const anderer = kreditorOhneIbanPflicht(db, { name: 'Andere AG' });
+  const unvollstaendig = createKreditor(db, { name: 'Ohne IBAN AG', kontoId: null, zahlungsart: 'ueberweisung' });
+  const inaktiv = kreditorOhneIbanPflicht(db, { name: 'Alte AG' });
+  deactivateKreditor(db, inaktiv);
+
+  const standard = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(standard.status, 200);
+  assert.match(standard.text, /<select[^>]*name="kreditorId"[^>]*required/);
+  assert.match(standard.text, new RegExp(`<option value="${kreditorId}"[^>]*selected`), 'vorgewählt: Lieferant am Beleg');
+  assert.match(standard.text, /Andere AG/);
+  assert.doesNotMatch(standard.text, /Ohne IBAN AG/);
+  assert.doesNotMatch(standard.text, /Alte AG/);
+  assert.doesNotMatch(standard.text, new RegExp(`value="${unvollstaendig}"`));
+
+  const mitQuery = await request(app).get(`/kontierung/${id}/aufsplitten`).query({ kreditorId: String(anderer) }).set('x-test-person-id', '1');
+  assert.match(mitQuery.text, new RegExp(`<option value="${anderer}"[^>]*selected`));
+  assert.doesNotMatch(mitQuery.text, new RegExp(`<option value="${kreditorId}"[^>]*selected`));
+  aufraeumen();
+});
+
+test('Kontierungsseite gibt den gewählten Lieferanten an das Aufsplitten-Popup weiter', async () => {
+  const { db, app, id, aufraeumen } = await splitPopupAufbau();
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /'kreditorId=' \+ encodeURIComponent\(/);
+  aufraeumen();
+  void db;
+});
+
+// Ein Splitkind trägt den QR-Betrag der ganzen Rechnung: ihn mit dem Teilbetrag zu vergleichen,
+// ergäbe bei jeder Kontierung eines Kindes einen falschen „Betrag weicht ab“.
+test('Kontierung eines Splitkinds mit passender QR-IBAN: kein „Betrag weicht ab“, kein Popup', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  const kreditorId = kreditorMitIban(db, { name: 'Muster AG', kontoId, iban: 'CH4431999123000889012' });
+  const elternId = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setQrDaten(db, elternId, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  updateKontierungMetadaten(db, elternId, { absender: 'Muster AG', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(elternId);
+  const kindId = createSplitJob(db, getJobById(db, elternId), { pdfPfad: '/tmp/a-kind.pdf', hinweisKontoId: kontoId, betrag: '80.00' });
+  assert.equal(getJobById(db, kindId).qr_betrag, '200.00', 'Voraussetzung: das Kind trägt den QR-Betrag der ganzen Rechnung');
+  claimJob(db, kindId, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).post(`/kontierung/${kindId}`).set('x-test-person-id', '1').type('form')
+    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '80.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+  assert.equal(res.status, 302, 'kein Popup');
+  assert.equal(getJobById(db, kindId).status, 'freigabe2');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten').get().n, 0);
+  db.close();
+});
+
+// Ein unbestätigter Popup-Durchgang hinterlässt eine Spur (nur Befund-Codes, nie die Eingabe),
+// damit das Popup nicht unbemerkt als Orakel für die letzten 4 IBAN-Zeichen dienen kann.
+function angezeigtEreignisse(db) {
+  return db.prepare("SELECT * FROM audit_ereignisse WHERE objekt = 'kontierung' AND aktion = 'auffaelligkeiten_angezeigt' ORDER BY id").all();
+}
+
+test('Popup-Durchgang ohne Bestätigung schreibt ein Audit-Ereignis mit den Befund-Codes, ohne IBAN-Eingabe', async () => {
+  const { db, id, form, senden } = await popupAufbau();
+  db.prepare("UPDATE jobs SET qr_iban = NULL WHERE id = ?").run(id);
+  const res = await senden({ ...form, ibanEndung: '7777' });
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  const ereignisse = angezeigtEreignisse(db);
+  assert.equal(ereignisse.length, 1);
+  assert.equal(ereignisse[0].objekt_id, String(id));
+  assert.equal(ereignisse[0].person_id, '1');
+  const nachher = JSON.parse(ereignisse[0].nachher);
+  assert.ok(nachher.codes.includes('iban_manuell_fremd'));
+  assert.doesNotMatch(ereignisse[0].nachher + (ereignisse[0].begruendung || '') + ereignisse[0].person_name, /7777|CH\d\d/);
+  db.close();
+});
+
+test('Bestätigter Durchgang schreibt kein weiteres auffaelligkeiten_angezeigt-Ereignis', async () => {
+  const { db, form, senden } = await popupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+  assert.equal(angezeigtEreignisse(db).length, 1);
+  const res = await senden({ ...form, auffaelligkeitenHash: hash, pruefBemerkung: 'ok' });
+  assert.equal(res.status, 302);
+  assert.equal(angezeigtEreignisse(db).length, 1);
+  db.close();
+});
+
+test('Aufsplitten: Popup-Durchgang ohne Bestätigung schreibt ebenfalls ein Audit-Ereignis', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false });
+  const res = await senden(form);
+  assert.equal(res.status, 200);
+  const ereignisse = angezeigtEreignisse(db);
+  assert.equal(ereignisse.length, 1);
+  assert.equal(ereignisse[0].objekt_id, String(id));
+  assert.deepEqual(JSON.parse(ereignisse[0].nachher).codes, ['iban_fremd']);
+  aufraeumen();
+});
+
+// Mail-Link nach dem Aufsplitten: aufs erste Kind, das die splittende Person selbst freigegeben
+// hat (alle Empfänger können /freigabe2 öffnen); gibt es keins, auf den Pool.
+test('Aufsplitten-Warnmail verlinkt das erste selbst freigegebene Kind, nicht ein fremdes Pool-Kind', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, kontoId, zweitesKontoId, form, senden, aufraeumen } = await splitPopupAufbau({ kontoFremd: true });
+  const umgedreht = { ...form, teilKontoId: [String(zweitesKontoId), String(kontoId)] }; // erstes Kind: fremdes Konto
+  const hash = hashAusAntwort((await senden(umgedreht)).text);
+  const res = await senden({ ...umgedreht, auffaelligkeitenHash: hash });
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id).sort((a, b) => a.id - b.id);
+  assert.equal(kinder[0].status, 'unzugewiesen');
+  assert.equal(kinder[1].status, 'freigabe2');
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.ok(warnungen.length > 0);
+  assert.ok(warnungen.every((m) => m.text.includes(`https://portal.example.org/freigabe2/${kinder[1].id}`)));
+  assert.ok(warnungen.every((m) => !m.text.includes(`/kontierung/${kinder[0].id}`)));
+  aufraeumen();
+});
+
+test('Aufsplitten-Warnmail ohne selbst freigegebenes Kind verlinkt den Pool', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, zweitesKontoId, form, senden, aufraeumen } = await splitPopupAufbau({ kontoFremd: true });
+  const nurFremd = { ...form, teilKontoId: [String(zweitesKontoId), String(zweitesKontoId)] };
+  const hash = hashAusAntwort((await senden(nurFremd)).text);
+  const res = await senden({ ...nurFremd, auffaelligkeitenHash: hash });
+  assert.equal(res.status, 302);
+  assert.equal(listSplitKinder(db, id).length, 2);
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.ok(warnungen.length > 0);
+  assert.ok(warnungen.every((m) => m.text.includes('https://portal.example.org/pool')));
+  aufraeumen();
 });

@@ -130,6 +130,11 @@ export async function starteResponsiveServer({ port = 0 } = {}) {
   seedDefaults(echteDb);
   const sp = await erstelleSpielwiese(echteDb, config, { neu: true });
   const ids = await ergaenzeDaten(sp.db, sp.config);
+  // Logo im Seitenverhältnis des echten (2850×762) "links" (Standard-Ausrichtung): Kopfzeilen-Layout muss auch damit halten (Prüfung "logo").
+  const logoPfad = join(dir, 'branding', 'logo-breit.svg');
+  writeFileSync(logoPfad, '<svg xmlns="http://www.w3.org/2000/svg" width="374" height="100"><rect width="374" height="100" fill="#c33"/></svg>');
+  setConfigValue(sp.db, 'branding_logo_pfad', logoPfad);
+  setConfigValue(sp.db, 'branding_logo_mimetype', 'image/svg+xml');
   const mailer = createTestMailer();
   // Der Lauf ruft als eine Person (Dora) mehrere hundert Seiten in wenigen Minuten auf (hell + dunkel):
   // eigene, grosszügige Limiter statt der Betriebswerte (300/15 min je Person), sonst 429 mitten im Lauf.

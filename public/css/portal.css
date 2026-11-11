@@ -47,6 +47,12 @@
   font-weight: 600;
 }
 
+/* Logo "links": img hat mx-2 (2 × .5rem Aussenabstand). max-width: 100% allein misst nur die Bildbreite,
+   ein breites Logo ragt dann um den Abstand über seine Spalte und klebt am Farbmodus-Knopf. */
+.portal-kopf-marke img {
+  max-width: calc(100% - 1rem);
+}
+
 /* Handy (unter 576 px): Menüknopf, Titel/Logo und die Knöpfe rechts teilen sich die erste Zeile,
    die Reiter Portal/Admin stehen in einer eigenen zweiten Zeile (ohne Admin-Reiter entfällt sie). Sonst bleibt neben den
    44-px-Touch-Knöpfen kein Platz für den Titel (er würde ganz weggekürzt). */
@@ -867,3 +873,73 @@ h1 .beleg-nr {
   height: 0.75rem;
   border-radius: 3px;
 }
+
+/* Prüf-Popup ohne JS: als normaler Block über dem Kontierungsformular (public/js/auffaelligkeiten.js). */
+.auffaelligkeiten-modal-ohne-js { display: block; position: static; }
+.auffaelligkeiten-modal-ohne-js .modal-dialog { margin: 0; max-width: none; }
+.auffaelligkeiten-modal-ohne-js .btn-close,
+.auffaelligkeiten-modal-ohne-js [data-bs-dismiss="modal"] { display: none; }
+
+/* ---------- Admin: Benachrichtigungen pro Ereignis ---------- */
+.benachrichtigung-bereich {
+  margin: .75rem 0 .25rem;
+  padding: 0 .75rem;
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+.benachrichtigung-liste .list-group-item {
+  border: 0;
+  border-radius: var(--bs-border-radius);
+  padding: .4rem .75rem;
+}
+.benachrichtigung-nummer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--bs-primary);
+  color: #fff;
+  font-size: .75rem;
+}
+.benachrichtigung-ziel {
+  font-size: .875rem;
+  padding: .35rem .7rem;
+}
+.benachrichtigung-vorschau-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Empfänger-Auswahl mit JS (public/js/benachrichtigungen.js): Kärtchen mit ✕ und Suche mit Vorschlagsliste. */
+.zielwahl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  max-width: 100%;
+  padding: .2rem .35rem .2rem .7rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius-pill);
+  background: var(--bs-tertiary-bg);
+  font-size: .875rem;
+}
+/* Bootstrap-d-flex überschreibt [hidden]: die leere Kärtchenliste muss trotzdem verschwinden. */
+.zielwahl [hidden] { display: none !important; }
+.zielwahl-chip > .symbol { flex: none; }
+.zielwahl-chip-text { min-width: 0; overflow-wrap: anywhere; }
+.zielwahl-chip .btn-close { flex: none; font-size: .7rem; }
+.zielwahl-suche { max-width: 28rem; }
+.zielwahl-liste {
+  top: 100%;
+  left: 0;
+  width: 100%;
+  margin-top: .125rem;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+.zielwahl-liste .dropdown-item { cursor: pointer; white-space: normal; overflow-wrap: anywhere; }
+.benachrichtigung-variablen .var { font-size: .8125rem; }
+.var-platzhalter { font-family: var(--bs-font-monospace); font-size: .75rem; opacity: .75; }

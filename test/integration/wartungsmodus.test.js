@@ -158,3 +158,24 @@ test('Modus an: «Erneut versenden» im Mail-Protokoll sendet nichts und zeigt e
   const seite = await agent.get('/admin/mails?zurueckgehalten=1');
   assert.match(seite.text, /Wartungsmodus/);
 });
+
+test('Modus an: Person nur mit backup_verwalten erreicht /admin/backup, sonst nichts', async (t) => {
+  const { db, app, client } = setup(t);
+  const agent = await loginAs(app, client, { id: 77, vorname: 'Buch', nachname: 'Halter', email: 'b@example.org', gruppen: ['10'] });
+  setGruppenBerechtigungen(db, 'buchhaltung', ['backup_verwalten']);
+  setzeWartungsmodus(db, true);
+  assert.notEqual((await agent.get('/admin/backup')).status, 503);
+  assert.equal((await agent.get('/admin/konten')).status, 503);
+  assert.equal((await agent.get('/pool')).status, 503);
+});
+
+test('Modus an: Anfragen einer angemeldeten Person hinterlassen keine Nutzungsdaten (kein Delta zum Backup)', async (t) => {
+  const { db, app, client } = setup(t);
+  const agent = await loginAs(app, client, { id: 7, vorname: 'Normal', nachname: 'User', email: 'n@example.org', gruppen: ['10'] });
+  assert.equal((await agent.get('/pool')).status, 200);
+  assert.ok(db.prepare('SELECT COUNT(*) AS n FROM nutzung_seitenaufrufe').get().n > 0, 'ohne Wartungsmodus wird erfasst');
+  setzeWartungsmodus(db, true);
+  const vorher = db.prepare('SELECT COUNT(*) AS n FROM nutzung_seitenaufrufe').get().n;
+  for (let i = 0; i < 3; i += 1) assert.equal((await agent.get('/pool')).status, 503);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM nutzung_seitenaufrufe').get().n, vorher);
+});

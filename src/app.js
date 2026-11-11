@@ -256,11 +256,12 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
       echterCsrfToken: (req, res) => res.locals.csrfToken ?? generateCsrfToken(req, res),
     }));
   }
+  // Vor Nutzungserfassung und Audit: im Wartungsmodus sollen normale Anfragen keine Daten schreiben.
+  app.use(wartungsmodusSperre(db, config));
   app.use(nutzungErfassen(db));
   app.use(auditContext);
   app.use(zugriffsAuditMiddleware(db));
   app.use(loadNavFlags(db, config));
-  app.use(wartungsmodusSperre(db, config));
 
   const mailer = injectedMailer ?? (testmodus ? createTestMailer() : createMailerOrFallback(config.smtp));
 

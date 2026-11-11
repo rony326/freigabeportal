@@ -201,3 +201,22 @@ test('Beispiel-Lieferanten sind vollständig, mit Zahlungsart; mindestens einer 
   assert.ok(kreditoren.some((k) => k.zahlungsart === 'ueberweisung'));
   sp.db.close(); db.close();
 });
+
+test('Spielwiese erbt den Wartungsmodus nicht (kein Sperren der Beispielpersonen)', async () => {
+  const { config, db } = umgebung();
+  setConfigValue(db, 'wartungsmodus_aktiv', '1');
+  setConfigValue(db, 'wartungsmodus_hinweis', 'Update');
+  const sp = await erstelleSpielwiese(db, config, { neu: true });
+  assert.notEqual(getConfigValue(sp.db, 'wartungsmodus_aktiv'), '1');
+  assert.ok(!getConfigValue(sp.db, 'wartungsmodus_hinweis'));
+});
+
+test('Spielwiese übernimmt die echten Gruppenrechte statt der Startwerte', async () => {
+  const { config, db } = umgebung();
+  const { setGruppenBerechtigungen, listGruppenBerechtigungen } = await import('../../src/db/gruppenBerechtigungenRepo.js');
+  setGruppenBerechtigungen(db, 'buchhaltung', ['mails_einsehen']);
+  setGruppenBerechtigungen(db, 'superadmin', ['konten_verwalten']);
+  const sp = await erstelleSpielwiese(db, config, { neu: true });
+  assert.deepEqual(listGruppenBerechtigungen(sp.db, 'buchhaltung'), ['mails_einsehen']);
+  assert.deepEqual(listGruppenBerechtigungen(sp.db, 'superadmin'), ['gruppenrechte_verwalten', 'konten_verwalten']);
+});

@@ -175,7 +175,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     }
     const { name, kontoId, iban } = req.body;
     const zahlungsart = req.body.zahlungsart;
-    const { errors, normalizedIban } = pruefeNeuenKreditor(db, { name, zahlungsart, iban });
+    const { errors, normalizedIban } = pruefeNeuenKreditor(db, { name, zahlungsart, iban, kontoId });
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join(' ') });
     }

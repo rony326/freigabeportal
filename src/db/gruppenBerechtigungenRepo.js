@@ -22,14 +22,16 @@ export function setGruppenBerechtigungen(db, gruppe, berechtigungen) {
   pruefeGruppe(gruppe);
   const gueltig = new Set(berechtigungen.filter((b) => GRANTABLE_BERECHTIGUNGEN.includes(b)));
   if (gruppe === 'superadmin') for (const recht of FESTE_RECHTE) gueltig.add(recht);
-  db.exec('BEGIN');
+  // Läuft schon eine Transaktion (z. B. Rechteänderung + Audit in der Route), gehört die Änderung dazu.
+  const eigene = !db.isTransaction;
+  if (eigene) db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM gruppen_berechtigungen WHERE gruppe = ?').run(gruppe);
     const insert = db.prepare('INSERT INTO gruppen_berechtigungen (gruppe, berechtigung) VALUES (?, ?)');
     for (const recht of gueltig) insert.run(gruppe, recht);
-    db.exec('COMMIT');
+    if (eigene) db.exec('COMMIT');
   } catch (err) {
-    db.exec('ROLLBACK');
+    if (eigene && db.isTransaction) db.exec('ROLLBACK');
     throw err;
   }
 }

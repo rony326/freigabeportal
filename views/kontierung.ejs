@@ -294,7 +294,7 @@
               <label class="form-label" for="neuer-lieferant-konto">Konto (optional)</label>
               <select class="form-select" id="neuer-lieferant-konto" data-searchable>
                 <option value="">— kein Konto —</option>
-                <% konten.forEach((k) => { %>
+                <% konten.filter((k) => k.buchungsart !== 'gutschrift').forEach((k) => { %>
                   <option value="<%= k.id %>"><%= k.kontonummer %> — <%= k.bezeichnung %></option>
                 <% }) %>
               </select>

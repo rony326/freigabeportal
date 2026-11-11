@@ -118,3 +118,16 @@ test('/healthz meldet den Wartungsmodus als Info, nicht als Fehler', async (t) =
   assert.equal(res.body.wartungsmodus, true);
   assert.notEqual(res.body.status, 'fehler');
 });
+
+test('POST ohne gültige aktion wird mit 400 abgelehnt und ändert nichts', async (t) => {
+  const { db, app, client } = setup(t);
+  const agent = await loginAs(app, client, ADMIN);
+  setzeWartungsmodus(db, true, 'Update');
+  const token = await fetchCsrfToken(agent, '/admin/wartungsmodus');
+  for (const body of [{ _csrf: token }, { _csrf: token, aktion: 'irgendwas' }]) {
+    const res = await agent.post('/admin/wartungsmodus').type('form').send(body);
+    assert.equal(res.status, 400);
+    assert.equal(istWartungsmodusAktiv(db), true);
+    assert.equal(wartungsHinweis(db), 'Update');
+  }
+});

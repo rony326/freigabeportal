@@ -107,3 +107,18 @@ test('POST ohne Änderung schreibt keine Audit-Einträge', async () => {
   assert.equal(audit(db).length, 0);
   db.close();
 });
+
+test('Schlägt das Audit fehl, wird auch die Rechteänderung zurückgenommen (eine Transaktion)', async () => {
+  const db = openDatabase(':memory:');
+  seed(db);
+  const vorher = listGruppenBerechtigungen(db, 'manager');
+  db.exec("CREATE TRIGGER test_audit_kaputt BEFORE INSERT ON audit_ereignisse WHEN NEW.objekt = 'gruppenrechte' BEGIN SELECT RAISE(ABORT, 'kaputt'); END;");
+  const app = buildTestApp(db);
+  app.use((err, req, res, next) => res.status(500).send('fehler'));
+  const res = await request(app).post('/admin/gruppenrechte').set('x-test-person-id', '99').type('form')
+    .send({ recht_superadmin: GRANTABLE_BERECHTIGUNGEN, recht_manager: ['konten_verwalten'], recht_buchhaltung: [] });
+  assert.equal(res.status, 500);
+  assert.deepEqual(listGruppenBerechtigungen(db, 'manager'), vorher);
+  assert.equal(db.isTransaction, false);
+  db.close();
+});

@@ -11,16 +11,27 @@ import {
   listZuweisungsregeln,
   findZuweisungsregelByMuster,
 } from '../../db/zuweisungsregelnRepo.js';
-import { listKonten } from '../../db/kontenRepo.js';
+import { listKonten, getKontoById, filterKontenFuerTyp } from '../../db/kontenRepo.js';
 import { createKreditorIban, deleteKreditorIban, getKreditorIbanById, listKreditorIbansAll, listKreditorIbansByKreditor, findKreditorIbanByIban } from '../../db/kreditorIbanRepo.js';
 import { normalizeIban, isValidIbanInternational, ibanKurz } from '../../services/ibanUtils.js';
 import { isValidAbsenderMuster, ABSENDER_MUSTER_FEHLER } from '../../utils/absenderMuster.js';
-import { pruefeNeuenKreditor, legeKreditorAn } from '../../services/kreditorAnlegen.js';
+import { pruefeNeuenKreditor, pruefeStandardKonto, legeKreditorAn } from '../../services/kreditorAnlegen.js';
 import { kreditorIdAusEingabe, KreditorFeldKonflikt } from '../../services/kreditorFelder.js';
 
 const IBAN_PFLICHT_FEHLER = 'Bei Überweisung und Dauerauftrag ist mindestens eine IBAN Pflicht.';
 const IBAN_UNGUELTIG_FEHLER = 'IBAN ist ungültig (Prüfziffer oder Länge stimmt nicht).';
 const LETZTE_IBAN_FEHLER = 'Die letzte IBAN kann nicht gelöscht werden, solange der Lieferant per Überweisung oder Dauerauftrag bezahlt wird.';
+
+// Auswahl für das Standard-Konto: nur Konten, die Rechnungen erlauben. Ein schon gesetztes Konto bleibt
+// sichtbar (auch wenn es inzwischen nicht mehr passt), damit Speichern es nicht still entfernt.
+function kontenFuerBearbeiten(db, kreditor) {
+  const konten = filterKontenFuerTyp(listKonten(db), 'rechnung');
+  if (kreditor.konto_id && !konten.some((k) => k.id === kreditor.konto_id)) {
+    const bestehendes = getKontoById(db, kreditor.konto_id);
+    if (bestehendes) konten.push(bestehendes);
+  }
+  return konten;
+}
 
 export function createKreditorenRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
@@ -54,7 +65,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
       ibanKurz,
       regeln,
       ibans,
-      konten: listKonten(db),
+      konten: filterKontenFuerTyp(listKonten(db), 'rechnung'),
       aktiveKreditoren: listKreditoren(db),
       regelErrors: [],
       regelValues: {},
@@ -75,7 +86,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
       kreditor: null,
       values: { zahlungsart: 'ueberweisung', ...values },
       errors,
-      konten: listKonten(db),
+      konten: filterKontenFuerTyp(listKonten(db), 'rechnung'),
       ZAHLUNGSARTEN,
       ZAHLUNGSART_LABEL,
     });
@@ -89,7 +100,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     const { name, kontoId, iban } = req.body;
     const zahlungsart = zahlungsartAusEingabe(req.body);
     const betragSchwankt = req.body.betragSchwankt === 'on';
-    const { errors, normalizedIban } = pruefeNeuenKreditor(db, { name, zahlungsart, iban });
+    const { errors, normalizedIban } = pruefeNeuenKreditor(db, { name, zahlungsart, iban, kontoId });
 
     if (errors.length > 0) {
       return renderNeu(res, 400, { errors, values: { name, kontoId, iban, zahlungsart, betragSchwankt } });
@@ -220,7 +231,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
         betragSchwankt: !!kreditor.betrag_schwankt,
       },
       errors: [],
-      konten: listKonten(db),
+      konten: kontenFuerBearbeiten(db, kreditor),
       ZAHLUNGSARTEN,
       ZAHLUNGSART_LABEL,
     });
@@ -236,6 +247,8 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     const zahlungsart = req.body.zahlungsart || kreditor.zahlungsart;
     const betragSchwankt = req.body.betragSchwankt === 'on';
     const errors = [];
+    const kontoFehler = pruefeStandardKonto(db, kontoId);
+    if (kontoFehler) errors.push(kontoFehler);
     if (!name || !name.trim()) errors.push('Name ist ein Pflichtfeld.');
     if (!ZAHLUNGSARTEN.includes(zahlungsart)) {
       errors.push('Zahlungsart ist ungültig.');
@@ -245,7 +258,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
 
     if (errors.length > 0) {
       return res.status(400).render('admin/kreditoren-form', {
-        kreditor, values: { name, kontoId, zahlungsart, betragSchwankt }, errors, konten: listKonten(db), ZAHLUNGSARTEN, ZAHLUNGSART_LABEL,
+        kreditor, values: { name, kontoId, zahlungsart, betragSchwankt }, errors, konten: filterKontenFuerTyp(listKonten(db), 'rechnung'), ZAHLUNGSARTEN, ZAHLUNGSART_LABEL,
       });
     }
 

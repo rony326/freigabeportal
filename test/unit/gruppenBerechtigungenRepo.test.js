@@ -49,3 +49,12 @@ test('listAlleGruppenBerechtigungen liefert alle drei Gruppen, auch leere', () =
   assert.deepEqual(alle.buchhaltung, []);
   db.close();
 });
+
+test('setGruppenBerechtigungen funktioniert innerhalb einer äusseren Transaktion', () => {
+  const db = openDatabase(':memory:');
+  db.exec('BEGIN');
+  setGruppenBerechtigungen(db, 'manager', ['konten_verwalten']);
+  db.exec('ROLLBACK');
+  assert.ok(listGruppenBerechtigungen(db, 'manager').length > 1, 'Rollback macht die Änderung rückgängig');
+  db.close();
+});

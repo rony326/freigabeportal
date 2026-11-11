@@ -20,15 +20,23 @@ export function createGruppenrechteRouter({ db, config, csrfProtection = (req, r
     });
   });
 
-  router.post('/', csrfProtection, (req, res) => {
+  router.post('/', csrfProtection, (req, res, next) => {
     const vorher = listAlleGruppenBerechtigungen(db);
-    for (const gruppe of GRUPPEN) {
-      const angefordert = [].concat(req.body[`recht_${gruppe}`] || []).map(String);
-      // Feste Rechte kommen nie aus dem Formular; setGruppenBerechtigungen erzwingt sie bei superadmin.
-      const gueltig = angefordert.filter((recht) => GRANTABLE_BERECHTIGUNGEN.includes(recht));
-      setGruppenBerechtigungen(db, gruppe, gueltig);
-      const nachher = listAlleGruppenBerechtigungen(db)[gruppe];
-      auditiereGruppenrechte(db, gruppe, vorher[gruppe], nachher);
+    // Rechte und Audit in einer Transaktion: scheitert das Audit, wird auch die Änderung zurückgenommen.
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const gruppe of GRUPPEN) {
+        const angefordert = [].concat(req.body[`recht_${gruppe}`] || []).map(String);
+        // Feste Rechte kommen nie aus dem Formular; setGruppenBerechtigungen erzwingt sie bei superadmin.
+        const gueltig = angefordert.filter((recht) => GRANTABLE_BERECHTIGUNGEN.includes(recht));
+        setGruppenBerechtigungen(db, gruppe, gueltig);
+        const nachher = listAlleGruppenBerechtigungen(db)[gruppe];
+        auditiereGruppenrechte(db, gruppe, vorher[gruppe], nachher);
+      }
+      db.exec('COMMIT');
+    } catch (err) {
+      if (db.isTransaction) db.exec('ROLLBACK');
+      return next(err);
     }
     res.redirect('/admin/gruppenrechte?gespeichert=1');
   });

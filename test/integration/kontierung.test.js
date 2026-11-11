@@ -4268,3 +4268,17 @@ test('GET /kontierung/:id/aufsplitten: Konto-Optionen tragen data-buchungsart un
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
+
+test('POST /kontierung/lieferanten: Standard-Konto mit reiner Gutschrift-Buchungsart wird abgelehnt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  db.prepare("UPDATE konten SET buchungsart = 'gutschrift' WHERE id = ?").run(kontoId);
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).post('/kontierung/lieferanten').set('x-test-person-id', '1').type('form')
+    .send({ name: 'Neue AG', zahlungsart: 'kreditkarte', kontoId: String(kontoId) });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /Standard-Konto muss Rechnungen erlauben/);
+  db.close();
+});

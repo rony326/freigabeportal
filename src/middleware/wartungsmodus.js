@@ -30,6 +30,11 @@ export function wartungsmodusSperre(db, config) {
       res.locals.wartungsmodusAktiv = true;
       return next();
     }
+    // Die Backup-Seite gehört zum Zweck des Modus (Backup ziehen): ihre Berechtigten kommen dorthin.
+    if (person && person.aktiv && /^\/admin\/backup(\/|$)/.test(req.path) && personHasPermission(db, config, person, 'backup_verwalten')) {
+      res.locals.wartungsmodusAktiv = true;
+      return next();
+    }
     res.set('Retry-After', RETRY_AFTER_SEKUNDEN);
     return res.status(503).render('wartung', { hinweis: wartungsHinweis(db) });
   };

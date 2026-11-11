@@ -103,12 +103,31 @@ test('Modus an: Person mit Recht wartungsmodus_schalten arbeitet weiter und sieh
   assert.match(res.text, /\/admin\/wartungsmodus/);
 });
 
-test('Modus an: Entzug des Rechts sperrt den Admin sofort aus', async (t) => {
+test('Modus an: Superadmin bleibt auch ohne Recht wartungsmodus_schalten nicht ausgesperrt und kommt an die Gruppenrechte', async (t) => {
   const { db, app, client } = setup(t);
   const agent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'a@example.org', gruppen: ['20'] });
   setzeWartungsmodus(db, true);
   setGruppenBerechtigungen(db, 'superadmin', ['konten_verwalten']);
-  assert.equal((await agent.get('/pool')).status, 503);
+  assert.equal((await agent.get('/admin/gruppenrechte')).status, 200);
+  assert.equal((await agent.get('/pool')).status, 200);
+});
+
+test('Modus an: eine normale Person ohne beide Rechte ist gesperrt, auch wenn sie andere Admin-Rechte hat', async (t) => {
+  const { db, app, client } = setup(t);
+  const agent = await loginAs(app, client, { id: 55, vorname: 'Mana', nachname: 'Ger', email: 'm@example.org', gruppen: ['30'] });
+  setzeWartungsmodus(db, true);
+  assert.equal((await agent.get('/admin/konten')).status, 503);
+});
+
+test('Modus an: Bestätigungsaufrufe von n8n (Abholung/Archivierung) bleiben offen, damit nichts doppelt gebucht wird', async (t) => {
+  const { db, app } = setup(t);
+  setzeWartungsmodus(db, true);
+  for (const pfad of ['/api/n8n/jobs/1/abholung-bestaetigen', '/api/n8n/jobs/1/archivierung-bestaetigen', '/api/n8n/rapporte/1/archivierung-bestaetigen']) {
+    const res = await request(app).post(pfad).set('X-API-Key', 'n8n-key');
+    assert.notEqual(res.status, 503, pfad);
+  }
+  // Lesende Abholung und Eingang bleiben gesperrt.
+  assert.equal((await request(app).get('/api/n8n/jobs/abholbereit').set('X-API-Key', 'n8n-key')).status, 503);
 });
 
 test('Modus an: n8n-Eingang und Cron antworten 503 mit Retry-After, Backup-Route bleibt offen', async (t) => {

@@ -136,7 +136,8 @@ Solange der Modus aktiv ist:
   antworten mit **503** und `Retry-After: 300` (JSON `{"error":"wartungsmodus"}`). Das Portal puffert nichts;
   **n8n muss die Anfrage später erneut versuchen** (siehe [n8n-schnittstelle.md](n8n-schnittstelle.md#wartungsmodus-503)).
   Kommt trotzdem etwas rein, entstünde ein Delta zum Backup — genau das soll vermieden werden.
-- **Offen bleiben:** `/api/n8n/backup/*` (Backup-Abholung), `/healthz` und `/auth/*`.
+- **Offen bleiben:** `/api/n8n/backup/*` (Backup-Abholung), die n8n-Bestätigungen (`…/abholung-bestaetigen`, `…/archivierung-bestaetigen`), `/healthz` und `/auth/*`. Wer `wartungsmodus_schalten` **oder** `gruppenrechte_verwalten` (Superadmin) hat, bleibt nie ausgesperrt.
+- **Hinweis zum Backup:** Ein im Modus gezogenes Backup enthält den Zustand «Wartungsmodus aktiv» — nach einem Restore startet das Portal ebenfalls im Wartungsmodus und muss ausgeschaltet werden.
 - **Geplante Jobs** pausieren (Läufe werden übersprungen, nicht nachgeholt); die **Datenbank-Sicherung läuft
   weiter**, sie liest nur.
 - **Audit-Log:** Ein- und Ausschalten (und der Hinweistext) steht als Änderung an `admin_config`

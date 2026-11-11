@@ -4,7 +4,7 @@ import { mitAuditKontext } from '../services/auditContext.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { getKreditkarteById } from '../db/kreditkartenRepo.js';
 import { listOffeneKkBelegeFuerKarte, getKkBelegById, ordneKkBelegZu, createKkBeleg, logKkBelegEreignis } from '../db/kkBelegeRepo.js';
-import { listKonten, getKontoById } from '../db/kontenRepo.js';
+import { listKonten, getKontoById, kontoErlaubtFuerTyp } from '../db/kontenRepo.js';
 import { listKreditorenWaehlbar, getKreditorById, istKreditorVollstaendig } from '../db/kreditorenRepo.js';
 import { kreditorIdAusEingabe, KreditorFeldKonflikt } from '../services/kreditorFelder.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -194,6 +194,8 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
             if (!KK_BETRAG_PATTERN.test(z.betrag)) return errors.push(`${nr}: Bitte einen gültigen Betrag angeben.`);
             const betragSigniert = normalisiereBetrag(z.betrag);
             if (Number(betragSigniert) === 0) return errors.push(`${nr}: Betrag darf nicht 0 sein.`);
+            const positionsTyp = Number(betragSigniert) < 0 ? 'gutschrift' : 'rechnung';
+            if (!kontoErlaubtFuerTyp(konto, positionsTyp)) return errors.push(`${nr}: Dieses Konto kann nicht für ${positionsTyp === 'gutschrift' ? 'Gutschriften' : 'Rechnungen'} verwendet werden.`);
             if (z.position && !POSITION_PATTERN.test(z.position)) return errors.push(`${nr}: Position enthält Zeichen, die nicht gestempelt werden können.`);
             // Bei Beleg-Zeilen ist die Beschreibung schreibgeschützt (kommt vom Beleg) -- dort nicht
             // prüfen, sonst liesse sich ein Altbeleg nie mehr abgleichen.

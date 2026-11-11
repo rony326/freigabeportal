@@ -4,7 +4,7 @@ import { mitAuditKontext } from '../services/auditContext.js';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { getKreditkarteById } from '../db/kreditkartenRepo.js';
-import { listKonten, getKontoById } from '../db/kontenRepo.js';
+import { listKonten, getKontoById, kontoErlaubtFuerTyp } from '../db/kontenRepo.js';
 import { listActivePersons, getPersonById } from '../db/personenRepo.js';
 import {
   createKkBeleg, getKkBelegById, updateKkBelegDaten, ersetzeKkBelegDatei, verwerfeKkBeleg,
@@ -48,6 +48,11 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     else if (!POSITION_PATTERN.test(beschreibung)) errors.push('Die Beschreibung enthält Zeichen, die nicht gestempelt werden können (z.B. Emojis). Bitte nur normale Buchstaben, Ziffern und Satzzeichen verwenden.');
     const konto = body.kontoId ? getKontoById(db, Number(body.kontoId)) : null;
     if (body.kontoId && (!konto || !konto.aktiv)) errors.push('Das gewählte Konto ist nicht gültig.');
+    // Positiv = Rechnung, negativ (Rückerstattung) = Gutschrift: das Konto muss dazu passen.
+    else if (konto && KK_BETRAG_PATTERN.test(betrag)) {
+      const typ = Number(normalisiereBetrag(betrag)) < 0 ? 'gutschrift' : 'rechnung';
+      if (!kontoErlaubtFuerTyp(konto, typ)) errors.push(`Dieses Konto kann nicht für ${typ === 'gutschrift' ? 'Gutschriften' : 'Rechnungen'} verwendet werden.`);
+    }
     const gekauftVonId = (body.gekauftVon || '').trim() || req.currentPerson.churchtools_person_id;
     const gekauftVon = getPersonById(db, gekauftVonId);
     if (!gekauftVon || (!gekauftVon.aktiv && gekauftVonId !== bisherigerKaeuferId)) errors.push('Bitte eine gültige Person für "Kauf getätigt von" wählen.');

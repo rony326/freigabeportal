@@ -509,3 +509,22 @@ test('kk-abgleich: Kartenherausgeber ohne hinterlegte IBAN → keine Warnung', a
   assert.equal(warnungen.length, 0);
   t.cleanup();
 });
+
+// --- Buchungsart: Position passt zum Vorzeichen (positiv = Rechnung, negativ = Gutschrift) ---
+
+test('POST kk-abgleich: eine Position auf einem Konto, das nicht zu Rechnung/Gutschrift passt, wird abgelehnt — nichts ändert sich', async () => {
+  const t = await setup();
+  t.db.prepare("UPDATE konten SET buchungsart = 'gutschrift' WHERE id = ?").run(t.eigen);
+  const b = await t.beleg('12.00', 'Einzelkauf');
+  const r1 = await post(t, '1', { gesamtbetrag: '12.00', zeilen: [{ art: 'beleg', belegId: b, kontoId: t.eigen, betrag: '12.00', beschreibung: 'Einzelkauf' }] });
+  assert.equal(r1.status, 400);
+  assert.match(r1.text, /kann nicht für Rechnungen verwendet werden/);
+  assert.equal(getJobById(t.db, t.jobId).status, 'zugewiesen');
+  assert.equal(getKkBelegById(t.db, b).status, 'offen');
+
+  t.db.prepare("UPDATE konten SET buchungsart = 'rechnung' WHERE id = ?").run(t.eigen);
+  const r2 = await post(t, '1', { gesamtbetrag: '-5.00', zeilen: [{ art: 'gebuehr', kontoId: t.eigen, betrag: '-5.00', beschreibung: 'Rückvergütung' }] });
+  assert.equal(r2.status, 400);
+  assert.match(r2.text, /kann nicht für Gutschriften verwendet werden/);
+  t.cleanup();
+});

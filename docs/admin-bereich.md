@@ -66,7 +66,7 @@ Welche Gruppe welches Recht hat, stellt ein Superadmin unter [Gruppenrechte](#gr
 | Seite | Route | benötigtes Recht |
 |---|---|---|
 | Übersicht | `/admin` | mindestens ein Recht (aus Gruppe oder Einzelrecht) |
-| Konten | `/admin/konten` | Einzelrecht `konten_verwalten` |
+| Konten | `/admin/konten` | Recht `konten_verwalten`; pro Konto die **Buchungsart** (Rechnung / Gutschrift / Rechnung / Gutschrift), siehe [rechnungs-workflow.md](rechnungs-workflow.md) |
 | Kreditoren | `/admin/kreditoren` | Einzelrecht `kreditoren_verwalten` |
 | Benachrichtigungen | `/admin/benachrichtigungen` (+ `/:id`, `/:id/zuruecksetzen`, `/:id/test-mail`, `/zusammenfassung/jetzt-ausfuehren`) | `benachrichtigungen_verwalten`; ersetzt Eskalationszeiten und Mail-Einstellungen (alte URLs leiten per GET weiter) |
 | Erscheinungsbild | `/admin/erscheinungsbild` | `erscheinungsbild_verwalten` |

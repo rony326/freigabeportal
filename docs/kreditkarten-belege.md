@@ -554,6 +554,15 @@ anderen Schritten von `pdf-bereinigung` stoppt ein einzelner
 Lösch-Fehler (z. B. Datei bereits weg oder Berechtigungsproblem) nicht
 die übrigen Belege im selben Lauf.
 
+## Buchungsart der Konten
+
+Das Konto eines Belegs bzw. einer Abgleich-Position muss zur Art der Buchung passen: **positive Beträge
+zählen als Rechnung** (Konto `rechnung` oder `beides`), **negative Beträge (Rückerstattung, Gebühren-Rückvergütung)
+als Gutschrift** (Konto `gutschrift` oder `beides`), konsistent damit, wie der Abgleich negative Zeilen zu
+Gutschrift-Teiljobs macht. Geprüft wird serverseitig beim Hochladen/Bearbeiten eines Belegs und pro Position
+im Abgleich (`kontoErlaubtFuerTyp`); die Konto-Auswahl dieser Seiten ist nicht gefiltert, weil der Typ vom
+Betrag abhängt.
+
 ## Bekannte Grenzen
 
 - **Kein Rechnungsnummer-Duplikat-Check pro Zeile.** Der Abgleich führt —

@@ -299,6 +299,8 @@ müssen unterschiedliche, aktive Personen sein
 (`validateKontoRoles`). Freigeber 1 kontiert/erstfreigibt, Freigeber 2
 erteilt die zweite, unabhängige Freigabe (Vier-Augen-Prinzip).
 
+`buchungsart` (`rechnung`, `gutschrift`, `beides`; Standard und Wert bestehender Konten: `beides`, `CHECK`) sagt, was auf das Konto gebucht werden darf. Änderungen stehen über den Audit-Trigger auf `konten` (`vorher`/`nachher`) im Audit-Log. Logik: `kontoErlaubtFuerTyp` / `filterKontenFuerTyp` in `src/db/kontenRepo.js`.
+
 ### `konto_budgets`
 Budget pro Konto und Kalenderjahr für die [Auswertung](auswertung.md): `konto_id` → `konten`,
 `jahr` (CHECK 2000–2100), `betrag` (REAL, CHECK ≥ 0), `geaendert_von`, `geaendert_am`;

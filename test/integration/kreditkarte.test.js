@@ -5,6 +5,7 @@ import request from 'supertest';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createKonto } from '../../src/db/kontenRepo.js';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson, deactivatePerson } from '../../src/db/personenRepo.js';
 import { seedDefaults, setConfigValue } from '../../src/db/adminConfigRepo.js';
@@ -278,5 +279,30 @@ test('POST /kreditkarte/belege: the kk_belege audit event carries the logged-in 
   const event = t.db.prepare("SELECT person_id, person_name FROM audit_ereignisse WHERE objekt = 'kk_belege' AND aktion = 'INSERT' AND objekt_id = ?").get(String(beleg.id));
   assert.equal(event.person_id, '3');
   assert.equal(event.person_name, 'P3 M');
+  t.cleanup();
+});
+
+// --- Buchungsart: Beleg-Konto passt zum Vorzeichen (positiv = Rechnung, negativ = Rückerstattung = Gutschrift) ---
+
+function kontoMitArt(db, art, nummer) {
+  return createKonto(db, { kontonummer: nummer, bezeichnung: `Konto ${art}`, freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '1', buchungsart: art });
+}
+
+test('Kreditkarten-Beleg: Betrag positiv verlangt ein Konto für Rechnungen, Rückerstattung ein Konto für Gutschriften', async () => {
+  const t = setup();
+  const nurGutschrift = kontoMitArt(t.db, 'gutschrift', '5001');
+  const nurRechnung = kontoMitArt(t.db, 'rechnung', '5002');
+  const basis = { kreditkarteId: String(t.offen), kaufdatum: '2026-09-01', beschreibung: 'Test' };
+
+  const a = await upload(t.app, '3', { ...basis, betrag: '12.50', kontoId: String(nurGutschrift) });
+  assert.equal(a.status, 400);
+  assert.match(a.text, /kann nicht für Rechnungen verwendet werden/);
+  const b = await upload(t.app, '3', { ...basis, betrag: '-12.50', kontoId: String(nurRechnung) });
+  assert.equal(b.status, 400);
+  assert.match(b.text, /kann nicht für Gutschriften verwendet werden/);
+  assert.equal(listKkBelegeFuerPerson(t.db, '3').length, 0);
+
+  assert.equal((await upload(t.app, '3', { ...basis, betrag: '12.50', kontoId: String(nurRechnung) })).status, 302);
+  assert.equal((await upload(t.app, '3', { ...basis, betrag: '-12.50', kontoId: String(nurGutschrift) })).status, 302);
   t.cleanup();
 });

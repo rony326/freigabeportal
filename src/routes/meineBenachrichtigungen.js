@@ -1,3 +1,5 @@
+// Persönliche Benachrichtigungen (`/meine-benachrichtigungen`, docs/geplante-jobs-und-benachrichtigungen.md): jede Person wählt sofort / täglich / wöchentlich oder den Standard der Gemeinde. Beim Wechsel auf "sofort" werden wartende Mails gleich zugestellt.
+
 import { Router } from 'express';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import {

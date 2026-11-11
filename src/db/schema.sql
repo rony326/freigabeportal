@@ -1,3 +1,10 @@
+-- Datenbankschema des Freigabeportals (SQLite). Gilt für eine FRISCHE Datenbank; bestehende Datenbanken erreichen neue Spalten und
+-- Tabellen über die idempotenten Migrationen in src/db/index.js und den weiteren *Schema.js-Dateien (Reihenfolge dort verbindlich).
+-- Neue Spalte/Tabelle also immer an BEIDEN Stellen ergänzen. Tabellen, die erst in Migrationen entstehen (kommentare, kenntnisnahmen,
+-- audit_ereignisse, export_nachweise, banner, nutzung_* u. a.), stehen nicht hier. Übersicht mit ER-Diagramm: docs/datenmodell.md.
+
+-- Personen mit Portalzugang: lokale Kopie der ChurchTools-Personen (Sync und Anmeldung); `gruppen` = JSON-Array der ChurchTools-Gruppen-IDs
+-- (daraus ergeben sich die Rollen), `aktiv = 0` = kein Zugang mehr, `ct_person_unresolved` = in ChurchTools nicht mehr auflösbar.
 CREATE TABLE IF NOT EXISTS personen (
   churchtools_person_id TEXT PRIMARY KEY,
   vorname TEXT NOT NULL,
@@ -17,9 +24,9 @@ CREATE TABLE IF NOT EXISTS personen (
 );
 
 -- Additive Einzelrechte pro Person, unabhängig von der ChurchTools-Rolle (superadmin/manager).
--- Nur die neun vergebbaren Rechte sind hier zulässig -- die drei hart gesperrten Admin-Bereiche
--- (Eskalationszeiten, Erscheinungsbild, Zeitstempel) sowie das Bearbeiten dieser Tabelle selbst
--- sind strukturell nicht einfügbar, unabhängig von der Anwendungslogik.
+-- Zulässig sind nur die vergebbaren Rechte aus services/berechtigungKatalog.js (GRANTABLE_BERECHTIGUNGEN); der CHECK wird in
+-- db/securitySchema.js daraus neu aufgebaut. Das feste Recht `gruppenrechte_verwalten` ist hier strukturell nicht einfügbar
+-- (es hängt allein an der Superadmin-Gruppe), unabhängig von der Anwendungslogik.
 CREATE TABLE IF NOT EXISTS person_berechtigungen (
   person_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
   berechtigung TEXT NOT NULL CHECK (berechtigung IN (
@@ -38,12 +45,14 @@ CREATE TABLE IF NOT EXISTS gruppen_berechtigungen (
   PRIMARY KEY (gruppe, berechtigung)
 );
 
+-- Sitzungen von express-session (db/sessionStore.js); `expires` als ISO-Zeitpunkt, abgelaufene Zeilen werden beim Lesen und beim Start gelöscht.
 CREATE TABLE IF NOT EXISTS sessions (
   sid TEXT PRIMARY KEY,
   sess TEXT NOT NULL,
   expires TEXT NOT NULL
 );
 
+-- Protokoll des ChurchTools-Personenabgleichs (db/syncLogRepo.js): Start/Ende, Status, Zähler, Fehlertext.
 CREATE TABLE IF NOT EXISTS sync_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   gestartet_am TEXT NOT NULL,
@@ -54,18 +63,18 @@ CREATE TABLE IF NOT EXISTS sync_log (
   anzahl_deaktiviert INTEGER
 );
 
+-- Einstellungen (Schlüssel/Wert, alles Text): Fristen, Empfänger, Mail-Vorlagen, Modul-Schalter, Zeitpläne. Werkseinstellungen: db/adminConfigRepo.js (DEFAULTS).
+-- Änderungen werden auditiert; Werte zu Schlüsseln mit pass/secret/token erscheinen im Audit als '[redacted]'.
 CREATE TABLE IF NOT EXISTS admin_config (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
 
--- Execution history for the scheduled/manually-triggered pool-erinnerungen and pdf-bereinigung
--- jobs (services/cronJobs.js) -- sync-personen keeps its own richer sync_log above (upserted/
--- deaktiviert counts), so it isn't duplicated in here.
--- beendet_am is nullable and status allows 'laufend' so a run can be recorded as started before it
--- finishes -- needed by zeitstempel-nachholen (see hasRecentRunningCronLauf in cronLogRepo.js) to
--- detect an overlapping run in progress; pool-erinnerungen and pdf-bereinigung still always write
--- both fields in one shot via logCronLauf and never use 'laufend'.
+-- Ausführungsprotokoll der geplanten bzw. manuell ausgelösten Hintergrund-Jobs (services/cronJobs.js) -- sync-personen führt mit sync_log (oben) ein eigenes,
+-- ausführlicheres Protokoll (Zähler angelegt/deaktiviert) und steht deshalb nicht hier.
+-- beendet_am ist nullable und status erlaubt 'laufend', damit ein Lauf als begonnen festgehalten werden kann, bevor er endet -- nötig für
+-- zeitstempel-nachholen & Co. (siehe hasRecentRunningCronLauf in cronLogRepo.js), um einen überlappenden laufenden Lauf zu erkennen; schnelle Jobs
+-- schreiben beide Felder weiterhin in einem Zug über logCronLauf und nutzen nie 'laufend'. Die erlaubten Jobnamen (CHECK) wachsen per Neuaufbau in db/index.js.
 CREATE TABLE IF NOT EXISTS cron_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job TEXT NOT NULL CHECK(job IN ('pool-erinnerungen', 'pdf-bereinigung', 'zeitstempel-nachholen', 'datenbank-sicherung', 'split-gruppen-nachholen', 'mail-digest', 'freigabe2-erinnerungen', 'kk-beleg-erinnerungen', 'mail-zustellung', 'rapport-erinnerungen')),
@@ -75,6 +84,7 @@ CREATE TABLE IF NOT EXISTS cron_log (
   details TEXT
 );
 
+-- Konten (Kostenstellen) mit den vier Freigabe-Rollen: Freigeber 1/2 und je eine Stellvertretung; `aktiv = 0` = abgeschaltet (nie gelöscht).
 CREATE TABLE IF NOT EXISTS konten (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kontonummer TEXT NOT NULL,
@@ -88,6 +98,7 @@ CREATE TABLE IF NOT EXISTS konten (
   buchungsart TEXT NOT NULL DEFAULT 'beides' CHECK (buchungsart IN ('rechnung', 'gutschrift', 'beides'))
 );
 
+-- Kreditoren = Lieferanten/Rechnungssteller (bis 2026-09 'debitoren', siehe docs/kreditoren-statt-debitoren.md): Standardkonto, Zahlungsart, Beträge-schwanken-Flag.
 CREATE TABLE IF NOT EXISTS kreditoren (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -97,6 +108,7 @@ CREATE TABLE IF NOT EXISTS kreditoren (
   betrag_schwankt INTEGER NOT NULL DEFAULT 0
 );
 
+-- Hinterlegte IBANs je Kreditor (Grundlage des IBAN-Abgleichs der Betrugserkennung); `quelle` z. B. 'manuell'.
 CREATE TABLE IF NOT EXISTS kreditor_ibans (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kreditor_id INTEGER NOT NULL REFERENCES kreditoren(id),
@@ -105,12 +117,14 @@ CREATE TABLE IF NOT EXISTS kreditor_ibans (
   erstellt_am TEXT NOT NULL
 );
 
+-- Zuweisungsregeln: Absender-Muster (E-Mail oder Domain) → Kreditor; beim Rechnungseingang wird danach Kreditor und Standardkonto vorgeschlagen.
 CREATE TABLE IF NOT EXISTS zuweisungsregeln (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   absender_muster TEXT NOT NULL UNIQUE,
   kreditor_id INTEGER NOT NULL REFERENCES kreditoren(id)
 );
 
+-- Sammelkopf einer Spesen-Einreichung; die einzelnen Positionen sind jobs mit quelle 'spesen' (spesenabrechnung_id).
 CREATE TABLE IF NOT EXISTS spesenabrechnungen (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   eingereicht_von TEXT NOT NULL REFERENCES personen(churchtools_person_id),
@@ -118,6 +132,11 @@ CREATE TABLE IF NOT EXISTS spesenabrechnungen (
   titel TEXT
 );
 
+-- Vorgänge (das Herzstück): Rechnungen, Gutschriften, Rapporte, Spesenpositionen, Kreditkartenabrechnungen und Teilvorgänge einer Aufteilung (aufgesplittet_von).
+-- Status-Lebenslauf: unzugewiesen (Pool) → zugewiesen (Kontierung/Freigabe 1) → freigabe2 → abgeschlossen → abgeholt (n8n) → archiviert;
+-- Seitenwege: abgelehnt, aufgesplittet (Elternvorgang), kenntnisnahme (Rapport), geloescht (weich gelöscht). Beschreibung: docs/rechnungs-workflow.md.
+-- Zeitstempel-/Freigabe-Felder sind per Trigger unveränderlich, sobald gesetzt (siehe unten und db/securitySchema.js). Weitere Spalten kommen über
+-- JOBS_TABLE_MIGRATIONS in db/index.js; Datenzugriff: db/jobsRepo.js.
 CREATE TABLE IF NOT EXISTS jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   eingang_am TEXT NOT NULL,
@@ -235,6 +254,8 @@ BEGIN
   SELECT RAISE(ABORT, 'gruppe_zeitstempel_gesetzt_am ist unveraenderlich, sobald gesetzt');
 END;
 
+-- Verlauf aller Aktionen an einem Vorgang (Freigabe 1/2, Ablehnung, Eskalation, Weiterleitung, Umhängen, Auffälligkeiten, Rapport- und Kreditkarten-Ereignisse):
+-- wer, wann, von welcher IP. Append-only (UPDATE/DELETE per Trigger abgewiesen, siehe db/securitySchema.js); `rolle` erlaubte Werte: CHECK, wächst per Neuaufbau.
 CREATE TABLE IF NOT EXISTS freigaben (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id INTEGER NOT NULL REFERENCES jobs(id),
@@ -250,6 +271,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
   ziel_person_id TEXT REFERENCES personen(churchtools_person_id)
 );
 
+-- Mail-Protokoll und Outbox: jede Benachrichtigung als Zeile mit Status eingereiht / geplant (Digest) / versendet / fehlgeschlagen (services/mailZustellung.js).
 CREATE TABLE IF NOT EXISTS mail_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation', 'auffaelligkeiten-warnung')),
@@ -269,9 +291,8 @@ CREATE TABLE IF NOT EXISTS mail_log (
   versendet_am TEXT
 );
 
--- job_id is deliberately NOT a foreign key: the whole point of this table is to keep a record
--- after the jobs row it refers to has been permanently deleted (see loeschenJob). dateiname is
--- duplicated here for the same reason — it would otherwise be unrecoverable once the job is gone.
+-- job_id ist bewusst KEIN Fremdschlüssel: Der ganze Zweck dieser Tabelle ist, einen Nachweis zu behalten, nachdem die jobs-Zeile, auf die sie sich bezieht,
+-- endgültig gelöscht wurde (siehe loeschenJob). dateiname ist aus demselben Grund hier doppelt abgelegt — er wäre sonst nach dem Löschen des Vorgangs nicht mehr auffindbar.
 CREATE TABLE IF NOT EXISTS job_loeschungen (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id INTEGER NOT NULL,
@@ -284,11 +305,10 @@ CREATE TABLE IF NOT EXISTS job_loeschungen (
 -- Audit-Trail für Datenbank-Wiederherstellungen (Admin -> Datenbank-Backup). Eigene, schlanke
 -- Tabelle statt Zweckentfremdung von cron_log: anders als bei den geplanten Jobs muss hier
 -- festgehalten werden, welche Person eine Wiederherstellung ausgelöst hat.
--- wiederhergestellt_von is deliberately NOT a foreign key (same rationale as job_loeschungen.job_id,
--- only in the other direction): this row is written into the JUST-RESTORED database, whose personen
--- table comes from the archive and may not contain the person who performed the restore at all
--- (e.g. restoring an archive that predates that admin's account). An enforced FK would make the
--- audit insert fail and report an already-successful restore as an error.
+-- wiederhergestellt_von ist bewusst KEIN Fremdschlüssel (gleiche Begründung wie bei job_loeschungen.job_id, nur in der Gegenrichtung): Diese Zeile wird in die
+-- GERADE wiederhergestellte Datenbank geschrieben, deren Tabelle personen aus dem Archiv stammt und die Person, die die Wiederherstellung ausgeführt hat, womöglich
+-- gar nicht enthält (z. B. bei einem Archiv, das älter ist als das Konto dieser Admin-Person). Ein erzwungener Fremdschlüssel liesse das Audit-INSERT scheitern und
+-- eine bereits erfolgreiche Wiederherstellung als Fehler melden.
 CREATE TABLE IF NOT EXISTS backup_wiederherstellungen (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   dateiname TEXT NOT NULL,

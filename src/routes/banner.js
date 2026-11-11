@@ -1,3 +1,5 @@
+// Banner ausblenden (`POST /banner/:id/ausblenden`): Info-Banner lassen sich pro Person wegklicken (docs/betrieb-und-nutzung.md); Wartung/Warnung nicht. Zugang: angemeldet.
+
 import { Router } from 'express';
 import { blendeBannerAus } from '../services/banner.js';
 import { portalPfad } from '../services/nutzung.js';

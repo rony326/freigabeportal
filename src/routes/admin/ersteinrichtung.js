@@ -1,3 +1,5 @@
+// Admin → Ersteinrichtung (`/admin/ersteinrichtung`, Recht `ersteinrichtung_verwalten`, docs/ersteinrichtung.md): der geführte Assistent (14 Schritte, services/ersteinrichtung.js) mit technischen Prüfungen, ChurchTools-Test, Testmail, Auslösen der Kernjobs, manuellem Abhaken und "Später".
+
 import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { currentAuditActor } from '../../services/auditContext.js';
@@ -6,6 +8,7 @@ import { einrichtungsStand, markiereSchritt, setzeOhneZeitstempel, SCHRITTE, mai
 import { pruefeTechnik, testeChurchtools, sendeTestmail, loeseKernjobsAus, JOB_NAMEN, jobStatusText } from '../../services/einrichtungTests.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 
+// Jobs, die der Assistent im Schritt "Geplante Jobs" auslösen kann; README_ANKER = Verweis auf die Go-Live-Checkliste.
 const KERNJOBS = ['sync-personen', 'pool-erinnerungen', 'mail-zustellung'];
 const TAGE_7_MS = 7 * 24 * 60 * 60 * 1000;
 const README_ANKER = 'README.md#go-live-checkliste-nach-dem-ersten-deploy';
@@ -34,6 +37,7 @@ export function createErsteinrichtungRouter({ db, config, mailer, statusCache = 
     res.redirect(`/admin/ersteinrichtung#schritt-${id}`);
   };
 
+  // GET /admin/ersteinrichtung – der Assistent (Stand aller Schritte, letzte Testergebnisse der Person).
   router.get('/', (req, res) => {
     // Technische Prüfung bei jedem Aufruf neu: nur schnelle Dateisystem-Prüfungen, kein ChurchTools.
     const technik = pruefeTechnik(config);
@@ -60,12 +64,14 @@ export function createErsteinrichtungRouter({ db, config, mailer, statusCache = 
     });
   });
 
+  // POST /admin/ersteinrichtung/technik – technische Prüfungen erneut ausführen.
   router.post('/technik', csrfProtection, (req, res) => {
     const technik = pruefeTechnik(config);
     schreibeAudit(db, 'test_technik', { nichtOk: technik.filter((p) => p.status !== 'ok').length });
     zurueck(res, 'grundlagen');
   });
 
+  // POST /admin/ersteinrichtung/churchtools-test – prüft die konfigurierten ChurchTools-Gruppen (Name, Mitgliederzahl).
   router.post('/churchtools-test', csrfProtection, asyncHandler(async (req, res) => {
     const ergebnis = await testeChurchtools(config);
     merke(req, 'churchtools', ergebnis);
@@ -73,6 +79,7 @@ export function createErsteinrichtungRouter({ db, config, mailer, statusCache = 
     zurueck(res, 'churchtools');
   }));
 
+  // POST /admin/ersteinrichtung/testmail – schickt der angemeldeten Person eine Testmail.
   router.post('/testmail', csrfProtection, asyncHandler(async (req, res) => {
     const ergebnis = await sendeTestmail(db, mailer, { person: req.currentPerson });
     merke(req, 'testmail', ergebnis);
@@ -80,6 +87,7 @@ export function createErsteinrichtungRouter({ db, config, mailer, statusCache = 
     zurueck(res, 'mail');
   }));
 
+  // POST /admin/ersteinrichtung/jobs – löst die Kernjobs einmal aus.
   router.post('/jobs', csrfProtection, asyncHandler(async (req, res) => {
     const ergebnis = await loeseKernjobsAus(db, config, mailer, KERNJOBS);
     merke(req, 'jobs', { ergebnis });
@@ -87,6 +95,7 @@ export function createErsteinrichtungRouter({ db, config, mailer, statusCache = 
     zurueck(res, 'jobs');
   }));
 
+  // POST /admin/ersteinrichtung/markieren – hakt einen manuellen Schritt (Module, Mail-Vorlagen) ab oder zurück.
   router.post('/markieren', csrfProtection, (req, res) => {
     try {
       markiereSchritt(db, String(req.body.id || ''), req.body.wert === '1');
@@ -96,6 +105,7 @@ export function createErsteinrichtungRouter({ db, config, mailer, statusCache = 
     zurueck(res, req.body.id);
   });
 
+  // POST /admin/ersteinrichtung/ohne-zeitstempel – hält fest, dass bewusst ohne Zeitstempeldienst gearbeitet wird.
   router.post('/ohne-zeitstempel', csrfProtection, (req, res) => {
     setzeOhneZeitstempel(db, req.body.wert === '1');
     zurueck(res, 'zeitstempel');

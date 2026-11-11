@@ -1,3 +1,6 @@
+// Admin → Erscheinungsbild (`/admin/erscheinungsbild`, Recht `erscheinungsbild_verwalten`, docs/admin-bereich.md): Seitentitel, Farben, Standard-Farbmodus, Logo (hell, optional dunkel; PNG/JPEG bis 2 MB; Dateiart wird an den Dateikennungs-Bytes geprüft) und Fusszeile.
+// Die Werte werden von middleware/branding.js auf jeder Seite verwendet.
+
 import { Router } from 'express';
 import multer from 'multer';
 import { mitAuditKontext } from '../../services/auditContext.js';
@@ -18,9 +21,7 @@ const LOGOS = [
   { feld: 'logoDunkel', label: 'Logo dunkel', datei: 'logo-dunkel', pfadKey: 'branding_logo_dunkel_pfad', mimetypeKey: 'branding_logo_dunkel_mimetype' },
 ];
 
-// Sniffs the actual file-signature bytes so a mislabeled upload (e.g. an SVG
-// renamed to logo.png with a spoofed `Content-Type: image/png`) is caught
-// even though multer's `file.mimetype` is just the client-declared header.
+// Prüft die echten Dateikennungs-Bytes, damit ein falsch bezeichneter Upload (z. B. ein in logo.png umbenanntes SVG mit gefälschtem `Content-Type: image/png`) auffällt, obwohl das `file.mimetype` von multer nur der vom Client angegebene Header ist.
 function detectImageMimetype(buffer) {
   if (
     buffer.length >= 8 &&
@@ -44,6 +45,7 @@ function detectImageMimetype(buffer) {
 export function createErscheinungsbildRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // Aktuelle Einstellungen für das Formular.
   function currentState() {
     return {
       primaryColor: getConfigValue(db, 'branding_farbe_primaer'),
@@ -57,17 +59,20 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
     };
   }
 
+  // Löscht die Logo-Datei von der Platte (still bei Fehlern).
   function loescheLogoDatei({ pfadKey }) {
     const pfad = getConfigValue(db, pfadKey);
     if (pfad && existsSync(pfad)) unlinkSync(pfad);
   }
 
+  // Entfernt ein Logo (Datei und Einstellungen).
   function entferneLogo(logo) {
     loescheLogoDatei(logo);
     deleteConfigValue(db, logo.pfadKey);
     deleteConfigValue(db, logo.mimetypeKey);
   }
 
+  // Speichert ein hochgeladenes Logo und aktualisiert die Einstellungen (Pfad, Dateiart).
   function speichereLogo(logo, datei) {
     loescheLogoDatei(logo);
     mkdirSync(config.brandingDir, { recursive: true });
@@ -77,14 +82,15 @@ export function createErscheinungsbildRouter({ db, config, csrfProtection = (req
     setConfigValue(db, logo.mimetypeKey, datei.mimetype);
   }
 
+  // GET /admin/erscheinungsbild – Formular.
   router.get('/', (req, res) => {
     res.render('admin/erscheinungsbild-form', { ...currentState(), errors: [], gespeichert: req.query.gespeichert === '1' });
   });
 
+  // POST /admin/erscheinungsbild – speichert alle Einstellungen (mit Upload, CSRF läuft nach multer).
   router.post('/', (req, res, next) => {
     mitAuditKontext(upload.fields(LOGOS.map(({ feld }) => ({ name: feld, maxCount: 1 }))))(req, res, (uploadErr) => {
-      // csrfProtection runs after multer parses the multipart body (including the _csrf field) —
-      // any earlier and req.body would still be empty, rejecting every legitimate submission.
+      // csrfProtection läuft, nachdem multer den multipart-Body (inklusive des Felds _csrf) geparst hat — jede frühere Ausführung hätte req.body noch leer und lehnte jede legitime Einreichung ab.
       csrfProtection(req, res, (csrfErr) => {
       if (csrfErr) return next(csrfErr);
       if (uploadErr) {

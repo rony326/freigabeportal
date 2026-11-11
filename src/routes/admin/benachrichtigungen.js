@@ -18,6 +18,7 @@ import { kreditorNameVariablen } from '../../services/kreditorFelder.js';
 import { currentAuditActor } from '../../services/auditContext.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 
+// Basis-URL; DIGEST_LOG_LIMIT = Anzahl angezeigter Läufe des Zusammenfassungs-Jobs; STANDARD_WAHL = Auswahl für den Standard der Bündelung; TESTMAIL_HINWEISE = Meldungen zum Testversand.
 const BASIS = '/admin/benachrichtigungen';
 const DIGEST_LOG_LIMIT = 10;
 const STANDARD_WAHL = [['sofort', 'Sofort'], ['taeglich', 'Täglich'], ['woechentlich', 'Wöchentlich']];
@@ -46,6 +47,7 @@ const vorlagenKeys = (ereignis) => {
 };
 // Textareas kommen als CRLF: auf LF vereinheitlichen, damit Vergleiche und Mails konsistent sind.
 const normalisiereText = (wert) => String(wert ?? '').replace(/\r\n?/g, '\n').trim();
+// Beispielwerte aller Variablen eines Ereignisses (für Vorschau und Testmail).
 function beispielVariablen(ereignis) {
   const werte = Object.fromEntries(ereignis.variablen.map((v) => [v.name, v.beispiel]));
   // Ältere angepasste Vorlagen nutzen noch %debitorName%: wie beim Versand mitbefüllen.
@@ -76,12 +78,14 @@ function browserDaten(db, ereignis, werte, empfaengerListe) {
 // Audit-Empfänger sind kommagetrennt gespeichert; im Formular eine Adresse pro Zeile.
 const auditAdressen = (wert) => parseEmpfaengerListe(String(wert ?? '').replace(/\r?\n|\r/g, ','));
 
+// true, wenn die Vorlage des Ereignisses vom Standard abweicht.
 function istAngepasst(db, ereignis) {
   if (!ereignis.vorlagenTyp) return false;
   const keys = vorlagenKeys(ereignis);
   return getConfigValue(db, keys.betreff) !== DEFAULTS[keys.betreff] || getConfigValue(db, keys.text) !== DEFAULTS[keys.text];
 }
 
+// Aktuelle Einstellungen eines Ereignisses (Zeiten/Schwellen, Zusatzempfänger, Vorlage) aus admin_config.
 function gespeicherteWerte(db, ereignis) {
   const zeit = Object.fromEntries(ereignis.zeitKeys.map(({ key }) => [key, getConfigValue(db, key) ?? DEFAULTS[key] ?? '']));
   let empfaenger = '';
@@ -142,6 +146,7 @@ function pruefeFormular(db, ereignis, body) {
   return { errors, eingabe, speichern };
 }
 
+// Schreibt die geprüften Werte in admin_config.
 function speichereWerte(db, werte) {
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -154,6 +159,7 @@ function speichereWerte(db, werte) {
 }
 
 // Änderungen an der Prüfnummer-Vorlage gehen an die Revision (ohne Vorlageninhalt).
+// (Siehe Kommentar oben.)
 function auditVorlagenAenderungen(db, ereignis, neu) {
   if (ereignis.id !== 'audit-pruefnummer') return [];
   const keys = vorlagenKeys(ereignis);
@@ -163,15 +169,19 @@ function auditVorlagenAenderungen(db, ereignis, neu) {
   return aenderungen;
 }
 
+// Hält den Testversand einer Vorlage im Audit fest.
 function schreibeTestmailAudit(db, ereignis, status) {
   const actor = currentAuditActor();
   db.prepare(`INSERT INTO audit_ereignisse (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher)
     VALUES (?, ?, ?, 'benachrichtigung', ?, 'test_mail', ?)`).run(new Date().toISOString(), actor.id, actor.name, ereignis.id, JSON.stringify({ status }));
 }
 
+// Admin → Benachrichtigungen (`/admin/benachrichtigungen`, Recht `benachrichtigungen_verwalten`, docs/admin-bereich.md): je Ereignis Fristen/Schwellen, Zusatzempfänger und Mail-Vorlage bearbeiten, auf den Standard zurücksetzen und eine Testmail senden.
+// Die Ereignisse sind in services/benachrichtigungsEreignisse.js definiert.
 export function createBenachrichtigungenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // Rendert die Seite eines Ereignisses (Wann/Wer/Was, Vorschau, Listen für den Browser).
   function renderSeite(req, res, status, ereignis, { werte = gespeicherteWerte(db, ereignis), errors = [] } = {}) {
     const vorschau = ereignis.vorlagenTyp
       ? renderBenachrichtigung(db, ereignis.vorlagenTyp, beispielVariablen(ereignis), { betreff: werte.betreff, text: werte.text })
@@ -207,20 +217,24 @@ export function createBenachrichtigungenRouter({ db, config, mailer, csrfProtect
 
   const nichtGefunden = (res) => res.status(404).render('error', { message: 'Dieses Ereignis gibt es nicht.' });
 
+  // GET /admin/benachrichtigungen – leitet zum ersten Ereignis.
   router.get('/', (req, res) => res.redirect(`${BASIS}/${EREIGNISSE[0].id}`));
 
+  // GET /admin/benachrichtigungen/:id – Seite eines Ereignisses (404 bei unbekannter id).
   router.get('/:id', (req, res) => {
     const ereignis = findeEreignis(req.params.id);
     if (!ereignis) return nichtGefunden(res);
     renderSeite(req, res, 200, ereignis);
   });
 
+  // POST /admin/benachrichtigungen/zusammenfassung/jetzt-ausfuehren – löst den Zusammenfassungs-Versand (mail-digest) sofort aus.
   router.post('/zusammenfassung/jetzt-ausfuehren', csrfProtection, asyncHandler(async (req, res) => {
     const ergebnis = await runMailDigestJob(db, config, mailer);
     const zurueck = ergebnis?.zurueckgestellt > 0 ? `&zurueckgestellt=${ergebnis.zurueckgestellt}` : '';
     res.redirect(`${BASIS}/zusammenfassung?getriggert=1${zurueck}`);
   }));
 
+  // POST /admin/benachrichtigungen/:id – prüft und speichert die Einstellungen eines Ereignisses (bei Änderung der Standard-Bündelung werden wartende Mails nachgezogen; Änderungen am Audit-Nachweis gehen an die Revision).
   router.post('/:id', csrfProtection, asyncHandler(async (req, res) => {
     const ereignis = findeEreignis(req.params.id);
     if (!ereignis) return nichtGefunden(res);
@@ -259,6 +273,7 @@ export function createBenachrichtigungenRouter({ db, config, mailer, csrfProtect
     res.redirect(`${BASIS}/${ereignis.id}?gespeichert=1`);
   }));
 
+  // POST /admin/benachrichtigungen/:id/zuruecksetzen – setzt Vorlage und Einstellungen des Ereignisses auf die Werkseinstellung zurück.
   router.post('/:id/zuruecksetzen', csrfProtection, asyncHandler(async (req, res) => {
     const ereignis = findeEreignis(req.params.id);
     if (!ereignis?.vorlagenTyp) return nichtGefunden(res);

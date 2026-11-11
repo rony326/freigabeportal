@@ -1,3 +1,5 @@
+// Admin → Geplante Jobs (`/admin/geplante-jobs`, Recht `geplante_jobs_verwalten`, docs/geplante-jobs-und-benachrichtigungen.md): Zeitpläne und Schwellen der Hintergrund-Jobs bearbeiten, die letzten Läufe ansehen und jeden Job per Knopf sofort ausführen.
+
 import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentSyncLogs } from '../../db/syncLogRepo.js';
@@ -10,6 +12,7 @@ const LOG_LIMIT = 10;
 export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // Alle Einstellungen und Protokolle der Seite.
   function ladeState(getriggert) {
     return {
       cronSyncPersonenStunde: getConfigValue(db, 'cron_sync_personen_stunde'),
@@ -40,6 +43,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     };
   }
 
+  // GET /admin/geplante-jobs – die Seite.
   router.get('/', (req, res) => {
     res.render('admin/geplante-jobs', {
       ...ladeState(req.query.getriggert || null),
@@ -48,6 +52,7 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     });
   });
 
+  // POST /admin/geplante-jobs – prüft und speichert alle Zeitpläne/Schwellen (Stunden und Minuten als Ganzzahl im gültigen Bereich, Intervalle und Tage als positive Ganzzahl); der Scheduler liest sie ab dem nächsten Tick.
   router.post('/', csrfProtection, (req, res) => {
     const {
       syncPersonenStunde,
@@ -157,11 +162,9 @@ export function createGeplanteJobsRouter({ db, config, mailer, csrfProtection = 
     res.redirect('/admin/geplante-jobs?gespeichert=1');
   });
 
-  // Manual/on-demand triggers, reusing the exact same job functions the in-process scheduler
-  // calls (services/cronJobs.js) — same behavior, same logging (cron_log/sync_log), just fired
-  // by an admin click instead of a timer. Each run is already persisted before the redirect, so
-  // the GET handler picks the just-created row straight back up as feedback (no separate flash
-  // mechanism needed).
+  // Manuelle/bedarfsweise Auslöser, die genau dieselben Job-Funktionen wiederverwenden wie der In-Process-Scheduler (services/cronJobs.js) — gleiches Verhalten, gleiche Protokollierung (cron_log/sync_log), nur durch einen Admin-Klick statt durch einen Timer ausgelöst.
+  // Jeder Lauf ist vor der Weiterleitung schon gespeichert, der GET-Handler greift die eben angelegte Zeile also direkt als Rückmeldung wieder auf (kein eigener Flash-Mechanismus nötig).
+  // POST /admin/geplante-jobs/<job>/jetzt-ausfuehren – je Job (sync-personen, pool-erinnerungen, pdf-bereinigung, zeitstempel-nachholen, split-gruppen-nachholen, freigabe2-erinnerungen, rapport-erinnerungen, kk-beleg-erinnerungen, mail-zustellung).
   router.post('/sync-personen/jetzt-ausfuehren', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       await runSyncPersonenJob(db, config, mailer);

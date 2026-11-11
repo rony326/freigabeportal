@@ -1,3 +1,5 @@
+// Anmeldung per ChurchTools-OAuth2 (`/auth/*`, docs/auth-und-rechte.md): siehe Kommentar bei `createAuthRouter`.
+
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { buildAuthorizeUrl, exchangeCodeForToken, fetchPerson, resolveMemberGroupIds } from '../services/churchtools.js';
@@ -7,6 +9,7 @@ import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
 import { schreibeTestmodusAudit } from './admin/testmodus.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 
+// Meldung, wenn ChurchTools bei der Anmeldung nicht antwortet (503).
 export const CT_ZEITLIMIT_MELDUNG = 'ChurchTools antwortet gerade nicht. Bitte in ein paar Minuten erneut versuchen.';
 
 // fetch() mit AbortSignal.timeout lehnt mit einem DOMException 'TimeoutError' ab ('AbortError' bei
@@ -15,15 +18,20 @@ function istZeitlimit(err) {
   return err?.name === 'TimeoutError' || err?.name === 'AbortError';
 }
 
+// Anmeldung per ChurchTools-OAuth2 (docs/auth-und-rechte.md): `/auth/login` (Weiterleitung), `/auth/callback` (Rückkehr), `/auth/logout`, `/auth/abgemeldet`.
+// Öffentlich (nur der öffentliche Rate-Limiter, kein Login nötig).
 export function createAuthRouter({ db, config, mailer = null, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // GET /auth/login – erzeugt den `state` (CSRF-Schutz des OAuth-Ablaufs) und leitet zu ChurchTools.
   router.get('/login', (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
     req.session.oauthState = state;
     res.redirect(buildAuthorizeUrl(config.churchtools, state));
   });
 
+  // GET /auth/callback – prüft `state`, tauscht den Code gegen ein Token, legt/aktualisiert die Person (mit Gruppen) an, erfasst die Anmeldung (neues Gerät → Mail),
+  // erneuert die Session und leitet auf /pool.
   router.get('/callback', asyncHandler(async (req, res, next) => {
     try {
       const { code, state } = req.query;
@@ -50,20 +58,16 @@ export function createAuthRouter({ db, config, mailer = null, csrfProtection = (
         throw err;
       }
       const candidateGroupIds = [config.churchtools.groupIdBuchhaltung, config.churchtools.groupIdAdmin, config.churchtools.groupIdManager].filter(Boolean);
-      // AUTH-WIDEN-1: login no longer requires Buchhaltung/Admin membership — Freigeber1/2 and
-      // their Stellvertreter are account-based roles (AUTHZ-3) that may not be in either group.
-      // gruppen is still resolved and stored exactly as before; only the empty-array rejection
-      // is gone. Every route that matters is gated by its own per-job or per-group check
-      // downstream (requireRole/requireAnyRole for /pool and /admin, per-job checks elsewhere).
+      // AUTH-WIDEN-1: Die Anmeldung verlangt keine Mitgliedschaft in Buchhaltung/Admin mehr — Freigeber 1/2 und ihre Stellvertretungen sind kontobasierte Rollen
+      // (AUTHZ-3), die in keiner der beiden Gruppen sein müssen. `gruppen` wird weiter genau wie bisher aufgelöst und gespeichert; nur die Ablehnung bei leerem
+      // Array entfällt. Jede wichtige Route ist weiter hinten durch eine eigene Prüfung je Vorgang oder je Gruppe abgesichert (requireRole/requireAnyRole für /pool
+      // und /admin, Prüfungen je Vorgang andernorts).
       //
-      // Uses the sync service account's Login-Token, not the freshly-obtained OAuth access
-      // token: ChurchTools' OAuth2 access tokens are only valid against the dedicated /oauth/*
-      // endpoints (authorize, access_token, userinfo) — /api/groups/*/members returns 403 for
-      // them, confirmed against the live instance. /oauth/userinfo's own `groups` field exists
-      // but only lists group *names*, which this app must never match against (see the
-      // Lastenheft's explicit "match by group ID, never by name" requirement — group renames in
-      // ChurchTools must not silently break access). The Login-Token already has the API access
-      // the nightly sync depends on, so it's reused here for the identical lookup at login time.
+      // Verwendet das Login-Token des Sync-Dienstkontos, nicht das frisch erhaltene OAuth-Zugriffstoken: OAuth2-Zugriffstoken von ChurchTools gelten nur für die
+      // eigenen /oauth/*-Endpunkte (authorize, access_token, userinfo) — /api/groups/*/members antwortet dafür mit 403, an der Live-Instanz bestätigt. Das Feld
+      // `groups` von /oauth/userinfo gibt es zwar, es listet aber nur Gruppen*namen*, nach denen diese App nie abgleichen darf (siehe die ausdrückliche Vorgabe des
+      // Lastenhefts "nach Gruppen-ID abgleichen, nie nach Namen" — Umbenennungen in ChurchTools dürfen den Zugang nicht still brechen). Das Login-Token hat den
+      // API-Zugriff, von dem der nächtliche Sync abhängt, schon; es wird hier für dieselbe Abfrage bei der Anmeldung wiederverwendet.
       const gruppen = await resolveMemberGroupIds(config.churchtools, config.churchtools.syncServiceToken, profile.id, candidateGroupIds);
 
       upsertPerson(db, {
@@ -81,13 +85,12 @@ export function createAuthRouter({ db, config, mailer = null, csrfProtection = (
         void sendeNeuesGeraetMail(db, mailer, { req, person: getPersonById(db, String(profile.id)) });
       }
 
-      // /pool is now the dashboard for every logged-in person, not just Buchhaltung/Portal-Admin
-      // (see app.js's /pool mount) — every login lands there directly, no landing page in between.
+      // /pool ist jetzt das Dashboard jeder angemeldeten Person, nicht nur der Buchhaltung/des Portal-Admins (siehe die Einbindung von /pool in app.js) — jede Anmeldung
+      // landet direkt dort, ohne Startseite dazwischen.
       //
-      // Regenerate the session on login (not just reuse the pre-login one) to prevent session
-      // fixation: a session ID issued before authentication must never become a valid,
-      // authenticated session ID after it. Nothing from the pre-login session is needed past
-      // this point — oauthState was already consumed above.
+      // Die Session wird bei der Anmeldung erneuert (nicht die Session vor der Anmeldung weiterverwendet), um Session-Fixation zu verhindern: Eine vor der
+      // Authentifizierung ausgestellte Session-ID darf danach nie eine gültige, authentifizierte Session-ID werden. Aus der Session vor der Anmeldung wird ab hier nichts
+      // mehr gebraucht — oauthState wurde oben schon verbraucht.
       req.session.regenerate((err) => {
         if (err) return next(err);
         req.session.personId = String(profile.id);
@@ -106,6 +109,7 @@ export function createAuthRouter({ db, config, mailer = null, csrfProtection = (
     }
   }));
 
+  // POST /auth/logout – beendet die Session (und einen laufenden Testmodus) und zeigt die Bestätigungsseite.
   router.post('/logout', csrfProtection, (req, res, next) => {
     // Abmelden beendet den Testmodus (im echten Audit-Log vermerkt).
     if (req.session.testmodus) {
@@ -114,15 +118,14 @@ export function createAuthRouter({ db, config, mailer = null, csrfProtection = (
     }
     req.session.destroy((err) => {
       if (err) return next(err);
-      // Redirecting straight to '/' used to immediately bounce an anonymous visitor to
-      // /auth/login (see app.js), which silently re-authenticates via ChurchTools SSO as long as
-      // the ChurchTools-side session is still active in this browser — the button looked like it
-      // did nothing. Landing on a real confirmation page first breaks that instant loop and makes
-      // the (real, momentary) logout visible before anyone can click their way back in.
+      // Eine direkte Weiterleitung auf '/' schickte einen anonymen Besucher früher sofort nach /auth/login (siehe app.js), und das meldet per ChurchTools-SSO still wieder an,
+      // solange die ChurchTools-Sitzung in diesem Browser noch aktiv ist — der Button sah aus, als täte er nichts. Erst auf einer echten Bestätigungsseite zu landen,
+      // unterbricht diese Sofort-Schleife und macht die (echte, kurzzeitige) Abmeldung sichtbar, bevor sich jemand wieder anmelden kann.
       res.redirect('/auth/abgemeldet');
     });
   });
 
+  // GET /auth/abgemeldet – Bestätigungsseite mit Link zur ChurchTools-Abmeldung.
   router.get('/abgemeldet', (req, res) => {
     res.render('abgemeldet', { churchtoolsBaseUrl: config.churchtools.baseUrl });
   });

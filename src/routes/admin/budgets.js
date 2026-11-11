@@ -1,3 +1,5 @@
+// Admin → Budgets (`/admin/budgets`, Recht `budgets_verwalten`, docs/auswertung.md): Jahresbudget je Konto pflegen und aus einer CSV-/Excel-Datei importieren (Vorschau mit Bestätigung innerhalb von 15 Minuten).
+
 import { Router } from 'express';
 import multer from 'multer';
 import { listKonten } from '../../db/kontenRepo.js';
@@ -11,6 +13,7 @@ const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
 const VORSCHAU_GUELTIG_MS = 15 * 60 * 1000;
 const uploadImport = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_IMPORT_BYTES, files: 1 } });
 
+// Gültiges Jahr (2000–2100) oder null.
 function jahrAus(text) {
   const jahr = Number(text);
   return Number.isInteger(jahr) && jahr >= 2000 && jahr <= 2100 ? jahr : null;
@@ -19,6 +22,7 @@ function jahrAus(text) {
 export function createBudgetsRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // Tabellenzeilen aller aktiven Konten mit Budget des Jahres, Vorjahreswert und Fehlermarkierung.
   function zeilen(jahr, eingaben = null, fehlerIds = new Set()) {
     const budgets = listBudgetsFuerJahr(db, jahr);
     const vorjahr = listBudgetsFuerJahr(db, jahr - 1);
@@ -35,10 +39,12 @@ export function createBudgetsRouter({ db, csrfProtection = (req, res, next) => n
     }));
   }
 
+  // Rendert die Seite.
   function seite(res, status, { jahr, konten, fehler = null, importFehler = null, gespeichert = false, importiert = null }) {
     return res.status(status).render('admin/budgets', { jahr, konten: konten ?? zeilen(jahr), fehler, importFehler, gespeichert, importiert });
   }
 
+  // GET /admin/budgets?jahr= – Budgets des Jahres.
   router.get('/', (req, res) => {
     const jahr = jahrAus(req.query.jahr) ?? Number(zuerichHeute().slice(0, 4));
     const importiert = /^\d+$/.test(String(req.query.importiert ?? '')) ? Number(req.query.importiert) : null;
@@ -47,10 +53,12 @@ export function createBudgetsRouter({ db, csrfProtection = (req, res, next) => n
 
   // ---------- Import ----------
 
+  // Aktive Konten für die Zuordnung der Importzeilen.
   function aktiveKonten() {
     return listKonten(db).map((k) => ({ id: k.id, kontonummer: String(k.kontonummer).trim() }));
   }
 
+  // Liest die gewählte Spalten-Zuordnung (Konto/Betrag/Kopfzeile) und begrenzt sie auf die Tabellenbreite.
   function zuordnungAus(quelle, importDaten) {
     const breite = Math.max(1, ...importDaten.zeilen.map((z) => z.length));
     const spalte = (wert, standard) => {
@@ -63,6 +71,7 @@ export function createBudgetsRouter({ db, csrfProtection = (req, res, next) => n
     return { spalteKonto, spalteBetrag, hatKopfzeile, breite };
   }
 
+  // Liest die zwischengespeicherte Importvorschau der Sitzung (höchstens 15 Minuten alt).
   function gueltigerImport(req) {
     const daten = req.session?.budgetImport;
     if (!daten || Date.now() - daten.erstelltAm > VORSCHAU_GUELTIG_MS) {
@@ -72,6 +81,7 @@ export function createBudgetsRouter({ db, csrfProtection = (req, res, next) => n
     return daten;
   }
 
+  // Rendert die Importvorschau (gültige und fehlerhafte Zeilen).
   function vorschau(res, daten, quelle) {
     const zuordnung = zuordnungAus(quelle, daten);
     const ergebnis = ordneZu(daten.zeilen, zuordnung, aktiveKonten(), listBudgetsFuerJahr(db, daten.jahr));
@@ -80,6 +90,7 @@ export function createBudgetsRouter({ db, csrfProtection = (req, res, next) => n
     res.render('admin/budgets-import', { daten, zuordnung, spalten, ergebnis, formatChf });
   }
 
+  // POST /admin/budgets/import – Datei hochladen (höchstens 2 MB, CSV oder .xlsx), Spalten zuordnen und die Vorschau anzeigen.
   router.post('/import', (req, res, next) => {
     // multer vor csrfProtection: das Token steht im multipart-Body.
     mitAuditKontext(uploadImport.single('datei'))(req, res, (uploadErr) => {
@@ -105,12 +116,14 @@ export function createBudgetsRouter({ db, csrfProtection = (req, res, next) => n
     });
   });
 
+  // GET /admin/budgets/import/vorschau – Vorschau erneut anzeigen (z. B. nach Änderung der Spaltenwahl).
   router.get('/import/vorschau', (req, res) => {
     const daten = gueltigerImport(req);
     if (!daten) return seite(res, 400, { jahr: Number(zuerichHeute().slice(0, 4)), importFehler: 'Die Vorschau ist abgelaufen. Bitte die Datei erneut hochladen.' });
     vorschau(res, daten, req.query);
   });
 
+  // POST /admin/budgets/import/bestaetigen – übernimmt die gültigen Zeilen der Vorschau als Budgets des Jahres.
   router.post('/import/bestaetigen', csrfProtection, (req, res) => {
     const daten = gueltigerImport(req);
     if (!daten) return seite(res, 400, { jahr: Number(zuerichHeute().slice(0, 4)), importFehler: 'Die Vorschau ist abgelaufen. Bitte die Datei erneut hochladen.' });
@@ -128,6 +141,7 @@ export function createBudgetsRouter({ db, csrfProtection = (req, res, next) => n
     res.redirect(`/admin/budgets?jahr=${daten.jahr}&importiert=${gueltig.length}`);
   });
 
+  // POST /admin/budgets – speichert die von Hand erfassten Budgets des Jahres (leeres Feld = Budget entfernen).
   router.post('/', csrfProtection, (req, res) => {
     const jahr = jahrAus(req.body.jahr);
     if (jahr === null) {

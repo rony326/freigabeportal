@@ -1,3 +1,7 @@
+// Dashboard / Aufgabenseite `/pool` (docs/rechnungs-workflow.md): für jede angemeldete Person die eigenen Aufgaben (Kontierungen, Freigaben, Spesen-Freigaben, Überarbeitungen, Rapporte),
+// für Buchhaltung/Superadmin zusätzlich der Pool der unzugewiesenen Vorgänge und für Superadmins die an die Administration eskalierten Vorgänge. Dazu zwei Aktionen auf Pool-Vorgängen
+// (Zuweisen an eine Person, als Kreditkartenabrechnung markieren).
+
 import { Router } from 'express';
 import {
   listPoolJobs,
@@ -29,23 +33,23 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // Ergänzt Vorgänge um Vorschau-Adresse (signiert), Kontonummer, Hinweis-Konto und Namen der zurücksendenden Person.
   function enrich(jobs) {
     return jobs.map((job) => ({
       ...job,
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       kontonummer: job.konto_id ? (getKontoById(db, job.konto_id)?.kontonummer ?? null) : null,
-      // Only meaningful while the job still sits unzugewiesen in the Pool — once it's actually
-      // kontiert, the real Konto (above) takes over and this best-effort hint is moot.
+      // Nur sinnvoll, solange der Vorgang noch unzugewiesen im Pool liegt — sobald er tatsächlich kontiert ist, übernimmt das echte Konto (oben), und dieser Best-Effort-Hinweis ist hinfällig.
       hinweisKonto: job.hinweis_konto_id ? (getKontoById(db, job.hinweis_konto_id) ?? null) : null,
       rueckgesendetVonName: job.pool_rueckgesendet_von ? personName(db, job.pool_rueckgesendet_von) : null,
     }));
   }
 
+  // GET /pool – das Dashboard (siehe Kopfkommentar).
   router.get('/', (req, res) => {
     const personId = req.currentPerson.churchtools_person_id;
-    // /pool is reachable by every logged-in person now (see app.js), but the company-wide pool of
-    // unassigned invoices is still Buchhaltung/Portal-Admin business — skip the query entirely for
-    // anyone else rather than relying on pool.ejs alone to hide it.
+    // /pool ist jetzt für jede angemeldete Person erreichbar (siehe app.js), aber der firmenweite Pool unzugewiesener Rechnungen bleibt Sache von Buchhaltung/Portal-Admin — die Abfrage
+    // wird für alle anderen ganz übersprungen, statt sich allein darauf zu verlassen, dass pool.ejs ihn ausblendet.
     const zeigtPool = personHasRole(req.currentPerson, config, 'buchhaltung') || personHasRole(req.currentPerson, config, 'superadmin');
     const istSuperadmin = personHasRole(req.currentPerson, config, 'superadmin');
     const kannZuweisen = personHasPermission(db, config, req.currentPerson, 'pool_zuweisen');
@@ -80,13 +84,12 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
     res.render('pool', daten);
   });
 
+  // POST /pool/:id/zuweisen (Recht `pool_zuweisen`) – weist einen Pool-Vorgang ohne Kontierung einer Person mit Freigeber-Rolle zu (Verlaufseintrag 'pool_zuweisung', Mail mit Vertretung).
   router.post('/:id/zuweisen', requirePermission(db, config, 'pool_zuweisen'), csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const job = getJobById(db, Number(req.params.id));
-      // quelle === 'spesen' mirrors the exclusion already applied by listPoolJobs/listPoolRuecklaeufer
-      // above — a Spesen position never appears in either Pool list, so this route should never
-      // reach one either. Not reachable via the UI, but a hand-crafted request could target one
-      // directly by id, so this is defense in depth alongside the status check.
+      // quelle === 'spesen' entspricht dem Ausschluss, den listPoolJobs/listPoolRuecklaeufer oben schon anwenden — eine Spesenposition erscheint in keiner der beiden Pool-Listen, diese Route soll
+      // sie also auch nie erreichen. Über die Oberfläche nicht erreichbar, aber eine von Hand gebaute Anfrage könnte per id direkt eine ansteuern, daher eine zusätzliche Absicherung neben der Statusprüfung.
       if (!job || job.status !== 'unzugewiesen' || job.quelle === 'spesen') {
         return res.status(409).json({ error: 'Job ist nicht mehr im Pool verfügbar.' });
       }
@@ -124,6 +127,7 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
     }
   }));
 
+  // POST /pool/:id/als-kk-abrechnung – markiert einen Pool-Vorgang als Abrechnung einer Kreditkarte (nur Buchhaltung/Superadmin, nur bei aktivem Modul).
   router.post('/:id/als-kk-abrechnung', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const darf = personHasRole(req.currentPerson, config, 'buchhaltung') || personHasRole(req.currentPerson, config, 'superadmin');

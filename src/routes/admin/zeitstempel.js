@@ -1,3 +1,5 @@
+// Admin → Zeitstempel (`/admin/zeitstempel`, Recht `zeitstempel_verwalten`, docs/zeitstempel-und-pruefbescheinigung.md und docs/audit-externe-nachweise.md): TSA-Adresse und Zugang (RFC3161), Warnschwelle sowie die Einstellungen des Audit-Nachweises (Modul, Revisions-Empfänger, Rhythmus, Prüfnummer-Versand).
+
 import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { adminAdressen } from '../../services/empfaenger.js';
@@ -11,6 +13,7 @@ const URL_PATTERN = /^https?:\/\//;
 const RHYTHMEN = { monatlich: 'monatlich', quartalsweise: 'quartalsweise', jaehrlich: 'jährlich' };
 
 // Formularfeld -> [Config-Key, Standardwert, Min, Max, Label]
+// (Siehe Kommentar oben.)
 const ZAHLENFELDER = {
   auditPruefnummerTag: ['audit_pruefnummer_tag', '1', 1, 28, 'Versandtag'],
   auditExportStunde: ['cron_audit_export_stunde', '3', 0, 23, 'Nächtlicher Export: Stunde'],
@@ -29,6 +32,7 @@ const VERSAND_HINWEISE = {
 const plural = (n, einzahl, mehrzahl) => `${n} ${n === 1 ? einzahl : mehrzahl}`;
 
 // Ergebnis von runAuditExportJob als Hinweis für die Seite.
+// Verständlicher Hinweis zum Ergebnis eines Export-Laufs (Pakete erstellt/gestempelt/Fehler).
 export function exportHinweis(ergebnis, tsaKonfiguriert) {
   if (ergebnis.status === 'uebersprungen') {
     return { art: 'warning', text: 'Nichts exportiert: der Audit-Nachweis ist ausgeschaltet. Bitte oben einschalten und speichern.' };
@@ -49,6 +53,7 @@ export function createZeitstempelAdminRouter({
 }) {
   const router = Router();
 
+  // Zustand des Audit-Nachweises (Pakete, Rückstand, Empfänger).
   function auditState() {
     const werte = {
       auditRevisionEmpfaenger: getConfigValue(db, 'audit_revision_empfaenger') ?? '',
@@ -59,6 +64,7 @@ export function createZeitstempelAdminRouter({
     return werte;
   }
 
+  // Zustand der Zeitstempel-Einstellungen für das Formular.
   function currentState() {
     return {
       tsaUrl: getConfigValue(db, 'zeitstempel_tsa_url') ?? '',
@@ -68,6 +74,7 @@ export function createZeitstempelAdminRouter({
     };
   }
 
+  // Rendert die Seite.
   function renderSeite(res, status, state, { errors = [], gespeichert = false, versand = null, exportErgebnis = null } = {}) {
     const { adressen } = parseEmpfaengerListe(state.auditRevisionEmpfaenger);
     res.status(status).render('admin/zeitstempel-form', {
@@ -84,10 +91,12 @@ export function createZeitstempelAdminRouter({
     });
   }
 
+  // GET /admin/zeitstempel – die Seite.
   router.get('/', (req, res) => {
     renderSeite(res, 200, currentState(), { gespeichert: req.query.gespeichert === '1', versand: req.query.versand });
   });
 
+  // POST /admin/zeitstempel – prüft und speichert TSA-Adresse/Zugang, Warnschwelle und Audit-Nachweis-Einstellungen (Änderungen und Empfängerwechsel werden gemeldet).
   router.post('/', csrfProtection, asyncHandler(async (req, res) => {
     const { tsaUrl, tsaUser, tsaPasswort, warnungAbStunden } = req.body;
     const trimmedUrl = (tsaUrl || '').trim();
@@ -164,6 +173,7 @@ export function createZeitstempelAdminRouter({
     res.redirect('/admin/zeitstempel?gespeichert=1');
   }));
 
+  // POST /admin/zeitstempel/audit-pruefnummer-senden – verschickt die aktuelle Prüfnummer sofort an die Revision.
   router.post('/audit-pruefnummer-senden', csrfProtection, asyncHandler(async (req, res) => {
     let status;
     try {
@@ -177,6 +187,7 @@ export function createZeitstempelAdminRouter({
 
   // Gleicher Lauf wie nachts um 03:15: Pakete erstellen und alle offenen stempeln. Das Ergebnis
   // (inkl. Fehlergrund) wird direkt angezeigt, weil das Audit-Log nur den Status festhält.
+  // POST /admin/zeitstempel/audit-export-jetzt – führt den Audit-Export jetzt aus (siehe Kommentar oben).
   router.post('/audit-export-jetzt', csrfProtection, asyncHandler(async (req, res) => {
     let ergebnis;
     try {

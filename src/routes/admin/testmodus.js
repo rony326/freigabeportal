@@ -1,7 +1,10 @@
+// Admin → Testmodus (`/admin/testmodus`, Recht `testmodus_nutzen`, docs/testmodus.md): Spielwiese ein-/ausschalten, Beispielperson wechseln, zurücksetzen. Echte Änderungen (Ein/Aus/Wechsel/Zurücksetzen) werden im echten Audit-Log festgehalten.
+
 import { Router } from 'express';
 import { BEISPIELPERSONEN } from '../../services/testmodus/beispieldaten.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 
+// Beim Einschalten gewählte Beispielperson; PERSONEN/ERLAUBT = zulässige Beispielpersonen; FEHLER_SPIELWIESE = Meldung, wenn die Spielwiese nicht aufgebaut werden kann.
 const STANDARD_PERSON = 'test-4'; // Dora Beispiel (Admin)
 const PERSONEN = BEISPIELPERSONEN.map((p) => ({ id: p.id, name: `${p.vorname} ${p.nachname}`, rolle: p.rolle }));
 const ERLAUBT = new Set(PERSONEN.map((p) => p.id));
@@ -30,8 +33,10 @@ export function createTestmodusRouter({ db, steuerung, csrfProtection = (req, re
     });
   };
 
+  // GET /admin/testmodus – Status und Steuerung.
   router.get('/', (req, res) => zeige(req, res));
 
+  // POST /admin/testmodus/ein – baut/öffnet die Spielwiese und schaltet den Testmodus für die Sitzung ein.
   router.post('/ein', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       if (!req.session.testmodus) {
@@ -50,6 +55,7 @@ export function createTestmodusRouter({ db, steuerung, csrfProtection = (req, re
     }
   }));
 
+  // POST /admin/testmodus/aus – schaltet den Testmodus aus (zurück ins echte Portal).
   router.post('/aus', csrfProtection, (req, res) => {
     if (req.session.testmodus) {
       delete req.session.testmodus;
@@ -58,6 +64,7 @@ export function createTestmodusRouter({ db, steuerung, csrfProtection = (req, re
     res.redirect('/admin/testmodus');
   });
 
+  // POST /admin/testmodus/person – wechselt die Beispielperson.
   router.post('/person', csrfProtection, (req, res) => {
     if (!req.session.testmodus) return res.redirect('/admin/testmodus');
     const personId = typeof req.body.personId === 'string' ? req.body.personId : '';
@@ -69,6 +76,7 @@ export function createTestmodusRouter({ db, steuerung, csrfProtection = (req, re
     res.redirect('/pool');
   });
 
+  // POST /admin/testmodus/zuruecksetzen – baut die Spielwiese mit frischen Beispieldaten neu auf.
   router.post('/zuruecksetzen', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       if (req.session.testmodus && req.body.bestaetigt !== '1') {

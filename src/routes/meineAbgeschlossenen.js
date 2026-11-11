@@ -1,3 +1,5 @@
+// "Meine abgeschlossenen Rechnungen" (`/meine-abgeschlossenen`): seitenweise Liste der abgeschlossenen Vorgänge, bei denen die Person Freigeber/Kontierende war. Zugang: angemeldet.
+
 import { Router } from 'express';
 import { listAbgeschlossenJobsForPerson } from '../db/jobsRepo.js';
 import { kommentarInfoFuer } from '../services/kommentare.js';

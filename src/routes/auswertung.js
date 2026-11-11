@@ -1,3 +1,6 @@
+// Seite "Auswertung" (`/auswertung`, docs/auswertung.md): Kennzahlen, Budget je Konto, Durchlaufzeiten, Engpässe, Lieferanten und CSV-Export.
+// Zugang: wer das Recht `auswertung_einsehen` hat (alle Konten) oder Freigeber 1/Stellvertretung eines Kontos ist (nur diese Konten) – siehe services/auswertung.js `zugangFuer`.
+
 import { Router } from 'express';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { personHasPermission } from '../middleware/permissions.js';
@@ -10,6 +13,7 @@ import {
 const ABSCHNITTE = ['budget', 'durchlauf', 'engpaesse', 'lieferanten'];
 const STUFEN_LABEL = { pool: 'Eingang bis Zuweisung (Pool)', freigabe1: 'Kontierung & Freigabe 1', freigabe2: 'Freigabe 2' };
 
+// "1 Tag" / "2.5 Tage" bzw. "—" ohne Wert.
 export function formatTage(tage) {
   if (tage === null || tage === undefined) return '—';
   const text = Number.isInteger(tage) ? String(tage) : tage.toFixed(1);
@@ -24,6 +28,7 @@ function csvZelle(wert) {
   return /[;"\r\n]/.test(text) || text.startsWith("'") ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
+// Baut den CSV-Text (Semikolon, UTF-8 mit BOM, CRLF).
 function csv(kopf, zeilen) {
   return `﻿${[kopf, ...zeilen].map((z) => z.map(csvZelle).join(';')).join('\r\n')}\r\n`;
 }
@@ -63,6 +68,7 @@ export function createAuswertungRouter({ db, config }) {
     return { person, zugang, heute, zeitraum, konten, kontoNr, kontoIds, schwelleTage };
   }
 
+  // GET /auswertung?zeitraum=jahr|12m|vorjahr|eigen&von=&bis=&konto= – die Seite.
   router.get('/', (req, res) => {
     const k = kontext(req, res);
     if (!k) return;
@@ -97,6 +103,7 @@ export function createAuswertungRouter({ db, config }) {
     });
   });
 
+  // GET /auswertung/export/<budget|durchlauf|engpaesse|lieferanten>.csv – CSV-Export mit denselben Filtern (Engpässe nur mit vollem Zugang).
   router.get('/export/:abschnitt.csv', (req, res) => {
     const { abschnitt } = req.params;
     if (!ABSCHNITTE.includes(abschnitt)) return res.status(404).render('error', { message: 'Diesen Export gibt es nicht.' });

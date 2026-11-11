@@ -12,6 +12,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | Dokument | Inhalt |
 |---|---|
 | [feature-abgleich-2026-09-30.md](feature-abgleich-2026-09-30.md) | Abgleich mit dem Code: verfügbare Features, Entwürfe und verbleibende Betriebsabnahmen |
+| [code-landkarte.md](code-landkarte.md) | Einstieg für Übernehmende: Verzeichnisse, Konventionen (Sprache, Kommentare), Checklisten für typische Änderungen (neue Seite, neues Recht, neue Spalte, neuer Job) |
 | [architektur.md](architektur.md) | Systemüberblick, Tech-Stack, Middleware-Pipeline, Router-Übersicht, Sicherheitsmechanismen |
 | [auth-und-rechte.md](auth-und-rechte.md) | ChurchTools-OAuth2-Login, Rollenmodell (Gruppen) und additive Einzelrechte, Job-Autorisierung |
 | [datenmodell.md](datenmodell.md) | Alle Datenbanktabellen, ER-Diagramm, wichtige Constraints |
@@ -48,6 +49,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 
 | Version | Datum | Release Notes |
 |---|---|---|
+| 1.2.2 | 2026-11-11 | [releases/v1.2.2.md](releases/v1.2.2.md) |
 | 1.2.1 | 2026-11-11 | [releases/v1.2.1.md](releases/v1.2.1.md) |
 | 1.2.0 | 2026-11-11 | [releases/v1.2.0.md](releases/v1.2.0.md) |
 | 1.1.1 | 2026-11-11 | [releases/v1.1.1.md](releases/v1.1.1.md) |

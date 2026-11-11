@@ -53,6 +53,13 @@ Wichtige Details:
 - **Session-Fixation-Schutz**: `session.regenerate()` beim Login — eine vor
   dem Login ausgestellte Session-ID darf nie zu einer authentifizierten
   werden.
+- **Sitzung und Cookie** (`src/app.js`): Eine Sitzung gilt 8 Stunden und liegt
+  in der Tabelle `sessions` (`src/db/sessionStore.js`). Hinter HTTPS heisst das
+  Cookie `__Host-portal.sid` (nur `Secure`, `Path=/`, ohne Domain: eine andere
+  Subdomain kann es nicht setzen), lokal über http `connect.sid`; es ist
+  `httpOnly` und `sameSite=lax`. Wer in ChurchTools aus einer Rollen-Gruppe
+  entfernt wird, verliert die Rolle spätestens nach dem nächsten Sync oder
+  Login, die Sitzung selbst endet nach 8 Stunden.
 - **Kein Gruppenzwang beim Login**: der Login gelingt unabhängig davon, ob
   die Person in einer der drei Gruppen ist — Freigeber/Stellvertreter
   können rein kontobasierte Rollen ohne jede Gruppenmitgliedschaft sein.

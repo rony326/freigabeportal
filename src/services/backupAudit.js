@@ -53,10 +53,13 @@ export function listUnresolvedBackupDeletions(db, { before = Number.MAX_SAFE_INT
     ORDER BY i.id DESC LIMIT ?`).all(before, limit);
 }
 
+// Fehler mit HTTP-Status für die manuelle Prüfung einer Löschabsicht.
 export class BackupReviewError extends Error {
   constructor(message, status) { super(message); this.status = status; }
 }
 
+// Manuelle Prüfung einer ungeklärten Löschabsicht: Administrator:in bestätigt, ob die Datei vorhanden ist (`datei_vorhanden` | `datei_nicht_vorhanden`), mit Begründung (10–2000 Zeichen).
+// Das schliesst die Absicht für die Sicherheitsalarme. @returns {number} id des Audit-Ereignisses
 export function reviewBackupDeletion(db, intentId, observation, reason) {
   if (!Number.isSafeInteger(intentId) || intentId < 1 || intentId >= Number.MAX_SAFE_INTEGER ||
       !['datei_vorhanden', 'datei_nicht_vorhanden'].includes(observation) ||

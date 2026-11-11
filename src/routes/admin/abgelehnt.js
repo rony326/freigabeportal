@@ -1,3 +1,5 @@
+// Admin → Abgelehnte Rechnungen (`/admin/abgelehnt`, Recht `abgelehnt_verwalten`, docs/admin-bereich.md): Liste aller abgelehnten Vorgänge und endgültiges (weiches) Löschen mit Begründung. Wer eine Rechnung selbst abgelehnt hat, darf sie nicht löschen.
+
 import { Router } from 'express';
 import { getJobById, listAlleAbgelehntenJobs, loeschenJob } from '../../db/jobsRepo.js';
 import { getPersonById } from '../../db/personenRepo.js';
@@ -9,6 +11,7 @@ import { asyncHandler } from '../../middleware/asyncHandler.js';
 export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // GET /admin/abgelehnt – Liste.
   router.get('/', (req, res) => {
     const jobs = listAlleAbgelehntenJobs(db).map((job) => ({
       ...job,
@@ -17,6 +20,7 @@ export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, 
     res.render('admin/abgelehnt-liste', { jobs, kommentarInfo: kommentarInfoFuer(db, config, req.currentPerson, jobs.map((j) => j.id)), gespeichert: req.query.gespeichert === '1' });
   });
 
+  // GET /admin/abgelehnt/:id – Bestätigungsseite zum Löschen (403 bei Selbstablehnung).
   router.get('/:id', (req, res) => {
     const job = getJobById(db, Number(req.params.id));
     if (!job || job.status !== 'abgelehnt') {
@@ -28,6 +32,7 @@ export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, 
     res.render('admin/abgelehnt-loeschen', { job, errors: [], begruendung: '' });
   });
 
+  // POST /admin/abgelehnt/:id/loeschen – löscht weich (Status 'geloescht', Eintrag in job_loeschungen) und stösst bei einem Splitkind die Prüfung der Gruppe an.
   router.post('/:id/loeschen', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const job = getJobById(db, Number(req.params.id));

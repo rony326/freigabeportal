@@ -1,3 +1,5 @@
+// Seite "Problem melden" (`/fehler-melden`, docs/betrieb-und-nutzung.md): jede angemeldete Person kann ein Problem melden (optional mit Fehler-ID); die Meldung wird gespeichert und alle Personen mit dem Recht `betrieb_einsehen` werden benachrichtigt.
+
 import { Router } from 'express';
 import { listActivePersons, getPersonById } from '../db/personenRepo.js';
 import { personHasPermission } from '../middleware/permissions.js';
@@ -10,6 +12,7 @@ const MAX_BESCHREIBUNG = 2000;
 const FEHLER_ID_MUSTER = /^[0-9a-f][0-9a-f-]{7,63}$/i;
 
 // Verknüpfung nur bei genau einem Treffer, der der meldenden Person gehört (oder keiner Person).
+// (Siehe Kommentar oben.) @returns {string|null} die vollständige Request-ID oder null
 function findeFehlerRequestId(db, fehlerId, personId) {
   if (typeof fehlerId !== 'string' || !FEHLER_ID_MUSTER.test(fehlerId)) return null;
   const treffer = db
@@ -23,11 +26,13 @@ function findeFehlerRequestId(db, fehlerId, personId) {
 export function createFehlerMeldenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // GET /fehler-melden?fehler=<Fehler-ID>&seite=<Pfad> – das Formular (Fehler-ID und Herkunftsseite vorbelegt).
   router.get('/', (req, res) => {
     const fehlerId = typeof req.query.fehler === 'string' && FEHLER_ID_MUSTER.test(req.query.fehler) ? req.query.fehler.slice(0, 8) : '';
     res.render('fehler-melden', { gesendet: false, fehlerId, beschreibung: '', fehlerText: null, seite: portalPfad(req.query.seite) || '' });
   });
 
+  // POST /fehler-melden – speichert die Meldung (höchstens 2000 Zeichen) und benachrichtigt im Hintergrund.
   router.post('/', csrfProtection, (req, res) => {
     const person = req.currentPerson;
     const personId = person.churchtools_person_id;

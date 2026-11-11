@@ -1,3 +1,6 @@
+// Öffentliche Prüfseite `/audit-pruefen` für die Revision (docs/audit-externe-nachweise.md): Paketnummer und Prüfnummer eingeben bzw. per Mail-Link
+// übergeben, das Ergebnis zeigt drei Prüfpunkte (services/auditPruefung.js). Kein Login, nur GET.
+
 import { Router } from 'express';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { normalisierePruefnummer, pruefeAuditNachweis } from '../services/auditPruefung.js';
@@ -8,6 +11,7 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 export function createAuditPruefenRouter({ db }) {
   const router = Router();
 
+  // GET /audit-pruefen?paket=…&pruefnummer=… – ohne Parameter das leere Formular, sonst Validierung und Prüfergebnis.
   router.get('/', asyncHandler(async (req, res, next) => {
     try {
       const abgeschaltet = getConfigValue(db, 'modul_audit_nachweis_aktiv') !== '1';

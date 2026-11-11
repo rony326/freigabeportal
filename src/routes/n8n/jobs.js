@@ -1,3 +1,8 @@
+// Maschinenroute `/api/n8n/jobs` (Header `X-API-Key`, Vertrag und Beispiele: docs/n8n-schnittstelle.md und docs/n8n-paperless-archivierung.md): Rechnungseingang aus dem Mail-Workflow und Abholung zum Export nach Bexio/Paperless.
+// Eingang: `POST /` (PDF + quelle/absender/dateiname) → Prüfung, Duplikaterkennung per Datei-Hash, Job, Thumbnail, QR-Erkennung, Kreditkartenerkennung, Zuweisung per Regel + Mail.
+// Export: `GET /abholbereit` → `GET /:id/exportnachweis` → `GET /:id/exportdatei/:exportId` → `POST /:id/archivierung-bestaetigen` (Archivquittung); `POST /:id/abholung-bestaetigen` ist die ältere reine Transport-Bestätigung.
+// Rapporte laufen nie über diese Route (siehe router.param), sondern über /api/n8n/rapporte.
+
 import { Router, json } from 'express';
 import multer from 'multer';
 import { writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
@@ -29,6 +34,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX
 // Dateiname des hochgeladenen PDF-Teils (nur für die Anzeige, services/belegName.js). Multer/busboy
 // lesen den Namen aus dem Content-Disposition-Header als latin1; n8n schickt UTF-8 — zurückwandeln,
 // sofern das ein gültiges UTF-8 ergibt. Pfadanteile und Steuerzeichen weg, auf 255 Zeichen begrenzt.
+// (Siehe Kommentar oben.) @returns {string|null} bereinigter Dateiname des PDF-Teils
 function pdfTeilName(file) {
   let name = String(file?.originalname ?? '');
   const utf8 = Buffer.from(name, 'latin1').toString('utf8');
@@ -37,6 +43,7 @@ function pdfTeilName(file) {
   return name ? name.slice(0, 255) : null;
 }
 
+// Prüft die Dateikennung "%PDF".
 function isPdf(buffer) {
   return buffer.length >= 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
 }
@@ -54,6 +61,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     next();
   });
 
+  // POST /api/n8n/jobs – nimmt eine Rechnung entgegen. Antworten: 201 `{id, status}`; 200 mit `duplikat: true` bei identischen Bytes (idempotent); 400 Eingabefehler; 422 PDF unbrauchbar (beschädigt/verschlüsselt/keine Seiten, `code`).
   router.post('/', (req, res, next) => {
     mitAuditKontext(upload.single('pdf'))(req, res, asyncCallback(next, async (uploadErr) => {
       try {
@@ -82,11 +90,8 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           return res.status(422).json({ error: err.message, code: err.code });
         }
 
-        // Catches the same PDF bytes being submitted twice (an n8n retry, or an IMAP trigger
-        // firing more than once for the same message) — the byte-identical file always hashes
-        // identically, while two genuinely different invoices never do. Returns the existing
-        // job instead of creating a duplicate, so a retried submission is idempotent rather
-        // than an error n8n would need to handle specially.
+        // Fängt dieselben PDF-Bytes ab, die zweimal eingereicht werden (ein Wiederholungsversuch von n8n oder ein mehrfach feuernder IMAP-Trigger für dieselbe Nachricht) — die byte-identische Datei hat immer denselben Hash, zwei wirklich verschiedene Rechnungen nie. Gibt den bestehenden Job zurück, statt ein Duplikat anzulegen, sodass eine
+        // wiederholte Einreichung idempotent ist und kein Fehler, den n8n besonders behandeln müsste.
         const dateiHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
         const vorhandenerJob = findJobByDateiHash(db, dateiHash);
         if (vorhandenerJob) {
@@ -107,10 +112,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           if (Number.isNaN(parsed.getTime())) {
             return res.status(400).json({ error: 'eingang_am ist kein gültiges Datum.' });
           }
-          // Store the normalized ISO form, not the raw input — the reminder/escalation sweeps
-          // compare eingang_am as a plain string against an ISO threshold, so a malformed-but-
-          // parseable value (e.g. non-ISO format) stored raw could otherwise make a job
-          // invisible to those comparisons forever.
+          // Die normalisierte ISO-Form speichern, nicht die Rohangabe — die Erinnerungs-/Eskalationsläufe vergleichen eingang_am als einfachen Text mit einer ISO-Schwelle, ein fehlerhaft formatierter, aber parsbarer Wert (z. B. nicht ISO), roh gespeichert, könnte einen Vorgang dauerhaft für diese Vergleiche unsichtbar machen.
           eingangAm = parsed.toISOString();
         } else {
           eingangAm = new Date().toISOString();
@@ -193,9 +195,8 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     }));
   });
 
-  // Every business and payment field comes from the frozen export evidence (services/exportSnapshot.js),
-  // never from the live job row. Legacy cases without sufficient evidence stay blocked here until an
-  // Altfall decision exists; n8n may trigger a payment only when zahlung.freigegeben is true.
+  // GET /api/n8n/jobs/abholbereit – abgeschlossene Einzelbelege und fertige Splitgruppen mit Metadaten, Zahlungsangaben und `export_nachweis_url`.
+  // Jedes fachliche und Zahlungsfeld stammt aus dem eingefrorenen Exportnachweis (services/exportSnapshot.js), nie aus der aktuellen Vorgangszeile. Altfälle ohne ausreichenden Nachweis bleiben hier gesperrt, bis eine Altfall-Entscheidung vorliegt; n8n darf eine Zahlung nur auslösen, wenn zahlung.freigegeben wahr ist.
   router.get('/abholbereit', (req, res, next) => {
     try {
       const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
@@ -283,6 +284,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     }
   });
 
+  // GET /api/n8n/jobs/archivierung-ausstehend?nach_id= – abgeholte/archivierte Belege ohne Archivquittung (Cursor, höchstens 100).
   router.get('/archivierung-ausstehend', (req, res) => {
     const after = req.query.nach_id ?? '0';
     if (typeof after !== 'string' || !/^\d+$/.test(after) || !Number.isSafeInteger(Number(after))) {
@@ -296,6 +298,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     res.set('Cache-Control', 'no-store').json(rows.map((row) => ({ ...row, export_nachweis_url: `/api/n8n/jobs/${row.id}/exportnachweis` })));
   });
 
+  // GET /api/n8n/jobs/:id/exportnachweis – unveränderliches Exportmanifest (idempotent; 409 bei Mangel, z. B. Zeitstempel fehlt oder Nachprüfung nötig).
   router.get('/:id/exportnachweis', (req, res, next) => {
     try {
       res.set('Cache-Control', 'no-store').json(createExportEvidence(db, Number(req.params.id)));
@@ -305,6 +308,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     }
   });
 
+  // POST /api/n8n/jobs/:id/archivierung-bestaetigen – Archivquittung (setzt den Vorgang auf 'abgeholt', falls noch nicht geschehen).
   router.post('/:id/archivierung-bestaetigen', json({ limit: '8kb' }), (req, res, next) => {
     try {
       const quittung = confirmArchiveReceipt(db, Number(req.params.id), req.body);
@@ -315,6 +319,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     }
   });
 
+  // GET /api/n8n/jobs/:id/exportdatei/:exportId – Exportdatei (PDF), nur wenn der Hash zum Manifest passt.
   router.get('/:id/exportdatei/:exportId', (req, res, next) => {
     try {
       const bytes = readExportDocument(db, Number(req.params.id), req.params.exportId);
@@ -325,7 +330,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     }
   });
 
-  // Compatibility ACK records transport only. It never proves archival or deletes files.
+  // POST /api/n8n/jobs/:id/abholung-bestaetigen – ältere Transport-Bestätigung: setzt 'abgeholt' (bei Splitgruppen die ganze Gruppe), beweist aber nie die Archivierung und löscht keine Dateien; 409, wenn gesperrt oder noch ohne Zeitstempel.
   router.post('/:id/abholung-bestaetigen', (req, res, next) => {
     const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
     const id = Number(req.params.id);

@@ -1,9 +1,13 @@
+// Admin → Module (`/admin/module`, Recht `module_verwalten`, docs/admin-bereich.md): schaltet die optionalen Module Spesen, Kreditkartenbelege und Rapporte ein/aus und enthält weitere Schalter:
+// strikte Freigeber-1-Prüfung bei der Kontierung, lokale Zeit im Audit-Log und die Schwelle "länger offen" der Auswertung (1–365 Tage). Spesen aus blockiert nur neue Einreichungen.
+
 import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 
 export function createModuleRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // Aktuelle Schalterstellungen.
   function werte() {
     return {
       spesenAktiv: getConfigValue(db, 'modul_spesen_aktiv') !== '0',
@@ -16,10 +20,12 @@ export function createModuleRouter({ db, csrfProtection = (req, res, next) => ne
     };
   }
 
+  // GET /admin/module – die Schalter.
   router.get('/', (req, res) => {
     res.render('admin/module-form', { ...werte(), gespeichert: req.query.gespeichert === '1' });
   });
 
+  // POST /admin/module – speichert die Schalter; ein nicht gesendetes Feld bedeutet "aus" (Checkbox), nur die Schwelle bleibt dann unverändert.
   router.post('/', csrfProtection, (req, res) => {
     // Fehlt das Feld (ältere Formulare), bleibt der gespeicherte Wert unverändert.
     const schwelle = req.body.auswertungOffenSchwelleTage;
@@ -32,8 +38,7 @@ export function createModuleRouter({ db, csrfProtection = (req, res, next) => ne
         gespeichert: false,
       });
     }
-    // An unchecked HTML checkbox submits no field at all, so its absence means "off" here —
-    // same convention as this app's other on/off admin_config flags (e.g. audit_log_lokale_zeit).
+    // Eine nicht angehakte HTML-Checkbox sendet gar kein Feld, ihr Fehlen bedeutet hier also "aus" — dieselbe Konvention wie bei den anderen Ein/Aus-Flags in admin_config (z. B. audit_log_lokale_zeit).
     setConfigValue(db, 'modul_spesen_aktiv', req.body.spesenAktiv ? '1' : '0');
     setConfigValue(db, 'modul_kreditkarten_aktiv', req.body.kreditkartenAktiv ? '1' : '0');
     setConfigValue(db, 'modul_rapporte_aktiv', req.body.rapporteAktiv ? '1' : '0');

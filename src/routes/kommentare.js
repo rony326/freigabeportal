@@ -1,3 +1,5 @@
+// Kommentare an Vorgängen (`POST /kommentare/:jobId`, docs/kommentare.md) und die Hilfsfunktion `kommentarBereich` für die Views. Sichtrecht und Regeln: services/kommentare.js. Zugang: angemeldet.
+
 import { Router } from 'express';
 import { getJobById } from '../db/jobsRepo.js';
 import {
@@ -28,12 +30,14 @@ const ZURUECK_MUSTER = [
   /^\/zeitstempel-pruefen\?jobId=\d+$/,
 ];
 
+// Rücksprungziel nur aus der Positivliste (sonst null) – verhindert offene Weiterleitungen.
 export function sicheresZiel(zurueck) {
   return typeof zurueck === 'string' && ZURUECK_MUSTER.some((re) => re.test(zurueck)) ? zurueck : null;
 }
 
 // Locals für views/_kommentare.ejs. Markiert die Kommentare als gelesen (jede eingebundene Seite).
 // null, wenn die Person die Kommentare nicht sehen darf (Seite zeigt dann keinen Bereich).
+// (Siehe Kommentar oben.) @returns {object|null} Daten für `views/_kommentare.ejs` oder null ohne Sichtrecht
 export function kommentarBereich(db, config, person, job, zurueck) {
   if (!job || !person || !darfKommentareSehen(db, config, person, job)) return null;
   markiereGelesen(db, job.id, person.churchtools_person_id);
@@ -63,6 +67,7 @@ export function createKommentareRouter({ db, config, mailer, csrfProtection = (r
     });
   }
 
+  // POST /kommentare/:jobId – speichert einen Kommentar (422 bei Validierungsfehlern, 403 ohne Sichtrecht) und leitet zurück an die Seite des Vorgangs.
   router.post('/:jobId', csrfProtection, asyncHandler(async (req, res) => {
     const job = /^\d+$/.test(req.params.jobId) ? getJobById(db, Number(req.params.jobId)) : null;
     if (!job || !darfKommentareSehen(db, config, req.currentPerson, job)) {

@@ -1,3 +1,5 @@
+// Admin → Sync-Übersicht (`/admin/sync`, Recht `sync_einsehen`, docs/personen-sync.md): Protokoll des ChurchTools-Personenabgleichs, Schutzgrenzen (Recht `sync_verwalten`) und "hängende" Vorgänge, deren zuständige Person nicht mehr handeln kann (Freigeben mit Recht `workflow_eingreifen`).
+
 import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
 import { listRecentSyncLogs } from '../../db/syncLogRepo.js';
@@ -5,6 +7,7 @@ import { listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin } fro
 import { getPersonById } from '../../db/personenRepo.js';
 import { requirePermission, personHasPermission } from '../../middleware/permissions.js';
 
+// Hängende Vorgänge samt Namen der betroffenen Person.
 function ladeStalledJobsMitNamen(db) {
   return listStalledJobs(db).map(({ job, akteurId, grund }) => {
     const akteur = getPersonById(db, akteurId);
@@ -24,6 +27,7 @@ export function createSyncRouter({ db, config = { churchtools: {} }, csrfProtect
     next();
   });
 
+  // GET /admin/sync – Protokoll, Schutzgrenzen, hängende Vorgänge.
   router.get('/', (req, res) => {
     res.render('admin/sync', {
       maxDeaktivierungProzent: getConfigValue(db, 'sync_max_deaktivierung_prozent'),
@@ -35,6 +39,7 @@ export function createSyncRouter({ db, config = { churchtools: {} }, csrfProtect
     });
   });
 
+  // POST /admin/sync – speichert die Schutzgrenzen (Prozent und Anzahl, ab denen ein Sync-Lauf abbricht).
   router.post('/', requirePermission(db, config, 'sync_verwalten'), csrfProtection, (req, res, next) => {
     const { maxDeaktivierungProzent, maxDeaktivierungAnzahl } = req.body;
     const errors = [];
@@ -71,6 +76,7 @@ export function createSyncRouter({ db, config = { churchtools: {} }, csrfProtect
     res.redirect('/admin/sync?gespeichert=1');
   });
 
+  // POST /admin/sync/stalled/:jobId/freigeben – gibt einen hängenden Vorgang frei (Pool) bzw. eskaliert ihn an die Admin-Gruppe (Freigabe 2).
   router.post('/stalled/:jobId/freigeben', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, (req, res, next) => {
     const jobId = Number(req.params.jobId);
     const reason = typeof req.body?.begruendung === 'string' ? req.body.begruendung.trim() : '';

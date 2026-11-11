@@ -220,7 +220,7 @@ async function runFreigabe2ErinnerungenJobInternal(db, config, mailer) {
       let reminder = 0;
       for (const job of listFreigabe2JobsForReminder(db, reminderStunden)) {
         const konto = getKontoById(db, job.konto_id);
-        if (!konto) continue; // deleted/unresolvable Konto -- listStalledJobs covers this separately
+        if (!konto) continue; // gelöschtes/nicht auflösbares Konto -- listStalledJobs deckt das getrennt ab
         const akteurId = getEffectiveFreigeber2Id(job, konto);
         const akteur = getPersonById(db, akteurId);
         if (!akteur || !akteur.aktiv || akteur.ct_person_unresolved) continue; // ditto -- inactive/unresolved actor
@@ -246,7 +246,7 @@ async function runFreigabe2ErinnerungenJobInternal(db, config, mailer) {
       for (const job of listFreigabe2JobsForEskalation(db, eskalationStunden)) {
         // Eskalation und Mail in derselben Transaktion: scheitert das Einreihen, bleibt auch die
         // Eskalation aus und der nächste Lauf versucht beides erneut.
-        if (!forceEskalierenFreigabe2AnAdmin(db, job.id)) continue; // race: already handled
+        if (!forceEskalierenFreigabe2AnAdmin(db, job.id)) continue; // Wettlauf: schon erledigt
         for (const email of empfaenger) {
           eintraege.push(reiheBenachrichtigungEin(db, {
             to: email,

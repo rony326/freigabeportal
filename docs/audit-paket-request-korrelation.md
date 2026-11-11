@@ -75,7 +75,7 @@ Loeschung oder der Archivierung des Backup-Inhalts.
 
 ## Korrelation von Hintergrundlaeufen
 
-Alle neun exportierten Job-Funktionen erhalten je Aufruf eine frische Lauf-UUID,
+Alle über `auditedJob` (`src/services/auditOperation.js`) gekapselten Job-Funktionen (Stand 1.2.1: siebzehn, alle Scheduler-Jobs sowie die Prüfung verwaister Dateien) erhalten je Aufruf eine frische Lauf-UUID,
 unabhaengig davon, ob Scheduler, Cron-API oder Administrator sie startet. Der Akteur
 bleibt erhalten; die authentifizierte Cron-API setzt `service:cron`, der Scheduler
 laeuft standardmaessig als System. HTTP-Request-ID und Lauf-ID koennen gleichzeitig

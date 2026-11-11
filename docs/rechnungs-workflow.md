@@ -142,7 +142,7 @@ Server prüft zusätzlich in Kontierung und Aufsplitten (pro Zeile) und lehnt ei
 («Dieses Konto kann nicht für Rechnungen/Gutschriften verwendet werden»). Bereits kontierte Vorgänge bleiben
 unverändert, auch wenn ein Konto später umgestellt wird.
 
-**Rechnung oder Gutschrift**: ein `typ`-Radio (Default `rechnung`) im
+**Rechnung oder Gutschrift** (steht als erste Auswahl ganz oben im Formular, noch vor dem Konto, weil sie die Konto-Auswahl bestimmt): ein `typ`-Radio (Default `rechnung`) im
 Kontierungsformular setzt `jobs.typ`. Der Betrag bleibt in der Datenbank in
 beiden Fällen positiv — allein `typ` trägt die Bedeutung, es gibt keine
 Vorzeichen-/Gegenbuchungslogik. Bei `gutschrift` ist das Zahlungsziel

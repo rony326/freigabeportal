@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { auffaelligkeitenKasten } from '../services/auffaelligkeitenAnzeige.js';
 import { personHasRole } from '../middleware/roles.js';
 import { personHasPermission } from '../middleware/permissions.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
@@ -141,6 +142,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       ...rapportAnsicht(job),
       previewUrl: buildSignedDownloadUrl(config, job.id, PDF_PREVIEW_TTL_SECONDS),
       kkHinweis: kkHinweisFuerJob(db, job),
+      auffaelligkeitenBestaetigt: auffaelligkeitenKasten(db, job.id),
       values: {
         kontoId: job.konto_id ? String(job.konto_id) : '',
         typ: job.typ || 'rechnung',

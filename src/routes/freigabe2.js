@@ -18,6 +18,7 @@ import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger } fr
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../services/splitGruppenExport.js';
+import { auffaelligkeitenKasten } from '../services/auffaelligkeitenAnzeige.js';
 import { kkHinweisFuerJob } from '../services/kkStempel.js';
 import { writeFinalDocument } from '../services/finalDocument.js';
 import { tsaTrustOptions } from '../services/tsaTrust.js';
@@ -142,6 +143,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       paymentReview,
       auditLog: buildAuditLog(db, job.id),
       kkHinweis: kkHinweisFuerJob(db, job),
+      auffaelligkeitenBestaetigt: auffaelligkeitenKasten(db, job.id),
       kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/freigabe2/${job.id}`),
       kommentarStand: kommentarStandVon(db, job.id),
     });

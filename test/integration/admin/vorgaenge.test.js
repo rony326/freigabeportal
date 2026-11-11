@@ -346,3 +346,18 @@ test('allgemeines Umhängen bietet Rapporte nicht an', async (t) => {
     .send({ zielId: '5', bemerkung: 'Zuständigkeit geklärt', bestaetigung: 'ja', stand: 'x' });
   assert.equal(post.status, 404);
 });
+
+test('Detail zeigt den Kasten mit bestätigten Auffälligkeiten, ohne Bestätigung keinen', async () => {
+  const db = openDatabase(':memory:');
+  const jobId = seed(db);
+  const app = buildApp(db);
+  const ohne = await request(app).get(`/admin/vorgaenge/${jobId}`).set('x-test-person-id', '99');
+  assert.doesNotMatch(ohne.text, /bewusst bestätigt/);
+  db.prepare('INSERT INTO kontierung_auffaelligkeiten (job_id, person_id, zeitpunkt, befunde_json, bemerkung) VALUES (?, ?, ?, ?, ?)')
+    .run(jobId, '1', '2026-11-10T13:32:00.000Z', JSON.stringify([{ code: 'iban_neu', schwere: 'rot', titel: 'IBAN nicht hinterlegt', text: 'CH93' }]), 'telefonisch');
+  const mit = await request(app).get(`/admin/vorgaenge/${jobId}`).set('x-test-person-id', '55');
+  assert.match(mit.text, /1 Auffälligkeit, bewusst bestätigt/);
+  assert.match(mit.text, /Bestätigt von <strong>P1 M<\/strong> am 10\.11\.2026, 14:32/);
+  assert.match(mit.text, /telefonisch/);
+  db.close();
+});

@@ -3881,3 +3881,20 @@ test('POST /kontierung/:id verlangt keine ibanEndung bei QR-Code, Lastschrift od
     db.close();
   }
 });
+
+test('GET /kontierung/:id zeigt bei erneuter Kontierung die bestätigten Auffälligkeiten der letzten Kontierung', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  upsertPerson(db, { id: '1', vorname: 'Frei', nachname: 'Geber', email: 'frei@example.org', gruppen: [], loggedInNow: true });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const ohne = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.doesNotMatch(ohne.text, /bewusst bestätigt/);
+  db.prepare('INSERT INTO kontierung_auffaelligkeiten (job_id, person_id, zeitpunkt, befunde_json, bemerkung) VALUES (?, ?, ?, ?, ?)')
+    .run(id, '1', '2026-11-10T13:32:00.000Z', JSON.stringify([{ code: 'iban_neu', schwere: 'rot', titel: 'IBAN nicht hinterlegt', text: 'CH93' }]), null);
+  const mit = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.match(mit.text, /1 Auffälligkeit, bewusst bestätigt/);
+  assert.match(mit.text, /Bestätigt von <strong>Frei Geber<\/strong> am 10\.11\.2026, 14:32/);
+  db.close();
+});

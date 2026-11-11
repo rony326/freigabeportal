@@ -77,6 +77,8 @@ erDiagram
         text name
         int konto_id FK "optionales Default-Konto"
         int aktiv
+        text zahlungsart "ueberweisung | dauerauftrag | lastschrift | kreditkarte"
+        int betrag_schwankt "0/1"
     }
     kreditor_ibans {
         int id PK
@@ -192,7 +194,7 @@ erDiagram
         int id PK
         int job_id FK "kein enforced FK, siehe unten"
         text person_id FK
-        text rolle "20 mögliche Werte"
+        text rolle "22 mögliche Werte"
         text zeitpunkt
         text ip
         int interessenskonflikt
@@ -327,10 +329,25 @@ eigenes Audit-Log für Belege, solange sie noch keine `jobs`-Zeile haben
 
 ### `kreditor_ibans`
 Ein Kreditor kann mehrere bekannte IBANs haben (`quelle`: manuell vom Admin
-erfasst, oder `bestaetigt` — automatisch übernommen, wenn eine Person bei
-der Kontierung einen unbekannten QR-Code-IBAN explizit bestätigt). Basis
-für den Betrugserkennungs-Abgleich, siehe
+erfasst; neue IBANs entstehen nur noch im Admin. `bestaetigt` ist ein
+Altwert aus der entfernten Funktion „IBAN merken“; solche Zeilen bleiben
+gültig). Basis für die Betrugserkennung, siehe
 [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md).
+
+`kreditoren.zahlungsart` (`ueberweisung` Default | `dauerauftrag` |
+`lastschrift` | `kreditkarte`) legt fest, ob eine IBAN Pflicht ist (nur bei
+Überweisung und Dauerauftrag; sonst ist der Lieferant nie „unvollständig“).
+`kreditoren.betrag_schwankt` schaltet die Prüfung „ungewöhnlich hoher Betrag“
+für diesen Lieferanten ab.
+
+### `kontierung_auffaelligkeiten`
+Bewusst bestätigte Auffälligkeiten aus dem Prüf-Popup: `job_id` → `jobs`,
+`person_id`, `zeitpunkt`, `befunde_json` (Liste aus `code`, `schwere`, `titel`,
+`text`) und `bemerkung` („Wie hast du geprüft?“). Append-only: Trigger
+verhindern UPDATE und DELETE. Eine Zeile pro bestätigter Kontierung; beim
+Aufsplitten bekommt jedes Teil-Job-Kind eine. Speist den Kasten
+„Auffälligkeiten, bewusst bestätigt“ (Freigabe 2, Kontierung, Admin-Vorgang).
+Details: [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md).
 
 ### `jobs`
 Die zentrale Tabelle — eine Zeile pro Rechnung/Beleg/Spesen-Position.
@@ -429,6 +446,9 @@ Foreign Key.
 
 `vertretung_fuer` ist gesetzt, wenn die handelnde Person zum Zeitpunkt der Aktion aktiver
 Ferienmodus-Stellvertreter der eigentlich zuständigen Person war — sonst `NULL`.
+
+Die Rollen `iban_manuell_geprueft` (manuelle 4-Zeichen-Kontrolle ohne QR-Code, Ergebnis im
+`kommentar`) und `auffaelligkeiten_bestaetigt` (Prüf-Popup bestätigt) sind neu.
 
 `vorher_zustaendig`/`ziel_person_id` sind nur bei `rolle = 'admin_umzuweisung'` gesetzt (vorher zuständige Person — `NULL` bei Pool/Admin-Gruppe — und Zielperson).
 

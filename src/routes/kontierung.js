@@ -215,6 +215,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           qrInfo: buildQrInfo(db, job),
           errors: [ergebnis.fehler],
           auditLog: buildAuditLog(db, job.id),
+          auffaelligkeitenBestaetigt: auffaelligkeitenKasten(db, job.id),
         });
       }
       const konten = ladeKontenFuerJob(req, job);
@@ -252,6 +253,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           feldFehlerAttr,
           auditLog: buildAuditLog(db, job.id),
           auffaelligkeiten,
+          auffaelligkeitenBestaetigt: auffaelligkeitenKasten(db, job.id),
         });
 
       // `messages`: Text oder neueFehler()-Sammler; `feld` ordnet einen einzelnen Text einem Feld zu.

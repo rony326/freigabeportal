@@ -3898,3 +3898,25 @@ test('GET /kontierung/:id zeigt bei erneuter Kontierung die bestätigten Auffäl
   assert.match(mit.text, /Bestätigt von <strong>Frei Geber<\/strong> am 10\.11\.2026, 14:32/);
   db.close();
 });
+
+test('POST /kontierung/:id: der Kasten mit bestätigten Auffälligkeiten bleibt nach einem Validierungsfehler sichtbar', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedKontoAndPersonen(db);
+  const { speichereBestaetigung } = await import('../../src/db/auffaelligkeitenRepo.js');
+  const jobId = createJob(db, { eingangAm: '2026-09-06T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  speichereBestaetigung(db, { jobId, personId: '1', befunde: [{ code: 'x', titel: 'Betrag ungewöhnlich', text: 'Mehr als üblich.' }], bemerkung: 'Telefonisch geprüft' });
+  const app = buildTestApp(db, { async sendMail() {} });
+
+  const res = await request(app)
+    .post(`/kontierung/${jobId}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ aktion: 'kontieren', kontoId: '', absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '10.00', zahlungsziel: '2026-10-01', typ: 'rechnung', interessenskonflikt: '' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /data-auffaelligkeiten-bestaetigt/);
+  assert.match(res.text, /Telefonisch geprüft/);
+  db.close();
+});

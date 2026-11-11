@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults, setConfigValue, getConfigValue } from '../../src/db/adminConfigRepo.js';
+import { listKreditoren, istKreditorVollstaendig } from '../../src/db/kreditorenRepo.js';
 import { erstelleSpielwiese, entferneSpielwiese, testmodusPfade } from '../../src/services/testmodus/spielwiese.js';
 
 function umgebung() {
@@ -36,7 +37,7 @@ test('erstellt DB, Verzeichnisse, Beispieldaten', async () => {
   assert.ok(existsSync(join(p.brandingDir, 'logo.png')));
   assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM personen').get().c, 5);
   assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM konten').get().c, 2);
-  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 2);
+  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 3);
   const status = sp.db.prepare("SELECT status, COUNT(*) c FROM jobs WHERE quelle != 'spesen' GROUP BY status").all().map((r) => r.status).sort();
   assert.deepEqual(status, ['abgelehnt', 'abgeschlossen', 'freigabe2', 'kenntnisnahme', 'unzugewiesen', 'zugewiesen']);
   assert.equal(sp.db.prepare("SELECT COUNT(*) c FROM jobs WHERE quelle = 'spesen'").get().c, 1);
@@ -84,10 +85,10 @@ test('neu=true setzt zurück, ohne neu bleibt Zusatzdaten', async () => {
   sp.db.prepare("INSERT INTO kreditoren (name, aktiv) VALUES ('Eigener', 1)").run();
   sp.db.close();
   sp = await erstelleSpielwiese(db, config);
-  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 3);
+  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 4);
   sp.db.close();
   sp = await erstelleSpielwiese(db, config, { neu: true });
-  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 2);
+  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 3);
   assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM personen').get().c, 5);
   sp.db.close(); db.close();
 });
@@ -147,7 +148,7 @@ test('unvollständige Spielwiese (ohne Bereit-Marker) wird neu erstellt', async 
   sp.db.prepare("INSERT INTO kreditoren (name, aktiv) VALUES ('Rest', 1)").run();
   sp.db.close();
   sp = await erstelleSpielwiese(db, config);
-  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 2);
+  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 3);
   assert.equal(getConfigValue(sp.db, 'testmodus_bereit'), '1');
   sp.db.close(); db.close();
 });
@@ -163,7 +164,7 @@ test('vorhandene Spielwiese erhält beim Wiederöffnen fehlende Standardwerte (A
   assert.equal(getConfigValue(sp.db, 'kk_beleg_erinnerung_tage'), '45');
   assert.equal(getConfigValue(sp.db, 'mail_vorlage_kk_abrechnung_zugewiesen_betreff'), 'Freigabeportal: Kreditkartenabrechnung zum Abgleich');
   assert.equal(getConfigValue(sp.db, 'footer_text'), 'In der Spielwiese geändert');
-  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 3, 'wiedergeöffnet, nicht neu erstellt');
+  assert.equal(sp.db.prepare('SELECT COUNT(*) c FROM kreditoren').get().c, 4, 'wiedergeöffnet, nicht neu erstellt');
   sp.db.close(); db.close();
 });
 
@@ -188,4 +189,15 @@ test('relative Pfade werden absolut aufgelöst', () => {
   assert.equal(p.brandingDir, resolve('data/branding-testmodus'));
   assert.equal(p.dbPath, resolve('data/portal.sqlite.testmodus.db'));
   assert.equal(p.backupDir, resolve('data/portal.sqlite.testmodus-backups'));
+});
+
+test('Beispiel-Lieferanten sind vollständig, mit Zahlungsart; mindestens einer per Lastschrift ohne IBAN', async () => {
+  const { config, db } = umgebung();
+  const sp = await erstelleSpielwiese(db, config);
+  const kreditoren = listKreditoren(sp.db);
+  assert.ok(kreditoren.length >= 3);
+  for (const k of kreditoren) assert.equal(istKreditorVollstaendig(sp.db, k), true, k.name);
+  assert.ok(kreditoren.some((k) => k.zahlungsart === 'lastschrift'));
+  assert.ok(kreditoren.some((k) => k.zahlungsart === 'ueberweisung'));
+  sp.db.close(); db.close();
 });

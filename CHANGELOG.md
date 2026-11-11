@@ -3,9 +3,9 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unreleased] – 1.1.0 (Entwurf)
+## [1.1.0] – 2026-11-11
 
-Release Notes (Entwurf): [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md).
+Release Notes: [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md).
 
 - Betrugserkennung: Zahlungsart und Pflicht-IBAN pro Lieferant (Lieferanten
   ohne IBAN sind bei der Kontierung nicht wählbar), internationale IBANs in den
@@ -55,6 +55,7 @@ Erste produktive Version. Ausführliche Release Notes:
 Release-Kandidat: Fundament mit ChurchTools-Login, Admin-Bereich,
 n8n-Schnittstelle, Freigabe-Workflow und Datenbank-Backup.
 
+[1.1.0]: https://github.com/rony326/freigabeportal/releases/tag/v1.1.0
 [1.0.1]: https://github.com/rony326/freigabeportal/releases/tag/v1.0.1
 [1.0.0]: https://github.com/rony326/freigabeportal/releases/tag/v1.0.0
 [0.1.0-rc.1]: https://github.com/rony326/freigabeportal/releases/tag/v0.1.0-rc.1

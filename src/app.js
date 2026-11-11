@@ -47,6 +47,7 @@ import { createAuditLogRouter } from './routes/admin/auditLog.js';
 import { createGeplanteJobsRouter } from './routes/admin/geplanteJobs.js';
 import { createBackupRouter } from './routes/admin/backup.js';
 import { createModuleRouter } from './routes/admin/module.js';
+import { wartungsmodusSperre } from './middleware/wartungsmodus.js';
 import { createGruppenrechteRouter } from './routes/admin/gruppenrechte.js';
 import { createAltfaelleRouter } from './routes/admin/altfaelle.js';
 import { createDateiQuarantaeneRouter } from './routes/admin/dateiQuarantaene.js';
@@ -258,6 +259,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use(auditContext);
   app.use(zugriffsAuditMiddleware(db));
   app.use(loadNavFlags(db, config));
+  app.use(wartungsmodusSperre(db, config));
 
   const mailer = injectedMailer ?? (testmodus ? createTestMailer() : createMailerOrFallback(config.smtp));
 

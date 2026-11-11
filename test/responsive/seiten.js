@@ -121,6 +121,7 @@ export const AUSGENOMMEN = [
   { view: 'admin/testmodus', grund: 'Nur in der echten App: die Test-Instanz montiert /admin/testmodus nicht (Steuerung des Testmodus).' },
   { view: 'admin/backup', grund: 'Nur in der echten App: im Testmodus ist /admin/backup gesperrt (403-Fehlerseite, siehe "Fehlerseite 403").' },
   { view: 'admin/budgets-import', grund: 'Braucht einen vorherigen Datei-Upload in derselben Session (Vorschau liegt nur 15 Minuten in der Session).' },
+  { view: 'wartung', grund: 'Erscheint nur bei aktivem Wartungsmodus (503) in der echten App; die Test-Instanz kennt keinen Wartungsmodus.' },
   { view: 'abgemeldet', grund: 'Nur in der echten App: /auth ist in der Test-Instanz nicht montiert (keine Anmeldung im Testmodus).' },
 ];
 

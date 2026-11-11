@@ -1,0 +1,13 @@
+<%- include('_seite_anfang', { titel: 'Wartungsarbeiten', rahmen: 'kompakt' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Wartungsarbeiten</h1>
+    </div>
+    <p class="alert alert-warning">Das Portal wird gerade gewartet. Bitte versuch es später wieder.</p>
+    <% if (hinweis) { %><p style="white-space: pre-line"><%= hinweis %></p><% } %>
+    <% if (locals.currentPerson) { %>
+      <form method="post" action="/auth/logout">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <button type="submit" class="btn btn-outline-secondary">Abmelden</button>
+      </form>
+    <% } %>
+<%- include('_seite_ende') %>

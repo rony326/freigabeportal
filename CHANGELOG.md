@@ -14,7 +14,7 @@ Datenbank-Migration (läuft beim Start).
   Admin-Seiten mit eigenem Recht, Änderungen im Audit-Log.
 - Konten mit Buchungsart (Rechnung / Gutschrift / beides): Kontierung und
   Aufsplitten filtern die Konto-Auswahl nach Typ, serverseitige Prüfung; Spesen
-  als Rechnung, Kreditkarten nach Vorzeichen; Standard-Konto von Lieferanten
+  als Rechnung, Kreditkarten nach Vorzeichen; «Art des Belegs» steht in der Kontierung vor dem Konto; Standard-Konto von Lieferanten
   muss Rechnungen erlauben.
 - Wartungsmodus für Updates: Wartungsseite (503), Mails zurückgehalten, n8n-Eingang
   503 mit Retry-After, geplante Jobs pausiert (ausser Datenbank-Sicherung).

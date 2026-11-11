@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
+import { getPersonById } from '../../db/personenRepo.js';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Länge begrenzen, bevor das Muster läuft: so bleibt die Prüfung auch bei sehr langer Eingabe schnell.
@@ -10,16 +11,27 @@ const EMAIL_MAX_LAENGE = 320;
 // already resolves both tokens.
 const GRUPPE_TOKENS = ['gruppe:buchhaltung', 'gruppe:admin'];
 
-export function validateEmpfaengerListe(value, label, errors) {
+// Zeilen: "gruppe:..."-Token, "person:<churchtools_person_id>" (nur mit db; die Person muss existieren,
+// aktiv oder nicht) oder eine E-Mail-Adresse. leerErlaubt: leer = Default des Aufrufers.
+export function validateEmpfaengerListe(value, label, errors, { db = null, leerErlaubt = false } = {}) {
   const zeilen = (value || '')
     .split('\n')
     .map((zeile) => zeile.trim())
     .filter(Boolean);
   if (zeilen.length === 0) {
+    if (leerErlaubt) return;
     errors.push(`${label} braucht mindestens ein Ziel.`);
     return;
   }
   for (const zeile of zeilen) {
+    if (zeile.startsWith('person:')) {
+      if (!db) {
+        errors.push(`${label}: Personen-Einträge ("person:<id>") sind hier nicht möglich.`);
+      } else if (!getPersonById(db, zeile.slice('person:'.length).trim())) {
+        errors.push(`${label}: unbekannte Person in "${zeile.length > 80 ? `${zeile.slice(0, 80)}…` : zeile}".`);
+      }
+      continue;
+    }
     if (!GRUPPE_TOKENS.includes(zeile) && !(zeile.length <= EMAIL_MAX_LAENGE && EMAIL_PATTERN.test(zeile))) {
       errors.push(`${label}: "${zeile.length > 80 ? `${zeile.slice(0, 80)}…` : zeile}" ist weder eine gültige E-Mail-Adresse noch "${GRUPPE_TOKENS.join('"/"')}".`);
     }
@@ -80,13 +92,11 @@ export function createEskalationRouter({ db, csrfProtection = (req, res, next) =
       errors.push('Rapporte – Eskalations-Stunden muss eine positive Ganzzahl sein.');
     }
     // Leer ist erlaubt: dann geht die Eskalation an die Admin-Gruppe.
-    if ((rapportEskalationEmpfaenger || '').trim() !== '') {
-      validateEmpfaengerListe(rapportEskalationEmpfaenger, 'Rapporte – Eskalations-Empfänger', errors);
-    }
-    validateEmpfaengerListe(reminderEmpfaenger, 'Reminder-Empfänger', errors);
-    validateEmpfaengerListe(eskalationEmpfaenger, 'Eskalations-Empfänger', errors);
-    validateEmpfaengerListe(ibanAbweichungEmpfaenger, 'IBAN-Abweichungs-Empfänger', errors);
-    validateEmpfaengerListe(freigabe2EskalationEmpfaenger, 'Freigabe 2 – Übergabe-Empfänger', errors);
+    validateEmpfaengerListe(rapportEskalationEmpfaenger, 'Rapporte – Eskalations-Empfänger', errors, { db, leerErlaubt: true });
+    validateEmpfaengerListe(reminderEmpfaenger, 'Reminder-Empfänger', errors, { db });
+    validateEmpfaengerListe(eskalationEmpfaenger, 'Eskalations-Empfänger', errors, { db });
+    validateEmpfaengerListe(ibanAbweichungEmpfaenger, 'IBAN-Abweichungs-Empfänger', errors, { db });
+    validateEmpfaengerListe(freigabe2EskalationEmpfaenger, 'Freigabe 2 – Übergabe-Empfänger', errors, { db });
 
     if (errors.length > 0) {
       return res.status(400).render('admin/eskalation-form', { reminderStunden, eskalationStunden, reminderEmpfaenger, eskalationEmpfaenger, ibanAbweichungEmpfaenger, freigabe2ReminderStunden, freigabe2EskalationStunden, freigabe2EskalationEmpfaenger, rapportReminderStunden, rapportEskalationStunden, rapportEskalationEmpfaenger, errors, gespeichert: false });

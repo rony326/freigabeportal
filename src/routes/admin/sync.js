@@ -49,7 +49,7 @@ export function createSyncRouter({ db, config = { churchtools: {} }, csrfProtect
     if (!Number.isInteger(anzahlNum) || anzahlNum <= 0) {
       errors.push('Max. Deaktivierungs-Anzahl muss eine positive Ganzzahl sein.');
     }
-    validateEmpfaengerListe(syncFehlerEmpfaenger, 'Sync-Fehler-Empfänger', errors);
+    validateEmpfaengerListe(syncFehlerEmpfaenger, 'Sync-Fehler-Empfänger', errors, { db });
 
     if (errors.length > 0) {
       return res.status(400).render('admin/sync', {

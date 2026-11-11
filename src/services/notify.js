@@ -112,6 +112,8 @@ export async function sendNotification(db, mailer, { to, typ, jobId, variablen =
   }
 }
 
+const PERSON_TOKEN_PREFIX = 'person:';
+
 export function resolveEmpfaenger(db, config, konfigWert) {
   if (!konfigWert) return [];
   const zeilen = konfigWert
@@ -128,6 +130,10 @@ export function resolveEmpfaenger(db, config, konfigWert) {
       for (const person of listActivePersonsInGroup(db, config.churchtools.groupIdAdmin)) {
         empfaenger.add(person.email);
       }
+    } else if (zeile.startsWith(PERSON_TOKEN_PREFIX)) {
+      // Aktuelle Mail der Person; inaktive oder mail-lose Personen werden still übersprungen.
+      const person = getPersonById(db, zeile.slice(PERSON_TOKEN_PREFIX.length).trim());
+      if (person && person.aktiv && person.email) empfaenger.add(person.email);
     } else {
       empfaenger.add(zeile);
     }

@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { seedGruppenBerechtigungen } from './gruppenBerechtigungenRepo.js';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -1315,5 +1316,6 @@ export function openDatabase(dbPath) {
   migrateSicherheitsalarmSchema(db);
   migrateTsaNachweisSchema(db);
   migrateAuditExportSchema(db);
+  seedGruppenBerechtigungen(db);
   return db;
 }

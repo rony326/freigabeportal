@@ -30,6 +30,14 @@ CREATE TABLE IF NOT EXISTS person_berechtigungen (
   PRIMARY KEY (person_id, berechtigung)
 );
 
+-- Rechte pro ChurchTools-Gruppe (superadmin, manager, buchhaltung). Bewusst ohne CHECK auf
+-- berechtigung: gueltig ist, was services/berechtigungKatalog.js kennt (spart Tabellen-Neuaufbauten).
+CREATE TABLE IF NOT EXISTS gruppen_berechtigungen (
+  gruppe TEXT NOT NULL,
+  berechtigung TEXT NOT NULL,
+  PRIMARY KEY (gruppe, berechtigung)
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   sid TEXT PRIMARY KEY,
   sess TEXT NOT NULL,

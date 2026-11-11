@@ -1,3 +1,4 @@
+import { personHasRole } from '../middleware/roles.js';
 import { Router } from 'express';
 import { getJobById, wiederOeffnenJob } from '../db/jobsRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -10,7 +11,7 @@ export function createAblehnungRouter({ db, config, csrfProtection = (req, res, 
   const router = Router();
 
   function isSuperadmin(person) {
-    return Boolean(person && person.gruppen.includes(String(config.churchtools.groupIdAdmin)));
+    return personHasRole(person, config, 'superadmin');
   }
 
   function loadAuthorizedJob(req, res) {

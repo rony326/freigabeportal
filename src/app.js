@@ -207,6 +207,9 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   if (!testmodus) app.use(
     session({
       store: new SqliteSessionStore(db),
+      // Hinter HTTPS mit __Host--Präfix (nur Secure, Path=/, ohne Domain-Attribut): ein Cookie dieses
+      // Namens kann nicht von einer Subdomain aus gesetzt oder überschrieben werden.
+      name: config.publicBaseUrl?.startsWith('https://') ? '__Host-portal.sid' : 'connect.sid',
       secret: config.sessionSecret,
       resave: false,
       saveUninitialized: false,
@@ -217,7 +220,9 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
         // would otherwise silently boot the app without the Secure flag on a TLS-required deployment.
         secure: Boolean(config.publicBaseUrl?.startsWith('https://')),
         sameSite: 'lax',
-        maxAge: 24 * 60 * 60 * 1000,
+        // 8 Stunden: Gruppenänderungen aus ChurchTools (Rollenentzug) greifen spätestens nach dem
+        // nächsten Sync oder Login; die ChurchTools-Anmeldung dahinter erneuert still.
+        maxAge: 8 * 60 * 60 * 1000,
       },
     })
   );

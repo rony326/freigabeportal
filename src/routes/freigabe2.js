@@ -1,3 +1,4 @@
+import { personHasRole } from '../middleware/roles.js';
 import { Router } from 'express';
 import { readFileSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -40,7 +41,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
   const router = Router();
 
   function isSuperadmin(person) {
-    return Boolean(person && person.gruppen.includes(String(config.churchtools.groupIdAdmin)));
+    return personHasRole(person, config, 'superadmin');
   }
 
   // Payment data for everything except Spesen comes from the locally stored intake scan (QR bill)

@@ -16,6 +16,18 @@ export function wartungsHinweis(db) {
 export function setzeWartungsmodus(db, aktiv, hinweis = '') {
   const neuerHinweis = aktiv ? String(hinweis ?? '').trim().slice(0, HINWEIS_MAX) : '';
   const neuerWert = aktiv ? '1' : '0';
-  if (getConfigValue(db, 'wartungsmodus_aktiv') !== neuerWert) setConfigValue(db, 'wartungsmodus_aktiv', neuerWert);
+  if (getConfigValue(db, 'wartungsmodus_aktiv') !== neuerWert) {
+    setConfigValue(db, 'wartungsmodus_aktiv', neuerWert);
+    setConfigValue(db, 'wartungsmodus_seit', aktiv ? new Date().toISOString() : '');
+  }
   if ((getConfigValue(db, 'wartungsmodus_hinweis') ?? '') !== neuerHinweis) setConfigValue(db, 'wartungsmodus_hinweis', neuerHinweis);
+}
+
+// Ab dieser Dauer weist das Banner die Berechtigten darauf hin, dass der Modus vielleicht vergessen
+// wurde: im Wartungsmodus gehen auch Sicherheitsalarme nicht raus.
+export const WARTUNG_LANG_STUNDEN = 4;
+
+export function wartungsmodusLaeuftLange(db, jetzt = Date.now()) {
+  const seit = Date.parse(getConfigValue(db, 'wartungsmodus_seit') || '');
+  return Number.isFinite(seit) && jetzt - seit > WARTUNG_LANG_STUNDEN * 3600 * 1000;
 }

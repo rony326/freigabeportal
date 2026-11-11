@@ -179,3 +179,34 @@ test('Modus an: Anfragen einer angemeldeten Person hinterlassen keine Nutzungsda
   for (let i = 0; i < 3; i += 1) assert.equal((await agent.get('/pool')).status, 503);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM nutzung_seitenaufrufe').get().n, vorher);
 });
+
+test('Modus an: Downloads antworten für Nicht-Berechtigte mit JSON-503 statt HTML, auch bei anderer Schreibweise', async (t) => {
+  const { db, app } = setup(t);
+  setzeWartungsmodus(db, true);
+  for (const pfad of ['/downloads/1?expires=1&signature=x', '/DOWNLOADS/1']) {
+    const res = await request(app).get(pfad);
+    assert.equal(res.status, 503, pfad);
+    assert.equal(res.body.error, 'wartungsmodus', pfad);
+    assert.ok(res.headers['retry-after'], pfad);
+  }
+});
+
+test('Modus an: andere Schreibweise der Maschinenrouten umgeht die Sperre nicht', async (t) => {
+  const { db, app } = setup(t);
+  setzeWartungsmodus(db, true);
+  const res = await request(app).get('/API/N8N/jobs/abholbereit').set('X-API-Key', 'n8n-key');
+  assert.equal(res.status, 503);
+  assert.equal(res.body.error, 'wartungsmodus');
+});
+
+test('Wartungsmodus merkt sich den Beginn; nach über 4 Stunden warnt das Banner vor zurückgehaltenen Sicherheitsalarmen', async (t) => {
+  const { db, app, client } = setup(t);
+  const agent = await loginAs(app, client, { id: 99, vorname: 'Admina', nachname: 'Portal', email: 'a@example.org', gruppen: ['20'] });
+  setzeWartungsmodus(db, true);
+  assert.ok(Date.parse(db.prepare("SELECT value FROM admin_config WHERE key = 'wartungsmodus_seit'").get().value));
+  assert.doesNotMatch((await agent.get('/pool')).text, /Seit mehr als 4 Stunden/);
+  db.prepare("UPDATE admin_config SET value = ? WHERE key = 'wartungsmodus_seit'").run(new Date(Date.now() - 5 * 3600 * 1000).toISOString());
+  assert.match((await agent.get('/pool')).text, /Seit mehr als 4 Stunden aktiv/);
+  setzeWartungsmodus(db, false);
+  assert.equal(db.prepare("SELECT value FROM admin_config WHERE key = 'wartungsmodus_seit'").get().value, '');
+});

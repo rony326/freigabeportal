@@ -1,7 +1,14 @@
-<style nonce="<%= locals.cspNonce %>">
+<%
+  // Bootstrap-eigene "Primärfarbe" (aktive Listeneinträge, angehakte Felder, Fokusrahmen, Nummern-Kreise)
+  // folgt der Markenfarbe statt dem Standard-Blau. Bootstrap braucht dafür auch die RGB-Zahlen.
+  const markeHex = /^#[0-9a-f]{6}$/i.test(branding.primaryColor || '') ? branding.primaryColor : '#2f4858';
+  const markeRgb = [1, 3, 5].map((i) => parseInt(markeHex.slice(i, i + 2), 16)).join(', ');
+%><style nonce="<%= locals.cspNonce %>">
   :root {
     --brand-primary: <%= branding.primaryColor || '#2f4858' %>;
     --brand-secondary: <%= branding.secondaryColor || '#4d7ea8' %>;
+    --bs-primary: <%= markeHex %>;
+    --bs-primary-rgb: <%= markeRgb %>;
     --bg: #ffffff;
     --fg: #1a1a1a;
   }
@@ -57,6 +64,28 @@
     --bs-btn-active-border-color: var(--brand-primary);
     --bs-btn-disabled-color: var(--brand-primary);
     --bs-btn-disabled-border-color: var(--brand-primary);
+  }
+  /* Angehakte Optionsfelder und Kontrollkästchen: Bootstrap schreibt dafür ein festes Blau. */
+  .form-check-input:checked, .form-check-input[type="checkbox"]:indeterminate {
+    background-color: var(--brand-primary);
+    border-color: var(--brand-primary);
+  }
+  /* Fokus von Feldern, Auswahlfeldern und Häkchen: Bootstrap schreibt dafür ein festes Blau
+     (#86b7fe / rgba(13,110,253,.25)). Hier folgt der Rahmen der Markenfarbe; im dunklen Modus wird sie
+     mit Weiss aufgehellt, damit der Rahmen vor dem fast schwarzen Hintergrund sichtbar bleibt. */
+  .form-control:focus, .form-select:focus, .form-check-input:focus {
+    border-color: color-mix(in srgb, var(--brand-primary) 60%, #fff);
+    box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--brand-primary) 40%, transparent);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="hell"]) .form-control:focus, :root:not([data-theme="hell"]) .form-select:focus, :root:not([data-theme="hell"]) .form-check-input:focus {
+      border-color: color-mix(in srgb, var(--brand-primary) 30%, #fff);
+      box-shadow: 0 0 0 .25rem color-mix(in srgb, color-mix(in srgb, var(--brand-primary) 30%, #fff) 45%, transparent);
+    }
+  }
+  :root[data-theme="dunkel"] .form-control:focus, :root[data-theme="dunkel"] .form-select:focus, :root[data-theme="dunkel"] .form-check-input:focus {
+    border-color: color-mix(in srgb, var(--brand-primary) 30%, #fff);
+    box-shadow: 0 0 0 .25rem color-mix(in srgb, color-mix(in srgb, var(--brand-primary) 30%, #fff) 45%, transparent);
   }
   /* Bootstrap's compiled .btn-outline-secondary bakes in a fixed #6c757d for text/border in
      every theme (it isn't redefined under [data-bs-theme=dark] the way body/border colors are) —

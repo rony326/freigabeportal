@@ -3,6 +3,23 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.2.1] – 2026-11-11
+
+Sicherheits-Wartungsversion nach einem vollständigen Sicherheitsdurchgang (keine
+kritischen oder hohen Funde). Release Notes:
+[docs/releases/v1.2.1.md](docs/releases/v1.2.1.md). Keine Datenbank-Migration.
+**Einmalige Neuanmeldung aller Personen** (neuer Cookie-Name).
+
+- Sitzungs-Cookie hinter HTTPS als `__Host-portal.sid`, Sitzungsdauer 8 statt 24
+  Stunden (Rollenentzug aus ChurchTools wirkt früher).
+- Wartungsmodus: Warnung im Banner nach über 4 Stunden (Sicherheitsalarme werden
+  zurückgehalten), `/downloads/*` antwortet für Nicht-Berechtigte mit JSON-503,
+  Pfadprüfungen unabhängig von Gross-/Kleinschreibung.
+- n8n-Eingang: abgelehnter Dateiname wird als JSON-Text geloggt (keine
+  Log-Injection).
+- Superadmin-Prüfung in Freigabe 2, Spesen-Freigabe 1, Ablehnung und
+  Kontierungszugriff über `personHasRole` statt handgebauter Gruppenprüfung.
+
 ## [1.2.0] – 2026-11-11
 
 Release Notes: [docs/releases/v1.2.0.md](docs/releases/v1.2.0.md). Enthält eine

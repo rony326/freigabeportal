@@ -10,10 +10,10 @@ import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS, personHasPermission, req
 
 const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
 
-test('GRANTABLE_BERECHTIGUNGEN lists exactly the fifteen catalog permissions, separating sync reading and writing', () => {
+test('GRANTABLE_BERECHTIGUNGEN lists exactly the catalog permissions, separating sync reading and writing', () => {
   assert.deepEqual(
     [...GRANTABLE_BERECHTIGUNGEN].sort(),
-    ['abgelehnt_verwalten', 'audit_log_einsehen', 'betrieb_einsehen', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'kreditoren_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'vorgaenge_einsehen', 'workflow_eingreifen', 'auswertung_einsehen', 'budgets_verwalten'].sort()
+    ['abgelehnt_verwalten', 'audit_log_einsehen', 'betrieb_einsehen', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'kreditoren_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'vorgaenge_einsehen', 'workflow_eingreifen', 'auswertung_einsehen', 'budgets_verwalten', 'personen_einsehen', 'testmodus_nutzen', 'benachrichtigungen_verwalten', 'erscheinungsbild_verwalten', 'ersteinrichtung_verwalten', 'zeitstempel_verwalten', 'backup_verwalten', 'module_verwalten', 'dateiquarantaene_verwalten', 'wartungsmodus_schalten'].sort()
   );
 });
 

@@ -159,7 +159,10 @@ export function ermittleBefunde(db, { job, kreditor, betrag, typ, ibanEndung = n
 
   const betragRp = rappen(betrag);
   if (betragRp !== null) {
-    const qrRp = rappen(job.qr_betrag);
+    // Ein Splitkind erbt den QR-Betrag der ganzen Rechnung (createSplitJob): verglichen mit seinem
+    // Teilbetrag gäbe das bei jeder Kontierung eines Kindes einen falschen Befund. Der Gesamtbetrag
+    // wurde beim Aufsplitten bereits gegen den QR-Betrag geprüft.
+    const qrRp = job.aufgesplittet_von ? null : rappen(job.qr_betrag);
     if (qrRp !== null && qrRp !== betragRp) {
       befunde.push({ code: 'betrag_qr', schwere: 'gelb', titel: 'Betrag weicht ab', text: `QR-Code: ${fmt(qrRp)} · kontiert: ${fmt(betragRp)}` });
     }

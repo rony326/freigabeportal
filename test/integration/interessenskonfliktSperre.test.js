@@ -309,6 +309,7 @@ test('Sackgasse Aufsplitten: Konflikt auf einem Teil, dessen Stellvertreter 1 fr
   const appMitDir = buildApp(db, stubMailer(), { jobsDir: dir });
 
   const res = await request(appMitDir).post(`/kontierung/${jobId}/aufsplitten`).set('x-test-person-id', '1').type('form').send({
+    kreditorId: String(kreditorOhneIbanPflicht(db, { name: 'Eigene Firma AG' })),
     gesamtbetrag: '100.00', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'],
     teilInteressenskonflikt: ['true', 'false'], begruendung: 'Eigene Firma',
   });

@@ -75,7 +75,7 @@ Rapport oder „Zurück in den Pool“. Rote Befunde stehen vor gelben.
 | `iban_anderer_kreditor` | IBAN gehört einem anderen Lieferanten | QR-IBAN ist bei einem anderen Lieferanten hinterlegt (nennt dessen Namen); ersetzt „IBAN nicht hinterlegt“ | rot |
 | `zahlungsart_ohne_iban` | Lieferant wird sonst per Lastschrift/Kreditkarte bezahlt | Lieferant ohne IBAN-Pflicht, Rechnung hat trotzdem einen QR-Code | gelb |
 | `name` | Name weicht ab | Zahlungsempfänger im QR-Code passt nicht zum Lieferantennamen | gelb |
-| `betrag_qr` | Betrag weicht ab | `qr_betrag` vorhanden und ungleich kontiertem Betrag (exakt, auf Rappen) | gelb |
+| `betrag_qr` | Betrag weicht ab | `qr_betrag` vorhanden und ungleich kontiertem Betrag (exakt, auf Rappen); entfällt bei Splitkindern (`aufgesplittet_von`), deren QR-Betrag der ganzen Rechnung gilt — der Gesamtbetrag wurde schon beim Aufsplitten verglichen | gelb |
 
 Eine frühere Prüfung „ausländische IBAN“ gibt es **nicht**: Swiss-QR-Rechnungen
 enthalten nur CH/LI-IBANs; eine fremde IBAN ist bereits durch „IBAN nicht
@@ -134,6 +134,12 @@ flowchart TD
   falsch, gilt das nie als Bestätigung. „Abbrechen“ leert den Hash.
 - Ein angehängter **Beleg** lässt sich nicht im Formular vorbefüllen; im Modal
   muss die Datei nochmals gewählt werden.
+- Jeder **nicht bestätigte** Popup-Durchgang schreibt ein Ereignis in
+  `audit_ereignisse` (`objekt = 'kontierung'`, `aktion =
+  'auffaelligkeiten_angezeigt'`, Job-ID, Person, in `nachher` nur die
+  Befund-Codes — nie die eingegebene IBAN-Endung oder eine IBAN). So bleibt
+  sichtbar, wenn jemand das Popup als Orakel für die letzten 4 IBAN-Zeichen
+  missbraucht. Gilt auch beim Aufsplitten.
 - Nach der Bestätigung entstehen: eine Zeile in `kontierung_auffaelligkeiten`
   (Befunde, Bemerkung, Person, Zeit; unveränderlich), ein `freigaben`-Eintrag
   `auffaelligkeiten_bestaetigt` und **eine** Mail `auffaelligkeiten-warnung`
@@ -174,8 +180,14 @@ Server (`brauchtManuelleIbanPruefung`).
 Die Aufsplitten-Route (`POST /kontierung/:id/aufsplitten`, siehe
 [rechnungs-workflow.md](rechnungs-workflow.md#5-aufsplitten-status-zugewiesen--aufgesplittet))
 zeigt dasselbe Prüf-Popup wie die Kontierung, aber **einmal für die ganze
-Rechnung**: Der Lieferant kommt vom Beleg (`job.kreditor_id`, es gibt keinen
-Lieferanten pro Zeile), die Befunde aus `ermittleBefunde` werden mit dem
+Rechnung**: Der Lieferant ist ein **Pflichtfeld** im Aufsplitten-Formular (es
+gibt keinen Lieferanten pro Zeile). Vorgewählt ist der im Kontierungsformular
+gewählte (`?kreditorId=`), sonst der am Beleg (`job.kreditor_id`); angeboten und
+angenommen werden nur aktive, vollständige Lieferanten (`listKreditorenWaehlbar`).
+Pool-Belege haben meist noch keinen Lieferanten am Beleg — ohne dieses Feld liefe
+die Prüfung ins Leere. Der gewählte Lieferant wird vor dem Anlegen der Kinder am
+Elternjob gespeichert (`kreditor_id`, `lieferant`), die Kinder übernehmen ihn.
+Die Befunde aus `ermittleBefunde` werden mit dem
 **Gesamtbetrag** berechnet (auch der Vergleich mit dem QR-Betrag), es gibt
 einen Hash und — ohne QR-Code bei Typ Rechnung und IBAN-pflichtigem
 Lieferanten — ein Feld für die letzten 4 Zeichen der IBAN. Ohne passende
@@ -185,13 +197,17 @@ eine `kontierung_auffaelligkeiten`-Zeile und einen freigaben-Eintrag
 `iban_manuell_geprueft`); die Warn-Mail `auffaelligkeiten-warnung` geht
 einmal an Freigeber 1 + 2 aller Teil-Konten, die splittende Person und die
 konfigurierten Empfänger, protokolliert am Elternjob, mit Link aufs erste
-Kind. Wurden Zeilen-Belege angehängt, bietet das Popup für jede dieser
+Kind, das die splittende Person selbst freigegeben hat (gibt es keins, auf den
+Pool — Kinder auf fremden Konten könnten die meisten Empfänger nicht öffnen, den
+Elternjob niemand mehr). Wurden Zeilen-Belege angehängt, bietet das Popup für jede dieser
 Zeilen ein Datei-Feld zum nochmaligen Auswählen an.
 
 Der Kreditkarten-Abgleich hat kein Popup: `pruefeIbanNachKkAbgleich` schreibt
 bei einem IBAN-Befund (`ibanBefund` aus betrugspruefung.js, unabhängig von der
 Zahlungsart, sobald mindestens eine IBAN hinterlegt ist) nachträglich
-`iban_abweichung` am Elternjob und schickt die Warn-Mail. Diese IBAN-Warnung ist
+`iban_abweichung` am Elternjob und schickt die Warn-Mail. Geprüft wird gegen
+den Kartenherausgeber, wie er nach dem Speichern der Kopfdaten am Elternjob
+steht — also auch, wenn er erst im Abgleich-Formular gewählt wurde. Diese IBAN-Warnung ist
 nicht blockierend und bleibt bewusst vom Popup und von der Zahlungsart
 unabhängig.
 

@@ -395,8 +395,12 @@
           var betrag = betragFeld ? betragFeld.value.trim() : '';
           // Same for the Typ radio, so a Gutschrift chosen here stays a Gutschrift in the split.
           var typFeld = document.querySelector('input[name="typ"]:checked');
+          // Und der gewählte Lieferant: das Aufsplitten prüft gegen ihn und verlangt ihn.
+          var kreditorFeld = document.getElementById('kreditorId');
+          var kreditorId = kreditorFeld ? kreditorFeld.value : '';
           var params = [];
           if (betrag) params.push('betrag=' + encodeURIComponent(betrag));
+          if (kreditorId) params.push('kreditorId=' + encodeURIComponent(kreditorId));
           if (typFeld) params.push('typ=' + encodeURIComponent(typFeld.value));
           frame.src = params.length ? frameUrl + '?' + params.join('&') : frameUrl;
         }

@@ -20,6 +20,7 @@ import {
   getEffectiveFreigeber2Id,
   markJobAufgesplittet,
   setJobBetrag,
+  setJobKreditor,
   setJobTyp,
   addBelegSeiten,
   findJobsByKreditorUndRechnungsnummer,
@@ -355,7 +356,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       if (!absender) {
         errors.add('absender', 'Bitte einen Absender angeben.');
       }
-      const kreditor = kreditorId ? getKreditorById(db, kreditorId) : null;
+      const gefundenerKreditor = kreditorId ? getKreditorById(db, kreditorId) : null;
+      // Deaktivierte Lieferanten stehen nicht in der Auswahl (listKreditorenWaehlbar) und werden auch
+      // per manipuliertem Formular nicht angenommen.
+      const kreditor = gefundenerKreditor && gefundenerKreditor.aktiv ? gefundenerKreditor : null;
       if (!kreditor) {
         errors.add('kreditorId', 'Bitte einen gültigen Lieferanten aus der Liste auswählen.');
       } else if (!istKreditorVollstaendig(db, kreditor)) {
@@ -424,6 +428,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const befunde = ermittleBefunde(db, { job, kreditor, betrag, typ: jobTyp, ibanEndung: ibanManuellNoetig ? ibanEndung : null, rechnungsnummer });
       const hash = befunde.length > 0 ? befundeHash(befunde) : null;
       if (hash && req.body.auffaelligkeitenHash !== hash) {
+        protokolliereAngezeigteAuffaelligkeiten(job.id, req.currentPerson, befunde);
         return renderSeite(200, {
           auffaelligkeiten: {
             befunde,
@@ -858,22 +863,34 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   });
 
   // `extra`: ibanEndung, pruefBemerkung und — in der Popup-Runde — auffaelligkeiten.
-  function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ, extra = {}) {
-    res.status(status).render('kontierung-aufsplitten', {
-      job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ,
-      ibanKasten: ibanKastenBeimAufsplitten(job),
-      values: { ibanEndung: extra.ibanEndung || '', pruefBemerkung: extra.pruefBemerkung || '' },
-      auffaelligkeiten: extra.auffaelligkeiten || null,
-    });
+  // Ein unbestätigter Popup-Durchgang hinterlässt eine Spur im Audit-Log, damit das Popup nicht
+  // unbemerkt als Orakel für die letzten 4 IBAN-Zeichen dienen kann (man tippt so lange, bis kein
+  // iban_manuell_fremd mehr kommt). Bewusst nur die Befund-Codes — nie die Eingabe oder eine IBAN.
+  function protokolliereAngezeigteAuffaelligkeiten(jobId, person, befunde) {
+    db.prepare(`INSERT INTO audit_ereignisse (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher)
+      VALUES (?, ?, ?, 'kontierung', ?, 'auffaelligkeiten_angezeigt', ?)`).run(
+      new Date().toISOString(),
+      person.churchtools_person_id,
+      `${person.vorname ?? ''} ${person.nachname ?? ''}`.trim() || person.churchtools_person_id,
+      String(jobId),
+      JSON.stringify({ codes: befunde.map((b) => b.code) }),
+    );
   }
 
-  // Beim Aufsplitten gibt es keinen Lieferanten pro Zeile: er kommt vom Beleg (job.kreditor_id).
-  // Ohne QR-Code liest die Person bei einem IBAN-pflichtigen Lieferanten einmal die letzten 4 Zeichen
-  // ab; das Feld steht im Formular, sichtbar nur bei Typ Rechnung (brauchtManuelleIbanPruefung).
-  function ibanKastenBeimAufsplitten(job) {
-    if (job.qr_iban || !job.kreditor_id) return false;
-    const kreditor = getKreditorById(db, job.kreditor_id);
-    return Boolean(kreditor) && brauchtManuelleIbanPruefung(job, kreditor, 'rechnung');
+  function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ, extra = {}) {
+    const kreditoren = listKreditorenWaehlbar(db);
+    const kreditorId = extra.kreditorId || '';
+    const gewaehlterKreditor = kreditoren.find((k) => String(k.id) === kreditorId) || null;
+    res.status(status).render('kontierung-aufsplitten', {
+      job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ, kreditoren,
+      // Ohne QR-Code steht der IBAN-Kasten immer im Formular; sichtbar und Pflicht nur, wenn der
+      // gewählte Lieferant eine IBAN braucht und Typ Rechnung gewählt ist (kontierung-iban.js).
+      ibanKasten: !job.qr_iban,
+      ibanKastenSichtbar: !job.qr_iban && Boolean(gewaehlterKreditor) && brauchtManuelleIbanPruefung(job, gewaehlterKreditor, typ),
+      lieferantFehler: Boolean(extra.lieferantFehler),
+      values: { kreditorId, ibanEndung: extra.ibanEndung || '', pruefBemerkung: extra.pruefBemerkung || '' },
+      auffaelligkeiten: extra.auffaelligkeiten || null,
+    });
   }
 
   // Eine aufgesplittete Rechnung hat genau einen Typ für alle Teile — eine Mischung aus Rechnung
@@ -894,10 +911,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     // Wie beim Betrag: ein im Kontierungsformular gewählter, noch nicht gespeicherter Typ kommt
     // als ?typ=... mit und hat Vorrang vor dem gespeicherten.
     const typ = normalisiereTyp(req.query.typ === 'gutschrift' || req.query.typ === 'rechnung' ? req.query.typ : job.typ);
+    // Und der im Kontierungsformular gewählte Lieferant (?kreditorId=...), sonst der am Beleg.
+    // renderAufsplittenForm wählt ihn nur vor, wenn er wählbar ist.
+    const queryKreditorId = typeof req.query.kreditorId === 'string' && /^\d+$/.test(req.query.kreditorId) ? req.query.kreditorId : null;
     renderAufsplittenForm(req, res, 200, job, konten, listKonten(db), queryBetrag || job.betrag || '', [
       { kontoId: '', betrag: '', interessenskonflikt: false },
       { kontoId: '', betrag: '', interessenskonflikt: false },
-    ], '', [], typ);
+    ], '', [], typ, { kreditorId: queryKreditorId || (job.kreditor_id ? String(job.kreditor_id) : '') });
   });
 
   router.post('/:id/aufsplitten', (req, res, next) => {
@@ -920,6 +940,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const positionen = [].concat(req.body.teilPosition || []);
       const begruendung = req.body.begruendung || '';
       const typ = normalisiereTyp(req.body.typ);
+      const kreditorIdEingabe = typeof req.body.kreditorId === 'string' ? req.body.kreditorId.trim() : '';
       const ibanEndung = normalizeIban(typeof req.body.ibanEndung === 'string' ? req.body.ibanEndung : '');
       const pruefBemerkung = (typeof req.body.pruefBemerkung === 'string' ? req.body.pruefBemerkung.trim() : '').slice(0, PRUEF_BEMERKUNG_MAX);
       const teileEingabe = kontoIds.map((kontoId, i) => ({
@@ -978,10 +999,22 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         });
       });
 
-      // Der Lieferant steht am Beleg (job.kreditor_id), nicht pro Zeile; ohne IBAN darf nicht aufgeteilt werden.
-      const jobKreditor = job.kreditor_id ? getKreditorById(db, job.kreditor_id) : null;
-      if (jobKreditor && !istKreditorVollstaendig(db, jobKreditor)) {
+      // Ein Lieferant für die ganze Rechnung (nicht pro Zeile), Pflicht wie bei der Kontierung: ohne
+      // ihn liefe die Prüfung ins Leere (keine Befunde, Kinder ohne kreditor_id, später kein
+      // IBAN-Abgleich bei der Zahlung). Pool-Belege haben meist noch keinen am Beleg, deshalb kommt er
+      // aus dem Formular (vorgewählt aus der Kontierung bzw. job.kreditor_id). Nur aktive und
+      // vollständige Lieferanten, wie in listKreditorenWaehlbar.
+      const gefundenerKreditor = /^\d+$/.test(kreditorIdEingabe) ? getKreditorById(db, Number(kreditorIdEingabe)) : null;
+      let jobKreditor = null;
+      let lieferantFehler = false;
+      if (!gefundenerKreditor || !gefundenerKreditor.aktiv) {
+        errors.push('Bitte einen gültigen Lieferanten aus der Liste auswählen.');
+        lieferantFehler = true;
+      } else if (!istKreditorVollstaendig(db, gefundenerKreditor)) {
         errors.push('Dieser Lieferant hat noch keine IBAN. Bitte melde dich bei der Administration.');
+        lieferantFehler = true;
+      } else {
+        jobKreditor = gefundenerKreditor;
       }
       const ibanManuellNoetig = Boolean(jobKreditor) && brauchtManuelleIbanPruefung(job, jobKreditor, typ);
       if (ibanManuellNoetig && !IBAN_ENDUNG_PATTERN.test(ibanEndung)) {
@@ -1005,17 +1038,16 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       }
 
       if (errors.length > 0) {
-        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors, typ, { ibanEndung, pruefBemerkung });
+        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors, typ, { kreditorId: kreditorIdEingabe, lieferantFehler, ibanEndung, pruefBemerkung });
       }
 
-      // Prüf-Popup wie bei der Kontierung (Spec B6), aber einmal für die ganze Rechnung: der
-      // Lieferant kommt vom Beleg, verglichen wird der Gesamtbetrag (auch gegen den QR-Betrag). Ein
+      // Prüf-Popup wie bei der Kontierung (Spec B6), aber einmal für die ganze Rechnung: gegen den
+      // gewählten Lieferanten, verglichen wird der Gesamtbetrag (auch gegen den QR-Betrag). Ein
       // Hash; ohne passende Bestätigung wird nichts angelegt und keine Mail verschickt.
-      const befunde = jobKreditor
-        ? ermittleBefunde(db, { job, kreditor: jobKreditor, betrag: gesamtbetrag, typ, ibanEndung: ibanManuellNoetig ? ibanEndung : null })
-        : [];
+      const befunde = ermittleBefunde(db, { job, kreditor: jobKreditor, betrag: gesamtbetrag, typ, ibanEndung: ibanManuellNoetig ? ibanEndung : null });
       const hash = befunde.length > 0 ? befundeHash(befunde) : null;
       if (hash && req.body.auffaelligkeitenHash !== hash) {
+        protokolliereAngezeigteAuffaelligkeiten(job.id, req.currentPerson, befunde);
         // Datei-Felder lassen sich nicht vorbefüllen: für jede Zeile mit Beleg ein eigenes Feld im
         // Modal, unter dem Namen, den die Zeile beim Absenden bekäme (Zeilen werden in derselben
         // Reihenfolge neu gerendert).
@@ -1025,6 +1057,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           label: `Einen Beleg für Zeile ${index + 1} hast du noch nicht gespeichert. Bitte wähle ihn hier nochmals aus, bevor du speicherst.`,
         }));
         return renderAufsplittenForm(req, res, 200, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, [], typ, {
+          kreditorId: kreditorIdEingabe,
           ibanEndung,
           pruefBemerkung,
           auffaelligkeiten: { befunde, hash, zeigeTelefonHinweis: befunde.some((b) => b.code.startsWith('iban')), belegFelder },
@@ -1046,6 +1079,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       try {
         setJobBetrag(db, job.id, job.betrag);
         setJobTyp(db, job.id, typ);
+        // Vor erzeugeTeilJobs: createSplitJob übernimmt kreditor_id und lieferant vom Elternjob-Objekt.
+        setJobKreditor(db, job.id, { kreditorId: jobKreditor.id, lieferant: jobKreditor.name });
+        job.kreditor_id = jobKreditor.id;
+        job.lieferant = jobKreditor.name;
         const markiert = markJobAufgesplittet(db, job.id);
         if (!markiert) {
           db.exec('ROLLBACK');
@@ -1094,9 +1131,19 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       if (hash) {
         // Eine Mail-Runde für die ganze Rechnung, protokolliert am Elternjob (Originalrechnung).
         // Empfänger: Freigeber 1 + 2 aller Teil-Konten (auch fremder: ihr Teil liegt im Pool),
-        // die splittende Person und iban_abweichung_empfaenger. Der Link zeigt aufs erste Kind,
-        // der Elternjob selbst ist nach dem Aufsplitten nicht mehr bearbeitbar.
-        const erstesKind = getJobById(db, kindIds[0]);
+        // die splittende Person und iban_abweichung_empfaenger.
+        // Link: aufs erste Kind, das die splittende Person selbst freigegeben hat (Freigabe 2 offen),
+        // denn ein Pool- oder Eskalations-Kind auf einem fremden Konto könnten die meisten Empfänger
+        // nicht öffnen. Gibt es keins, auf den Pool: dort liegen die übrigen Teile, und der Elternjob
+        // selbst ist nach dem Aufsplitten nirgends mehr zu öffnen.
+        const selbstFreigegebenId = ergebnis.selbstFreigegeben.map((e) => e.id).sort((a, b) => a - b)[0];
+        const selbstFreigegeben = selbstFreigegebenId ? getJobById(db, selbstFreigegebenId) : null;
+        let link = `${config.publicBaseUrl}/pool`;
+        if (selbstFreigegeben) {
+          link = selbstFreigegeben.status === 'freigabe2'
+            ? `${config.publicBaseUrl}/freigabe2/${selbstFreigegeben.id}`
+            : `${config.publicBaseUrl}/kontierung/${selbstFreigegeben.id}`;
+        }
         await sendeAuffaelligkeitenWarnung(db, mailer, config, {
           job,
           kreditor: jobKreditor,
@@ -1104,9 +1151,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           bemerkung: pruefBemerkung,
           person: req.currentPerson,
           freigeberIds: aufgeloesteTeile.flatMap((t) => [t.konto.freigeber1_id, t.konto.freigeber2_id]),
-          link: erstesKind.status === 'freigabe2'
-            ? `${config.publicBaseUrl}/freigabe2/${erstesKind.id}`
-            : `${config.publicBaseUrl}/kontierung/${erstesKind.id}`,
+          link,
         });
       }
 

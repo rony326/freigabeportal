@@ -1,3 +1,4 @@
+import { kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
@@ -90,6 +91,7 @@ test('a 3-Konten Aufsplitten flow exports one combined document and retains file
     .post(`/kontierung/${jobId}/aufsplitten`)
     .type('form')
     .send({
+      kreditorId: String(kreditorOhneIbanPflicht(db, { name: 'Muster AG' })),
       gesamtbetrag: '180.00',
       teilKontoId: [String(kontoA), String(kontoB), String(kontoC)],
       teilBetrag: ['60.00', '60.00', '60.00'],

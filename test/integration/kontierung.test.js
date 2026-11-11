@@ -1638,6 +1638,16 @@ test('a Portal-Admin with zero roles on the job\'s Konto can still complete Kont
   db.close();
 });
 
+// Aufsplitten verlangt einen vollständigen, aktiven Lieferanten aus dem Formular (Abschluss-Review
+// 2026-11-11). Für Tests, die nicht den Lieferanten selbst prüfen: der erste wählbare, sonst ein
+// neuer Lastschrift-Lieferant «Muster AG» (braucht keine IBAN).
+function splitLieferant(db) {
+  const vorhanden = db.prepare(`SELECT k.id FROM kreditoren k WHERE k.aktiv = 1
+    AND (k.zahlungsart NOT IN ('ueberweisung', 'dauerauftrag') OR EXISTS (SELECT 1 FROM kreditor_ibans i WHERE i.kreditor_id = k.id))
+    ORDER BY k.id LIMIT 1`).get();
+  return String(vorhanden ? vorhanden.id : kreditorOhneIbanPflicht(db, { name: 'Muster AG' }));
+}
+
 function seedJobMitDateien(db, jobsDir, { betrag = '200.00' } = {}) {
   const kontoId = seedKontoAndPersonen(db);
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
@@ -1751,7 +1761,7 @@ test('POST /kontierung/:id/aufsplitten creates independent split jobs, each with
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
     });
@@ -1797,7 +1807,7 @@ test('POST /kontierung/:id/aufsplitten persists teilPosition as rechnungspositio
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['60.00', '40.00'],
       teilPosition: ['Pos. 1', 'Pos. 2'],
@@ -1866,7 +1876,7 @@ test('POST /kontierung/:id/aufsplitten with typ=gutschrift marks every split chi
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
+    .send({ kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
 
   assert.equal(res.status, 302);
   assert.equal(getJobById(db, id).typ, 'gutschrift');
@@ -1891,7 +1901,7 @@ test('POST /kontierung/:id/aufsplitten without (or with an unknown) typ saves th
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ gesamtbetrag: '100.00', typ: 'quatsch', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
+    .send({ kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'quatsch', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
 
   assert.equal(res.status, 302);
   assert.equal(getJobById(db, id).typ, 'rechnung');
@@ -1911,7 +1921,7 @@ test('POST /kontierung/:id/aufsplitten keeps the Gutschrift selection when the f
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '30.00'] });
+    .send({ kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '30.00'] });
 
   assert.equal(res.status, 400);
   assert.match(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
@@ -1935,7 +1945,7 @@ test('POST /kontierung/:id/aufsplitten rejects a teilPosition with characters th
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['60.00', '40.00'],
       teilPosition: ['Pos. 1 \u{1F600}', 'Pos. 2'],
@@ -1961,7 +1971,7 @@ test('POST /kontierung/:id/aufsplitten accepts a teilPosition with German letter
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['60.00', '40.00'],
       teilPosition: ['Pos. 3.1 (Gebäude-Unterhalt), Nr. 7/8 – Zuschlag', 'Pos. 2'],
@@ -1990,7 +2000,7 @@ test('POST /kontierung/:id/aufsplitten accepts teilPosition characters the old \
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: positionen.map(() => String(kontoId)),
       teilBetrag: positionen.map(() => '20.00'),
       teilPosition: positionen,
@@ -2028,7 +2038,7 @@ test('POST /kontierung/:id/aufsplitten rejects teilPosition characters that woul
       .set('x-test-person-id', '1')
       .type('form')
       .send({
-        gesamtbetrag: '100.00',
+        kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
         teilKontoId: [String(kontoId), String(kontoId)],
         teilBetrag: ['60.00', '40.00'],
         teilPosition: [wert, 'Pos. 2'],
@@ -2053,7 +2063,7 @@ test('POST /kontierung/:id/aufsplitten records the Beleg page count on the split
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .field('gesamtbetrag', '200.00')
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
     .field('teilKontoId', String(kontoId))
     .field('teilKontoId', String(kontoId))
     .field('teilBetrag', '120.00')
@@ -2079,7 +2089,7 @@ test('POST /kontierung/:id/aufsplitten merges a per-Zeile Beleg into just that s
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .field('gesamtbetrag', '200.00')
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
     .field('teilKontoId', String(kontoId))
     .field('teilKontoId', String(kontoId))
     .field('teilBetrag', '120.00')
@@ -2109,7 +2119,7 @@ test('POST /kontierung/:id/aufsplitten rejects an invalid per-Zeile Beleg, nothi
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .field('gesamtbetrag', '200.00')
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
     .field('teilKontoId', String(kontoId))
     .field('teilKontoId', String(kontoId))
     .field('teilBetrag', '120.00')
@@ -2137,7 +2147,7 @@ test('POST /kontierung/:id/aufsplitten rejects a request carrying more attached 
   let req = request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .field('gesamtbetrag', '200.00')
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
     .field('teilKontoId', String(kontoId))
     .field('teilKontoId', String(kontoId))
     .field('teilBetrag', '120.00')
@@ -2167,7 +2177,7 @@ test('POST /kontierung/:id/aufsplitten rejects Teilbeträge that do not sum to t
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '90.00'],
     });
@@ -2192,7 +2202,7 @@ test('POST /kontierung/:id/aufsplitten rejects a missing or invalid Gesamtbetrag
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '',
+      kreditorId: splitLieferant(db), gesamtbetrag: '',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
     });
@@ -2222,7 +2232,7 @@ test('POST /kontierung/:id/aufsplitten succeeds for a job that never had a Betra
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '150.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '150.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['100.00', '50.00'],
     });
@@ -2249,7 +2259,7 @@ test('POST /kontierung/:id/aufsplitten rejects fewer than two Teilbeträge', asy
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId)],
       teilBetrag: ['200.00'],
     });
@@ -2276,7 +2286,7 @@ test('POST /kontierung/:id/aufsplitten sends a part on a Konto the person is not
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(fremdKontoId)],
       teilBetrag: ['100.00', '100.00'],
     });
@@ -2318,7 +2328,7 @@ test('POST /kontierung/:id/aufsplitten escalates a part with a declared Interess
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
       teilInteressenskonflikt: ['false', 'true'],
@@ -2364,7 +2374,7 @@ test('POST /kontierung/:id/aufsplitten escalates to Portal-Admin, not back to th
     .set('x-test-person-id', '2')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
       teilInteressenskonflikt: ['false', 'true'],
@@ -2400,7 +2410,7 @@ test('POST /kontierung/:id/aufsplitten keeps escalating to Portal-Admin on a Zei
     .set('x-test-person-id', '99')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
       teilInteressenskonflikt: ['false', 'true'],
@@ -2434,7 +2444,7 @@ test('POST /kontierung/:id/aufsplitten requires a Begründung when any Zeile dec
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
       teilInteressenskonflikt: ['false', 'true'],
@@ -2463,7 +2473,7 @@ test('POST /kontierung/:id/aufsplitten handles all three outcomes in a single mi
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '300.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '300.00',
       teilKontoId: [String(kontoId), String(kontoId), String(fremdKontoId)],
       teilBetrag: ['100.00', '100.00', '100.00'],
       teilInteressenskonflikt: ['false', 'true', 'false'],
@@ -2508,7 +2518,7 @@ test('POST /kontierung/:id/aufsplitten lets an admin-escalated Portal-Admin stil
     .set('x-test-person-id', '99')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
     });
@@ -2528,7 +2538,7 @@ test('POST /kontierung/:id/aufsplitten lets an admin-escalated Portal-Admin stil
 // Der Lieferant steht am Elternjob (kein Lieferant pro Zeile): Befunde werden einmal für
 // job.kreditor_id mit dem Gesamtbetrag berechnet, ein Hash, ein ibanEndung-Feld.
 
-async function splitPopupAufbau({ qr = true, zahlungsart = 'ueberweisung', iban = 'CH0000000000000000000', kontoFremd = false } = {}) {
+async function splitPopupAufbau({ qr = true, zahlungsart = 'ueberweisung', iban = 'CH0000000000000000000', kontoFremd = false, lieferantAmBeleg = true } = {}) {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
   const db = openDatabase(':memory:');
   seedDefaults(db);
@@ -2550,14 +2560,16 @@ async function splitPopupAufbau({ qr = true, zahlungsart = 'ueberweisung', iban 
   writeFileSync(pdfPfad, ECHTES_PDF);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
   claimJob(db, id, '1');
-  updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
+  // lieferantAmBeleg: false ist der Normalfall aus dem Pool (n8n setzt kreditor_id nur über eine
+  // Zuweisungsregel) — der Lieferant kommt dann allein aus dem Formular.
+  updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: lieferantAmBeleg ? 'Muster AG' : null, kreditorId: lieferantAmBeleg ? kreditorId : null });
   if (qr) setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
   const mailer = createStubMailer();
   const app = buildTestAppMitDateien(db, mailer, jobsDir);
-  const form = { gesamtbetrag: '200.00', teilKontoId: [String(kontoId), String(zweitesKontoId)], teilBetrag: ['120.00', '80.00'] };
+  const form = { kreditorId: String(kreditorId), gesamtbetrag: '200.00', teilKontoId: [String(kontoId), String(zweitesKontoId)], teilBetrag: ['120.00', '80.00'] };
   const senden = (body) => request(app).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form').send(body);
   const aufraeumen = () => { db.close(); rmSync(jobsDir, { recursive: true, force: true }); };
-  return { db, app, id, kontoId, mailer, form, senden, aufraeumen };
+  return { db, app, id, kontoId, kreditorId, zweitesKontoId, mailer, form, senden, aufraeumen };
 }
 
 test('GET /kontierung/:id/aufsplitten zeigt ohne QR-Code bei einem Überweisungs-Lieferanten ein Feld für die letzten 4 Zeichen der IBAN, ohne die hinterlegte IBAN', async () => {
@@ -2571,14 +2583,22 @@ test('GET /kontierung/:id/aufsplitten zeigt ohne QR-Code bei einem Überweisungs
   aufraeumen();
 });
 
-test('GET /kontierung/:id/aufsplitten zeigt mit QR-Code oder bei Lastschrift-Lieferant kein IBAN-Feld', async () => {
-  for (const variante of [{ qr: true }, { qr: false, zahlungsart: 'lastschrift' }]) {
-    const { app, id, aufraeumen } = await splitPopupAufbau(variante);
-    const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
-    assert.equal(res.status, 200);
-    assert.doesNotMatch(res.text, /name="ibanEndung"/);
-    aufraeumen();
-  }
+test('GET /kontierung/:id/aufsplitten zeigt mit QR-Code kein IBAN-Feld, bei Lastschrift-Lieferant nur verborgen und nicht Pflicht', async () => {
+  const mitQr = await splitPopupAufbau({ qr: true });
+  const res = await request(mitQr.app).get(`/kontierung/${mitQr.id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /name="ibanEndung"/);
+  mitQr.aufraeumen();
+
+  // Ohne QR-Code steht der Kasten im Formular, damit er beim Wechsel auf einen Überweisungs-
+  // Lieferanten erscheinen kann (kontierung-iban.js); für den vorgewählten Lastschrift-Lieferanten verborgen.
+  const lastschrift = await splitPopupAufbau({ qr: false, zahlungsart: 'lastschrift' });
+  const res2 = await request(lastschrift.app).get(`/kontierung/${lastschrift.id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res2.status, 200);
+  assert.match(res2.text, /class="alert alert-warning d-none" id="iban-manuell-kasten"/);
+  assert.doesNotMatch(res2.text, /name="ibanEndung"[^>]*required/);
+  assert.match(res2.text, /src="\/js\/kontierung-iban\.js/);
+  lastschrift.aufraeumen();
 });
 
 test('POST /kontierung/:id/aufsplitten mit fremder QR-IBAN und ohne Bestätigung zeigt das Prüf-Popup, legt keine Kinder an und lässt den Elternjob unverändert', async () => {
@@ -2724,7 +2744,7 @@ test('POST /kontierung/:id/aufsplitten mit Zeilen-Beleg in der Popup-Runde biete
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .field('gesamtbetrag', '200.00')
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
     .field('teilKontoId', String(kontoId))
     .field('teilKontoId', String(kontoId))
     .field('teilBetrag', '120.00')
@@ -2745,7 +2765,7 @@ test('POST /kontierung/:id/aufsplitten: ein im Modal nochmals gewählter Zeilen-
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .field('gesamtbetrag', '200.00')
+    .field('kreditorId', splitLieferant(db)).field('gesamtbetrag', '200.00')
     .field('teilKontoId', String(kontoId))
     .field('teilKontoId', String(kontoId))
     .field('teilBetrag', '120.00')
@@ -2784,7 +2804,7 @@ test('POST /kontierung/:id/aufsplitten sends no IBAN-Abweichung mail when the QR
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
     });
@@ -2810,13 +2830,14 @@ test("POST /kontierung/:id/aufsplitten copies the parent's QR-decoded data onto 
   updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId: null });
   setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: 'REF-1', qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+  const kreditorId = kreditorMitIban(db, { name: 'Muster AG', iban: 'CH4431999123000889012' }); // QR-IBAN hinterlegt: kein Popup
 
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '200.00',
+      kreditorId: String(kreditorId), gesamtbetrag: '200.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['120.00', '80.00'],
     });
@@ -3480,7 +3501,7 @@ test('a Ferienmodus-Stellvertreter can aufsplitten the absent person\'s job; eac
     .set('x-test-person-id', '2')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['60.00', '40.00'],
     });
@@ -3511,7 +3532,7 @@ test('a split child\'s Freigabe-2-fällig mail also reaches the target Konto\'s 
     .set('x-test-person-id', '1')
     .type('form')
     .send({
-      gesamtbetrag: '100.00',
+      kreditorId: splitLieferant(db), gesamtbetrag: '100.00',
       teilKontoId: [String(kontoId), String(kontoId)],
       teilBetrag: ['60.00', '40.00'],
     });
@@ -3767,7 +3788,7 @@ test('GET /kontierung/:id listet einen Lieferanten ohne IBAN nicht im Dropdown; 
   db.close();
 });
 
-test('POST /kontierung/:id/aufsplitten mit einem Lieferanten ohne IBAN am Beleg → 400, nichts aufgeteilt', async () => {
+test('POST /kontierung/:id/aufsplitten mit einem gewählten Lieferanten ohne IBAN → 400, nichts aufgeteilt', async () => {
   const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
   const db = openDatabase(':memory:');
   seedDefaults(db);
@@ -3778,7 +3799,7 @@ test('POST /kontierung/:id/aufsplitten mit einem Lieferanten ohne IBAN am Beleg 
   db.prepare('UPDATE jobs SET kreditor_id = ? WHERE id = ?').run(unvollstaendig, id);
   const app = buildTestApp(db, createStubMailer());
   const res = await request(app).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form')
-    .send({ gesamtbetrag: '200.00', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['100.00', '100.00'] });
+    .send({ kreditorId: String(unvollstaendig), gesamtbetrag: '200.00', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['100.00', '100.00'] });
   assert.equal(res.status, 400);
   assert.match(res.text, /Dieser Lieferant hat noch keine IBAN\. Bitte melde dich bei der Administration\./);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 1);
@@ -3919,4 +3940,226 @@ test('POST /kontierung/:id: der Kasten mit bestätigten Auffälligkeiten bleibt 
   assert.match(res.text, /data-auffaelligkeiten-bestaetigt/);
   assert.match(res.text, /Telefonisch geprüft/);
   db.close();
+});
+
+// --- Abschluss-Review 2026-11-11 ---------------------------------------------------------
+// Aufsplitten verlangt einen vollständigen Lieferanten aus dem Formular (der Normalfall aus dem
+// Pool hat keinen am Beleg); geprüft wird gegen diesen Lieferanten.
+
+test('Aufsplitten ohne Lieferant am Beleg: gewählter Lieferant mit fremder QR-IBAN → Prüf-Popup, nichts angelegt', async () => {
+  const { db, id, mailer, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false });
+  assert.equal(getJobById(db, id).kreditor_id, null);
+  const res = await senden(form);
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /IBAN nicht hinterlegt/);
+  assert.match(res.text, new RegExp(`<option value="${form.kreditorId}"[^>]*selected`), 'der gewählte Lieferant bleibt im Modal-Durchgang gewählt');
+  assert.equal(listSplitKinder(db, id).length, 0);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(getJobById(db, id).kreditor_id, null);
+  assert.equal(mailer.sent.length, 0);
+  aufraeumen();
+});
+
+test('Aufsplitten ohne Lieferant am Beleg: mit Hash → Kinder mit kreditor_id, Bestätigung je Kind, eine Mail-Runde', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, kreditorId, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false });
+  const hash = hashAusAntwort((await senden(form)).text);
+  const res = await senden({ ...form, auffaelligkeitenHash: hash, pruefBemerkung: 'telefonisch bestätigt' });
+  assert.equal(res.status, 302);
+  const eltern = getJobById(db, id);
+  assert.equal(eltern.status, 'aufgesplittet');
+  assert.equal(eltern.kreditor_id, kreditorId, 'der gewählte Lieferant wird am Elternjob gespeichert');
+  assert.equal(eltern.lieferant, 'Muster AG');
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) {
+    assert.equal(kind.kreditor_id, kreditorId, `Kind #${kind.id} erbt den Lieferanten`);
+    assert.equal(kind.lieferant, 'Muster AG');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten WHERE job_id = ?').get(kind.id).n, 1);
+    assert.equal(listFreigabenByJob(db, kind.id).filter((f) => f.rolle === 'auffaelligkeiten_bestaetigt').length, 1);
+  }
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.deepEqual(warnungen.map((m) => m.empfaenger).sort(), ['p1@example.org', 'p3@example.org', 'revision@example.org'], 'eine Mail-Runde');
+  aufraeumen();
+});
+
+test('Aufsplitten ohne gewählten Lieferanten → Feldfehler, nichts angelegt', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false, iban: 'CH4431999123000889012' });
+  const { kreditorId: _weg, ...ohne } = form;
+  for (const body of [ohne, { ...form, kreditorId: '' }, { ...form, kreditorId: '99999' }]) {
+    const res = await senden(body);
+    assert.equal(res.status, 400);
+    assert.match(res.text, /Bitte einen gültigen Lieferanten aus der Liste auswählen\./);
+    assert.match(res.text, /name="teilBetrag" value="120\.00"/);
+  }
+  assert.equal(listSplitKinder(db, id).length, 0);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  aufraeumen();
+});
+
+test('Aufsplitten mit unvollständigem Lieferanten (Überweisung ohne IBAN) → Fehler, nichts angelegt', async () => {
+  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false });
+  const unvollstaendig = createKreditor(db, { name: 'Ohne IBAN AG', kontoId: null, zahlungsart: 'ueberweisung' });
+  const res = await senden({ ...form, kreditorId: String(unvollstaendig) });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Dieser Lieferant hat noch keine IBAN\. Bitte melde dich bei der Administration\./);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  aufraeumen();
+});
+
+test('Aufsplitten mit deaktiviertem Lieferanten → Fehler, nichts angelegt', async () => {
+  const { deactivateKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const { db, id, kreditorId, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false, iban: 'CH4431999123000889012' });
+  deactivateKreditor(db, kreditorId);
+  const res = await senden(form);
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bitte einen gültigen Lieferanten aus der Liste auswählen\./);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  aufraeumen();
+});
+
+test('Kontierung mit deaktiviertem Lieferanten → Feldfehler, nichts gespeichert', async () => {
+  const { deactivateKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const { db, id, form, senden } = await popupAufbau();
+  deactivateKreditor(db, Number(form.kreditorId));
+  const res = await senden(form);
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bitte einen gültigen Lieferanten aus der Liste auswählen\./);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  db.close();
+});
+
+test('GET /kontierung/:id/aufsplitten bietet nur wählbare Lieferanten an; ?kreditorId hat Vorrang vor dem Lieferanten am Beleg', async () => {
+  const { createKreditor, deactivateKreditor } = await import('../../src/db/kreditorenRepo.js');
+  const { db, app, id, kreditorId, aufraeumen } = await splitPopupAufbau();
+  const anderer = kreditorOhneIbanPflicht(db, { name: 'Andere AG' });
+  const unvollstaendig = createKreditor(db, { name: 'Ohne IBAN AG', kontoId: null, zahlungsart: 'ueberweisung' });
+  const inaktiv = kreditorOhneIbanPflicht(db, { name: 'Alte AG' });
+  deactivateKreditor(db, inaktiv);
+
+  const standard = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(standard.status, 200);
+  assert.match(standard.text, /<select[^>]*name="kreditorId"[^>]*required/);
+  assert.match(standard.text, new RegExp(`<option value="${kreditorId}"[^>]*selected`), 'vorgewählt: Lieferant am Beleg');
+  assert.match(standard.text, /Andere AG/);
+  assert.doesNotMatch(standard.text, /Ohne IBAN AG/);
+  assert.doesNotMatch(standard.text, /Alte AG/);
+  assert.doesNotMatch(standard.text, new RegExp(`value="${unvollstaendig}"`));
+
+  const mitQuery = await request(app).get(`/kontierung/${id}/aufsplitten`).query({ kreditorId: String(anderer) }).set('x-test-person-id', '1');
+  assert.match(mitQuery.text, new RegExp(`<option value="${anderer}"[^>]*selected`));
+  assert.doesNotMatch(mitQuery.text, new RegExp(`<option value="${kreditorId}"[^>]*selected`));
+  aufraeumen();
+});
+
+test('Kontierungsseite gibt den gewählten Lieferanten an das Aufsplitten-Popup weiter', async () => {
+  const { db, app, id, aufraeumen } = await splitPopupAufbau();
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /'kreditorId=' \+ encodeURIComponent\(/);
+  aufraeumen();
+  void db;
+});
+
+// Ein Splitkind trägt den QR-Betrag der ganzen Rechnung: ihn mit dem Teilbetrag zu vergleichen,
+// ergäbe bei jeder Kontierung eines Kindes einen falschen „Betrag weicht ab“.
+test('Kontierung eines Splitkinds mit passender QR-IBAN: kein „Betrag weicht ab“, kein Popup', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  const kreditorId = kreditorMitIban(db, { name: 'Muster AG', kontoId, iban: 'CH4431999123000889012' });
+  const elternId = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  setQrDaten(db, elternId, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  updateKontierungMetadaten(db, elternId, { absender: 'Muster AG', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(elternId);
+  const kindId = createSplitJob(db, getJobById(db, elternId), { pdfPfad: '/tmp/a-kind.pdf', hinweisKontoId: kontoId, betrag: '80.00' });
+  assert.equal(getJobById(db, kindId).qr_betrag, '200.00', 'Voraussetzung: das Kind trägt den QR-Betrag der ganzen Rechnung');
+  claimJob(db, kindId, '1');
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).post(`/kontierung/${kindId}`).set('x-test-person-id', '1').type('form')
+    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '80.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+  assert.equal(res.status, 302, 'kein Popup');
+  assert.equal(getJobById(db, kindId).status, 'freigabe2');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten').get().n, 0);
+  db.close();
+});
+
+// Ein unbestätigter Popup-Durchgang hinterlässt eine Spur (nur Befund-Codes, nie die Eingabe),
+// damit das Popup nicht unbemerkt als Orakel für die letzten 4 IBAN-Zeichen dienen kann.
+function angezeigtEreignisse(db) {
+  return db.prepare("SELECT * FROM audit_ereignisse WHERE objekt = 'kontierung' AND aktion = 'auffaelligkeiten_angezeigt' ORDER BY id").all();
+}
+
+test('Popup-Durchgang ohne Bestätigung schreibt ein Audit-Ereignis mit den Befund-Codes, ohne IBAN-Eingabe', async () => {
+  const { db, id, form, senden } = await popupAufbau();
+  db.prepare("UPDATE jobs SET qr_iban = NULL WHERE id = ?").run(id);
+  const res = await senden({ ...form, ibanEndung: '7777' });
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  const ereignisse = angezeigtEreignisse(db);
+  assert.equal(ereignisse.length, 1);
+  assert.equal(ereignisse[0].objekt_id, String(id));
+  assert.equal(ereignisse[0].person_id, '1');
+  const nachher = JSON.parse(ereignisse[0].nachher);
+  assert.ok(nachher.codes.includes('iban_manuell_fremd'));
+  assert.doesNotMatch(ereignisse[0].nachher + (ereignisse[0].begruendung || '') + ereignisse[0].person_name, /7777|CH\d\d/);
+  db.close();
+});
+
+test('Bestätigter Durchgang schreibt kein weiteres auffaelligkeiten_angezeigt-Ereignis', async () => {
+  const { db, form, senden } = await popupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+  assert.equal(angezeigtEreignisse(db).length, 1);
+  const res = await senden({ ...form, auffaelligkeitenHash: hash, pruefBemerkung: 'ok' });
+  assert.equal(res.status, 302);
+  assert.equal(angezeigtEreignisse(db).length, 1);
+  db.close();
+});
+
+test('Aufsplitten: Popup-Durchgang ohne Bestätigung schreibt ebenfalls ein Audit-Ereignis', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ lieferantAmBeleg: false });
+  const res = await senden(form);
+  assert.equal(res.status, 200);
+  const ereignisse = angezeigtEreignisse(db);
+  assert.equal(ereignisse.length, 1);
+  assert.equal(ereignisse[0].objekt_id, String(id));
+  assert.deepEqual(JSON.parse(ereignisse[0].nachher).codes, ['iban_fremd']);
+  aufraeumen();
+});
+
+// Mail-Link nach dem Aufsplitten: aufs erste Kind, das die splittende Person selbst freigegeben
+// hat (alle Empfänger können /freigabe2 öffnen); gibt es keins, auf den Pool.
+test('Aufsplitten-Warnmail verlinkt das erste selbst freigegebene Kind, nicht ein fremdes Pool-Kind', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, kontoId, zweitesKontoId, form, senden, aufraeumen } = await splitPopupAufbau({ kontoFremd: true });
+  const umgedreht = { ...form, teilKontoId: [String(zweitesKontoId), String(kontoId)] }; // erstes Kind: fremdes Konto
+  const hash = hashAusAntwort((await senden(umgedreht)).text);
+  const res = await senden({ ...umgedreht, auffaelligkeitenHash: hash });
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id).sort((a, b) => a.id - b.id);
+  assert.equal(kinder[0].status, 'unzugewiesen');
+  assert.equal(kinder[1].status, 'freigabe2');
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.ok(warnungen.length > 0);
+  assert.ok(warnungen.every((m) => m.text.includes(`https://portal.example.org/freigabe2/${kinder[1].id}`)));
+  assert.ok(warnungen.every((m) => !m.text.includes(`/kontierung/${kinder[0].id}`)));
+  aufraeumen();
+});
+
+test('Aufsplitten-Warnmail ohne selbst freigegebenes Kind verlinkt den Pool', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, zweitesKontoId, form, senden, aufraeumen } = await splitPopupAufbau({ kontoFremd: true });
+  const nurFremd = { ...form, teilKontoId: [String(zweitesKontoId), String(zweitesKontoId)] };
+  const hash = hashAusAntwort((await senden(nurFremd)).text);
+  const res = await senden({ ...nurFremd, auffaelligkeitenHash: hash });
+  assert.equal(res.status, 302);
+  assert.equal(listSplitKinder(db, id).length, 2);
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.ok(warnungen.length > 0);
+  assert.ok(warnungen.every((m) => m.text.includes('https://portal.example.org/pool')));
+  aufraeumen();
 });

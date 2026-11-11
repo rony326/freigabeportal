@@ -1,7 +1,9 @@
-// Single shared source of truth for IBAN normalization/validation — used by the QR-bill payload
-// parser, the admin Lieferanten-IBAN form, and the Kontierung "IBAN merken" opt-in save, so all
-// three agree on what counts as a well-formed Swiss IBAN and none of them can drift out of sync
-// with the others (a drift here previously caused false-positive IBAN-mismatch fraud alerts).
+// Gemeinsame Quelle für IBAN-Normalisierung und -Prüfung, damit QR-Parser, Betrugsprüfung,
+// Zahlungsexport und Lieferanten-Stammdaten dasselbe unter einer IBAN verstehen (ein Auseinanderlaufen
+// hat früher falsche IBAN-Abweichungs-Warnungen ausgelöst). Alle normalisieren mit `normalizeIban`.
+// Geprüft wird in zwei Stufen: `isValidIban` + `ibanChecksumValid` streng nur CH (Zahlungsfreigabe
+// für Spesen und QR-Rechnungen beim Export, paymentApproval.js), `isValidIbanInternational` mit
+// Länderlängen für die Kreditor-Stammdaten (Admin-Formular, Lieferant anlegen aus der Kontierung).
 const IBAN_PATTERN = /^CH\d{2}[0-9A-Z]{17}$/;
 
 export function normalizeIban(iban) {

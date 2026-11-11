@@ -282,6 +282,12 @@ export function setJobBetrag(db, jobId, betrag) {
   db.prepare('UPDATE jobs SET betrag = ? WHERE id = ?').run(betrag || null, jobId);
 }
 
+// Beim Aufsplitten gewählter Lieferant: am Elternjob gespeichert, bevor die Kinder ihn über
+// createSplitJob übernehmen.
+export function setJobKreditor(db, jobId, { kreditorId, lieferant }) {
+  db.prepare('UPDATE jobs SET kreditor_id = ?, lieferant = ? WHERE id = ?').run(kreditorId, lieferant, jobId);
+}
+
 export function setJobTyp(db, jobId, typ) {
   db.prepare('UPDATE jobs SET typ = ? WHERE id = ?').run(typ, jobId);
 }

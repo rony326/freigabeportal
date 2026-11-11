@@ -164,6 +164,15 @@ test('betrag_qr: auf Rappen genau, Komma erlaubt', () => {
   assert.deepEqual(qr({}, '4780'), []);
 });
 
+test('betrag_qr entfällt bei einem Splitkind: der QR-Betrag gilt für die ganze Rechnung, nicht für den Teilbetrag', () => {
+  const db = setup();
+  const k = getKreditorById(db, kreditorMitIban(db, { name: 'Muster Druck AG' }));
+  const eltern = job(db, { qr_iban: IBAN_HINTERLEGT, qr_betrag: '200.00', status: 'aufgesplittet' });
+  const kind = job(db, { qr_iban: IBAN_HINTERLEGT, qr_betrag: '200.00', aufgesplittet_von: eltern.id });
+  const befunde = ermittleBefunde(db, { job: kind, kreditor: k, betrag: '80.00', typ: 'rechnung' });
+  assert.deepEqual(codes(befunde).filter((c) => c === 'betrag_qr'), []);
+});
+
 test('betrag_qr nutzt die QR-Währung im Text', () => {
   const db = setup();
   const k = getKreditorById(db, kreditorMitIban(db, { name: 'Muster Druck AG' }));

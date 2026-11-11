@@ -340,8 +340,12 @@ verteilt werden müssen (`GET/POST /kontierung/:id/aufsplitten`):
    dem Ursprungs-Job und auf jedem Teil-Job gespeichert — eine Mischung
    innerhalb eines Belegs gibt es nicht. Der Typ des Ursprungs-Jobs ist
    massgeblich für die Zahlungsart der Splitgruppe.
+   Der **Lieferant** ist Pflicht (ein Feld für alle Teile, nur aktive und
+   vollständige Lieferanten; vorgewählt aus dem Kontierungsformular bzw.
+   `job.kreditor_id`) und wird vor dem Anlegen der Kinder am Ursprungs-Job
+   gespeichert, die Teil-Jobs übernehmen ihn.
    Vor dem Anlegen läuft die Betrugserkennung **einmal pro Rechnung**: Lieferant
-   ist der des Belegs (`job.kreditor_id`), Betrag der **Gesamtbetrag**, und es gibt
+   ist der gewählte, Betrag der **Gesamtbetrag**, und es gibt
    höchstens eine IBAN-Endung (ohne QR-Code, bei Typ Rechnung und IBAN-pflichtigem
    Lieferanten). Ohne Bestätigung im Prüf-Popup wird nichts angelegt; danach geht
    **eine** Warn-Mail an Freigeber 1 + 2 aller Teil-Konten und die splittende

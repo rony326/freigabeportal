@@ -56,7 +56,7 @@ import {
   bereiteTeilDateienVor,
   erzeugeTeilJobs,
   benachrichtigeNachAufsplitten,
-  pruefeIbanNachAufsplitten,
+  alleKindIds,
 } from '../services/aufsplitten.js';
 import { asyncCallback, asyncHandler } from '../middleware/asyncHandler.js';
 import { neueFehler, feldFehlerAttr } from '../utils/feldFehler.js';
@@ -425,7 +425,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             befunde,
             hash,
             zeigeTelefonHinweis: befunde.some((b) => b.code.startsWith('iban')),
-            belegNichtGespeichert: Boolean(req.file),
+            // Ein Datei-Feld lässt sich nicht vorbefüllen: der Beleg wird im Modal nochmals gewählt.
+            belegFelder: req.file
+              ? [{ id: 'auffaelligkeiten-beleg', name: 'beleg', label: 'Einen angehängten Beleg hast du noch nicht gespeichert. Bitte wähle ihn hier nochmals aus, bevor du speicherst.' }]
+              : [],
           },
         });
       }
@@ -850,8 +853,23 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     res.redirect('/pool');
   });
 
-  function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ) {
-    res.status(status).render('kontierung-aufsplitten', { job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ });
+  // `extra`: ibanEndung, pruefBemerkung und — in der Popup-Runde — auffaelligkeiten.
+  function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ, extra = {}) {
+    res.status(status).render('kontierung-aufsplitten', {
+      job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ,
+      ibanKasten: ibanKastenBeimAufsplitten(job),
+      values: { ibanEndung: extra.ibanEndung || '', pruefBemerkung: extra.pruefBemerkung || '' },
+      auffaelligkeiten: extra.auffaelligkeiten || null,
+    });
+  }
+
+  // Beim Aufsplitten gibt es keinen Lieferanten pro Zeile: er kommt vom Beleg (job.kreditor_id).
+  // Ohne QR-Code liest die Person bei einem IBAN-pflichtigen Lieferanten einmal die letzten 4 Zeichen
+  // ab; das Feld steht im Formular, sichtbar nur bei Typ Rechnung (brauchtManuelleIbanPruefung).
+  function ibanKastenBeimAufsplitten(job) {
+    if (job.qr_iban || !job.kreditor_id) return false;
+    const kreditor = getKreditorById(db, job.kreditor_id);
+    return Boolean(kreditor) && brauchtManuelleIbanPruefung(job, kreditor, 'rechnung');
   }
 
   // Eine aufgesplittete Rechnung hat genau einen Typ für alle Teile — eine Mischung aus Rechnung
@@ -898,6 +916,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const positionen = [].concat(req.body.teilPosition || []);
       const begruendung = req.body.begruendung || '';
       const typ = normalisiereTyp(req.body.typ);
+      const ibanEndung = normalizeIban(typeof req.body.ibanEndung === 'string' ? req.body.ibanEndung : '');
+      const pruefBemerkung = (typeof req.body.pruefBemerkung === 'string' ? req.body.pruefBemerkung.trim() : '').slice(0, PRUEF_BEMERKUNG_MAX);
       const teileEingabe = kontoIds.map((kontoId, i) => ({
         kontoId,
         betrag: betraege[i] || '',
@@ -959,6 +979,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       if (jobKreditor && !istKreditorVollstaendig(db, jobKreditor)) {
         errors.push('Dieser Lieferant hat noch keine IBAN. Bitte melde dich bei der Administration.');
       }
+      const ibanManuellNoetig = Boolean(jobKreditor) && brauchtManuelleIbanPruefung(job, jobKreditor, typ);
+      if (ibanManuellNoetig && !IBAN_ENDUNG_PATTERN.test(ibanEndung)) {
+        errors.push(IBAN_ENDUNG_FEHLER);
+      }
 
       if (errors.length === 0) {
         const summe = aufgeloesteTeile.reduce((sum, t) => sum + Number(t.betrag), 0);
@@ -977,7 +1001,30 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       }
 
       if (errors.length > 0) {
-        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors, typ);
+        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors, typ, { ibanEndung, pruefBemerkung });
+      }
+
+      // Prüf-Popup wie bei der Kontierung (Spec B6), aber einmal für die ganze Rechnung: der
+      // Lieferant kommt vom Beleg, verglichen wird der Gesamtbetrag (auch gegen den QR-Betrag). Ein
+      // Hash; ohne passende Bestätigung wird nichts angelegt und keine Mail verschickt.
+      const befunde = jobKreditor
+        ? ermittleBefunde(db, { job, kreditor: jobKreditor, betrag: gesamtbetrag, typ, ibanEndung: ibanManuellNoetig ? ibanEndung : null })
+        : [];
+      const hash = befunde.length > 0 ? befundeHash(befunde) : null;
+      if (hash && req.body.auffaelligkeitenHash !== hash) {
+        // Datei-Felder lassen sich nicht vorbefüllen: für jede Zeile mit Beleg ein eigenes Feld im
+        // Modal, unter dem Namen, den die Zeile beim Absenden bekäme (Zeilen werden in derselben
+        // Reihenfolge neu gerendert).
+        const belegFelder = [...teilBelegByIndex.keys()].sort((a, b) => a - b).map((index) => ({
+          id: `auffaelligkeiten-teil-beleg-${index}`,
+          name: `teilBeleg_${index}`,
+          label: `Einen Beleg für Zeile ${index + 1} hast du noch nicht gespeichert. Bitte wähle ihn hier nochmals aus, bevor du speicherst.`,
+        }));
+        return renderAufsplittenForm(req, res, 200, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, [], typ, {
+          ibanEndung,
+          pruefBemerkung,
+          auffaelligkeiten: { befunde, hash, zeigeTelefonHinweis: befunde.some((b) => b.code.startsWith('iban')), belegFelder },
+        });
       }
 
       // Persisted on the parent even though it's about to be retired: the parent may never have
@@ -990,6 +1037,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const vorbereiteteTeile = await bereiteTeilDateienVor(config, job, aufgeloesteTeile);
 
       let ergebnis;
+      let kindIds = [];
       db.exec('BEGIN');
       try {
         setJobBetrag(db, job.id, job.betrag);
@@ -1009,6 +1057,28 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           fremdKontoModus: 'pool',
           istVertretung: !job.freigabe1_eskaliert_an_admin && istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, job.zugewiesen_an),
         });
+        // Befunde und manuelle IBAN-Prüfung gelten für die ganze Rechnung: an jedem Kind protokolliert,
+        // damit der Audit-Log jedes Teils sie zeigt.
+        kindIds = alleKindIds(ergebnis);
+        const zeitpunkt = new Date().toISOString();
+        const personId = req.currentPerson.churchtools_person_id;
+        const ibanPasst = ibanManuellNoetig ? ibanEndungPasst(db, jobKreditor.id, ibanEndung) : null;
+        for (const kindId of kindIds) {
+          if (hash) {
+            speichereBestaetigung(db, { jobId: kindId, personId, befunde, bemerkung: pruefBemerkung });
+            createFreigabe(db, {
+              jobId: kindId, personId, rolle: 'auffaelligkeiten_bestaetigt', zeitpunkt, ip: req.ip,
+              interessenskonflikt: false, kommentar: bestaetigungsKommentar(befunde, pruefBemerkung), eskaliertVon: null,
+            });
+          }
+          if (ibanManuellNoetig) {
+            createFreigabe(db, {
+              jobId: kindId, personId, rolle: 'iban_manuell_geprueft', zeitpunkt, ip: req.ip, interessenskonflikt: false,
+              kommentar: `IBAN manuell geprüft: ${ibanPasst ? 'Übereinstimmung' : 'keine Übereinstimmung'} (Eingabe ${ibanEndung})`,
+              eskaliertVon: null,
+            });
+          }
+        }
         db.exec('COMMIT');
       } catch (err) {
         db.exec('ROLLBACK');
@@ -1016,7 +1086,25 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       }
 
       await benachrichtigeNachAufsplitten(db, mailer, config, { job, ergebnis, person: req.currentPerson });
-      await pruefeIbanNachAufsplitten(db, mailer, config, { job, teile: aufgeloesteTeile, konten, person: req.currentPerson, ip: req.ip });
+
+      if (hash) {
+        // Eine Mail-Runde für die ganze Rechnung, protokolliert am Elternjob (Originalrechnung).
+        // Empfänger: Freigeber 1 + 2 aller Teil-Konten (auch fremder: ihr Teil liegt im Pool),
+        // die splittende Person und iban_abweichung_empfaenger. Der Link zeigt aufs erste Kind,
+        // der Elternjob selbst ist nach dem Aufsplitten nicht mehr bearbeitbar.
+        const erstesKind = getJobById(db, kindIds[0]);
+        await sendeAuffaelligkeitenWarnung(db, mailer, config, {
+          job,
+          kreditor: jobKreditor,
+          befunde,
+          bemerkung: pruefBemerkung,
+          person: req.currentPerson,
+          freigeberIds: aufgeloesteTeile.flatMap((t) => [t.konto.freigeber1_id, t.konto.freigeber2_id]),
+          link: erstesKind.status === 'freigabe2'
+            ? `${config.publicBaseUrl}/freigabe2/${erstesKind.id}`
+            : `${config.publicBaseUrl}/kontierung/${erstesKind.id}`,
+        });
+      }
 
       res.redirect('/pool');
     } catch (err) {

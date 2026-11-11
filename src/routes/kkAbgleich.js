@@ -15,7 +15,7 @@ import { markJobAufgesplittet, setJobBetrag, setKkAbrechnungKopfdaten, setKkText
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
-import { bereiteTeilDateienVor, erzeugeTeilJobs, benachrichtigeNachAufsplitten, pruefeIbanNachAufsplitten, POSITION_PATTERN } from '../services/aufsplitten.js';
+import { bereiteTeilDateienVor, erzeugeTeilJobs, benachrichtigeNachAufsplitten, pruefeIbanNachKkAbgleich, alleKindIds, POSITION_PATTERN } from '../services/aufsplitten.js';
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
 import { extrahierePdfText } from '../services/pdfText.js';
 import { analysiereText, LEERE_ANALYSE, berechneVorschlaege } from '../services/kkTextAnalyse.js';
@@ -307,11 +307,8 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
               fremdKontoModus: 'freigeber1',
               istVertretung: !job.freigabe1_eskaliert_an_admin && istAktiveVertretungFuer(db, personId, job.zugewiesen_an),
             });
-            // erzeugeTeilJobs legt die Kinder in Eingabereihenfolge an; die IDs aller Ergebnislisten
-            // zusammen, aufsteigend sortiert, entsprechen deshalb 1:1 der Reihenfolge von `vorbereitet`.
-            const kindIds = [
-              ...ergebnis.selbstFreigegeben, ...ergebnis.eskaliert, ...ergebnis.eskaliertAnAdmin, ...ergebnis.fremdeKonten, ...ergebnis.anFreigeber1,
-            ].map((e) => e.id).sort((a, c) => a - c);
+            // Aufsteigend sortiert entsprechen die Kind-IDs 1:1 der Reihenfolge von `vorbereitet`.
+            const kindIds = alleKindIds(ergebnis);
             if (kindIds.length !== vorbereitet.length) throw new Error('Teil-Job-Anzahl stimmt nicht');
             vorbereitet.forEach((teil, i) => {
               const kindId = kindIds[i];
@@ -345,7 +342,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           }
 
           await benachrichtigeNachAufsplitten(db, mailer, config, { job, ergebnis, person: req.currentPerson });
-          await pruefeIbanNachAufsplitten(db, mailer, config, { job, teile: vorbereitet, konten, person: req.currentPerson, ip: req.ip });
+          await pruefeIbanNachKkAbgleich(db, mailer, config, { job, teile: vorbereitet, konten, person: req.currentPerson, ip: req.ip });
           res.redirect('/pool');
         } catch (err) {
           if (err instanceof KreditorFeldKonflikt) return res.status(400).render('error', { message: err.message });

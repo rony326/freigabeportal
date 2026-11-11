@@ -52,12 +52,26 @@ zusätzlich informiert und können gezielt nachfragen.
 
 ## Aufsplitten
 
-`pruefeIbanAbgleich` läuft identisch auch in der Aufsplitten-Route
-(`POST /kontierung/:id/aufsplitten`, siehe
+Die Aufsplitten-Route (`POST /kontierung/:id/aufsplitten`, siehe
 [rechnungs-workflow.md](rechnungs-workflow.md#5-aufsplitten-status-zugewiesen--aufgesplittet))
-für jeden gewählten Kreditor — eine über Aufsplitten kontierte Teilrechnung
-durchläuft denselben Abgleich gegen die hinterlegte Lieferanten-IBAN wie
-die normale Kontierung, inklusive derselben Warn-Mail bei Mismatch.
+zeigt dasselbe Prüf-Popup wie die Kontierung, aber **einmal für die ganze
+Rechnung**: Der Lieferant kommt vom Beleg (`job.kreditor_id`, es gibt keinen
+Lieferanten pro Zeile), die Befunde aus `ermittleBefunde` werden mit dem
+**Gesamtbetrag** berechnet (auch der Vergleich mit dem QR-Betrag), es gibt
+einen Hash und — ohne QR-Code bei Typ Rechnung und IBAN-pflichtigem
+Lieferanten — ein Feld für die letzten 4 Zeichen der IBAN. Ohne passende
+Bestätigung wird nichts angelegt. Nach der Bestätigung bekommt jedes Kind
+eine `kontierung_auffaelligkeiten`-Zeile und einen freigaben-Eintrag
+`auffaelligkeiten_bestaetigt` (bei manueller Prüfung zusätzlich
+`iban_manuell_geprueft`); die Warn-Mail `auffaelligkeiten-warnung` geht
+einmal an Freigeber 1 + 2 aller Teil-Konten, die splittende Person und die
+konfigurierten Empfänger, protokolliert am Elternjob, mit Link aufs erste
+Kind. Wurden Zeilen-Belege angehängt, bietet das Popup für jede dieser
+Zeilen ein Datei-Feld zum nochmaligen Auswählen an.
+
+Der Kreditkarten-Abgleich hat kein Popup: `pruefeIbanNachKkAbgleich` schreibt
+bei einem IBAN-Befund nachträglich `iban_abweichung` am Elternjob und
+schickt die Warn-Mail.
 
 ## Verwandter, unabhängiger Mechanismus: Rechnungsnummer-Duplikat-Check
 

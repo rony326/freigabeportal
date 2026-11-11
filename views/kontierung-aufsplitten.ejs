@@ -13,7 +13,8 @@
     <% } %>
     <p>Jede Zeile wird zu einer eigenständigen Rechnung mit eigenem Konto und Teilbetrag. Zahlungsziel, Lieferant, Absender und Rechnungsnummer werden übernommen. Für Konten, bei denen du Freigeber oder Stellvertretung bist, gilt Freigabe 1 automatisch als durch dich erteilt — ausser du kreuzt "Konflikt" an, dann geht der Teil direkt an deine Stellvertretung. Für andere Konten landet der Teil unzugewiesen im Pool mit einem Hinweis für die zuständige Person. Das Kästchen "Konflikt" ist nur relevant, wenn du bei diesem Konto selbst Freigeber oder Stellvertretung bist.</p>
 
-    <form method="post" action="/kontierung/<%= job.id %>/aufsplitten" enctype="multipart/form-data" class="col-12">
+    <% if (locals.auffaelligkeiten) { %><%- include('_auffaelligkeiten_modal', { auffaelligkeiten, values, formId: 'aufsplitten-form' }) %><% } %>
+    <form id="aufsplitten-form" method="post" action="/kontierung/<%= job.id %>/aufsplitten" enctype="multipart/form-data" class="col-12">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="mb-3">
         <span class="form-label d-block">Typ</span>
@@ -32,6 +33,15 @@
         <input type="text" inputmode="decimal" class="form-control" id="gesamtbetrag" name="gesamtbetrag" value="<%= gesamtbetrag %>" placeholder="z.B. 200.00" required>
         <div class="form-text">Die Teilbeträge unten müssen exakt diese Summe ergeben.</div>
       </div>
+      <% if (locals.ibanKasten) { %>
+        <%# Gleicher Kasten wie auf der Kontierung, aber nur einmal: der Lieferant gilt für alle Teile. Die hinterlegte IBAN wird nie angezeigt. %>
+        <div class="alert alert-warning<%= typ === 'gutschrift' ? ' d-none' : '' %>" id="iban-manuell-kasten">
+          <h2 class="h5 alert-heading">Kein QR-Code: IBAN bitte von Hand prüfen</h2>
+          <p class="mb-2">Auf dieser Rechnung wurde kein QR-Code erkannt. Lies auf der Rechnung die IBAN des Lieferanten ab und gib die letzten 4 Zeichen ein. Die hinterlegte IBAN siehst du hier bewusst nicht.</p>
+          <label class="form-label" for="ibanEndung">Letzte 4 Zeichen der IBAN</label>
+          <input type="text" class="form-control w-auto" id="ibanEndung" name="ibanEndung" value="<%= values.ibanEndung %>" maxlength="9" autocomplete="off" spellcheck="false"<%= typ === 'gutschrift' ? '' : ' required' %>>
+        </div>
+      <% } %>
       <div id="teile-container">
         <% teile.forEach((teil) => { %>
           <div class="row g-2 mb-3 pb-3 border-bottom align-items-center teil-zeile">
@@ -78,6 +88,7 @@
     </form>
       </div>
     </div>
+  <% if (locals.auffaelligkeiten) { %><script src="/js/auffaelligkeiten.js?v=<%= locals.assetVersion || 0 %>" defer></script><% } %>
   <script nonce="<%= locals.cspNonce %>">
     (function () {
       // Reached both standalone (direct navigation) and embedded in an <iframe> inside a Bootstrap
@@ -90,6 +101,20 @@
           window.parent.postMessage('aufsplitten-abbrechen', window.location.origin);
         });
       }
+    })();
+    (function () {
+      // IBAN-Kasten (nur ohne QR-Code vorhanden): nur bei Typ Rechnung sichtbar und Pflicht.
+      var kasten = document.getElementById('iban-manuell-kasten');
+      var eingabe = document.getElementById('ibanEndung');
+      if (!kasten || !eingabe) return;
+      document.querySelectorAll('input[name="typ"]').forEach(function (radio) {
+        radio.addEventListener('change', function () {
+          var gewaehlt = document.querySelector('input[name="typ"]:checked');
+          var noetig = !gewaehlt || gewaehlt.value === 'rechnung';
+          kasten.classList.toggle('d-none', !noetig);
+          eingabe.required = noetig;
+        });
+      });
     })();
     (function () {
       var kontoOptionsHtml = document.querySelector('.teil-zeile select').innerHTML;
@@ -135,7 +160,7 @@
       // don't. Renaming each row's file input to its current position right before submit (not
       // at row-creation time, so add/remove reordering is always handled correctly) gives the
       // server a stable teilBeleg_<i> fieldname to match back against that row's other fields.
-      document.querySelector('form[action$="/aufsplitten"]').addEventListener('submit', function () {
+      document.getElementById('aufsplitten-form').addEventListener('submit', function () {
         document.querySelectorAll('.teil-zeile').forEach(function (zeile, i) {
           var fileInput = zeile.querySelector('.teil-beleg-input');
           if (fileInput && fileInput.files.length > 0) {

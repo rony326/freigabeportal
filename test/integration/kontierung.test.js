@@ -2524,52 +2524,239 @@ test('POST /kontierung/:id/aufsplitten lets an admin-escalated Portal-Admin stil
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('POST /kontierung/:id/aufsplitten sends an IBAN-Abweichung warning mail and logs it on the parent job when the QR-IBAN mismatches, without blocking the split', async () => {
+// --- Prüf-Popup beim Aufsplitten --------------------------------------------------------
+// Der Lieferant steht am Elternjob (kein Lieferant pro Zeile): Befunde werden einmal für
+// job.kreditor_id mit dem Gesamtbetrag berechnet, ein Hash, ein ibanEndung-Feld.
+
+async function splitPopupAufbau({ qr = true, zahlungsart = 'ueberweisung', iban = 'CH0000000000000000000', kontoFremd = false } = {}) {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
-  const { createKreditorIban } = await import('../../src/db/kreditorIbanRepo.js');
-  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
   const db = openDatabase(':memory:');
   seedDefaults(db);
+  setConfigValue(db, 'iban_abweichung_empfaenger', 'revision@example.org');
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
-  const kontoId = seedKontoAndPersonen(db); // freigeber1Id:'1', freigeber2Id:'3'
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
-  createKreditorIban(db, { kreditorId, iban: 'CH0000000000000000000' }); // hinterlegte IBAN weicht ab
+  const kontoId = seedKontoAndPersonen(db); // Freigeber 1 = '1' (splittet selbst), Freigeber 2 = '3'
+  let zweitesKontoId = kontoId;
+  if (kontoFremd) {
+    // Ein Konto, auf dem die splittende Person keine Rolle hat: der Teil geht in den Pool.
+    for (const pid of ['5', '6']) {
+      upsertPerson(db, { id: pid, vorname: `Person${pid}`, nachname: 'Muster', email: `p${pid}@example.org`, gruppen: ['10'], loggedInNow: true });
+    }
+    zweitesKontoId = createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '5', stellvertreter1Id: '5', freigeber2Id: '6', stellvertreter2Id: '5' });
+  }
+  const kreditorId = zahlungsart === 'lastschrift'
+    ? kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId })
+    : kreditorMitIban(db, { name: 'Muster AG', kontoId, iban, zahlungsart });
   const pdfPfad = join(jobsDir, `original-${Date.now()}.pdf`);
   writeFileSync(pdfPfad, ECHTES_PDF);
   const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: 'lief@example.org', dateiname: 'rechnung.pdf', pdfPfad });
   claimJob(db, id, '1');
   updateKontierungMetadaten(db, id, { absender: 'lief@example.org', betrag: '200.00', zahlungsziel: '2026-09-01', rechnungsnummer: 'RE-1', lieferant: 'Muster AG', kreditorId });
-  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  if (qr) setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '200.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
   const mailer = createStubMailer();
   const app = buildTestAppMitDateien(db, mailer, jobsDir);
+  const form = { gesamtbetrag: '200.00', teilKontoId: [String(kontoId), String(zweitesKontoId)], teilBetrag: ['120.00', '80.00'] };
+  const senden = (body) => request(app).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form').send(body);
+  const aufraeumen = () => { db.close(); rmSync(jobsDir, { recursive: true, force: true }); };
+  return { db, app, id, kontoId, mailer, form, senden, aufraeumen };
+}
 
+test('GET /kontierung/:id/aufsplitten zeigt ohne QR-Code bei einem Überweisungs-Lieferanten ein Feld für die letzten 4 Zeichen der IBAN, ohne die hinterlegte IBAN', async () => {
+  const { app, id, aufraeumen } = await splitPopupAufbau({ qr: false, iban: 'CH9300762011623852957' });
+  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="iban-manuell-kasten"/);
+  assert.match(res.text, /name="ibanEndung"/);
+  assert.doesNotMatch(res.text, /name="ibanEndung_\d+"/, 'nur ein Feld, nicht eins pro Zeile');
+  assert.doesNotMatch(res.text, /2957|CH93/, 'die hinterlegte IBAN erscheint nie, auch nicht teilweise');
+  aufraeumen();
+});
+
+test('GET /kontierung/:id/aufsplitten zeigt mit QR-Code oder bei Lastschrift-Lieferant kein IBAN-Feld', async () => {
+  for (const variante of [{ qr: true }, { qr: false, zahlungsart: 'lastschrift' }]) {
+    const { app, id, aufraeumen } = await splitPopupAufbau(variante);
+    const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+    assert.equal(res.status, 200);
+    assert.doesNotMatch(res.text, /name="ibanEndung"/);
+    aufraeumen();
+  }
+});
+
+test('POST /kontierung/:id/aufsplitten mit fremder QR-IBAN und ohne Bestätigung zeigt das Prüf-Popup, legt keine Kinder an und lässt den Elternjob unverändert', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, mailer, form, senden, aufraeumen } = await splitPopupAufbau();
+
+  const res = await senden(form);
+
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /IBAN nicht hinterlegt/);
+  assert.doesNotMatch(res.text, /Teil \d+ ·/, 'kein Teil-Präfix: die Befunde gelten für die ganze Rechnung');
+  assert.match(res.text, /<form id="aufsplitten-form"/);
+  assert.match(res.text, /name="auffaelligkeitenHash" form="aufsplitten-form"/);
+  assert.match(res.text, /name="pruefBemerkung" form="aufsplitten-form"/);
+  assert.match(res.text, /type="submit" form="aufsplitten-form" class="btn btn-danger"[^>]*>Geprüft, trotzdem speichern/);
+  assert.doesNotMatch(res.text, /form="kontierung-form"/);
+  assert.match(res.text, /name="teilBetrag" value="120\.00"/, 'Zeilenwerte bleiben erhalten');
+  assert.match(res.text, /src="\/js\/auffaelligkeiten\.js/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listSplitKinder(db, id).length, 0);
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten').get().n, 0);
+  assert.equal(listMailLog(db).length, 0);
+  assert.equal(mailer.sent.length, 0);
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten mit passendem Hash legt die Kinder an, protokolliert die Bestätigung je Kind und schickt eine Mail-Runde', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ kontoFremd: true });
+  const hash = hashAusAntwort((await senden(form)).text);
+
+  const res = await senden({ ...form, auffaelligkeitenHash: hash, pruefBemerkung: 'telefonisch bestätigt' });
+
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/pool');
+  assert.equal(getJobById(db, id).status, 'aufgesplittet');
+  const kinder = listSplitKinder(db, id).sort((a, b) => a.id - b.id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) {
+    const zeilen = db.prepare('SELECT * FROM kontierung_auffaelligkeiten WHERE job_id = ?').all(kind.id);
+    assert.equal(zeilen.length, 1, `Bestätigung an Kind #${kind.id}`);
+    assert.equal(zeilen[0].bemerkung, 'telefonisch bestätigt');
+    assert.equal(zeilen[0].person_id, '1');
+    assert.deepEqual(JSON.parse(zeilen[0].befunde_json).map((b) => b.code), ['iban_fremd']);
+    const bestaetigt = listFreigabenByJob(db, kind.id).filter((f) => f.rolle === 'auffaelligkeiten_bestaetigt');
+    assert.equal(bestaetigt.length, 1);
+    assert.equal(bestaetigt[0].kommentar, 'IBAN nicht hinterlegt — Wie geprüft: telefonisch bestätigt');
+  }
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM freigaben WHERE rolle = 'iban_abweichung'").get().n, 0, 'der alte iban_abweichung-Eintrag entfällt');
+
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.deepEqual(warnungen.map((m) => m.empfaenger).sort(),
+    ['p1@example.org', 'p3@example.org', 'p5@example.org', 'p6@example.org', 'revision@example.org'],
+    'eine Mail pro Empfänger: Freigeber 1 + 2 aller Teil-Konten, die splittende Person, Revision');
+  assert.ok(warnungen.every((m) => m.job_id === id), 'protokolliert am Elternjob (Originalrechnung)');
+  assert.ok(warnungen.every((m) => m.text.includes('- IBAN nicht hinterlegt: ') && m.text.includes('Wie geprüft: telefonisch bestätigt')));
+  assert.ok(warnungen.every((m) => m.text.includes(`https://portal.example.org/freigabe2/${kinder[0].id}`)), 'Link aufs erste Kind');
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten mit veraltetem Hash zeigt das Popup erneut und legt nichts an', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+  const res = await senden({ ...form, gesamtbetrag: '210.00', teilBetrag: ['130.00', '80.00'], auffaelligkeitenHash: hash });
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Betrag weicht ab/);
+  assert.notEqual(hashAusAntwort(res.text), hash);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten vergleicht den QR-Betrag mit dem Gesamtbetrag, nicht mit den Teilbeträgen', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ iban: 'CH4431999123000889012' }); // QR-IBAN hinterlegt
+  const res = await senden(form); // QR 200.00 = Gesamtbetrag, Teile 120/80
+  assert.equal(res.status, 302, 'keine Auffälligkeit, kein Popup');
+  assert.equal(listSplitKinder(db, id).length, 2);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten').get().n, 0);
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten ohne QR-Code und ohne ibanEndung bei Überweisungs-Lieferant → 400, nichts angelegt', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ qr: false, iban: 'CH9300762011623852957' });
+  const res = await senden(form);
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Bitte gib die letzten 4 Zeichen der IBAN auf der Rechnung ein\./);
+  assert.match(res.text, /name="teilBetrag" value="120\.00"/);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten als Gutschrift ohne QR-Code braucht keine ibanEndung', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ qr: false, iban: 'CH9300762011623852957' });
+  const res = await senden({ ...form, typ: 'gutschrift' });
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  assert.ok(kinder.every((k) => !listFreigabenByJob(db, k.id).some((f) => f.rolle === 'iban_manuell_geprueft')));
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten mit passender ibanEndung splittet ohne Popup und protokolliert die manuelle Prüfung je Kind', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ qr: false, iban: 'CH9300762011623852957' });
+  const res = await senden({ ...form, ibanEndung: '2957' });
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) {
+    const zeilen = listFreigabenByJob(db, kind.id).filter((f) => f.rolle === 'iban_manuell_geprueft');
+    assert.equal(zeilen.length, 1);
+    assert.equal(zeilen[0].kommentar, 'IBAN manuell geprüft: Übereinstimmung (Eingabe 2957)');
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten').get().n, 0);
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten mit falscher ibanEndung zeigt das Popup; nach Bestätigung je Kind „keine Übereinstimmung“', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau({ qr: false, iban: 'CH9300762011623852957' });
+  const erste = await senden({ ...form, ibanEndung: '0000' });
+  assert.equal(erste.status, 200);
+  assert.match(erste.text, /IBAN nicht hinterlegt \(manuelle Prüfung\)/);
+  assert.match(erste.text, /name="ibanEndung"[^>]*value="0000"/, 'die Eingabe bleibt erhalten');
+  assert.equal(listSplitKinder(db, id).length, 0);
+
+  const res = await senden({ ...form, ibanEndung: '0000', auffaelligkeitenHash: hashAusAntwort(erste.text) });
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  for (const kind of kinder) {
+    const freigaben = listFreigabenByJob(db, kind.id);
+    assert.equal(freigaben.find((f) => f.rolle === 'iban_manuell_geprueft').kommentar, 'IBAN manuell geprüft: keine Übereinstimmung (Eingabe 0000)');
+    assert.ok(freigaben.some((f) => f.rolle === 'auffaelligkeiten_bestaetigt'));
+  }
+  assert.ok(listMailLog(db).some((m) => m.typ === 'auffaelligkeiten-warnung' && m.text.includes('IBAN nicht hinterlegt (manuelle Prüfung)')));
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten mit Zeilen-Beleg in der Popup-Runde bietet im Modal ein Feld für genau diese Zeile an', async () => {
+  const { db, app, id, kontoId, aufraeumen } = await splitPopupAufbau();
   const res = await request(app)
     .post(`/kontierung/${id}/aufsplitten`)
     .set('x-test-person-id', '1')
-    .type('form')
-    .send({
-      gesamtbetrag: '200.00',
-      teilKontoId: [String(kontoId), String(kontoId)],
-      teilBetrag: ['120.00', '80.00'],
-    });
+    .field('gesamtbetrag', '200.00')
+    .field('teilKontoId', String(kontoId))
+    .field('teilKontoId', String(kontoId))
+    .field('teilBetrag', '120.00')
+    .field('teilBetrag', '80.00')
+    .attach('teilBeleg_1', PNG_1X1, { filename: 'beleg.png', contentType: 'image/png' });
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /Einen Beleg für Zeile 2 hast du noch nicht gespeichert/);
+  assert.match(res.text, /name="teilBeleg_1" form="aufsplitten-form"/);
+  assert.doesNotMatch(res.text, /name="teilBeleg_0"/);
+  assert.equal(listSplitKinder(db, id).length, 0);
+  aufraeumen();
+});
 
-  assert.equal(res.status, 302, 'the split must still complete despite the mismatch');
-  assert.equal(res.headers.location, '/pool');
-
-  const auditEintrag = db.prepare("SELECT * FROM freigaben WHERE job_id = ? AND rolle = 'iban_abweichung'").get(id);
-  assert.ok(auditEintrag, 'expected an iban_abweichung freigaben row on the parent job');
-
-  const mailLog = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
-  assert.ok(mailLog.length > 0, 'expected at least one auffaelligkeiten-warnung mail to be logged');
-  assert.ok(mailLog.every((m) => m.text.includes('- IBAN nicht hinterlegt: ')));
-  assert.ok(mailer.sent.some((m) => /Auffälligkeiten/.test(m.subject)));
-  assert.equal(listMailLog(db).filter((m) => m.typ === 'iban-warnung').length, 0);
-
-  const kinder = listSplitKinder(db, id);
-  assert.equal(kinder.length, 2, 'the split itself must still go through');
-  db.close();
-  rmSync(jobsDir, { recursive: true, force: true });
+test('POST /kontierung/:id/aufsplitten: ein im Modal nochmals gewählter Zeilen-Beleg landet im PDF genau dieses Kindes', async () => {
+  const { db, app, id, kontoId, form, senden, aufraeumen } = await splitPopupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .field('gesamtbetrag', '200.00')
+    .field('teilKontoId', String(kontoId))
+    .field('teilKontoId', String(kontoId))
+    .field('teilBetrag', '120.00')
+    .field('teilBetrag', '80.00')
+    .field('auffaelligkeitenHash', hash)
+    .attach('teilBeleg_1', PNG_1X1, { filename: 'beleg.png', contentType: 'image/png' });
+  assert.equal(res.status, 302);
+  const kinder = listSplitKinder(db, id).sort((a, b) => a.id - b.id);
+  assert.equal(kinder[0].beleg_seitenzahl ?? 0, 0);
+  assert.equal(kinder[1].beleg_seitenzahl, 1);
+  aufraeumen();
 });
 
 test('POST /kontierung/:id/aufsplitten sends no IBAN-Abweichung mail when the QR-IBAN matches the hinterlegte IBAN', async () => {
@@ -2960,6 +3147,47 @@ test('POST /kontierung/:id Ablehnen mit Auffälligkeiten zeigt kein Popup', asyn
   assert.equal(res.status, 302);
   assert.equal(getJobById(db, id).status, 'abgelehnt');
   assert.equal(anzahlBestaetigungen(db, id), 0);
+  db.close();
+});
+
+test('POST /kontierung/:id mit strikter Freigeber-1-Prüfung: Auffälligkeiten zeigen das Popup, mit Hash wird weitergeleitet, bestätigt und gewarnt', async () => {
+  const { setQrDaten } = await import('../../src/db/jobsRepo.js');
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  setConfigValue(db, 'iban_abweichung_empfaenger', 'revision@example.org');
+  setConfigValue(db, 'kontierung_strikte_freigeber1_pruefung', '1');
+  const kontoId = seedKontoAndPersonen(db);
+  const kreditorId = kreditorMitIban(db, { name: 'Muster AG', kontoId, iban: 'CH0000000000000000000' });
+  const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '3'); // Freigeber 2, nicht Freigeber 1 → strikte Weiterleitung an '1'
+  setKontierung(db, id, kontoId);
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
+  const app = buildTestApp(db, createStubMailer());
+  const form = { kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' };
+  const senden = (body) => request(app).post(`/kontierung/${id}`).set('x-test-person-id', '3').type('form').send(body);
+
+  const erste = await senden(form);
+  assert.equal(erste.status, 200);
+  assert.match(erste.text, /id="auffaelligkeiten-modal"/);
+  assert.equal(getJobById(db, id).zugewiesen_an, '3', 'nichts weitergeleitet');
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  assert.equal(anzahlBestaetigungen(db, id), 0);
+  assert.equal(listMailLog(db).length, 0);
+
+  const res = await senden({ ...form, auffaelligkeitenHash: hashAusAntwort(erste.text), pruefBemerkung: 'Rückruf' });
+  assert.equal(res.status, 302);
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.zugewiesen_an, '1', 'an den echten Freigeber 1 weitergeleitet');
+  const rollen = listFreigabenByJob(db, id).map((f) => f.rolle);
+  assert.ok(rollen.includes('freigabe1_weiterleitung'));
+  assert.ok(rollen.includes('auffaelligkeiten_bestaetigt'));
+  assert.ok(!rollen.includes('freigeber1'));
+  assert.equal(anzahlBestaetigungen(db, id), 1);
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.deepEqual(warnungen.map((m) => m.empfaenger).sort(), ['p1@example.org', 'p3@example.org', 'revision@example.org']);
+  assert.ok(warnungen.every((m) => m.text.includes(`https://portal.example.org/kontierung/${id}`)), 'noch nicht in Freigabe 2: Link auf die Kontierung');
   db.close();
 });
 

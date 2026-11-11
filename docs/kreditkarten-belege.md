@@ -557,8 +557,8 @@ die übrigen Belege im selben Lauf.
 ## Bekannte Grenzen
 
 - **Kein Rechnungsnummer-Duplikat-Check pro Zeile.** Der Abgleich führt —
-  wie das bestehende Aufsplitten — nur den **IBAN-Abgleich auf
-  Elternjob-Ebene** aus (`pruefeIbanNachAufsplitten`, gegen `job.qr_iban`/
+  nur den **IBAN-Abgleich auf
+  Elternjob-Ebene** aus (`pruefeIbanNachKkAbgleich`, gegen `job.qr_iban`/
   `job.kreditor_id` der Abrechnung selbst). Ein Duplikat-Check auf
   Kreditor + Rechnungsnummer je Teil-Zeile — wie ihn die Spec-Formulierung
   in Abschnitt 5 nahelegt — existiert weder beim Aufsplitten noch beim

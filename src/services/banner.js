@@ -3,6 +3,10 @@ export const BANNER_ARTEN = ['wartung', 'warnung', 'info'];
 const REIHENFOLGE = { wartung: 0, warnung: 1, info: 2 };
 export const BANNER_TEXT_MAX = 1000;
 
+/**
+ * Aktuell gültige Banner für eine Person: aktiv, im Zeitfenster, Info-Banner nicht ausgeblendet; Reihenfolge Wartung, Warnung, Info.
+ * @returns {object[]} `{id, art, text, link, wegklickbar}`
+ */
 export function aktiveBanner(db, personId, jetzt = new Date()) {
   const iso = jetzt.toISOString();
   const zeilen = db
@@ -15,6 +19,7 @@ export function aktiveBanner(db, personId, jetzt = new Date()) {
   return zeilen.map((z) => ({ id: z.id, art: z.art, text: z.text, link: z.link && linkGueltig(z.link) ? z.link : null, wegklickbar: z.art === 'info' }));
 }
 
+// Blendet ein Info-Banner für die Person dauerhaft aus. @returns {'ok'|'nicht_gefunden'|'nicht_wegklickbar'}
 export function blendeBannerAus(db, bannerId, personId) {
   const banner = db.prepare('SELECT art FROM banner WHERE id = ?').get(bannerId);
   if (!banner) return 'nicht_gefunden';
@@ -34,6 +39,7 @@ function istZeit(wert) {
   return typeof wert === 'string' && wert !== '' && !Number.isNaN(new Date(wert).getTime());
 }
 
+// @returns {string[]} Fehlermeldungen (leer = gültig)
 export function pruefeBannerEingabe({ art, text, link, von, bis } = {}) {
   const fehler = [];
   if (!BANNER_ARTEN.includes(art)) fehler.push('Art muss Info, Wartung oder Warnung sein.');

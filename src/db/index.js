@@ -1,3 +1,17 @@
+// Datenbank-Einstieg: öffnet die SQLite-Datei (`node:sqlite`) und bringt sie auf den aktuellen Stand.
+//
+// Schema-Strategie (wichtig für jede Änderung am Datenmodell, Übersicht: docs/datenmodell.md):
+//   1. `schema.sql` legt auf einer FRISCHEN Datenbank alle Tabellen an (`CREATE TABLE IF NOT EXISTS`).
+//   2. Bestehende Datenbanken (Live, Backups, Tests) erreichen neue Spalten/Tabellen NUR über die
+//      idempotenten `migrate*`-Funktionen in diesem Verzeichnis, die bei jedem Start laufen.
+//      Neue Spalte → Eintrag in der passenden `*_TABLE_MIGRATIONS`-Liste (UND in schema.sql).
+//   3. SQLite kann CHECK-Bedingungen nicht per ALTER erweitern. Neue erlaubte Werte (Status, Rollen, Mailtypen,
+//      Cron-Jobnamen) brauchen deshalb einen Tabellen-Neuaufbau (`erweitereCheckPerRebuild`); der erkennt am
+//      "Marker" (dem neuesten Wert), ob er schon gelaufen ist.
+//   4. Die Reihenfolge in `openDatabase()` ist bindend: CHECK-Rebuilds löschen die Trigger der alten Tabelle,
+//      deshalb läuft `migrateSecuritySchema` (legt die Audit-Trigger neu an) NACH allen Rebuilds.
+// Migrationen laufen bei jedem Start und müssen darum immer wiederholbar sein, ohne Daten zu verändern.
+
 import { DatabaseSync } from 'node:sqlite';
 import { seedGruppenBerechtigungen } from './gruppenBerechtigungenRepo.js';
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -18,12 +32,11 @@ import { getDefaultConfigValue } from './adminConfigRepo.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// `CREATE TABLE IF NOT EXISTS` in schema.sql only reaches a fresh/in-memory database — once any
-// database file has already been created once (test data, an early deployment, whatever), that
-// statement no-ops on it and new jobs columns silently never arrive. New columns go here too so
-// an already-existing database picks them up on next start. Each entry is idempotent: skipped if
-// the column already exists (either added by an earlier run of this migration, or present from
-// the start via schema.sql on a brand-new database).
+// `CREATE TABLE IF NOT EXISTS` in schema.sql erreicht nur eine frische bzw. In-Memory-Datenbank — sobald eine
+// Datenbankdatei einmal angelegt wurde (Testdaten, ein früher Betrieb, egal was), läuft diese Anweisung dort ins Leere,
+// und neue jobs-Spalten kommen nie an. Neue Spalten gehören deshalb auch hierher, damit eine bestehende Datenbank sie
+// beim nächsten Start bekommt. Jeder Eintrag ist idempotent: er wird übersprungen, wenn die Spalte schon existiert
+// (entweder durch einen früheren Lauf dieser Migration oder von Anfang an über schema.sql in einer neuen Datenbank).
 const JOBS_TABLE_MIGRATIONS = [
   { column: 'betrag', ddl: 'ALTER TABLE jobs ADD COLUMN betrag TEXT' },
   { column: 'zahlungsziel', ddl: 'ALTER TABLE jobs ADD COLUMN zahlungsziel TEXT' },
@@ -76,6 +89,7 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'rapport_eskaliert_am', ddl: 'ALTER TABLE jobs ADD COLUMN rapport_eskaliert_am TEXT' },
 ];
 
+// Nachträgliche Spalten der Tabelle `personen`.
 const PERSONEN_TABLE_MIGRATIONS = [
   { column: 'ferienmodus_von', ddl: 'ALTER TABLE personen ADD COLUMN ferienmodus_von TEXT' },
   { column: 'ferienmodus_bis', ddl: 'ALTER TABLE personen ADD COLUMN ferienmodus_bis TEXT' },
@@ -87,6 +101,7 @@ const PERSONEN_TABLE_MIGRATIONS = [
   { column: 'benachrichtigung', ddl: 'ALTER TABLE personen ADD COLUMN benachrichtigung TEXT' },
 ];
 
+// Ergänzt fehlende `personen`-Spalten (idempotent; gleiches Muster bei den Funktionen darunter).
 function migratePersonenTable(db) {
   const existing = new Set(db.prepare('PRAGMA table_info(personen)').all().map((col) => col.name));
   for (const { column, ddl } of PERSONEN_TABLE_MIGRATIONS) {
@@ -130,29 +145,25 @@ function migrateFreigabenTableVertretung(db) {
   }
 }
 
-// SQLite CHECK constraints can't be widened with ALTER TABLE — same rebuild-in-a-transaction
-// approach as migrateFreigabenTable below. The marker this function checks for is `'spesen'`
-// (the newest quelle value); check schema.sql's jobs CREATE TABLE for what the CHECK currently
-// allows, not this comment.
+// SQLite-CHECK-Bedingungen lassen sich nicht per ALTER TABLE erweitern — gleicher Neuaufbau in einer Transaktion
+// wie bei migrateFreigabenTable weiter unten. Der Marker, auf den diese Funktion prüft, ist `'spesen'` (der neueste
+// quelle-Wert); was der CHECK aktuell erlaubt, steht im CREATE TABLE der Tabelle jobs in schema.sql, nicht in diesem Kommentar.
 //
-// Must run BEFORE migrateJobsTable(db) in openDatabase(): renaming jobs aside (and later
-// dropping the renamed copy) also renames/drops every trigger and index attached to it, since
-// SQLite's ALTER TABLE RENAME rewrites their ON-clause to follow the table and DROP TABLE takes
-// dependent triggers with it. Running migrateJobsTable(db) immediately afterwards re-creates
-// idx_jobs_datei_hash and all four zeitstempel-immutability triggers unconditionally (its own
-// CREATE INDEX/TRIGGER IF NOT EXISTS statements), healing what this rebuild just dropped. This
-// function deliberately does NOT also add the four new Spesen columns — JOBS_TABLE_MIGRATIONS'
-// plain ADD COLUMN entries (which don't care about an unrelated CHECK constraint) already cover
-// that, exactly like every other jobs column added since this table's original schema.sql.
+// Muss in openDatabase() VOR migrateJobsTable(db) laufen: Beim Beiseiteschieben von jobs (und dem späteren Löschen der
+// umbenannten Kopie) gehen auch alle Trigger und Indizes der Tabelle mit, denn SQLites ALTER TABLE RENAME schreibt deren
+// ON-Klausel auf die umbenannte Tabelle um und DROP TABLE nimmt abhängige Trigger mit. migrateJobsTable(db) legt direkt
+// danach idx_jobs_datei_hash und alle vier Zeitstempel-Schutz-Trigger bedingungslos neu an (eigene CREATE INDEX/TRIGGER
+// IF NOT EXISTS), was hier verloren ging, heilt also wieder. Diese Funktion ergänzt bewusst NICHT auch die vier neuen
+// Spesen-Spalten — die einfachen ADD-COLUMN-Einträge in JOBS_TABLE_MIGRATIONS (die ein fremder CHECK nicht stört)
+// decken das schon ab, genau wie jede andere jobs-Spalte seit dem ursprünglichen schema.sql.
 function migrateJobsTableQuelleCheck(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'").get();
   if (!tableSql || tableSql.sql.includes("'spesen'")) return;
 
-  // Only run the migration if the old jobs table has the columns it should have from
-  // the original schema.sql and JOBS_TABLE_MIGRATIONS. If it doesn't, let migrateJobsTable add
-  // them via ALTER TABLE first; a later restart will run this migration on the fully-populated
-  // table. We check for konto_id (original schema) and beleg_seitenzahl (latest migration),
-  // which covers the full range.
+  // Die Migration nur ausführen, wenn die alte jobs-Tabelle die Spalten hat, die sie aus dem ursprünglichen schema.sql
+  // und JOBS_TABLE_MIGRATIONS haben muss. Fehlen sie, ergänzt migrateJobsTable sie zuerst per ALTER TABLE; ein späterer
+  // Neustart führt diese Migration dann auf der vollständigen Tabelle aus. Geprüft werden konto_id (ursprüngliches
+  // Schema) und beleg_seitenzahl (jüngste Migration), das deckt den ganzen Bereich ab.
   const cols = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name));
   if (!cols.has('konto_id') || !cols.has('beleg_seitenzahl') || !cols.has('gruppe_abgeholt_am')) {
     console.warn(
@@ -309,6 +320,8 @@ function migrateJobsStatusKenntnisnahme(db) {
   }
 }
 
+// Ersetzt ein Muster im SQL-Text und bricht ab, wenn es nicht GENAU einmal vorkommt – verhindert, dass ein
+// Neuaufbau der Tabelle `jobs` stillschweigend ein verändertes CREATE-Statement erzeugt.
 function ersetzeGenauEinmal(text, muster, ersatz) {
   const treffer = text.match(new RegExp(muster.source, 'g')) || [];
   if (treffer.length !== 1) {
@@ -317,6 +330,7 @@ function ersetzeGenauEinmal(text, muster, ersatz) {
   return text.replace(muster, ersatz);
 }
 
+// Ergänzt fehlende `jobs`-Spalten, den Hash-Index und die Manipulationsschutz-Trigger für Zeitstempel.
 function migrateJobsTable(db) {
   const existing = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((col) => col.name));
   for (const { column, ddl } of JOBS_TABLE_MIGRATIONS) {
@@ -370,61 +384,56 @@ function migrateJobsTable(db) {
     END
   `);
 
-  // Runs strictly after the loop above, so the abgeschlossen_am column is guaranteed to exist by
-  // now (whether it came from schema.sql on a fresh database or from the ALTER TABLE entry).
+  // Läuft strikt nach der Schleife oben, die Spalte abgeschlossen_am existiert hier also garantiert (entweder aus
+  // schema.sql in einer frischen Datenbank oder aus dem ALTER-TABLE-Eintrag).
   //
-  // Backfill: on the day the RFC3161 feature is deployed to a database that already has
-  // 'abgeschlossen' jobs, those jobs have no abgeschlossen_am (the column is new). Without this,
-  // they are caught by the n8n pickup gate (jobsRepo.listAbholbereitJobs/confirmAbholung block
-  // every abgeschlossen job without a timestamp) while being invisible to the admin warning
-  // banner (countZeitstempelUeberfaellig skips abgeschlossen_am IS NULL) — un-pickupable with
-  // nothing on the dashboard saying why. Stamping them with "now" puts them on the same clock as
-  // freshly completed jobs: the nachhol-job picks them up, and if the TSA stays unreachable the
-  // banner does start warning about them once the threshold passes.
+  // Nachtrag (Backfill): Wird die RFC3161-Funktion auf einer Datenbank mit bereits 'abgeschlossenen' Jobs eingespielt,
+  // haben diese Jobs kein abgeschlossen_am (die Spalte ist neu). Ohne diese Korrektur würden sie von der n8n-Abholsperre
+  // erfasst (jobsRepo.listAbholbereitJobs/confirmAbholung blockieren jeden abgeschlossenen Job ohne Zeitstempel), wären
+  // aber für den Admin-Warnbanner unsichtbar (countZeitstempelUeberfaellig überspringt abgeschlossen_am IS NULL) — nicht
+  // abholbar, ohne dass das Dashboard den Grund nennt. Mit "jetzt" gestempelt laufen sie auf derselben Uhr wie frisch
+  // abgeschlossene Jobs: der Nachhol-Job holt sie, und bleibt die TSA unerreichbar, warnt der Banner nach Ablauf der
+  // Schwelle auch vor ihnen.
   //
-  // Idempotent by construction, no guard flag needed: it only touches rows whose abgeschlossen_am
-  // is still NULL, and every row it touches gets a non-NULL value, so a second run matches nothing.
+  // Von Natur aus idempotent, ohne Schutz-Flag: Es betrifft nur Zeilen mit abgeschlossen_am IS NULL, und jede betroffene
+  // Zeile bekommt einen Wert, ein zweiter Lauf findet also nichts mehr.
   db.prepare("UPDATE jobs SET abgeschlossen_am = ? WHERE status = 'abgeschlossen' AND abgeschlossen_am IS NULL").run(
     new Date().toISOString()
   );
 
-  // Backfill: on the day this feature is deployed to a database that already has jobs sitting in
-  // 'freigabe2' status, those jobs have no freigabe2_seit (the column is new) and are therefore
-  // invisible to listFreigabe2JobsForReminder/listFreigabe2JobsForEskalation forever (NULL < ? is
-  // NULL/falsy in SQLite). Stamping them with "now" (deploy time) rather than eingang_am is
-  // deliberate: eingang_am could be months old, which would make every already-stuck job
-  // simultaneously eligible for escalation on the very first cron tick after deploy -- a mail
-  // storm and a mass, undifferentiated handover to the admin group. Starting their clock at deploy
-  // time instead means they follow the same reminder-then-escalation cadence as a job entering
-  // freigabe2 today.
+  // Nachtrag (Backfill): Wird diese Funktion auf einer Datenbank mit Jobs im Status 'freigabe2' eingespielt, haben diese
+  // Jobs kein freigabe2_seit (die Spalte ist neu) und sind für listFreigabe2JobsForReminder/listFreigabe2JobsForEskalation
+  // dauerhaft unsichtbar (NULL < ? ist in SQLite NULL/falsch). Sie mit "jetzt" (Einspielzeitpunkt) statt mit eingang_am zu
+  // stempeln, ist Absicht: eingang_am kann Monate alt sein, wodurch jeder bereits hängende Job beim allerersten Cron-Lauf
+  // nach dem Einspielen gleichzeitig eskalierbar würde — ein Mailsturm und eine massenhafte, undifferenzierte Übergabe an
+  // die Admin-Gruppe. Beginnt ihre Uhr zum Einspielzeitpunkt, folgen sie demselben Rhythmus aus Erinnerung und Eskalation
+  // wie ein Job, der heute in freigabe2 eintritt.
   //
-  // Idempotent by construction, no guard flag needed: it only touches rows whose freigabe2_seit is
-  // still NULL, and every row it touches gets a non-NULL value, so a second run matches nothing.
+  // Von Natur aus idempotent, ohne Schutz-Flag: Es betrifft nur Zeilen mit freigabe2_seit IS NULL, und jede betroffene
+  // Zeile bekommt einen Wert, ein zweiter Lauf findet also nichts mehr.
   db.prepare("UPDATE jobs SET freigabe2_seit = ? WHERE status = 'freigabe2' AND freigabe2_seit IS NULL").run(
     new Date().toISOString()
   );
 }
 
-// SQLite CHECK constraints can't be widened with ALTER TABLE — unlike JOBS_TABLE_MIGRATIONS'
-// simple ADD COLUMN entries, an already-existing freigaben table (any database whose rolle CHECK
-// predates the current marker value checked for below) keeps its original, narrower CHECK
-// forever, since `CREATE TABLE IF NOT EXISTS` in schema.sql no-ops on it. The only way to widen a
-// CHECK constraint in SQLite is to rebuild the table: rename it aside, create a fresh one from the
-// current schema, copy every row across, then drop the old one — all inside one transaction so a
-// crash mid-migration can't leave the database without a freigaben table at all. The marker value
-// this function checks for (currently 'freigabe1_weiterleitung') moves forward each time the
-// CHECK is widened again — it's just "the newest rolle value", not tied to any one feature; check
-// the CREATE TABLE below for what the CHECK currently allows, not this comment.
+// SQLite-CHECK-Bedingungen lassen sich nicht per ALTER TABLE erweitern — anders als die einfachen ADD-COLUMN-Einträge in
+// JOBS_TABLE_MIGRATIONS behält eine bereits bestehende Tabelle freigaben (jede Datenbank, deren rolle-CHECK älter ist als
+// der unten geprüfte Marker) ihren ursprünglichen, engeren CHECK für immer, weil `CREATE TABLE IF NOT EXISTS` in
+// schema.sql dort nichts bewirkt. Ein CHECK lässt sich in SQLite nur durch einen Tabellen-Neuaufbau erweitern: beiseite
+// umbenennen, frisch aus dem aktuellen Schema anlegen, alle Zeilen kopieren, die alte löschen — alles in einer Transaktion,
+// damit ein Absturz mitten in der Migration die Datenbank nicht ganz ohne Tabelle freigaben zurücklässt. Der Marker,
+// auf den diese Funktion prüft (derzeit 'freigabe1_weiterleitung'), rückt bei jeder weiteren Erweiterung vor — er ist
+// einfach "der neueste rolle-Wert", nicht an ein einzelnes Feature gebunden; was der CHECK aktuell erlaubt, steht im
+// CREATE TABLE weiter unten, nicht in diesem Kommentar.
 function migrateFreigabenTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'freigaben'").get();
   if (!tableSql || tableSql.sql.includes('freigabe1_weiterleitung')) return;
 
-  // node:sqlite enforces `PRAGMA foreign_keys` by default, and it must be toggled OFF outside any
-  // transaction (the pragma is a documented no-op if set from inside one). Without this, a single
-  // freigaben row referencing a jobs.id or personen.churchtools_person_id that no longer exists
-  // aborts the INSERT below, the catch rolls back, and the error propagates out of openDatabase —
-  // the whole app fails to start. Restoring it in `finally` (not just after COMMIT) matters: a
-  // migration that throws must not leave FK enforcement permanently disabled.
+  // node:sqlite erzwingt `PRAGMA foreign_keys` standardmässig, und es muss ausserhalb jeder Transaktion abgeschaltet
+  // werden (innerhalb ist das Pragma laut Dokumentation wirkungslos). Ohne das bräche eine einzige freigaben-Zeile, die
+  // auf eine nicht mehr existierende jobs.id oder personen.churchtools_person_id verweist, das INSERT unten ab, das catch
+  // rollt zurück, und der Fehler wandert aus openDatabase heraus — die ganze App startet nicht. Das Wiederherstellen im
+  // `finally` (nicht nur nach COMMIT) ist wichtig: eine Migration, die wirft, darf die FK-Prüfung nicht dauerhaft abgeschaltet lassen.
   db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');
   try {
@@ -456,16 +465,16 @@ function migrateFreigabenTable(db) {
   }
 }
 
-// Same rationale as migrateFreigabenTable above: mail_log.typ's CHECK constraint can't be
-// widened with ALTER TABLE, so an already-running database that predates 'rechnungsnummer-warnung'
-// needs its mail_log table rebuilt in place to accept the new value.
+// Gleiche Begründung wie bei migrateFreigabenTable oben: der CHECK von mail_log.typ lässt sich nicht per ALTER TABLE
+// erweitern. Eine laufende Datenbank, die älter ist als 'rechnungsnummer-warnung', braucht deshalb einen Neuaufbau ihrer
+// Tabelle mail_log an Ort und Stelle, um den neuen Wert zu akzeptieren.
 function migrateMailLogTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mail_log'").get();
   if (!tableSql || tableSql.sql.includes('rechnungsnummer-warnung')) return;
 
-  // See the matching comment in migrateFreigabenTable above: node:sqlite enforces
-  // `PRAGMA foreign_keys` by default, so a single mail_log row referencing a jobs.id that no
-  // longer exists would otherwise abort this INSERT and take down app startup entirely.
+  // Siehe den passenden Kommentar in migrateFreigabenTable oben: node:sqlite erzwingt `PRAGMA foreign_keys` standardmässig,
+  // eine einzige mail_log-Zeile mit Verweis auf eine nicht mehr existierende jobs.id würde sonst dieses INSERT abbrechen
+  // und den App-Start ganz verhindern.
   db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');
   try {
@@ -497,11 +506,10 @@ function migrateMailLogTable(db) {
   }
 }
 
-// Same rationale as migrateFreigabenTable above: an already-existing cron_log table (any database
-// that predates the 'datenbank-sicherung' job name) keeps its original, narrower schema forever
-// otherwise, and startCronLauf('datenbank-sicherung', ...) would fail on it. The marker value this
-// function checks for moves forward each time the CHECK is widened again -- check the CREATE TABLE
-// below for what it currently allows, not this comment.
+// Gleiche Begründung wie bei migrateFreigabenTable oben: eine bereits bestehende Tabelle cron_log (jede Datenbank, die älter
+// ist als der Jobname 'datenbank-sicherung') behielte sonst ihr ursprüngliches, engeres Schema für immer, und
+// startCronLauf('datenbank-sicherung', ...) würde darauf fehlschlagen. Der Marker, auf den diese Funktion prüft, rückt bei
+// jeder weiteren Erweiterung des CHECK vor — was er aktuell erlaubt, steht im CREATE TABLE unten, nicht in diesem Kommentar.
 function migrateCronLogTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cron_log'").get();
   if (!tableSql || tableSql.sql.includes('datenbank-sicherung')) return;
@@ -531,16 +539,16 @@ function migrateCronLogTable(db) {
   }
 }
 
-// Same rationale as migrateFreigabenTable above: an already-existing person_berechtigungen table
-// (any database whose berechtigung CHECK predates 'pool_zuweisen') keeps its original,
-// narrower CHECK forever otherwise, since `CREATE TABLE IF NOT EXISTS` in schema.sql no-ops on it.
+// Gleiche Begründung wie bei migrateFreigabenTable oben: eine bereits bestehende Tabelle person_berechtigungen (jede Datenbank,
+// deren berechtigung-CHECK älter ist als 'pool_zuweisen') behielte sonst ihren ursprünglichen, engeren CHECK für immer, weil
+// `CREATE TABLE IF NOT EXISTS` in schema.sql dort nichts bewirkt.
 function migratePersonBerechtigungenTable(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'person_berechtigungen'").get();
   if (!tableSql || tableSql.sql.includes('pool_zuweisen')) return;
 
-  // See the matching comment in migrateFreigabenTable above: node:sqlite enforces
-  // `PRAGMA foreign_keys` by default, so a single person_berechtigungen row referencing a
-  // personen.churchtools_person_id that no longer exists would otherwise abort this INSERT.
+  // Siehe den passenden Kommentar in migrateFreigabenTable oben: node:sqlite erzwingt `PRAGMA foreign_keys` standardmässig,
+  // eine einzige person_berechtigungen-Zeile mit Verweis auf eine nicht mehr existierende personen.churchtools_person_id
+  // würde sonst dieses INSERT abbrechen.
   db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');
   try {
@@ -571,9 +579,9 @@ function migratePersonBerechtigungenTable(db) {
   }
 }
 
-// Same rationale/pattern as migrateCronLogTable above, one more CHECK widening for the new
-// 'split-gruppen-nachholen' cron job. Marker value moves forward again the next time this CHECK
-// needs widening -- check the CREATE TABLE below for what it currently allows, not this comment.
+// Gleiches Muster wie migrateCronLogTable oben, eine weitere CHECK-Erweiterung, hier für den neuen Cron-Job
+// 'split-gruppen-nachholen'. Der Marker rückt beim nächsten Erweitern des CHECK wieder vor — was er aktuell erlaubt, steht
+// im CREATE TABLE unten, nicht in diesem Kommentar.
 function migrateCronLogTableSplitGruppen(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cron_log'").get();
   if (!tableSql || tableSql.sql.includes('split-gruppen-nachholen')) return;
@@ -603,9 +611,9 @@ function migrateCronLogTableSplitGruppen(db) {
   }
 }
 
-// Same pattern as migrateMailLogTable above: an already-running database predating the
-// batching feature has mail_log.status CHECK'd to only 'versendet'/'fehlgeschlagen' — sendNotification
-// now needs a third value, 'geplant', for rows queued for the daily digest instead of sent immediately.
+// Gleiches Muster wie migrateMailLogTable oben: eine laufende Datenbank aus der Zeit vor der Bündelung hat mail_log.status
+// nur auf 'versendet'/'fehlgeschlagen' eingeschränkt — sendNotification braucht jetzt einen dritten Wert, 'geplant', für
+// Zeilen, die für die tägliche Zusammenfassung vorgemerkt statt sofort gesendet werden.
 function migrateMailLogTableGeplantStatus(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mail_log'").get();
   if (!tableSql || tableSql.sql.includes('geplant')) return;
@@ -641,8 +649,8 @@ function migrateMailLogTableGeplantStatus(db) {
   }
 }
 
-// Same pattern as migrateCronLogTableSplitGruppen above, one more CHECK widening for the new
-// 'mail-digest' cron job (the daily per-recipient batching digest).
+// Gleiches Muster wie migrateCronLogTableSplitGruppen oben, eine weitere CHECK-Erweiterung, hier für den neuen Cron-Job
+// 'mail-digest' (die tägliche Sammelmail je Empfänger:in).
 function migrateCronLogTableMailDigest(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cron_log'").get();
   if (!tableSql || tableSql.sql.includes('mail-digest')) return;
@@ -672,8 +680,8 @@ function migrateCronLogTableMailDigest(db) {
   }
 }
 
-// Same pattern as migrateMailLogTableGeplantStatus above, one more CHECK widening for the two
-// new 'freigabe2-reminder'/'freigabe2-eskalation' mail types (freigabe2-erinnerungen cron job).
+// Gleiches Muster wie migrateMailLogTableGeplantStatus oben, eine weitere CHECK-Erweiterung, hier für die zwei neuen
+// Mailtypen 'freigabe2-reminder'/'freigabe2-eskalation' (Cron-Job freigabe2-erinnerungen).
 function migrateMailLogTableFreigabe2(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mail_log'").get();
   if (!tableSql || tableSql.sql.includes('freigabe2-reminder')) return;
@@ -709,8 +717,8 @@ function migrateMailLogTableFreigabe2(db) {
   }
 }
 
-// Same pattern as migrateCronLogTableMailDigest above, one more CHECK widening for the new
-// 'freigabe2-erinnerungen' cron job (reminder + escalation for stalled freigabe2 jobs).
+// Gleiches Muster wie migrateCronLogTableMailDigest oben, eine weitere CHECK-Erweiterung, hier für den neuen Cron-Job
+// 'freigabe2-erinnerungen' (Erinnerung + Eskalation bei hängenden freigabe2-Vorgängen).
 function migrateCronLogTableFreigabe2Erinnerungen(db) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cron_log'").get();
   if (!tableSql || tableSql.sql.includes('freigabe2-erinnerungen')) return;
@@ -744,6 +752,8 @@ function migrateCronLogTableFreigabe2Erinnerungen(db) {
 // migrateFreigabenTable & Co. oben (rename aside, create fresh, copy, drop, alles in einer
 // Transaktion, FK-Enforcement währenddessen aus). `marker` ist der neueste erlaubte Wert: steht er
 // schon im CREATE-Statement der Tabelle, ist nichts zu tun.
+// Gemeinsamer Helfer: baut `tabelle` mit dem neuen `createSql` neu auf, wenn `marker` noch nicht im
+// bestehenden CREATE-Statement steht. `spalten` sind die zu kopierenden Spalten.
 function erweitereCheckPerRebuild(db, { tabelle, marker, createSql, spalten }) {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(tabelle);
   if (!tableSql || tableSql.sql.includes(marker)) return;
@@ -1034,6 +1044,7 @@ function migrateBetriebMailTypen(db) {
   db.exec('CREATE INDEX IF NOT EXISTS mail_log_zustellung_idx ON mail_log(status, naechster_versuch_am)');
 }
 
+// Mailtyp 'testmail' (Testversand aus den Admin-Seiten) im mail_log-CHECK ergänzen.
 function migrateTestmailTyp(db) {
   erweitereCheckPerRebuild(db, {
     tabelle: 'mail_log',
@@ -1273,11 +1284,19 @@ function migrateBenachrichtigungEinstellung(db) {
   }
 }
 
+/**
+ * Öffnet (und erstellt bei Bedarf) die Datenbank, registriert die Audit-SQL-Funktionen, führt
+ * schema.sql und alle Migrationen aus und sät die Gruppenrechte.
+ * @param {string} dbPath Dateipfad oder `:memory:` (Tests)
+ * @returns {DatabaseSync} offene Datenbank; der Aufrufer schliesst sie
+ */
 export function openDatabase(dbPath) {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
   }
   const db = new DatabaseSync(dbPath);
+  // SQL-Funktionen für die Audit-Trigger: sie lesen Handelnde, Request-ID und Lauf aus dem aktuellen
+  // AsyncLocalStorage-Kontext (services/auditContext.js), damit jedes protokollierte Ereignis weiss, wer es auslöste.
   db.function('audit_actor_id', () => currentAuditActor().id);
   db.function('audit_actor_name', () => currentAuditActor().name);
   db.function('audit_request_id', currentAuditRequestId);

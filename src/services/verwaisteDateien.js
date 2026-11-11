@@ -1,3 +1,4 @@
+// Quarantäne für verwaiste finale Dokumente: erkennen, in Quarantäne verschieben, wiederherstellen oder auf Entscheidung endgültig löschen (Admin → Datei-Quarantäne).
 import { lstatSync, readdirSync, mkdirSync, linkSync, unlinkSync, openSync, closeSync, fstatSync, readFileSync, fsyncSync, constants } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -24,6 +25,7 @@ import { hasRecentRunningCronLauf } from '../db/cronLogRepo.js';
 // vorkommt, und Dateien, deren SHA-256 einem gespeicherten finalen/Export-Hash entspricht. Bei
 // laufenden Nachhol-Jobs, unklarem Verzeichniszustand oder DB-Fehlern wird nichts verschoben.
 
+// Dateinamenmuster finaler Dokumente und Name des Quarantäneverzeichnisses innerhalb von jobsDir.
 export const FINAL_DATEI_MUSTER = /^final-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/;
 export const QUARANTAENE_VERZEICHNIS = 'quarantaene-verwaiste-dateien';
 const STANDARD_MINDESTALTER_STUNDEN = 24;
@@ -37,18 +39,21 @@ export class QuarantaeneFehler extends Error {
   constructor(message, status) { super(message); this.status = status; }
 }
 
+// Mindestalter einer Datei (admin_config, mindestens 1 Stunde) in Millisekunden.
 function mindestAlterMs(db, override) {
   if (override !== undefined) return override;
   const stunden = Number(getConfigValue(db, 'verwaiste_dateien_mindestalter_stunden') ?? STANDARD_MINDESTALTER_STUNDEN);
   return Math.max(MIN_MINDESTALTER_STUNDEN, Number.isFinite(stunden) ? stunden : STANDARD_MINDESTALTER_STUNDEN) * 60 * 60 * 1000;
 }
 
+// Wirft, wenn das Verzeichnis fehlt oder ein Symlink ist.
 function echtesVerzeichnis(pfad) {
   const stat = lstatSync(pfad, { throwIfNoEntry: false });
   if (!stat || !stat.isDirectory()) throw new QuarantaeneFehler('Verzeichnis fehlt oder ist kein echtes Verzeichnis (Symlink?).', 409);
   return stat;
 }
 
+// Pfad des Quarantäneverzeichnisses (optional anlegen, Modus 0700).
 function quarantaeneVerzeichnis(jobsDir, anlegen) {
   const pfad = join(jobsDir, QUARANTAENE_VERZEICHNIS);
   if (anlegen && !lstatSync(pfad, { throwIfNoEntry: false })) mkdirSync(pfad, { mode: 0o700 });
@@ -71,12 +76,14 @@ function dateiFingerabdruck(pfad) {
   } finally { closeSync(fd); }
 }
 
+// Textspalten einer Tabelle (zum Durchsuchen nach Dateinamen).
 function textSpalten(db, tabelle) {
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(tabelle)) return [];
   return db.prepare(`PRAGMA table_info(${tabelle})`).all()
     .filter((spalte) => !spalte.type || /TEXT|CHAR|CLOB/i.test(spalte.type)).map((spalte) => spalte.name);
 }
 
+// @returns {'aktiv'|'historisch'|null} ob der Dateiname in einer aktiven Tabelle bzw. nur im Audit vorkommt
 export function dateinameReferenziert(db, dateiname) {
   for (const tabelle of REFERENZ_TABELLEN) {
     const spalten = textSpalten(db, tabelle);
@@ -88,6 +95,7 @@ export function dateinameReferenziert(db, dateiname) {
   return null;
 }
 
+// true, wenn der SHA-256 einem gespeicherten finalen/Export-Hash entspricht.
 export function hashBekannt(db, sha256) {
   for (const [tabelle, spalten] of Object.entries(HASH_SPALTEN)) {
     const vorhandene = new Set(textSpalten(db, tabelle));
@@ -98,6 +106,7 @@ export function hashBekannt(db, sha256) {
   return false;
 }
 
+// Audit-Ereignis zum Quarantäne-Vorgang.
 function schreibeAudit(db, aktion, objektId, nachher, begruendung = null) {
   const actor = currentAuditActor();
   db.prepare(`INSERT INTO audit_ereignisse (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher, begruendung)
@@ -111,10 +120,15 @@ function verschiebeOhneUeberschreiben(quelle, ziel) {
   unlinkSync(quelle);
 }
 
+// Während Nachhol-Jobs läuft, wird nichts verschoben (sie schreiben gerade Dateien).
 function laufendeNachholjobs(db) {
   return ['zeitstempel-nachholen', 'split-gruppen-nachholen'].some((job) => hasRecentRunningCronLauf(db, job));
 }
 
+/**
+ * Verschiebt eindeutig verwaiste finale Dokumente in die Quarantäne (siehe Kopfkommentar); löscht nie selbst.
+ * @returns {{status: string, geprueft: number, verschoben: number, referenziert: number, historisch: number, hashBekannt: number, zuJung: number, keineRegulaereDatei: number, fehler: number}}
+ */
 export function pruefeVerwaisteFinaleDateien(db, config, { mindestAlterMs: mindestAlterOverride, jetzt = Date.now(), vorTransaktion } = {}) {
   if (db.isTransaction) throw new Error('Verwaiste-Dateien-Prüfung braucht eine eigene Transaktion.');
   const ergebnis = { status: 'erfolg', geprueft: 0, verschoben: 0, referenziert: 0, historisch: 0, hashBekannt: 0, zuJung: 0, keineRegulaereDatei: 0, fehler: 0 };
@@ -187,6 +201,7 @@ export function pruefeVerwaisteFinaleDateien(db, config, { mindestAlterMs: minde
   return ergebnis;
 }
 
+// Hintergrund-Prüfung (läuft innerhalb des Jobs pdf-bereinigung; Audit-Klammer durch auditedJob).
 export const runVerwaisteDateienPruefung = auditedJob('verwaiste-dateien', (db, config, options) => {
   try {
     return pruefeVerwaisteFinaleDateien(db, config, options);
@@ -196,6 +211,7 @@ export const runVerwaisteDateienPruefung = auditedJob('verwaiste-dateien', (db, 
   }
 });
 
+// Begründung ist Pflicht (10–2000 Zeichen, keine Steuerzeichen). @returns {string} getrimmte Begründung
 function pruefeBegruendung(begruendung) {
   if (typeof begruendung !== 'string' || begruendung.trim().length < 10 || begruendung.length > 2000 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(begruendung)) {
     throw new QuarantaeneFehler('Begruendung (10 bis 2000 Zeichen) ist erforderlich.', 400);
@@ -203,6 +219,7 @@ function pruefeBegruendung(begruendung) {
   return begruendung.trim();
 }
 
+// Lädt einen noch nicht entschiedenen Quarantäne-Eintrag.
 function offenerEintrag(db, id) {
   if (!Number.isSafeInteger(id) || id < 1) throw new QuarantaeneFehler('Ungültiger Quarantäne-Eintrag.', 400);
   const eintrag = db.prepare("SELECT * FROM datei_quarantaene WHERE id = ? AND status = 'quarantaene'").get(id);
@@ -210,16 +227,19 @@ function offenerEintrag(db, id) {
   return eintrag;
 }
 
+// Setzt die Entscheidung (Person, Zeit, Begründung) auf den Eintrag.
 function entscheide(db, id, status, begruendung) {
   const actor = currentAuditActor();
   db.prepare("UPDATE datei_quarantaene SET status = ?, entschieden_von = ?, entschieden_am = ?, begruendung = ? WHERE id = ? AND status = 'quarantaene'")
     .run(status, actor.id, new Date().toISOString(), begruendung, id);
 }
 
+// Quarantäne-Einträge, offene zuerst.
 export function listQuarantaene(db, { limit = 100 } = {}) {
   return db.prepare("SELECT * FROM datei_quarantaene ORDER BY status = 'quarantaene' DESC, id DESC LIMIT ?").all(Math.min(Math.max(1, limit), 500));
 }
 
+// Entscheidung "wiederherstellen": verschiebt die Datei an den Ursprungsort zurück (Admin → Datei-Quarantäne), Begründung Pflicht.
 export function stelleQuarantaeneDateiWiederHer(db, config, id, begruendungRoh) {
   const begruendung = pruefeBegruendung(begruendungRoh);
   if (db.isTransaction) throw new Error('Quarantaene-Entscheidung braucht eine eigene Transaktion.');

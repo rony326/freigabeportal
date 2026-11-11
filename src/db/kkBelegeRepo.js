@@ -1,5 +1,12 @@
+// Kreditkartenbelege (Tabellen `kk_belege`, `kk_beleg_ereignisse`), siehe docs/kreditkarten-belege.md.
+// Status: 'entwurf' (per Mail eingegangen, unvollständig) → 'offen' (vollständig, wartet auf Abgleich) →
+// 'zugeordnet' (einer Monatsabrechnung zugeordnet) bzw. 'verworfen'. Nur 'entwurf'/'offen' sind bearbeitbar;
+// alle Änderungs-Funktionen liefern `true`, wenn tatsächlich eine Zeile geändert wurde (Schutz gegen parallele Zugriffe).
+
+// Bedingung, die in jedem UPDATE mitläuft: zugeordnete oder verworfene Belege bleiben unverändert.
 const BEARBEITBAR = "status IN ('offen', 'entwurf')";
 
+// Legt einen Beleg an. `gekauftVon` ist die Person, die gekauft hat (Standard: wer hochlädt). @returns {number} id
 export function createKkBeleg(db, { kreditkarteId, hochgeladenVon, gekauftVon, quelle, pdfPfad, thumbnailPfad, betrag, waehrung = 'CHF', kaufdatum, beschreibung, kontoId, status }) {
   const result = db
     .prepare(
@@ -14,10 +21,12 @@ export function createKkBeleg(db, { kreditkarteId, hochgeladenVon, gekauftVon, q
   return Number(result.lastInsertRowid);
 }
 
+// @returns {object|null}
 export function getKkBelegById(db, id) {
   return db.prepare('SELECT * FROM kk_belege WHERE id = ?').get(id) ?? null;
 }
 
+// Ändert die erfassten Daten eines noch bearbeitbaren Belegs. @returns {boolean} false, wenn nicht (mehr) bearbeitbar
 export function updateKkBelegDaten(db, id, { kreditkarteId, betrag, kaufdatum, beschreibung, kontoId, gekauftVon }) {
   const result = db
     .prepare(
@@ -39,11 +48,13 @@ export function aktiviereKkBelegEntwurf(db, id) {
   return result.changes > 0;
 }
 
+// Tauscht die PDF-Datei eines bearbeitbaren Belegs aus. @returns {boolean}
 export function ersetzeKkBelegDatei(db, id, { pdfPfad, thumbnailPfad }) {
   const result = db.prepare(`UPDATE kk_belege SET pdf_pfad = ?, thumbnail_pfad = ? WHERE id = ? AND ${BEARBEITBAR}`).run(pdfPfad, thumbnailPfad ?? null, id);
   return result.changes > 0;
 }
 
+// Markiert einen bearbeitbaren Beleg als verworfen (mit Grund, Person, Zeit). @returns {boolean}
 export function verwerfeKkBeleg(db, id, { personId, grund }) {
   const result = db
     .prepare(`UPDATE kk_belege SET status = 'verworfen', verworfen_grund = ?, verworfen_von = ?, verworfen_am = ? WHERE id = ? AND ${BEARBEITBAR}`)
@@ -60,10 +71,12 @@ export function ordneKkBelegZu(db, id, { kreditkarteId, jobId }) {
   return result.changes > 0;
 }
 
+// Offene Belege einer Karte, für den Abgleich mit der Monatsabrechnung (nach Kaufdatum).
 export function listOffeneKkBelegeFuerKarte(db, kreditkarteId) {
   return db.prepare("SELECT * FROM kk_belege WHERE kreditkarte_id = ? AND status = 'offen' ORDER BY kaufdatum, id").all(kreditkarteId);
 }
 
+// Alle Belege, die die Person hochgeladen hat oder bei denen sie als Käufer:in steht ("Meine Belege").
 export function listKkBelegeFuerPerson(db, personId) {
   return db
     .prepare(
@@ -73,6 +86,7 @@ export function listKkBelegeFuerPerson(db, personId) {
     .all(personId, personId);
 }
 
+// Offene Belege der Karten, für die die Person verantwortlich ist.
 export function listOffeneKkBelegeFuerVerantwortlich(db, personId) {
   return db
     .prepare(
@@ -82,10 +96,12 @@ export function listOffeneKkBelegeFuerVerantwortlich(db, personId) {
     .all(personId);
 }
 
+// Der Beleg, der dem Abrechnungs-Vorgang (Job) zugeordnet wurde, oder null.
 export function getKkBelegByJobId(db, jobId) {
   return db.prepare('SELECT * FROM kk_belege WHERE zugeordnet_job_id = ?').get(jobId) ?? null;
 }
 
+// Schreibt einen Eintrag in den Belegverlauf (`kk_beleg_ereignisse`).
 export function logKkBelegEreignis(db, { belegId, personId, aktion, kommentar }) {
   db.prepare('INSERT INTO kk_beleg_ereignisse (beleg_id, person_id, aktion, zeitpunkt, kommentar) VALUES (?, ?, ?, ?, ?)').run(
     belegId, personId ?? null, aktion, new Date().toISOString(), kommentar ?? null
@@ -109,6 +125,7 @@ export function listKkBelegeFuerErinnerung(db, schwelleIso) {
     .all(schwelleIso.slice(0, 10), schwelleIso, schwelleIso);
 }
 
+// Merkt den Zeitpunkt der letzten Erinnerung (damit der Tageslauf nicht jeden Tag erneut mahnt).
 export function markKkBelegErinnert(db, id) {
   db.prepare('UPDATE kk_belege SET letzte_erinnerung_am = ? WHERE id = ?').run(new Date().toISOString(), id);
 }
@@ -123,6 +140,7 @@ export function listVerworfeneKkBelegeZurLoeschung(db, schwelleIso) {
     .all(schwelleIso);
 }
 
+// Löscht nur den Dateiverweis (Datei selbst entfernt der Aufrufer); die Zeile bleibt als Nachweis.
 export function markKkBelegDateiGeloescht(db, id) {
   db.prepare('UPDATE kk_belege SET pdf_pfad = NULL, thumbnail_pfad = NULL, datei_geloescht_am = ? WHERE id = ? AND datei_geloescht_am IS NULL').run(new Date().toISOString(), id);
 }

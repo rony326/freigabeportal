@@ -1,5 +1,8 @@
+// SMTP-Mailversand über nodemailer. Der Versandweg mit Wiederholung und Protokoll ist services/notify.js bzw. services/mailZustellung.js.
+
 import nodemailer from 'nodemailer';
 
+// Erstellt den Mailer mit `sendMail({to, subject, text})`. Wirft, wenn SMTP_HOST/USER/PASS/FROM fehlen. Port 465 = implizites TLS.
 export function createMailer(smtpConfig) {
   if (!smtpConfig.host || !smtpConfig.user || !smtpConfig.pass || !smtpConfig.from) {
     throw new Error('SMTP ist nicht konfiguriert (SMTP_HOST/SMTP_USER/SMTP_PASS/SMTP_FROM fehlen).');
@@ -22,10 +25,10 @@ export function createMailer(smtpConfig) {
   };
 }
 
-// SMTP is optional until final production credentials exist (see .env.example) — both app.js
-// (request-time mail sending) and index.js (the in-process scheduler) need the same
-// "log and fall back to an always-failing mailer" behavior rather than crashing the whole
-// process on a missing/incomplete SMTP config, so it lives here once instead of twice.
+// SMTP ist optional, bis endgültige Produktivzugangsdaten existieren (siehe .env.example) — sowohl app.js (Mailversand während
+// einer Anfrage) als auch index.js (der In-Process-Scheduler) brauchen dasselbe Verhalten "protokollieren und auf einen immer
+// fehlschlagenden Mailer zurückfallen", statt den ganzen Prozess bei fehlender/unvollständiger SMTP-Konfiguration abstürzen zu
+// lassen — deshalb steht es einmal hier statt zweimal.
 export function createMailerOrFallback(smtpConfig) {
   try {
     return createMailer(smtpConfig);

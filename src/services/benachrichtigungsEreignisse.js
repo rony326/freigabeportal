@@ -2,8 +2,10 @@
 // Texte, zugehörige Konfig-Schlüssel (Zeiten, Zusatzempfänger) und Variablen der Mail-Vorlage.
 // Die Vorlagen-Texte selbst liegen weiter in admin_config (mail_vorlage_*, siehe mailTemplates.js).
 
+// Gruppen der Seite (Reihenfolge der Abschnitte).
 export const BEREICHE = ['Allgemein', 'Rechnungen', 'Freigabe 2', 'Warnungen', 'Rapporte', 'Kreditkarten', 'System & Sicherheit'];
 
+// Variable einer Mail-Vorlage: Name im Platzhalter (%name%), Anzeigename und Beispielwert für die Vorschau.
 const v = (name, label, beispiel) => ({ name, label, beispiel });
 const NAME = v('empfaengerName', 'Name', 'Anna Muster');
 const DATEI = v('jobDateiname', 'Dateiname', 'Rechnung-4711.pdf');
@@ -12,6 +14,7 @@ const PORTAL = v('portalName', 'Portalname', 'Freigabeportal');
 const STUNDEN = v('stunden', 'Stunden', '24');
 const KREDITOR = v('kreditorName', 'Lieferant', 'Muster AG');
 
+// Ergänzt eine Ereignis-Definition um die Standardwerte.
 function ereignis(def) {
   return {
     vorlagenTyp: null,
@@ -26,6 +29,10 @@ function ereignis(def) {
   };
 }
 
+// Alle Ereignisse. Felder: `id`, `bereich`, `titel`, `beschreibung`, `vorlagenTyp` (Mailtyp = Schlüssel der Vorlage, null = fester Text),
+// `automatisch` (Beschreibung der festen Empfänger), `empfaengerKey` (admin_config-Schlüssel der Zusatzempfänger), `empfaengerLeerErlaubt`,
+// `empfaengerArt` ('alle' | 'nurEmail'), `zeitKeys` (einstellbare Fristen/Schwellen), `sofort` (nie gebündelt) und `variablen` (Platzhalter).
+// Neues Ereignis: hier eintragen, `vorlagenTyp` in services/mailTemplates.js (TYP_ZU_KEY_INFIX) und die Vorlage in db/adminConfigRepo.js ergänzen.
 export const EREIGNISSE = [
   ereignis({
     id: 'zusammenfassung',
@@ -319,6 +326,7 @@ export const EREIGNISSE = [
   }),
 ];
 
+// @returns {object|undefined} das Ereignis zur id
 export function findeEreignis(id) {
   return EREIGNISSE.find((e) => e.id === id);
 }

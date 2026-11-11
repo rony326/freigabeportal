@@ -1,3 +1,7 @@
+// Mail-Protokoll (Tabelle `mail_log`): jede versendete, geplante oder eingereihte Mail samt Status.
+// Die Zustellung selbst (Wiederholung, Sperren) steht in services/mailZustellung.js, die Bündelung in services/benachrichtigung.js.
+
+// Protokolliert eine Mail mit ihrem Status ('versendet' | 'fehlgeschlagen' | 'geplant' | 'eingereiht'). @returns {number} id
 export function logMailAttempt(db, { typ, jobId, empfaenger, betreff, text, status, fehlerDetails }) {
   const result = db
     .prepare(
@@ -8,6 +12,7 @@ export function logMailAttempt(db, { typ, jobId, empfaenger, betreff, text, stat
   return Number(result.lastInsertRowid);
 }
 
+// Alle Einträge, neueste zuerst (Admin → Mails).
 export function listMailLog(db) {
   return db.prepare('SELECT * FROM mail_log ORDER BY id DESC').all();
 }
@@ -16,6 +21,7 @@ export function getMailLogById(db, id) {
   return db.prepare('SELECT * FROM mail_log WHERE id = ?').get(id) ?? null;
 }
 
+// Löscht abgeschlossene Einträge, die älter als der Zeitpunkt sind. @returns {number} Anzahl gelöschter Zeilen
 export function pruneMailLogOlderThan(db, isoThreshold) {
   // Nur abgeschlossene Zeilen: 'eingereiht'/'geplant' sind noch zuzustellen und dürfen nie durch
   // die Aufbewahrungsfrist verloren gehen.

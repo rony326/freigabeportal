@@ -1,3 +1,6 @@
+// Einzelrechte pro Person (Tabelle `person_berechtigungen`), additiv zu den Gruppenrechten. Verwaltung: Admin → Personen.
+// Die Prüfung "hat die Person das Recht?" macht middleware/permissions.js, die diese Funktionen nutzt.
+
 export function listBerechtigungenForPerson(db, personId) {
   return db
     .prepare('SELECT berechtigung FROM person_berechtigungen WHERE person_id = ?')
@@ -5,6 +8,7 @@ export function listBerechtigungenForPerson(db, personId) {
     .map((row) => row.berechtigung);
 }
 
+// Ersetzt alle Einzelrechte einer Person atomar. Der CHECK in der Tabelle lässt nur vergebbare Rechte zu.
 export function setBerechtigungenForPerson(db, personId, berechtigungen) {
   db.exec('BEGIN');
   try {

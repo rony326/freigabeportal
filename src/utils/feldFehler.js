@@ -1,3 +1,6 @@
+// Hilfsfunktionen für Formularvalidierung mit Feldzuordnung (Barrierefreiheit: aria-invalid).
+// Verwendung: Route sammelt Fehler mit `neueFehler()`, View markiert die Felder mit `feldFehlerAttr()`.
+
 // Sammelt Formularfehler samt Zuordnung zum Eingabefeld (id des Elements; null = ohne Feld).
 export function neueFehler() {
   const liste = [];

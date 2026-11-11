@@ -3,6 +3,7 @@ const LANGSAM_MIN_AUFRUFE = 20;
 const LANGSAM_ANZAHL = 10;
 const TOP_SEITEN_ANZAHL = 20;
 
+// Median (gerundet) oder null bei leerer Liste.
 export function median(werte) {
   if (werte.length === 0) return null;
   const s = [...werte].sort((a, b) => a - b);
@@ -11,6 +12,7 @@ export function median(werte) {
 }
 
 // Nearest-Rank: kleinster Wert, unter dem mindestens 90 % liegen.
+// 90. Perzentil (Nearest-Rank) oder null bei leerer Liste.
 export function p90(werte) {
   if (werte.length === 0) return null;
   const s = [...werte].sort((a, b) => a - b);
@@ -24,6 +26,7 @@ function tagZurich(iso) {
   return tagFormat.format(new Date(iso));
 }
 
+// Häufigkeiten eines Feldes, absteigend ('unbekannt' für leere Werte).
 function verteilung(zeilen, feld) {
   const zaehler = new Map();
   for (const z of zeilen) {
@@ -34,6 +37,11 @@ function verteilung(zeilen, feld) {
     .sort((a, b) => b.anzahl - a.anzahl || a.wert.localeCompare(b.wert, 'de'));
 }
 
+/**
+ * Kennzahlen des Zeitraums (optional für eine Person): aktive Personen, Aufrufe, Geräte-/Browser-/Betriebssystem-Verteilung,
+ * meistbesuchte und langsamste Seiten (Median/p90), Fehler pro Tag.
+ * @param {{von: string, bis: string, personId?: string}} p ISO-Zeitpunkte
+ */
 export function uebersicht(db, { von, bis, personId = null }) {
   const personFilter = personId ? ' AND person_id = ?' : '';
   const parameter = personId ? [von, bis, String(personId)] : [von, bis];
@@ -82,6 +90,7 @@ export function uebersicht(db, { von, bis, personId = null }) {
   };
 }
 
+// Einzelansicht einer Person: Anmeldungen, Geräte, letzte Aufrufe, Fehler und Fehlermeldungen.
 export function personDetail(db, personId) {
   const id = String(personId);
   return {

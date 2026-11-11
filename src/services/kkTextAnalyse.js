@@ -4,6 +4,7 @@
 // Betrag: optionales Minus, Tausendertrenner ' ’ oder Leerzeichen, genau zwei Nachkommastellen
 // mit . oder ,, optional gefolgt von CR oder - (Gutschrift). Die Lookbehind/-ahead-Grenzen
 // verhindern Treffer mitten in Datumsangaben (03.09.2026) oder Kartennummern.
+// (Beträge, Daten und Kartenendziffern in rohem PDF-Text finden; Reihenfolge und Grenzen siehe Kommentar.)
 const BETRAG_RE = /(?<![\d.,'’])(-\s?)?(\d{1,3}(?:['’ ]\d{3})+|\d+)[.,](\d{2})(?![\d.,])(\s?(?:CR\b|-))?/g;
 const DATUM_RES = [
   { re: /\b(\d{2})\.(\d{2})\.(\d{4})\b/g, map: (m) => `${m[3]}-${m[2]}-${m[1]}` },
@@ -20,10 +21,12 @@ export const LEERE_ANALYSE = Object.freeze({ betraege: [], daten: [], total: nul
 // Zifferngruppen-Folgen nicht quadratisch zurücksetzt.
 const MAX_ZEILENLAENGE = 500;
 
+// Zerlegt Text in Zeilen und kürzt jede auf MAX_ZEILENLAENGE.
 function zeilen(text) {
   return String(text || '').split(/\r?\n/).map((z) => z.slice(0, MAX_ZEILENLAENGE));
 }
 
+// true bei einem echten Kalenderdatum (ISO, YYYY-MM-DD).
 function istGueltigesDatum(iso) {
   const d = new Date(`${iso}T00:00:00Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso;
@@ -42,6 +45,7 @@ function betraegeInZeile(zeile) {
   return treffer;
 }
 
+// @returns {{betrag: string, zeile: number}[]} gefundene Beträge ("-" bei Gutschrift/CR) mit Zeilennummer
 export function findeBetraege(text) {
   const result = [];
   zeilen(text).forEach((zeile, i) => {
@@ -50,6 +54,7 @@ export function findeBetraege(text) {
   return result;
 }
 
+// @returns {{datum: string, zeile: number}[]} gefundene gültige Daten als ISO-Datum mit Zeilennummer
 export function findeDaten(text) {
   const result = [];
   zeilen(text).forEach((zeile, i) => {
@@ -65,6 +70,7 @@ export function findeDaten(text) {
   return result;
 }
 
+// Letzte vier Ziffern maskierter Kartennummern ("**** 1234"). @returns {Set<string>}
 export function findeEndziffern(text) {
   const result = new Set();
   const begrenzt = String(text || '').slice(0, 200000);
@@ -72,23 +78,25 @@ export function findeEndziffern(text) {
   return result;
 }
 
+// Schlägt den Gesamtbetrag vor: erste Zeile mit "Total/Saldo/zu bezahlen/Rechnungsbetrag", bevorzugt der Betrag nach "CHF". @returns {string|null}
 export function schlageTotalVor(text) {
   for (const zeile of zeilen(text)) {
     if (!TOTAL_RE.test(zeile)) continue;
-    // Prefer amount directly after CHF token
+    // Bevorzugt der Betrag direkt nach dem CHF-Zeichen.
     const chfIdx = /\bCHF\b/i.exec(zeile)?.index;
     if (chfIdx !== undefined) {
       const afterChf = zeile.slice(chfIdx);
       const betraege = betraegeInZeile(afterChf);
       if (betraege.length > 0) return betraege[0];
     }
-    // Otherwise return last amount on the line
+    // Sonst der letzte Betrag der Zeile.
     const betraege = betraegeInZeile(zeile);
     if (betraege.length > 0) return betraege.at(-1);
   }
   return null;
 }
 
+// Fasst Beträge, Daten und Totalvorschlag zusammen (Text auf 200'000 Zeichen begrenzt, da Mailanhänge nicht vertrauenswürdig sind).
 export function analysiereText(text) {
   const begrenzt = String(text || '').slice(0, 200000);
   return { betraege: findeBetraege(begrenzt), daten: findeDaten(begrenzt), total: schlageTotalVor(begrenzt) };
@@ -101,6 +109,7 @@ function tageAbstand(a, b) {
 // Ein Beleg wird vorgeschlagen, wenn sein Betrag (Absolutwert -- Gutschriften stehen je nach Bank
 // als "-", "CR" oder positiv da) in der Abrechnung vorkommt. Jede Fundstelle deckt höchstens
 // einen Beleg ab; Belege mit passendem Datum (±3 Tage, gleiche Textzeile) kommen zuerst dran.
+// Schlägt vor, welcher erfasste Beleg zu welcher Fundstelle in der Abrechnung passt. @returns {Map<number, 'betrag'|'betrag_datum'>} Beleg-id → Art des Treffers
 export function berechneVorschlaege(belege, analyse) {
   const a = analyse || LEERE_ANALYSE;
   const fundstellen = new Map();

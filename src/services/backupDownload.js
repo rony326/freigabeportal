@@ -1,3 +1,4 @@
+// Öffnet eine Sicherungsdatei zum Ausliefern (nur reguläre, eigenständige Datei, ohne Symlink-Folge); Routen: routes/admin/backup.js und routes/n8n/backup.js.
 import { openSync, closeSync, fstatSync, constants, createReadStream } from 'node:fs';
 
 export function openBackupDownload(path) {

@@ -1,3 +1,8 @@
+// Offline-Wiederherstellung und Rückwechsel (docs/offline-restore.md, verbindlich): läuft ausschliesslich über die CLI (`npm run backup:restore|rollback`) bei
+// gestopptem Server. Eine Sicherung wird in eine NEUE "Generation" (eigenes Verzeichnis mit Datenbank, Belegen, Erscheinungsbild) entpackt, geprüft, die Pfade
+// werden umgeschrieben und erst dann per atomarem Zeiger (`<DB_PATH>.active.json`) aktiviert; der bisherige Stand bleibt als `previous` für den Rückwechsel
+// erhalten. Alle Schritte werden in einem Journal (`.maintenance.jsonl`) festgehalten; es gibt nie ein Live-Restore bei laufendem Server.
+
 import { mkdirSync, existsSync, writeFileSync, openSync, closeSync, fsyncSync, rmSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve, relative, sep, isAbsolute } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -10,6 +15,7 @@ import { logBackupWiederherstellung } from '../db/backupWiederherstellungenRepo.
 import { withAuditActor, withAuditOperation, currentAuditOperation } from './auditContext.js';
 import { acquireStorageLock, storagePaths, readStoragePointer, absoluteStorageConfig, atomicJson, syncDirectory } from './storageState.js';
 
+// Bediener und Grund sind Pflicht (Nachvollziehbarkeit im Audit). @returns {{operator, reason, host, osUid}}
 function maintenanceIdentity(options) {
   const operator = typeof options.operator === 'string' ? options.operator.trim() : '';
   const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
@@ -17,6 +23,7 @@ function maintenanceIdentity(options) {
   return { operator, reason, host: hostname(), osUid: process.getuid?.() ?? null };
 }
 
+// Hängt ein Ereignis an das Wartungsjournal an (fsync).
 function journal(paths, event) {
   const fd = openSync(`${paths.baseDbPath}.maintenance.jsonl`, 'a', 0o600);
   try { writeFileSync(fd, `${JSON.stringify({ ...event, laufId: currentAuditOperation()?.id || null, zeitpunkt: new Date().toISOString() })}\n`); fsyncSync(fd); }
@@ -24,12 +31,14 @@ function journal(paths, event) {
   syncDirectory(dirname(paths.baseDbPath));
 }
 
+// Schreibt eine Datei dauerhaft (exklusiv, Modus 0600, fsync).
 function durableFile(path, bytes) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const fd = openSync(path, 'wx', 0o600);
   try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
 }
 
+// Rechnet einen im Backup gespeicherten Pfad auf das neue Zielverzeichnis um; wirft bei Pfaden ausserhalb des Quellverzeichnisses.
 function rebase(path, kind, source, destination) {
   if (!path) return path;
   const suffix = relative(source[kind], resolve(source.cwd, path));
@@ -37,16 +46,25 @@ function rebase(path, kind, source, destination) {
   return join(destination[kind === 'jobs' ? 'jobsDir' : 'brandingDir'], suffix);
 }
 
+// Prüft Integrität und Fremdschlüssel der wiederhergestellten Datenbank.
 function assertDatabaseIntegrity(db) {
   const rows = db.prepare('PRAGMA integrity_check').all();
   if (rows.length !== 1 || rows[0].integrity_check !== 'ok' || db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Wiederhergestellte Datenbank ist nicht konsistent.');
 }
 
+// true, wenn `path` innerhalb von `root` liegt.
 function isWithin(path, root) {
   const suffix = relative(resolve(root), path);
   return !suffix || suffix !== '..' && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix);
 }
 
+/**
+ * Stellt eine verschlüsselte Sicherung offline wieder her (Ablauf siehe Kopfkommentar).
+ * @param {Buffer} buffer die .fpbak-Datei
+ * @param {object} config Speicherkonfiguration
+ * @param {{operator: string, reason: string, expectedSha256: string, sourceName?: string, onPhase?: Function}} options
+ * @returns {object} der neue Zeiger auf den aktiven Datenstand
+ */
 export const restoreOffline = (buffer, config, options = {}) =>
   withAuditOperation('backup-restore', () => restoreOfflineInternal(buffer, config, options));
 
@@ -134,19 +152,19 @@ function restoreOfflineInternal(buffer, config, options) {
     journal(lock, { aktion: 'restore_activated', ...pointer });
     return { ...pointer, pointerPath: lock.pointerPath };
   } catch (err) {
-    // A failure after rename/fsync may already have selected the complete new generation.
-    // Never delete a directory that the persistent pointer might reference.
+    // Ein Fehler nach rename/fsync kann die vollständige neue Generation schon ausgewählt haben. Nie ein Verzeichnis löschen, auf das der dauerhafte Zeiger verweisen könnte.
     let selected = activated;
     try { selected ||= generation && dirname(readStoragePointer(config, { requireComplete: false })?.current.dbPath || '') === generation; }
     catch { selected = true; }
     if (generation && !selected) rmSync(generation, { recursive: true, force: true });
     try { journal(lock, { aktion: 'restore_failed', ...identity, backupSha256: digest, possiblyActivated: Boolean(selected), error: err.message }); }
-    catch { /* Preserve the original failure and both data generations if journaling fails. */ }
+    catch { /* Den ursprünglichen Fehler und beide Datenstände erhalten, falls auch das Journal scheitert. */ }
     if (selected) err.message += ' Der aktive Datenstand wurde möglicherweise bereits umgeschaltet; Status vor Neustart prüfen. Beide Datenstände bleiben erhalten.';
     throw err;
   } finally { lock.release(); }
 }
 
+// Wechselt auf den vorherigen Datenstand zurück (nach geprüfter Integrität); der bisherige aktive wird zum `previous`. Bediener und Grund sind Pflicht.
 export const rollbackOffline = (config, options = {}) =>
   withAuditOperation('backup-rollback', () => rollbackOfflineInternal(config, options));
 
@@ -182,6 +200,7 @@ function rollbackOfflineInternal(config, options) {
   } finally { lock.release(); }
 }
 
+// Status für `backup:status`: ob gesperrt, wo Sperre und Zeiger liegen und was aktuell aktiv ist.
 export function offlineRestoreStatus(config) {
   const paths = storagePaths(config);
   return { locked: existsSync(paths.lockPath), lockPath: paths.lockPath, pointerPath: paths.pointerPath, pointer: readStoragePointer(config, { requireComplete: false }) };

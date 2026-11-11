@@ -1,3 +1,4 @@
+// Protokollierung verweigerter Zugriffe (403/401) im Audit mit Drosselung – Grundsätze direkt unterhalb (docs/audit-paket-haertung-2026-09-29.md).
 import { currentAuditActor, currentAuditRequestId, currentAuditOperation, withAuditActor, withAuditRequest, withAuditOperationContext } from './auditContext.js';
 
 // Protokollierung verweigerter Zugriffe. Grundsaetze:
@@ -10,6 +11,7 @@ import { currentAuditActor, currentAuditRequestId, currentAuditOperation, withAu
 // - Wachstum ist je Stundenfenster begrenzt: je Schluessel (Grund/Bereich/Akteur) wenige
 //   Einzelereignisse, global eine Obergrenze, danach nur noch ein Drosselhinweis und Zaehler.
 
+// Fenstergrösse und Obergrenzen der Drosselung (siehe Grundsätze oben).
 export const FENSTER_MS = 60 * 60 * 1000;
 export const EINZEL_PRO_SCHLUESSEL = 3;
 export const EINZEL_PRO_FENSTER = 50;
@@ -19,6 +21,7 @@ const UEBERLAUF = '#ueberlauf';
 const EINZEL_ZAEHLER = '#einzel';
 const HINWEIS_ZAEHLER = '#hinweise';
 
+// Zulässige Gründe einer Zugriffsverweigerung (feste Liste).
 export const ZUGRIFF_GRUENDE = new Set([
   'nicht_angemeldet', 'fehlende_rolle', 'fehlendes_recht', 'kein_adminbereich', 'csrf',
   'api_key', 'cron_secret', 'anmeldung_ungueltig', 'objekt_verweigert',
@@ -45,6 +48,7 @@ const RECHT_MUSTER = /^[a-z_]{1,40}$/;
 let fehlerAnzahl = 0;
 let letzterFehlerAm = null;
 
+// Anzahl und Zeitpunkt der Fehler, die beim Protokollieren aufgetreten sind (Statusseite).
 export function zugriffsAuditFehlerStatus() {
   return { fehlerAnzahl, letzterFehlerAm };
 }
@@ -64,22 +68,26 @@ export function zugriffsBereich(req) {
 
 const ERFASST = Symbol('zugriffVerweigertErfasst');
 
+// Schreibt ein Audit-Ereignis 'zugriff' (ohne Anfragedaten).
 function schreibeEreignis(db, actor, aktion, bereich, nachher) {
   db.prepare(`INSERT INTO audit_ereignisse
     (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher)
     VALUES (?, ?, ?, 'zugriff', ?, ?, ?)`).run(new Date().toISOString(), String(actor.id), String(actor.name), bereich, aktion, JSON.stringify(nachher));
 }
 
+// Erhöht den Zähler eines Schlüssels im Fenster und liefert den neuen Stand.
 function zaehle(db, fenster, schluessel) {
   return db.prepare(`INSERT INTO audit_zugriff_drosselung (fenster_start, schluessel, anzahl) VALUES (?, ?, 1)
     ON CONFLICT(fenster_start, schluessel) DO UPDATE SET anzahl = anzahl + 1
     RETURNING anzahl, protokolliert, drosselung_gemeldet`).get(fenster, schluessel);
 }
 
+// Aktueller Zählerstand eines Schlüssels im Fenster.
 function zaehlerStand(db, fenster, schluessel) {
   return db.prepare('SELECT anzahl FROM audit_zugriff_drosselung WHERE fenster_start = ? AND schluessel = ?').get(fenster, schluessel)?.anzahl || 0;
 }
 
+// Protokolliert eine verweigerte Anfrage unter den Grundsätzen oben (nur einmal je Anfrage). @returns {boolean} true, wenn ein Einzelereignis geschrieben wurde
 export function protokolliereZugriffVerweigerung(db, req, { grund, status, recht = null }, now = new Date()) {
   if (req[ERFASST]) return false;
   req[ERFASST] = true;
@@ -129,10 +137,12 @@ export function protokolliereZugriffVerweigerung(db, req, { grund, status, recht
 
 // Guards melden ueber diesen Helfer. Ohne installierte Middleware (z.B. isoliert getestete Router)
 // ist er wirkungslos; die Zugriffsentscheidung haengt nie davon ab.
+// (Siehe Kommentar oben.)
 export function meldeZugriffVerweigert(req, info) {
   try { req.zugriffVerweigert?.(info); } catch { /* Protokollierung darf die Verweigerung nicht beeinflussen. */ }
 }
 
+// Express-Middleware: stellt `req.zugriffVerweigert()` bereit und protokolliert zusätzlich Verweigerungen (401/403), die eine Route selbst ausgelöst hat.
 export function zugriffsAuditMiddleware(db) {
   return (req, res, next) => {
     req.zugriffVerweigert = (info) => protokolliereZugriffVerweigerung(db, req, info);

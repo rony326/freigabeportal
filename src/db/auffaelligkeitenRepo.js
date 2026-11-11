@@ -1,6 +1,7 @@
 // Bewusst bestätigte Auffälligkeiten bei der Kontierung (Prüf-Popup). Append-only: UPDATE/DELETE
 // bricht ein Trigger ab (schema.sql). Befunde: services/betrugspruefung.js.
 
+// Wandelt die gespeicherten Befunde (JSON-Text) zurück in ein Array.
 function mitBefunden(row) {
   if (!row) return null;
   const { befunde_json: befundeJson, ...rest } = row;
@@ -16,6 +17,7 @@ export function speichereBestaetigung(db, { jobId, personId, befunde, bemerkung 
 }
 
 // Neueste zuerst.
+// Alle Bestätigungen eines Jobs, neueste zuerst; `befunde` ist ein Array von Befund-Objekten.
 export function listBestaetigungen(db, jobId) {
   return db
     .prepare('SELECT * FROM kontierung_auffaelligkeiten WHERE job_id = ? ORDER BY zeitpunkt DESC, id DESC')
@@ -23,6 +25,7 @@ export function listBestaetigungen(db, jobId) {
     .map(mitBefunden);
 }
 
+// Die jüngste Bestätigung oder null – wird für die Hinweise bei Freigeber 1/2 gebraucht.
 export function letzteBestaetigung(db, jobId) {
   return listBestaetigungen(db, jobId)[0] ?? null;
 }

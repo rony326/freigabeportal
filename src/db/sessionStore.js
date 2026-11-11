@@ -1,12 +1,16 @@
+// Session-Speicher für express-session in der Tabelle `sessions` (statt Arbeitsspeicher), damit Anmeldungen
+// einen Neustart überstehen. Sessions sind JSON; abgelaufene Zeilen werden beim Lesen und beim Start gelöscht.
+
 import { Store } from 'express-session';
 
+// Implementiert get/set/destroy der express-session-Store-Schnittstelle (synchron, Fehler an den Callback).
 export class SqliteSessionStore extends Store {
   constructor(db) {
     super();
     this.db = db;
-    // Expired rows are otherwise only pruned when that exact sid is read again — a session
-    // that never comes back leaves its row forever. A boot-time sweep bounds that growth
-    // without adding a dedicated cron endpoint for it.
+    // Abgelaufene Zeilen würden sonst nur gelöscht, wenn genau diese sid nochmals gelesen wird — eine Sitzung, die nie
+    // zurückkommt, liesse ihre Zeile ewig stehen. Das Aufräumen beim Start begrenzt dieses Wachstum, ohne einen eigenen
+    // Cron-Endpunkt dafür zu brauchen.
     this.db.prepare('DELETE FROM sessions WHERE expires < ?').run(new Date().toISOString());
   }
 

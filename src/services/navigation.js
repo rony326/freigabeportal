@@ -1,9 +1,11 @@
 // Navigationsdaten für die Seitenleiste (reine Funktionen, keine Abhängigkeiten).
 
+// 'admin' für /admin/…, sonst 'portal' (bestimmt, welches Seitenmenü erscheint).
 export function bereichFuerPfad(pfad) {
   return pfad === '/admin' || pfad.startsWith('/admin/') ? 'admin' : 'portal';
 }
 
+// true, wenn der Pfad dem Menüpunkt entspricht oder darunter liegt.
 export function istAktiv(pfad, href) {
   return pfad === href || pfad.startsWith(href + '/');
 }
@@ -21,6 +23,9 @@ export const SYMBOLE = [
 ];
 
 // flag: Schlüssel in adminNav bzw. Portal-Option (null = immer sichtbar)
+// ---- Menüstruktur Portal und Admin ----
+// Neuer Menüpunkt: hier mit `flag` (Schlüssel in `adminNav` bzw. Portal-Option) eintragen; bei Admin-Seiten das Flag in middleware/nav.js
+// ergänzen und das Symbol in SYMBOLE aufnehmen (danach `node scripts/baueSymbole.js`).
 const PORTAL = [
   { titel: 'Arbeit', punkte: [
     { label: 'Aufgaben', href: '/pool', symbol: 'inbox', flag: null },
@@ -79,6 +84,7 @@ const ADMIN = [
   ] },
 ];
 
+// Filtert Gruppen und Punkte nach Sichtbarkeit und ergänzt aktiven Zustand sowie Zähler.
 function baue(definition, pfad, sichtbar, zaehlerFuer = () => undefined) {
   return definition
     .map((g) => ({
@@ -96,6 +102,7 @@ function baue(definition, pfad, sichtbar, zaehlerFuer = () => undefined) {
     .filter((g) => g.punkte.length > 0);
 }
 
+// Menü für die Portal-Seiten; `offeneAufgaben` erscheint als Zähler am Punkt "Aufgaben".
 export function bauePortalGruppen({ pfad, spesenModulAktiv, zeigeKreditkarteNav, offeneAufgaben, auswertungSichtbar = false }) {
   const optionen = { spesenModulAktiv, zeigeKreditkarteNav, auswertungSichtbar };
   return baue(
@@ -106,6 +113,7 @@ export function bauePortalGruppen({ pfad, spesenModulAktiv, zeigeKreditkarteNav,
   );
 }
 
+// Menü für den Adminbereich, sichtbar nach den Rechten in `adminNav`.
 export function baueAdminGruppen({ pfad, adminNav }) {
   return baue(ADMIN, pfad, (flag) => Boolean(adminNav?.[flag]));
 }

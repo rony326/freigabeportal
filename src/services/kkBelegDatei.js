@@ -1,3 +1,5 @@
+// Dateien von Kreditkartenbelegen: Upload immer als PDF (Bilder → A4-Seite) mit Thumbnail ablegen und Dateien still entfernen (docs/kreditkarten-belege.md).
+
 import { mkdirSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildBelegPdf } from './belegAnhaengen.js';
@@ -8,6 +10,7 @@ import { renderFirstPageThumbnail } from './thumbnail.js';
 export const KK_BETRAG_PATTERN = /^-?\d+([.,]\d{1,2})?$/;
 export const KK_DATUM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+// Betrag mit Punkt und zwei Nachkommastellen ("12,5" → "12.50").
 export function normalisiereBetrag(betrag) {
   return Number(String(betrag).replace(',', '.')).toFixed(2);
 }
@@ -30,6 +33,7 @@ export async function speichereKkBelegDatei(config, buffer, mimetype) {
   return { pdfPfad, thumbnailPfad };
 }
 
+// Löscht Dateien; fehlende Pfade und Fehler werden übergangen bzw. nur protokolliert (z. B. zum Aufräumen nach einem Abbruch).
 export function loescheDateienStill(...pfade) {
   for (const pfad of pfade) {
     if (!pfad) continue;

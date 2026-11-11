@@ -20,6 +20,7 @@ export const KOMMENTAR_MAX_LAENGE = 2000;
 
 const name = (p) => `${p.vorname} ${p.nachname}`;
 
+// Sichtrecht auf die Kommentare eines Vorgangs (siehe Kopfkommentar): PDF-Sichtrecht oder Recht `vorgaenge_einsehen`.
 export function darfKommentareSehen(db, config, person, job) {
   if (!person || person.aktiv === false || !job) return false;
   return canViewJobPdf(db, config, person, job) || personHasPermission(db, config, person, 'vorgaenge_einsehen');
@@ -32,11 +33,13 @@ export function istKommentarGeschlossen(job) {
   return KOMMENTAR_GESCHLOSSEN_STATUS.includes(job.status) || (job.status === 'aufgesplittet' && Boolean(job.gruppe_pdf_pfad));
 }
 
+// Sichtrecht UND Vorgang noch nicht geschlossen.
 export function darfKommentieren(db, config, person, job) {
   return darfKommentareSehen(db, config, person, job) && !istKommentarGeschlossen(job);
 }
 
 // Alle aktiven Personen in EINER Abfrage (gleiche Form wie getPersonById).
+// (Alle aktiven Personen in einer Abfrage.)
 function aktivePersonen(db) {
   return db
     .prepare('SELECT * FROM personen WHERE aktiv = 1')
@@ -84,6 +87,7 @@ function sichtbarkeitFuer(db, config, job) {
   };
 }
 
+// Aktive Personen, die den Vorgang sehen dürfen und damit per @Name erwähnt werden können (Vorschlagsliste im Formular).
 export function erwaehnbarePersonen(db, config, job) {
   const sieht = sichtbarkeitFuer(db, config, job);
   return aktivePersonen(db)
@@ -142,6 +146,7 @@ function parseErwaehnungen(text, kandidaten) {
 // "@Wort Wort" ohne passenden Kandidaten (erstes Wort mit Buchstabe, zweites mit Grossbuchstabe am
 // Anfang) landet in `unbekannt`; "@10 Uhr", "@CHF 20" oder ein einzelnes "@Wort" sind normaler Text.
 // Gleichnamige Kandidaten liefern alle ihre IDs.
+// @returns {{ids: string[], unbekannt: string[]}} erkannte Personen-IDs und unbekannte "@Wort Wort"-Versuche
 export function findeErwaehnungen(text, kandidaten) {
   const { treffer, unbekannt } = parseErwaehnungen(text, kandidaten);
   const ids = [];
@@ -165,6 +170,7 @@ function aktuellVerantwortlich(db, config, job) {
   return ids;
 }
 
+// Mail-Empfänger eines neuen Kommentars samt passendem Link (Details siehe `beteiligte`).
 function ermittleEmpfaenger(db, config, job, { schreiberId, erwaehntIds = [] } = {}) {
   const verantwortlich = aktuellVerantwortlich(db, config, job);
   const kandidaten = [...verantwortlich];
@@ -210,6 +216,7 @@ function ermittleEmpfaenger(db, config, job, { schreiberId, erwaehntIds = [] } =
 // (je + aktive Vertretung), job.zugewiesen_an (Freigeber 1 des Vorgangs) + Vertretung, Freigeber 1
 // und effektiver Freigeber 2 des Kontos (je + Vertretung), einreichende Person, frühere
 // Kommentierende, Erwähnte. Gefiltert auf darfKommentareSehen, ohne Schreiber, eindeutig.
+// @returns {string[]} Personen-IDs der Beteiligten, die über einen neuen Kommentar benachrichtigt werden
 export function beteiligte(db, config, job, optionen = {}) {
   return ermittleEmpfaenger(db, config, job, optionen).map((e) => e.person.churchtools_person_id);
 }
@@ -218,6 +225,7 @@ export function beteiligte(db, config, job, optionen = {}) {
 // Pool-Vorgänge haben keine zuständige Person, eine abgelehnte Spesen-Position hat keine
 // Arbeitsseite (/abgelehnt verweigert Spesen), und /spesen-freigabe1 öffnet nur die zugewiesene
 // Prüfperson bzw. bei Eskalation die Admins — nicht deren Ferienvertretung.
+// Arbeitsseite der zuständigen Person (Kontierung, Freigabe 2, Überarbeitung, Spesen-Freigabe 1) – siehe Kommentar oben.
 function workflowLink(config, job, personId) {
   const basis = config.publicBaseUrl;
   if (job.status === 'freigabe2') return `${basis}/freigabe2/${job.id}`;
@@ -231,12 +239,14 @@ function workflowLink(config, job, personId) {
 }
 
 // Sieht die Person den Vorgang über eine eigene Rolle (canViewJobPdf ohne den Superadmin-Freipass)?
+// (Siehe Kommentar oben.)
 function siehtUeberRolle(db, config, person, job) {
   const adminGruppe = config.churchtools?.groupIdAdmin ? String(config.churchtools.groupIdAdmin) : null;
   const ohneAdmin = adminGruppe ? { ...person, gruppen: (person.gruppen || []).filter((g) => String(g) !== adminGruppe) } : person;
   return canViewJobPdf(db, config, ohneAdmin, job);
 }
 
+// Hinweis in der Mail, wenn es für die Person keine Seite zum direkten Verlinken gibt.
 export const KEIN_DIREKTLINK = 'kein Direktlink (der Vorgang ist nicht mehr in Bearbeitung; die Kommentare stehen auf dem archivierten PDF)';
 
 // Ruling Fix-Runde 1 + Abschlussprüfung 3–5: jeder Link führt auf eine Seite, die die Person
@@ -244,6 +254,7 @@ export const KEIN_DIREKTLINK = 'kein Direktlink (der Vorgang ist nicht mehr in B
 // sichtbar → /zeitstempel-pruefen?jobId=… (canViewJobPdf-geschützt); nur über das Vorgänge-Recht
 // sichtbar → Admin-Vorgang-Detail, aber nur für laufende Vorgänge (sonst 404) — danach die
 // Zeitstempel-Prüfseite, wenn canViewJobPdf (Superadmins), sonst kein Link, nur ein kurzer Hinweis.
+// Bestimmt den Link, der in der Kommentar-Mail steht (siehe Regeln oben).
 function linkFuer(db, config, person, job, verantwortlich) {
   const basis = config.publicBaseUrl;
   const id = person.churchtools_person_id;
@@ -262,6 +273,7 @@ function linkFuer(db, config, person, job, verantwortlich) {
 
 // Vorlage `kommentar`; fehlt ein Teil (gelöscht/leer), gilt die Werkseinstellung (Ruling 2): ein
 // kaputtes Admin-Setup darf keinen Kommentar verlieren.
+// (Siehe Kommentar oben.)
 function kommentarVorlage(db) {
   const v = getVorlage(db, 'kommentar');
   const oder = (wert, key) => (typeof wert === 'string' && wert.trim() ? wert : getDefaultConfigValue(key));
@@ -273,6 +285,7 @@ function kommentarVorlage(db) {
 
 // Rendert die Mail für einen Empfänger. Scheitert das trotz Rückfall, bleibt der Kommentar stehen:
 // Fehler loggen (wie sendNotification) und den Versuch als 'fehlgeschlagen' in mail_log festhalten.
+// (Siehe Kommentar oben.) @returns {object|null} gerenderte Mail oder null bei Vorlagenfehler
 function rendereKommentarMail(db, vorlage, { to, jobId, variablen }) {
   try {
     return renderBenachrichtigung(db, 'kommentar', variablen, vorlage);
@@ -307,6 +320,11 @@ function rendereKommentarMail(db, vorlage, { to, jobId, variablen }) {
 // Aufrufer COMMIT/ROLLBACK macht. Ein späteres ROLLBACK des Aufrufers würde Kommentar und mail_log-
 // Zeilen verwerfen, während die Mails schon unterwegs sind. Die Route /kommentare ruft die Funktion
 // deshalb ausserhalb jeder Transaktion auf.
+/**
+ * Prüft und speichert einen Kommentar und reiht die Benachrichtigungsmails ein (siehe Erläuterung oben).
+ * @param {{job: object, person: object, text: string, jetzt?: Date}} p
+ * @returns {Promise<{ok: true, id: number, zustellung: Promise}|{ok: false, fehler: string[]}>}
+ */
 export async function erfasseKommentar(db, config, mailer, { job, person, text, jetzt = new Date() }) {
   const sauber = String(text ?? '').normalize('NFC').trim();
   const fehler = [];
@@ -370,6 +388,7 @@ export async function erfasseKommentar(db, config, mailer, { job, person, text, 
   return { ok: true, id, zustellung };
 }
 
+// Alle Kommentare eines Vorgangs in zeitlicher Reihenfolge, mit Name der verfassenden Person.
 export function listeKommentare(db, jobId) {
   return db
     .prepare(
@@ -382,6 +401,7 @@ export function listeKommentare(db, jobId) {
     .map((r) => ({ ...r }));
 }
 
+// @returns {Map<number, {anzahl: number, neu: number}>} je Vorgang: Anzahl Kommentare und seit dem letzten Lesen neue (ohne eigene)
 export function kommentarInfo(db, jobIds, personId) {
   const info = new Map();
   const ids = [...new Set(jobIds.map(Number))];
@@ -413,6 +433,7 @@ export function kommentarInfoFuer(db, config, person, jobIds) {
   return info;
 }
 
+// Merkt, dass die Person die Kommentare des Vorgangs gelesen hat (zuletzt-Zeit wird nie zurückgesetzt).
 export function markiereGelesen(db, jobId, personId, jetzt = new Date()) {
   db.prepare(
     `INSERT INTO kommentar_gelesen (job_id, person_id, zuletzt_am) VALUES (?, ?, ?)

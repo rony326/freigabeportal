@@ -1,3 +1,5 @@
+// Eskalation bei Interessenskonflikt: Prüfung, ob die Stellvertretung als Ziel in Frage kommt, und die passenden Texte (docs/rechnungs-workflow.md).
+
 import { getPersonById } from '../db/personenRepo.js';
 import { listFreigabenByJob, listKonfliktmelder } from '../db/freigabenRepo.js';
 
@@ -24,12 +26,14 @@ export function ausschlussGrundFuerEskalationsziel(db, job, { stufe, zielId, mel
 
 // Text für die Admin-Mail: bisher hiess es pauschal, auch die Stellvertretung habe einen Konflikt
 // erklärt — bei einer ausgeschlossenen Stellvertretung stimmt das nicht.
+// Satz für die Mail an die Admin-Gruppe, passend zum Grund (ausgeschlossene vs. ebenfalls befangene Stellvertretung).
 export function adminEskalationsText(objekt, ausschlussGrund) {
   return ausschlussGrund
     ? `${objekt} wurde nach einem Interessenskonflikt an die Portal-Admin-Gruppe eskaliert, da die Stellvertretung ausgeschlossen ist (${ausschlussGrund}).`
     : `${objekt} wurde an die Portal-Admin-Gruppe eskaliert, da auch die Stellvertretung einen Interessenskonflikt erklärt hat.`;
 }
 
+// Hängt den Ausschlussgrund an die Eskalationsbegründung an.
 export function grundMitAusschluss(grund, ausschlussGrund) {
   return ausschlussGrund ? `${grund} — Stellvertretung ausgeschlossen (${ausschlussGrund})` : grund;
 }

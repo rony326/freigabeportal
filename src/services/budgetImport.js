@@ -4,6 +4,7 @@
 import { readSheet } from 'read-excel-file/node';
 import { parseBetrag } from './auswertung.js';
 
+// Obergrenze der Zeilen einer Importdatei.
 export const MAX_ZEILEN = 2000;
 
 // Trennzeichen aus der ersten Zeile (ausserhalb von Anführungszeichen): ; oder ,
@@ -20,6 +21,7 @@ function trennzeichen(text) {
   return komma > semikolon ? ',' : ';';
 }
 
+// Einfacher CSV-Leser mit Anführungszeichen; das Trennzeichen (; oder ,) wird aus der ersten Zeile erkannt.
 function parseCsv(text) {
   const trenner = trennzeichen(text);
   const zeilen = [];
@@ -47,12 +49,20 @@ function parseCsv(text) {
   return zeilen;
 }
 
+// Wandelt alle Zellen in getrimmten Text um und entfernt leere Zeilen am Ende.
 function ohneLeereEndzeilen(zeilen) {
   const kopie = zeilen.map((z) => z.map((w) => (w === null || w === undefined ? '' : String(w).trim())));
   while (kopie.length && kopie[kopie.length - 1].every((w) => w === '')) kopie.pop();
   return kopie;
 }
 
+/**
+ * Liest eine hochgeladene CSV- oder Excel-Datei (.xlsx) in eine Zeilen-/Spaltentabelle aus Text.
+ * @param {Buffer} buffer Dateiinhalt
+ * @param {string} dateiname bestimmt das Format über die Endung
+ * @returns {Promise<string[][]>}
+ * @throws {Error} mit verständlicher Meldung bei unbekanntem Format, kaputter Datei oder zu vielen Zeilen
+ */
 export async function leseTabelle(buffer, dateiname) {
   const endung = String(dateiname || '').toLowerCase().split('.').pop();
   let zeilen;
@@ -79,6 +89,10 @@ export function erkenneKopfzeile(zeilen, spalteBetrag) {
 }
 
 // konten: aktive Konten [{ id, kontonummer }]; bisher: Map kontoId → Budget im Zieljahr.
+/**
+ * Ordnet die Zeilen den aktiven Konten zu und trennt gültige von fehlerhaften Zeilen (unbekanntes Konto, ungültiger Betrag, doppelt).
+ * @returns {{gueltig: {kontoId, kontonummer, betrag, bisher}[], fehler: {zeile: number, grund: string}[]}}
+ */
 export function ordneZu(zeilen, { spalteKonto, spalteBetrag, hatKopfzeile }, konten, bisher = new Map()) {
   const nachNummer = new Map();
   for (const k of konten) if (!nachNummer.has(k.kontonummer)) nachNummer.set(k.kontonummer, k);

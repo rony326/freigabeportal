@@ -1,10 +1,11 @@
+// Nächtlicher Personen-/Gruppenabgleich mit ChurchTools (docs/personen-sync.md): Zugangsmodell und Schutzmechanismen direkt unterhalb.
 import { fetchGroupMemberIds, fetchPersonById } from './churchtools.js';
 import { upsertPerson, listActivePersonsMitGruppen, deactivatePerson, markUnresolved, personExists, setPersonGruppen } from '../db/personenRepo.js';
 import { listKontoReferencedPersonIds } from '../db/kontenRepo.js';
 import { startSyncLog, finishSyncLog } from '../db/syncLogRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
-// Zugangsmodell (siehe docs/rollen-und-berechtigungen.md, Abschnitt Personen-Sync):
+// Zugangsmodell (siehe docs/personen-sync.md und docs/auth-und-rechte.md):
 //
 // Anmelden darf jede Person, die sich über ChurchTools-OAuth anmelden kann (AUTH-WIDEN-1) --
 // Verwaltungsgruppen (Buchhaltung/Admin/Manager) steuern nur Rollen, nicht den Portalzugang.
@@ -26,6 +27,7 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 // OAuth aber auch nicht mehr neu anmelden. Siehe Restrisiko in der Dokumentation.
 const ZUGANG_ENTZOGEN_HTTP = new Set([404, 410]);
 
+// Grund, warum ChurchTools die Person als "Zugang entzogen" führt (nur ausdrücklich archiviert), sonst null.
 function entzugsgrund(profile) {
   // Nur ein ausdrücklich gesetztes true zählt; fehlt das Feld (ältere ChurchTools-Versionen),
   // gilt die Person als nicht archiviert.
@@ -33,6 +35,7 @@ function entzugsgrund(profile) {
   return null;
 }
 
+// Lädt das Profil und ordnet das Ergebnis ein: 'ok', 'entzogen' (404/410 oder archiviert) oder 'nicht_aufloesbar' (Ausfall o. ä.).
 async function ladeProfil(config, accessToken, personId) {
   try {
     const profile = await fetchPersonById(config, accessToken, personId);
@@ -44,10 +47,19 @@ async function ladeProfil(config, accessToken, personId) {
   }
 }
 
+// true, wenn beide Gruppenlisten dieselben Einträge enthalten.
 function gleicheGruppen(a, b) {
   return a.length === b.length && a.every((g) => b.includes(g));
 }
 
+/**
+ * Gleicht die Personen mit ChurchTools ab (Zugangsmodell siehe oben): Gruppenlisten laden, jede zu prüfende Person abrufen, dann in
+ * einer Transaktion anlegen/aktualisieren, als nicht auflösbar markieren bzw. deaktivieren. Protokoll in `sync_log`.
+ * Die Massenänderungs-Sperre bricht den Lauf ohne Änderungen ab (SYNC-1, unten).
+ * @param {object} config ChurchTools-Teil der Konfiguration
+ * @param {string} accessToken Login-Token des Sync-Dienstkontos
+ * @returns {Promise<{upserted: number, deactivated: number, unresolved: number, rollenentzug?: number, abgebrochen: boolean, meldung?: string}>}
+ */
 export async function runPersonenSync(db, config, accessToken) {
   const syncLogId = startSyncLog(db);
   try {
@@ -100,14 +112,12 @@ export async function runPersonenSync(db, config, accessToken) {
       .map((p) => p.id);
     const betroffen = toDeactivate.length + rollenentzug.length;
 
-    // SYNC-1: refuse to commit a sync run that would change an abnormally large share of the
-    // active roster in one shot (a ChurchTools-side outage or misconfiguration returning an
-    // empty/near-empty group membership list is exactly this shape). The percent threshold only
-    // applies once the active population is at least as large as the absolute-count threshold —
-    // below that, a single person's completely normal departure would otherwise be 100% of a tiny
-    // population. Two dedicated arms catch what both miss at small scale: this run would touch
-    // every active person, or would strip every current group-role holder of all roles. A
-    // population of exactly one is exempted, since a lone person's departure is a normal event.
+    // SYNC-1: Einen Sync-Lauf nicht festschreiben, der einen ungewöhnlich grossen Anteil der aktiven Personen auf einen Schlag änderte
+    // (ein Ausfall oder eine Fehlkonfiguration auf ChurchTools-Seite, die eine leere/fast leere Gruppenmitgliederliste liefert, hat genau
+    // diese Form). Die Prozentschwelle gilt erst, wenn die aktive Personenzahl mindestens so gross ist wie die absolute Anzahl-Schwelle —
+    // darunter wäre der ganz normale Austritt einer einzelnen Person sonst 100 % einer winzigen Gruppe. Zwei eigene Zweige fangen, was
+    // beide im Kleinen übersehen: Der Lauf würde jede aktive Person berühren oder allen aktuellen Inhabern einer Gruppenrolle alle Rollen
+    // entziehen. Genau eine Person ist ausgenommen, da der Austritt einer einzelnen Person ein normales Ereignis ist.
     const anzahlAktiv = aktiveVorher.length;
     const maxProzent = Number(getConfigValue(db, 'sync_max_deaktivierung_prozent') || '50');
     const maxAnzahl = Number(getConfigValue(db, 'sync_max_deaktivierung_anzahl') || '10');

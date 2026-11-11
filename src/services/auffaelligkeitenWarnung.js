@@ -6,6 +6,7 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 import { sendNotification, resolveEmpfaenger } from './notify.js';
 import { kreditorNameVariablen } from './kreditorFelder.js';
 
+// Befunde als Aufzählung ("- Titel: Text") für die Mail.
 export function auffaelligkeitenAlsText(befunde) {
   return befunde.map((b) => `- ${b.titel}: ${b.text}`).join('\n');
 }
@@ -15,6 +16,7 @@ export function bestaetigungsKommentar(befunde, bemerkung) {
   return befunde.map((b) => b.titel).join('; ') + (bemerkung ? ` — Wie geprüft: ${bemerkung}` : '');
 }
 
+// Verschickt die Warn-Mail an alle Empfänger (jede Adresse einmal, siehe Kopfkommentar).
 export async function sendeAuffaelligkeitenWarnung(db, mailer, config, { job, kreditor, befunde, bemerkung, person, freigeberIds, link }) {
   const empfaenger = new Set();
   for (const personId of freigeberIds) {

@@ -1,7 +1,17 @@
+// Sicherheits-Schema: Manipulationsschutz und lückenloses Audit per Datenbank-Trigger.
+//   - Unveränderliche Felder (Zeitstempel, Freigabe-Snapshot, Endhash) und append-only Nachweistabellen
+//   - Die Audit-Tabelle `audit_ereignisse` (unveränderlich) und die Trigger, die jede Änderung wichtiger Tabellen
+//     (Konten, Kreditoren, Jobs, Freigaben, Einstellungen …) mit Vorher/Nachher-Stand protokollieren
+// Muss NACH allen Tabellen-Neuaufbauten laufen und läuft bei jedem Start (Trigger werden neu erzeugt, damit sie die
+// aktuelle Spaltenliste kennen). Neue auditierte Tabelle: in `tables` (unten) mit ihrem Schlüsselfeld eintragen.
+// Hintergrund: docs/auth-und-rechte.md (Audit) und docs/datenmodell.md.
+
 import { GRANTABLE_BERECHTIGUNGEN } from '../services/berechtigungKatalog.js';
 
+// Alle vergebbaren Einzelrechte (Quelle: services/berechtigungKatalog.js); der CHECK der Tabelle wird daraus gebaut.
 const RIGHTS = GRANTABLE_BERECHTIGUNGEN;
 
+// Legt Schutz-Trigger, Audit-Tabelle und Audit-Trigger an (siehe Kopfkommentar). Idempotent.
 export function migrateSecuritySchema(db) {
   const jobColumns = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name));
   for (const [column, type] of Object.entries({ freigabe_snapshot: 'TEXT', final_datei_hash: 'TEXT', gruppe_final_datei_hash: 'TEXT', zeitstempel_erforderlich: 'INTEGER NOT NULL DEFAULT 0' })) {
@@ -110,6 +120,7 @@ export function migrateSecuritySchema(db) {
       BEGIN SELECT RAISE(ABORT, 'freigaben ist unveraenderlich'); END;`);
   }
 
+  // Tabelle → Schlüsselspalte, die als `objekt_id` ins Audit-Ereignis geschrieben wird.
   const tables = {
     person_berechtigungen: 'person_id', konten: 'id', kreditoren: 'id',
     kreditor_ibans: 'id', zuweisungsregeln: 'id', admin_config: 'key',
@@ -120,11 +131,12 @@ export function migrateSecuritySchema(db) {
     kommentare: 'id', kenntnisnahmen: 'id', konto_budgets: 'konto_id', kontierung_auffaelligkeiten: 'id',
   };
   // Inhalte, die nach Ablauf der Aufbewahrung nicht im (unveränderlichen) Audit-Log bleiben dürfen.
+  // (Kennwörter, Geheimnisse und Token in admin_config werden unten ebenfalls als '[redacted]' protokolliert.)
   const GESCHWAERZT = { betrieb_fehlermeldungen: ['beschreibung', 'seite', 'user_agent'] };
-  // Triggers make the event part of the same statement/transaction as its mutation.
-  // They are always dropped and recreated: the snapshot freezes the column list at creation time,
-  // so a trigger created before a later ALTER TABLE ADD COLUMN (e.g. jobs.kreditkarte_id) would
-  // silently omit the new column from vorher/nachher.
+  // Die Trigger machen das Ereignis zum Teil derselben Anweisung/Transaktion wie die Änderung selbst. Sie werden immer
+  // gelöscht und neu angelegt: der Snapshot friert die Spaltenliste beim Anlegen ein, ein vor einem späteren
+  // ALTER TABLE ADD COLUMN (z. B. jobs.kreditkarte_id) angelegter Trigger würde die neue Spalte in vorher/nachher
+  // still weglassen.
   // Eine Transaktion für alle DROP/CREATE-Paare: sonst gäbe es zwischen zwei Anweisungen (oder nach
   // einem Fehler mitten in der Schleife) Tabellen ganz ohne Audit-Trigger.
   db.exec('BEGIN IMMEDIATE');

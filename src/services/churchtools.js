@@ -1,3 +1,7 @@
+// Client für die ChurchTools-Schnittstelle: OAuth2-Anmeldung (Autorisierung, Token, Profil) und – mit dem Login-Token des
+// Sync-Dienstkontos – Personen, Gruppen und Gruppenmitglieder (docs/auth-und-rechte.md, docs/personen-sync.md). Im Testmodus
+// ruft nichts nach aussen; es gibt feste Beispieldaten.
+
 // A4-01: Alle produktiven ChurchTools-fetch-Aufrufe (Login und nächtlicher Sync) bekommen ein
 // Zeitlimit. Eine hängende CT-Instanz (TCP offen, keine Antwort) darf weder die Login-Anfrage
 // unbegrenzt blockieren noch den Sync dauerhaft lahmlegen (der Reentrancy-Guard im scheduler.js
@@ -11,6 +15,7 @@ function ctSignal(config) {
   return AbortSignal.timeout(config?.ctFetchTimeoutMs ?? CT_FETCH_TIMEOUT_MS);
 }
 
+// Adresse, an die der Browser zur ChurchTools-Anmeldung geschickt wird (`state` schützt vor CSRF).
 export function buildAuthorizeUrl(config, state) {
   const url = new URL('/oauth/authorize', config.baseUrl);
   url.searchParams.set('client_id', config.clientId);
@@ -20,9 +25,8 @@ export function buildAuthorizeUrl(config, state) {
   return url.toString();
 }
 
-// `status` is attached so callers can tell "ChurchTools says this does not exist" (404/410) apart
-// from outages, rate limits or permission problems -- the Personen-Sync only treats the former as
-// a withdrawn portal access (services/sync.js).
+// `status` wird angehängt, damit Aufrufer "ChurchTools sagt, das existiert nicht" (404/410) von Ausfällen, Ratenlimits oder
+// Berechtigungsproblemen unterscheiden können — der Personen-Sync wertet nur Ersteres als entzogenen Portalzugang (services/sync.js).
 async function parseOrThrow(response, label) {
   if (!response.ok) {
     throw Object.assign(new Error(`ChurchTools ${label} fehlgeschlagen: ${response.status}`), { status: response.status });
@@ -38,6 +42,7 @@ function sperreImTestmodus(config) {
 // Beispiel-Zahlungsdaten (Muster-IBAN), damit Spesen im Testmodus freigegeben werden können.
 export const TESTMODUS_IBAN = 'CH9300762011623852957';
 
+// Tauscht den Autorisierungscode gegen ein OAuth2-Zugriffstoken.
 export async function exchangeCodeForToken(config, code) {
   sperreImTestmodus(config);
   const url = new URL('/oauth/access_token', config.baseUrl);
@@ -56,25 +61,23 @@ export async function exchangeCodeForToken(config, code) {
   return parseOrThrow(response, 'Token-Austausch');
 }
 
+// Profil der angemeldeten Person (/oauth/userinfo).
 export async function fetchPerson(config, accessToken) {
   sperreImTestmodus(config);
-  // OAuth2 access tokens are only valid against the dedicated /oauth/* endpoints (authorize,
-  // access_token, userinfo) — not the general /api/* REST surface, which returns 403 for a
-  // Bearer-token request. /oauth/userinfo also returns the profile as a flat object, unlike
-  // /api/*'s { data: {...} } envelope.
+  // OAuth2-Zugriffstoken gelten nur für die eigenen /oauth/*-Endpunkte (authorize, access_token, userinfo) — nicht für die
+  // allgemeine REST-Schnittstelle /api/*, die für eine Bearer-Anfrage mit 403 antwortet. /oauth/userinfo liefert das Profil
+  // ausserdem als flaches Objekt, anders als die Hülle { data: {...} } von /api/*.
   const url = new URL('/oauth/userinfo', config.baseUrl);
   const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` }, signal: ctSignal(config) });
   return parseOrThrow(response, 'Profilabruf');
 }
 
-// fetchPersonById and fetchGroupMemberIds are only ever called with a ChurchTools Login-Token
-// (the sync service account's token), never an OAuth access token — the general /api/* REST
-// surface doesn't accept OAuth Bearer auth at all (see fetchPerson above). Login-Tokens use
-// their own, different scheme: "Authorization: Login <token>", not "Bearer <token>" — confirmed
-// against ChurchTools' own API authentication docs. Using the wrong scheme fails as a 401
-// (rejected outright), not a 403 (rejected but authenticated) — the two token types are not
-// interchangeable and must never share a header-building helper without being explicit about
-// which scheme applies.
+// fetchPersonById und fetchGroupMemberIds werden nur mit einem ChurchTools-Login-Token (dem Token des Sync-Dienstkontos)
+// aufgerufen, nie mit einem OAuth-Zugriffstoken — die allgemeine REST-Schnittstelle /api/* akzeptiert OAuth-Bearer-
+// Authentifizierung gar nicht (siehe fetchPerson oben). Login-Token haben ein eigenes Schema: "Authorization: Login <token>",
+// nicht "Bearer <token>" — gegen die Authentifizierungs-Doku von ChurchTools bestätigt. Das falsche Schema scheitert mit 401
+// (sofort abgelehnt), nicht mit 403 (authentifiziert, aber abgelehnt) — die beiden Tokenarten sind nicht austauschbar und
+// dürfen sich keinen Header-Helfer teilen, ohne ausdrücklich zu klären, welches Schema gilt.
 export async function fetchPersonById(config, loginToken, personId) {
   if (config?.testmodus) {
     const daten = { id: personId };
@@ -88,11 +91,10 @@ export async function fetchPersonById(config, loginToken, personId) {
   return data.data;
 }
 
-// Confirmed against a live instance: ChurchTools' GET /api/persons/{id} response has no separate
-// customFields array at all. Custom fields appear as flat, lowercase/underscored top-level
-// properties directly on the person object (e.g. "iban_1", "kontoinhaber") — so
-// CT_CUSTOM_FIELD_IBAN/CT_CUSTOM_FIELD_KONTOINHABER must be set to that exact property key, not a
-// display name or a numeric custom-field ID.
+// An einer Live-Instanz bestätigt: Die Antwort von ChurchTools GET /api/persons/{id} hat gar kein eigenes customFields-Array.
+// Benutzerdefinierte Felder erscheinen als flache, kleingeschriebene Eigenschaften direkt am Personenobjekt (z. B. "iban_1",
+// "kontoinhaber") — CT_CUSTOM_FIELD_IBAN/CT_CUSTOM_FIELD_KONTOINHABER müssen also genau diesen Eigenschaftsschlüssel enthalten,
+// nicht einen Anzeigenamen oder eine numerische Feld-ID.
 export function extractCustomFieldValue(person, fieldKey) {
   if (!person || !fieldKey) return null;
   const wert = person[fieldKey];
@@ -101,6 +103,7 @@ export function extractCustomFieldValue(person, fieldKey) {
   return getrimmt || null;
 }
 
+// Gruppe (id, Name) – für die Prüfung der konfigurierten Gruppen-IDs in der Ersteinrichtung.
 export async function fetchGroup(config, loginToken, groupId, { signal = ctSignal(config) } = {}) {
   sperreImTestmodus(config);
   const url = new URL(`/api/groups/${groupId}`, config.baseUrl);
@@ -109,6 +112,7 @@ export async function fetchGroup(config, loginToken, groupId, { signal = ctSigna
   return { id: String(data.data.id), name: data.data.name };
 }
 
+// IDs aller Mitglieder einer Gruppe (als Text).
 export async function fetchGroupMemberIds(config, loginToken, groupId, { signal = ctSignal(config) } = {}) {
   sperreImTestmodus(config);
   const url = new URL(`/api/groups/${groupId}/members`, config.baseUrl);
@@ -117,6 +121,7 @@ export async function fetchGroupMemberIds(config, loginToken, groupId, { signal 
   return data.data.map((member) => String(member.personId));
 }
 
+// Welche der Kandidaten-Gruppen enthalten die Person? (Beim Login: Rollen der Person bestimmen.) @returns {Promise<string[]>}
 export async function resolveMemberGroupIds(config, loginToken, personId, candidateGroupIds) {
   const memberships = await Promise.all(
     candidateGroupIds.map(async (groupId) => {

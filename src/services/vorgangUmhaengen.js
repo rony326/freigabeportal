@@ -1,3 +1,6 @@
+// Admin-Eingriff "Umhängen" (Admin → Laufende Vorgänge, docs/rechnungs-workflow.md): übergibt einen laufenden Vorgang an eine andere Person
+// mit hartem Konfliktschutz (Vier-Augen-Prinzip, erklärte Interessenskonflikte) und Mails an Ziel und bisher Zuständige.
+
 import { getJobById, adminUmhaengen } from '../db/jobsRepo.js';
 import { listPersonenMitFreigeberRolle } from '../db/kontenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -6,6 +9,7 @@ import { reiheBenachrichtigungEin, reiheBenachrichtigungMitVertretungEin } from 
 import { stelleEintraegeZu } from './mailZustellung.js';
 import { LAUFENDE_STATUS, ermittleZustaendigkeit, standToken } from './vorgangZustaendigkeit.js';
 
+// Mindestlänge der Begründung (Zeichen), auch bei den Rapport-Eingriffen verwendet.
 export const MIN_BEMERKUNG_LAENGE = 10;
 const MAIL_TYP = 'admin-umzuweisung';
 
@@ -40,6 +44,7 @@ export function listUmhaengenZiele(db, job) {
   return listPersonenMitFreigeberRolle(db).filter((p) => !ausgeschlossen.has(p.churchtools_person_id));
 }
 
+// Seite, auf der die neu zuständige Person den Vorgang bearbeitet.
 function linkNachUmhaengen(config, job) {
   const basis = config.publicBaseUrl;
   if (job.status === 'freigabe2') return `${basis}/freigabe2/${job.id}`;
@@ -47,6 +52,10 @@ function linkNachUmhaengen(config, job) {
   return job.quelle === 'spesen' ? `${basis}/spesen-freigabe1/${job.id}` : `${basis}/kontierung/${job.id}`;
 }
 
+/**
+ * Hängt einen Vorgang um (in einer Transaktion: Zustand prüfen, Verlaufseintrag, Mails einreihen); die Zustellung folgt nach dem Commit.
+ * @returns {Promise<{ok: true}|{fehler: 'phase'|'stand'|'ziel'}>} 'phase' = nicht umhängbar, 'stand' = jemand war schneller, 'ziel' = Ziel nicht zulässig
+ */
 export async function umhaengeVorgang(db, config, mailer, { jobId, zielId, bemerkung, standErwartet, admin, ip }) {
   let eintraege = [];
   db.exec('BEGIN');

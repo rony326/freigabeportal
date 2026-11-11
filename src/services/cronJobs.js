@@ -1,3 +1,11 @@
+// Die Hintergrund-Jobs des Portals (docs/geplante-jobs-und-benachrichtigungen.md): jeder Job ist eine Funktion `(db, config, mailer) → {status, …}`
+// mit status 'erfolg' | 'fehler' | 'uebersprungen' | 'abgebrochen'. Sie werden vom In-Process-Scheduler (services/scheduler.js) und – für das manuelle
+// "Jetzt ausführen" – von routes/cron.js bzw. routes/admin/geplanteJobs.js aufgerufen. Jeder Lauf wird in `cron_log` protokolliert (db/cronLogRepo.js)
+// und als Audit-Ereignis 'hintergrundlauf' geklammert (auditedJob). Mailjobs reihen zuerst dauerhaft ein und stellen danach zu (mailZustellung.js).
+//   sync-personen · pool-erinnerungen · freigabe2-erinnerungen · rapport-erinnerungen · pdf-bereinigung · zeitstempel-nachholen ·
+//   split-gruppen-nachholen · datenbank-sicherung · mail-digest · mail-zustellung · kk-beleg-erinnerungen
+// (Die übrigen Jobs des Schedulers – TSA-Sperrlisten, Audit-Export/-Prüfnummer, Nutzungsdaten, Sicherheitsalarme – stehen in eigenen Dateien.)
+
 import { existsSync, unlinkSync, readdirSync, statSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -61,6 +69,7 @@ import { setZeitstempelMitNachweis } from './zeitstempel.js';
 import { speichereTsaNachweis } from './tsaNachweis.js';
 import { pruefeUndFinalisiereSplitGruppe } from './splitGruppenExport.js';
 
+// Ab diesem Alter dürfen liegengebliebene temporäre Dateien von pdf-bereinigung gelöscht werden.
 const TMP_MAX_ALTER_MS = 60 * 60 * 1000; // 1 Stunde
 
 // Tage-Einstellung aus admin_config: nur eine ganze Zahl >= 1 zählt, sonst der Default -- ein
@@ -98,12 +107,12 @@ function abschlussMitBilanz(fachlich, bilanz) {
   };
 }
 
-// The actual job bodies behind /internal/cron/* (routes/cron.js, manual/on-demand triggering)
-// and the in-process scheduler (services/scheduler.js, the normal way these now run) — extracted
-// here so both trigger paths call the exact same logic instead of risking drift between two
-// copies. Each function returns a plain result object rather than touching an HTTP response;
-// the route layer maps `status` to an HTTP status code.
+// Die eigentlichen Job-Rümpfe hinter /internal/cron/* (routes/cron.js, manuelles/bedarfsweises Auslösen) und dem In-Process-Scheduler
+// (services/scheduler.js, der normale Weg, wie sie jetzt laufen) — hier ausgelagert, damit beide Auslösepfade genau dieselbe Logik aufrufen,
+// statt dass zwei Kopien auseinanderlaufen. Jede Funktion liefert ein einfaches Ergebnisobjekt, ohne eine HTTP-Antwort anzufassen; die
+// Routenschicht bildet `status` auf einen HTTP-Status ab.
 
+// Mail "ChurchTools-Sync fehlgeschlagen" an die Empfänger aus `sync_fehler_empfaenger` (immer sofort, nie gebündelt).
 async function benachrichtigeSyncFehler(db, config, mailer, meldung) {
   const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'sync_fehler_empfaenger'));
   for (const email of empfaenger) {
@@ -120,6 +129,7 @@ async function benachrichtigeSyncFehler(db, config, mailer, meldung) {
   }
 }
 
+// Job `sync-personen` (nachts): gleicht Personen und Gruppen mit ChurchTools ab (services/sync.js), meldet Abbruch/Fehler per Mail. Im Testmodus deaktiviert.
 export const runSyncPersonenJob = auditedJob('sync-personen', runSyncPersonenJobInternal);
 
 async function runSyncPersonenJobInternal(db, config, mailer) {
@@ -140,6 +150,7 @@ async function runSyncPersonenJobInternal(db, config, mailer) {
   }
 }
 
+// Job `pool-erinnerungen` (stündlich): Erinnerung und Eskalation für Pool-Vorgänge, die zu lange unbeansprucht liegen.
 export const runPoolErinnerungenJob = auditedJob('pool-erinnerungen', runPoolErinnerungenJobInternal);
 
 async function runPoolErinnerungenJobInternal(db, config, mailer) {
@@ -195,6 +206,7 @@ async function runPoolErinnerungenJobInternal(db, config, mailer) {
   }
 }
 
+// Job `freigabe2-erinnerungen` (stündlich): Erinnerung an die zuständige Person, nach der Eskalationsfrist Übergabe an die Admin-Gruppe.
 export const runFreigabe2ErinnerungenJob = auditedJob('freigabe2-erinnerungen', runFreigabe2ErinnerungenJobInternal);
 
 async function runFreigabe2ErinnerungenJobInternal(db, config, mailer) {
@@ -229,7 +241,7 @@ async function runFreigabe2ErinnerungenJobInternal(db, config, mailer) {
       }
 
       let eskalation = 0;
-      // Same recipients apply to every job in this phase of a given run.
+      // Dieselben Empfänger gelten für jeden Job in dieser Phase eines Laufs.
       const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'freigabe2_eskalation_empfaenger'));
       for (const job of listFreigabe2JobsForEskalation(db, eskalationStunden)) {
         // Eskalation und Mail in derselben Transaktion: scheitert das Einreihen, bleibt auch die
@@ -259,6 +271,7 @@ async function runFreigabe2ErinnerungenJobInternal(db, config, mailer) {
   }
 }
 
+// Job `rapport-erinnerungen` (stündlich): holt vollständig bestätigte Rapporte nach, erinnert an offene Kenntnisnahmen und eskaliert.
 export const runRapportErinnerungenJob = auditedJob('rapport-erinnerungen', runRapportErinnerungenJobInternal);
 
 async function runRapportErinnerungenJobInternal(db, config, mailer) {
@@ -342,6 +355,8 @@ async function runRapportErinnerungenJobInternal(db, config, mailer) {
   }
 }
 
+// Job `pdf-bereinigung` (nachts): löscht Dateien archivierter Vorgänge nach der Aufbewahrungsfrist, verworfene Kreditkartenbelege, temporäre
+// Reste und alte Mail-Protokolle und verschiebt verwaiste finale Dokumente in die Quarantäne.
 export const runPdfBereinigungJob = auditedJob('pdf-bereinigung', runPdfBereinigungJobInternal);
 
 // Loescht eine archivierte Datei mit Audit-Klammer. Scheitert bereits das Absichtsprotokoll, bleibt
@@ -371,7 +386,7 @@ function runPdfBereinigungJobInternal(db, config) {
     console.error('Archivierungs-Sweep fehlgeschlagen:', err.message);
   }
 
-  // The group receipt protects the merged document as well as its child documents.
+  // Die Gruppenquittung schützt das zusammengeführte Dokument ebenso wie seine Teildokumente.
   for (const parent of db.prepare("SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_abgeholt_am IS NOT NULL").all()) {
     if (!hasMatureArchiveReceipt(db, parent) || !archivedBytesMatch(db, parent)) continue;
     if (parent.gruppe_pdf_pfad && existsSync(parent.gruppe_pdf_pfad)) {
@@ -455,19 +470,16 @@ function runPdfBereinigungJobInternal(db, config) {
   return ergebnis;
 }
 
-// Best-effort retry for jobs whose Freigabe-2 completion (freigabe2.js) either had no TSA
-// configured at the time, or attempted setZeitstempel and failed (TSA outage). Silently does
-// nothing (no log entry) when the feature is unconfigured, matching setZeitstempel's own
-// "empty zeitstempel_tsa_url = feature disabled" behavior at Freigabe-2 completion. Each pending
-// job is tried independently — one job's TSA failure or missing PDF file must never stop the
-// others in the same run from being retried.
+// Best-Effort-Wiederholung für Vorgänge, bei denen der Abschluss von Freigabe 2 (freigabe2.js) entweder damals keine TSA konfiguriert hatte oder
+// setZeitstempel versuchte und scheiterte (TSA-Ausfall). Tut still nichts (kein Protokolleintrag), wenn die Funktion nicht konfiguriert ist —
+// entsprechend dem Verhalten von setZeitstempel selbst ("leere zeitstempel_tsa_url = Funktion aus") beim Abschluss von Freigabe 2. Jeder
+// ausstehende Vorgang wird einzeln versucht — der TSA-Fehler oder die fehlende PDF-Datei eines Vorgangs darf die anderen im selben Lauf nie
+// vom Wiederholen abhalten.
 //
-// Overlap guard: unlike pool-erinnerungen/pdf-bereinigung (fast, no per-item network round-trip),
-// each iteration here awaits a real TSA call, so a batch can take a while — Task 5's manual
-// "Jetzt ausführen" trigger calls this exact function too, and could otherwise fire while a
-// scheduled run is still mid-batch. Same start/finish/hasRecentRunning pattern as
-// runSyncPersonenJob's hasRecentRunningSync guard, just scoped to cron_log via
-// startCronLauf/finishCronLauf/hasRecentRunningCronLauf instead of sync_log.
+// Überlappungsschutz: Anders als pool-erinnerungen/pdf-bereinigung (schnell, kein Netzwerkaufruf je Eintrag) wartet jeder Durchlauf hier auf
+// einen echten TSA-Aufruf, ein Stapel kann also dauern — das manuelle "Jetzt ausführen" ruft genau diese Funktion ebenfalls auf und könnte sonst
+// auslösen, während ein geplanter Lauf noch mitten im Stapel ist. Dasselbe Muster Start/Ende/hasRecentRunning wie der hasRecentRunningSync-Schutz
+// von runSyncPersonenJob, nur über startCronLauf/finishCronLauf/hasRecentRunningCronLauf auf cron_log statt auf sync_log.
 export const runZeitstempelNachholenJob = auditedJob('zeitstempel-nachholen', runZeitstempelNachholenJobInternal);
 
 async function runZeitstempelNachholenJobInternal(db, config) {
@@ -493,7 +505,7 @@ async function runZeitstempelNachholenJobInternal(db, config) {
     let fehlgeschlagen = 0;
     let dateiFehlt = 0;
     for (const job of ausstehend) {
-      // An issued archive manifest pins the exported revision. Never silently replace it.
+      // Ein ausgestelltes Archivmanifest bindet die exportierte Fassung fest. Nie still ersetzen.
       if (db.prepare('SELECT 1 FROM export_nachweise WHERE job_id = ? OR job_id = ?').get(job.id, job.aufgesplittet_von || job.id)) continue;
       // Bekannte Einschränkung (siehe Spec): sobald n8n den Job abgeholt hat, löscht das Portal
       // die lokale PDF-Datei -- ein Zeitstempel kann für diesen Job dann nicht mehr nachgeholt
@@ -607,6 +619,7 @@ function runDatenbankSicherungJobInternal(db, config) {
 // beschädigtes Kind-PDF -- oder die zum Zeitpunkt des letzten Auslösers noch unvollständig war.
 // Jede Gruppe wird unabhängig versucht: ein fehlerhaftes Kind-PDF in einer Gruppe darf die
 // anderen Gruppen im selben Lauf nicht blockieren.
+// Job `split-gruppen-nachholen` (alle 15 Min.): siehe Kommentar oben.
 export const runSplitGruppenNachholenJob = auditedJob('split-gruppen-nachholen', runSplitGruppenNachholenJobInternal);
 
 async function runSplitGruppenNachholenJobInternal(db, config) {
@@ -649,6 +662,7 @@ async function runSplitGruppenNachholenJobInternal(db, config) {
 // (services/mailZustellung.js), damit parallele Läufe nichts doppelt versenden. Scheitert der
 // Versand, bleiben die Zeilen 'geplant' und der Job mail-zustellung wiederholt den Digest mit
 // wachsendem Abstand; erst nach ausgeschöpften Versuchen werden sie 'fehlgeschlagen'.
+// Job `mail-digest` (täglich früh): siehe Kommentar oben.
 export const runMailDigestJob = auditedJob('mail-digest', runMailDigestJobInternal);
 
 async function runMailDigestJobInternal(db, config, mailer, { jetzt = new Date() } = {}) {
@@ -726,6 +740,7 @@ async function runMailDigestJobInternal(db, config, mailer, { jetzt = new Date()
 // 5 Minuten). Doppelversand verhindern die Zeilensperren in services/mailZustellung.js.
 const runMailZustellungJobAudited = auditedJob('mail-zustellung', runMailZustellungJobInternal);
 
+// Job `mail-zustellung` (alle 5 Min.): siehe Kommentar oben.
 export async function runMailZustellungJob(db, config, mailer) {
   if (!hatFaelligeMails(db)) return { status: 'uebersprungen', meldung: 'Keine fälligen Mails' };
   return runMailZustellungJobAudited(db, config, mailer);
@@ -750,6 +765,7 @@ async function runMailZustellungJobInternal(db, config, mailer) {
 // gleichzeitig fällig sind; und (2) markierte Kreditkartenabrechnungen, die seit ebenso langer
 // Zeit auf den Abgleich (kkAbgleich.js) warten. Jede Erinnerung wird pro Beleg/Abrechnung nur
 // einmal pro Intervall verschickt (letzte_erinnerung_am / kk_erinnert_am).
+// Job `kk-beleg-erinnerungen` (täglich): siehe Kommentar oben.
 export const runKkBelegErinnerungenJob = auditedJob('kk-beleg-erinnerungen', runKkBelegErinnerungenJobInternal);
 
 async function runKkBelegErinnerungenJobInternal(db, config, mailer) {

@@ -2,6 +2,7 @@
 // (services/tsaNachweis.js). Objekte sind inhaltsadressiert (SHA-256 des DER) und dedupliziert;
 // jeder Nachweis ist einem Job, einer Dokumentart und dem SHA-256 der gestempelten Datei
 // zugeordnet. Beide Tabellen sind lokal gegen UPDATE/DELETE gesperrt.
+// Tabellen `tsa_evidenz_objekte` (inhaltsadressierte Zertifikate/Sperrlisten/Token) und `tsa_pruefnachweise`.
 export function migrateTsaNachweisSchema(db) {
   db.exec('SAVEPOINT tsa_nachweis_schema');
   try {

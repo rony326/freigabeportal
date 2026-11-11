@@ -1,5 +1,12 @@
+// Hüllt einen Hintergrund-Job so ein, dass Start, Ende und Abbruch als Audit-Ereignisse ('hintergrundlauf') protokolliert werden.
+
 import { withAuditOperation, currentAuditOperation, currentAuditActor } from './auditContext.js';
 
+/**
+ * @param {string} kind Art des Laufs (z. B. 'pdf-bereinigung'), erscheint im Audit-Ereignis
+ * @param {Function} action der eigentliche Job, `action(db, …)`; darf synchron oder asynchron sein
+ * @returns {Function} gleich aufrufbare Funktion; schreibt 'lauf_gestartet' und 'lauf_beendet'/'lauf_abgebrochen'
+ */
 export function auditedJob(kind, action) {
   return function (...args) {
     return withAuditOperation(kind, () => {

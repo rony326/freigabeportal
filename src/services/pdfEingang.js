@@ -1,3 +1,4 @@
+// Eingangsprüfung für PDFs (Rechnungseingang, Spesen): beschädigt, verschlüsselt, keine Seiten – Begründung direkt unterhalb.
 import * as mupdf from 'mupdf';
 import { PDFDocument } from 'pdf-lib';
 
@@ -27,10 +28,12 @@ export const PDF_EINGANG_MELDUNGEN = {
   pdf_keine_seiten: 'Die PDF-Datei enthält keine lesbare Seite.',
 };
 
+// Erzeugt den Fehler zum Code mit der deutschen Meldung.
 function fehler(code) {
   return new PdfEingangFehler(code, PDF_EINGANG_MELDUNGEN[code]);
 }
 
+// Öffnet das PDF mit mupdf (Passwort? Seitenzahl? Probe-Rasterung der ersten Seite). @returns {number} Seitenzahl
 function pruefeMitMupdf(buffer) {
   let doc;
   try {
@@ -68,6 +71,7 @@ function pruefeMitMupdf(buffer) {
   }
 }
 
+// Öffnet das PDF mit pdf-lib (verschlüsselt? beschädigt? Seiten?).
 async function pruefeMitPdfLib(buffer) {
   let doc;
   try {
@@ -82,6 +86,12 @@ async function pruefeMitPdfLib(buffer) {
 
 // Wirft PdfEingangFehler (code: pdf_beschaedigt | pdf_verschluesselt | pdf_keine_seiten),
 // liefert sonst die Seitenzahl.
+/**
+ * Prüft ein eingehendes PDF mit beiden Bibliotheken (siehe Kopfkommentar).
+ * @param {Buffer} buffer
+ * @returns {Promise<{seiten: number}>}
+ * @throws {PdfEingangFehler} (n8n-Route antwortet dann mit 422 und dem Fehlercode)
+ */
 export async function pruefeEingangsPdf(buffer) {
   if (!buffer || buffer.length < 5 || buffer.subarray(0, 4).toString('latin1') !== '%PDF') throw fehler('pdf_beschaedigt');
   const seiten = pruefeMitMupdf(buffer);

@@ -1,24 +1,24 @@
+// Liest den Swiss-QR-Code aus dem PDF: Seite rastern (mupdf), QR-Code dekodieren (jsQR) und die Nutzlast parsen (qrBill.js).
+
 import * as mupdf from 'mupdf';
 import jsQR from 'jsqr';
 import { parseQrBillPayload } from './qrBill.js';
 
-// Much higher than thumbnail.js's 200px preview width — a Swiss QR-Bill's code occupies roughly
-// the bottom-left quarter of an A4 page, and jsQR needs real pixel resolution per module to
-// decode reliably, especially for scanned (not born-digital) invoices.
+// Deutlich höher als die 200 px Vorschaubreite in thumbnail.js — der Code einer Schweizer QR-Rechnung liegt etwa im unteren linken
+// Viertel einer A4-Seite, und jsQR braucht echte Pixelauflösung je Modul, um zuverlässig zu dekodieren, besonders bei gescannten
+// (nicht digital erzeugten) Rechnungen.
 const SCAN_WIDTH_PX = 1200;
 
-// Ceiling on the total number of pixels this module will ever rasterize for one page, regardless
-// of how the source PDF declares its MediaBox. Roughly an A4 page rendered at SCAN_WIDTH_PX=1200
-// wide (1200 x ~1697 ≈ 2.04M px), with generous headroom for wider/shorter layouts. Without this,
-// `scale = SCAN_WIDTH_PX / width` alone lets a PDF with a narrow/tall page (legal within mupdf's
-// own limits — this is reachable from untrusted PDFs ingested via POST /n8n/jobs) blow the height
-// up to match, producing an arbitrarily large pixmap: measured at 345 MB / 2.5s for a degenerate
-// [50, 1000] page, and scaling quadratically worse for more extreme geometries. A page this
-// distorted renders far too small for jsQR to find anything anyway, so clamping down to the cap
-// just makes scanQrBill take its already-designed "nothing found" (null) path instead of trying
-// to allocate an unbounded buffer.
+// Obergrenze für die Gesamtzahl Pixel, die dieses Modul je Seite höchstens rastert, egal wie das Quell-PDF seine MediaBox angibt.
+// Etwa eine A4-Seite bei SCAN_WIDTH_PX=1200 Breite (1200 x ~1697 ≈ 2,04 Mio. px), mit reichlich Spielraum für breitere/kürzere
+// Layouts. Ohne sie lässt `scale = SCAN_WIDTH_PX / width` allein ein PDF mit schmaler/hoher Seite (innerhalb der eigenen Grenzen von
+// mupdf zulässig — erreichbar über nicht vertrauenswürdige PDFs aus POST /n8n/jobs) die Höhe entsprechend aufblähen und ein
+// beliebig grosses Pixmap erzeugen: gemessen 345 MB / 2,5 s bei einer entarteten [50, 1000]-Seite, bei extremeren Geometrien
+// quadratisch schlimmer. Eine so verzerrte Seite rendert ohnehin viel zu klein, als dass jsQR etwas fände; das Begrenzen führt
+// also nur dazu, dass scanQrBill seinen ohnehin vorgesehenen Weg "nichts gefunden" (null) nimmt, statt einen unbegrenzten Puffer anzulegen.
 const MAX_SCAN_PIXELS = 8_000_000;
 
+// Rastert eine Seite und dekodiert den QR-Code. @returns {string|null} Text des QR-Codes oder null
 function decodePageAsQrText(doc, pageIndex) {
   const page = doc.loadPage(pageIndex);
   try {
@@ -30,14 +30,12 @@ function decodePageAsQrText(doc, pageIndex) {
     if (scannedPixels > MAX_SCAN_PIXELS) {
       scale *= Math.sqrt(MAX_SCAN_PIXELS / scannedPixels);
     }
-    // alpha=false, same as thumbnail.js: unpainted page area comes back as opaque white.
-    // (An earlier version of this code used alpha=true so getPixels() would already be
-    // 4-bytes/pixel RGBA for jsQR — but mupdf leaves *unpainted* pixels in an alpha-enabled
-    // pixmap uncomposited, i.e. (0,0,0,0), not opaque white. That turns the QR code's mandatory
-    // white quiet zone into solid black in the RGB channels and jsQR can never find the finder
-    // patterns, so every page silently decoded to null. Rendering opaque (alpha=false) instead
-    // gives a correctly white-backed RGB buffer; we then pad it out to RGBA ourselves below,
-    // since jsQR requires 4 bytes/pixel.)
+    // alpha=false, wie in thumbnail.js: unbemalte Seitenfläche kommt als deckendes Weiss zurück. (Eine frühere Version nutzte
+    // alpha=true, damit getPixels() für jsQR schon 4-Byte-RGBA liefert — aber mupdf lässt *unbemalte* Pixel eines Pixmaps mit Alpha
+    // unkomponiert, d. h. (0,0,0,0), nicht deckendes Weiss. Das macht die vorgeschriebene weisse Ruhezone des QR-Codes in den
+    // RGB-Kanälen komplett schwarz, jsQR findet die Positionsmuster nie, und jede Seite wurde still zu null dekodiert. Deckend
+    // (alpha=false) zu rendern ergibt einen korrekt weiss hinterlegten RGB-Puffer; den füllen wir unten selbst auf RGBA auf, da
+    // jsQR 4 Byte/Pixel verlangt.)
     const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false);
     try {
       const rgb = pixmap.getPixels();
@@ -60,6 +58,12 @@ function decodePageAsQrText(doc, pageIndex) {
   }
 }
 
+/**
+ * Sucht den QR-Code auf der ersten (und bei mehreren Seiten der letzten) Seite.
+ * @param {Buffer} pdfBuffer
+ * @returns {object|null} geparste Zahlungsdaten (siehe parseQrBillPayload) oder null, wenn keiner gefunden wurde
+ * @throws {Error} wenn sich das PDF nicht öffnen lässt
+ */
 export function scanQrBill(pdfBuffer) {
   let doc;
   try {

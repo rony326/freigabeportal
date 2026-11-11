@@ -1,3 +1,4 @@
+// Automatische Erneuerung der lokalen TSA-Sperrlisten (Job `tsa-crl-aktualisierung`, CLI `npm run tsa:crl-update`).
 import { randomBytes } from 'node:crypto';
 import { lstatSync, openSync, writeFileSync, fsyncSync, closeSync, renameSync, rmSync } from 'node:fs';
 import { dirname, basename, join } from 'node:path';
@@ -23,6 +24,7 @@ export const WARNFRIST_MS = 7 * 24 * 3600 * 1000;
 const MAX_CRL_BYTES = 4 * 1024 * 1024;
 const TSA_TIMING = { timeout: 15000, retry: 2, retryDelay: 1000 };
 
+// Lädt eine Sperrliste per HTTP (Zeitlimit, Grössenlimit 4 MB).
 async function holeUrlPerHttp(url) {
   const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
   if (!response.ok) throw new Error(`Sperrliste ${url}: HTTP ${response.status}`);
@@ -32,12 +34,14 @@ async function holeUrlPerHttp(url) {
   return bytes;
 }
 
+// Wandelt eine PEM-Sperrliste in DER um (DER bleibt unverändert).
 function alsDer(bytes) {
   const text = bytes.subarray(0, 32).toString('latin1');
   if (!text.startsWith('-----BEGIN X509 CRL-----')) return bytes;
   return Buffer.from(bytes.toString('latin1').replace(/-----[A-Z0-9 ]+-----|\s/g, ''), 'base64');
 }
 
+// HTTP-Verteilpunkte (CRL Distribution Points) eines Zertifikats.
 function verteilpunkte(certificate) {
   const cdp = certificate.extensions?.find((extension) => extension.extnID === '2.5.29.31')?.parsedValue;
   return (cdp?.distributionPoints || [])
@@ -47,6 +51,7 @@ function verteilpunkte(certificate) {
     .map((name) => name.value);
 }
 
+// Fordert einen echten Testzeitstempel an, dessen Zertifikatskette die URLs der Sperrlisten liefert.
 async function testzeitstempel(tsaConfig) {
   const request = freshTimestampRequest(await createTimestampRequest(Uint8Array.from(randomBytes(32)), { hashAlgorithm: 'SHA-256' }));
   const response = parseTimestampResponse(await sendTimestampRequest(request, { url: tsaConfig.url, headers: buildTsaHeaders(tsaConfig), ...TSA_TIMING }));
@@ -54,6 +59,7 @@ async function testzeitstempel(tsaConfig) {
   return validateTimestampBinding(request, response.token);
 }
 
+// Ersetzt die Datei atomar (temporär, fsync, rename); lehnt Symlinks ab und behält die Rechte der alten Datei.
 function schreibeAtomar(pfad, inhalt) {
   let stat = null;
   try { stat = lstatSync(pfad); } catch (err) { if (err.code !== 'ENOENT') throw err; }
@@ -69,6 +75,11 @@ function schreibeAtomar(pfad, inhalt) {
   }
 }
 
+/**
+ * Lädt die Sperrlisten aller Zertifikate der TSA-Kette (ohne Vertrauensanker), prüft sie und schreibt `crlFile` neu.
+ * @param {{url, user?, passwort?, trustAnchorsFile, trustAnchorsSha256, crlFile}} tsaConfig
+ * @returns {Promise<{sperrlisten: object[], naechsterAblauf: Date}>}
+ */
 export async function aktualisiereTsaCrls(tsaConfig, { holeUrl = holeUrlPerHttp } = {}) {
   if (!tsaConfig.url || !tsaConfig.crlFile) throw new Error('TSA-URL und TSA_CRL_FILE muessen konfiguriert sein.');
   const anchors = loadTsaTrustAnchors(tsaConfig.trustAnchorsFile, tsaConfig.trustAnchorsSha256);
@@ -97,6 +108,7 @@ export async function aktualisiereTsaCrls(tsaConfig, { holeUrl = holeUrlPerHttp 
   return { sperrlisten, naechsterAblauf: new Date(Math.min(...sperrlisten.map((s) => s.nextUpdate.getTime()))) };
 }
 
+// Frühestes nextUpdate der aktuell gespeicherten Sperrlisten (ms) oder null, wenn sie fehlen/unlesbar sind.
 function aktuellerAblauf(crlFile) {
   try {
     return Math.min(...loadTsaCrls(crlFile).map((crl) => crl.nextUpdate?.value.getTime() ?? 0));
@@ -105,6 +117,7 @@ function aktuellerAblauf(crlFile) {
   }
 }
 
+// Schickt die Alarmmail an die Sicherheitsalarm-Empfänger (Mailtyp 'sicherheitsalarm').
 async function alarmiere(db, config, mailer, { meldung, ablauf }) {
   const empfaenger = resolveEmpfaenger(db, config, getConfigValue(db, 'sicherheitsalarm_empfaenger') ?? 'gruppe:admin').filter(Boolean);
   if (!empfaenger.length) return;
@@ -122,6 +135,7 @@ async function alarmiere(db, config, mailer, { meldung, ablauf }) {
   });
 }
 
+// Ein Lauf des Jobs; läuft nur mit TSA_CRL_AUTO_UPDATE=true und eingetragener TSA. Alarm erst kurz vor Ablauf, bei Sperrung oder fehlender Datei.
 async function runTsaCrlAktualisierungJobInternal(db, config, mailer, { holeUrl, jetzt = Date.now() } = {}) {
   const tsaUrl = getConfigValue(db, 'zeitstempel_tsa_url');
   if (!config.tsaCrlAutoUpdate || !tsaUrl) return { status: 'uebersprungen' };
@@ -145,4 +159,5 @@ async function runTsaCrlAktualisierungJobInternal(db, config, mailer, { holeUrl,
   }
 }
 
+// Geplanter Job `tsa-crl-aktualisierung` (Zeitplan: cron_tsa_crl_*; Audit-Klammer durch auditedJob).
 export const runTsaCrlAktualisierungJob = auditedJob('tsa-crl-aktualisierung', runTsaCrlAktualisierungJobInternal);

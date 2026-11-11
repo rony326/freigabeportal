@@ -1,3 +1,8 @@
+// Export- und Zahlungsnachweis (docs/export-und-zahlungsintegritaet.md): bestimmt, was n8n/Paperless exportieren darf und welche
+// Zahlungsdaten gelten. Quellen: der bei Freigabe 2 eingefrorene Einzel-Snapshot (`jobs.freigabe_snapshot`), der Gruppen-Snapshot
+// (`gruppe_freigabe_snapshot`) oder eine Altfall-Entscheidung (services/altfaelle.js). Nachweisstatus u. a.: snapshot,
+// altfall_nachbestaetigt, altfall_nur_archiv, historisch_unvollstaendig (gesperrt).
+
 import { listSplitKinder } from '../db/jobsRepo.js';
 import { bestimmeZahlungsart, validateQrPayment, zahlungBestaetigungspflichtig } from './paymentApproval.js';
 
@@ -5,16 +10,19 @@ import { bestimmeZahlungsart, validateQrPayment, zahlungBestaetigungspflichtig }
 // dem bei Freigabe 2 eingefrorenen Snapshot, dem Gruppen-Snapshot oder einer protokollierten
 // Altfall-Entscheidung -- nie aus der aktuellen jobs-/konten-Zeile oder aus ChurchTools.
 
+// JSON lesen; bei kaputtem oder leerem Inhalt null statt Fehler.
 function parse(json) {
   if (!json) return null;
   try { return JSON.parse(json); } catch { return null; }
 }
 
+// Die Altfall-Entscheidung zum Vorgang (mit geparsten angezeigten Daten) oder null.
 export function getAltfallEntscheidung(db, jobId) {
   const row = db.prepare('SELECT * FROM altfall_entscheidungen WHERE job_id = ?').get(jobId);
   return row ? { ...row, angezeigte_daten: JSON.parse(row.angezeigte_daten) } : null;
 }
 
+// Betrag mit Vorzeichen (Gutschrift negativ) auf 2 Stellen, oder null bei fehlendem/ungültigem Wert.
 function betragSigniert(betrag, typ) {
   const wert = Number(betrag);
   if (betrag == null || betrag === '' || Number.isNaN(wert)) return null;
@@ -29,7 +37,7 @@ export function belegMetadaten(job, konto) {
     dateiname: job.dateiname ?? null, lieferant: job.lieferant ?? null, rechnungsnummer: job.rechnungsnummer ?? null,
     betrag: job.betrag ?? null, typ, betrag_signiert: betragSigniert(job.betrag, typ),
     zahlungsziel: job.zahlungsziel ?? null,
-    // An unknown invoice date must not be substituted with the payment deadline.
+    // Ein unbekanntes Rechnungsdatum darf nicht durch das Zahlungsziel ersetzt werden.
     rechnungsdatum: job.rechnungsdatum || null,
     konto_id: konto?.id ?? job.konto_id ?? null,
     konto_kontonummer: konto?.kontonummer ?? null, konto_bezeichnung: konto?.bezeichnung ?? null,
@@ -89,15 +97,18 @@ export function zahlungExport(zahlung, herkunft) {
   };
 }
 
+// true, wenn der Vorgang bzw. seine Gruppe schon an n8n übergeben wurde.
 function bereitsUebergeben(job) {
   return job.status === 'abgeholt' || job.status === 'archiviert' || Boolean(job.gruppe_abgeholt_am);
 }
 
+// Aktuelle Vorgangsdaten für bereits übergebene Altfälle, deutlich als "nicht durch eine Freigabe belegt" gekennzeichnet.
 function unbelegt(job) {
   // Nur fuer bereits uebergebene Altfaelle: aktueller Datensatz, ausdruecklich nicht freigabegebunden.
   return { hinweis: 'Aktueller Datensatz zum Exportzeitpunkt, nicht durch eine Freigabe belegt.', ...belegMetadaten(job, null), konto_kontonummer: undefined, konto_bezeichnung: undefined };
 }
 
+// Baut den Nachweis aus einer Altfall-Entscheidung ('nachbestaetigt' → Zahlung mit Bestätigung, 'nur_archiv' → ohne Zahlungsfreigabe).
 function ausEntscheidung(entscheidung, extra = {}) {
   const herkunft = entscheidung.entscheidung === 'nachbestaetigt' ? 'altfall_nachbestaetigt' : 'altfall_nur_archiv';
   const daten = entscheidung.angezeigte_daten;
@@ -112,6 +123,10 @@ function ausEntscheidung(entscheidung, extra = {}) {
   };
 }
 
+/**
+ * Nachweis für einen Einzelbeleg.
+ * @returns {{status: string, exportierbar: boolean, grund: string|null, metadaten: object|null, zahlung: object, unbelegte_jobdaten?: object}}
+ */
 export function einzelNachweis(db, job) {
   const snapshot = parse(job.freigabe_snapshot);
   if (snapshot?.job) {
@@ -135,6 +150,7 @@ export function einzelNachweis(db, job) {
   };
 }
 
+// Nachweis für den Elternvorgang einer Splitgruppe (Gruppen-Snapshot, Altfall-Entscheidung oder unvollständig).
 export function gruppenNachweis(db, parent) {
   const snapshot = parse(parent.gruppe_freigabe_snapshot);
   if (snapshot) {
@@ -169,6 +185,7 @@ export function exportNachweis(db, job) {
   return nachweis;
 }
 
+// Eine Position (Teilbeleg) im Gruppennachweis, aus dem Freigabe-Snapshot des Kindes.
 export function kindPosition(kind, snapshot) {
   return {
     job_id: kind.id,
@@ -183,6 +200,7 @@ export function kindPosition(kind, snapshot) {
 }
 
 // Erwartete Gruppenzahlung aus den eingefrorenen Eingangsdaten des Elternjobs (QR-Scan).
+// (Siehe Kommentar oben.)
 function erwarteteGruppenZahlung(parent) {
   const art = bestimmeZahlungsart(parent);
   if (art !== 'qr_rechnung') return { art, daten: null, hinweise: [] };
@@ -193,6 +211,7 @@ function erwarteteGruppenZahlung(parent) {
 // Stellt den Gruppen-Snapshot vor der Finalisierung zusammen. Jede Position muss einen
 // Freigabe-Snapshot tragen; alle Teilbelege muessen dieselbe Gesamtzahlung ausdruecklich
 // bestaetigt haben. Sonst entscheidet nur eine protokollierte Altfall-Entscheidung.
+// @returns {{snapshot: object}|{nachpruefung: string}} den fertigen Gruppen-Snapshot oder den Grund, warum eine Nachprüfung (Altfall) nötig ist
 export function bereiteGruppenSnapshotVor(db, parent, kinder, erstelltAm = new Date().toISOString()) {
   const metadaten = { ...belegMetadaten(parent, null), konto_id: null, position: null, anzahl_positionen: kinder.length };
   const erwartet = erwarteteGruppenZahlung(parent);

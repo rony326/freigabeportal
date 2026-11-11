@@ -1,3 +1,6 @@
+// Aufbereitung der laufenden Vorgänge für Admin → Laufende Vorgänge (docs/admin-bereich.md): Art, Status, Zuständigkeit, Prognose
+// für Freigabe 2, Kennzeichen (Rückläufer, Eskalation, Konflikt …) sowie "hängt" und "überfällig".
+
 import { getKontoById } from '../db/kontenRepo.js';
 import { getKreditorById } from '../db/kreditorenRepo.js';
 import { listStalledJobs } from '../db/jobsRepo.js';
@@ -9,6 +12,7 @@ import { LAUFENDE_STATUS, ermittleZustaendigkeit } from './vorgangZustaendigkeit
 import { belegName } from './belegName.js';
 import { aktuelleKenntnisnahmen } from './rapporte.js';
 
+// Anzeigename je laufendem Status.
 export const STATUS_LABEL = {
   unzugewiesen: 'Pool',
   zugewiesen: 'Kontierung / Freigabe 1',
@@ -20,6 +24,7 @@ export const STATUS_LABEL = {
 const ART_LABEL = { rechnung: 'Rechnung', gutschrift: 'Gutschrift', spesen: 'Spesen', rapport: 'Rapport' };
 const STUNDE_MS = 60 * 60 * 1000;
 
+// 'rapport' | 'spesen' | 'gutschrift' | 'rechnung'
 function artVon(job) {
   if (job.typ === 'rapport') return 'rapport';
   if (job.quelle === 'spesen') return 'spesen';
@@ -36,6 +41,7 @@ function namensAufloeser(db) {
   };
 }
 
+// "Vorname Nachname" oder 'Unbekannt'.
 function anzeigeName(person) {
   return person ? `${person.vorname} ${person.nachname}` : 'Unbekannt';
 }
@@ -59,6 +65,7 @@ function prognoseFreigabe2(db, job, person) {
   return { personId: null, name: null, prognose: true, offen: true };
 }
 
+// Seit wann liegt der Vorgang in seiner aktuellen Stufe (für die Spalte "seit").
 function seitWann(db, job) {
   if (job.status === 'freigabe2' && job.freigabe2_seit) return job.freigabe2_seit;
   if (job.status === 'unzugewiesen') return job.pool_rueckgesendet_am || job.eingang_am;
@@ -72,6 +79,7 @@ function rapportStand(db, job) {
   return { bestaetigt: zeilen.filter((k) => k.bestaetigt_am).length, gesamt: zeilen.length, offen: zeilen.filter((k) => !k.bestaetigt_am) };
 }
 
+// Überfällig = länger als die Erinnerungsfrist der Stufe (Pool, Freigabe 2) bzw. die Eskalationsfrist (Rapport) wartend.
 function istUeberfaellig(db, job, jetzt) {
   if (job.status === 'kenntnisnahme') {
     const stunden = Number(getConfigValue(db, 'rapport_eskalation_stunden'));
@@ -89,6 +97,7 @@ function istUeberfaellig(db, job, jetzt) {
   return false;
 }
 
+// Kennzeichen für die Anzeige (Rückläufer, Admin-Eskalation, Interessenskonflikt, umgeleitet).
 function kennzeichenVon(job) {
   const liste = [];
   if (job.status === 'unzugewiesen' && job.pool_rueckgesendet_bemerkung) liste.push('Rückläufer');
@@ -103,6 +112,7 @@ function haengendeJobIds(db) {
   return new Set(listStalledJobs(db).map((s) => s.job.id));
 }
 
+// Beschreibt einen laufenden Vorgang für Liste und Detail (siehe zurückgegebene Felder). Der Kontext (`namen`, `haengendeIds`) erlaubt, ihn für viele Vorgänge wiederzuverwenden.
 export function beschreibeVorgang(db, job, { jetzt = Date.now(), namen = namensAufloeser(db), haengendeIds = haengendeJobIds(db) } = {}) {
   const zust = ermittleZustaendigkeit(db, job);
   const zustaendigPerson = namen(zust.personId);
@@ -136,6 +146,7 @@ export function beschreibeVorgang(db, job, { jetzt = Date.now(), namen = namensA
   };
 }
 
+// Alle laufenden Vorgänge, optional gefiltert nach `status`, `art`, `personId` (zuständig) und `nurProbleme` (hängt oder überfällig).
 export function listLaufendeVorgaenge(db, filter = {}) {
   const platzhalter = LAUFENDE_STATUS.map(() => '?').join(', ');
   const jobs = db.prepare(`SELECT * FROM jobs WHERE status IN (${platzhalter}) ORDER BY eingang_am, id`).all(...LAUFENDE_STATUS);

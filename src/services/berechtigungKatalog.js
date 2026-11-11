@@ -74,6 +74,7 @@ export const BERECHTIGUNG_BEREICHE = [
 
 // Rechte, die der Manager bisher nicht (über das feste Bündel) hatte, plus die neuen, die nur
 // Superadmin bekommen.
+// Rechte, die der Manager nicht über das feste Anfangsbündel bekam (vorher nicht vorhanden bzw. neu eingeführt) – nur Superadmin startet damit.
 const NICHT_FUER_MANAGER = [
   'sync_verwalten', 'workflow_eingreifen', 'betrieb_einsehen',
   'benachrichtigungen_verwalten', 'erscheinungsbild_verwalten', 'ersteinrichtung_verwalten', 'zeitstempel_verwalten',
@@ -81,6 +82,9 @@ const NICHT_FUER_MANAGER = [
 ];
 
 // Startwerte der Migration = Verhalten vor der Einführung der Gruppenrechte.
+// Anfangsrechte je Gruppe beim ersten Anlegen der Tabelle `gruppen_berechtigungen`; danach pflegt sie Admin → Gruppenrechte.
+// Neues vergebbares Recht: in GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS und einem Bereich in BERECHTIGUNG_BEREICHE eintragen,
+// den Startwert festlegen und den Guard in app.js/middleware/nav.js/services/navigation.js verdrahten (siehe docs/auth-und-rechte.md).
 export function startwerteFuerGruppe(gruppe) {
   if (gruppe === 'superadmin') return [...GRANTABLE_BERECHTIGUNGEN, ...FESTE_RECHTE];
   if (gruppe === 'manager') return GRANTABLE_BERECHTIGUNGEN.filter((recht) => !NICHT_FUER_MANAGER.includes(recht));

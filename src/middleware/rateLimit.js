@@ -1,3 +1,6 @@
+// Drei Begrenzer (express-rate-limit), eingehängt in app.js: öffentlich (je IP), angemeldet (je Person),
+// Maschinen (n8n/Cron/Backup). Bei Überschreitung antworten sie mit 429 und JSON.
+
 import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
 
 export const RATE_LIMIT_MESSAGE = { error: 'Zu viele Anfragen, bitte später erneut versuchen.' };
@@ -14,6 +17,7 @@ const COMMON_OPTIONS = {
   handler: jsonRateLimitHandler,
 };
 
+// Öffentliche Seiten/Login: 100 Anfragen je 15 Min. und IP.
 export function createPublicRateLimiter(overrides = {}) {
   return rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -23,6 +27,7 @@ export function createPublicRateLimiter(overrides = {}) {
   });
 }
 
+// Angemeldete Seiten: 300 Anfragen je 15 Min., gezählt je Person (ohne Anmeldung je IP).
 export function createSessionRateLimiter(overrides = {}) {
   return rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -33,6 +38,7 @@ export function createSessionRateLimiter(overrides = {}) {
   });
 }
 
+// n8n-/Cron-/Backup-Routen: 60 Anfragen je Minute.
 export function createMachineRateLimiter(overrides = {}) {
   return rateLimit({
     windowMs: 60 * 1000,

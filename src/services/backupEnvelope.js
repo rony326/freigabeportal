@@ -1,3 +1,8 @@
+// Verschlüsselung der Sicherungen (`.fpbak`, Format FPBACK01; verbindlich beschrieben in docs/backup-verschluesselung.md).
+// Aufbau: Kennung "FPBACK01" | Länge der Schlüssel-ID | Schlüssel-ID | Nonce (12 Byte) | AES-256-GCM-Chiffretext | Tag (16 Byte).
+// Der Kopf wird als zusätzliche authentifizierte Daten (AAD) mitgeschützt. Die Schlüssel stehen in einer Schlüsselbund-Datei
+// ausserhalb aller gesicherten Verzeichnisse (BACKUP_KEYRING_FILE); es gibt bewusst keinen unverschlüsselten Rückfall.
+
 import { createCipheriv, createDecipheriv, createSecretKey, randomBytes, randomUUID } from 'node:crypto';
 import { openSync, closeSync, fstatSync, readFileSync, realpathSync, existsSync, constants, writeFileSync, fsyncSync, linkSync, unlinkSync } from 'node:fs';
 import { resolve, relative, isAbsolute, sep, join } from 'node:path';
@@ -10,11 +15,18 @@ const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
 export const ENCRYPTED_BACKUP_MAX_BYTES = BACKUP_LIMITS.archiveBytes + 8 + 1 + 64 + NONCE_BYTES + TAG_BYTES;
 
+// true, wenn `path` innerhalb von `root` liegt.
 function within(path, root) {
   const suffix = relative(root, path);
   return !suffix || !isAbsolute(suffix) && suffix !== '..' && !suffix.startsWith(`..${sep}`);
 }
 
+/**
+ * Liest und prüft den Schlüsselbund (JSON: version 1, activeKeyId, keys[{id, keyHex}], max. 16 Schlüssel). Die Datei muss
+ * eine eigenständige reguläre Datei mit Modus 0600/0400 ausserhalb der Sicherungsdaten sein.
+ * @returns {{activeKeyId: string, keys: Map<string, KeyObject>}}
+ * @throws {BackupValidationError} bei jedem Mangel; die Meldung enthält nie Schlüsselmaterial oder Pfade
+ */
 export function loadBackupKeyring(config) {
   if (!config.backupKeyringFile) throw new BackupValidationError('BACKUP_KEYRING_FILE ist erforderlich; kein unverschluesseltes Backup-Fallback.');
   let fd;
@@ -44,7 +56,7 @@ export function loadBackupKeyring(config) {
     if (!keys.has(document.activeKeyId)) throw new Error('Missing active key');
     return { activeKeyId: document.activeKeyId, keys };
   } catch {
-    // Never include parser input, key material or secret-bearing paths in logs.
+    // Weder Parser-Eingaben noch Schlüsselmaterial oder geheimnisbehaftete Pfade ins Log schreiben.
     throw new BackupValidationError('Backup-Schlüsselbund unlesbar oder ungültig: separate reguläre Datei, Modus 0600/0400 und gültiges Format erforderlich.');
   } finally {
     bytes?.fill(0);
@@ -52,6 +64,7 @@ export function loadBackupKeyring(config) {
   }
 }
 
+// Verschlüsselt ein Archiv mit dem aktiven Schlüssel des Schlüsselbunds. @returns {Buffer} fertige .fpbak-Datei
 export function encryptBackupArchive(plaintext, keyring) {
   if (!Buffer.isBuffer(plaintext) || plaintext.length > BACKUP_LIMITS.archiveBytes) throw new BackupValidationError('Backup-Archiv ist zu gross oder ungültig.');
   const id = Buffer.from(keyring.activeKeyId, 'ascii');
@@ -64,6 +77,7 @@ export function encryptBackupArchive(plaintext, keyring) {
   return Buffer.concat([header, ciphertext, cipher.getAuthTag()]);
 }
 
+// Entschlüsselt und authentifiziert eine .fpbak-Datei. @returns {{plaintext: Buffer, keyId: string}}
 export function decryptBackupArchive(buffer, keyring) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 38 || buffer.length > ENCRYPTED_BACKUP_MAX_BYTES || !buffer.subarray(0, 8).equals(MAGIC)) {
     throw new BackupValidationError('Authentifiziertes FPBACK01-Backup erforderlich; Klartext-ZIP und unbekannte Formate sind gesperrt.');
@@ -81,7 +95,7 @@ export function decryptBackupArchive(buffer, keyring) {
     decipher.setAAD(buffer.subarray(0, headerLength));
     decipher.setAuthTag(buffer.subarray(-TAG_BYTES));
     plaintext = decipher.update(buffer.subarray(headerLength, -TAG_BYTES));
-    // No ZIP parsing or filesystem writes until the complete authentication tag has verified.
+    // Kein ZIP-Parsing und keine Dateisystem-Schreibzugriffe, bevor der vollständige Authentifizierungs-Tag geprüft ist.
     const final = decipher.final();
     return { plaintext: Buffer.concat([plaintext, final]), keyId: id };
   } catch {
@@ -89,6 +103,7 @@ export function decryptBackupArchive(buffer, keyring) {
   } finally { plaintext?.fill(0); }
 }
 
+// Erstellt die komplette, verschlüsselte Sicherung (Datenbank + Dateien) im Speicher.
 export function buildEncryptedBackup(db, config) {
   const keyring = loadBackupKeyring(config);
   const plaintext = buildBackupArchive(db, config);
@@ -96,6 +111,7 @@ export function buildEncryptedBackup(db, config) {
   finally { plaintext.fill(0); }
 }
 
+// Entschlüsselt und prüft eine Sicherung vollständig (Struktur, Hashes, Datenbank). @returns Archiv, Manifest und Authentifizierungsangaben
 export function validateEncryptedBackup(buffer, config) {
   const { plaintext, keyId } = decryptBackupArchive(buffer, loadBackupKeyring(config));
   try {
@@ -104,15 +120,16 @@ export function validateEncryptedBackup(buffer, config) {
     plaintext.fill(0);
     throw err;
   }
-  // AdmZip retains the authenticated buffer for extraction by the caller.
+  // AdmZip behält den authentifizierten Puffer für die Extraktion durch den Aufrufer.
 }
 
+// Schreibt die Datei atomar ins Verzeichnis: erst temporär (0600), dann per Hardlink veröffentlicht – überschreibt nie eine bestehende Sicherung.
 export function publishEncryptedBackup(directory, filename, buffer) {
   const temporary = join(directory, `.backup-${randomUUID()}.tmp`);
   const fd = openSync(temporary, 'wx', 0o600);
   try {
     try { writeFileSync(fd, buffer); fsyncSync(fd); } finally { closeSync(fd); }
-    // Linking publishes a complete file atomically and cannot overwrite an existing backup.
+    // Das Verlinken veröffentlicht eine vollständige Datei atomar und kann keine bestehende Sicherung überschreiben.
     linkSync(temporary, join(directory, filename));
   } finally { unlinkSync(temporary); }
   syncDirectory(directory);

@@ -27,10 +27,12 @@ const MAX_JAHRE = 5;
 
 const tagFormat = new Intl.DateTimeFormat('en-CA', { timeZone: ZEITZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
 
+// Zürcher Kalenderdatum (YYYY-MM-DD) eines UTC-Zeitpunkts.
 export function zuerichDatum(iso) {
   return tagFormat.format(new Date(iso));
 }
 
+// Heutiges Datum in Zürcher Zeit.
 export function zuerichHeute() {
   return zuerichDatum(new Date().toISOString());
 }
@@ -51,15 +53,18 @@ function zuerichMitternachtUtc(datum) {
   return new Date(ergebnis).toISOString();
 }
 
+// Datum (YYYY-MM-DD) plus/minus Tage.
 function plusTage(datum, tage) {
   const [y, m, d] = datum.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + tage)).toISOString().slice(0, 10);
 }
 
+// Anzahl Kalendertage zwischen zwei Daten.
 function tageZwischen(vonDatum, bisDatum) {
   return Math.round((Date.parse(`${bisDatum}T00:00:00Z`) - Date.parse(`${vonDatum}T00:00:00Z`)) / TAG_MS);
 }
 
+// true bei einem echten Kalenderdatum im Format YYYY-MM-DD.
 function istDatum(text) {
   if (typeof text !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
   const [y, m, d] = text.split('-').map(Number);
@@ -72,6 +77,11 @@ function utcGrenzen(von, bis) {
   return { ab: zuerichMitternachtUtc(von), bisExklusiv: zuerichMitternachtUtc(plusTage(bis, 1)) };
 }
 
+/**
+ * Liest den Zeitraum aus der Abfrage (`zeitraum` = jahr | 12m | vorjahr | eigen, mit `von`/`bis`).
+ * @returns {{art: string, von: string, bis: string, budgetJahr: number, fehler?: string}} bei ungültiger Eingabe der
+ *   Standardzeitraum (laufendes Jahr) plus `fehler`
+ */
 export function parseZeitraum(query = {}, heute = zuerichHeute()) {
   const jahr = Number(heute.slice(0, 4));
   const standard = { art: 'jahr', von: `${jahr}-01-01`, bis: heute, budgetJahr: jahr };
@@ -92,6 +102,7 @@ export function parseZeitraum(query = {}, heute = zuerichHeute()) {
 
 // ---------- Zahlen ----------
 
+// Median einer Zahlenliste oder null bei leerer Liste.
 export function median(werte) {
   if (!werte.length) return null;
   const s = [...werte].sort((a, b) => a - b);
@@ -112,6 +123,7 @@ function runde(wert, stellen) {
   return Math.round(wert * f) / f;
 }
 
+// Betrag als "CHF 12'345.60" (Schweizer Tausendertrennung).
 export function formatChf(betrag) {
   const wert = Math.round((Number(betrag) || 0) * 100) / 100;
   const [ganz, rest] = Math.abs(wert).toFixed(2).split('.');
@@ -131,6 +143,8 @@ export function parseBetrag(text) {
 
 // ---------- Zugang ----------
 
+// Wer darf die Auswertung sehen und für welche Konten? `null` = kein Zugang; `{alle: true}` mit Recht
+// `auswertung_einsehen`, sonst die Konten, bei denen die Person Freigeber 1 bzw. dessen Stellvertretung ist.
 export function zugangFuer(db, config, person) {
   if (!person) return null;
   if (personHasPermission(db, config, person, 'auswertung_einsehen')) return { alle: true, kontoIds: null, engpaesse: true };
@@ -142,6 +156,7 @@ export function zugangFuer(db, config, person) {
 
 // ---------- SQL-Bausteine ----------
 
+// SQL-Zusatz und Parameter zur Einschränkung auf erlaubte Konten (leere Liste = nichts sichtbar).
 function kontoFilter(kontoIds) {
   if (kontoIds === null || kontoIds === undefined) return { sql: '', params: [] };
   if (!kontoIds.length) return { sql: ' AND 0', params: [] };
@@ -152,6 +167,7 @@ function platzhalter(liste) {
   return liste.map(() => '?').join(',');
 }
 
+// Freigegebene Rechnungen im Zeitraum samt vorzeichenrichtigem Betrag (`wert`).
 function freigegebeneJobs(db, { von, bis, kontoIds }, spalten = 'j.*') {
   const { ab, bisExklusiv } = utcGrenzen(von, bis);
   const kf = kontoFilter(kontoIds);
@@ -170,6 +186,7 @@ function personenNamen(db) {
 
 // ---------- Kennzahlen ----------
 
+// Kennzahlen der Kopfzeile: freigegeben, in Freigabe, Median der Durchlaufzeit, lange offen, ohne Betrag, in EUR.
 export function kennzahlen(db, { von, bis, kontoIds, schwelleTage, heute = zuerichHeute() }) {
   const freigegeben = freigegebeneJobs(db, { von, bis, kontoIds });
   const kf = kontoFilter(kontoIds);
@@ -258,6 +275,7 @@ function tage(vonIso, bisIso) {
   return Math.max(0, (Date.parse(bisIso) - Date.parse(vonIso)) / TAG_MS);
 }
 
+// Median und 90. Perzentil der Tage je Stufe (Pool, Freigabe 1, Freigabe 2) für im Zeitraum freigegebene Rechnungen.
 export function durchlaufzeiten(db, { von, bis, kontoIds }) {
   const werte = { pool: [], freigabe1: [], freigabe2: [] };
   const jobs = freigegebeneJobs(db, { von, bis, kontoIds }, 'j.id, j.eingang_am, j.abgeschlossen_am');
@@ -300,6 +318,7 @@ function stufeSeit(db, job) {
   return t ?? job.eingang_am;
 }
 
+// Wo liegen offene Rechnungen? Gruppiert nach zuständiger Person/Pool/Admin und Stufe, die längste Wartezeit zuerst.
 export function engpaesse(db, { kontoIds, heute = zuerichHeute() }) {
   const kf = kontoFilter(kontoIds);
   const jobs = db.prepare(`SELECT j.* FROM jobs j WHERE j.status IN (${platzhalter(ENGPASS_STATUS)}) AND ${KEIN_RAPPORT}${kf.sql}`)
@@ -323,6 +342,7 @@ export function engpaesse(db, { kontoIds, heute = zuerichHeute() }) {
 
 // ---------- Lieferanten ----------
 
+// Lieferanten im Zeitraum nach Betrag mit Anteil und den (bis zu zwei) häufigsten Konten.
 export function lieferanten(db, { von, bis, kontoIds }) {
   const { ab, bisExklusiv } = utcGrenzen(von, bis);
   const kf = kontoFilter(kontoIds);

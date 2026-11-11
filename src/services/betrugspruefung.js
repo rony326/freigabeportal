@@ -1,3 +1,5 @@
+// (Fachliche Beschreibung der Prüfungen: docs/qr-bill-und-betrugserkennung.md.)
+
 // Auffälligkeiten bei der Kontierung (Spec 2026-11-10, B4). Nur Lesezugriffe: Dieser Service
 // ermittelt Befunde, schreibt nichts und verschickt keine Mails — das Verdrahten (Popup, Protokoll,
 // Benachrichtigung) machen die Routen.
@@ -9,6 +11,7 @@ import { DEFAULTS, getConfigValue } from '../db/adminConfigRepo.js';
 
 /** @typedef {{ code: string, schwere: 'rot'|'gelb', titel: string, text: string }} Befund */
 
+// Sortierreihenfolge der Befund-Codes innerhalb derselben Schwere im Prüf-Popup.
 const CODE_REIHENFOLGE = [
   'iban_anderer_kreditor', 'iban_fremd', 'iban_manuell_fremd', 'zahlungsart_ohne_iban',
   'name', 'betrag_qr', 'betrag_hoch', 'neuer_kreditor', 'gleicher_betrag',
@@ -24,6 +27,7 @@ const DATUM = new Intl.DateTimeFormat('de-CH', { timeZone: 'Europe/Zurich', day:
 
 const RECHTSFORMEN = /(^|[^a-z0-9])(e\.v\.|ag|gmbh|sa|sarl|klg|kg|ltd|llc|inc|ev|co|cie|genossenschaft|stiftung|verein)(?=[^a-z0-9]|$)/g;
 
+// Vergleichsform eines Firmennamens: Kleinschreibung, ohne Akzente, Rechtsformen (AG, GmbH …) und Sonderzeichen.
 export function normalisiereFirmenname(name) {
   return String(name ?? '')
     .toLowerCase()
@@ -44,16 +48,19 @@ export function namenPassen(a, b) {
   return na.includes(nb) || nb.includes(na);
 }
 
+// true, wenn bei einer Rechnung ohne QR-IBAN für einen IBAN-pflichtigen Lieferanten die Endung von Hand geprüft werden muss.
 export function brauchtManuelleIbanPruefung(job, kreditor, typ) {
   return !job.qr_iban && typ === 'rechnung' && brauchtIban(kreditor.zahlungsart);
 }
 
+// Passen die letzten 4 Zeichen zu einer hinterlegten IBAN des Lieferanten?
 export function ibanEndungPasst(db, kreditorId, endung) {
   const normalisiert = normalizeIban(typeof endung === 'string' ? endung.trim() : '');
   if (normalisiert.length !== 4) return false;
   return listKreditorIbansByKreditor(db, kreditorId).some((row) => normalizeIban(row.iban).slice(-4) === normalisiert);
 }
 
+// Prüfsumme über Code und Text der Befunde – bindet die Bestätigung im Popup an genau diese Befunde.
 export function befundeHash(befunde) {
   const daten = JSON.stringify(befunde.map(({ code, text }) => ({ code, text })));
   return crypto.createHash('sha256').update(daten).digest('hex');
@@ -80,6 +87,7 @@ function schwelle(db, key) {
   return roh !== null && roh !== '' && Number.isFinite(wert) && wert >= 0 ? wert : Number(DEFAULTS[key]);
 }
 
+// Frühere kontierte Rechnungen desselben Lieferanten (Betrag in Rappen, Zeitpunkt der Freigabe 1) als Vergleichsbasis.
 function fruehereRechnungen(db, kreditorId, jobId) {
   const platzhalter = FRUEHERE_RECHNUNGEN_AUSGESCHLOSSENE_STATUS.map(() => '?').join(', ');
   const rows = db.prepare(`
@@ -101,6 +109,7 @@ function fruehereRechnungen(db, kreditorId, jobId) {
     .filter((r) => r.rappen !== null);
 }
 
+// true, wenn beide Rechnungsnummern gesetzt und gleich sind.
 function gleicheNummer(a, b) {
   const na = (a ?? '').trim();
   const nb = (b ?? '').trim();
@@ -174,6 +183,7 @@ export function ermittleBefunde(db, { job, kreditor, betrag, typ, ibanEndung = n
 }
 
 // E/F/G — nur für Typ Rechnung.
+// Betragsprüfungen (ungewöhnlich hoch, neuer Lieferant mit hohem Betrag, gleicher Betrag kurz hintereinander); Schwellen aus admin_config (pruefung_*).
 function betragsBefunde(db, { job, kreditor, betragRp, rechnungsnummer, fmt }) {
   const befunde = [];
   const jetzt = Date.now();

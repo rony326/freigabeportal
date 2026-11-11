@@ -1,3 +1,4 @@
+// Zustellung der Benachrichtigungen über `mail_log` (Outbox mit Wiederholung) – Funktionsweise im Kommentar direkt unterhalb; Auslöser: Job mail-zustellung.
 import { randomUUID } from 'node:crypto';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { getVorlage, renderTemplate } from './mailTemplates.js';
@@ -28,25 +29,31 @@ import { istWartungsmodusAktiv } from './wartungsmodus.js';
 //   Nachricht nach Ablauf der Sperre erneut versendet. SMTP bietet keine Idempotenz, die das
 //   ausschliessen könnte.
 
+// Dauer der Sperre einer beanspruchten Zeile, Basis und Obergrenze des Wiederholungsabstands, Standard-Höchstzahl der Versuche
+// und Höchstzahl Zeilen je Lauf.
 export const SPERRE_MS = 10 * 60 * 1000;
 export const BASIS_BACKOFF_MS = 5 * 60 * 1000;
 export const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
 const STANDARD_MAX_VERSUCHE = 8;
 const MAX_ZEILEN_PRO_LAUF = 200;
 
+// Millisekunden → ISO-Zeitpunkt.
 function iso(ms) {
   return new Date(ms).toISOString();
 }
 
+// Maximale Zahl Zustellversuche (admin_config `mail_zustellung_max_versuche`, Standard 8).
 export function maxVersuche(db) {
   const wert = Number(getConfigValue(db, 'mail_zustellung_max_versuche'));
   return Number.isInteger(wert) && wert >= 1 ? wert : STANDARD_MAX_VERSUCHE;
 }
 
+// Wartezeit bis zum nächsten Versuch: 5 Min · 2^(Versuch-1), höchstens 6 Stunden.
 export function wartezeitNachVersuch(versuche) {
   return Math.min(MAX_BACKOFF_MS, BASIS_BACKOFF_MS * 2 ** Math.max(0, versuche - 1));
 }
 
+// Führt `action` in einer Transaktion aus; läuft schon eine, gehört die Aktion dazu.
 function inTransaktion(db, action) {
   if (db.isTransaction) return action();
   db.exec('BEGIN IMMEDIATE');
@@ -60,6 +67,7 @@ function inTransaktion(db, action) {
   }
 }
 
+// Legt die Mail dauerhaft in `mail_log` ab ('eingereiht' für den sofortigen Versand, 'geplant' für den Digest). @returns {number} id
 export function reiheMailEin(db, { typ, jobId, empfaenger, betreff, text, geplant = false, jetzt = Date.now() }) {
   const zeit = iso(jetzt);
   const result = db
@@ -71,6 +79,7 @@ export function reiheMailEin(db, { typ, jobId, empfaenger, betreff, text, geplan
   return Number(result.lastInsertRowid);
 }
 
+// Beansprucht die Zeilen mit Status `status` unter einer befristeten Sperre. @returns {{token, zeilen}} nur die tatsächlich beanspruchten Zeilen
 function beanspruche(db, ids, status, jetzt) {
   if (!ids.length) return { token: null, zeilen: [] };
   const token = randomUUID();
@@ -132,18 +141,22 @@ export async function stelleMailZu(db, mailer, id, { jetzt = Date.now() } = {}) 
   return { id, status, beansprucht: true, ...(fehler ? { fehler } : {}) };
 }
 
+// Leere Zählung eines Laufs (versendet, Wiederholung, fehlgeschlagen, geplant).
 export function neueBilanz() {
   return { versendet: 0, wiederholung: 0, fehlgeschlagen: 0, geplant: 0 };
 }
 
+// true, wenn Wiederholungen oder endgültige Fehler angefallen sind.
 export function bilanzHatFehler(bilanz) {
   return bilanz.wiederholung + bilanz.fehlgeschlagen > 0;
 }
 
+// Zählung als Satz für das Cron-Protokoll.
 export function bilanzText(bilanz) {
   return `Mails versendet: ${bilanz.versendet}, zur Wiederholung eingereiht: ${bilanz.wiederholung}, endgültig fehlgeschlagen: ${bilanz.fehlgeschlagen}, für Digest geplant: ${bilanz.geplant}`;
 }
 
+// Zählt einen Status in die Bilanz ein.
 function zaehle(bilanz, status) {
   if (status === 'versendet') bilanz.versendet += 1;
   else if (status === 'fehlgeschlagen') bilanz.fehlgeschlagen += 1;
@@ -164,6 +177,7 @@ export async function stelleEintraegeZu(db, mailer, eintraege, bilanz = neueBila
   return bilanz;
 }
 
+// Digest-Vorlage; wirft, wenn Betreff oder Text fehlt.
 export function ladeDigestVorlage(db) {
   const vorlage = getVorlage(db, 'digest');
   if (!vorlage.betreff || !vorlage.text) {
@@ -186,6 +200,7 @@ export function markiereDigestZeilenFehlgeschlagen(db, zeilen, meldung, jetzt = 
 }
 
 // Wort für %zusammenfassung%; bei "sofort" (einmalige Zustellung nach dem Wechsel) neutral.
+// (Siehe Kommentar oben.)
 export function zusammenfassungsWort(wert) {
   return wert === 'woechentlich' ? 'wöchentliche' : wert === 'taeglich' ? 'tägliche' : 'gesammelte';
 }
@@ -244,6 +259,7 @@ export async function stelleDigestZu(db, config, mailer, { empfaenger, ids, vorl
   return status.includes('fehlgeschlagen') ? 'fehlgeschlagen' : status[0];
 }
 
+// Gruppiert mail_log-Zeilen nach Empfängeradresse.
 export function gruppiereNachEmpfaenger(zeilen) {
   const gruppen = new Map();
   for (const zeile of zeilen) {
@@ -253,6 +269,7 @@ export function gruppiereNachEmpfaenger(zeilen) {
   return gruppen;
 }
 
+// true, wenn Mails zur Zustellung oder Wiederholung fällig sind (Statusseite).
 export function hatFaelligeMails(db, jetzt = Date.now()) {
   return db
     .prepare(

@@ -1,3 +1,5 @@
+// Text aus PDFs lesen (mupdf), für die Analyse von Kreditkartenabrechnungen und die Kartenerkennung.
+
 import * as mupdf from 'mupdf';
 
 const MAX_SEITEN = 20;

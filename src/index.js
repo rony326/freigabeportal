@@ -1,3 +1,12 @@
+// Einstiegspunkt des Freigabeportals (`npm start`).
+//
+// Reihenfolge beim Start (Details: docs/architektur.md, Abschnitt "Bootstrap"):
+//   1. Prozesswächter installieren, Umgebungsvariablen laden und validieren
+//   2. Datenspeicher exklusiv sperren (nie zwei Prozesse auf derselben SQLite-Datei)
+//   3. Datenbank öffnen (Schema + Migrationen), Standardwerte säen
+//   4. Express-App bauen, Hintergrund-Jobs (Scheduler) starten, auf Port lauschen
+// Beim Beenden (SIGTERM/SIGINT) wird sauber heruntergefahren; nach 30 s erzwingt ein Timer den Exit.
+
 import { loadConfig } from './config/env.js';
 import { openDatabase } from './db/index.js';
 import { seedDefaults } from './db/adminConfigRepo.js';
@@ -15,7 +24,7 @@ const baseConfig = loadConfig();
 const lock = acquireStorageLock(baseConfig);
 let db;
 process.once('exit', () => {
-  // A failed database open may have left an unknown handle/transaction. Keep the lock then.
+  // Ein fehlgeschlagenes Öffnen der Datenbank kann ein unbekanntes Handle/eine offene Transaktion hinterlassen haben; dann bleibt die Sperre bestehen.
   if (!db) return;
   try { db.close(); lock.release(); }
   catch (err) { console.error('Datenspeicher konnte nicht sauber geschlossen werden; Sperre bleibt bestehen:', err.message); }

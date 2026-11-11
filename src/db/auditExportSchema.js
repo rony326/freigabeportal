@@ -3,6 +3,7 @@
 // in derselben Datenbank wie das Auditprotokoll und ist daher selbst KEIN Nachweis externer
 // Unveraenderlichkeit; es ermoeglicht nur, Pakete lueckenlos zu erzeugen und spaeter gegen extern
 // aufbewahrte Hashes abzugleichen.
+// Tabellen `audit_export_pakete` (Kette) und `audit_export_zeitstempel`; beide sind per Trigger append-only.
 export function migrateAuditExportSchema(db) {
   db.exec('SAVEPOINT audit_export_schema');
   try {

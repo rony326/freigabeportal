@@ -1,9 +1,11 @@
+// Lebenszyklus der Test-Instanz (Spielwiese + App) im Speicher: hole / zurücksetzen / schliessen (docs/testmodus.md).
 import { erstelleSpielwiese } from './spielwiese.js';
 
 // Hält die Test-Instanz (Spiel-DB + App) im Speicher: lazy beim ersten Bedarf erzeugt, beim
 // Zurücksetzen neu gebaut (alte Spiel-DB geschlossen). Scheitert das Erzeugen, bleibt nichts
 // zwischengespeichert, damit ein späterer Versuch neu beginnt.
 // baueTestApp({ db, config }) kommt von app.js (vermeidet einen Import-Kreis).
+// @returns {{hole: Function, zuruecksetzen: Function, schliessen: Function}} `hole()` liefert die Instanz `{app, db, config}`, `zuruecksetzen()` baut neu auf.
 export function createTestmodusSteuerung({ echteDb, config, baueTestApp }) {
   let aktuell = null; // Promise<{ app, db, config }>
 

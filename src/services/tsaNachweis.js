@@ -1,3 +1,4 @@
+// Nachweis der Evidenz (Token, Zertifikatskette, Sperrlisten), die bei einem Zeitstempel verwendet wurde – speichern und lokal prüfen.
 import { createHash } from 'node:crypto';
 import { Certificate } from 'pkijs';
 import { crlDer } from './tsaRevocation.js';
@@ -18,12 +19,17 @@ const certDer = (cert) => Buffer.from(cert.toSchema().toBER(false));
 const name = (rdn) => rdn.typesAndValues.map((tv) => `${tv.type}=${tv.value.valueBlock.value}`).join(',');
 
 // Kanonisches JSON (sortierte Schluessel), damit der Nachweis-Hash reproduzierbar ist.
+// Kanonisches JSON mit sortierten Schlüsseln (stabile Grundlage für Hashes).
 export function kanonischesJson(wert) {
   if (Array.isArray(wert)) return `[${wert.map(kanonischesJson).join(',')}]`;
   if (wert && typeof wert === 'object') return `{${Object.keys(wert).sort().map((k) => `${JSON.stringify(k)}:${kanonischesJson(wert[k])}`).join(',')}}`;
   return JSON.stringify(wert);
 }
 
+/**
+ * Stellt den Nachweis zu einem Zeitstempel zusammen: Daten (JSON) und die zu speichernden Evidenzobjekte (Token, Zertifikate, Sperrlisten, je mit SHA-256).
+ * @returns {{daten: object, objekte: {sha256: string, art: string, der: Buffer}[]}}
+ */
 export function baueTsaNachweis({ binding, token, kette = null, trustAnchorsSha256 = null, pruefzeitpunkt = new Date() }) {
   const objekte = [];
   const merke = (art, der) => {
@@ -65,6 +71,7 @@ export function baueTsaNachweis({ binding, token, kette = null, trustAnchorsSha2
 
 // Muss innerhalb der Transaktion laufen, die auch den Zeitstempel-Hash des Jobs setzt: ohne
 // gespeicherten Nachweis wird der Zeitstempel nicht festgeschrieben (Fail-closed).
+// Speichert Nachweis und Evidenzobjekte (siehe Kommentar oben); wirft, wenn keine Transaktion läuft oder der Nachweis fehlt.
 export function speichereTsaNachweis(db, { jobId, bezug, dokumentSha256, nachweis }) {
   if (!db.isTransaction) throw new Error('TSA-Nachweis muss mit dem Zeitstempel-Hash gemeinsam gespeichert werden.');
   if (!nachweis?.daten || !Array.isArray(nachweis.objekte)) throw new Error('TSA-Nachweis fehlt.');
@@ -81,6 +88,7 @@ export function speichereTsaNachweis(db, { jobId, bezug, dokumentSha256, nachwei
 
 // Liest einen Nachweis und prueft lokal, dass Nachweis-JSON und alle referenzierten Objekte noch
 // zu ihren Hashes passen. Das ist eine Konsistenzpruefung, kein Beweis externer Unveraenderlichkeit.
+// @returns {object|null} Nachweiszeile mit `integritaet` ('lokal_konsistent' | 'abweichung') und `fehlendeObjekte`, oder null
 export function ladeTsaNachweis(db, { jobId, bezug, dokumentSha256 }) {
   const row = db.prepare('SELECT * FROM tsa_pruefnachweise WHERE job_id = ? AND bezug = ? AND dokument_sha256 = ?').get(jobId, bezug, dokumentSha256);
   if (!row) return null;

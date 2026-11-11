@@ -5,6 +5,7 @@
 // Exportmanifeste) und in Formularen, die vor dem Deployment geladen wurden. Liegen alter und neuer
 // Wert gleichzeitig und widerspruechlich vor, wird abgelehnt statt geraten.
 
+// Fehler (HTTP 400), wenn neues und altes Feld widersprüchliche Werte haben.
 export class KreditorFeldKonflikt extends Error {
   constructor(message) { super(message); this.status = 400; }
 }
@@ -14,6 +15,7 @@ function normalisiert(wert) {
   return String(wert);
 }
 
+// Nimmt den neuen oder alten Wert; sind beide gesetzt und verschieden, wird abgelehnt.
 function waehle(neu, alt, bezeichnung) {
   const n = normalisiert(neu);
   const a = normalisiert(alt);

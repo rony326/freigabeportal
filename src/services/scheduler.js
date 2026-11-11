@@ -1,3 +1,8 @@
+// In-Process-Scheduler: der dauerhaft laufende Node-Prozess plant alle 16 Hintergrund-Jobs selbst (kein externer Task-Scheduler nötig).
+// Zeiten und Intervalle stehen in `admin_config` (Admin → Geplante Jobs) und werden vor jedem Lauf neu gelesen. Beschreibung der Jobs:
+// docs/geplante-jobs-und-benachrichtigungen.md. Neuer Job: in cronJobs.js implementieren, hier in `startScheduler` einhängen, in
+// routes/cron.js bzw. routes/admin/geplanteJobs.js für den manuellen Aufruf freigeben und den Zeitplan in adminConfigRepo.js ergänzen.
+
 import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runDatenbankSicherungJob, runSplitGruppenNachholenJob, runMailDigestJob, runFreigabe2ErinnerungenJob, runRapportErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from './cronJobs.js';
 import { istWartungsmodusAktiv } from './wartungsmodus.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -9,16 +14,14 @@ import { runNutzungsdatenBereinigungJob } from './nutzungBereinigung.js';
 const ZEITZONE = 'Europe/Zurich';
 const MINUTE_MS = 60 * 1000;
 
-// Swiss org, hardcoded rather than derived from the server's OS timezone — Infomaniak's hosting
-// runs in UTC, and "nachts" (nightly) here always means Europe/Zurich local time regardless of
-// where the process happens to run.
+// Schweizer Organisation, fest eingetragen statt aus der Zeitzone des Server-Betriebssystems abgeleitet — das Hosting bei Infomaniak
+// läuft in UTC, und "nachts" meint hier immer Europe/Zurich, egal wo der Prozess gerade läuft.
 //
-// Exported for unit testing: milliseconds from `now` until the next occurrence of `stunde:minute`
-// in `zeitzone` — later today if that time hasn't passed yet, otherwise tomorrow. Recomputed fresh
-// after every run (see scheduleDaily) rather than driven by a fixed 24h setInterval, which would
-// silently drift by an hour across each Swiss clock change; the one remaining edge case is the
-// day of the DST change itself, where the computed delay can be off by up to an hour — acceptable
-// for a once-nightly maintenance job, not worth the complexity to close entirely.
+// Für Unit-Tests exportiert: Millisekunden ab `now` bis zum nächsten Auftreten von `stunde:minute` in `zeitzone` — heute, wenn die
+// Zeit noch nicht vorbei ist, sonst morgen. Wird nach jedem Lauf frisch berechnet (siehe planeTaeglich) statt von einem festen
+// setInterval über 24 h getrieben, das bei jeder Schweizer Zeitumstellung still um eine Stunde abdriften würde; der eine verbleibende
+// Randfall ist der Tag der Zeitumstellung selbst, an dem die berechnete Wartezeit um bis zu eine Stunde danebenliegen kann —
+// für einen nur nächtlichen Wartungsjob akzeptabel und die Komplexität nicht wert, ihn ganz zu schliessen.
 export function msBisNaechstesTaeglichesEreignis(stunde, minute, now = new Date(), zeitzone = ZEITZONE) {
   const teile = new Intl.DateTimeFormat('en-US', {
     timeZone: zeitzone,
@@ -35,13 +38,14 @@ export function msBisNaechstesTaeglichesEreignis(stunde, minute, now = new Date(
   return deltaSekunden * 1000;
 }
 
+// Zahl aus dem Konfigurationswert, sonst der Standard.
 function zahlOderStandard(wert, standard) {
   const n = Number(wert);
   return Number.isFinite(n) ? n : standard;
 }
 
-// stundeGetter/minuteGetter (not fixed numbers) so a schedule change saved in
-// /admin/geplante-jobs takes effect from the next tick onward, without a process restart.
+// stundeGetter/minuteGetter (keine festen Zahlen), damit eine unter /admin/geplante-jobs gespeicherte Zeitplanänderung ab dem nächsten
+// Tick wirkt, ohne Prozessneustart. Ein Lauf überschneidet sich nie mit dem vorherigen (`laeuft`-Sperre).
 function planeTaeglich(stundeGetter, minuteGetter, aufgabe) {
   let laeuft = false;
   async function tick() {
@@ -60,8 +64,8 @@ function planeTaeglich(stundeGetter, minuteGetter, aufgabe) {
   setTimeout(tick, msBisNaechstesTaeglichesEreignis(stundeGetter(), minuteGetter()));
 }
 
-// intervallMsGetter is re-read before every reschedule (recursive setTimeout, not setInterval)
-// for the same reason as scheduleDaily above: a saved interval change applies to the next tick.
+// intervallMsGetter wird vor jeder Neuplanung neu gelesen (rekursives setTimeout, kein setInterval), aus demselben Grund wie bei
+// planeTaeglich oben: Eine gespeicherte Intervalländerung gilt ab dem nächsten Tick.
 function planeIntervall(intervallMsGetter, aufgabe) {
   let laeuft = false;
   function schedule() {
@@ -82,15 +86,17 @@ function planeIntervall(intervallMsGetter, aufgabe) {
   schedule();
 }
 
-// Replaces the external "Infomaniak Task Scheduler calls /internal/cron/* on a timer" setup
-// (README) for hosting plans where that isn't actually available — the always-running Node
-// process schedules the same three jobs itself, reading their schedule from admin_config
-// (configurable under /admin/geplante-jobs) on every tick. The HTTP endpoints in routes/cron.js
-// still exist for manual/on-demand triggering; this is just an additional, self-sufficient
-// trigger path that doesn't depend on any external scheduler at all.
+// Ersetzt das externe Setup "Infomaniak-Task-Scheduler ruft /internal/cron/* im Takt auf" (README) für Hosting-Pläne, auf denen es das
+// nicht gibt — der dauerhaft laufende Node-Prozess plant dieselben Jobs selbst und liest den Zeitplan bei jedem Tick aus admin_config
+// (einstellbar unter /admin/geplante-jobs). Die HTTP-Endpunkte in routes/cron.js bestehen weiter für manuelles/bedarfsweises Auslösen;
+// dies ist nur ein zusätzlicher, selbstgenügsamer Auslösepfad, der von keinem externen Scheduler abhängt.
 //
-// `jobs` is injectable (defaults to the real cronJobs.js functions) purely so tests can swap in
-// fakes without needing to fake ChurchTools/SMTP/the filesystem.
+// `jobs` ist nur deshalb austauschbar (Standard: die echten Funktionen aus cronJobs.js), damit Tests Attrappen einsetzen können, ohne
+// ChurchTools/SMTP/das Dateisystem nachzubilden.
+/**
+ * Startet alle geplanten Jobs (siehe Kopfkommentar). Im Wartungsmodus pausieren alle ausser der Datenbank-Sicherung.
+ * @param {{db: object, config: object, mailer: object, jobs?: object}} opts
+ */
 export function startScheduler({
   db,
   config,
@@ -134,6 +140,7 @@ export function startScheduler({
 }) {
   // Wartungsmodus: alle geplanten Jobs pausieren (verpasste Läufe verfallen; Intervalljobs laufen beim
   // nächsten Tick, tägliche zur nächsten Fälligkeit). Ausnahme: die Datenbank-Sicherung, sie liest nur.
+  // (Jobs mit `trotzWartung` laufen auch im Wartungsmodus.)
   const mitWartung = (aufgabe, trotzWartung) => async () => {
     if (!trotzWartung && istWartungsmodusAktiv(db)) return;
     return aufgabe();

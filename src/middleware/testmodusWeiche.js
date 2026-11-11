@@ -1,3 +1,7 @@
+// Weiche zwischen echter App und Testmodus-Instanz (Spielwiese, siehe docs/testmodus.md):
+// Sitzungen mit eingeschaltetem Testmodus werden an eine zweite Express-App mit Spiel-Datenbank
+// weitergereicht, alle anderen bleiben in der echten App.
+
 import { personHasPermission } from './permissions.js';
 import { schreibeTestmodusAudit } from '../routes/admin/testmodus.js';
 
@@ -12,11 +16,13 @@ export const ECHTE_PFADE = ['/auth', '/healthz', '/admin/testmodus', '/admin/bet
 export const HINWEIS_ROLLE = 'Der Testmodus wurde beendet, weil du das Recht «Testmodus nutzen» nicht mehr hast.';
 export const HINWEIS_SPIELWIESE = 'Der Testmodus wurde beendet, weil die Spielwiese nicht verfügbar ist. Du arbeitest wieder im echten Portal.';
 
+// true, wenn der Pfad auch im Testmodus von der echten App bedient wird (siehe ECHTE_PFADE).
 export function istEchterPfad(pfad) {
   const p = String(pfad || '').toLowerCase();
   return ECHTE_PFADE.some((praefix) => p === praefix || p.startsWith(`${praefix}/`));
 }
 
+// Testmodus ist nur für aktive Personen mit dem Recht `testmodus_nutzen` erlaubt.
 export function darfTestmodus(db, person, config) {
   return Boolean(person && person.aktiv) && personHasPermission(db, config, person, 'testmodus_nutzen');
 }

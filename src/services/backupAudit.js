@@ -1,9 +1,13 @@
+// Löschen von Sicherungsdateien mit lückenlosem Audit (docs/audit-paket-request-korrelation.md): erst die Absicht
+// protokollieren, dann löschen, dann das Ergebnis – so bleibt eine Löschung auch dann nachvollziehbar, wenn der Prozess dazwischen stirbt.
+
 import { lstatSync, unlinkSync } from 'node:fs';
 import { basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { currentAuditActor } from './auditContext.js';
 import { BACKUP_DATEINAME_PATTERN } from './backup.js';
 
+// Löscht eine Sicherungsdatei (nur gültige Backup-Dateinamen, Begründung Pflicht, nicht innerhalb einer Transaktion).
 export function deleteBackupWithAudit(db, path, reason) {
   const filename = basename(path);
   if (!BACKUP_DATEINAME_PATTERN.test(filename)) throw new Error('Ungueltiger Backup-Dateiname.');
@@ -16,7 +20,7 @@ export function deleteBackupWithAudit(db, path, reason) {
     VALUES (?, ?, ?, 'backup', ?, ?, ?, ?)`).run(
     new Date().toISOString(), actor.id, actor.name, filename, action,
     JSON.stringify({ operationId, ...details }), reason.trim());
-  // Persist intent before the irreversible filesystem action, outside a rollbackable transaction.
+  // Die Absicht wird vor der unumkehrbaren Dateioperation festgehalten, ausserhalb einer zurückrollbaren Transaktion.
   write('backup_loeschung_beabsichtigt', {});
   try {
     if (!lstatSync(path).isFile()) throw new Error('Backup ist keine regulaere Datei.');
@@ -28,6 +32,7 @@ export function deleteBackupWithAudit(db, path, reason) {
   write('backup_geloescht', {});
 }
 
+// Löschabsichten ohne Abschluss (weder gelöscht noch fehlgeschlagen noch geprüft) – Grundlage der Sicherheitsalarme.
 export function listUnresolvedBackupDeletions(db, { before = Number.MAX_SAFE_INTEGER, limit = 50 } = {}) {
   if (!Number.isSafeInteger(before) || before < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
     throw new Error('Ungültige Seitengrenzen für Backup-Löschabsichten.');

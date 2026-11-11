@@ -1,13 +1,14 @@
-// Ferienmodus is purely additive (see docs/superpowers/specs/2026-09-07-ferienmodus-design.md):
-// nothing in jobs/konten is ever reassigned. "Active" is always computed against today's date,
-// never stored as a separate flag — no cron job needed to flip it off again.
-// Joined against personen a second time (aliased "stellvertreter") to require the chosen
-// substitute to still be aktiv = 1 -- every other role-holder path in this codebase (e.g.
-// listActivePersons, listVertretungsKandidaten) applies the same filter. Without it, a
-// substitute who leaves the organization and gets deactivated by the nightly sync would keep
-// receiving notification mails and keep being able to act as substitute for as long as the
-// vacationer's date window runs. This deliberately does NOT check the absent person's (personId)
-// own aktiv flag -- that's an orthogonal question this helper has never answered either way.
+// Der Ferienmodus ist rein additiv (siehe docs/superpowers/specs/2026-09-07-ferienmodus-design.md): an jobs/konten wird nie etwas
+// umgehängt. "Aktiv" wird immer gegen das heutige Datum berechnet und nie als eigenes Flag gespeichert — es braucht keinen Cron-Job, der
+// es wieder ausschaltet. Eine Person trägt Zeitraum (von/bis) und Stellvertreter:in ein (Seite /ferienmodus); Mails und Berechtigungen
+// der vertretenen Person gelten dann zusätzlich für die Stellvertretung.
+//
+// Mit einem zweiten Join auf personen (Alias "stellvertreter") wird verlangt, dass die gewählte Stellvertretung noch aktiv = 1 ist —
+// jeder andere Rollenträger-Pfad in diesem Code (z. B. listActivePersons, listVertretungsKandidaten) wendet denselben Filter an. Ohne
+// ihn bekäme eine Stellvertretung, die die Organisation verlässt und vom nächtlichen Sync deaktiviert wird, weiter Benachrichtigungsmails
+// und könnte weiter als Vertretung handeln, solange das Datumsfenster der abwesenden Person läuft. Das aktiv-Flag der abwesenden Person
+// (personId) wird bewusst NICHT geprüft — das ist eine davon unabhängige Frage, die dieser Helfer auch nie beantwortet hat.
+// @returns {string|null} id der aktiven Stellvertretung oder null
 export function getAktivenVertreter(db, personId) {
   const row = db
     .prepare(
@@ -23,6 +24,7 @@ export function getAktivenVertreter(db, personId) {
   return row.ferienmodus_stellvertreter_id;
 }
 
+// true, wenn `kandidatId` heute die aktive Stellvertretung der Person ist.
 export function istAktiveVertretungFuer(db, kandidatId, urspruenglichePersonId) {
   if (!kandidatId || !urspruenglichePersonId) return false;
   return getAktivenVertreter(db, urspruenglichePersonId) === kandidatId;

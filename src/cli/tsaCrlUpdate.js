@@ -1,3 +1,5 @@
+// CLI: `npm run tsa:crl-update` – siehe Hinweis unten und docs/tsa-vertrauensanker.md.
+
 import { parseArgs } from 'node:util';
 import { loadStorageConfig } from '../config/env.js';
 import { resolveStorageConfig } from '../services/storageState.js';

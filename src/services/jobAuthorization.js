@@ -1,3 +1,4 @@
+// Wer darf das PDF/die Kommentare eines Vorgangs sehen? (Sichtrechte für Vorschau, Download und Kommentare.)
 import { getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { personHasRole } from '../middleware/roles.js';
@@ -5,20 +6,20 @@ import { istAktiveVertretungFuer } from './vertretung.js';
 import { hatKenntnisnahmeZeile } from '../db/rapporteRepo.js';
 import { personHasPermission } from '../middleware/permissions.js';
 
-// Mirrors the per-page authorization each job-detail route already enforces (loadAuthorizedJob
-// in kontierung.js/ablehnung.js, loadAuthorized in freigabe2.js, the Pool gate in poolPage.js) —
-// used to decide whether a given session may see a job's PDF/thumbnail (preview refresh,
-// thumbnail image), not as a replacement for those routes' own checks.
+// Entspricht der Berechtigung je Seite, die jede Vorgangs-Detailroute ohnehin durchsetzt (loadAuthorizedJob in
+// kontierung.js/ablehnung.js, loadAuthorized in freigabe2.js, das Pool-Tor in poolPage.js) — entscheidet, ob eine Sitzung
+// das PDF/Thumbnail eines Vorgangs sehen darf (Vorschau erneuern, Thumbnail-Bild); ersetzt nicht die eigenen Prüfungen jener Routen.
+// @returns {boolean} true für Superadmin, Buchhaltung (Pool), zugewiesene Person und Vertretung, Einreicher:in, Rapport-Beteiligte, Freigeber 2 und Vertretung
 export function canViewJobPdf(db, config, currentPerson, job) {
   if (personHasRole(currentPerson, config, 'superadmin')) return true;
   if (job.status === 'unzugewiesen') return personHasRole(currentPerson, config, 'buchhaltung');
   const personId = currentPerson.churchtools_person_id;
   if (job.zugewiesen_an === personId) return true;
   if (job.zugewiesen_an && istAktiveVertretungFuer(db, personId, job.zugewiesen_an)) return true;
-  // A Spesen position's own submitter is neither zugewiesen_an (that's the Freigeber1/Stellvertreter1
-  // reviewer) nor ever the resolved Freigeber2/Stellvertreter2 (blocked by the Vier-Augen-Prinzip
-  // self-approval guards in spesenFreigabe1.js/freigabe2.js) — without this check they could never
-  // view their own submitted Beleg or verify its Zeitstempel, even after it's fully approved.
+  // Die einreichende Person einer Spesenposition ist weder zugewiesen_an (das ist der prüfende Freigeber 1/Stellvertreter 1)
+  // noch je der aufgelöste Freigeber 2/Stellvertreter 2 (gesperrt durch die Vier-Augen-Selbstfreigabe-Sperren in
+  // spesenFreigabe1.js/freigabe2.js) — ohne diese Prüfung könnte sie ihren eigenen eingereichten Beleg nie ansehen oder
+  // seinen Zeitstempel prüfen, selbst nach vollständiger Freigabe.
   if (job.eingereicht_von === personId) return true;
   // Rapport: die markierende Person und jede (auch frühere) Empfängerin -- nicht deren Vertretung,
   // denn zur Kenntnis nimmt nur die genannte Person.
@@ -34,6 +35,7 @@ export function canViewJobPdf(db, config, currentPerson, job) {
   return false;
 }
 
+// true, wenn die Person den Rapport markiert hat oder je Empfänger:in war.
 export function istRapportBeteiligt(db, personId, job) {
   return job.typ === 'rapport' && (job.rapport_markiert_von === personId || hatKenntnisnahmeZeile(db, job.id, personId));
 }

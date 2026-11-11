@@ -1,3 +1,4 @@
+// Markieren eines Vorgangs als Kreditkartenabrechnung (manuell oder automatisch erkannt), siehe docs/kreditkarten-belege.md.
 import { markiereJobAlsKkAbrechnung } from '../db/jobsRepo.js';
 import { listOffeneKkBelegeFuerKarte } from '../db/kkBelegeRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
@@ -7,6 +8,11 @@ import { sendNotificationMitVertretung } from './notify.js';
 // Gemeinsamer Ablauf für manuelle (Pool/Kontierung) und automatische (Etappe 2) Markierung.
 // markiertVon = null bedeutet System: freigaben.person_id ist NOT NULL, deshalb wird dann die
 // verantwortliche Person der Karte eingetragen und im Kommentar "automatisch" vermerkt.
+/**
+ * Markiert einen Vorgang als Kreditkartenabrechnung der Karte (Verlaufseintrag 'kk_abrechnung_markiert') und benachrichtigt die
+ * verantwortliche Person (mit Vertretung), sofern sie nicht selbst markiert hat.
+ * @returns {Promise<boolean>} false, wenn der Vorgang nicht mehr im erwarteten Status war
+ */
 export async function markiereAlsKkAbrechnung(db, config, mailer, { job, karte, markiertVon, ip, ausStatus, kommentarZusatz = '' }) {
   db.exec('BEGIN');
   try {

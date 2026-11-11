@@ -3,6 +3,7 @@
 import { letzteBestaetigung } from '../db/auffaelligkeitenRepo.js';
 import { personName, zeitpunktAnzeige } from './auditLog.js';
 
+// @returns {{befunde: object[], vonName: string, zeitpunkt: string, bemerkung: string|null}|null}
 export function auffaelligkeitenKasten(db, jobId) {
   const zeile = letzteBestaetigung(db, jobId);
   if (!zeile || zeile.befunde.length === 0) return null;

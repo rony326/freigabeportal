@@ -1,3 +1,4 @@
+// Einmalige Migration "Debitoren → Kreditoren" (docs/kreditoren-statt-debitoren.md): benennt Tabellen und Spalten um, ohne Daten zu verändern.
 import { createHash } from 'node:crypto';
 import { currentAuditActor } from '../services/auditContext.js';
 
@@ -14,18 +15,22 @@ import { currentAuditActor } from '../services/auditContext.js';
 // Historische JSON-Inhalte (Audit vorher/nachher, Freigabe-Snapshots, Exportmanifeste) behalten
 // ihre alten Schluessel und Hashes; gelesen werden sie ueber services/kreditorFelder.js.
 
+// Umzubenennende Tabellen und Spalten (alt → neu).
 const TABELLEN = [['debitoren', 'kreditoren'], ['debitor_ibans', 'kreditor_ibans']];
 const SPALTEN = [['kreditor_ibans', 'debitor_id', 'kreditor_id'], ['zuweisungsregeln', 'debitor_id', 'kreditor_id'], ['jobs', 'debitor_id', 'kreditor_id']];
 const ALTE_AUDIT_TRIGGER = ['debitoren', 'debitor_ibans'].flatMap((t) => ['INSERT', 'UPDATE', 'DELETE'].map((a) => `audit_${t}_${a}`));
 
+// true, wenn die Tabelle in der Datenbank existiert.
 function tabelleExistiert(db, name) {
   return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
 }
 
+// Spaltennamen einer Tabelle (leeres Set, wenn es sie nicht gibt).
 function spalten(db, tabelle) {
   return tabelleExistiert(db, tabelle) ? new Set(db.prepare(`PRAGMA table_info(${tabelle})`).all().map((c) => c.name)) : new Set();
 }
 
+// Prüfsumme über Kreditor-Stammdaten und alle Verweise (Jobs, IBANs, Regeln): vorher/nachher gleich = nichts verrutscht.
 function zuordnungen(db, namen) {
   const teile = [];
   // Stabile Rollennamen statt Tabellennamen, damit vorher/nachher vergleichbar sind.
@@ -40,6 +45,8 @@ function zuordnungen(db, namen) {
   return { sha256: createHash('sha256').update(`${stammdaten}\n${teile.join('\n')}`).digest('hex'), anzahlStammdaten: stammdaten ? stammdaten.split(';').length : 0 };
 }
 
+// Führt die Umbenennung durch (siehe Kopfkommentar). @returns {null|{tabellen:number, spalten:number, zuordnungenSha256:string}}
+// null, wenn nichts zu tun war. Läuft in einer Transaktion und schreibt ein Audit-Ereignis `schema_migration`.
 export function migrateKreditorenBezeichnung(db) {
   for (const [alt, neu] of TABELLEN) {
     if (tabelleExistiert(db, alt) && tabelleExistiert(db, neu)) {

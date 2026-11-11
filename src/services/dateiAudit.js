@@ -1,3 +1,5 @@
+// Protokolliertes Löschen einzelner Dateien (Belege, Thumbnails, Gruppen-PDFs …) – siehe Erläuterung bei der Funktion.
+
 import { lstatSync, readFileSync, unlinkSync } from 'node:fs';
 import { basename } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -12,6 +14,7 @@ const FEHLERCODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'EISDIR', 'EBUSY', 'NO
 // 2. Nach dem Unlink 'datei_geloescht' bzw. bei Dateifehler 'datei_loeschung_fehlgeschlagen'.
 // Protokolliert wird nur der generierte Dateiname, nie der absolute Pfad oder Dateiinhalt.
 // Rueckgabe: true, wenn die Datei danach nicht mehr existiert.
+// (Rückgabe: true, wenn die Datei danach nicht mehr existiert; bei Fehlern false, protokolliert als 'datei_loeschung_fehlgeschlagen'.)
 export function loescheDateiMitAudit(db, pfad, { objekt, objektId, dateiart, anlass }) {
   if (!DATEIARTEN.has(dateiart)) throw new Error('Unbekannte Dateiart fuer protokollierte Loeschung.');
   if (db.isTransaction) throw new Error('Protokollierte Datei-Loeschung darf nicht in einer DB-Transaktion laufen.');

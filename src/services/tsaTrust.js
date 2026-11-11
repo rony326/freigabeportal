@@ -1,3 +1,6 @@
+// Vertrauensanker und Kettenprüfung der TSA (docs/tsa-vertrauensanker.md): lokale Wurzelzertifikate laden (SHA-256-gebunden), den Pfad vom
+// Signierzertifikat zu einem Anker prüfen und die Sperrprüfung (tsaRevocation.js) anschliessen. Ohne gültigen Anker gilt kein Zeitstempel als geprüft.
+
 import { openSync, closeSync, fstatSync, readFileSync, constants } from 'node:fs';
 import { createHash, X509Certificate } from 'node:crypto';
 import * as asn1js from 'asn1js';
@@ -6,6 +9,7 @@ import { verifyTsaRevocation } from './tsaRevocation.js';
 
 const fingerprint = (cert) => createHash('sha256').update(Buffer.from(cert.toSchema().toBER(false))).digest('hex');
 
+// Trust-Einstellungen aus der Konfiguration (Ankerdatei, deren SHA-256, Sperrlistendatei, Kettenpflicht).
 export function tsaTrustOptions(config = {}) {
   return {
     trustAnchorsFile: config.tsaTrustAnchorsFile,
@@ -15,6 +19,7 @@ export function tsaTrustOptions(config = {}) {
   };
 }
 
+// Liest die Ankerdatei (PEM, nur selbstsignierte CA-Zertifikate, höchstens 16) und prüft deren SHA-256. @returns {Certificate[]}
 export function loadTsaTrustAnchors(path, expectedHash) {
   if (!path || !/^[a-f0-9]{64}$/.test(expectedHash || '')) throw new Error('TSA-Vertrauensanker und deren SHA-256 muessen konfiguriert sein.');
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -43,6 +48,7 @@ export function loadTsaTrustAnchors(path, expectedHash) {
 
 // Validiert den Pfad vom tatsaechlichen Unterzeichner zu einem lokalen Anker zum Zeitstempel- und
 // zum Empfangszeitpunkt, ohne Sperrpruefung. Liefert die Kette (Signer zuerst, Anker zuletzt).
+// (Siehe Kommentar oben.) @returns {{chain: Certificate[], signerHash: string}}
 export async function validateTsaPath({ signed, info, signer }, anchors) {
   const certificates = (signed.certificates || []).filter((cert) => cert instanceof Certificate);
   if (!anchors.length || certificates.length > 12) throw new Error('TSA-Zertifikatskette fehlt oder ist zu gross.');
@@ -51,7 +57,7 @@ export async function validateTsaPath({ signed, info, signer }, anchors) {
   // "Trusted Root G4") ersetzt der Anker selbst; PKI.js wuerde sonst ihnen statt dem Anker folgen.
   const spki = (cert) => Buffer.from(cert.subjectPublicKeyInfo.toSchema().toBER(false));
   const isAnchorCopy = (cert) => anchors.some((anchor) => anchor.subject.isEqual(cert.subject) && spki(anchor).equals(spki(cert)));
-  // PKI.js takes the last untrusted certificate as the leaf. Bind the result to the actual signer.
+  // PKI.js nimmt das letzte nicht vertrauenswürdige Zertifikat als Blatt. Das Ergebnis wird an den tatsächlichen Unterzeichner gebunden.
   const ordered = [...certificates.filter((cert) => fingerprint(cert) !== signerHash && !isAnchorCopy(cert)), signer];
   const roots = new Set(anchors.map(fingerprint));
   let chain;
@@ -66,6 +72,7 @@ export async function validateTsaPath({ signed, info, signer }, anchors) {
   return { chain, signerHash };
 }
 
+// Vollständige Prüfung: Kette zu einem Anker plus Sperrstatus anhand der Sperrlisten. @returns {Promise<object>} Nachweisdaten (Kette, Sperrlisten, Prüfzeitpunkt)
 export async function verifyTsaChain(binding, anchors, crls = []) {
   const { chain, signerHash } = await validateTsaPath(binding, anchors);
   const now = new Date();

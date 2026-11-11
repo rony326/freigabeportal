@@ -1,8 +1,12 @@
+// Ersteinrichtungs-Assistent (Admin → Ersteinrichtung, docs/ersteinrichtung.md): 14 Schritte, die der Stand des Systems selbst
+// misst (kein Abhaken von Hand, ausser bei "manuell"). Technische Prüfungen: services/einrichtungTests.js.
+
 import { getConfigValue, setConfigValue } from '../db/adminConfigRepo.js';
 
 const TAGE_7_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Reihenfolge und Pflicht-Flags sind verbindlich (Spec Ersteinrichtung).
+// Alle Schritte (id, Titel, Beschreibung, Pflicht, Link). `manuell: true` = wird von Hand abgehakt (Module, Mail-Vorlagen).
 export const SCHRITTE = [
   { id: 'grundlagen', titel: 'Technische Grundlagen', beschreibung: 'Prüft, ob alle nötigen Einstellungen des Servers vorhanden und gültig sind.', pflicht: true, link: '/admin/betrieb/status', manuell: false },
   { id: 'rollen', titel: 'Superadmin festlegen', beschreibung: 'Mindestens eine aktive Person muss in der ChurchTools-Gruppe der Superadmins sein.', pflicht: true, link: '/admin/personen', manuell: false },
@@ -23,6 +27,7 @@ export const SCHRITTE = [
 const hat = (db, sql, ...args) => Boolean(db.prepare(sql).get(...args));
 const cfg = (db, key) => (getConfigValue(db, key) || '').trim();
 
+// Standardtitel des Portals; ein geänderter Titel gilt beim Schritt "Erscheinungsbild" als erledigt.
 export const STANDARD_TITEL = 'Freigabeportal';
 const ABSCHLUSS_KEY = 'einrichtung_abgeschlossen_am';
 
@@ -50,6 +55,7 @@ export function mailErledigt(db) {
 }
 
 // Namen (ohne E-Mail) der aktiven Personen einer ChurchTools-Gruppe, alphabetisch.
+// (Siehe Kommentar oben.)
 function namenInGruppe(db, gid) {
   return db.prepare('SELECT vorname, nachname, gruppen FROM personen WHERE aktiv = 1').all()
     .filter((r) => JSON.parse(r.gruppen).includes(String(gid)))
@@ -57,6 +63,7 @@ function namenInGruppe(db, gid) {
     .sort((a, b) => a.localeCompare(b, 'de'));
 }
 
+// Misst den Stand eines Schritts. @returns {{erledigt: boolean, hinweis?: string}} plus schrittspezifische Zusatzdaten
 function messe(id, db, config, jetzt, technik, tsaErgebnis) {
   switch (id) {
     case 'grundlagen': {
@@ -113,6 +120,10 @@ function messe(id, db, config, jetzt, technik, tsaErgebnis) {
 // Misst den aktuellen Stand. Sind erstmals alle Pflichtschritte erledigt, wird der Abschluss
 // einmalig festgehalten (einrichtung_abgeschlossen_am); danach bleibt er, auch wenn ein Schritt
 // später wieder offen ist. Die Schritte zeigen trotzdem immer den echten Stand.
+/**
+ * @param {object} opts `technik` (Ergebnis von pruefeTechnik), `tsaErgebnis` (zwischengespeicherte TSA-Probe), `jetzt`
+ * @returns {{schritte: object[], pflichtGesamt: number, pflichtOffen: number, abgeschlossenAm: string|null}}
+ */
 export function einrichtungsStand(db, config, { jetzt = new Date(), technik, tsaErgebnis = null } = {}) {
   const schritte = SCHRITTE.map(({ manuell, ...s }) => {
     const { erledigt, hinweis, ...details } = messe(s.id, db, config, jetzt, technik, tsaErgebnis);
@@ -128,12 +139,14 @@ export function einrichtungsStand(db, config, { jetzt = new Date(), technik, tsa
   return { schritte, pflichtGesamt: pflicht.length, pflichtOffen, abgeschlossenAm };
 }
 
+// Hakt einen manuellen Schritt ab oder zurück; wirft bei Schritten, die das System selbst misst.
 export function markiereSchritt(db, id, wert) {
   const s = SCHRITTE.find((x) => x.id === id);
   if (!s || !s.manuell) throw new Error(`Schritt "${id}" kann nicht von Hand markiert werden.`);
   setConfigValue(db, `einrichtung_markiert_${id}`, wert ? '1' : '0');
 }
 
+// Hält fest, dass bewusst ohne Zeitstempeldienst gearbeitet wird (Schritt "Zeitstempel" gilt dann als erledigt).
 export function setzeOhneZeitstempel(db, wert) {
   setConfigValue(db, 'einrichtung_ohne_zeitstempel', wert ? '1' : '0');
 }

@@ -1,3 +1,6 @@
+// Zusammenführen einer vollständig freigegebenen Splitgruppe zu EINEM gestempelten, zeitgestempelten Archiv-PDF (docs/rechnungs-workflow.md,
+// "Splitgruppen-Export"; Aufrufer: Abschluss von Freigabe 2, Löschung einer blockierenden Zeile und der Cron-Job split-gruppen-nachholen).
+
 import { readFileSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { PDFDocument } from 'pdf-lib';
@@ -14,16 +17,15 @@ import { tsaTrustOptions } from './tsaTrust.js';
 import { bereiteGruppenSnapshotVor, getAltfallEntscheidung } from './exportSnapshot.js';
 import { listeKommentare } from './kommentare.js';
 
-// mergeBelegFuerJob (Aufsplitten time, kontierung.js) always inserts Beleg pages directly
-// after the invoice pages, before any later stamping -- so with a known Beleg page count
-// recorded at that time (kind.beleg_seitenzahl), the Beleg pages are always exactly
-// [basisSeitenzahl, basisSeitenzahl + belegSeitenzahl), regardless of how many stamp/Verlauf
-// pages a later Freigabe-2 completion appended after them.
+// mergeBelegFuerJob (beim Aufsplitten, kontierung.js) fügt Belegseiten immer direkt hinter die Rechnungsseiten ein, vor jedem späteren
+// Stempeln — mit der damals festgehaltenen Belegseitenzahl (kind.beleg_seitenzahl) liegen die Belegseiten also immer genau bei
+// [basisSeitenzahl, basisSeitenzahl + belegSeitenzahl), egal wie viele Stempel-/Verlaufsseiten ein späterer Abschluss von Freigabe 2
+// dahinter anhängt.
 //
-// Deriving the range from the Kind-PDF's current page count instead (as an earlier version did)
-// is wrong: by the time a group merge runs, every Kind has already been individually stamped by
-// freigabe2.js, so the page-count delta would drag each Kind's own redundant Stempelseite into
-// the combined archival document -- exactly what this feature exists to avoid.
+// Den Bereich stattdessen aus der aktuellen Seitenzahl des Kind-PDFs abzuleiten (wie es eine frühere Version tat), ist falsch: Bis ein
+// Gruppen-Merge läuft, hat freigabe2.js jedes Kind schon einzeln gestempelt, die Seitenzahl-Differenz würde also die eigene, überflüssige
+// Stempelseite jedes Kindes in das gemeinsame Archivdokument ziehen — genau das, was diese Funktion vermeiden soll.
+// Kopiert die Belegseiten des Kindes ans Gruppendokument (siehe oben). Wirft, wenn die gespeicherte Belegseitenzahl nicht passt.
 async function haengeBelegSeitenAn(gruppenDoc, kindBytes, basisSeitenzahl, belegSeitenzahl) {
   if (!belegSeitenzahl) return;
   const kindDoc = await PDFDocument.load(kindBytes);
@@ -42,10 +44,12 @@ function kommentareFuerStempel(db, jobId) {
 
 // Stand aller Kommentare der Gruppe (Elternjob + Teile): ändert er sich während Stempeln/TSA,
 // wird nicht festgeschrieben -- der Nachhol-Job stempelt dann mit dem neuen Kommentar neu.
+// (Siehe Kommentar oben.)
 function kommentarStandGruppe(db, jobIds) {
   return jobIds.map((id) => { const liste = listeKommentare(db, id); return `${id}:${liste.length}:${liste.at(-1)?.id ?? 0}`; }).join('|');
 }
 
+// Momentaufnahme des Gruppenstands (Vollständigkeit, Konten, Freigaben, Altfall-Entscheidung) – wird vor und nach der Arbeit verglichen.
 function groupState(db, parentJobId) {
   const completeness = pruefeSplitGruppenVollstaendigkeit(db, parentJobId);
   return {
@@ -59,18 +63,16 @@ function groupState(db, parentJobId) {
   };
 }
 
-// Merges a complete Splitgruppe (alle Kinder abgeschlossen) into one stamped, zeitgestempelten
-// PDF and records it on the Elternjob. Best-effort and idempotent by construction: no-ops
-// whenever the group is not (yet) complete, is blocked by a rejected sibling, or has already been
-// exported (gruppe_pdf_pfad already set) -- safe to call repeatedly from multiple trigger points
-// (Freigabe-2-Abschluss, Löschung einer blockierenden Zeile, der Nachhol-Cron-Job).
+// Führt eine vollständige Splitgruppe (alle Kinder abgeschlossen) zu einem gestempelten, zeitgestempelten PDF zusammen und hält es am
+// Elternjob fest. Best-Effort und von Natur aus idempotent: wirkungslos, wenn die Gruppe (noch) nicht vollständig ist, durch ein
+// abgelehntes Geschwister blockiert wird oder schon exportiert ist (gruppe_pdf_pfad schon gesetzt) — gefahrlos wiederholt aus mehreren
+// Auslösern aufrufbar (Abschluss Freigabe 2, Löschung einer blockierenden Zeile, Nachhol-Cron-Job).
 //
-// Deliberately DOES block the whole export on a configured-but-unreachable TSA (unlike
-// freigabe2.js's per-job stampAndFinalize, which proceeds without a Zeitstempel on TSA failure):
-// this merged document's entire purpose is the paperless archival copy handed to Paperless-ngx,
-// so shipping it without the Zeitstempel it was built for would defeat that purpose. Retried
-// later by the split-gruppen-nachholen cron job (cronJobs.js) exactly because gruppe_pdf_pfad
-// stays unset on failure.
+// Blockiert bewusst den ganzen Export bei einer konfigurierten, aber nicht erreichbaren TSA (anders als stampAndFinalize je Job in
+// freigabe2.js, das bei TSA-Ausfall ohne Zeitstempel weitermacht): Der ganze Zweck dieses zusammengeführten Dokuments ist die Papierlos-
+// Archivkopie für Paperless-ngx; sie ohne den Zeitstempel auszuliefern, für den sie gebaut wurde, würde diesen Zweck verfehlen. Wird
+// später vom Cron-Job split-gruppen-nachholen (cronJobs.js) wiederholt, gerade weil gruppe_pdf_pfad bei einem Fehler ungesetzt bleibt.
+// @returns {Promise<{status: 'exportiert'|'uebersprungen'|'blockiert'|'unvollstaendig'|'nachpruefung'|'fehler', ...}>}
 export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = {}) {
   let parent = getJobById(db, parentJobId);
   if (!parent || parent.status !== 'aufgesplittet' || parent.gruppe_pdf_pfad) return { status: 'uebersprungen' };
@@ -79,7 +81,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
   let zielPfad;
   try {
     const tsaUrl = getConfigValue(db, 'zeitstempel_tsa_url');
-    // Persist before network/file work so failure followed by disabling TSA cannot downgrade it.
+    // Vor Netzwerk-/Dateiarbeit festhalten, damit ein Fehlschlag gefolgt vom Abschalten der TSA die Pflicht nicht zurücknehmen kann.
     if (!parent.zeitstempel_erforderlich && (tsaUrl || kinder.some((kind) => kind.zeitstempel_erforderlich))) {
       db.prepare('UPDATE jobs SET zeitstempel_erforderlich = 1 WHERE id = ?').run(parent.id);
       parent = getJobById(db, parent.id);
@@ -188,7 +190,7 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
     return { status: 'exportiert', pdfPfad };
   } catch (err) {
     if (zielPfad) {
-      try { unlinkSync(zielPfad); } catch { /* Never remove any other attempt's file. */ }
+      try { unlinkSync(zielPfad); } catch { /* Nie die Datei eines anderen Versuchs entfernen. */ }
     }
     console.error(`Splitgruppen-Export für Elternjob ${parentJobId} fehlgeschlagen, wird nachgeholt:`, err.message);
     return { status: 'fehler', error: err.message };

@@ -1,15 +1,23 @@
+// CSRF-Schutz für alle Formulare und die beiden fetch()-Endpunkte – Hintergründe direkt unterhalb.
+// Abdeckung aller schreibenden Routen erzwingt test/integration/csrfSweep.test.js.
+
 import { doubleCsrf } from 'csrf-csrf';
 
-// Double-submit-cookie CSRF protection (csrf-csrf, not the deprecated csurf). Tokens are tied to
-// the session id (getSessionIdentifier), so a token issued before login is naturally invalidated
-// by auth.js's req.session.regenerate() on login — generateCsrfToken silently issues a fresh one
-// next time it's called rather than throwing.
+// CSRF-Schutz per Double-Submit-Cookie (csrf-csrf, nicht das veraltete csurf). Die Tokens sind an die Session-ID
+// gebunden (getSessionIdentifier): ein vor der Anmeldung ausgestelltes Token wird durch das req.session.regenerate()
+// in auth.js bei der Anmeldung von selbst ungültig — generateCsrfToken stellt beim nächsten Aufruf still ein neues
+// aus, statt zu werfen.
 //
-// getCsrfTokenFromRequest checks both the form body (_csrf hidden field, the vast majority of
-// routes) and the x-csrf-token header (the two fetch()-based AJAX endpoints: POST
-// /kontierung/lieferanten and POST /api/pool/:id/beanspruchen, neither of which submits a form
-// body). Both sources are explicit and mutually exclusive per request shape, not a blind
-// fallthrough over untrusted input.
+// getCsrfTokenFromRequest prüft sowohl den Formular-Body (Hidden-Feld _csrf, die grosse Mehrheit der Routen) als
+// auch den Header x-csrf-token (die zwei fetch()-basierten AJAX-Endpunkte POST /kontierung/lieferanten und
+// POST /api/pool/:id/beanspruchen, die keinen Formular-Body senden). Beide Quellen sind ausdrücklich und je nach
+// Anfrageform getrennt, kein blindes Durchreichen unvertrauter Eingaben.
+/**
+ * @param {object} config Laufzeitkonfiguration (braucht `sessionSecret`, `publicBaseUrl`, optional `testmodus`)
+ * @returns {{attachCsrfToken: Function, csrfProtection: Function, generateCsrfToken: Function}}
+ *   `attachCsrfToken` legt `res.locals.csrfToken` für die Views an; `csrfProtection` ist die Prüf-Middleware
+ *   für schreibende Routen; `generateCsrfToken` erzeugt ein Token ausserhalb der Views.
+ */
 export function createCsrfProtection(config) {
   const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     getSecret: () => config.sessionSecret,
@@ -19,14 +27,15 @@ export function createCsrfProtection(config) {
     cookieOptions: {
       sameSite: 'lax',
       path: '/',
-      // Mirrors app.js's session cookie: secure is derived from publicBaseUrl rather than
-      // NODE_ENV so local/test HTTP traffic still gets the cookie set.
+      // Wie beim Session-Cookie in app.js: `secure` wird aus publicBaseUrl abgeleitet statt aus NODE_ENV, damit
+      // lokaler/Test-HTTP-Verkehr das Cookie trotzdem bekommt.
       secure: Boolean(config.publicBaseUrl?.startsWith('https://')),
       httpOnly: true,
     },
     getCsrfTokenFromRequest: (req) => req.body?._csrf || req.headers['x-csrf-token'],
   });
 
+  // Stellt jeder Seite ein frisches Token als `res.locals.csrfToken` bereit (Hidden-Feld `_csrf` in den Formularen).
   function attachCsrfToken(req, res, next) {
     res.locals.csrfToken = generateCsrfToken(req, res);
     next();

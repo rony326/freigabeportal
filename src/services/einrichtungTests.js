@@ -1,3 +1,4 @@
+// Technische Prüfungen und Tests der Ersteinrichtung (Mailserver, Speicherorte, Schlüsselbund, ChurchTools, Testmail, Kernjobs); Assistent: services/ersteinrichtung.js.
 import nodeFs from 'node:fs';
 import { resolve, dirname, basename, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,7 @@ import { loadBackupKeyring } from './backupEnvelope.js';
 // oder Geheimnisse ausgegeben, nur Status und ein kurzer Hinweis.
 
 // Wurzel der Anwendung (Elternverzeichnis von src), unabhängig vom Arbeitsverzeichnis des Prozesses.
+// (Siehe Kommentar oben.)
 export const ANWENDUNGSVERZEICHNIS = fileURLToPath(new URL('../../', import.meta.url));
 
 const HOSTER = 'Bitte beim Hoster eintragen (z. B. Infomaniak: Site-Konfiguration → Umgebungsvariablen).';
@@ -25,6 +27,7 @@ const SPEICHER = [
 const SMTP_VARIABLEN = [['SMTP_HOST', 'host'], ['SMTP_USER', 'user'], ['SMTP_PASS', 'pass'], ['SMTP_FROM', 'from']];
 
 // Nur ob die Variablen gesetzt sind, nie deren Werte.
+// Prüft, dass alle SMTP-Variablen gesetzt sind (Status 'ok' | 'fehlt').
 function pruefeMailserver(config) {
   const fehlend = SMTP_VARIABLEN.filter(([, feld]) => !String(config.smtp?.[feld] ?? '').trim()).map(([v]) => v);
   const zeile = { name: 'Mailserver', anker: 'mailserver' };
@@ -48,6 +51,7 @@ function pruefeKeyring(config, fs, ladeKeyring) {
 }
 
 // Nächstes vorhandenes Verzeichnis oberhalb des Pfads: dort muss geschrieben werden können.
+// true, wenn in das nächste vorhandene Verzeichnis oberhalb des Pfads geschrieben werden kann.
 function beschreibbar(fs, pfad) {
   let aktuell = pfad;
   while (!fs.existsSync(aktuell)) {
@@ -64,6 +68,7 @@ function beschreibbar(fs, pfad) {
 }
 
 // Symlinks auflösen: vom tiefsten vorhandenen Vorfahren aus, der Rest wird unverändert angehängt.
+// Löst Symlinks auf (siehe Kommentar), damit der Vergleich mit dem Anwendungsverzeichnis nicht umgangen werden kann.
 function echterPfad(fs, pfad) {
   const rest = [];
   let aktuell = pfad;
@@ -80,11 +85,13 @@ function echterPfad(fs, pfad) {
   }
 }
 
+// Prüft einen Speicherort und hängt bei einem Mangel Einstellung und Hoster-Hinweis an.
 function pruefeSpeicher(config, anwendungsVerzeichnis, fs, s) {
   const r = pruefeSpeicherOrt(config, anwendungsVerzeichnis, fs, s);
   return r.status === 'ok' ? r : { ...r, hinweis: `${r.hinweis} Einstellung: ${s.variable}. ${HOSTER}` };
 }
 
+// Speicherort muss ein beschreibbares Verzeichnis sein und ausserhalb des Anwendungsverzeichnisses liegen (sonst überschreibt es der nächste Deploy).
 function pruefeSpeicherOrt(config, anwendungsVerzeichnis, fs, { name, feld, datei }) {
   const wert = config[feld];
   if (!wert) return { name, status: 'fehlt', hinweis: 'Nicht eingestellt.' };
@@ -104,6 +111,11 @@ function pruefeSpeicherOrt(config, anwendungsVerzeichnis, fs, { name, feld, date
   return { name, status: 'ok', hinweis: 'Beschreibbar.' };
 }
 
+/**
+ * Technische Grundlagen der Ersteinrichtung (Schritt "grundlagen" und Statusseite): Pflichteinstellungen, https, Speicherorte,
+ * Mailserver, Backup-Schlüsselbund, optionale Schlüssel und TSA-Vertrauensanker. Gibt nie Werte oder Geheimnisse aus.
+ * @returns {{name: string, status: 'ok'|'warnung'|'fehlt'|'ungültig', hinweis: string, anker?: string}[]}
+ */
 export function pruefeTechnik(config, { anwendungsVerzeichnis = ANWENDUNGSVERZEICHNIS, fs = nodeFs, ladeKeyring = loadBackupKeyring } = {}) {
   const pruefungen = [];
   pruefungen.push({ name: 'Pflichteinstellungen', status: 'ok', hinweis: 'Alle Pflichtvariablen sind gesetzt (beim Start geprüft).' });
@@ -135,6 +147,7 @@ export function pruefeTechnik(config, { anwendungsVerzeichnis = ANWENDUNGSVERZEI
   return pruefungen;
 }
 
+// Ruft alle konfigurierten ChurchTools-Gruppen ab (mit Zeitlimit) und meldet Name und Mitgliederzahl. Fehlermeldungen sind bewusst fest formuliert.
 export async function testeChurchtools(config, { timeoutMs = 10000 } = {}) {
   if (config.testmodus) return { ok: false, meldung: 'Im Testmodus deaktiviert.' };
   const ct = config.churchtools;
@@ -167,6 +180,7 @@ export async function testeChurchtools(config, { timeoutMs = 10000 } = {}) {
 
 const SIEHE_MAILSERVER = 'Bitte die Einstellungen des Mailservers prüfen (siehe Technische Grundlagen → Mailserver).';
 
+// Schickt der angemeldeten Person eine Testmail über den normalen Versandweg (Mailtyp 'testmail').
 export async function sendeTestmail(db, mailer, { person }) {
   const to = (person?.email || '').trim();
   if (!to) return { status: 'fehlgeschlagen', meldung: 'Für dein Konto ist keine E-Mail-Adresse hinterlegt.' };
@@ -183,6 +197,7 @@ export async function sendeTestmail(db, mailer, { person }) {
 }
 
 // Anzeige im Assistenten: deutsche Namen statt Job-IDs, verständlicher Status.
+// Anzeigenamen der Kernjobs im Assistenten.
 export const JOB_NAMEN = { 'sync-personen': 'Personen-Abgleich', 'pool-erinnerungen': 'Erinnerungen', 'mail-zustellung': 'Mailzustellung' };
 const JOB_STATUS = { erfolg: 'erfolgreich', fehler: 'fehlgeschlagen', uebersprungen: 'nichts zu tun', abgebrochen: 'abgebrochen', unbekannt: 'unbekannt' };
 export const jobStatusText = (status) => JOB_STATUS[status] || status;
@@ -194,6 +209,7 @@ const KERNJOBS = {
 };
 
 // Dieselben Funktionen wie die "jetzt ausführen"-Routen unter /admin/geplante-jobs.
+// Löst die angegebenen Kernjobs sofort aus. @returns {Promise<{job: string, status: string}[]>}
 export async function loeseKernjobsAus(db, config, mailer, jobs) {
   const ergebnis = [];
   for (const job of jobs) {

@@ -1,3 +1,18 @@
+// Express-App: hier wird alles zusammengesteckt – Sicherheits-Header, Session, CSRF, Rechte-Guards und
+// sämtliche Router. `createApp()` wird vom echten Server (index.js), von den Tests und – rekursiv – für die
+// Testmodus-Instanz (Spielwiese mit eigener Datenbank, docs/testmodus.md) aufgerufen.
+//
+// Die REIHENFOLGE der `app.use`-Aufrufe ist Teil der Sicherheit und der Funktion; nicht umsortieren, ohne
+// die Begründungen an den Stellen zu lesen. Grobe Pipeline (docs/architektur.md, "Middleware-Pipeline"):
+//   Security-Header → /healthz → Request-ID → statische Dateien → Branding → Body-Parser → Session →
+//   Cookies → CSRF-Token → aktuelle Person → Testmodus-Weiche → Wartungsmodus → Nutzungserfassung →
+//   Audit-Kontext/Zugriffs-Audit → Navigation → Router (Admin, Maschinen, Portal) → 404 → Fehler-Handler.
+//
+// Neuer Router? 1. Datei in src/routes/ anlegen (Fabrik `createXxxRouter({ db, config, … })`),
+// 2. hier mit dem passenden Guard einhängen (requireLogin / requireRole / requirePermission),
+// 3. schreibende Routen mit `csrfProtection` absichern (csrfSweep.test.js prüft das),
+// 4. Menüeintrag in services/navigation.js, Doku in docs/admin-bereich.md bzw. docs/architektur.md.
+
 import { randomBytes } from 'node:crypto';
 import { parseEmpfaengerListe } from './services/auditNachweisJobs.js';
 import { feldFehlerAttr } from './utils/feldFehler.js';
@@ -93,11 +108,22 @@ import { erfasseFehler } from './services/nutzung.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// `mailer` is injectable for tests (a stub instead of the SMTP-backed default).
+// `mailer` ist für Tests austauschbar (ein Stub statt des SMTP-Versands).
 // `testmodus`: Test-Instanz auf der Spiel-DB — ohne Sitzung (kommt von der echten App), ohne
 // Login und /healthz, ohne TSA-Probe, Mailer = Test-Mailer; Person = gewählte Beispielperson.
 // `limiter`: von aussen gereichte Rate-Limiter (die echte App gibt der Test-Instanz einen festen
 // Satz, damit ein Zurücksetzen keine neuen MemoryStore-Timer und alten App-Graphen zurücklässt).
+/**
+ * Baut die komplette Express-App.
+ * @param {object} opts
+ * @param {object} opts.db geöffnete SQLite-Datenbank (`node:sqlite`)
+ * @param {object} opts.config Laufzeitkonfiguration aus `loadConfig()`
+ * @param {object} [opts.mailer] Mail-Versand; Standard: SMTP, ohne Konfiguration ein Fallback, der nur protokolliert
+ * @param {Function} [opts.tsaVersuch] Test-Einschub für die TSA-Probe der Statusseite
+ * @param {boolean} [opts.testmodus] true = Test-Instanz auf der Spiel-DB (siehe Kommentar unten)
+ * @param {object} [opts.limiter] fertige Rate-Limiter (nur für die Test-Instanz)
+ * @returns {import('express').Express}
+ */
 export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuch = undefined, testmodus = false, limiter = null }) {
   const app = express();
   // AUS-03: kein `X-Powered-By: Express`-Header — verrät sonst die eingesetzte Technik (Fingerprint).
@@ -111,8 +137,8 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // Vorlage bei jedem Aufruf neu (gemessen: /pool rund 4-5x langsamer). `npm run dev` startet den
   // Prozess bei Änderungen ohnehin neu.
   app.set('view cache', true);
-  // Computed once at startup, not per request — the deployed commit doesn't change while the
-  // process is running, and shelling out to git on every request would be wasteful.
+  // Einmal beim Start berechnet, nicht pro Anfrage: der laufende Commit ändert sich während des Prozesses
+  // nicht, und bei jeder Anfrage git aufzurufen wäre Verschwendung.
   app.locals.version = getVersionInfo(join(__dirname, '..'));
   app.locals.zeitpunktAnzeige = zeitpunktAnzeige;
   app.locals.belegName = belegName;
@@ -124,19 +150,18 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     .map((datei) => Math.trunc(statSync(join(__dirname, '..', 'public', datei)).mtimeMs).toString(36))
     .join('');
   app.use((req, res, next) => {
-    // X-Content-Type-Options: the PDF magic-byte check on upload only validates the first 4
-    // bytes, so this stops a browser from sniffing a crafted upload into something other than
-    // its declared Content-Type when served back from /downloads or /branding.
+    // X-Content-Type-Options: Die PDF-Prüfung beim Upload kontrolliert nur die ersten 4 Bytes. Der Header
+    // verhindert, dass ein Browser eine präparierte Datei beim Ausliefern über /downloads oder /branding
+    // als etwas anderes als den deklarierten Content-Type interpretiert (Sniffing).
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    // X-Frame-Options: SAMEORIGIN, not DENY — kontierung.ejs, freigabe2.ejs, and pool.ejs all
-    // embed the signed-download-URL PDF preview in a same-origin <iframe>, and DENY blocks
-    // framing even from the same origin. SameSite=Lax cookies already aren't sent on cross-site
-    // framed subresource requests, so SAMEORIGIN still closes the cross-site framing case.
+    // X-Frame-Options: SAMEORIGIN, nicht DENY — kontierung.ejs, freigabe2.ejs und pool.ejs binden die PDF-Vorschau
+    // (signierte Download-URL) in einem gleich-originären <iframe> ein, und DENY blockiert auch das.
+    // SameSite=Lax-Cookies werden bei seitenübergreifend eingebetteten Unterressourcen ohnehin nicht mitgesendet,
+    // SAMEORIGIN schliesst den Fall "fremde Seite bettet uns ein" also weiterhin.
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-    // Referrer-Policy: signed download URLs carry their signature in the query string
-    // (services/downloadUrl.js) and are embedded in <iframe> previews — without this, a link
-    // clicked inside a rendered invoice PDF could leak a live, still-valid download URL to a
-    // third party via the Referer header.
+    // Referrer-Policy: Signierte Download-URLs tragen ihre Signatur in der Query (services/downloadUrl.js) und
+    // stecken in <iframe>-Vorschauen. Ohne diesen Header könnte ein Link, der in einer gerenderten Rechnungs-PDF
+    // angeklickt wird, eine noch gültige Download-URL über den Referer an Dritte weitergeben.
     res.setHeader('Referrer-Policy', 'no-referrer');
     // AUS-01 Strict-Transport-Security: nur auf einer HTTPS-Anfrage setzen (req.secure wertet
     // hinter `trust proxy` = 1 das X-Forwarded-Proto des Infomaniak-Proxys aus). Im lokalen
@@ -153,15 +178,15 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     // kappt Cross-Origin-Zugriffe, ohne die eigene same-origin-Einbettung zu brechen.
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-    // Content-Security-Policy: defense-in-depth backstop, not the primary XSS defense — every EJS
-    // view was audited to only ever use auto-escaping `<%= %>` on user-controlled data (the
-    // "Roh-Ausgabe-Sweep" in test/integration/layoutSweep.test.js enforces this). Inline <script>
-    // and <style> blocks run only with this request's nonce (res.locals.cspNonce, set on every
-    // block in the views — test/integration/cspSweep.test.js enforces it), so an injected script
-    // or style block is blocked even if escaping ever failed. style="" attributes stay allowed
-    // (style-src-attr): many views use them for layout and computed widths, and CSS attributes
-    // cannot run code. img-src allows data: (images only) because Bootstrap's CSS ships its icons
-    // as data-URI SVGs (close X, select arrow, check marks); without it those icons are invisible.
+    // Content-Security-Policy: zusätzliche Sicherung, nicht die primäre XSS-Abwehr — jede EJS-Ansicht wurde
+    // geprüft und gibt vom Benutzer kontrollierte Daten nur mit dem escapenden `<%= %>` aus (der
+    // "Roh-Ausgabe-Sweep" in test/integration/layoutSweep.test.js erzwingt das). Inline-<script>- und
+    // <style>-Blöcke laufen nur mit dem Nonce dieser Anfrage (res.locals.cspNonce, an jedem Block in den Views gesetzt —
+    // test/integration/cspSweep.test.js erzwingt es); ein eingeschleuster Block wird also selbst dann blockiert,
+    // wenn das Escaping je versagen sollte. style=""-Attribute bleiben erlaubt (style-src-attr): viele Views nutzen
+    // sie für Layout und berechnete Breiten, und CSS-Attribute können keinen Code ausführen. img-src erlaubt data:
+    // (nur Bilder), weil Bootstraps CSS seine Icons als data-URI-SVGs mitbringt (Schliessen-X, Auswahlpfeil,
+    // Häkchen); ohne das wären diese Icons unsichtbar.
     const nonce = randomBytes(16).toString('base64');
     res.locals.cspNonce = nonce;
     res.setHeader(
@@ -215,9 +240,9 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
-        // Derived from publicBaseUrl (always required in production via env.js) rather than
-        // NODE_ENV, which nothing enforces being set correctly on the host — an unset NODE_ENV
-        // would otherwise silently boot the app without the Secure flag on a TLS-required deployment.
+        // Aus publicBaseUrl abgeleitet (in Produktion laut env.js immer Pflicht) statt aus NODE_ENV, dessen
+        // korrekte Setzung auf dem Host nichts erzwingt — ein nicht gesetztes NODE_ENV würde sonst still ohne
+        // Secure-Flag starten, obwohl TLS Pflicht ist.
         secure: Boolean(config.publicBaseUrl?.startsWith('https://')),
         sameSite: 'lax',
         // 8 Stunden: Gruppenänderungen aus ChurchTools (Rollenentzug) greifen spätestens nach dem
@@ -226,17 +251,16 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
       },
     })
   );
-  // cookie-parser must run after express-session (session parses its own cookie first) and
-  // before the CSRF middleware, which reads/writes its own separate, non-session cookie.
+  // cookie-parser muss nach express-session laufen (die Session liest ihr eigenes Cookie zuerst) und vor der
+  // CSRF-Middleware, die ihr eigenes, von der Session getrenntes Cookie liest und schreibt.
   app.use(cookieParser());
   app.use(ansichtWahl());
   const { attachCsrfToken, csrfProtection, generateCsrfToken } = createCsrfProtection(config);
   app.use((req, res, next) => {
-    // /api/n8n/* and /internal/cron/* are machine routes authenticated via X-API-Key /
-    // X-Cron-Secret headers, never session cookies — they send no CSRF cookie or token and must
-    // stay exempt. /api/pool is session-cookie authenticated (its beanspruchen button is a
-    // fetch() call, protected via the x-csrf-token header instead of a form field) and does need
-    // this.
+    // /api/n8n/* und /internal/cron/* sind Maschinenrouten, die über die Header X-API-Key bzw. X-Cron-Secret
+    // authentifiziert werden, nie über Session-Cookies — sie senden weder CSRF-Cookie noch -Token und müssen
+    // ausgenommen bleiben. /api/pool dagegen ist per Session-Cookie authentifiziert (der Button "beanspruchen"
+    // ist ein fetch()-Aufruf, geschützt über den Header x-csrf-token statt eines Formularfelds) und braucht CSRF.
     if (req.path.startsWith('/api/n8n/') || req.path.startsWith('/internal/cron')) return next();
     return attachCsrfToken(req, res, next);
   });
@@ -280,6 +304,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // versionierte URLs werden vom Browser gecacht, siehe routes/branding.js).
   app.use('/branding', createBrandingRouter({ db }));
   app.use('/admin', sessionLimiter, requireAdminAreaAccess(db, config));
+  // Admin-Startseite (Dashboard mit Hinweiskarten). Alle Unterseiten hängen darunter, jede mit eigenem Recht.
   app.get('/admin', (req, res) => {
     const zeitstempelWarnungSchwelle = Number(getConfigValue(db, 'zeitstempel_warnung_ab_stunden'));
     const tsaAktiv = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
@@ -314,6 +339,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
         && parseEmpfaengerListe(getConfigValue(db, 'audit_revision_empfaenger')).adressen.length === 0,
     });
   });
+  // ---- Admin-Bereich: je Seite ein Recht (Katalog: services/berechtigungKatalog.js, Übersicht: docs/admin-bereich.md) ----
   app.use('/admin/konten', requirePermission(db, config, 'konten_verwalten'), createKontenRouter({ db, csrfProtection }));
   app.use('/admin/kreditoren', requirePermission(db, config, 'kreditoren_verwalten'), createKreditorenRouter({ db, csrfProtection }));
   // Frueherer Pfad (fachlich falsch 'Debitoren'): Lesezeichen und vor dem Deployment geladene
@@ -349,16 +375,19 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   if (testmodusSteuerung) app.use('/admin/testmodus', requirePermission(db, config, 'testmodus_nutzen'), createTestmodusRouter({ db, steuerung: testmodusSteuerung, csrfProtection }));
   app.use('/admin/betrieb', requirePermission(db, config, 'betrieb_einsehen'), createBetriebRouter({ db, config, statusCache, csrfProtection }));
 
+  // ---- Maschinenrouten (ohne Session, mit Schlüssel): n8n-Rechnungseingang/-abholung, Backup, Kreditkartenbelege, Rapporte ----
+  // Vertrag: docs/n8n-schnittstelle.md. Das Backup hat einen eigenen Schlüssel (BACKUP_API_KEY).
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   app.use('/api/n8n/backup', machineLimiter, requireApiKey({ n8nApiKey: config.backupApiKey }), createN8nBackupRouter({ config }));
   app.use('/api/n8n/kk-belege', machineLimiter, requireApiKey(config), createN8nKkBelegeRouter({ db, config, mailer }));
   app.use('/api/n8n/rapporte', machineLimiter, requireApiKey(config), createN8nRapporteRouter({ db, config }));
+  // ---- Portal-Seiten für angemeldete Personen ----
   app.use('/api/pool', sessionLimiter, requireRole(config, 'buchhaltung'), createPoolRouter({ db, csrfProtection }));
-  // Dashboard for every logged-in person, not just Buchhaltung/Superadmin: "/" always redirects
-  // here now that the old landing page is gone, and a Freigeber1/2-only person (no group
-  // membership, AUTH-WIDEN-1) needs somewhere to land too. The pool-of-unassigned-invoices
-  // section itself stays restricted inside pool.ejs (gated on isBuchhaltung/isSuperadmin from
-  // loadNavFlags) — only the route-level gate widens, not who can see the company-wide pool.
+  // Dashboard für jede angemeldete Person, nicht nur Buchhaltung/Superadmin: "/" leitet immer hierher, seit die
+  // alte Startseite entfallen ist, und auch eine reine Freigeber-1/2-Person (ohne Gruppenzugehörigkeit,
+  // AUTH-WIDEN-1) braucht einen Einstieg. Der Pool der unzugewiesenen Rechnungen bleibt innerhalb von pool.ejs
+  // beschränkt (über isBuchhaltung/isSuperadmin aus loadNavFlags) — nur das Routen-Tor ist weiter, nicht wer
+  // den firmenweiten Pool sieht.
   app.use('/pool', sessionLimiter, requireLogin(), createPoolPageRouter({ db, config, mailer, csrfProtection }));
   app.use('/meine-abgeschlossenen', sessionLimiter, requireLogin(), createMeineAbgeschlossenenRouter({ db, config }));
   app.use('/auswertung', sessionLimiter, requireLogin(), createAuswertungRouter({ db, config }));
@@ -380,27 +409,30 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/kommentare', sessionLimiter, requireLogin(), createKommentareRouter({ db, config, mailer, csrfProtection }));
   app.use('/rapporte', sessionLimiter, requireLogin(), createRapporteRouter({ db, config, mailer, csrfProtection }));
 
+  // ---- Anmeldung, öffentliche Prüfseite und Cron-Aufrufe ----
   if (!testmodus) app.use('/auth', publicLimiter, createAuthRouter({ db, config, mailer, csrfProtection }));
   // Oeffentlich fuer die Revision (ohne Portal-Login), nur GET.
   app.use('/audit-pruefen', publicLimiter, createAuditPruefenRouter({ db }));
   app.use('/internal/cron', machineLimiter, requireCronSecret(config), createCronRouter({ db, config, mailer }));
 
-  // No standalone landing page: every visit to "/" goes straight to the dashboard (/pool) for a
-  // logged-in person, or to login for an anonymous one.
+  // Keine eigene Startseite: "/" führt angemeldete Personen direkt ins Dashboard (/pool), anonyme zur Anmeldung.
   app.get('/', publicLimiter, (req, res) => {
     res.redirect(req.currentPerson ? '/pool' : '/auth/login');
   });
 
+  // Alles, was kein Router beantwortet hat.
   app.use((req, res) => {
     res.status(404).render('error', { message: 'Seite nicht gefunden.' });
   });
 
+  // Zentraler Fehler-Handler (muss als letzter registriert sein): CSRF-Fehler → 403, kaputter Anfrage-Inhalt → 400,
+  // alles andere → 500 mit kurzer Fehler-ID, die in der Betriebsseite (betrieb_fehler) nachgeschlagen werden kann.
   app.use((err, req, res, next) => {
     res.locals.branding ??= { primaryColor: null, secondaryColor: null, hasLogo: false, themeAttr: null, seitenTitel: 'Freigabeportal' };
     if (err.code === 'EBADCSRFTOKEN') {
-      // Most likely a stale/expired form (session changed since it was loaded, e.g. logged out
-      // and back in another tab) rather than an actual attack — no need to log.stack this one.
-      // Still recorded (throttled, without the submitted token) as a denied access.
+      // Meist ein veraltetes/abgelaufenes Formular (Session hat gewechselt, z. B. in einem anderen Tab ab- und wieder
+      // angemeldet) und kein Angriff — deshalb kein Stack-Log. Als Zugriffsverweigerung wird es trotzdem
+      // (gedrosselt, ohne das gesendete Token) erfasst.
       meldeZugriffVerweigert(req, { grund: 'csrf', status: 403 });
       return res
         .status(403)

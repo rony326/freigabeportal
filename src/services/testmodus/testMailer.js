@@ -1,5 +1,6 @@
 // Mailer der Test-Instanz: sammelt nur, kein SMTP, kein Netz. Der normale Outbox-Ablauf
 // (mailZustellung.js) markiert die Zeile danach in der Spiel-DB als 'versendet'.
+// @returns {{gesendet: object[], sendMail: Function}}
 export function createTestMailer() {
   const gesendet = [];
   return {

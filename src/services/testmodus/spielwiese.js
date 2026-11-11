@@ -1,3 +1,7 @@
+// Die Spielwiese (docs/testmodus.md): eine vollständig abgeschottete Kopie des Portals mit eigener Datenbank, eigenen Verzeichnissen, abgeleiteten
+// Geheimnissen und ohne Zugang nach aussen (kein SMTP, kein ChurchTools, keine TSA, keine Sicherung). Die Pfade liegen NEBEN den echten (nie darin),
+// damit keine echte Sicherung Testdaten enthält und der Testmodus nie echte Dateien anfasst.
+
 import { existsSync, rmSync, mkdirSync, cpSync } from 'node:fs';
 import { GRUPPEN } from '../berechtigungKatalog.js';
 import { listGruppenBerechtigungen, setGruppenBerechtigungen } from '../../db/gruppenBerechtigungenRepo.js';
@@ -19,6 +23,7 @@ const liegtIn = (innen, aussen) => {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 };
 
+// Berechnet die Pfade der Spielwiese und prüft, dass keiner im echten Belegverzeichnis liegt. @returns {{dbPath, jobsDir, brandingDir, backupDir}}
 export function testmodusPfade(config) {
   if (!config.dbPath || config.dbPath === ':memory:') throw new Error('Der Testmodus braucht eine Datei-Datenbank (kein :memory:).');
   const dbPath = normalisiert(config.dbPath, 'DB_PATH');
@@ -39,6 +44,7 @@ export function testmodusPfade(config) {
 }
 
 const GEHEIM = /secret|token|pass|key/i;
+// Einstellungen, die nicht aus der echten App in die Spielwiese kopiert werden (Geheimnisse, TSA, Wartungsmodus, Einrichtungsstand).
 const NICHT_KOPIEREN = new Set([
   'zeitstempel_tsa_url', 'zeitstempel_tsa_user', 'zeitstempel_tsa_passwort', 'monitoring_secret',
   'testmodus_bereit',
@@ -46,6 +52,7 @@ const NICHT_KOPIEREN = new Set([
   'wartungsmodus_aktiv', 'wartungsmodus_hinweis',
 ]);
 
+// true, wenn der Schlüssel in die Spielwiese kopiert werden darf.
 export function kopierbareEinstellung(key) {
   return !GEHEIM.test(key) && !NICHT_KOPIEREN.has(key) && !key.startsWith('einrichtung_');
 }
@@ -57,6 +64,7 @@ function ableiten(geheimnis, zweck) {
 
 // TSA-Zugang bleibt in der Spiel-DB immer leer, egal welcher Schreibweg ihn setzt.
 const TSA_SCHLUESSEL = "('zeitstempel_tsa_url', 'zeitstempel_tsa_user', 'zeitstempel_tsa_passwort')";
+// Sorgt dafür, dass die TSA-Einstellungen in der Spiel-Datenbank leer bleiben (Trigger für Insert und Update).
 function sichereSpielDb(db) {
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS testmodus_kein_tsa_insert AFTER INSERT ON admin_config
@@ -69,6 +77,7 @@ function sichereSpielDb(db) {
   `);
 }
 
+// Test-Konfiguration: abgeleitete Geheimnisse, keine Schlüssel/SMTP/Cron, ChurchTools-Attrappe mit Testgruppen.
 function baueTestConfig(config) {
   const pfade = testmodusPfade(config);
   return {
@@ -97,6 +106,7 @@ function baueTestConfig(config) {
   };
 }
 
+// Löscht Spiel-Datenbank und -Verzeichnisse.
 function loescheDateien(pfade) {
   for (const suffix of ['', '-wal', '-shm', '-journal']) rmSync(`${pfade.dbPath}${suffix}`, { force: true });
   rmSync(pfade.jobsDir, { recursive: true, force: true });
@@ -104,6 +114,7 @@ function loescheDateien(pfade) {
   rmSync(pfade.backupDir, { recursive: true, force: true });
 }
 
+// Öffnet eine vorhandene, vollständig aufgebaute Spiel-Datenbank (Marker `testmodus_bereit`), sonst null.
 function oeffneVorhandene(pfade) {
   if (!existsSync(pfade.dbPath)) return null;
   let db;
@@ -118,6 +129,8 @@ function oeffneVorhandene(pfade) {
   }
 }
 
+// Öffnet die vorhandene Spielwiese oder baut eine neue (mit `neu: true` immer neu): Einstellungen und Gruppenrechte werden aus der echten App kopiert,
+// Beispieldaten eingespielt. @returns {Promise<{db, config}>}
 export async function erstelleSpielwiese(echteDb, config, { neu = false } = {}) {
   const pfade = testmodusPfade(config);
   const testConfig = baueTestConfig(config);
@@ -161,6 +174,7 @@ export async function erstelleSpielwiese(echteDb, config, { neu = false } = {}) 
   return { db, config: testConfig };
 }
 
+// Löscht die Spielwiese vollständig.
 export function entferneSpielwiese(config) {
   loescheDateien(testmodusPfade(config));
 }

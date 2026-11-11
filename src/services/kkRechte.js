@@ -1,3 +1,4 @@
+// Rechteregeln für Kreditkartenbelege (erfassen, bearbeiten, sehen, Menüpunkt anzeigen).
 import { getKreditkarteById, listKreditkarten, listErfasserIds } from '../db/kreditkartenRepo.js';
 import { getJobById } from '../db/jobsRepo.js';
 import { personHasRole } from '../middleware/roles.js';
@@ -7,6 +8,7 @@ import { istAktiveVertretungFuer } from './vertretung.js';
 // Zentrale Rechte-Regeln für Kreditkarten-Belege (Spec Abschnitt 7) -- Routen fragen nur hier
 // nach, statt die Regeln je Seite nachzubauen.
 
+// Belege für die Karte erfassen darf: wer bei "offener Erfassung" jede Person, sonst die verantwortliche Person und die eingetragenen Erfasser.
 export function darfAufKarteErfassen(db, karte, personId) {
   if (!karte || !karte.aktiv) return false;
   if (karte.erfassung_offen) return true;
@@ -14,10 +16,12 @@ export function darfAufKarteErfassen(db, karte, personId) {
   return listErfasserIds(db, karte.id).includes(personId);
 }
 
+// Aktive Karten, für die die Person Belege erfassen darf.
 export function listErfassbareKarten(db, personId) {
   return listKreditkarten(db).filter((karte) => darfAufKarteErfassen(db, karte, personId));
 }
 
+// Bearbeiten darf, wer hochgeladen hat, als Käufer:in steht oder für die Karte verantwortlich ist – nur solange der Beleg 'offen'/'entwurf' ist.
 export function darfBelegBearbeiten(db, beleg, personId) {
   if (!beleg || !['offen', 'entwurf'].includes(beleg.status)) return false;
   if (beleg.hochgeladen_von === personId || beleg.gekauft_von === personId) return true;
@@ -25,6 +29,7 @@ export function darfBelegBearbeiten(db, beleg, personId) {
   return Boolean(karte && karte.verantwortlich_id === personId);
 }
 
+// Ansehen dürfen zusätzlich Superadmin, wer eine markierte Abrechnung der Karte gerade abgleicht (auch als Vertretung) und, nach der Zuordnung, wer den Vorgang sehen darf.
 export function darfBelegSehen(db, config, beleg, person) {
   if (!beleg || !person) return false;
   const personId = person.churchtools_person_id;
@@ -46,6 +51,7 @@ export function darfBelegSehen(db, config, beleg, person) {
   return false;
 }
 
+// Entscheidet, ob der Menüpunkt "Kreditkarte" für die Person erscheint (erfassen, verantwortlich oder eigene Belege).
 export function zeigeKreditkartenBereich(db, personId) {
   if (listErfassbareKarten(db, personId).length > 0) return true;
   if (db.prepare('SELECT 1 FROM kreditkarten WHERE verantwortlich_id = ? LIMIT 1').get(personId)) return true;

@@ -28,9 +28,9 @@ aber keine Vorgänge umhängen. Manager sollen Kreditoren und Konten anlegen, sp
 Audit-Log sehen, aber weder Sync-Übersicht noch Mail-Protokoll.
 
 ### Entscheidungen
-- **Einstellbare Gruppen:** `superadmin`, `manager`, `buchhaltung`. (Annahme des Entwurfs:
-  „Admin" und „Superadmin" sind dieselbe CT-Gruppe `CT_GROUP_ID_ADMIN`.) Die Gruppen-IDs bleiben
-  in der Config; nur die Rechte pro Gruppe liegen in der DB.
+- **Einstellbare Gruppen:** genau drei ChurchTools-Gruppen: `superadmin`, `manager`, `buchhaltung`
+  (bestätigt vom Auftraggeber; es gibt keine separate „Admin"-Gruppe). Die Gruppen-IDs bleiben in der
+  Config (`CT_GROUP_ID_ADMIN` = Rolle `superadmin`); nur die Rechte pro Gruppe liegen in der DB.
 - **Neue Tabelle** `gruppen_berechtigungen (gruppe TEXT, berechtigung TEXT, PRIMARY KEY(gruppe,
   berechtigung))`. Das bestehende CHECK-Constraint auf `person_berechtigungen.berechtigung` ist
   veraltet (kennt nicht alle 15 Rechte) und wird beim Anfassen bereinigt: Rechte-Liste nur noch an

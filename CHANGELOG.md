@@ -3,6 +3,21 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.1.1] – 2026-11-11
+
+Wartungsversion. Release Notes:
+[docs/releases/v1.1.1.md](docs/releases/v1.1.1.md).
+
+- Admin → Kreditoren: «Neuer Kreditor» auf eigener Seite statt Formular unter
+  der Liste; Zuweisungsregel und IBAN hinzufügen als Karten.
+- Admin → Benachrichtigungen: Empfänger-Kärtchen und gewähltes Ereignis im Look
+  des übrigen Portals.
+- Markenfarbe statt Standard-Blau für angehakte Felder, Fokusrahmen und
+  Nummern-Kreise.
+- Release Notes ergänzt um wichtige 1.1.0-Punkte (Aufsplitten verlangt einen
+  Lieferanten, Schnellanlage nur für Admins, Benachrichtigungen nur für
+  Superadmins).
+
 ## [1.1.0] – 2026-11-11
 
 Release Notes: [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md).
@@ -55,6 +70,7 @@ Erste produktive Version. Ausführliche Release Notes:
 Release-Kandidat: Fundament mit ChurchTools-Login, Admin-Bereich,
 n8n-Schnittstelle, Freigabe-Workflow und Datenbank-Backup.
 
+[1.1.1]: https://github.com/rony326/freigabeportal/releases/tag/v1.1.1
 [1.1.0]: https://github.com/rony326/freigabeportal/releases/tag/v1.1.0
 [1.0.1]: https://github.com/rony326/freigabeportal/releases/tag/v1.0.1
 [1.0.0]: https://github.com/rony326/freigabeportal/releases/tag/v1.0.0

@@ -48,6 +48,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 
 | Version | Datum | Release Notes |
 |---|---|---|
+| 1.1.1 | 2026-11-11 | [releases/v1.1.1.md](releases/v1.1.1.md) |
 | 1.1.0 | 2026-11-11 | [releases/v1.1.0.md](releases/v1.1.0.md) |
 | 1.0.1 | 2026-11-10 | [releases/v1.0.1.md](releases/v1.0.1.md) |
 | 1.0.0 | 2026-11-09 | [releases/v1.0.0.md](releases/v1.0.0.md) |

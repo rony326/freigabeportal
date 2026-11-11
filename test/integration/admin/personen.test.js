@@ -190,3 +190,52 @@ test('GET /admin/personen shows the Ferienmodus period and Stellvertreter name f
   assert.match(res.text, /Cé Muster/);
   db.close();
 });
+
+const herkunftZeile = (html, recht) => (html.match(new RegExp(`<li[^>]*data-herkunft="${recht}"[^>]*>[\\s\\S]*?</li>`)) || [''])[0];
+
+test('Personenliste zeigt pro Recht die Herkunft: direkt und über Gruppe', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  db.prepare("INSERT INTO person_berechtigungen (person_id, berechtigung) VALUES ('55', 'workflow_eingreifen')").run();
+  const res = await request(buildTestApp(db)).get('/admin/personen').set('x-test-person-id', '99');
+  assert.equal(res.status, 200);
+  assert.match(herkunftZeile(res.text, 'workflow_eingreifen'), /direkt/);
+  assert.match(herkunftZeile(res.text, 'konten_verwalten'), /über Gruppe Manager/);
+  assert.doesNotMatch(herkunftZeile(res.text, 'konten_verwalten'), /direkt/);
+  db.close();
+});
+
+test('Person in Superadmin und Buchhaltung: Herkunft nennt beide Gruppen', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20', '10'], loggedInNow: true });
+  db.prepare("INSERT INTO gruppen_berechtigungen (gruppe, berechtigung) VALUES ('buchhaltung', 'kreditoren_verwalten')").run();
+  const res = await request(buildTestApp(db)).get('/admin/personen').set('x-test-person-id', '99');
+  const zeile = herkunftZeile(res.text, 'kreditoren_verwalten');
+  assert.match(zeile, /Superadmin/);
+  assert.match(zeile, /Buchhaltung/);
+  db.close();
+});
+
+test('Einzelrecht-Checkbox eines Rechts, das eine Gruppe liefert, trägt den Hinweis und bleibt bedienbar', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  const res = await request(buildTestApp(db)).get('/admin/personen').set('x-test-person-id', '99');
+  const box = res.text.match(/<input[^>]*id="berechtigung-55-konten_verwalten"[^>]*>/)[0];
+  assert.doesNotMatch(box, /disabled/);
+  assert.match(res.text, /for="berechtigung-55-konten_verwalten">[^<]*<\/label>\s*<span[^>]*>auch über Gruppe Manager/);
+  db.close();
+});
+
+test('Speichern der Einzelrechte ist im Audit-Log nachvollziehbar (Trigger auf person_berechtigungen)', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  const res = await request(buildTestApp(db)).post('/admin/personen/55/berechtigungen').set('x-test-person-id', '99').type('form').send({ berechtigungen: ['workflow_eingreifen'] });
+  assert.equal(res.status, 302);
+  const z = db.prepare("SELECT nachher FROM audit_ereignisse WHERE objekt = 'person_berechtigungen'").all();
+  assert.equal(z.length, 1);
+  assert.match(z[0].nachher, /workflow_eingreifen/);
+  db.close();
+});

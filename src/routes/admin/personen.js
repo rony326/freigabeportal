@@ -2,8 +2,27 @@ import { Router } from 'express';
 import { listAllPersons, getPersonById } from '../../db/personenRepo.js';
 import { personHasRole } from '../../middleware/roles.js';
 import { listBerechtigungenForPerson, setBerechtigungenForPerson } from '../../db/personBerechtigungenRepo.js';
-import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS, personHasPermission, requirePermission } from '../../middleware/permissions.js';
+import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS, personHasPermission, requirePermission, ermittleRechteMitHerkunft } from '../../middleware/permissions.js';
+import { FESTE_RECHTE } from '../../services/berechtigungKatalog.js';
 import { personName } from '../../services/auditLog.js';
+
+const GRUPPEN_LABEL = { superadmin: 'Superadmin', manager: 'Manager', buchhaltung: 'Buchhaltung' };
+
+// Effektive Rechte einer Person in Katalog-Reihenfolge, je mit den Quellen ("direkt", "über Gruppe X").
+function rechteMitHerkunft(db, config, person) {
+  const herkunft = ermittleRechteMitHerkunft(db, config, person);
+  return [...GRANTABLE_BERECHTIGUNGEN, ...FESTE_RECHTE]
+    .filter((recht) => herkunft.has(recht))
+    .map((recht) => {
+      const { gruppen, direkt } = herkunft.get(recht);
+      return {
+        recht,
+        label: BERECHTIGUNG_LABELS[recht],
+        gruppen: gruppen.map((g) => GRUPPEN_LABEL[g]),
+        quellen: [...gruppen.map((g) => `über Gruppe ${GRUPPEN_LABEL[g]}`), ...(direkt ? ['direkt'] : [])],
+      };
+    });
+}
 
 function rolleVon(person, config) {
   if (personHasRole(person, config, 'superadmin')) return 'Superadmin';
@@ -20,6 +39,7 @@ export function createPersonenRouter({ db, config, csrfProtection = (req, res, n
       ...p,
       rolle: rolleVon(p, config),
       berechtigungen: listBerechtigungenForPerson(db, p.churchtools_person_id),
+      rechteHerkunft: rechteMitHerkunft(db, config, p),
       ferienmodusStellvertreterName: p.ferienmodus_stellvertreter_id ? personName(db, p.ferienmodus_stellvertreter_id) : null,
     }));
     res.render('admin/personen-liste', {
@@ -38,6 +58,7 @@ export function createPersonenRouter({ db, config, csrfProtection = (req, res, n
     // wuerde das Recht beim Speichern still entzogen (docs/kreditoren-statt-debitoren.md).
     const angefordert = [].concat(req.body.berechtigungen || []).map((b) => (b === 'debitoren_verwalten' ? 'kreditoren_verwalten' : b));
     const gueltig = [...new Set(angefordert.filter((b) => GRANTABLE_BERECHTIGUNGEN.includes(b)))];
+    // Die Tabelle person_berechtigungen wird bereits per Trigger auditiert (db/securitySchema.js).
     setBerechtigungenForPerson(db, req.params.id, gueltig);
     res.redirect('/admin/personen');
   });

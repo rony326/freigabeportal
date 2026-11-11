@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
 import { withAuditActor } from '../../src/services/auditContext.js';
-import { auditiereGruppenrechte, auditiereEinzelrechte } from '../../src/services/rechteAudit.js';
+import { auditiereGruppenrechte } from '../../src/services/rechteAudit.js';
 
 // admin_config wird bereits per Trigger auditiert (z. B. das Seeding-Kennzeichen); hier nur Rechte-Einträge.
 const eintraege = (db) => db.prepare("SELECT * FROM audit_ereignisse WHERE objekt <> 'admin_config' ORDER BY id").all();
@@ -23,15 +23,5 @@ test('gleicher Bestand schreibt nichts', () => {
   const db = openDatabase(':memory:');
   assert.equal(auditiereGruppenrechte(db, 'manager', ['a'], ['a']), 0);
   assert.equal(eintraege(db).length, 0);
-  db.close();
-});
-
-test('Einzelrechte nutzen objekt person_berechtigungen mit der Person als objekt_id', () => {
-  const db = openDatabase(':memory:');
-  auditiereEinzelrechte(db, '42', [], ['konten_verwalten']);
-  const [z] = eintraege(db);
-  assert.equal(z.objekt, 'person_berechtigungen');
-  assert.equal(z.objekt_id, '42');
-  assert.equal(z.aktion, 'recht_erteilt');
   db.close();
 });

@@ -16,11 +16,8 @@ function auditiere(db, objekt, objektId, vorher, nachher) {
   return anzahl;
 }
 
-// Ein Audit-Eintrag pro geändertem Recht; gibt die Anzahl zurück.
+// Ein Audit-Eintrag pro geändertem Recht; gibt die Anzahl zurück. (Einzelrechte auditiert bereits
+// ein Datenbank-Trigger auf person_berechtigungen.)
 export function auditiereGruppenrechte(db, gruppe, vorher, nachher) {
   return auditiere(db, 'gruppenrechte', gruppe, vorher, nachher);
-}
-
-export function auditiereEinzelrechte(db, personId, vorher, nachher) {
-  return auditiere(db, 'person_berechtigungen', personId, vorher, nachher);
 }

@@ -26,7 +26,8 @@
           <input class="form-check-input" type="radio" name="typ" id="typGutschrift" value="gutschrift" <%= typ === 'gutschrift' ? 'checked' : '' %>>
           <label class="form-check-label" for="typGutschrift">Gutschrift</label>
         </div>
-        <div class="form-text">Gilt für alle Teile gemeinsam.</div>
+        <div class="form-text">Gilt für alle Teile gemeinsam. Die Konto-Auswahl zeigt nur Konten, die zum Typ passen.</div>
+        <div class="form-text text-warning" id="konto-typ-hinweis" role="status" aria-live="polite" hidden>Ein gewähltes Konto passt nicht zum Typ – bitte neu wählen.</div>
       </div>
       <div class="mb-3 col-12 col-sm-6 col-md-4">
         <label class="form-label" for="gesamtbetrag">Gesamtbetrag</label>
@@ -61,7 +62,7 @@
               <select class="form-select" name="teilKontoId">
                 <option value="">— Konto wählen —</option>
                 <% alleKonten.forEach((k) => { %>
-                  <option value="<%= k.id %>" <%= String(k.id) === teil.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+                  <option value="<%= k.id %>" data-buchungsart="<%= k.buchungsart %>" <%= String(k.id) === teil.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
                 <% }) %>
               </select></label>
             </div>
@@ -102,6 +103,7 @@
   <% if (locals.auffaelligkeiten) { %><script src="/js/auffaelligkeiten.js?v=<%= locals.assetVersion || 0 %>" defer></script><% } %>
   <%# IBAN-Kasten (nur ohne QR-Code vorhanden): sichtbar und Pflicht je nach gewähltem Lieferanten und Typ. %>
   <script src="/js/kontierung-iban.js?v=<%= locals.assetVersion || 0 %>" defer></script>
+  <script src="/js/kontierung-konto-filter.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <script nonce="<%= locals.cspNonce %>">
     (function () {
       // Reached both standalone (direct navigation) and embedded in an <iframe> inside a Bootstrap

@@ -279,8 +279,18 @@ gespeichert, sondern bei jeder Prüfung aus dem heutigen Datum berechnet
 
 ### `person_berechtigungen`
 Additive Einzelrechte, siehe [auth-und-rechte.md](auth-und-rechte.md). Ein
-`CHECK`-Constraint erlaubt fünfzehn Rechte. Für die sieben
-`superadmin`-exklusiven Admin-Bereiche gibt es keine vergebbaren Werte.
+`CHECK`-Constraint erlaubt genau die vergebbaren Rechte aus `src/services/berechtigungKatalog.js`
+(`GRANTABLE_BERECHTIGUNGEN`); `migrateSecuritySchema` baut die Tabelle neu auf, sobald der Katalog wächst.
+
+### Wartungsmodus (`admin_config`)
+Zustand in `admin_config`: `wartungsmodus_aktiv` (`'1'`/`'0'`) und `wartungsmodus_hinweis` (max. 200 Zeichen). Änderungen auditiert der Trigger auf `admin_config`.
+
+### `gruppen_berechtigungen`
+Rechte pro ChurchTools-Gruppe: `gruppe` (`superadmin`, `manager`, `buchhaltung`) und `berechtigung`,
+Primärschlüssel `(gruppe, berechtigung)`. Bewusst ohne `CHECK` auf `berechtigung`: gültig ist, was der
+Katalog kennt (geprüft in `src/db/gruppenBerechtigungenRepo.js`). Superadmin hat dort immer die Zeile
+`gruppenrechte_verwalten`. Befüllt einmalig beim Start (Startwerte), dann über Admin → Gruppenrechte; jede
+Änderung steht im Audit-Log (`objekt = 'gruppenrechte'`).
 
 ### `konten`
 Ein "Konto" ist eine Kostenstelle mit genau vier Rollen: Freigeber 1 +
@@ -288,6 +298,8 @@ dessen Stellvertreter, Freigeber 2 + dessen Stellvertreter — alle vier
 müssen unterschiedliche, aktive Personen sein
 (`validateKontoRoles`). Freigeber 1 kontiert/erstfreigibt, Freigeber 2
 erteilt die zweite, unabhängige Freigabe (Vier-Augen-Prinzip).
+
+`buchungsart` (`rechnung`, `gutschrift`, `beides`; Standard und Wert bestehender Konten: `beides`, `CHECK`) sagt, was auf das Konto gebucht werden darf. Änderungen stehen über den Audit-Trigger auf `konten` (`vorher`/`nachher`) im Audit-Log. Logik: `kontoErlaubtFuerTyp` / `filterKontenFuerTyp` in `src/db/kontenRepo.js`.
 
 ### `konto_budgets`
 Budget pro Konto und Kalenderjahr für die [Auswertung](auswertung.md): `konto_id` → `konten`,

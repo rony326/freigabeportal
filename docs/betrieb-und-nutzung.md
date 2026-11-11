@@ -116,6 +116,34 @@ letzter Nutzung). Der Standard gilt nur, solange noch kein Text gespeichert ist:
 unter Admin → Betrieb & Nutzung → Datenschutz selbst ergänzen. Der Text muss von der
 Betreiberin bei Bedarf rechtlich geprüft und angepasst werden.
 
+## Wartungsmodus für Updates
+
+Für Updates und Backups gibt es unter **Admin → Betrieb → Wartungsmodus** (`/admin/wartungsmodus`, Recht
+`wartungsmodus_schalten`, Standard nur Superadmin) einen Schalter. Zweck: ein **konsistenter Stand** für das
+Backup — während des Modus verändern weder Rechnungsverarbeitung noch Mailversand die Daten.
+
+Empfohlener Ablauf: **Modus an → Backup ziehen → Update einspielen → Modus aus.**
+
+Solange der Modus aktiv ist:
+
+- **Personen:** sehen auf jeder Seite (ausser Login, `/healthz`) eine Wartungsseite (HTTP 503) mit dem optionalen
+  Hinweis (z. B. «Update bis ca. 14:00»). Wer das Recht hat, arbeitet weiter und sieht oben einen Banner
+  «Wartungsmodus aktiv».
+- **Mails:** werden nicht versendet. Die Outbox hält alles zurück (Status `eingereiht`/`geplant`, kein Versuch
+  gezählt), nichts geht verloren; nach dem Ausschalten stellt der Job `mail-zustellung` bzw. der Digest zu.
+  Dasselbe gilt für Sicherheitsalarme. «Erneut versenden» im Mail-Protokoll sendet nichts und weist darauf hin.
+- **Rechnungseingang:** `/api/n8n/jobs`, `/api/n8n/kk-belege`, `/api/n8n/rapporte` und `/internal/cron/*`
+  antworten mit **503** und `Retry-After: 300` (JSON `{"error":"wartungsmodus"}`). Das Portal puffert nichts;
+  **n8n muss die Anfrage später erneut versuchen** (siehe [n8n-schnittstelle.md](n8n-schnittstelle.md#wartungsmodus-503)).
+  Kommt trotzdem etwas rein, entstünde ein Delta zum Backup — genau das soll vermieden werden.
+- **Offen bleiben:** `/api/n8n/backup/*` (Backup-Abholung), die n8n-Bestätigungen (`…/abholung-bestaetigen`, `…/archivierung-bestaetigen`), `/healthz` und `/auth/*`. Wer `wartungsmodus_schalten` **oder** `gruppenrechte_verwalten` (Superadmin) hat, bleibt nie ausgesperrt; wer nur `backup_verwalten` hat, erreicht `/admin/backup`. Die Sperre greift vor der Nutzungserfassung und dem Zugriffs-Audit: normale Anfragen hinterlassen im Modus keine Nutzungsdaten. Die Testinstanz (Spielwiese) ist vom Modus nicht betroffen.
+- **Hinweis zum Backup:** Ein im Modus gezogenes Backup enthält den Zustand «Wartungsmodus aktiv» — nach einem Restore startet das Portal ebenfalls im Wartungsmodus und muss ausgeschaltet werden.
+- **Geplante Jobs** pausieren (Läufe werden übersprungen, nicht nachgeholt); die **Datenbank-Sicherung läuft
+  weiter**, sie liest nur.
+- **Audit-Log:** Ein- und Ausschalten (und der Hinweistext) steht als Änderung an `admin_config`
+  (`wartungsmodus_aktiv`, `wartungsmodus_hinweis`) mit Person und Zeitpunkt im Audit-Log.
+- **`/healthz`** (mit Monitoring-Schlüssel) enthält `"wartungsmodus": true|false`; der Modus ist kein Fehler.
+
 ## Bekannte Grenzen
 
 - Für Problemmeldungen gibt es **kein eigenes Rate-Limit**, nur den allgemeinen

@@ -17,6 +17,15 @@
         <label class="form-label" for="bezeichnung">Bezeichnung</label>
         <input type="text" class="form-control" id="bezeichnung" name="bezeichnung" value="<%= values.bezeichnung || '' %>" required>
       </div>
+      <div class="mb-3">
+        <label class="form-label" for="buchungsart">Buchungsart</label>
+        <select class="form-select" id="buchungsart" name="buchungsart">
+          <% BUCHUNGSARTEN.forEach((art) => { %>
+            <option value="<%= art %>" <%= (values.buchungsart || 'beides') === art ? 'selected' : '' %>><%= BUCHUNGSART_LABEL[art] %></option>
+          <% }) %>
+        </select>
+        <div class="form-text">Was auf dieses Konto gebucht werden darf. Die Kontierung zeigt nur passende Konten an.</div>
+      </div>
 
       <div class="mb-3">
         <label class="form-label" for="freigeber1Id">Freigeber 1</label>

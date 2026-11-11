@@ -134,6 +134,14 @@ flowchart TD
     E -- ja --> G["eskalierenFreigabe1AnAdmin<br/>(SYNC-8)<br/>Status bleibt zugewiesen<br/>+ Mail an Admin-Gruppe"]
 ```
 
+**Konto-Auswahl nach Buchungsart**: Jedes Konto hat eine Buchungsart (`rechnung`, `gutschrift` oder `beides`,
+Admin → Konten). Bei «Rechnung» bietet die Auswahl nur Konten `rechnung` und `beides`, bei «Gutschrift» nur
+`gutschrift` und `beides`; bei «Rapport» gilt kein Filter. Wechselt man den Typ und das gewählte Konto passt
+nicht mehr, wird die Auswahl geleert und ein Hinweis erscheint (`public/js/kontierung-konto-filter.js`). Der
+Server prüft zusätzlich in Kontierung und Aufsplitten (pro Zeile) und lehnt ein nicht passendes Konto ab
+(«Dieses Konto kann nicht für Rechnungen/Gutschriften verwendet werden»). Bereits kontierte Vorgänge bleiben
+unverändert, auch wenn ein Konto später umgestellt wird.
+
 **Rechnung oder Gutschrift**: ein `typ`-Radio (Default `rechnung`) im
 Kontierungsformular setzt `jobs.typ`. Der Betrag bleibt in der Datenbank in
 beiden Fällen positiv — allein `typ` trägt die Bedeutung, es gibt keine

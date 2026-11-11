@@ -1,3 +1,4 @@
+import { getKontoById, kontoErlaubtFuerTyp } from '../db/kontenRepo.js';
 import { createKreditor, ZAHLUNGSARTEN, brauchtIban } from '../db/kreditorenRepo.js';
 import { createKreditorIban, findKreditorIbanByIban } from '../db/kreditorIbanRepo.js';
 import { normalizeIban, isValidIbanInternational } from './ibanUtils.js';
@@ -7,9 +8,20 @@ export const IBAN_UNGUELTIG_FEHLER = 'IBAN ist ungültig (Prüfziffer oder Läng
 export const IBAN_BEREITS_ZUGEORDNET_FEHLER = 'Diese IBAN ist bereits einem Lieferanten zugeordnet.';
 
 // Gemeinsame Prüfung für das Anlegen eines Lieferanten (Admin und Kontierungs-Schnellanlage).
-export function pruefeNeuenKreditor(db, { name, zahlungsart, iban }) {
+export const STANDARD_KONTO_FEHLER = 'Das Standard-Konto muss Rechnungen erlauben (Buchungsart «Rechnung» oder «Rechnung / Gutschrift»).';
+
+// Das Standard-Konto steuert eingehende Rechnungen: ein reines Gutschrift-Konto ist dafür nicht zulässig.
+export function pruefeStandardKonto(db, kontoId) {
+  if (!kontoId) return null;
+  const konto = getKontoById(db, Number(kontoId));
+  return konto && !kontoErlaubtFuerTyp(konto, 'rechnung') ? STANDARD_KONTO_FEHLER : null;
+}
+
+export function pruefeNeuenKreditor(db, { name, zahlungsart, iban, kontoId = null }) {
   const normalizedIban = normalizeIban(iban);
   const errors = [];
+  const kontoFehler = pruefeStandardKonto(db, kontoId);
+  if (kontoFehler) errors.push(kontoFehler);
   if (!name || !name.trim()) errors.push('Name ist ein Pflichtfeld.');
   if (!ZAHLUNGSARTEN.includes(zahlungsart)) {
     errors.push('Zahlungsart ist ungültig.');

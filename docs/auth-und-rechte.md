@@ -83,13 +83,13 @@ ChurchTools-Session selbst zu beenden.
 ## Rollenmodell (Gruppen)
 
 Drei ChurchTools-Gruppen werden auf drei Rollen abgebildet
-(`src/middleware/roles.js`):
+(`src/middleware/roles.js`). Es gibt keine weitere Gruppe.
 
 | Rolle | Umgebungsvariable | Pflicht? | Bedeutung |
 |---|---|---|---|
 | `buchhaltung` | `CT_GROUP_ID_BUCHHALTUNG` | ja | sieht den unternehmensweiten Pool unzugewiesener Rechnungen, kann Rechnungen beanspruchen |
-| `superadmin` | `CT_GROUP_ID_ADMIN` | ja | voller Zugriff auf den gesamten Admin-Bereich, kann Einzelrechte vergeben, ist Fallback-Empfänger für jede Admin-Eskalation |
-| `manager` | `CT_GROUP_ID_MANAGER` | optional | erhält alle Einzelrechte ausser `sync_verwalten`, `workflow_eingreifen` und `betrieb_einsehen` (siehe unten) sowie den Testmodus; die sieben superadmin-exklusiven Bereiche bleiben gesperrt |
+| `superadmin` | `CT_GROUP_ID_ADMIN` | ja | ist Fallback-Empfänger für jede Admin-Eskalation; seine Admin-Rechte stehen wie bei jeder Gruppe in der Rechte-Matrix (siehe unten), nur `gruppenrechte_verwalten` ist fest |
+| `manager` | `CT_GROUP_ID_MANAGER` | optional | nur Admin-Rechte laut Rechte-Matrix |
 
 `personHasRole(person, config, rolle)` prüft, ob die zugehörige
 ChurchTools-Gruppen-ID in `person.gruppen` enthalten ist — dieses Array
@@ -97,42 +97,64 @@ wird bei Login und beim nächtlichen Sync neu geschrieben, **nicht** bei
 jeder Anfrage live gegen ChurchTools geprüft. Wer eine Gruppe verlässt,
 verliert die Rolle also spätestens mit dem nächsten Sync-Lauf, behält aber
 den Portalzugang für seine konto-, karten- oder rechtebasierten Aufgaben.
+`gruppenVon(person, config)` liefert alle Gruppen einer Person (eine Person kann in mehreren sein).
 
-## Additive Einzelrechte (`person_berechtigungen`)
+## Rechte: Gruppenrechte und Einzelrechte
 
-Zusätzlich zum Gruppenmodell gibt es fünfzehn einzeln vergebbare,
-additive Rechte, unabhängig von ChurchTools-Gruppen
-(`src/middleware/permissions.js`, `src/db/personBerechtigungenRepo.js`):
+Die Rechte für den Admin-Bereich kommen aus **zwei additiven Quellen**
+(`src/middleware/permissions.js`):
 
-- `konten_verwalten`
-- `kreditoren_verwalten`
-- `geplante_jobs_verwalten`
-- `abgelehnt_verwalten`
-- `mails_einsehen`
-- `sync_einsehen`
-- `audit_log_einsehen`
+1. **Gruppenrechte** (`gruppen_berechtigungen`): pro Gruppe (`superadmin`, `manager`, `buchhaltung`)
+   stellt ein Superadmin unter **Admin → Einstellungen → Gruppenrechte** ein, welche Rechte die Gruppe hat.
+2. **Einzelrechte** (`person_berechtigungen`): pro Person unter **Admin → Stammdaten → Personen**
+   (`POST /admin/personen/:id/berechtigungen`, Recht `gruppenrechte_verwalten`).
+
+Das effektive Recht einer Person ist die **Vereinigung** aus den Rechten aller ihrer Gruppen und ihren
+Einzelrechten. Es gibt kein Verbotsrecht: Ein Recht entfällt erst, wenn keine Quelle es mehr liefert. Wer
+z. B. in `superadmin` und `buchhaltung` ist, bekommt die Summe beider Gruppen. Unter **Personen** steht pro
+Recht die Herkunft («direkt», «über Gruppe Manager», auch mehrere); `ermittleRechteMitHerkunft` liefert
+sie. Bei Einzelrechten, die schon eine Gruppe liefert, steht der Hinweis «auch über Gruppe X»; die Checkbox
+bleibt bedienbar (der Einzelrechte-Eintrag bleibt bestehen, wenn die Gruppe das Recht später verliert).
+
+### Rechtekatalog
+
+Der Katalog liegt in `src/services/berechtigungKatalog.js` (`GRANTABLE_BERECHTIGUNGEN`, Labels,
+Bereiche, Startwerte). Vergebbar sind:
+
+- `konten_verwalten`, `kreditoren_verwalten`, `geplante_jobs_verwalten`, `abgelehnt_verwalten`,
+  `mails_einsehen`, `sync_einsehen`, `audit_log_einsehen`
 - `pool_zuweisen`: Pool-Belege an Personen zuweisen — erlaubt `POST /pool/:id/zuweisen`
-- `kreditkarten_verwalten`: Kreditkarten anlegen/bearbeiten/(de)aktivieren und Erfasser pflegen — erlaubt `/admin/kreditkarten/*`, siehe [kreditkarten-belege.md](kreditkarten-belege.md#rechte)
+- `kreditkarten_verwalten`: Kreditkarten anlegen/bearbeiten/(de)aktivieren und Erfasser pflegen — siehe [kreditkarten-belege.md](kreditkarten-belege.md#rechte)
 - `sync_verwalten`: Sync konfigurieren (zusätzlich zu `sync_einsehen`)
-- `vorgaenge_einsehen`: Übersicht laufender Vorgänge — erlaubt `GET /admin/vorgaenge` und `GET /admin/vorgaenge/:id`
-- `workflow_eingreifen`: in laufende Vorgänge eingreifen — Force-Aktionen bei hängenden Jobs, Altfälle und Umhängen (`POST /admin/vorgaenge/:id/umhaengen`); gilt auch für Rapporte: Empfänger ersetzen/entfernen und Markierung aufheben (`POST /admin/vorgaenge/:id/rapport/…`) sowie `POST /kontierung/:id/rapport-aufheben` für Dritte. Das Bestätigen eines Rapports ist **kein** Recht, sondern an die namentlich zugeteilte Person gebunden (kein Ferienmodus, keine Vertretung)
-- `betrieb_einsehen` („Betrieb & Nutzung“): Nutzungsdaten und Fehler einsehen, Fehlermeldungen bearbeiten, Banner und Datenschutztext verwalten — erlaubt `/admin/betrieb/*`, siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md)
-- `auswertung_einsehen` („Auswertung einsehen (alle Konten)“): `/auswertung` für alle Konten inkl. „Wo Rechnungen liegen“. Ohne das Recht sehen Freigeber 1 und Stellvertreter 1 die Seite nur für ihre eigenen aktiven Konten, siehe [auswertung.md](auswertung.md)
-- `budgets_verwalten` („Budgets verwalten“): Budgets pro Konto und Jahr pflegen und importieren — erlaubt `/admin/budgets/*`, siehe [auswertung.md](auswertung.md#budgets-pflegen)
+- `vorgaenge_einsehen`: Übersicht laufender Vorgänge — `GET /admin/vorgaenge` und `GET /admin/vorgaenge/:id`
+- `workflow_eingreifen`: in laufende Vorgänge eingreifen — Force-Aktionen, Altfälle, Umhängen (`POST /admin/vorgaenge/:id/umhaengen`); gilt auch für Rapporte: Empfänger ersetzen/entfernen und Markierung aufheben sowie `POST /kontierung/:id/rapport-aufheben` für Dritte. Das Bestätigen eines Rapports ist **kein** Recht, sondern an die namentlich zugeteilte Person gebunden
+- `betrieb_einsehen` («Betrieb & Nutzung»): siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md)
+- `auswertung_einsehen`, `budgets_verwalten`: siehe [auswertung.md](auswertung.md)
+- Neu (früher fest an Rollen gebunden): `personen_einsehen`, `testmodus_nutzen`,
+  `benachrichtigungen_verwalten`, `erscheinungsbild_verwalten`, `ersteinrichtung_verwalten`,
+  `zeitstempel_verwalten`, `backup_verwalten`, `module_verwalten`, `dateiquarantaene_verwalten`
+- `wartungsmodus_schalten`: Wartungsmodus ein-/ausschalten
 
-`superadmin` erhält jedes dieser Rechte automatisch über sein
-Rollen-Bundle, `manager` jedes ausser `sync_verwalten`,
-`workflow_eingreifen` und `betrieb_einsehen` (siehe
-[audit-umsetzungsstand-2026-09-27.md](audit-umsetzungsstand-2026-09-27.md)). Für alle anderen Personen sind sie rein additiv: ein
-Recht ohne jede ChurchTools-Gruppenmitgliedschaft. Vergeben werden sie
-ausschliesslich von einem `superadmin` unter **Admin → Stammdaten → Personen**
-(`POST /admin/personen/:id/berechtigungen`).
+Dazu ein **festes** Recht: `gruppenrechte_verwalten` (Gruppenrechte-Seite, Einzelrechte vergeben). Es hängt
+allein an der Mitgliedschaft in `superadmin`, ist nicht abschaltbar und weder anderen Gruppen noch als
+Einzelrecht vergebbar — Schutz vor dem Aussperren.
 
-Sechs Admin-Bereiche bleiben `superadmin`-exklusiv: Benachrichtigungen
-(früher Eskalationszeiten und Mail-Einstellungen), Erscheinungsbild,
-Zeitstempel, Datenbank-Backup, Datei-Quarantäne und Module. Für sie gibt es keine additiven Einzelrechte; die
-Routen prüfen die Rolle direkt. Der `CHECK`-Constraint akzeptiert nur die
-fünfzehn oben genannten Rechte.
+### Startwerte
+
+Beim ersten Start nach der Einführung (leere Tabelle `gruppen_berechtigungen`) werden die Gruppen mit dem
+bisherigen Verhalten befüllt: `superadmin` alle Rechte; `manager` alle ausser `sync_verwalten`,
+`workflow_eingreifen`, `betrieb_einsehen` und den neuen, nur für Superadmin gedachten Rechten
+(`benachrichtigungen_verwalten`, `erscheinungsbild_verwalten`, `ersteinrichtung_verwalten`,
+`zeitstempel_verwalten`, `backup_verwalten`, `module_verwalten`, `dateiquarantaene_verwalten`,
+`wartungsmodus_schalten`); `buchhaltung` keine. Das Seeding läuft einmalig und überschreibt später nie
+Änderungen.
+
+### Admin-Zugang und Audit
+
+`requireAdminAreaAccess` lässt jede Person in `/admin`, die mindestens ein Recht hat (aus Gruppe oder
+Einzelrecht). Änderungen an Gruppenrechten stehen im globalen Audit-Log (`objekt` = `gruppenrechte`,
+`objekt_id` = Gruppe, `aktion` = `recht_erteilt`/`recht_entzogen`, ein Eintrag pro geändertem Recht);
+Einzelrechte protokolliert der bestehende Trigger auf `person_berechtigungen`.
 
 Details zur Rechte-Matrix pro Admin-Seite: [admin-bereich.md](admin-bereich.md).
 

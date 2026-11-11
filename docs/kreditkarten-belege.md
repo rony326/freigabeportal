@@ -176,7 +176,7 @@ beim Abgleich als Position auf die Stempelseite übernommen wird.
 
 Liste, Neu, Bearbeiten, Deaktivieren/Reaktivieren — gleiches Muster wie
 Konten. Geschützt durch das neue additive Recht `kreditkarten_verwalten`
-(`superadmin` hat es implizit über sein Rollen-Bundle). Das
+(`superadmin` hat es als Startwert der Gruppenrechte). Das
 Bearbeiten-Formular zeigt bei deaktivierter Checkbox „Alle Personen dürfen
 Belege erfassen“ eine Personen-Mehrfachauswahl für `kreditkarte_erfasser`.
 
@@ -553,6 +553,15 @@ selektiert von vornherein nur `status = 'verworfen'`. Wie bei den beiden
 anderen Schritten von `pdf-bereinigung` stoppt ein einzelner
 Lösch-Fehler (z. B. Datei bereits weg oder Berechtigungsproblem) nicht
 die übrigen Belege im selben Lauf.
+
+## Buchungsart der Konten
+
+Das Konto eines Belegs bzw. einer Abgleich-Position muss zur Art der Buchung passen: **positive Beträge
+zählen als Rechnung** (Konto `rechnung` oder `beides`), **negative Beträge (Rückerstattung, Gebühren-Rückvergütung)
+als Gutschrift** (Konto `gutschrift` oder `beides`), konsistent damit, wie der Abgleich negative Zeilen zu
+Gutschrift-Teiljobs macht. Geprüft wird serverseitig beim Hochladen/Bearbeiten eines Belegs und pro Position
+im Abgleich (`kontoErlaubtFuerTyp`); die Konto-Auswahl dieser Seiten ist nicht gefiltert, weil der Typ vom
+Betrag abhängt.
 
 ## Bekannte Grenzen
 

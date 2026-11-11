@@ -5,15 +5,16 @@ import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
+import { startwerteFuerGruppe } from '../../src/services/berechtigungKatalog.js';
 import { loadCurrentPerson } from '../../src/middleware/roles.js';
 import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS, personHasPermission, requirePermission, requireAdminAreaAccess } from '../../src/middleware/permissions.js';
 
 const CONFIG = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
 
-test('GRANTABLE_BERECHTIGUNGEN lists exactly the fifteen catalog permissions, separating sync reading and writing', () => {
+test('GRANTABLE_BERECHTIGUNGEN lists exactly the catalog permissions, separating sync reading and writing', () => {
   assert.deepEqual(
     [...GRANTABLE_BERECHTIGUNGEN].sort(),
-    ['abgelehnt_verwalten', 'audit_log_einsehen', 'betrieb_einsehen', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'kreditoren_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'vorgaenge_einsehen', 'workflow_eingreifen', 'auswertung_einsehen', 'budgets_verwalten'].sort()
+    ['abgelehnt_verwalten', 'audit_log_einsehen', 'betrieb_einsehen', 'geplante_jobs_verwalten', 'konten_verwalten', 'kreditkarten_verwalten', 'kreditoren_verwalten', 'mails_einsehen', 'pool_zuweisen', 'sync_einsehen', 'sync_verwalten', 'vorgaenge_einsehen', 'workflow_eingreifen', 'auswertung_einsehen', 'budgets_verwalten', 'personen_einsehen', 'testmodus_nutzen', 'benachrichtigungen_verwalten', 'erscheinungsbild_verwalten', 'ersteinrichtung_verwalten', 'zeitstempel_verwalten', 'backup_verwalten', 'module_verwalten', 'dateiquarantaene_verwalten', 'wartungsmodus_schalten'].sort()
   );
 });
 
@@ -37,11 +38,12 @@ test('personHasPermission: superadmin has every grantable permission without any
   db.close();
 });
 
-test('personHasPermission: manager must receive explicit grants for sensitive sync writes', () => {
+test('personHasPermission: manager hat genau die Startwert-Rechte der Gruppe', () => {
   const db = openDatabase(':memory:');
   const person = { churchtools_person_id: '1', gruppen: ['30'] };
+  const erwartet = startwerteFuerGruppe('manager');
   for (const permission of GRANTABLE_BERECHTIGUNGEN) {
-    assert.equal(personHasPermission(db, CONFIG, person, permission), !['sync_verwalten', 'workflow_eingreifen', 'betrieb_einsehen'].includes(permission), permission);
+    assert.equal(personHasPermission(db, CONFIG, person, permission), erwartet.includes(permission), permission);
   }
   db.close();
 });

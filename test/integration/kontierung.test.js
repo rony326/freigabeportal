@@ -4163,3 +4163,122 @@ test('Aufsplitten-Warnmail ohne selbst freigegebenes Kind verlinkt den Pool', as
   assert.ok(warnungen.every((m) => m.text.includes('https://portal.example.org/pool')));
   aufraeumen();
 });
+
+// --- Buchungsart der Konten: Kontierung und Aufsplitten ---
+
+function kontierungFormular(extra = {}) {
+  return { absender: 'Muster AG', rechnungsnummer: 'R-1', betrag: '50.00', zahlungsziel: '2026-12-31', interessenskonflikt: 'nein', begruendung: '', ...extra };
+}
+
+function seedKontierbaren(db, buchungsart) {
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  db.prepare('UPDATE konten SET buchungsart = ? WHERE id = ?').run(buchungsart, kontoId);
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  return { kontoId, kreditorId, id };
+}
+
+test('Kontierung als Rechnung mit einem reinen Gutschrift-Konto wird serverseitig abgelehnt, Job unverändert', async () => {
+  const db = openDatabase(':memory:');
+  const { kontoId, kreditorId, id } = seedKontierbaren(db, 'gutschrift');
+  const res = await request(buildTestApp(db, createStubMailer())).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form')
+    .send(kontierungFormular({ kontoId: String(kontoId), kreditorId: String(kreditorId), typ: 'rechnung' }));
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Dieses Konto kann nicht für Rechnungen verwendet werden/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  db.close();
+});
+
+test('Kontierung als Gutschrift mit einem reinen Rechnungs-Konto wird abgelehnt', async () => {
+  const db = openDatabase(':memory:');
+  const { kontoId, kreditorId, id } = seedKontierbaren(db, 'rechnung');
+  const res = await request(buildTestApp(db, createStubMailer())).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form')
+    .send(kontierungFormular({ kontoId: String(kontoId), kreditorId: String(kreditorId), typ: 'gutschrift' }));
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Dieses Konto kann nicht für Gutschriften verwendet werden/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  db.close();
+});
+
+test('Kontierung: passende Buchungsart (rechnung für Rechnung, gutschrift für Gutschrift, beides für beide) wird angenommen', async () => {
+  for (const [art, typ] of [['rechnung', 'rechnung'], ['gutschrift', 'gutschrift'], ['beides', 'rechnung'], ['beides', 'gutschrift']]) {
+    const db = openDatabase(':memory:');
+    const { kontoId, kreditorId, id } = seedKontierbaren(db, art);
+    const res = await request(buildTestApp(db, createStubMailer())).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form')
+      .send(kontierungFormular({ kontoId: String(kontoId), kreditorId: String(kreditorId), typ }));
+    assert.equal(res.status, 302, `${art} für ${typ}`);
+    db.close();
+  }
+});
+
+test('Kontierung mit einem deaktivierten Konto wird abgelehnt', async () => {
+  const db = openDatabase(':memory:');
+  const { kontoId, kreditorId, id } = seedKontierbaren(db, 'beides');
+  deactivateKonto(db, kontoId);
+  const res = await request(buildTestApp(db, createStubMailer())).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form')
+    .send(kontierungFormular({ kontoId: String(kontoId), kreditorId: String(kreditorId), typ: 'rechnung' }));
+  assert.equal(res.status, 400);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  db.close();
+});
+
+test('GET /kontierung/:id: jede Konto-Option trägt data-buchungsart', async () => {
+  const db = openDatabase(':memory:');
+  const { kontoId, id } = seedKontierbaren(db, 'gutschrift');
+  const res = await request(buildTestApp(db, createStubMailer())).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, new RegExp(`<option value="${kontoId}"[^>]*data-buchungsart="gutschrift"`));
+  assert.match(res.text, /kontierung-konto-filter\.js/);
+  db.close();
+});
+
+test('Aufsplitten: Zeile mit nicht passendem Konto wird abgelehnt, nichts gespeichert; passender Typ geht durch', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  db.prepare("UPDATE konten SET buchungsart = 'gutschrift' WHERE id = ?").run(kontoId);
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+  const senden = (typ) => request(app).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form')
+    .send({ kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ, teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'] });
+
+  const abgelehnt = await senden('rechnung');
+  assert.equal(abgelehnt.status, 400);
+  assert.match(abgelehnt.text, /nicht für Rechnungen verwendet werden/);
+  assert.equal(listSplitKinder(db, id).length, 0);
+
+  const ok = await senden('gutschrift');
+  assert.equal(ok.status, 302);
+  assert.equal(listSplitKinder(db, id).length, 2);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /kontierung/:id/aufsplitten: Konto-Optionen tragen data-buchungsart und der Filter-Skript ist eingebunden', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  db.prepare("UPDATE konten SET buchungsart = 'rechnung' WHERE id = ?").run(kontoId);
+  const res = await request(buildTestAppMitDateien(db, createStubMailer(), jobsDir)).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.match(res.text, new RegExp(`<option value="${kontoId}"[^>]*data-buchungsart="rechnung"`));
+  assert.match(res.text, /kontierung-konto-filter\.js/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/lieferanten: Standard-Konto mit reiner Gutschrift-Buchungsart wird abgelehnt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  db.prepare("UPDATE konten SET buchungsart = 'gutschrift' WHERE id = ?").run(kontoId);
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).post('/kontierung/lieferanten').set('x-test-person-id', '1').type('form')
+    .send({ name: 'Neue AG', zahlungsart: 'kreditkarte', kontoId: String(kontoId) });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /Standard-Konto muss Rechnungen erlauben/);
+  db.close();
+});

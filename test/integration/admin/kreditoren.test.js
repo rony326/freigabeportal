@@ -469,3 +469,57 @@ test('GET /admin/kreditoren: Badge IBAN fehlt, Zähler, Zahlungsart-Spalte', asy
   assert.match(res.text, /2 Lieferanten ohne IBAN/);
   db.close();
 });
+
+// --- Buchungsart: das Standard-Konto eines Lieferanten steuert eingehende Rechnungen ---
+
+function seedKontenMitArt(db) {
+  for (const id of ['1', '2', '3', '4']) upsertPerson(db, { id, vorname: `P${id}`, nachname: 'M', email: `p${id}@example.org`, gruppen: [] });
+  const k = (nr, art) => createKonto(db, { kontonummer: nr, bezeichnung: `Konto-${art}`, freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4', buchungsart: art });
+  return { gutschrift: k('7001', 'gutschrift'), rechnung: k('7002', 'rechnung'), beides: k('7003', 'beides') };
+}
+
+test('Kreditor-Formular bietet kein reines Gutschrift-Konto als Standard-Konto an', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  seedKontenMitArt(db);
+  const res = await request(buildTestApp(db)).get('/admin/kreditoren/neu').set('x-test-person-id', '99');
+  assert.doesNotMatch(res.text, /Konto-gutschrift/);
+  assert.match(res.text, /Konto-rechnung/);
+  assert.match(res.text, /Konto-beides/);
+  db.close();
+});
+
+test('Kreditor mit reinem Gutschrift-Konto als Standard-Konto wird beim Anlegen und Ändern abgelehnt', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const konten = seedKontenMitArt(db);
+  const app = buildTestApp(db);
+  const res = await request(app).post('/admin/kreditoren').set('x-test-person-id', '99').type('form')
+    .send({ name: 'Muster AG', zahlungsart: 'kreditkarte', kontoId: String(konten.gutschrift) });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Standard-Konto muss Rechnungen erlauben/);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kreditoren').get().n, 0);
+
+  const ok = await request(app).post('/admin/kreditoren').set('x-test-person-id', '99').type('form')
+    .send({ name: 'Muster AG', zahlungsart: 'kreditkarte', kontoId: String(konten.beides) });
+  assert.equal(ok.status, 302);
+  const id = db.prepare('SELECT id FROM kreditoren').get().id;
+  const upd = await request(app).post(`/admin/kreditoren/${id}`).set('x-test-person-id', '99').type('form')
+    .send({ name: 'Muster AG', zahlungsart: 'kreditkarte', kontoId: String(konten.gutschrift) });
+  assert.equal(upd.status, 400);
+  assert.equal(db.prepare('SELECT konto_id FROM kreditoren WHERE id = ?').get(id).konto_id, konten.beides);
+  db.close();
+});
+
+test('Bearbeiten: ein schon gesetztes Standard-Konto bleibt sichtbar und wird beim Speichern nicht still geleert', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const konten = seedKontenMitArt(db);
+  const app = buildTestApp(db);
+  await request(app).post('/admin/kreditoren').set('x-test-person-id', '99').type('form').send({ name: 'Alt AG', zahlungsart: 'kreditkarte', kontoId: String(konten.beides) });
+  const id = db.prepare('SELECT id FROM kreditoren').get().id;
+  db.prepare("UPDATE konten SET buchungsart = 'gutschrift' WHERE id = ?").run(konten.beides);
+  const form = await request(app).get(`/admin/kreditoren/${id}/bearbeiten`).set('x-test-person-id', '99');
+  assert.match(form.text, new RegExp(`<option value="${konten.beides}" selected>`));
+  db.close();
+});

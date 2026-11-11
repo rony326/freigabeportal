@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { seedGruppenBerechtigungen } from './gruppenBerechtigungenRepo.js';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -102,6 +103,18 @@ const KREDITOREN_TABLE_MIGRATIONS = [
 function migrateKreditorenTable(db) {
   const existing = new Set(db.prepare('PRAGMA table_info(kreditoren)').all().map((col) => col.name));
   for (const { column, ddl } of KREDITOREN_TABLE_MIGRATIONS) {
+    if (!existing.has(column)) db.exec(ddl);
+  }
+}
+
+// Buchungsart pro Konto (Rechnung/Gutschrift/beides); bestehende Konten bleiben 'beides'.
+const KONTEN_TABLE_MIGRATIONS = [
+  { column: 'buchungsart', ddl: "ALTER TABLE konten ADD COLUMN buchungsart TEXT NOT NULL DEFAULT 'beides' CHECK (buchungsart IN ('rechnung', 'gutschrift', 'beides'))" },
+];
+
+function migrateKontenTable(db) {
+  const existing = new Set(db.prepare('PRAGMA table_info(konten)').all().map((col) => col.name));
+  for (const { column, ddl } of KONTEN_TABLE_MIGRATIONS) {
     if (!existing.has(column)) db.exec(ddl);
   }
 }
@@ -1288,6 +1301,7 @@ export function openDatabase(dbPath) {
   migrateCronLogTableFreigabe2Erinnerungen(db);
   migratePersonenTable(db);
   migrateKreditorenTable(db);
+  migrateKontenTable(db);
   migrateFreigabenTableVertretung(db);
   migrateKreditkartenChecks(db);
   migrateMailLogSicherheitsalarm(db);
@@ -1315,5 +1329,6 @@ export function openDatabase(dbPath) {
   migrateSicherheitsalarmSchema(db);
   migrateTsaNachweisSchema(db);
   migrateAuditExportSchema(db);
+  seedGruppenBerechtigungen(db);
   return db;
 }

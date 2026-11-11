@@ -3,7 +3,7 @@ import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { listKonten } from '../db/kontenRepo.js';
+import { listKonten, filterKontenFuerTyp, kontoErlaubtFuerTyp } from '../db/kontenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { createSpesenabrechnung } from '../db/spesenabrechnungenRepo.js';
 import { createSpesenPosition, getJobById } from '../db/jobsRepo.js';
@@ -42,7 +42,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
 
   router.get('/neu', (req, res) => {
     res.render('spesen-neu', {
-      alleKonten: listKonten(db),
+      alleKonten: filterKontenFuerTyp(listKonten(db), 'rechnung'),
       values: { titel: '', positionen: [{}, {}] },
       errors: [],
     });
@@ -56,7 +56,8 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {
-          const alleKonten = listKonten(db);
+          const aktiveKonten = listKonten(db);
+          const alleKonten = filterKontenFuerTyp(aktiveKonten, 'rechnung');
           const titel = (req.body.titel || '').trim() || null;
           const kontoIds = [].concat(req.body.posKontoId || []);
           const betraege = [].concat(req.body.posBetrag || []);
@@ -101,9 +102,13 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
           }
 
           positionen.forEach((pos, i) => {
-            const konto = alleKonten.find((k) => String(k.id) === pos.kontoId);
+            const konto = aktiveKonten.find((k) => String(k.id) === pos.kontoId);
             if (!konto) {
               errors.push(`Position ${i + 1}: Bitte ein gültiges Konto wählen.`);
+              return;
+            }
+            if (!kontoErlaubtFuerTyp(konto, 'rechnung')) {
+              errors.push(`Position ${i + 1}: Dieses Konto kann nicht für Rechnungen verwendet werden.`);
               return;
             }
             if (!BETRAG_PATTERN.test(pos.betrag)) {

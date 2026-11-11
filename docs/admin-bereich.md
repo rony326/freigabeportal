@@ -61,39 +61,40 @@ kleinen Bildschirmen. Schlüsseltabelle und Cookie-Logik:
 
 ## Rechte-Matrix
 
+Welche Gruppe welches Recht hat, stellt ein Superadmin unter [Gruppenrechte](#gruppenrechte-admingruppenrechte) ein; Startwerte und die Regel «Vereinigung aus Gruppen- und Einzelrechten» stehen in [auth-und-rechte.md](auth-und-rechte.md). Die Spalte nennt das Recht, das die Route prüft.
+
 | Seite | Route | benötigtes Recht |
 |---|---|---|
-| Übersicht | `/admin` | jedes Einzelrecht, `superadmin` oder `manager` |
-| Konten | `/admin/konten` | Einzelrecht `konten_verwalten` |
-| Kreditoren | `/admin/kreditoren` | Einzelrecht `kreditoren_verwalten` |
-| Benachrichtigungen | `/admin/benachrichtigungen` (+ `/:id`, `/:id/zuruecksetzen`, `/:id/test-mail`, `/zusammenfassung/jetzt-ausfuehren`) | **nur** `superadmin`; ersetzt Eskalationszeiten und Mail-Einstellungen (alte URLs leiten per GET weiter) |
-| Erscheinungsbild | `/admin/erscheinungsbild` | **nur** `superadmin` |
-| Zeitstempel | `/admin/zeitstempel` | **nur** `superadmin` |
-| Personen | `/admin/personen` | `superadmin` oder `manager` |
+| Übersicht | `/admin` | mindestens ein Recht (aus Gruppe oder Einzelrecht) |
+| Konten | `/admin/konten` | Recht `konten_verwalten`; pro Konto die **Buchungsart** (Rechnung / Gutschrift / Rechnung / Gutschrift), siehe [rechnungs-workflow.md](rechnungs-workflow.md) |
+| Kreditoren | `/admin/kreditoren` | Recht `kreditoren_verwalten`; das Standard-Konto muss Rechnungen erlauben (Buchungsart `rechnung` oder `beides`), reine Gutschrift-Konten stehen nicht zur Auswahl |
+| Benachrichtigungen | `/admin/benachrichtigungen` (+ `/:id`, `/:id/zuruecksetzen`, `/:id/test-mail`, `/zusammenfassung/jetzt-ausfuehren`) | `benachrichtigungen_verwalten`; ersetzt Eskalationszeiten und Mail-Einstellungen (alte URLs leiten per GET weiter) |
+| Erscheinungsbild | `/admin/erscheinungsbild` | `erscheinungsbild_verwalten` |
+| Zeitstempel | `/admin/zeitstempel` | `zeitstempel_verwalten` |
+| Personen | `/admin/personen` | `personen_einsehen`; Einzelrechte setzen: `gruppenrechte_verwalten` |
+| Gruppenrechte | `/admin/gruppenrechte` | `gruppenrechte_verwalten` (fest für `superadmin`) |
 | Mail-Protokoll | `/admin/mails` | Einzelrecht `mails_einsehen` |
 | Personen-Sync | `/admin/sync` | `sync_einsehen`; Konfiguration zusätzlich `sync_verwalten`, Force-Aktionen zusätzlich `workflow_eingreifen` |
 | Laufende Vorgänge | `/admin/vorgaenge` | Einzelrecht `vorgaenge_einsehen` (Umhängen: `workflow_eingreifen`); `superadmin` ✓, `manager` ✓ (nur ansehen); bei Rapporten Ersetzen/Entfernen/Aufheben ebenfalls `workflow_eingreifen` |
 | Abgelehnte Rechnungen | `/admin/abgelehnt` | Einzelrecht `abgelehnt_verwalten` |
-| Altfälle | `/admin/altfaelle` | Einzelrecht `workflow_eingreifen` (nicht im Manager-Bündel) |
+| Altfälle | `/admin/altfaelle` | Recht `workflow_eingreifen` (Startwert: nicht für Manager) |
 | Geplante Jobs | `/admin/geplante-jobs` | Einzelrecht `geplante_jobs_verwalten` |
 | Audit-Log | `/admin/audit-log` | Einzelrecht `audit_log_einsehen` |
-| Datenbank-Backup | `/admin/backup` | **nur** `superadmin` |
-| Datei-Quarantäne | `/admin/dateiquarantaene` | **nur** `superadmin` (verwaiste finale Dokumente zurückholen/löschen, Begründung Pflicht) |
+| Datenbank-Backup | `/admin/backup` | `backup_verwalten` |
+| Datei-Quarantäne | `/admin/dateiquarantaene` | `dateiquarantaene_verwalten` (verwaiste finale Dokumente zurückholen/löschen, Begründung Pflicht) |
 | Betrieb & Nutzung | `/admin/betrieb` (+ `/personen/:id`, `/fehler`, `/fehler/:requestId`, `/meldungen`, `/meldungen/:id`, `/banner`, `/datenschutz`, `/status`) | Einzelrecht `betrieb_einsehen`; `superadmin` ✓, `manager` ✗ — siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md); Status: [statusseite-und-monitoring.md](statusseite-und-monitoring.md) |
 | Kreditkarten | `/admin/kreditkarten` | Einzelrecht `kreditkarten_verwalten` |
 | Budgets | `/admin/budgets` (+ `/import`, `/import/vorschau`, `/import/bestaetigen`) | Einzelrecht `budgets_verwalten`; `superadmin` ✓, `manager` ✓ — Budget pro Konto und Jahr, Import aus Excel/CSV mit Vorschau, siehe [auswertung.md](auswertung.md#budgets-pflegen) |
-| Module | `/admin/module` | **nur** `superadmin`; enthält auch die Schwelle «länger offen» der Auswertung (`auswertung_offen_schwelle_tage`, 1–365, Standard 14) |
-| Ersteinrichtung | `/admin/ersteinrichtung` | **nur** `superadmin`; geführter Assistent mit 14 Schritten (8 Pflicht), technische Prüfung, ChurchTools-Test, Testmail, Kernjobs auslösen; Hinweis auf dem Admin-Dashboard ("später" blendet ihn 7 Tage aus); Statusdienst `einrichtung` |
-| Testmodus | `/admin/testmodus` | `superadmin` oder `manager`; Spielwiese zum gefahrlosen Ausprobieren, siehe [testmodus.md](testmodus.md) |
+| Module | `/admin/module` | `module_verwalten`; enthält auch die Schwelle «länger offen» der Auswertung (`auswertung_offen_schwelle_tage`, 1–365, Standard 14) |
+| Ersteinrichtung | `/admin/ersteinrichtung` | `ersteinrichtung_verwalten`; geführter Assistent mit 14 Schritten (8 Pflicht), technische Prüfung, ChurchTools-Test, Testmail, Kernjobs auslösen; Hinweis auf dem Admin-Dashboard ("später" blendet ihn 7 Tage aus); Statusdienst `einrichtung` |
+| Wartungsmodus | `/admin/wartungsmodus` | `wartungsmodus_schalten` (Standard nur Superadmin); siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md#wartungsmodus-für-updates) |
+| Testmodus | `/admin/testmodus` | `testmodus_nutzen`; Spielwiese zum gefahrlosen Ausprobieren, siehe [testmodus.md](testmodus.md) |
 
 Die Seite **Laufende Vorgänge** zeigt alle Vorgänge in `unzugewiesen`, `zugewiesen`, `freigabe2` und `abgelehnt`; mit `workflow_eingreifen` lassen sie sich umhängen. Details: [rechnungs-workflow.md](rechnungs-workflow.md#8-admin-eingriff-laufende-vorgänge-umhängen).
 
 **Rapporte im Dashboard:** Die Liste zeigt auch Rapporte (Status `kenntnisnahme`) mit der Art «Rapport» und dem Stand «n von m» bestätigt; Filter `?typ=rapport`. Auf der Detailseite kann man mit `workflow_eingreifen` je offener Empfängerin bzw. offenem Empfänger **Ersetzen** (neue Person, per Mail informiert) oder **Entfernen** (Begründung mindestens 10 Zeichen) und die ganze Markierung **Aufheben**. Das allgemeine Umhängen ist für Rapporte nicht vorgesehen. Siehe [rechnungs-workflow.md](rechnungs-workflow.md#9-rapporte-status-kenntnisnahme).
 
-Die mit **nur `superadmin`** markierten Bereiche lassen sich als
-Einzelrecht gar nicht vergeben — strukturell abgesichert über den
-`CHECK`-Constraint auf `person_berechtigungen` (siehe
-[datenmodell.md](datenmodell.md#person_berechtigungen)).
+Jeder Bereich hat genau ein Recht, das einer Gruppe oder einer Person zugewiesen werden kann; nur `gruppenrechte_verwalten` ist fest für `superadmin` und nicht vergebbar (siehe [auth-und-rechte.md](auth-und-rechte.md)).
 
 ## Konten (`/admin/konten`)
 
@@ -286,14 +287,22 @@ Gedacht als Sammelstelle für künftige, ebenfalls unabhängig einführbare Modu
 Nur Superadmin. Geführter Assistent mit 14 Schritten (8 Pflicht), technischer Prüfung, ChurchTools-Test, Testmail und
 Auslösen der Kernjobs; Hinweis auf dem Dashboard, den "später" 7 Tage ausblendet. Details: [ersteinrichtung.md](ersteinrichtung.md).
 
+## Gruppenrechte (`/admin/gruppenrechte`)
+
+Recht `gruppenrechte_verwalten` (fest für `superadmin`, nicht abschaltbar). Eine Matrix mit allen Rechten
+(gruppiert nach Vorgänge, Stammdaten, Einstellungen, Betrieb) und den drei Gruppen `superadmin`, `manager`
+und `buchhaltung`; pro Zelle eine Checkbox. «Speichern» ersetzt die Rechte aller drei Gruppen, die Wirkung
+gilt sofort. Jede Änderung steht im Audit-Log (ein Eintrag pro Recht und Gruppe). Details:
+[auth-und-rechte.md](auth-und-rechte.md).
+
 ## Personen (`/admin/personen`)
 
-Read-only-Liste aller aus ChurchTools synchronisierten Personen mit
-abgeleiteter Rolle (Superadmin/Manager/Benutzer). Aktive Personen ohne
+Liste aller aus ChurchTools synchronisierten Personen mit
+abgeleiteter Rolle und den effektiven Rechten samt Herkunft («direkt», «über Gruppe X») (Superadmin/Manager/Benutzer). Aktive Personen ohne
 Verwaltungsgruppe werden neutral als „Portalzugang über ChurchTools-Login“
 gekennzeichnet (kein Fehlerzustand); bei deaktivierten Personen steht der
 Grund (in ChurchTools gelöscht bzw. archiviert) samt Datum — siehe
-[personen-sync.md](personen-sync.md). Nur ein `superadmin`
+[personen-sync.md](personen-sync.md). Wer `gruppenrechte_verwalten` hat,
 kann hier zusätzlich die additiven Einzelrechte pro Person setzen
 (`POST /admin/personen/:id/berechtigungen`) — siehe
 [auth-und-rechte.md](auth-und-rechte.md).
@@ -364,9 +373,8 @@ alle Jobs) und `job_loeschungen` (das Löschprotokoll endgültig gelöschter
 Rechnungen) sowie `kk_beleg_ereignisse` (Kreditkartenbelege vor ihrer
 Zuordnung zu einem Job). Filterbar nach Person, Konto, Zeitraum (Von/Bis) sowie
 Ereignis-Typ, zusätzlich eine Freitext-Suche über Kommentar/Begründung
-und Dateiname. Einzelrecht `audit_log_einsehen` — `superadmin` und
-`manager` erhalten es automatisch über ihr Rollen-Bundle, sonst gilt
-dieselbe additive Vergabe wie bei den übrigen vergebbaren Bereichen
+und Dateiname. Einzelrecht `audit_log_einsehen` — Gruppen und Personen erhalten es über die
+Gruppenrechte bzw. als Einzelrecht (additiv wie bei den übrigen Bereichen)
 (siehe [auth-und-rechte.md](auth-und-rechte.md)).
 
 Zusätzlich zeigt die ungefilterte Seite die zentralen Änderungen aus

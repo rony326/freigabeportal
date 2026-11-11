@@ -15,8 +15,12 @@
               <td data-label="Status"><span class="badge <%= p.aktiv ? 'text-bg-success' : 'text-bg-secondary' %>"><%= p.aktiv ? 'Aktiv' : 'Inaktiv' %></span></td>
               <td data-label="Rolle"><span class="badge text-bg-info"><%= p.rolle %></span></td>
               <td data-label="Einzelrechte" class="stapel-block">
-                <% if (p.rolle !== 'Benutzer') { %>
-                  <span class="text-muted small">bereits über Rolle <%= p.rolle %> enthalten</span>
+                <% if (p.rechteHerkunft.length > 0) { %>
+                  <ul class="list-unstyled small mb-1 personen-herkunft">
+                    <% p.rechteHerkunft.forEach((r) => { %>
+                      <li data-herkunft="<%= r.recht %>"><%= r.label %> <span class="text-muted">(<%= r.quellen.join(', ') %>)</span></li>
+                    <% }) %>
+                  </ul>
                 <% } %>
                 <% if (bearbeitbar) { %>
                 <form method="post" action="/admin/personen/<%= p.churchtools_person_id %>/berechtigungen" class="personen-rechte d-flex flex-wrap gap-2 mt-1">
@@ -31,7 +35,7 @@
                         id="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"
                         <%= p.berechtigungen.includes(berechtigung) ? 'checked' : '' %>
                       >
-                      <label class="form-check-label small" for="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"><%= berechtigungLabels[berechtigung] %></label>
+                      <label class="form-check-label small" for="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"><%= berechtigungLabels[berechtigung] %></label><% const ausGruppe = p.rechteHerkunft.find((r) => r.recht === berechtigung); %><% if (ausGruppe && ausGruppe.gruppen.length) { %><span class="text-muted small ms-1">auch über Gruppe <%= ausGruppe.gruppen.join(', ') %></span><% } %>
                     </div>
                   <% }) %>
                   <button type="submit" class="btn btn-sm btn-outline-primary">Speichern</button>
@@ -49,7 +53,7 @@
                         <%= p.berechtigungen.includes(berechtigung) ? 'checked' : '' %>
                         disabled
                       >
-                      <label class="form-check-label small" for="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"><%= berechtigungLabels[berechtigung] %></label>
+                      <label class="form-check-label small" for="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"><%= berechtigungLabels[berechtigung] %></label><% const ausGruppe = p.rechteHerkunft.find((r) => r.recht === berechtigung); %><% if (ausGruppe && ausGruppe.gruppen.length) { %><span class="text-muted small ms-1">auch über Gruppe <%= ausGruppe.gruppen.join(', ') %></span><% } %>
                     </div>
                   <% }) %>
                 </div>

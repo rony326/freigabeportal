@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createPublicRateLimiter } from '../middleware/rateLimit.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
+import { istWartungsmodusAktiv } from '../services/wartungsmodus.js';
 import { createStatusCache, pruefeDatenbank } from '../services/statusPruefungen.js';
 import { createTsaErreichbarkeit } from '../services/statusTsa.js';
 
@@ -28,7 +29,7 @@ export function createHealthzRouter({
     }
     // Zwischengespeichert (30 s), gemeinsam mit Statusseite und Dashboard.
     const ergebnis = statusCache.ergebnis();
-    const body = { status: ergebnis.status, geprueft_am: ergebnis.geprueft_am, version: versionFn(), dienste: ergebnis.dienste };
+    const body = { status: ergebnis.status, geprueft_am: ergebnis.geprueft_am, version: versionFn(), wartungsmodus: istWartungsmodusAktiv(db), dienste: ergebnis.dienste };
     res.status(ergebnis.dienste.datenbank?.status === 'fehler' ? 503 : 200).json(body);
   });
   return router;

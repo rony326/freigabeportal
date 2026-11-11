@@ -355,3 +355,35 @@ test('POST /spesen rejects a damaged or encrypted PDF Beleg with an understandab
     db.close();
   }
 });
+
+// --- Buchungsart: Spesen zählen als Rechnung ---
+
+test('Spesen: reine Gutschrift-Konten stehen nicht zur Auswahl, Rechnung und beides schon', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedGrundlagen(db);
+  createKonto(db, { kontonummer: '2000', bezeichnung: 'NurGutschrift', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4', buchungsart: 'gutschrift' });
+  createKonto(db, { kontonummer: '3000', bezeichnung: 'NurRechnung', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4', buchungsart: 'rechnung' });
+  const res = await request(buildTestApp(db, createStubMailer())).get('/spesen/neu').set('x-test-person-id', '5');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /NurGutschrift/);
+  assert.match(res.text, /NurRechnung/);
+  assert.match(res.text, /Reisespesen/);
+  db.close();
+});
+
+test('POST /spesen mit einem reinen Gutschrift-Konto wird abgelehnt, kein Job angelegt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedGrundlagen(db);
+  const gutschriftKonto = createKonto(db, { kontonummer: '2000', bezeichnung: 'NurGutschrift', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4', buchungsart: 'gutschrift' });
+  const pdf = await buildPdfFixture(['Beleg']);
+  const res = await request(buildTestApp(db, createStubMailer()))
+    .post('/spesen').set('x-test-person-id', '5').field('_csrf', 'valid-token')
+    .field('posKontoId', String(gutschriftKonto)).field('posBetrag', '10.00').field('posAuslageDatum', '2026-08-20').field('posBeschreibung', 'x')
+    .attach('posBeleg_0', pdf, { filename: 'a.pdf', contentType: 'application/pdf' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /kann nicht für Rechnungen verwendet werden/);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE quelle = 'spesen'").get().n, 0);
+  db.close();
+});

@@ -1,0 +1,55 @@
+<%- include('../_seite_anfang', { titel: 'Gruppenrechte' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Gruppenrechte</h1>
+    </div>
+    <p class="text-muted">Lege fest, welche Bereiche des Admin-Bereichs die ChurchTools-Gruppen nutzen dürfen. Die Rechte einer Person sind die Summe aus ihren Gruppen und ihren Einzelrechten (unter «Personen»). «Gruppenrechte verwalten» ist für Superadmin fest gesetzt, damit sich niemand aussperren kann.</p>
+    <form method="post" action="/admin/gruppenrechte">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <div class="table-responsive">
+        <table class="table align-middle gruppenrechte-tabelle">
+          <thead>
+            <tr>
+              <th scope="col">Recht</th>
+              <% gruppen.forEach((gruppe) => { %><th scope="col" class="text-center"><%= gruppenLabel[gruppe] %></th><% }) %>
+            </tr>
+          </thead>
+          <% bereiche.forEach((bereich) => { %>
+          <tbody>
+            <tr class="table-light"><th scope="rowgroup" colspan="<%= gruppen.length + 1 %>"><%= bereich.titel %></th></tr>
+            <% bereich.rechte.forEach((recht) => { %>
+              <% const fest = festeRechte.includes(recht); %>
+              <tr>
+                <td><%= labels[recht] %><% if (fest) { %> <span class="text-muted small">(fest für Superadmin)</span><% } %></td>
+                <% gruppen.forEach((gruppe) => { %>
+                  <td class="text-center">
+                    <% if (fest && gruppe !== 'superadmin') { %>
+                      <span class="text-muted" aria-hidden="true">–</span>
+                    <% } else { %>
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        id="recht-<%= gruppe %>-<%= recht %>"
+                        name="recht_<%= gruppe %>"
+                        value="<%= recht %>"
+                        aria-label="<%= labels[recht] %> für <%= gruppenLabel[gruppe] %>"
+                        <%= rechte[gruppe].includes(recht) ? 'checked' : '' %>
+                        <%= fest ? 'disabled' : '' %>
+                      >
+                    <% } %>
+                  </td>
+                <% }) %>
+              </tr>
+            <% }) %>
+          </tbody>
+          <% }) %>
+        </table>
+      </div>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+      <% if (gespeichert) { %>
+        <div class="alert alert-success alert-dismissible alert-kompakt fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">
+          Gespeichert.
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schliessen"></button>
+        </div>
+      <% } %>
+    </form>
+<%- include('../_seite_ende') %>

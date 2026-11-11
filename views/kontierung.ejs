@@ -43,9 +43,10 @@
                 <select class="form-select<%= ff.kontoId ? ' is-invalid' : '' %>" id="kontoId" name="kontoId" required data-searchable<%- ffAttr(ff, 'kontoId') %>>
                   <option value="">— wählen —</option>
                   <% konten.forEach((k) => { %>
-                    <option value="<%= k.id %>" <%= String(k.id) === values.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+                    <option value="<%= k.id %>" data-buchungsart="<%= k.buchungsart %>" <%= String(k.id) === values.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
                   <% }) %>
                 </select>
+                <div class="form-text text-warning" id="konto-typ-hinweis" role="status" aria-live="polite" hidden>Das gewählte Konto passt nicht zum Typ – bitte neu wählen.</div>
 <% if (ff.kontoId) { %><div class="invalid-feedback d-block" id="kontoId-fehler"><%= ff.kontoId %></div><% } %>
               </div>
 
@@ -293,7 +294,7 @@
               <label class="form-label" for="neuer-lieferant-konto">Konto (optional)</label>
               <select class="form-select" id="neuer-lieferant-konto" data-searchable>
                 <option value="">— kein Konto —</option>
-                <% konten.forEach((k) => { %>
+                <% konten.filter((k) => k.buchungsart !== 'gutschrift').forEach((k) => { %>
                   <option value="<%= k.id %>"><%= k.kontonummer %> — <%= k.bezeichnung %></option>
                 <% }) %>
               </select>
@@ -308,6 +309,7 @@
     </div>
     <% } %>
   <script src="/js/kontierung-iban.js?v=<%= locals.assetVersion || 0 %>" defer></script>
+  <script src="/js/kontierung-konto-filter.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <% if (locals.auffaelligkeiten) { %><script src="/js/auffaelligkeiten.js?v=<%= locals.assetVersion || 0 %>" defer></script><% } %>
   <script nonce="<%= locals.cspNonce %>">
     // Eingebettetes PDF, "Vorschau neu laden" und Beleg/Formular-Umschalter: public/js/belegUmschalter.js.
@@ -500,7 +502,7 @@
           var lower = (filterText || '').toLowerCase();
           var any = false;
           Array.prototype.forEach.call(select.options, function (opt) {
-            if (!opt.value) return; // skip the "— wählen —" placeholder
+            if (!opt.value || opt.disabled) return; // skip the "— wählen —" placeholder and Konten, die nicht zum Typ passen
             var label = optionLabel(opt);
             if (lower && label.toLowerCase().indexOf(lower) === -1) return;
             any = true;

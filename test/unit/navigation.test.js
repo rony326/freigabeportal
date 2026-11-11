@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { bereichFuerPfad, istAktiv, bauePortalGruppen, baueAdminGruppen } from '../../src/services/navigation.js';
 
-const ADMIN_KEYS = ['vorgaenge', 'konten', 'kreditoren', 'benachrichtigungen', 'erscheinungsbild', 'zeitstempel', 'personen', 'mails', 'sync', 'geplanteJobs', 'abgelehnt', 'auditLog', 'backup', 'module', 'ersteinrichtung', 'kreditkarten', 'altfaelle', 'betrieb', 'testmodus'];
+const ADMIN_KEYS = ['vorgaenge', 'konten', 'kreditoren', 'benachrichtigungen', 'erscheinungsbild', 'zeitstempel', 'personen', 'mails', 'sync', 'geplanteJobs', 'abgelehnt', 'auditLog', 'backup', 'dateiquarantaene', 'module', 'ersteinrichtung', 'gruppenrechte', 'kreditkarten', 'altfaelle', 'betrieb', 'testmodus', 'wartungsmodus'];
 const adminNav = (fn) => Object.fromEntries(ADMIN_KEYS.map((k) => [k, fn(k)]));
 const portal = (o = {}) => bauePortalGruppen({ pfad: '/pool', spesenModulAktiv: true, zeigeKreditkarteNav: true, offeneAufgaben: 0, ...o });
 const finde = (gruppen, label) => gruppen.flatMap((g) => g.punkte).find((p) => p.label === label);
@@ -19,15 +19,17 @@ test('Admin-Gruppen in Reihenfolge Vorgänge, Stammdaten, Einstellungen, Betrieb
   assert.deepEqual(gruppen.map((g) => g.punkte.map((p) => p.label)), [
     ['Laufende Vorgänge', 'Abgelehnte Rechnungen', 'Altfälle'],
     ['Konten', 'Kreditoren', 'Kreditkarten', 'Personen'],
-    ['Benachrichtigungen', 'Erscheinungsbild', 'Module', 'Zeitstempel', 'Ersteinrichtung'],
-    ['Datenbank-Backup', 'Datei-Quarantäne', 'Mail-Protokoll', 'Sync-Übersicht', 'Geplante Jobs', 'Audit-Log', 'Betrieb & Nutzung', 'Testmodus'],
+    ['Benachrichtigungen', 'Erscheinungsbild', 'Module', 'Zeitstempel', 'Ersteinrichtung', 'Gruppenrechte'],
+    ['Datenbank-Backup', 'Datei-Quarantäne', 'Mail-Protokoll', 'Sync-Übersicht', 'Geplante Jobs', 'Audit-Log', 'Betrieb & Nutzung', 'Testmodus', 'Wartungsmodus'],
   ]);
   assert.ok(gruppen.flatMap((g) => g.punkte).every((p) => p.symbol && !p.aktiv));
 });
 
-test('Admin: Datei-Quarantäne hängt am Flag backup', () => {
-  const g = baueAdminGruppen({ pfad: '/x', adminNav: adminNav((k) => k === 'backup') });
-  assert.deepEqual(g.flatMap((x) => x.punkte).map((p) => p.href), ['/admin/backup', '/admin/dateiquarantaene']);
+test('Admin: Datei-Quarantäne hängt am eigenen Flag dateiquarantaene, nicht an backup', () => {
+  const g = baueAdminGruppen({ pfad: '/x', adminNav: adminNav((k) => k === 'dateiquarantaene') });
+  assert.deepEqual(g.flatMap((x) => x.punkte).map((p) => p.href), ['/admin/dateiquarantaene']);
+  const b = baueAdminGruppen({ pfad: '/x', adminNav: adminNav((k) => k === 'backup') });
+  assert.deepEqual(b.flatMap((x) => x.punkte).map((p) => p.href), ['/admin/backup']);
 });
 
 test('istAktiv: Unterseite markiert, Präfix ohne Pfadgrenze nicht', () => {

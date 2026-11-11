@@ -1,5 +1,21 @@
 import { getPersonById, listActivePersons } from './personenRepo.js';
 
+export const BUCHUNGSARTEN = ['rechnung', 'gutschrift', 'beides'];
+export const BUCHUNGSART_LABEL = { rechnung: 'Rechnung', gutschrift: 'Gutschrift', beides: 'Rechnung / Gutschrift' };
+
+// Rechnung -> Konten 'rechnung' und 'beides'; Gutschrift -> 'gutschrift' und 'beides'. Andere Typen
+// (z. B. Rapport) und Konten ohne Angabe schränken nicht ein.
+export function kontoErlaubtFuerTyp(konto, typ) {
+  if (typ !== 'rechnung' && typ !== 'gutschrift') return true;
+  const art = konto?.buchungsart;
+  if (!art || art === 'beides') return true;
+  return art === typ;
+}
+
+export function filterKontenFuerTyp(konten, typ) {
+  return konten.filter((konto) => kontoErlaubtFuerTyp(konto, typ));
+}
+
 const ROLE_KEYS = ['freigeber1Id', 'stellvertreter1Id', 'freigeber2Id', 'stellvertreter2Id'];
 const ROLE_LABELS = {
   freigeber1Id: 'Freigeber 1',
@@ -41,21 +57,23 @@ export function validateKontoRoles(db, roles, existingRoles = {}) {
   return errors;
 }
 
-export function createKonto(db, { kontonummer, bezeichnung, freigeber1Id, stellvertreter1Id, freigeber2Id, stellvertreter2Id }) {
+export function createKonto(db, { kontonummer, bezeichnung, freigeber1Id, stellvertreter1Id, freigeber2Id, stellvertreter2Id, buchungsart = 'beides' }) {
   const result = db
     .prepare(
-      `INSERT INTO konten (kontonummer, bezeichnung, freigeber1_id, stellvertreter1_id, freigeber2_id, stellvertreter2_id, aktiv)
-       VALUES (?, ?, ?, ?, ?, ?, 1)`
+      `INSERT INTO konten (kontonummer, bezeichnung, freigeber1_id, stellvertreter1_id, freigeber2_id, stellvertreter2_id, aktiv, buchungsart)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?)`
     )
-    .run(kontonummer, bezeichnung, freigeber1Id, stellvertreter1Id, freigeber2Id, stellvertreter2Id);
+    .run(kontonummer, bezeichnung, freigeber1Id, stellvertreter1Id, freigeber2Id, stellvertreter2Id, buchungsart);
   return Number(result.lastInsertRowid);
 }
 
-export function updateKonto(db, id, { kontonummer, bezeichnung, freigeber1Id, stellvertreter1Id, freigeber2Id, stellvertreter2Id }) {
+// buchungsart ist optional: fehlt sie, bleibt der gespeicherte Wert.
+export function updateKonto(db, id, { kontonummer, bezeichnung, freigeber1Id, stellvertreter1Id, freigeber2Id, stellvertreter2Id, buchungsart = null }) {
   db.prepare(
-    `UPDATE konten SET kontonummer = ?, bezeichnung = ?, freigeber1_id = ?, stellvertreter1_id = ?, freigeber2_id = ?, stellvertreter2_id = ?
+    `UPDATE konten SET kontonummer = ?, bezeichnung = ?, freigeber1_id = ?, stellvertreter1_id = ?, freigeber2_id = ?, stellvertreter2_id = ?,
+       buchungsart = COALESCE(?, buchungsart)
      WHERE id = ?`
-  ).run(kontonummer, bezeichnung, freigeber1Id, stellvertreter1Id, freigeber2Id, stellvertreter2Id, id);
+  ).run(kontonummer, bezeichnung, freigeber1Id, stellvertreter1Id, freigeber2Id, stellvertreter2Id, buchungsart, id);
 }
 
 export function deactivateKonto(db, id) {

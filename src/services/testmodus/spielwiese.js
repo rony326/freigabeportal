@@ -1,4 +1,6 @@
 import { existsSync, rmSync, mkdirSync, cpSync } from 'node:fs';
+import { GRUPPEN } from '../berechtigungKatalog.js';
+import { listGruppenBerechtigungen, setGruppenBerechtigungen } from '../../db/gruppenBerechtigungenRepo.js';
 import { join, basename, resolve, relative, isAbsolute } from 'node:path';
 import { createHmac } from 'node:crypto';
 import { openDatabase } from '../../db/index.js';
@@ -40,6 +42,8 @@ const GEHEIM = /secret|token|pass|key/i;
 const NICHT_KOPIEREN = new Set([
   'zeitstempel_tsa_url', 'zeitstempel_tsa_user', 'zeitstempel_tsa_passwort', 'monitoring_secret',
   'testmodus_bereit',
+  // Der Wartungsmodus der echten App gilt nicht für die Spielwiese.
+  'wartungsmodus_aktiv', 'wartungsmodus_hinweis',
 ]);
 
 export function kopierbareEinstellung(key) {
@@ -135,6 +139,10 @@ export async function erstelleSpielwiese(echteDb, config, { neu = false } = {}) 
   const ins = db.prepare('INSERT INTO admin_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
   for (const row of echteDb.prepare('SELECT key, value FROM admin_config').all()) {
     if (kopierbareEinstellung(row.key)) ins.run(row.key, row.value);
+  }
+  // Gruppenrechte der echten App übernehmen, damit die Beispielpersonen die konfigurierten Rechte zeigen.
+  for (const gruppe of GRUPPEN) {
+    setGruppenBerechtigungen(db, gruppe, listGruppenBerechtigungen(echteDb, gruppe));
   }
   if (config.brandingDir && existsSync(config.brandingDir)) {
     cpSync(config.brandingDir, pfade.brandingDir, { recursive: true });

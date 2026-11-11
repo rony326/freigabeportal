@@ -196,3 +196,7 @@ Spielwiese erst nach einem Zurücksetzen.
 
 Die Weiche und die Test-Instanz sind in [architektur.md](architektur.md#testmodus-weiche-und-test-instanz)
 beschrieben. Entwurf: [`superpowers/specs/2026-10-25-testmodus-design.md`](superpowers/specs/2026-10-25-testmodus-design.md).
+
+## Gruppenrechte und Wartungsmodus
+
+Beim Aufbau der Spielwiese werden die **Gruppenrechte** der echten App übernommen (`gruppen_berechtigungen`), damit die Beispielpersonen die konfigurierten Rechte zeigen. Der **Wartungsmodus** der echten App wird nicht kopiert und gilt in der Spielwiese nicht.

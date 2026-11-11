@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createKonto, updateKonto, deactivateKonto, activateKonto, getKontoById, listKonten, validateKontoRoles } from '../../db/kontenRepo.js';
+import { BUCHUNGSARTEN, BUCHUNGSART_LABEL, createKonto, updateKonto, deactivateKonto, activateKonto, getKontoById, listKonten, validateKontoRoles } from '../../db/kontenRepo.js';
 import { listActivePersons, getPersonById } from '../../db/personenRepo.js';
 
 function personDisplayName(db, id) {
@@ -15,7 +15,17 @@ function readRoleFields(body) {
     stellvertreter1Id: body.stellvertreter1Id,
     freigeber2Id: body.freigeber2Id,
     stellvertreter2Id: body.stellvertreter2Id,
+    buchungsart: body.buchungsart,
   };
+}
+
+// Fehlt die Buchungsart im Formular, bleibt sie beim Bearbeiten unverändert und ist beim Anlegen 'beides'.
+function pruefeBuchungsart(values, errors) {
+  if (values.buchungsart === undefined || values.buchungsart === '') {
+    values.buchungsart = undefined;
+    return;
+  }
+  if (!BUCHUNGSARTEN.includes(values.buchungsart)) errors.push('Buchungsart: bitte Rechnung, Gutschrift oder Rechnung / Gutschrift wählen.');
 }
 
 export function createKontenRouter({ db, csrfProtection = (req, res, next) => next() }) {
@@ -28,21 +38,22 @@ export function createKontenRouter({ db, csrfProtection = (req, res, next) => ne
       freigeber1Name: personDisplayName(db, konto.freigeber1_id),
       freigeber2Name: personDisplayName(db, konto.freigeber2_id),
     }));
-    res.render('admin/konten-liste', { konten, zeigtAlle, gespeichert: req.query.gespeichert === '1' });
+    res.render('admin/konten-liste', { BUCHUNGSART_LABEL, konten, zeigtAlle, gespeichert: req.query.gespeichert === '1' });
   });
 
   router.get('/neu', (req, res) => {
-    res.render('admin/konten-form', { konto: null, values: {}, errors: [], personen: listActivePersons(db) });
+    res.render('admin/konten-form', { BUCHUNGSARTEN, BUCHUNGSART_LABEL, konto: null, values: {}, errors: [], personen: listActivePersons(db) });
   });
 
   router.post('/', csrfProtection, (req, res) => {
     const values = readRoleFields(req.body);
     const errors = validateKontoRoles(db, values);
+    pruefeBuchungsart(values, errors);
     if (!values.kontonummer) errors.push('Kontonummer ist ein Pflichtfeld.');
     if (!values.bezeichnung) errors.push('Bezeichnung ist ein Pflichtfeld.');
 
     if (errors.length > 0) {
-      return res.status(400).render('admin/konten-form', { konto: null, values, errors, personen: listActivePersons(db) });
+      return res.status(400).render('admin/konten-form', { BUCHUNGSARTEN, BUCHUNGSART_LABEL, konto: null, values, errors, personen: listActivePersons(db) });
     }
 
     createKonto(db, values);
@@ -54,7 +65,7 @@ export function createKontenRouter({ db, csrfProtection = (req, res, next) => ne
     if (!konto) {
       return res.status(404).render('error', { message: 'Konto nicht gefunden.' });
     }
-    res.render('admin/konten-form', {
+    res.render('admin/konten-form', { BUCHUNGSARTEN, BUCHUNGSART_LABEL,
       konto,
       values: {
         kontonummer: konto.kontonummer,
@@ -63,6 +74,7 @@ export function createKontenRouter({ db, csrfProtection = (req, res, next) => ne
         stellvertreter1Id: konto.stellvertreter1_id,
         freigeber2Id: konto.freigeber2_id,
         stellvertreter2Id: konto.stellvertreter2_id,
+        buchungsart: konto.buchungsart,
       },
       errors: [],
       personen: listActivePersons(db),
@@ -84,11 +96,12 @@ export function createKontenRouter({ db, csrfProtection = (req, res, next) => ne
       stellvertreter2Id: konto.stellvertreter2_id,
     };
     const errors = validateKontoRoles(db, values, existingRoles);
+    pruefeBuchungsart(values, errors);
     if (!values.kontonummer) errors.push('Kontonummer ist ein Pflichtfeld.');
     if (!values.bezeichnung) errors.push('Bezeichnung ist ein Pflichtfeld.');
 
     if (errors.length > 0) {
-      return res.status(400).render('admin/konten-form', { konto, values, errors, personen: listActivePersons(db) });
+      return res.status(400).render('admin/konten-form', { BUCHUNGSARTEN, BUCHUNGSART_LABEL, konto, values, errors, personen: listActivePersons(db) });
     }
 
     updateKonto(db, id, values);

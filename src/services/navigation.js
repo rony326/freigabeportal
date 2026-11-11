@@ -15,7 +15,7 @@ export const SYMBOLE = [
   'activity', 'x-circle', 'hourglass-split', 'journal-text', 'building', 'credit-card-2-front', 'people', 'alarm',
   'envelope-at', 'palette', 'grid-3x3-gap', 'clock-history', 'list-check', 'database', 'shield-exclamation',
   'envelope-paper', 'arrow-repeat', 'calendar-check', 'card-list', 'speedometer2', 'cone-striped', 'piggy-bank',
-  'bar-chart-line',
+  'bar-chart-line', 'key', 'tools',
   // Sonstige: Menü, Farbmodus, Neu laden, Tabelle, Kacheln, Empfänger-Kärtchen (Person)
   'list', 'circle-half', 'arrow-clockwise', 'table', 'grid', 'person', 'x-lg',
 ];
@@ -64,16 +64,18 @@ const ADMIN = [
     { label: 'Module', href: '/admin/module', symbol: 'grid-3x3-gap', flag: 'module' },
     { label: 'Zeitstempel', href: '/admin/zeitstempel', symbol: 'clock-history', flag: 'zeitstempel' },
     { label: 'Ersteinrichtung', href: '/admin/ersteinrichtung', symbol: 'list-check', flag: 'ersteinrichtung' },
+    { label: 'Gruppenrechte', href: '/admin/gruppenrechte', symbol: 'key', flag: 'gruppenrechte' },
   ] },
   { titel: 'Betrieb', punkte: [
     { label: 'Datenbank-Backup', href: '/admin/backup', symbol: 'database', flag: 'backup' },
-    { label: 'Datei-Quarantäne', href: '/admin/dateiquarantaene', symbol: 'shield-exclamation', flag: 'backup' },
+    { label: 'Datei-Quarantäne', href: '/admin/dateiquarantaene', symbol: 'shield-exclamation', flag: 'dateiquarantaene' },
     { label: 'Mail-Protokoll', href: '/admin/mails', symbol: 'envelope-paper', flag: 'mails' },
     { label: 'Sync-Übersicht', href: '/admin/sync', symbol: 'arrow-repeat', flag: 'sync' },
     { label: 'Geplante Jobs', href: '/admin/geplante-jobs', symbol: 'calendar-check', flag: 'geplanteJobs' },
     { label: 'Audit-Log', href: '/admin/audit-log', symbol: 'card-list', flag: 'auditLog' },
     { label: 'Betrieb & Nutzung', href: '/admin/betrieb', symbol: 'speedometer2', flag: 'betrieb' },
     { label: 'Testmodus', href: '/admin/testmodus', symbol: 'cone-striped', flag: 'testmodus' },
+    { label: 'Wartungsmodus', href: '/admin/wartungsmodus', symbol: 'tools', flag: 'wartungsmodus' },
   ] },
 ];
 

@@ -93,6 +93,8 @@ export const SEITEN = [
   { name: 'Admin Ersteinrichtung', view: 'admin/ersteinrichtung', pfad: '/admin/ersteinrichtung' },
   { name: 'Admin Zeitstempel', view: 'admin/zeitstempel-form', pfad: '/admin/zeitstempel' },
   { name: 'Admin Module', view: 'admin/module-form', pfad: '/admin/module' },
+  { name: 'Admin Gruppenrechte', view: 'admin/gruppenrechte', pfad: '/admin/gruppenrechte' },
+  { name: 'Admin Wartungsmodus', view: 'admin/wartungsmodus', pfad: '/admin/wartungsmodus' },
   { name: 'Admin Budgets', view: 'admin/budgets', pfad: '/admin/budgets' },
   { name: 'Auswertung', view: 'auswertung', pfad: '/auswertung' },
   // Kompakte Erfolgsmeldung "Gespeichert." mit ✕ neben dem Speichern-Knopf (Prüfung schliessen).
@@ -120,6 +122,7 @@ export const AUSGENOMMEN = [
   { view: 'admin/testmodus', grund: 'Nur in der echten App: die Test-Instanz montiert /admin/testmodus nicht (Steuerung des Testmodus).' },
   { view: 'admin/backup', grund: 'Nur in der echten App: im Testmodus ist /admin/backup gesperrt (403-Fehlerseite, siehe "Fehlerseite 403").' },
   { view: 'admin/budgets-import', grund: 'Braucht einen vorherigen Datei-Upload in derselben Session (Vorschau liegt nur 15 Minuten in der Session).' },
+  { view: 'wartung', grund: 'Erscheint nur bei aktivem Wartungsmodus (503) in der echten App; die Test-Instanz kennt keinen Wartungsmodus.' },
   { view: 'abgemeldet', grund: 'Nur in der echten App: /auth ist in der Test-Instanz nicht montiert (keine Anmeldung im Testmodus).' },
 ];
 

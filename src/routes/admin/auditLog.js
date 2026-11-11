@@ -17,6 +17,8 @@ function bisEndeDesTages(bis) {
 const HISTORISCHE_OBJEKTNAMEN = {
   debitoren: 'kreditoren (historisch: debitoren)',
   debitor_ibans: 'kreditor_ibans (historisch: debitor_ibans)',
+  gruppenrechte: 'Gruppenrechte',
+  person_berechtigungen: 'Einzelrechte',
 };
 
 export function objektLabel(objekt) {

@@ -68,6 +68,8 @@ unterschiedlichen Konten geht jede an ihren eigenen Freigeber 1. Eine
 Sammelabrechnung ist immer rein Spesen (keine gemischten Einreichungen mit
 Rechnungspositionen).
 
+**Buchungsart der Konten:** Spesen zählen als Rechnung. Die Konto-Auswahl zeigt nur Konten mit Buchungsart `rechnung` oder `beides`; der Server lehnt Positionen mit einem reinen Gutschrift-Konto ab («Dieses Konto kann nicht für Rechnungen verwendet werden»).
+
 ## 2. Freigabe 1 (`/spesen-freigabe1`, `src/routes/spesenFreigabe1.js`, review-only)
 
 Da bei der Einreichung bereits alle Daten erfasst wurden, gibt es für die

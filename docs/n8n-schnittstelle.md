@@ -70,6 +70,14 @@ nicht automatisch wiederholen, sondern die Mail zur manuellen Bearbeitung
 weiterleiten (z. B. an die Buchhaltung, mit der Meldung aus `error`).
 Dieselbe Prüfung gilt für PDF-Belege bei der Spesen-Einreichung.
 
+## Wartungsmodus (503)
+
+Ist das Portal im [Wartungsmodus](betrieb-und-nutzung.md#wartungsmodus-für-updates), antworten alle
+`/api/n8n/jobs`, `/api/n8n/kk-belege` und `/api/n8n/rapporte`-Routen mit **HTTP 503**, dem Header
+`Retry-After: 300` und `{"error":"wartungsmodus"}`. Es wird nichts gespeichert. **Der n8n-Workflow muss bei 503
+(und Netzwerkfehlern) erneut versuchen**, z. B. über «Retry On Fail» mit mehreren Minuten Pause; die Mail bleibt
+solange im Postfach bzw. der Beleg im Workflow. `/api/n8n/backup/*` bleibt im Wartungsmodus erreichbar. Ebenso bleiben die **Bestätigungen** (`POST /api/n8n/jobs/:id/abholung-bestaetigen`, `…/archivierung-bestaetigen` und die Rapporte-Variante) offen: sie schreiben nur das Ergebnis eines schon gelaufenen Exports, ein 503 würde zur Doppelbuchung führen. Empfehlung: den n8n-Export-Workflow vor dem Einschalten pausieren.
+
 ## Abholung fertiger Rechnungen
 
 ```mermaid

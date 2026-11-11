@@ -91,7 +91,8 @@ const AUDIT = {
   text: DEFAULTS.mail_vorlage_audit_pruefnummer_text,
 };
 
-const ohneHilfe = (html) => html.replace(/<textarea[\s\S]*?<\/textarea>/g, '').replace(/<div class="form-text" id="empfaengerHilfe">[\s\S]*?<\/div>/g, '');
+// Ohne Textarea, Hilfetext und Datenelement für das Browser-Skript (dort stehen die Werte bewusst roh).
+const ohneHilfe = (html) => html.replace(/<textarea[\s\S]*?<\/textarea>/g, '').replace(/<script type="application\/json"[\s\S]*?<\/script>/g, '').replace(/<div class="form-text" id="empfaengerHilfe">[\s\S]*?<\/div>/g, '');
 const listenEintrag = (html, id) => html.match(new RegExp(`<a[^>]*href="/admin/benachrichtigungen/${id}"[\\s\\S]*?</a>`))[0];
 
 test('GET /admin/benachrichtigungen leitet auf das erste Ereignis, unbekanntes Ereignis → 404', async (t) => {
@@ -508,4 +509,58 @@ test('Sync-Seite verweist für die Empfänger auf Benachrichtigungen', async (t)
   assert.match(seite.text, /Wer bei einem Sync-Fehler eine Mail bekommt, legt eine Superadmin-Person unter „Benachrichtigungen“ fest\./);
   assert.match(seite.text, /href="\/admin\/benachrichtigungen\/sync-fehler">Empfänger einstellen → Benachrichtigungen</);
   assert.doesNotMatch(seite.text, /name="syncFehlerEmpfaenger"/);
+});
+
+// Komfort im Browser (public/js/benachrichtigungen.js): Skript, Datenelement und Variablen-Knöpfe.
+const datenAus = (text) => {
+  const m = text.match(/<script type="application\/json" id="benachrichtigungDaten" nonce="[^"]*">([\s\S]*?)<\/script>/);
+  if (!m) throw new Error('kein Datenelement benachrichtigungDaten');
+  return JSON.parse(m[1]);
+};
+
+test('Komfort: Skript, Datenelement mit aktiven Personen (nur id + Name), Gruppen, Beispielen und Variablen-Knöpfen', async (t) => {
+  const { db, als } = umgebung(t);
+  upsertPerson(db, { id: '7', vorname: 'Ina', nachname: 'Weg', email: 'weg@example.org', gruppen: [] });
+  db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '7'").run();
+  upsertPerson(db, { id: '8', vorname: 'Ohne', nachname: 'Mail', email: '', gruppen: [] });
+  upsertPerson(db, { id: '9', vorname: '</script><b>', nachname: 'X', email: 'x@example.org', gruppen: [] });
+  setConfigValue(db, 'reminder_empfaenger', 'person:7\ngruppe:admin');
+  const zuweisung = await als().get('/admin/benachrichtigungen/zuweisung');
+  assert.equal(zuweisung.status, 200);
+  assert.match(zuweisung.text, /<script src="\/js\/benachrichtigungen\.js\?v=[^"]*" defer><\/script>/);
+  assert.match(zuweisung.text, /<button type="button" class="[^"]*\bvar\b[^"]*" data-var="empfaengerName">Name\b/);
+  assert.equal(datenAus(zuweisung.text).beispiele.empfaengerName, 'Anna Muster');
+  assert.deepEqual(datenAus(zuweisung.text).personen, [], 'ohne Zusatzempfänger keine Personenliste');
+
+  const seite = await als().get('/admin/benachrichtigungen/reminder');
+  const daten = datenAus(seite.text);
+  assert.equal(daten.nurEmail, false);
+  assert.deepEqual(daten.personen.map((p) => Object.keys(p).sort()), daten.personen.map(() => ['id', 'name']));
+  const ids = daten.personen.map((p) => p.id);
+  assert.ok(ids.includes('1') && ids.includes('9'));
+  assert.ok(!ids.includes('7'), 'inaktive Person nicht im Picker');
+  assert.ok(!ids.includes('8'), 'Person ohne Mail nicht im Picker');
+  assert.equal(daten.personen.find((p) => p.id === '1').name, 'Paula Person');
+  assert.doesNotMatch(seite.text, /<\/script><b>/, 'Namen im JSON dürfen das Skript-Element nicht beenden');
+  assert.deepEqual(daten.gruppen, [{ wert: 'gruppe:admin', label: 'Gruppe Admin' }, { wert: 'gruppe:buchhaltung', label: 'Gruppe Buchhaltung' }]);
+  assert.equal(daten.beispiele.jobDateiname, 'Rechnung-4711.pdf');
+  assert.equal(daten.beispiele.portalName, 'Freigabeportal');
+  assert.deepEqual(daten.anzeige, [{ wert: 'person:7', label: 'Ina Weg', hinweis: 'inaktiv' }, { wert: 'gruppe:admin', label: 'Gruppe Admin', hinweis: null }]);
+});
+
+test('Komfort: Audit-Prüfnummer bietet nur E-Mail-Adressen an (keine Personen, keine Gruppen)', async (t) => {
+  const { als } = umgebung(t);
+  const daten = datenAus((await als().get('/admin/benachrichtigungen/audit-pruefnummer')).text);
+  assert.equal(daten.nurEmail, true);
+  assert.deepEqual(daten.personen, []);
+  assert.deepEqual(daten.gruppen, []);
+});
+
+test('Komfort: nach Fehler ist das Formular als ungespeichert markiert (Hinweis zur Test-Mail)', async (t) => {
+  const { als } = umgebung(t);
+  const gut = await als().get('/admin/benachrichtigungen/reminder');
+  assert.doesNotMatch(gut.text, /id="ereignisForm" data-ungespeichert/);
+  const res = await sende(als(), 'reminder', { ...REMINDER, betreff: '' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /id="ereignisForm" data-ungespeichert/);
 });

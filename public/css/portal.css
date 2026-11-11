@@ -914,3 +914,30 @@ h1 .beleg-nr {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* Empfänger-Auswahl mit JS (public/js/benachrichtigungen.js): Kärtchen mit ✕ und Suche mit Vorschlagsliste. */
+.zielwahl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  max-width: 100%;
+  padding: .2rem .35rem .2rem .7rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius-pill);
+  background: var(--bs-tertiary-bg);
+  font-size: .875rem;
+}
+.zielwahl-chip > .symbol { flex: none; }
+.zielwahl-chip-text { min-width: 0; overflow-wrap: anywhere; }
+.zielwahl-chip .btn-close { flex: none; font-size: .7rem; }
+.zielwahl-suche { max-width: 28rem; }
+.zielwahl-liste {
+  top: 100%;
+  left: 0;
+  width: 100%;
+  margin-top: .125rem;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+.zielwahl-liste .dropdown-item { cursor: pointer; white-space: normal; overflow-wrap: anywhere; }
+.benachrichtigung-variablen .var { font-size: .8125rem; }
+.var-platzhalter { font-family: var(--bs-font-monospace); font-size: .75rem; opacity: .75; }

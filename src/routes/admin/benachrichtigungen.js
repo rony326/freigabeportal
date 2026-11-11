@@ -3,12 +3,13 @@
 // /admin/mail-einstellungen; die Werte liegen weiter in admin_config.
 import { Router } from 'express';
 import { DEFAULTS, getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
+import { listActivePersons } from '../../db/personenRepo.js';
 import { listRecentCronLog } from '../../db/cronLogRepo.js';
 import { listGeplantMailsGruppiertNachEmpfaenger } from '../../db/mailLogRepo.js';
 import { BEREICHE, EREIGNISSE, findeEreignis } from '../../services/benachrichtigungsEreignisse.js';
 import { TYP_ZU_KEY_INFIX } from '../../services/mailTemplates.js';
 import { renderBenachrichtigung, sendRenderedMail } from '../../services/notify.js';
-import { validateEmpfaengerListe, empfaengerZeilen, empfaengerAnzeige, adminAdressen } from '../../services/empfaenger.js';
+import { validateEmpfaengerListe, empfaengerZeilen, empfaengerAnzeige, adminAdressen, EMPFAENGER_GRUPPEN } from '../../services/empfaenger.js';
 import { parseEmpfaengerListe, meldeAuditEmpfaengerWechsel, meldeAuditNachweisAenderung } from '../../services/auditNachweisJobs.js';
 import { BENACHRICHTIGUNG_WERTE, WOCHENTAG_NAMEN, benachrichtigungFuer } from '../../services/benachrichtigung.js';
 import { stelleWartendeSofortZu } from '../../services/mailZustellung.js';
@@ -51,6 +52,27 @@ function beispielVariablen(ereignis) {
   return werte.kreditorName === undefined ? werte : { ...werte, ...kreditorNameVariablen(werte.kreditorName) };
 }
 const nurEmail = (ereignis) => ereignis.empfaengerArt === 'nurEmail';
+
+// Daten für public/js/benachrichtigungen.js (Empfänger-Auswahl, Live-Vorschau). Personen nur so
+// viel wie nötig: aktive mit Mailadresse, id und Name. Bei nurEmail weder Personen noch Gruppen.
+function browserDaten(db, ereignis, werte, empfaengerListe) {
+  const mitPicker = Boolean(ereignis.empfaengerKey) && !nurEmail(ereignis);
+  const portalName = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
+  const hinweis = (e) => (e.unbekannt ? 'unbekannt' : e.inaktiv ? 'inaktiv' : null);
+  const zeilen = empfaengerZeilen(werte.empfaenger);
+  const daten = {
+    nurEmail: nurEmail(ereignis),
+    personen: mitPicker
+      ? listActivePersons(db).filter((p) => p.email).map((p) => ({ id: p.churchtools_person_id, name: `${p.vorname ?? ''} ${p.nachname ?? ''}`.trim() }))
+      : [],
+    gruppen: mitPicker ? Object.entries(EMPFAENGER_GRUPPEN).map(([wert, label]) => ({ wert, label })).sort((a, b) => a.label.localeCompare(b.label, 'de')) : [],
+    // Gespeicherte Zeilen mit lesbarem Namen (auch inaktive/unbekannte Personen) für die Kärtchen.
+    anzeige: empfaengerListe.map((e, i) => ({ wert: zeilen[i], label: e.label, hinweis: hinweis(e) })),
+    beispiele: ereignis.vorlagenTyp ? { ...beispielVariablen(ereignis), portalName } : {},
+  };
+  // In <script type="application/json">: "<" maskieren, damit kein Wert das Element beendet.
+  return JSON.stringify(daten).replace(/</g, '\\u003c');
+}
 // Audit-Empfänger sind kommagetrennt gespeichert; im Formular eine Adresse pro Zeile.
 const auditAdressen = (wert) => parseEmpfaengerListe(String(wert ?? '').replace(/\r?\n|\r/g, ','));
 
@@ -157,6 +179,7 @@ export function createBenachrichtigungenRouter({ db, config, mailer, csrfProtect
     const gespeicherteAuditAdressen = nurEmail(ereignis) ? auditAdressen(getConfigValue(db, ereignis.empfaengerKey)).adressen : [];
     const testmail = TESTMAIL_HINWEISE[req.query.testmail];
     const istZusammenfassung = ereignis.id === 'zusammenfassung';
+    const empfaengerListe = ereignis.empfaengerKey && !nurEmail(ereignis) ? empfaengerAnzeige(db, werte.empfaenger) : [];
     res.status(status).render('admin/benachrichtigungen', {
       vorschauAusEingabe: errors.length > 0,
       bereiche: BEREICHE.map((name) => ({
@@ -166,7 +189,8 @@ export function createBenachrichtigungenRouter({ db, config, mailer, csrfProtect
       ereignis,
       werte,
       errors,
-      empfaengerListe: ereignis.empfaengerKey && !nurEmail(ereignis) ? empfaengerAnzeige(db, werte.empfaenger) : [],
+      empfaengerListe,
+      browserDaten: browserDaten(db, ereignis, werte, empfaengerListe),
       adminAdressen: adminAdressen(db, config, gespeicherteAuditAdressen),
       vorschau,
       angepasst: istAngepasst(db, ereignis),

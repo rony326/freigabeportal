@@ -10,6 +10,7 @@ const PERSON_PREFIX = 'person:';
 // Beide Gruppen-Tokens sind überall erlaubt; resolveEmpfaenger löst beide auf.
 const GRUPPEN = { 'gruppe:buchhaltung': 'Gruppe Buchhaltung', 'gruppe:admin': 'Gruppe Admin' };
 const GRUPPE_TOKENS = Object.keys(GRUPPEN);
+export const EMPFAENGER_GRUPPEN = Object.freeze({ ...GRUPPEN });
 
 const kuerze = (zeile) => (zeile.length > 80 ? `${zeile.slice(0, 80)}…` : zeile);
 

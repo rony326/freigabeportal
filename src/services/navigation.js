@@ -16,8 +16,8 @@ export const SYMBOLE = [
   'envelope-at', 'palette', 'grid-3x3-gap', 'clock-history', 'list-check', 'database', 'shield-exclamation',
   'envelope-paper', 'arrow-repeat', 'calendar-check', 'card-list', 'speedometer2', 'cone-striped', 'piggy-bank',
   'bar-chart-line',
-  // Sonstige: Menü, Farbmodus, Neu laden, Tabelle, Kacheln
-  'list', 'circle-half', 'arrow-clockwise', 'table', 'grid',
+  // Sonstige: Menü, Farbmodus, Neu laden, Tabelle, Kacheln, Empfänger-Kärtchen (Person)
+  'list', 'circle-half', 'arrow-clockwise', 'table', 'grid', 'person',
 ];
 
 // flag: Schlüssel in adminNav bzw. Portal-Option (null = immer sichtbar)

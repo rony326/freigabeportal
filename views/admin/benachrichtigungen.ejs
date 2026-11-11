@@ -45,7 +45,7 @@
           <div class="alert alert-<%= testmailHinweis.art %>"><%= testmailHinweis.text %></div>
         <% } %>
 
-        <form method="post" action="/admin/benachrichtigungen/<%= ereignis.id %>" id="ereignisForm">
+        <form method="post" action="/admin/benachrichtigungen/<%= ereignis.id %>" id="ereignisForm"<% if (errors.length > 0) { %> data-ungespeichert<% } %>>
           <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
 
           <section class="card mb-3">
@@ -118,28 +118,53 @@
                 <% if (nurEmail && adminAdressen.length > 0) { %>
                   <div class="alert alert-warning">Die Adresse <%= adminAdressen.join(', ') %> gehört einer Person mit Admin-Rechten. Für eine unabhängige Prüfung sollte die Revision eine eigene Adresse haben.</div>
                 <% } %>
+                <% const leerText = nurEmail ? 'Noch keine Adresse eingetragen.' : (ereignis.empfaengerLeerErlaubt ? 'Keine Zusatzempfänger – die Mail geht an die Gruppe Admin.' : 'Noch keine Empfänger.'); %>
                 <% if (!nurEmail) { %>
                   <p class="mb-1"><%= ereignis.automatisch ? 'Zusätzlich:' : 'Empfänger:' %></p>
-                  <% if (empfaengerListe.length > 0) { %>
-                    <ul class="list-unstyled d-flex flex-wrap gap-2 mb-2">
-                      <% empfaengerListe.forEach((e) => { %>
-                        <li class="badge rounded-pill text-bg-light border fw-normal benachrichtigung-ziel">
-                          <% if (e.art === 'gruppe') { %><%- include('../_symbol', { name: 'people' }) %><% } %>
-                          <%= e.label %>
-                          <% if (e.unbekannt) { %><span class="badge text-bg-warning ms-1">unbekannt</span><% } else if (e.inaktiv) { %><span class="badge text-bg-secondary ms-1">inaktiv</span><% } %>
-                        </li>
-                      <% }) %>
-                    </ul>
-                  <% } else { %>
-                    <p class="text-muted small mb-2"><%= ereignis.empfaengerLeerErlaubt ? 'Keine Zusatzempfänger – die Mail geht an die Gruppe Admin.' : 'Noch keine Empfänger.' %></p>
-                  <% } %>
+                  <div data-empfaenger-ohne-js>
+                    <% if (empfaengerListe.length > 0) { %>
+                      <ul class="list-unstyled d-flex flex-wrap gap-2 mb-2">
+                        <% empfaengerListe.forEach((e) => { %>
+                          <li class="badge rounded-pill text-bg-light border fw-normal benachrichtigung-ziel">
+                            <% if (e.art === 'gruppe') { %><%- include('../_symbol', { name: 'people' }) %><% } %>
+                            <%= e.label %>
+                            <% if (e.unbekannt) { %><span class="badge text-bg-warning ms-1">unbekannt</span><% } else if (e.inaktiv) { %><span class="badge text-bg-secondary ms-1">inaktiv</span><% } %>
+                          </li>
+                        <% }) %>
+                      </ul>
+                    <% } else { %>
+                      <p class="text-muted small mb-2"><%= leerText %></p>
+                    <% } %>
+                  </div>
                 <% } %>
-                <label class="form-label" for="empfaenger"><%= nurEmail ? 'Empfänger (E-Mail-Adressen)' : (ereignis.automatisch ? 'Zusätzliche Empfänger bearbeiten' : 'Empfänger bearbeiten') %></label>
-                <textarea class="form-control" id="empfaenger" name="empfaenger" rows="3" aria-describedby="empfaengerHilfe"><%= werte.empfaenger %></textarea>
+                <%# Mit JS (public/js/benachrichtigungen.js): Kärtchen + Suche statt Textfeld. Das Textfeld bleibt das gesendete Feld. %>
+                <div class="zielwahl" data-empfaenger-picker hidden>
+                  <% if (nurEmail) { %><p class="mb-1">Empfänger:</p><% } %>
+                  <ul class="list-unstyled d-flex flex-wrap gap-2 mb-2" data-empfaenger-kaertchen aria-label="Gewählte Empfänger"></ul>
+                  <p class="text-muted small mb-2" data-empfaenger-leer hidden><%= leerText %></p>
+                  <label class="form-label" for="empfaengerSuche"><%= nurEmail ? 'E-Mail-Adresse hinzufügen' : 'Person, Gruppe oder E-Mail hinzufügen' %></label>
+                  <div class="position-relative zielwahl-suche">
+                    <input type="text" class="form-control" id="empfaengerSuche" data-empfaenger-suche role="combobox" aria-expanded="false" aria-controls="empfaengerVorschlaege" aria-autocomplete="list" autocomplete="off" spellcheck="false"<% if (nurEmail) { %> inputmode="email"<% } %> aria-describedby="empfaengerSucheMeldung">
+                    <div class="dropdown-menu zielwahl-liste" id="empfaengerVorschlaege" role="listbox" aria-label="Vorschläge" data-empfaenger-vorschlaege></div>
+                  </div>
+                  <div class="form-text" id="empfaengerSucheMeldung" data-empfaenger-meldung aria-live="polite"></div>
+                </div>
+                <template id="empfaengerSymbole">
+                  <span data-art="gruppe"><%- include('../_symbol', { name: 'people' }) %></span>
+                  <span data-art="person"><%- include('../_symbol', { name: 'person' }) %></span>
+                  <span data-art="mail"><%- include('../_symbol', { name: 'envelope-at' }) %></span>
+                </template>
+                <div data-empfaenger-ohne-js>
+                  <label class="form-label" for="empfaenger"><%= nurEmail ? 'Empfänger (E-Mail-Adressen)' : (ereignis.automatisch ? 'Zusätzliche Empfänger bearbeiten' : 'Empfänger bearbeiten') %></label>
+                  <textarea class="form-control" id="empfaenger" name="empfaenger" rows="3" aria-describedby="empfaengerHilfe"><%= werte.empfaenger %></textarea>
+                  <% if (nurEmail) { %>
+                    <div class="form-text" id="empfaengerHilfe">Eine Zeile pro E-Mail-Adresse.</div>
+                  <% } else { %>
+                    <div class="form-text" id="empfaengerHilfe">Eine Zeile pro Empfänger: gruppe:buchhaltung, gruppe:admin, person:ID oder E-Mail-Adresse<%= ereignis.empfaengerLeerErlaubt ? ' (leer = Gruppe Admin)' : '' %>.</div>
+                  <% } %>
+                </div>
                 <% if (nurEmail) { %>
-                  <div class="form-text" id="empfaengerHilfe">Eine Zeile pro E-Mail-Adresse. Externe Revisoren haben kein Konto, darum sind hier nur E-Mail-Adressen möglich. Bei einer Änderung erhalten alte und neue Adressen eine Benachrichtigung.</div>
-                <% } else { %>
-                  <div class="form-text" id="empfaengerHilfe">Eine Zeile pro Empfänger: gruppe:buchhaltung, gruppe:admin, person:ID oder E-Mail-Adresse<%= ereignis.empfaengerLeerErlaubt ? ' (leer = Gruppe Admin)' : '' %>.</div>
+                  <div class="form-text">Externe Revisoren haben kein Konto, darum sind hier nur E-Mail-Adressen möglich. Bei einer Änderung erhalten alte und neue Adressen eine Benachrichtigung.</div>
                 <% } %>
               <% } %>
             </div>
@@ -163,19 +188,20 @@
                   <% if (digestFehlt.length > 0) { %>
                     <div class="alert alert-warning py-2 small" id="digestVorlageHinweis">Die Vorlage nennt nicht <%= digestFehlt.join(' und ') %>: Empfänger erfahren dann nicht den Rhythmus bzw. finden keinen Link zu ihren Einstellungen.</div>
                   <% } %>
-                  <p class="small mb-1">Platzhalter:</p>
-                  <ul class="list-unstyled d-flex flex-wrap gap-2 small benachrichtigung-variablen">
+                  <p class="small mb-1" id="variablenTitel">Platzhalter einfügen:</p>
+                  <div class="d-flex flex-wrap gap-2 benachrichtigung-variablen" role="group" aria-labelledby="variablenTitel">
                     <% ereignis.variablen.forEach((v) => { %>
-                      <li data-variable="<%= v.name %>"><span class="fw-semibold"><%= v.label %></span> <code>%<%= v.name %>%</code></li>
+                      <button type="button" class="btn btn-sm btn-outline-secondary var" data-var="<%= v.name %>"><%= v.label %> <span class="var-platzhalter">%<%= v.name %>%</span></button>
                     <% }) %>
-                  </ul>
+                  </div>
                 </div>
                 <div class="col-12 col-xl-5">
-                  <p class="small mb-1">Vorschau <span class="text-muted">(<%= vorschauAusEingabe ? 'eingegebener, noch nicht gespeicherter Text' : 'gespeicherter Text' %> mit Beispieldaten)</span></p>
+                  <p class="small mb-1">Vorschau <span class="text-muted" id="vorschauQuelle">(<%= vorschauAusEingabe ? 'eingegebener, noch nicht gespeicherter Text' : 'gespeicherter Text' %> mit Beispieldaten)</span></p>
                   <div class="border rounded p-2 small benachrichtigung-vorschau">
-                    <p class="fw-semibold mb-2"><%= vorschau.subject %></p>
-                    <div class="benachrichtigung-vorschau-text"><%= vorschau.text %></div>
+                    <p class="fw-semibold mb-2 benachrichtigung-vorschau-text" id="vorschauBetreff"><%= vorschau.subject %></p>
+                    <div class="benachrichtigung-vorschau-text" id="vorschauText"><%= vorschau.text %></div>
                   </div>
+                  <ul class="list-unstyled small text-warning-emphasis mt-2 mb-0" id="vorschauWarnungen" hidden></ul>
                 </div>
               </div>
             </div>
@@ -246,4 +272,6 @@
         <% } %>
       </div>
     </div>
+    <script type="application/json" id="benachrichtigungDaten" nonce="<%= locals.cspNonce %>"><%- browserDaten %></script>
+    <script src="/js/benachrichtigungen.js?v=<%= locals.assetVersion || 0 %>" defer></script>
 <%- include('../_seite_ende') %>

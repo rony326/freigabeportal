@@ -11,7 +11,7 @@ import { getPersonById } from '../db/personenRepo.js';
 import { getKreditorById } from '../db/kreditorenRepo.js';
 import { listKreditorIbansByKreditor } from '../db/kreditorIbanRepo.js';
 import { sendeAuffaelligkeitenWarnung } from './auffaelligkeitenWarnung.js';
-import { ermittleBefunde } from './betrugspruefung.js';
+import { ibanBefund } from './betrugspruefung.js';
 import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from './notify.js';
 
 // teilPosition landet später wörtlich auf der gemeinsamen Stempelseite der Splitgruppe
@@ -283,9 +283,12 @@ export async function pruefeIbanNachKkAbgleich(db, mailer, config, { job, teile,
   if (!job.qr_iban || !job.kreditor_id) return;
   const kreditor = getKreditorById(db, job.kreditor_id);
   if (!kreditor) return;
-  const befunde = ermittleBefunde(db, { job, kreditor, betrag: null, typ: job.typ })
-    .filter((b) => b.code === 'iban_fremd' || b.code === 'iban_anderer_kreditor');
-  if (befunde.length === 0) return;
+  // Wie bisher unabhängig von der Zahlungsart (Kartenherausgeber zieht meist per Lastschrift ein);
+  // ohne hinterlegte IBAN kein Abgleich.
+  if (listKreditorIbansByKreditor(db, kreditor.id).length === 0) return;
+  const befund = ibanBefund(db, kreditor, job.qr_iban);
+  if (!befund) return;
+  const befunde = [befund];
   createFreigabe(db, {
     jobId: job.id,
     personId: person.churchtools_person_id,

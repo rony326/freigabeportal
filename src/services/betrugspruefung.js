@@ -108,6 +108,26 @@ function gleicheNummer(a, b) {
 }
 
 /**
+ * IBAN-Befund (iban_anderer_kreditor bzw. iban_fremd), wenn die QR-IBAN nicht zu den hinterlegten
+ * IBANs des Lieferanten gehört; sonst null. Prüft die Zahlungsart bewusst nicht — das entscheidet der
+ * Aufrufer (ermittleBefunde nur bei IBAN-Pflicht, der Kreditkarten-Abgleich immer).
+ * @returns {Befund|null}
+ */
+export function ibanBefund(db, kreditor, qrIbanRoh) {
+  const qrIban = normalizeIban(qrIbanRoh);
+  const eigene = listKreditorIbansByKreditor(db, kreditor.id).map((row) => normalizeIban(row.iban));
+  if (eigene.includes(qrIban)) return null;
+  const treffer = findKreditorIbanByIban(db, qrIban);
+  const anderer = treffer && treffer.kreditor_id !== kreditor.id ? getKreditorById(db, treffer.kreditor_id) : null;
+  if (anderer) {
+    return { code: 'iban_anderer_kreditor', schwere: 'rot', titel: 'IBAN gehört einem anderen Lieferanten',
+      text: `Die IBAN auf der Rechnung (${ibanKurz(qrIban)}) ist bei «${anderer.name}» hinterlegt, nicht bei «${kreditor.name}».` };
+  }
+  return { code: 'iban_fremd', schwere: 'rot', titel: 'IBAN nicht hinterlegt',
+    text: `Die IBAN auf der Rechnung (${ibanKurz(qrIban)}) stimmt mit keiner hinterlegten IBAN von «${kreditor.name}» überein.` };
+}
+
+/**
  * @returns {Befund[]} sortiert: rot vor gelb, dann CODE_REIHENFOLGE.
  * `rechnungsnummer` (optional) ist die im Formular eingegebene Nummer; ohne Angabe gilt die des Jobs.
  */
@@ -119,18 +139,8 @@ export function ermittleBefunde(db, { job, kreditor, betrag, typ, ibanEndung = n
   const qrIban = job.qr_iban ? normalizeIban(job.qr_iban) : null;
 
   if (qrIban && brauchtIban(kreditor.zahlungsart)) {
-    const eigene = listKreditorIbansByKreditor(db, kreditor.id).map((row) => normalizeIban(row.iban));
-    if (!eigene.includes(qrIban)) {
-      const treffer = findKreditorIbanByIban(db, qrIban);
-      const anderer = treffer && treffer.kreditor_id !== kreditor.id ? getKreditorById(db, treffer.kreditor_id) : null;
-      if (anderer) {
-        befunde.push({ code: 'iban_anderer_kreditor', schwere: 'rot', titel: 'IBAN gehört einem anderen Lieferanten',
-          text: `Die IBAN auf der Rechnung (${ibanKurz(qrIban)}) ist bei «${anderer.name}» hinterlegt, nicht bei «${name}».` });
-      } else {
-        befunde.push({ code: 'iban_fremd', schwere: 'rot', titel: 'IBAN nicht hinterlegt',
-          text: `Die IBAN auf der Rechnung (${ibanKurz(qrIban)}) stimmt mit keiner hinterlegten IBAN von «${name}» überein.` });
-      }
-    }
+    const befund = ibanBefund(db, kreditor, qrIban);
+    if (befund) befunde.push(befund);
   }
   if (qrIban && !brauchtIban(kreditor.zahlungsart)) {
     const label = ZAHLUNGSART_LABEL[kreditor.zahlungsart] ?? kreditor.zahlungsart;

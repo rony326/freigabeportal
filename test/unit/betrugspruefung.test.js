@@ -8,6 +8,7 @@ import { setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { kreditorMitIban, kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
 import {
   ermittleBefunde,
+  ibanBefund,
   befundeHash,
   brauchtManuelleIbanPruefung,
   ibanEndungPasst,
@@ -369,4 +370,20 @@ test('Unlesbarer Betrag: keine Betragsprüfungen, kein Fehler', () => {
   const db = setup();
   const k = getKreditorById(db, kreditorMitIban(db, { name: 'Neu AG' }));
   assert.deepEqual(codes(ermittleBefunde(db, { job: job(db, { qr_iban: IBAN_HINTERLEGT, qr_betrag: '5.00' }), kreditor: k, betrag: '', typ: 'rechnung' })), []);
+});
+
+test('ibanBefund prüft unabhängig von der Zahlungsart und mit denselben Texten wie ermittleBefunde', () => {
+  const db = setup();
+  const lastschrift = createKreditor(db, { name: 'Karten Bank', kontoId: null, zahlungsart: 'lastschrift' });
+  createKreditorIban(db, { kreditorId: lastschrift, iban: IBAN_HINTERLEGT, quelle: 'manuell' });
+  const kreditor = getKreditorById(db, lastschrift);
+  assert.equal(ibanBefund(db, kreditor, 'CH93 0076 2011 6238 5295 7'), null, 'normalisiert verglichen');
+  const fremd = ibanBefund(db, kreditor, IBAN_UNBEKANNT);
+  assert.equal(fremd.code, 'iban_fremd');
+  assert.equal(fremd.titel, 'IBAN nicht hinterlegt');
+  kreditorMitIban(db, { name: 'Andere AG', iban: IBAN_ANDERE });
+  const anderer = ibanBefund(db, kreditor, IBAN_ANDERE);
+  assert.equal(anderer.code, 'iban_anderer_kreditor');
+  assert.match(anderer.text, /bei «Andere AG» hinterlegt, nicht bei «Karten Bank»/);
+  db.close();
 });

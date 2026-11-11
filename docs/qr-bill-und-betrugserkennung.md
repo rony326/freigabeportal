@@ -70,8 +70,9 @@ Kind. Wurden Zeilen-Belege angehängt, bietet das Popup für jede dieser
 Zeilen ein Datei-Feld zum nochmaligen Auswählen an.
 
 Der Kreditkarten-Abgleich hat kein Popup: `pruefeIbanNachKkAbgleich` schreibt
-bei einem IBAN-Befund nachträglich `iban_abweichung` am Elternjob und
-schickt die Warn-Mail.
+bei einem IBAN-Befund (`ibanBefund` aus betrugspruefung.js, unabhängig von der
+Zahlungsart, sobald mindestens eine IBAN hinterlegt ist) nachträglich
+`iban_abweichung` am Elternjob und schickt die Warn-Mail.
 
 ## Verwandter, unabhängiger Mechanismus: Rechnungsnummer-Duplikat-Check
 

@@ -4282,3 +4282,26 @@ test('POST /kontierung/lieferanten: Standard-Konto mit reiner Gutschrift-Buchung
   assert.match(res.body.error, /Standard-Konto muss Rechnungen erlauben/);
   db.close();
 });
+
+test('GET /kontierung/:id: die Typ-Auswahl (Rechnung/Gutschrift) steht vor der Konto-Auswahl', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = seedKontierbaren(db, 'beides');
+  const res = await request(buildTestApp(db, createStubMailer())).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  const typ = res.text.indexOf('name="typ" id="typRechnung"');
+  const konto = res.text.indexOf('id="kontoId"');
+  assert.ok(typ > -1 && konto > -1);
+  assert.ok(typ < konto, 'Typ-Radio muss im HTML vor dem Konto-Feld stehen');
+  assert.match(res.text.slice(Math.max(0, typ - 400), typ), /Art des Belegs/);
+  db.close();
+});
+
+test('GET /kontierung/:id: die Typ-Auswahl liegt ausserhalb der kontierung-block-Container (bei Rapport werden diese ausgeblendet)', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = seedKontierbaren(db, 'beides');
+  const res = await request(buildTestApp(db, createStubMailer())).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  const typ = res.text.indexOf('name="typ" id="typRechnung"');
+  const ersterBlock = res.text.indexOf('class="kontierung-block"');
+  assert.ok(typ < ersterBlock, 'Typ-Radio steht vor dem ersten kontierung-block');
+  db.close();
+});

@@ -48,6 +48,7 @@ import { createGeplanteJobsRouter } from './routes/admin/geplanteJobs.js';
 import { createBackupRouter } from './routes/admin/backup.js';
 import { createModuleRouter } from './routes/admin/module.js';
 import { wartungsmodusSperre } from './middleware/wartungsmodus.js';
+import { createWartungsmodusRouter } from './routes/admin/wartungsmodus.js';
 import { createGruppenrechteRouter } from './routes/admin/gruppenrechte.js';
 import { createAltfaelleRouter } from './routes/admin/altfaelle.js';
 import { createDateiQuarantaeneRouter } from './routes/admin/dateiQuarantaene.js';
@@ -334,6 +335,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   if (testmodus) app.use('/admin/backup', imTestmodusGesperrt('Backups sind im Testmodus nicht verfügbar.'));
   else app.use('/admin/backup', requirePermission(db, config, 'backup_verwalten'), createBackupRouter({ db, config, csrfProtection }));
   app.use('/admin/module', requirePermission(db, config, 'module_verwalten'), createModuleRouter({ db, csrfProtection }));
+  app.use('/admin/wartungsmodus', requirePermission(db, config, 'wartungsmodus_schalten'), createWartungsmodusRouter({ db, csrfProtection }));
   app.use('/admin/gruppenrechte', requirePermission(db, config, 'gruppenrechte_verwalten'), createGruppenrechteRouter({ db, config, csrfProtection }));
   app.use('/admin/altfaelle', requirePermission(db, config, 'workflow_eingreifen'), createAltfaelleRouter({ db, config, csrfProtection }));
   app.use('/admin/dateiquarantaene', requirePermission(db, config, 'dateiquarantaene_verwalten'), createDateiQuarantaeneRouter({ db, config, csrfProtection }));

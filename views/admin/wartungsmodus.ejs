@@ -1,0 +1,29 @@
+<%- include('../_seite_anfang', { titel: 'Wartungsmodus' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Wartungsmodus</h1>
+    </div>
+    <p class="text-muted">Für Updates und Backups: Solange der Wartungsmodus aktiv ist, sehen normale Personen nur eine Wartungsseite, es gehen keine Mails raus (sie bleiben in der Warteschlange und werden nach dem Ausschalten zugestellt) und das Portal nimmt keine Rechnungen an (n8n bekommt «später erneut versuchen» und liefert nach). Geplante Jobs pausieren, nur die Datenbank-Sicherung läuft weiter. Wer das Recht «Wartungsmodus schalten» hat, kann weiterarbeiten.</p>
+    <p>Aktueller Zustand:
+      <% if (aktiv) { %><span class="badge text-bg-warning">Wartungsmodus aktiv</span><% } else { %><span class="badge text-bg-success">Normalbetrieb</span><% } %>
+    </p>
+    <form method="post" action="/admin/wartungsmodus" class="col-12 col-md-8 col-lg-6">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <% if (!aktiv) { %>
+        <div class="mb-3">
+          <label class="form-label" for="hinweis">Hinweis für die Wartungsseite (optional)</label>
+          <input type="text" class="form-control" id="hinweis" name="hinweis" maxlength="200" value="<%= hinweis %>">
+          <div class="form-text">Zum Beispiel «Update bis ca. 14:00». Maximal 200 Zeichen.</div>
+        </div>
+        <button type="submit" name="aktion" value="einschalten" class="btn btn-warning">Wartungsmodus einschalten</button>
+      <% } else { %>
+        <% if (hinweis) { %><p>Hinweis auf der Wartungsseite: <em><%= hinweis %></em></p><% } %>
+        <button type="submit" name="aktion" value="ausschalten" class="btn btn-primary">Wartungsmodus ausschalten</button>
+      <% } %>
+      <% if (gespeichert) { %>
+        <div class="alert alert-success alert-dismissible alert-kompakt fade show d-inline-flex align-items-center py-1 ps-2 ms-2 mb-0" role="alert">
+          Gespeichert.
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schliessen"></button>
+        </div>
+      <% } %>
+    </form>
+<%- include('../_seite_ende') %>

@@ -87,6 +87,7 @@ Welche Gruppe welches Recht hat, stellt ein Superadmin unter [Gruppenrechte](#gr
 | Budgets | `/admin/budgets` (+ `/import`, `/import/vorschau`, `/import/bestaetigen`) | Einzelrecht `budgets_verwalten`; `superadmin` ✓, `manager` ✓ — Budget pro Konto und Jahr, Import aus Excel/CSV mit Vorschau, siehe [auswertung.md](auswertung.md#budgets-pflegen) |
 | Module | `/admin/module` | `module_verwalten`; enthält auch die Schwelle «länger offen» der Auswertung (`auswertung_offen_schwelle_tage`, 1–365, Standard 14) |
 | Ersteinrichtung | `/admin/ersteinrichtung` | `ersteinrichtung_verwalten`; geführter Assistent mit 14 Schritten (8 Pflicht), technische Prüfung, ChurchTools-Test, Testmail, Kernjobs auslösen; Hinweis auf dem Admin-Dashboard ("später" blendet ihn 7 Tage aus); Statusdienst `einrichtung` |
+| Wartungsmodus | `/admin/wartungsmodus` | `wartungsmodus_schalten` (Standard nur Superadmin); siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md#wartungsmodus-für-updates) |
 | Testmodus | `/admin/testmodus` | `testmodus_nutzen`; Spielwiese zum gefahrlosen Ausprobieren, siehe [testmodus.md](testmodus.md) |
 
 Die Seite **Laufende Vorgänge** zeigt alle Vorgänge in `unzugewiesen`, `zugewiesen`, `freigabe2` und `abgelehnt`; mit `workflow_eingreifen` lassen sie sich umhängen. Details: [rechnungs-workflow.md](rechnungs-workflow.md#8-admin-eingriff-laufende-vorgänge-umhängen).

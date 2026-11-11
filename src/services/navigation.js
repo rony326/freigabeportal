@@ -15,7 +15,7 @@ export const SYMBOLE = [
   'activity', 'x-circle', 'hourglass-split', 'journal-text', 'building', 'credit-card-2-front', 'people', 'alarm',
   'envelope-at', 'palette', 'grid-3x3-gap', 'clock-history', 'list-check', 'database', 'shield-exclamation',
   'envelope-paper', 'arrow-repeat', 'calendar-check', 'card-list', 'speedometer2', 'cone-striped', 'piggy-bank',
-  'bar-chart-line', 'key',
+  'bar-chart-line', 'key', 'tools',
   // Sonstige: Menü, Farbmodus, Neu laden, Tabelle, Kacheln, Empfänger-Kärtchen (Person)
   'list', 'circle-half', 'arrow-clockwise', 'table', 'grid', 'person', 'x-lg',
 ];
@@ -75,6 +75,7 @@ const ADMIN = [
     { label: 'Audit-Log', href: '/admin/audit-log', symbol: 'card-list', flag: 'auditLog' },
     { label: 'Betrieb & Nutzung', href: '/admin/betrieb', symbol: 'speedometer2', flag: 'betrieb' },
     { label: 'Testmodus', href: '/admin/testmodus', symbol: 'cone-striped', flag: 'testmodus' },
+    { label: 'Wartungsmodus', href: '/admin/wartungsmodus', symbol: 'tools', flag: 'wartungsmodus' },
   ] },
 ];
 

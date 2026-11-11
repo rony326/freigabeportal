@@ -94,6 +94,7 @@ export const SEITEN = [
   { name: 'Admin Zeitstempel', view: 'admin/zeitstempel-form', pfad: '/admin/zeitstempel' },
   { name: 'Admin Module', view: 'admin/module-form', pfad: '/admin/module' },
   { name: 'Admin Gruppenrechte', view: 'admin/gruppenrechte', pfad: '/admin/gruppenrechte' },
+  { name: 'Admin Wartungsmodus', view: 'admin/wartungsmodus', pfad: '/admin/wartungsmodus' },
   { name: 'Admin Budgets', view: 'admin/budgets', pfad: '/admin/budgets' },
   { name: 'Auswertung', view: 'auswertung', pfad: '/auswertung' },
   // Kompakte Erfolgsmeldung "Gespeichert." mit ✕ neben dem Speichern-Knopf (Prüfung schliessen).

@@ -37,6 +37,7 @@ export function loadNavFlags(db, config) {
       altfaelle: hasPermission('workflow_eingreifen'),
       betrieb: hasPermission('betrieb_einsehen'),
       testmodus: hasPermission('testmodus_nutzen'),
+      wartungsmodus: hasPermission('wartungsmodus_schalten'),
     };
     // Strip a trailing slash (e.g. "/pool/") so nav highlighting/buttons keyed on an exact
     // path like "/pool" still match — Express routes both with and without it identically.

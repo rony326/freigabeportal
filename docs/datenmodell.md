@@ -282,6 +282,9 @@ Additive Einzelrechte, siehe [auth-und-rechte.md](auth-und-rechte.md). Ein
 `CHECK`-Constraint erlaubt genau die vergebbaren Rechte aus `src/services/berechtigungKatalog.js`
 (`GRANTABLE_BERECHTIGUNGEN`); `migrateSecuritySchema` baut die Tabelle neu auf, sobald der Katalog wächst.
 
+### Wartungsmodus (`admin_config`)
+Zustand in `admin_config`: `wartungsmodus_aktiv` (`'1'`/`'0'`) und `wartungsmodus_hinweis` (max. 200 Zeichen). Änderungen auditiert der Trigger auf `admin_config`.
+
 ### `gruppen_berechtigungen`
 Rechte pro ChurchTools-Gruppe: `gruppe` (`superadmin`, `manager`, `buchhaltung`) und `berechtigung`,
 Primärschlüssel `(gruppe, berechtigung)`. Bewusst ohne `CHECK` auf `berechtigung`: gültig ist, was der

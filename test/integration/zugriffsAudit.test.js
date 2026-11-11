@@ -73,7 +73,7 @@ test('anonymous admin access is denied, recorded with request ID and without que
   assert.ok(!JSON.stringify(event).includes('12345'));
 });
 
-test('missing role and missing permission are attributed to the logged-in person with the required right', async (t) => {
+test('missing permission and missing area access are attributed to the logged-in person with the required right', async (t) => {
   const { db, app, client } = setup(t);
   const agent = await loginAs(app, client, { id: 7, gruppen: [] });
   assert.equal((await agent.get('/admin/konten')).status, 403);
@@ -84,7 +84,7 @@ test('missing role and missing permission are attributed to the logged-in person
   assert.deepEqual(events.map((e) => [e.person_id, e.daten.grund, e.daten.recht ?? null, e.objekt_id]), [
     ['7', 'kein_adminbereich', null, '/admin/konten'],
     ['7', 'fehlendes_recht', 'konten_verwalten', '/admin/konten'],
-    ['7', 'fehlende_rolle', null, '/admin/backup'],
+    ['7', 'fehlendes_recht', 'backup_verwalten', '/admin/backup'],
   ]);
   assert.equal(events[1].person_name, 'Vorname Person7');
   // An authorised area is not recorded as denied and its outcome is unchanged.

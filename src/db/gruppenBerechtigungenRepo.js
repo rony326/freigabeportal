@@ -1,7 +1,4 @@
 import { GRUPPEN, GRANTABLE_BERECHTIGUNGEN, FESTE_RECHTE, startwerteFuerGruppe } from '../services/berechtigungKatalog.js';
-import { getConfigValue, setConfigValue } from './adminConfigRepo.js';
-
-const MARKER = 'gruppenrechte_initialisiert';
 
 function pruefeGruppe(gruppe) {
   if (!GRUPPEN.includes(gruppe)) throw new Error(`Unbekannte Gruppe: ${gruppe}`);
@@ -37,9 +34,11 @@ export function setGruppenBerechtigungen(db, gruppe, berechtigungen) {
   }
 }
 
-// Einmalig: Startwerte = Verhalten vor Einführung der Gruppenrechte. Später nie wieder.
+// Einmalig: Startwerte = Verhalten vor Einführung der Gruppenrechte. Ob schon initialisiert wurde,
+// zeigt die Tabelle selbst: Superadmin behält das feste Recht immer, ein leerer Bestand heisst also
+// «noch nie gesetzt». (Ein Kennzeichen in admin_config wäre per Trigger auditiert und würde bei
+// jeder neuen Datenbank ein Audit-Ereignis erzeugen.)
 export function seedGruppenBerechtigungen(db) {
-  if (getConfigValue(db, MARKER) === '1') return;
+  if (db.prepare('SELECT 1 FROM gruppen_berechtigungen LIMIT 1').get()) return;
   for (const gruppe of GRUPPEN) setGruppenBerechtigungen(db, gruppe, startwerteFuerGruppe(gruppe));
-  setConfigValue(db, MARKER, '1');
 }

@@ -107,8 +107,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   const router = Router();
 
   const LIEFERANT_NUR_ADMIN_HINWEIS = 'Neue Lieferanten legt die Administration an.';
-  const darfLieferantenAnlegen = (person) => personHasRole(person, config, 'superadmin')
-    || personHasPermission(db, config, person, 'kreditoren_verwalten');
+  const darfLieferantenAnlegen = (person) => personHasPermission(db, config, person, 'kreditoren_verwalten');
 
   const lieferantAnsicht = (req) => ({ darfLieferantAnlegen: darfLieferantenAnlegen(req.currentPerson), ZAHLUNGSARTEN, ZAHLUNGSART_LABEL });
 

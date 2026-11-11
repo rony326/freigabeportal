@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { listAllPersons, getPersonById } from '../../db/personenRepo.js';
-import { personHasRole, requireRole } from '../../middleware/roles.js';
+import { personHasRole } from '../../middleware/roles.js';
 import { listBerechtigungenForPerson, setBerechtigungenForPerson } from '../../db/personBerechtigungenRepo.js';
-import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS } from '../../middleware/permissions.js';
+import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS, personHasPermission, requirePermission } from '../../middleware/permissions.js';
 import { personName } from '../../services/auditLog.js';
 
 function rolleVon(person, config) {
@@ -15,7 +15,7 @@ export function createPersonenRouter({ db, config, csrfProtection = (req, res, n
   const router = Router();
 
   router.get('/', (req, res) => {
-    const bearbeitbar = personHasRole(req.currentPerson, config, 'superadmin');
+    const bearbeitbar = personHasPermission(db, config, req.currentPerson, 'gruppenrechte_verwalten');
     const personen = listAllPersons(db).map((p) => ({
       ...p,
       rolle: rolleVon(p, config),
@@ -30,7 +30,7 @@ export function createPersonenRouter({ db, config, csrfProtection = (req, res, n
     });
   });
 
-  router.post('/:id/berechtigungen', csrfProtection, requireRole(config, 'superadmin'), (req, res) => {
+  router.post('/:id/berechtigungen', csrfProtection, requirePermission(db, config, 'gruppenrechte_verwalten'), (req, res) => {
     if (!getPersonById(db, req.params.id)) {
       return res.status(404).render('error', { message: 'Person nicht gefunden.' });
     }

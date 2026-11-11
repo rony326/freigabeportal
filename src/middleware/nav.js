@@ -18,24 +18,25 @@ export function loadNavFlags(db, config) {
       vorgaenge: hasPermission('vorgaenge_einsehen'),
       konten: hasPermission('konten_verwalten'),
       kreditoren: hasPermission('kreditoren_verwalten'),
-      benachrichtigungen: res.locals.isSuperadmin,
-      erscheinungsbild: res.locals.isSuperadmin,
-      zeitstempel: res.locals.isSuperadmin,
-      personen: res.locals.isSuperadmin || res.locals.isManager,
+      benachrichtigungen: hasPermission('benachrichtigungen_verwalten'),
+      erscheinungsbild: hasPermission('erscheinungsbild_verwalten'),
+      zeitstempel: hasPermission('zeitstempel_verwalten'),
+      personen: hasPermission('personen_einsehen'),
       mails: hasPermission('mails_einsehen'),
       sync: hasPermission('sync_einsehen'),
       geplanteJobs: hasPermission('geplante_jobs_verwalten'),
       abgelehnt: hasPermission('abgelehnt_verwalten'),
       auditLog: hasPermission('audit_log_einsehen'),
-      backup: res.locals.isSuperadmin,
-      module: res.locals.isSuperadmin,
-      ersteinrichtung: res.locals.isSuperadmin,
+      backup: hasPermission('backup_verwalten'),
+      dateiquarantaene: hasPermission('dateiquarantaene_verwalten'),
+      module: hasPermission('module_verwalten'),
+      ersteinrichtung: hasPermission('ersteinrichtung_verwalten'),
       gruppenrechte: hasPermission('gruppenrechte_verwalten'),
       kreditkarten: hasPermission('kreditkarten_verwalten'),
       budgets: hasPermission('budgets_verwalten'),
       altfaelle: hasPermission('workflow_eingreifen'),
       betrieb: hasPermission('betrieb_einsehen'),
-      testmodus: res.locals.isSuperadmin || res.locals.isManager,
+      testmodus: hasPermission('testmodus_nutzen'),
     };
     // Strip a trailing slash (e.g. "/pool/") so nav highlighting/buttons keyed on an exact
     // path like "/pool" still match — Express routes both with and without it identically.
@@ -49,7 +50,7 @@ export function loadNavFlags(db, config) {
     lazyLocal(res, 'navigation', () => {
       if (!person) return null;
       const bereich = bereichFuerPfad(res.locals.currentPath);
-      const zeigeAdminReiter = Boolean(res.locals.isSuperadmin || res.locals.isManager || Object.values(res.locals.adminNav).some(Boolean));
+      const zeigeAdminReiter = Object.values(res.locals.adminNav).some(Boolean);
       const gruppen =
         bereich === 'admin'
           ? baueAdminGruppen({ pfad: res.locals.currentPath, adminNav: res.locals.adminNav })

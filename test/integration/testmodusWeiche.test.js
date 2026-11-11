@@ -627,8 +627,9 @@ test('Echte App ohne je eingeschalteten Testmodus legt keine Spielwiesen-Dateien
 // nicht als unhandledRejection (= Prozess-Exit) enden.
 test('Weiche: synchroner Throw der Test-Instanz landet in next(err), keine unhandledRejection', async () => {
   const { testmodusWeiche } = await import('../../src/middleware/testmodusWeiche.js');
+  const { openDatabase } = await import('../../src/db/index.js');
   const weiche = testmodusWeiche({
-    db: null,
+    db: openDatabase(':memory:'),
     config: { churchtools: { groupIdAdmin: '20' } },
     holeTestApp: async () => () => { throw new Error('Test-Instanz kaputt'); },
     echterCsrfToken: () => 'token',

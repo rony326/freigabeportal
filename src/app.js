@@ -20,7 +20,7 @@ import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { createN8nBackupRouter } from './routes/n8n/backup.js';
 import { createN8nKkBelegeRouter } from './routes/n8n/kkBelege.js';
 import { createN8nRapporteRouter } from './routes/n8n/rapporte.js';
-import { loadCurrentPerson, loadBeispielperson, requireRole, requireAnyRole, requireLogin } from './middleware/roles.js';
+import { loadCurrentPerson, loadBeispielperson, requireRole, requireLogin } from './middleware/roles.js';
 import { requireAdminAreaAccess, requirePermission } from './middleware/permissions.js';
 import { loadNavFlags } from './middleware/nav.js';
 import { loadBranding } from './middleware/branding.js';
@@ -285,7 +285,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
     // nach dem ersten Abschluss nie mehr. Nie in der Test-Instanz: deren Pflichtschritte (TSA, Sync,
     // Sicherung) sind dort gesperrt und liessen sich nie abschliessen.
     let einrichtungHinweis = null;
-    if (!testmodus && res.locals.isSuperadmin === true && !einrichtungAbgeschlossenAm(db)) {
+    if (!testmodus && res.locals.adminNav?.ersteinrichtung === true && !einrichtungAbgeschlossenAm(db)) {
       try {
         const bis = Date.parse(getConfigValue(db, `einrichtung_spaeter_bis_${req.currentPerson.churchtools_person_id}`) || '');
         if (!(bis > Date.now())) {
@@ -300,7 +300,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
       zeitstempelUeberfaellig: tsaAktiv ? countZeitstempelUeberfaellig(db, zeitstempelWarnungSchwelle) : 0,
       zeitstempelWarnungSchwelle,
       // Hinweis nur für Superadmins, nur solange der automatische Nachweis aktiv ist.
-      auditRevisionEmpfaengerFehlt: res.locals.isSuperadmin === true
+      auditRevisionEmpfaengerFehlt: res.locals.adminNav?.benachrichtigungen === true
         && getConfigValue(db, 'modul_audit_nachweis_aktiv') === '1'
         && parseEmpfaengerListe(getConfigValue(db, 'audit_revision_empfaenger')).adressen.length === 0,
     });
@@ -312,17 +312,17 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/admin/debitoren', (req, res) => res.redirect(req.method === 'GET' || req.method === 'HEAD' ? 301 : 308, `/admin/kreditoren${req.url.replace(/^\/(?=\?|$)/, '')}`));
   app.use('/admin/kreditkarten', requirePermission(db, config, 'kreditkarten_verwalten'), createKreditkartenAdminRouter({ db, csrfProtection }));
   app.use('/admin/budgets', requirePermission(db, config, 'budgets_verwalten'), createBudgetsRouter({ db, csrfProtection }));
-  app.use('/admin/benachrichtigungen', requireRole(config, 'superadmin'), createBenachrichtigungenRouter({ db, config, mailer, csrfProtection }));
+  app.use('/admin/benachrichtigungen', requirePermission(db, config, 'benachrichtigungen_verwalten'), createBenachrichtigungenRouter({ db, config, mailer, csrfProtection }));
   // Frühere Seiten (Lesezeichen): Eskalationszeiten und Mail-Einstellungen sind jetzt Ereignisse dort.
   app.get('/admin/eskalation', (req, res) => res.redirect('/admin/benachrichtigungen/reminder'));
   app.get('/admin/mail-einstellungen', (req, res) => res.redirect('/admin/benachrichtigungen/zusammenfassung'));
-  app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config, csrfProtection }));
-  app.use('/admin/ersteinrichtung', requireRole(config, 'superadmin'), createErsteinrichtungRouter({ db, config, mailer, statusCache, csrfProtection }));
+  app.use('/admin/erscheinungsbild', requirePermission(db, config, 'erscheinungsbild_verwalten'), createErscheinungsbildRouter({ db, config, csrfProtection }));
+  app.use('/admin/ersteinrichtung', requirePermission(db, config, 'ersteinrichtung_verwalten'), createErsteinrichtungRouter({ db, config, mailer, statusCache, csrfProtection }));
   // Test-Instanz: TSA-Zugang nicht speicherbar (die Spiel-DB hält ihn ohnehin leer), keine Backups.
   const imTestmodusGesperrt = (message) => (req, res) => res.status(403).render('error', { message });
   if (testmodus) app.post('/admin/zeitstempel', imTestmodusGesperrt('Der Zeitstempeldienst ist im Testmodus deaktiviert.'));
-  app.use('/admin/zeitstempel', requireRole(config, 'superadmin'), createZeitstempelAdminRouter({ db, config, mailer, csrfProtection }));
-  app.use('/admin/personen', requireAnyRole(config, ['superadmin', 'manager']), createPersonenRouter({ db, config, csrfProtection }));
+  app.use('/admin/zeitstempel', requirePermission(db, config, 'zeitstempel_verwalten'), createZeitstempelAdminRouter({ db, config, mailer, csrfProtection }));
+  app.use('/admin/personen', requirePermission(db, config, 'personen_einsehen'), createPersonenRouter({ db, config, csrfProtection }));
   app.use('/admin/mails', requirePermission(db, config, 'mails_einsehen'), createMailsRouter({ db, mailer, csrfProtection }));
   app.use('/admin/sync', requirePermission(db, config, 'sync_einsehen'), createSyncRouter({ db, config, csrfProtection }));
   app.use('/admin/abgelehnt', requirePermission(db, config, 'abgelehnt_verwalten'), createAdminAbgelehntRouter({ db, config, csrfProtection }));
@@ -330,13 +330,13 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/admin/audit-log', requirePermission(db, config, 'audit_log_einsehen'), createAuditLogRouter({ db }));
   app.use('/admin/geplante-jobs', requirePermission(db, config, 'geplante_jobs_verwalten'), createGeplanteJobsRouter({ db, config, mailer, csrfProtection }));
   if (testmodus) app.use('/admin/backup', imTestmodusGesperrt('Backups sind im Testmodus nicht verfügbar.'));
-  else app.use('/admin/backup', requireRole(config, 'superadmin'), createBackupRouter({ db, config, csrfProtection }));
-  app.use('/admin/module', requireRole(config, 'superadmin'), createModuleRouter({ db, csrfProtection }));
+  else app.use('/admin/backup', requirePermission(db, config, 'backup_verwalten'), createBackupRouter({ db, config, csrfProtection }));
+  app.use('/admin/module', requirePermission(db, config, 'module_verwalten'), createModuleRouter({ db, csrfProtection }));
   app.use('/admin/gruppenrechte', requirePermission(db, config, 'gruppenrechte_verwalten'), createGruppenrechteRouter({ db, config, csrfProtection }));
   app.use('/admin/altfaelle', requirePermission(db, config, 'workflow_eingreifen'), createAltfaelleRouter({ db, config, csrfProtection }));
-  app.use('/admin/dateiquarantaene', requireRole(config, 'superadmin'), createDateiQuarantaeneRouter({ db, config, csrfProtection }));
+  app.use('/admin/dateiquarantaene', requirePermission(db, config, 'dateiquarantaene_verwalten'), createDateiQuarantaeneRouter({ db, config, csrfProtection }));
   if (testmodus) app.use('/testmodus', sessionLimiter, requireLogin(), createTestmodusInstanzRouter({ db, config, mailer, csrfProtection }));
-  if (testmodusSteuerung) app.use('/admin/testmodus', requireAnyRole(config, ['superadmin', 'manager']), createTestmodusRouter({ db, steuerung: testmodusSteuerung, csrfProtection }));
+  if (testmodusSteuerung) app.use('/admin/testmodus', requirePermission(db, config, 'testmodus_nutzen'), createTestmodusRouter({ db, steuerung: testmodusSteuerung, csrfProtection }));
   app.use('/admin/betrieb', requirePermission(db, config, 'betrieb_einsehen'), createBetriebRouter({ db, config, statusCache, csrfProtection }));
 
   app.use('/api/n8n/jobs', machineLimiter, requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));

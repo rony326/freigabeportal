@@ -1,4 +1,4 @@
-import { personHasRole } from './roles.js';
+import { personHasPermission } from './permissions.js';
 import { schreibeTestmodusAudit } from '../routes/admin/testmodus.js';
 
 // Pfade, die auch mit eingeschaltetem Testmodus immer in der echten App laufen.
@@ -9,7 +9,7 @@ import { schreibeTestmodusAudit } from '../routes/admin/testmodus.js';
 // dorthin kommen von Seiten der Spielwiese (Spiel-IDs); die Seite trägt das Band.
 export const ECHTE_PFADE = ['/auth', '/healthz', '/admin/testmodus', '/admin/betrieb/status', '/audit-pruefen', '/api/n8n', '/internal'];
 
-export const HINWEIS_ROLLE = 'Der Testmodus wurde beendet, weil du keine Admin-Rolle (Superadmin oder Manager) mehr hast.';
+export const HINWEIS_ROLLE = 'Der Testmodus wurde beendet, weil du das Recht «Testmodus nutzen» nicht mehr hast.';
 export const HINWEIS_SPIELWIESE = 'Der Testmodus wurde beendet, weil die Spielwiese nicht verfügbar ist. Du arbeitest wieder im echten Portal.';
 
 export function istEchterPfad(pfad) {
@@ -17,8 +17,8 @@ export function istEchterPfad(pfad) {
   return ECHTE_PFADE.some((praefix) => p === praefix || p.startsWith(`${praefix}/`));
 }
 
-export function darfTestmodus(person, config) {
-  return Boolean(person && person.aktiv) && (personHasRole(person, config, 'superadmin') || personHasRole(person, config, 'manager'));
+export function darfTestmodus(db, person, config) {
+  return Boolean(person && person.aktiv) && personHasPermission(db, config, person, 'testmodus_nutzen');
 }
 
 // Beendet den Testmodus ohne Zutun der Person: echtes Audit + einmaliger Hinweis in der Sitzung.
@@ -53,7 +53,7 @@ export function testmodusWeiche({ db, config, holeTestApp, echterCsrfToken }) {
       zeigeHinweis(req, res);
       return next();
     }
-    if (!darfTestmodus(req.currentPerson, config)) {
+    if (!darfTestmodus(db, req.currentPerson, config)) {
       beende(db, req, 'rolle_verloren', HINWEIS_ROLLE);
       zeigeHinweis(req, res);
       return next();

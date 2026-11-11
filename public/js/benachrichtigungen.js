@@ -180,8 +180,10 @@
         }
         var entfernen = document.createElement('button');
         entfernen.type = 'button';
-        entfernen.className = 'btn-close';
+        entfernen.className = 'zielwahl-chip-entfernen';
         entfernen.setAttribute('aria-label', info.label + ' entfernen');
+        var kreuz = symbol('entfernen');
+        if (kreuz) entfernen.appendChild(kreuz);
         entfernen.addEventListener('click', function () { entferne(index); });
         li.appendChild(entfernen);
         kaertchen.appendChild(li);
@@ -197,7 +199,7 @@
       zeichne();
       melde(label + ' entfernt.');
       // Fokus nicht verlieren: auf das nächste (sonst vorherige) Kärtchen, zuletzt auf die Suche.
-      var knoepfe = kaertchen.querySelectorAll('.btn-close');
+      var knoepfe = kaertchen.querySelectorAll('.zielwahl-chip-entfernen');
       var ziel = knoepfe[Math.min(index, knoepfe.length - 1)];
       (ziel || suche).focus();
     }

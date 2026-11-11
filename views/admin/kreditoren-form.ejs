@@ -1,14 +1,19 @@
 <%- include('../_seite_anfang', { titel: 'Kreditor' }) %>
+<% const istNeu = !kreditor; %>
     <div class="seitenkopf">
-      <h1 class="seitenkopf-titel">Kreditor bearbeiten</h1>
+      <h1 class="seitenkopf-titel"><%= istNeu ? 'Neuer Kreditor' : 'Kreditor bearbeiten' %></h1>
+      <div class="seitenkopf-aktionen"><a href="/admin/kreditoren" class="btn btn-outline-secondary btn-sm">Zurück zur Liste</a></div>
     </div>
     <% if (errors.length > 0) { %>
       <div class="alert alert-danger">
         <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
       </div>
     <% } %>
-    <form method="post" action="/admin/kreditoren/<%= kreditor.id %>" class="col-12 col-md-8 col-lg-6">
+    <form method="post" action="<%= istNeu ? '/admin/kreditoren' : `/admin/kreditoren/${kreditor.id}` %>" class="col-12 col-lg-8">
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <section class="card mb-3">
+        <div class="card-body">
+          <h2 class="h5 card-title">Lieferant</h2>
       <div class="mb-3">
         <label class="form-label" for="name">Name</label>
         <input type="text" class="form-control" id="name" name="name" value="<%= values.name || '' %>" required>
@@ -22,16 +27,28 @@
           <% }) %>
         </select>
       </div>
+        </div>
+      </section>
+      <section class="card mb-3">
+        <div class="card-body">
+          <h2 class="h5 card-title">Bezahlung</h2>
       <div class="mb-3">
         <span class="form-label d-block">Zahlungsart</span>
         <% ZAHLUNGSARTEN.forEach((art) => { %>
           <div class="form-check form-check-inline">
-            <input class="form-check-input" type="radio" name="zahlungsart" id="zahlungsart-<%= art %>" value="<%= art %>" <%= values.zahlungsart === art ? 'checked' : '' %>>
+            <input class="form-check-input" type="radio" name="zahlungsart" id="zahlungsart-<%= art %>" value="<%= art %>" <%= (values.zahlungsart || 'ueberweisung') === art ? 'checked' : '' %>>
             <label class="form-check-label" for="zahlungsart-<%= art %>"><%= ZAHLUNGSART_LABEL[art] %></label>
           </div>
         <% }) %>
         <div class="form-text">Überweisung und Dauerauftrag: mindestens eine IBAN ist Pflicht.</div>
       </div>
+      <% if (istNeu) { %>
+      <div class="mb-3">
+        <label class="form-label" for="iban">IBAN</label>
+        <input type="text" class="form-control" id="iban" name="iban" value="<%= values.iban || '' %>" placeholder="z.B. CH93 0076 2011 6238 5295 7" autocomplete="off" spellcheck="false">
+        <div class="form-text">Neue IBANs bitte nur aus einer unabhängigen Quelle übernehmen (Vertrag, Telefonat), nicht von einer Rechnung. Ausländische IBANs sind erlaubt.</div>
+      </div>
+      <% } %>
       <div class="mb-3">
         <div class="form-check">
           <input class="form-check-input" type="checkbox" name="betragSchwankt" id="betragSchwankt" <%= values.betragSchwankt ? 'checked' : '' %>>
@@ -39,7 +56,9 @@
         </div>
         <div class="form-text">z. B. bei Handwerkern oder Projekt-Lieferanten. Alle IBAN- und Duplikat-Prüfungen bleiben aktiv.</div>
       </div>
-      <button type="submit" class="btn btn-primary">Speichern</button>
+        </div>
+      </section>
+      <button type="submit" class="btn btn-primary"><%= istNeu ? 'Kreditor anlegen' : 'Speichern' %></button>
       <a href="/admin/kreditoren" class="btn btn-outline-secondary">Abbrechen</a>
     </form>
 <%- include('../_seite_ende') %>

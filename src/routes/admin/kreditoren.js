@@ -56,8 +56,6 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
       ibans,
       konten: listKonten(db),
       aktiveKreditoren: listKreditoren(db),
-      kreditorErrors: [],
-      kreditorValues: { zahlungsart: 'ueberweisung' },
       regelErrors: [],
       regelValues: {},
       ibanErrors: [],
@@ -71,6 +69,22 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     renderListe(req, res, 200);
   });
 
+  // Anlegen auf einer eigenen Seite (wie „Bearbeiten“), nicht als Formular unter der Liste.
+  function renderNeu(res, status, { errors = [], values = {} } = {}) {
+    res.status(status).render('admin/kreditoren-form', {
+      kreditor: null,
+      values: { zahlungsart: 'ueberweisung', ...values },
+      errors,
+      konten: listKonten(db),
+      ZAHLUNGSARTEN,
+      ZAHLUNGSART_LABEL,
+    });
+  }
+
+  router.get('/neu', (req, res) => {
+    renderNeu(res, 200);
+  });
+
   router.post('/', csrfProtection, (req, res) => {
     const { name, kontoId, iban } = req.body;
     const zahlungsart = zahlungsartAusEingabe(req.body);
@@ -78,10 +92,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     const { errors, normalizedIban } = pruefeNeuenKreditor(db, { name, zahlungsart, iban });
 
     if (errors.length > 0) {
-      return renderListe(req, res, 400, {
-        kreditorErrors: errors,
-        kreditorValues: { name, kontoId, iban, zahlungsart, betragSchwankt },
-      });
+      return renderNeu(res, 400, { errors, values: { name, kontoId, iban, zahlungsart, betragSchwankt } });
     }
 
     legeKreditorAn(db, { name, kontoId, zahlungsart, betragSchwankt, normalizedIban });

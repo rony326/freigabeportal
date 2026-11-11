@@ -3,6 +3,23 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased] – 1.1.0 (Entwurf)
+
+Release Notes (Entwurf): [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md).
+
+- Betrugserkennung: Zahlungsart und Pflicht-IBAN pro Lieferant (Lieferanten
+  ohne IBAN sind bei der Kontierung nicht wählbar), internationale IBANs in den
+  Stammdaten, „IBAN merken“ entfernt.
+- Prüf-Popup vor dem Speichern der Kontierung und beim Aufsplitten
+  (Auffälligkeiten A–G, eine gemeinsame Warn-Mail `auffaelligkeiten-warnung`,
+  ersetzt `iban-warnung`), manuelle IBAN-Kontrolle ohne QR-Code,
+  Anzeige bestätigter Auffälligkeiten für Freigeber und Admin.
+- Admin → Benachrichtigungen pro Ereignis (Wann/Wer/Was, Empfänger-Auswahl,
+  Variablen-Knöpfe, Live-Vorschau, Test-Mail) ersetzt Eskalationszeiten und
+  Mail-Einstellungen; alte URLs leiten weiter.
+- Du-Form auf `/audit-pruefen` und in allen Standard-Mailtexten, Logo
+  verlinkt auf die Startseite und bleibt mobil links.
+
 ## [1.0.1] – 2026-11-10
 
 Wartungsversion. Release Notes:

@@ -139,7 +139,7 @@ flowchart TD
   `auffaelligkeiten_bestaetigt` und **eine** Mail `auffaelligkeiten-warnung`
   (ersetzt die frühere `iban-warnung`). Empfänger: Freigeber 1 und 2 des Kontos,
   die kontierende Person und die zusätzlich konfigurierten Empfänger
-  (`iban_abweichung_empfaenger`, **Admin → Einstellungen → Eskalationszeiten**),
+  (`iban_abweichung_empfaenger`, **Admin → Einstellungen → Benachrichtigungen**),
   jede Adresse einmal. Die Mail geht immer sofort, nie gebündelt.
 - Die **bestätigten Auffälligkeiten** erscheinen als rot umrandeter Kasten
   „N Auffälligkeiten, bewusst bestätigt“ (mit „Bestätigt von X am …“ und „Wie

@@ -514,7 +514,7 @@ offenen Person nach `rapport_reminder_stunden` (Default 72) einen Reminder
 `rapport_eskalation_stunden` (Default 168) an `rapport_eskalation_empfaenger`
 (leer = Admin-Gruppe; Mail `rapport-eskalation`). Inaktive oder nicht
 auflösbare Empfänger:innen werden nicht erinnert, aber sofort eskaliert.
-Einstellungen: **Admin → Eskalationszeiten**. Details:
+Einstellungen: **Admin → Einstellungen → Benachrichtigungen**. Details:
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#rapport-erinnerungen).
 
 **Admin-Eingriff.** Unter **Admin → Vorgänge** (`/admin/vorgaenge`) tragen

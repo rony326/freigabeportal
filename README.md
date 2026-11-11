@@ -243,7 +243,7 @@ jeden davon manuell sofort auslösen, und den Verlauf der letzten Läufe
 (Erfolg/Fehler samt Details) einsehen — sowohl geplante als auch manuell
 ausgelöste Läufe landen im selben Verlauf. `datenbank-sicherung` wird unter
 **Admin → Betrieb → Datenbank-Backup**, `mail-digest` unter **Admin → Einstellungen →
-Mail-Einstellungen** eingestellt; `sicherheitsalarme` nur über `admin_config`.
+Benachrichtigungen** eingestellt; `sicherheitsalarme` nur über `admin_config`.
 Details zu allen sechzehn Jobs:
 [docs/geplante-jobs-und-benachrichtigungen.md](docs/geplante-jobs-und-benachrichtigungen.md).
 

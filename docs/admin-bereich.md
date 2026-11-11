@@ -66,7 +66,7 @@ kleinen Bildschirmen. Schlüsseltabelle und Cookie-Logik:
 | Übersicht | `/admin` | jedes Einzelrecht, `superadmin` oder `manager` |
 | Konten | `/admin/konten` | Einzelrecht `konten_verwalten` |
 | Kreditoren | `/admin/kreditoren` | Einzelrecht `kreditoren_verwalten` |
-| Eskalationszeiten | `/admin/eskalation` | **nur** `superadmin` |
+| Benachrichtigungen | `/admin/benachrichtigungen` (+ `/:id`, `/:id/zuruecksetzen`, `/:id/test-mail`, `/zusammenfassung/jetzt-ausfuehren`) | **nur** `superadmin`; ersetzt Eskalationszeiten und Mail-Einstellungen (alte URLs leiten per GET weiter) |
 | Erscheinungsbild | `/admin/erscheinungsbild` | **nur** `superadmin` |
 | Zeitstempel | `/admin/zeitstempel` | **nur** `superadmin` |
 | Personen | `/admin/personen` | `superadmin` oder `manager` |
@@ -84,7 +84,6 @@ kleinen Bildschirmen. Schlüsseltabelle und Cookie-Logik:
 | Budgets | `/admin/budgets` (+ `/import`, `/import/vorschau`, `/import/bestaetigen`) | Einzelrecht `budgets_verwalten`; `superadmin` ✓, `manager` ✓ — Budget pro Konto und Jahr, Import aus Excel/CSV mit Vorschau, siehe [auswertung.md](auswertung.md#budgets-pflegen) |
 | Module | `/admin/module` | **nur** `superadmin`; enthält auch die Schwelle «länger offen» der Auswertung (`auswertung_offen_schwelle_tage`, 1–365, Standard 14) |
 | Ersteinrichtung | `/admin/ersteinrichtung` | **nur** `superadmin`; geführter Assistent mit 14 Schritten (8 Pflicht), technische Prüfung, ChurchTools-Test, Testmail, Kernjobs auslösen; Hinweis auf dem Admin-Dashboard ("später" blendet ihn 7 Tage aus); Statusdienst `einrichtung` |
-| Mail-Einstellungen | `/admin/mail-einstellungen` | **nur** `superadmin` |
 | Testmodus | `/admin/testmodus` | `superadmin` oder `manager`; Spielwiese zum gefahrlosen Ausprobieren, siehe [testmodus.md](testmodus.md) |
 
 Die Seite **Laufende Vorgänge** zeigt alle Vorgänge in `unzugewiesen`, `zugewiesen`, `freigabe2` und `abgelehnt`; mit `workflow_eingreifen` lassen sie sich umhängen. Details: [rechnungs-workflow.md](rechnungs-workflow.md#8-admin-eingriff-laufende-vorgänge-umhängen).
@@ -119,35 +118,88 @@ und [kreditkarten-belege.md](kreditkarten-belege.md#6b-automatische-kartenerkenn
 ## Kreditoren (`/admin/kreditoren`)
 
 Drei zusammengehörige Tabellen auf einer Seite: **Kreditoren**
-(Lieferanten, optional mit Default-Konto), **Zuweisungsregeln**
+(Lieferanten mit **Zahlungsart** Überweisung, Dauerauftrag, Lastschrift oder
+Kreditkarte, optional mit Default-Konto und „Beträge schwanken stark“), **Zuweisungsregeln**
 (Absender-Adresse/-Domain → Kreditor, steuert die Auto-Zuweisung beim
 Rechnungseingang) und **hinterlegte IBANs** je Kreditor (Basis des
 Betrugserkennungs-Abgleichs, siehe
-[qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)). Ein
+[qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)). Neue
+IBANs entstehen **nur hier** (aus unabhängiger Quelle wie Vertrag oder
+Telefonat), nicht mehr von einer Rechnung („IBAN merken“ entfällt). Bei
+Überweisung und Dauerauftrag ist mindestens eine IBAN Pflicht (Feldfehler
+beim Speichern; die letzte IBAN lässt sich nicht löschen); die Liste zeigt
+die Zahlungsart, gekürzte IBANs und das Abzeichen „vollständig“ / „IBAN
+fehlt“. Unvollständige Kreditoren sind bei der Kontierung nicht wählbar.
+Ein
 Kreditor lässt sich auch direkt aus der Kontierungs-Seite heraus neu
 anlegen (`POST /kontierung/lieferanten`) — erlaubt für `buchhaltung`, `superadmin`,
 Einzelrecht `kreditoren_verwalten` oder wer selbst eine offene Kontierung bzw.
 Überarbeitung hat (sonst 403).
 
-## Eskalationszeiten (`/admin/eskalation`)
+## Benachrichtigungen (`/admin/benachrichtigungen`)
 
-Konfiguriert, nach wie vielen Stunden eine unbeanspruchte Pool-Rechnung
-eine Reminder- bzw. eine Eskalations-Mail auslöst, sowie die jeweiligen
-Empfängerlisten (E-Mail-Adressen oder die Tokens `gruppe:buchhaltung` /
-`gruppe:admin`) — inklusive der IBAN-Abweichungs-Empfänger. Zusätzlich
-dieselben Werte für Rechnungen, die in `freigabe2` festhängen:
-`freigabe2_reminder_stunden` und `freigabe2_eskalation_stunden` (Defaults
-24 bzw. 48 Stunden) sowie die Eskalations-Empfängerliste
-`freigabe2_eskalation_empfaenger` (Default `gruppe:admin`) — der Reminder
-selbst geht an keine konfigurierbare Liste, sondern immer an die
-tatsächlich zuständige Person. Siehe
-[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#freigabe2-erinnerungen).
+Eine Seite für alle Mail-Ereignisse; sie ersetzt die früheren Seiten
+„Eskalationszeiten“ (`/admin/eskalation`) und „Mail-Einstellungen“
+(`/admin/mail-einstellungen`). Beide alten URLs leiten per GET auf das passende
+Ereignis weiter (Lesezeichen funktionieren), POSTs auf die alten URLs gibt es
+nicht mehr. **Nur `superadmin`.** Menü: Admin → Einstellungen → Benachrichtigungen.
 
-Für **Rapporte** (nur zur Kenntnis) gibt es drei weitere Felder:
-`rapport_reminder_stunden` (Default 72, Reminder an jede offene Person),
-`rapport_eskalation_stunden` (Default 168, einmalige Eskalation je Rapport) und
-`rapport_eskalation_empfaenger` (leer = Admin-Gruppe). Siehe
-[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#rapport-erinnerungen).
+**Aufbau:** links die Ereignisliste nach Bereichen (Allgemein, Rechnungen,
+Freigabe 2, Warnungen, Rapporte, Kreditkarten, System & Sicherheit) mit
+Suchfeld. Ein Ereignis pro URL (`/admin/benachrichtigungen/<id>`, z. B.
+`reminder`), gespeichert wird pro Ereignis. Das Abzeichen „angepasst“ markiert
+Ereignisse, deren Text vom Standard abweicht. Auf älteren Installationen mit
+früheren Standardtexten kann es fälschlich erscheinen; „Text auf Standard
+zurücksetzen“ behebt das. Rechts das gewählte Ereignis mit drei Blöcken:
+
+- **Wann:** die Stunden-Werte bzw. Schwellen des Ereignisses (Reminder und
+  Eskalation im Pool, Freigabe 2, Rapporte, Wiederholung des
+  Sicherheitsalarms; beim Ereignis „Auffälligkeiten bei Kontierung“ die
+  Schwellen der Betragsprüfungen E/F/G). Bei sofort verschickten Ereignissen
+  steht der Hinweis, dass die Mail sofort geht. Werte und Validierung wie
+  zuvor.
+- **Wer:** fester Text, wer automatisch eine Mail bekommt, und bei Ereignissen
+  mit konfigurierbaren Empfängern die **zusätzlichen Empfänger** als Kärtchen
+  mit ×. Das Suchfeld bietet Gruppen (Buchhaltung, Admin), aktive Personen
+  (Name, Mail) und „Andere E-Mail-Adresse eingeben …“. Gespeichert wird als
+  Liste mit `gruppe:buchhaltung`, `gruppe:admin`, `person:<ID>` oder
+  E-Mail-Adresse; Personen werden beim Versand zur aktuellen Adresse
+  aufgelöst, inaktive Personen still übersprungen. Ohne JavaScript bleibt ein
+  Textfeld (ein Eintrag pro Zeile). Ein Hinweis „ungespeichert“ erscheint, wenn
+  die Liste von der gespeicherten abweicht.
+- **Was:** Betreff und Text. Die Variablen stehen als Knöpfe mit lesbaren
+  Namen („Name“, „Dateiname“, „Link“ …) bereit und fügen `%variable%` an der
+  Cursorposition ein. Eine Live-Vorschau zeigt Beispieldaten; unbekannte
+  Variablen werden gewarnt, Pflicht-Hinweise (z. B. `%zusammenfassung%` in der
+  Zusammenfassungs-Mail) bleiben. **Test-Mail an mich** schickt den
+  gespeicherten Text mit Beispieldaten sofort an die Adresse der angemeldeten
+  Person (Betreff „[Test] …“, Typ `testmail`) und wird im Audit-Log
+  festgehalten. **Text auf Standard zurücksetzen** fragt per Dialog nach.
+  Ereignisse ohne Vorlage (z. B. Sicherheitsalarm) haben keinen Block „Was“.
+
+**Umgezogene Einstellungen:** Die Empfänger der Sync-Fehler-Mails
+(`sync_fehler_empfaenger`) und der Audit-Prüfnummer
+(`audit_revision_empfaenger`) werden jetzt hier gepflegt; `/admin/sync` und
+`/admin/zeitstempel` verlinken nur noch hierher. Die Prüfnummer-Empfänger
+akzeptieren **ausschliesslich E-Mail-Adressen** (externe Revision hat kein
+Konto); die bestehende Änderungsmail an bisherige und neue Revision bleibt.
+Das Ereignis „Zusammenfassung & Versandzeit“ enthält Standard
+(sofort/täglich/wöchentlich), Wochentag, Versandzeit, die Digest-Vorlage und
+den Knopf „Jetzt ausführen“ für den `mail-digest`-Job. Der Standard gilt für
+alle, die auf
+[Meine Benachrichtigungen](geplante-jobs-und-benachrichtigungen.md#persönliche-benachrichtigungen-meine-benachrichtigungen)
+nichts anderes gewählt haben. `kk_beleg_erinnerung_tage` bleibt unter
+`/admin/geplante-jobs`.
+
+Die Zeit-Werte für Freigabe 2 (`freigabe2_reminder_stunden` 24,
+`freigabe2_eskalation_stunden` 48, `freigabe2_eskalation_empfaenger`
+Default `gruppe:admin`) und Rapporte (`rapport_reminder_stunden` 72,
+`rapport_eskalation_stunden` 168, `rapport_eskalation_empfaenger`, leer =
+Admin-Gruppe) liegen als eigene Ereignisse auf derselben Seite. Siehe
+[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#admin-seite-benachrichtigungen).
+Der Mail-Typ `iban-warnung` wurde durch `auffaelligkeiten-warnung` ersetzt;
+alte `mail_vorlage_iban_warnung_*`-Schlüssel bleiben in bestehenden
+Datenbanken ungenutzt liegen.
 
 ## Erscheinungsbild (`/admin/erscheinungsbild`)
 
@@ -170,7 +222,7 @@ Abschnitt **Audit-Nachweis für die Revision** (nur Superadmin, Hintergrund in
 [audit-externe-nachweise.md](audit-externe-nachweise.md)):
 
 - Funktion aktiv (`modul_audit_nachweis_aktiv`, Default an) — bewusst hier und nicht unter Module.
-- Empfänger der Prüfnummer (`audit_revision_empfaenger`, komma-getrennt). Ein Wechsel geht per Mail
+- Empfänger der Prüfnummer (`audit_revision_empfaenger`): werden unter [Benachrichtigungen](#benachrichtigungen-adminbenachrichtigungen) → „Audit-Prüfnummer“ gepflegt (nur E-Mail-Adressen), hier nur Link. Ein Wechsel geht per Mail
   an alte und neue Adresse; Warnung, wenn eine Adresse zu einer Person mit Admin-Rechten gehört;
   Hinweis (auch im Admin-Dashboard), wenn kein Empfänger festgelegt ist.
 - Versandrhythmus (`audit_pruefnummer_rhythmus`: monatlich, quartalsweise Jan/Apr/Jul/Okt, jährlich
@@ -230,31 +282,6 @@ Gedacht als Sammelstelle für künftige, ebenfalls unabhängig einführbare Modu
 Nur Superadmin. Geführter Assistent mit 14 Schritten (8 Pflicht), technischer Prüfung, ChurchTools-Test, Testmail und
 Auslösen der Kernjobs; Hinweis auf dem Dashboard, den "später" 7 Tage ausblendet. Details: [ersteinrichtung.md](ersteinrichtung.md).
 
-## Mail-Einstellungen (`/admin/mail-einstellungen`)
-
-Editierbare Betreff-/Text-Vorlagen (`%variable%`-Platzhalter) für alle
-Mail-Typen (inkl. `freigabe2-reminder`/`freigabe2-eskalation`, siehe
-[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#freigabe2-erinnerungen),
-sowie die drei Kreditkarten-Typen `kk-abrechnung-zugewiesen`,
-`kk-beleg-erinnerung` und `kk-beleg-eingegangen`, sowie `kommentar` (siehe [kommentare.md](kommentare.md)), siehe
-[kreditkarten-belege.md](kreditkarten-belege.md#3-abrechnung-markieren-und-übergeben)
-und [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail))
-plus die Digest-Vorlage, sowie der **Standard für Benachrichtigungen**
-(`mail_standard_benachrichtigung`: sofort, täglich oder wöchentlich gesammelt),
-der **Wochentag für die wöchentliche Zusammenfassung** (`mail_digest_wochentag`,
-1 = Montag bis 7 = Sonntag, Default Montag) und die Versandzeit
-(`mail_batching_stunde`/`mail_batching_minute`, gilt für täglich und wöchentlich),
-dazu das manuelle "Jetzt ausführen" für den `mail-digest`-Job. Der Standard gilt
-für alle Personen, die auf [Meine Benachrichtigungen](geplante-jobs-und-benachrichtigungen.md#persönliche-benachrichtigungen-meine-benachrichtigungen)
-(`/meine-benachrichtigungen`) nichts anderes gewählt haben. Den alten Schalter
-`mail_batching_aktiv` gibt es nicht mehr. **Nur `superadmin`**, wie
-Eskalationszeiten/Erscheinungsbild/Zeitstempel/Backup. Details:
-[geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail)
-und
-[2026-09-07-mail-vorlagen-und-batching-design.md](superpowers/specs/2026-09-07-mail-vorlagen-und-batching-design.md)
-bzw. für die persönliche Wahl
-[2026-10-25-persoenliche-benachrichtigungen-design.md](superpowers/specs/2026-10-25-persoenliche-benachrichtigungen-design.md).
-
 ## Personen (`/admin/personen`)
 
 Read-only-Liste aller aus ChurchTools synchronisierten Personen mit
@@ -280,7 +307,7 @@ eingereihte Zeile sofort, ohne Duplikat. Semantik und Wiederholungslogik:
 ## Personen-Sync (`/admin/sync`)
 
 Zeigt den Verlauf der letzten Sync-Läufe, erlaubt das Konfigurieren der
-Sicherheitsschwellen (SYNC-1) und listet **blockierte Rechnungen**
+Sicherheitsschwellen (SYNC-1) (die Empfänger der Fehler-Mails stehen unter [Benachrichtigungen](#benachrichtigungen-adminbenachrichtigungen) → „Sync-Fehler“) und listet **blockierte Rechnungen**
 ("stalled jobs") mit einer Force-Freigeben-Funktion. Details:
 [personen-sync.md](personen-sync.md).
 

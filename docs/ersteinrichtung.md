@@ -101,7 +101,7 @@ und, wo vorhanden, `mail_log`, `sync_log` und `cron_log`.
 ## Testmail
 
 Neuer Mail-Typ `testmail` (`mail_log.typ`, Migration in `src/db/index.js`): feste Vorlage, geht immer sofort
-(`IMMER_SOFORT_TYPEN` in `src/services/notify.js`, nie als Sammelmail) und ist unter Mail-Einstellungen nicht editierbar.
+(`IMMER_SOFORT_TYPEN` in `src/services/notify.js`, nie als Sammelmail) und ist unter Benachrichtigungen nicht editierbar.
 Hat die Person keine E-Mail-Adresse, wird nichts verschickt und die Seite sagt es. Scheitert der Versand oder wird er
 wiederholt, verweist die Meldung auf die Zeile Mailserver („siehe Technische Grundlagen → Mailserver“).
 

@@ -128,9 +128,9 @@ Recht ohne jede ChurchTools-Gruppenmitgliedschaft. Vergeben werden sie
 ausschliesslich von einem `superadmin` unter **Admin → Stammdaten → Personen**
 (`POST /admin/personen/:id/berechtigungen`).
 
-Sieben Admin-Bereiche bleiben `superadmin`-exklusiv: Eskalationszeiten,
-Erscheinungsbild, Zeitstempel, Datenbank-Backup, Datei-Quarantäne, Module
-und Mail-Einstellungen. Für sie gibt es keine additiven Einzelrechte; die
+Sechs Admin-Bereiche bleiben `superadmin`-exklusiv: Benachrichtigungen
+(früher Eskalationszeiten und Mail-Einstellungen), Erscheinungsbild,
+Zeitstempel, Datenbank-Backup, Datei-Quarantäne und Module. Für sie gibt es keine additiven Einzelrechte; die
 Routen prüfen die Rolle direkt. Der `CHECK`-Constraint akzeptiert nur die
 fünfzehn oben genannten Rechte.
 

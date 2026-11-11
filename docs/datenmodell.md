@@ -496,7 +496,7 @@ Betriebs-/Konfigurationstabellen: Lauf-Historie des nächtlichen
 ChurchTools-Syncs (`sync_log`) bzw. der übrigen Hintergrund-Jobs
 (`cron_log`; `sicherheitsalarme` protokolliert stattdessen im Audit-Log),
 Key-Value-Store
-für alle Admin-Einstellungen (Eskalationszeiten, Cron-Zeitpläne,
+für alle Admin-Einstellungen (Benachrichtigungen, Cron-Zeitpläne,
 Branding, TSA-Konfiguration, …), und der Express-Session-Store.
 
 ## Zusätzliche Nachweis- und Betriebstabellen

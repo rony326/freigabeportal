@@ -88,8 +88,8 @@ oder Serverzugriff das Audit-Log im Nachhinein veraendert?* Spec:
    (`gen_time` hoechstens 5 Min. vor und 7 Tage nach Erstellung); dazu Anzahl neuerer Pakete.
    "Keine Veraenderung festgestellt" nur, wenn alle Punkte gruen sind.
 
-**Empfaenger-Schutz:** `audit_revision_empfaenger` (komma-getrennt) und alle Einstellungen aendert nur
-der Superadmin auf `/admin/zeitstempel`. Wechsel der Empfaenger geht als Mail an alte **und** neue
+**Empfaenger-Schutz:** `audit_revision_empfaenger` (nur E-Mail-Adressen, komma-getrennt) aendert nur
+der Superadmin auf `/admin/benachrichtigungen/audit-pruefnummer`, alle uebrigen Einstellungen auf `/admin/zeitstempel`. Wechsel der Empfaenger geht als Mail an alte **und** neue
 Adresse, Abschalten sowie Aenderung von Rhythmus/Tag als Mail an die Empfaenger; Aenderungen stehen
 im Audit-Log (Trigger auf `admin_config`). Gehoert eine Adresse zu einer Person mit Admin-Rechten, warnt die Seite.
 

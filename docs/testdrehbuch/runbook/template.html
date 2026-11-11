@@ -12,7 +12,7 @@
     <tr><th>Testtermin(e)</th><td class="fill"></td></tr>
     <tr><th>Testleitung</th><td class="fill"></td></tr>
     <tr><th>Portal-Version / Datum Aufspielen</th><td class="fill"></td></tr>
-    <tr><th>Umfang</th><td>41 Szenarien in 8 Blöcken · gut 6 Stunden, gut auf zwei Termine verteilbar</td></tr>
+    <tr><th>Umfang</th><td>46 Szenarien in 8 Blöcken · gut 6,5 Stunden, gut auf zwei Termine verteilbar</td></tr>
   </table>
   <div class="howto">
     <h4>So wird das Runbook benutzt</h4>
@@ -58,7 +58,7 @@
   <table class="grid">
     <tbody>
       <tr><th>Kreditor «Testlieferant AG»</th><td>mit hinterlegter IBAN (dieselbe wie auf den QR-Rechnungen R1, R2, R2b, R6)</td></tr>
-      <tr><th>Kreditor «Zweiter Lieferant GmbH»</th><td><b>ohne</b> IBAN (für S-04)</td></tr>
+      <tr><th>Kreditor «Zweiter Lieferant GmbH»</th><td>noch <b>nicht</b> angelegt (wird in S-04 vom Admin mit IBAN erfasst)</td></tr>
       <tr><th>Zuweisungsregeln</th><td>keine für die Testlieferanten — alle Testbelege sollen im Pool landen</td></tr>
       <tr><th>Kreditkarte «Test-Visa»</th><td>Endziffern 4242, verantwortlich D, «Alle Personen dürfen Belege erfassen» ein</td></tr>
     </tbody>
@@ -79,9 +79,9 @@
       <tr><td><span class="box"></span></td><td>Konten T1–T4, Kreditoren und Kreditkarte gemäss Seite 2 angelegt.</td></tr>
       <tr><td><span class="box"></span></td><td>Admin → Module: Spesen <b>ein</b>, Kreditkarten <b>ein</b>, Rapporte <b>ein</b>, strikte Freigeber1-Prüfung <b>aus</b>, Schwelle «länger offen» 14 Tage.</td></tr>
       <tr><td><span class="box"></span></td><td>Admin → Personen → A: Rechte <b>Auswertung einsehen (alle Konten)</b> und <b>Budgets verwalten</b> geben (A spielt auch den Kassier). B, C, D bekommen diese Rechte <b>nicht</b>.</td></tr>
-      <tr><td><span class="box"></span></td><td>Admin → Eskalationszeiten: für V-03 kurz stellen (z. B. Erinnerung 1 h, Eskalation 2 h, Freigabe 2 gleich; optional Rapporte ebenso). Alte Werte notieren: <span class="fill inline"></span></td></tr>
-      <tr><td><span class="box"></span></td><td>IBAN-Abweichungs-Empfänger: E eingetragen.</td></tr>
-      <tr><td><span class="box"></span></td><td>Mail-Einstellungen: Standard-Benachrichtigung «sofort». Alle Testenden prüfen, dass sie Mails erhalten.</td></tr>
+      <tr><td><span class="box"></span></td><td>Admin → Benachrichtigungen: für V-03 kurz stellen (Ereignisse Erinnerung, Eskalation, Freigabe 2, optional Rapporte; z. B. Erinnerung 1 h, Eskalation 2 h). Alte Werte notieren: <span class="fill inline"></span></td></tr>
+      <tr><td><span class="box"></span></td><td>Admin → Benachrichtigungen → «Auffälligkeiten bei Kontierung»: E als Zusatzempfänger eingetragen.</td></tr>
+      <tr><td><span class="box"></span></td><td>Admin → Benachrichtigungen → «Zusammenfassung &amp; Versandzeit»: Standard-Benachrichtigung «sofort». Alle Testenden prüfen, dass sie Mails erhalten.</td></tr>
       <tr><td><span class="box"></span></td><td>Testbelege-Paket entpackt und an die Testenden verteilt (Ordner 2 und 3 auf die Handys, Ordner 5 an A). Ordner 1 und 4 behält die Testleitung zum Versenden.</td></tr>
       <tr><td><span class="box"></span></td><td>Optional: Abläufe vorher allein im <b>Testmodus</b> durchspielen (Admin → Testmodus).</td></tr>
       <tr><td><span class="box"></span></td><td>Entscheiden, was nach dem Test mit den Testvorgängen passiert (siehe Aufräumen). Abgeschlossene Vorgänge und das Audit-Log lassen sich bewusst nicht löschen.</td></tr>
@@ -93,7 +93,7 @@
 <section class="page">
   <h2>3 · Testbelege</h2>
   <p>Alle Dateien liegen im Paket <b>Testbelege-Freigabeportal.zip</b>, in vier Ordnern. Jeder Beleg trägt «TESTBELEG» als Wasserzeichen. Die QR-Codes sind echte Swiss-QR-Codes mit gültigen, aber erfundenen IBANs. Die Testbelege wurden mit den Prüffunktionen des Portals kontrolliert.</p>
-  <div class="warn">IBAN für den Kreditor «Testlieferant AG» hinterlegen: <b class="mono">CH03 0070 0110 0001 2345 6</b>. «Zweiter Lieferant GmbH» bekommt <b>keine</b> IBAN. Diese Zahlen nie für echte Zahlungen verwenden.</div>
+  <div class="warn">IBAN für den Kreditor «Testlieferant AG» hinterlegen: <b class="mono">CH03 0070 0110 0001 2345 6</b>. «Zweiter Lieferant GmbH» wird erst in S-04 angelegt. Diese Zahlen nie für echte Zahlungen verwenden.</div>
   <table class="grid belege">
     <thead><tr><th></th><th>Beleg</th><th>Datei / Inhalt</th><th>Für</th></tr></thead>
     <tbody>
@@ -133,10 +133,10 @@
     <thead><tr><th>Runde</th><th>Szenarien</th><th>Dauer</th></tr></thead>
     <tbody>
       <tr><td>Start</td><td>Rollen verteilen, alle angemeldet, «Problem melden» zeigen. R8 senden und V-03 starten (läuft nebenher).</td><td>15 min</td></tr>
-      <tr><td>1 · Rechnungen</td><td>R-01, R-02, R-03, R-07, S-01, S-02, S-03, S-04 — zwei Abläufe gleichzeitig möglich</td><td>75 min</td></tr>
+      <tr><td>1 · Rechnungen</td><td>R-01, R-02, R-03, R-07, S-01, S-02, S-03, S-04, S-07, S-08 — zwei Abläufe gleichzeitig möglich</td><td>95 min</td></tr>
       <tr><td>2 · Spesen</td><td>SP-01 – SP-05, dazu K-01 (Belege vorab)</td><td>50 min</td></tr>
       <tr><td>3 · Kreditkarten</td><td>K-02 – K-07</td><td>50 min</td></tr>
-      <tr><td>4 · Sonderfälle</td><td>V-01, R-06, R-04, R-05, R-08, V-02, V-04, V-05, R-09, SP-06, S-05, S-06</td><td>80 min</td></tr>
+      <tr><td>4 · Sonderfälle</td><td>V-01, R-06, R-04, R-05, R-08, V-02, V-04, V-05, V-07, R-09, SP-06, S-05, S-06</td><td>95 min</td></tr>
       <tr><td>5 · Rapporte</td><td>RA-01 – RA-04 (RA-01 kann schon in Runde 1 starten)</td><td>35 min</td></tr>
       <tr><td>6 · Auswertung</td><td>AW-01 – AW-04, wenn die meisten Vorgänge abgeschlossen sind</td><td>40 min</td></tr>
       <tr><td>Abschluss</td><td>V-03 auswerten, V-06, G-01 (wenn nicht schon nebenher), Besprechung der Fehler</td><td>30 min</td></tr>
@@ -169,7 +169,7 @@
   <h2>Aufräumen nach dem Test</h2>
   <table class="check">
     <tbody>
-      <tr><td><span class="box"></span></td><td>Eskalationszeiten auf die notierten Werte zurückstellen.</td></tr>
+      <tr><td><span class="box"></span></td><td>Benachrichtigungen (Zeiten, Zusatzempfänger, Texte) auf die notierten Werte zurückstellen.</td></tr>
       <tr><td><span class="box"></span></td><td>Module wie für den Betrieb gewünscht einstellen (Spesen, Kreditkarten, Rapporte). Strikte Freigeber1-Prüfung bewusst entscheiden.</td></tr>
       <tr><td><span class="box"></span></td><td>Test-Budgets 2026/2027 leeren (Admin → Budgets) und die echten Budgets erfassen oder importieren. Rechte für Auswertung und Budgets den richtigen Personen geben, Test-Rechte bei A entfernen.</td></tr>
       <tr><td><span class="box"></span></td><td>Ferienmodus aller Testenden beendet. Benachrichtigungen wieder auf die gewünschte Einstellung.</td></tr>

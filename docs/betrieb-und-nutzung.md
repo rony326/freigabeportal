@@ -73,7 +73,7 @@ noch nie gesehen (nicht bei der allerersten Anmeldung überhaupt). Dann geht die
 `neues-geraet` an die Person selbst: Zeitpunkt, Gerät, IP-Adresse und Hinweis, wen sie
 kontaktieren soll (`betrieb_kontakt_email`; leer = „die Portal-Administration“). Wer das
 Cookie löscht oder ein privates Fenster nutzt, gilt als neues Gerät – die Mail sagt das.
-Es gibt keine automatische Sperre. Der Mail-Typ ist bearbeitbar (Mail-Einstellungen) und
+Es gibt keine automatische Sperre. Der Mail-Typ ist bearbeitbar (Admin → Benachrichtigungen) und
 wird immer sofort zugestellt – im Hintergrund über die Mail-Outbox, die Anmeldung wartet
 nicht auf den Mailserver.
 

@@ -101,7 +101,7 @@ Buchhaltung bekommt bei Erwähnung oder als frühere Kommentierende den Link auf
 die Zeitstempel-Prüfung.
 
 Die Mailvorlage heisst `kommentar` und ist unter **Admin → Einstellungen →
-Mail-Einstellungen** (`/admin/mail-einstellungen`, nur Superadmin) bearbeitbar.
+Benachrichtigungen** (`/admin/benachrichtigungen/kommentar`, nur Superadmin) bearbeitbar.
 Schlüssel in `admin_config`: `mail_vorlage_kommentar_betreff` und
 `mail_vorlage_kommentar_text`; Variablen: `%empfaengerName%`,
 `%verfasserName%`, `%kommentarText%`, `%jobId%`, `%jobDateiname%`, `%link%`,

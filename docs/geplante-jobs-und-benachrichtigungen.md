@@ -40,7 +40,7 @@ flowchart LR
   Intervall-Jobs starten nach dem Neustart erst nach Ablauf ihres ersten
   Intervalls. Nach jedem ungeplanten Ausfall deshalb unter **Admin →
   Betrieb → Geplante Jobs**, **Admin → Betrieb → Datenbank-Backup** und **Admin →
-  Einstellungen → Mail-Einstellungen** prüfen, ob der letzte Lauf fehlt, und ihn bei Bedarf
+  Einstellungen → Benachrichtigungen** (Ereignis „Zusammenfassung & Versandzeit“) prüfen, ob der letzte Lauf fehlt, und ihn bei Bedarf
   über „Jetzt ausführen“ (bzw. `POST /internal/cron/*`) nachholen. Für die
   Sicherung empfiehlt sich zusätzlich eine externe Überwachung, die das Alter
   der neuesten `.fpbak`-Datei (bzw. des letzten n8n-Abrufs) prüft.
@@ -74,7 +74,7 @@ flowchart LR
 | `kk-beleg-erinnerungen` | täglich 08:00 (Europe/Zürich) | Geplante Jobs | ja | `cron_log` | Erinnerungs-Mails für seit langem offene Kreditkartenbelege/-entwürfe und noch nicht abgeglichene Kreditkartenabrechnungen |
 | `mail-zustellung` | alle 5 Minuten | Geplante Jobs | ja | `cron_log` (nur Läufe mit fälligen Mails) | wiederholt eingereihte, noch nicht zugestellte Mails und gescheiterte Digests mit wachsendem Abstand |
 | `datenbank-sicherung` | täglich 03:00 (Europe/Zürich) | Datenbank-Backup | nein | `cron_log` | verschlüsselte `.fpbak`-Sicherung von DB + `JOBS_DIR` + `BRANDING_DIR` nach `BACKUP_DIR`, Retention nur für `.fpbak` |
-| `mail-digest` | täglich 07:00 (Europe/Zürich) | Mail-Einstellungen | nein | `cron_log` | fasst gemäss der persönlichen Wahl (täglich/wöchentlich) eingereihte (`mail_log.status = 'geplant'`) Mails pro Empfänger zu einer Zusammenfassung zusammen |
+| `mail-digest` | täglich 07:00 (Europe/Zürich) | Benachrichtigungen → Zusammenfassung & Versandzeit | nein | `cron_log` | fasst gemäss der persönlichen Wahl (täglich/wöchentlich) eingereihte (`mail_log.status = 'geplant'`) Mails pro Empfänger zu einer Zusammenfassung zusammen |
 | `sicherheitsalarme` | alle 30 Minuten | nur `admin_config` (`cron_sicherheitsalarme_intervall_minuten`) | nein | Audit-Log (`hintergrundlauf`), `mail_log` | meldet ungeklärte Backup-Löschabsichten |
 | `tsa-crl-aktualisierung` | täglich 04:15 (Europe/Zürich), nur mit `TSA_CRL_AUTO_UPDATE=true` | nur `admin_config` (`cron_tsa_crl_stunde`/`cron_tsa_crl_minute`) | ja | Audit-Log (`hintergrundlauf`), `mail_log` bei Alarm | erneuert `TSA_CRL_FILE` aus der validierten TSA-Kette — siehe [tsa-vertrauensanker.md](tsa-vertrauensanker.md#automatische-sperrlisten-erneuerung) |
 | `audit-export` | täglich 03:15 (Europe/Zürich) | nur `admin_config` / Admin → Zeitstempel (`cron_audit_export_stunde`/`_minute`) | nein | Audit-Log (`hintergrundlauf`), kein `cron_log` | erzeugt Audit-Pakete, holt RFC3161-Zeitstempel (auch nachträglich), Alarm bei Rückstand (nur mit konfigurierter TSA-URL) |
@@ -96,7 +96,7 @@ flowchart TD
 
 Beide Schwellen und die jeweiligen Empfängerlisten (E-Mail-Adressen oder
 `gruppe:buchhaltung` / `gruppe:admin`) sind unter **Admin →
-Einstellungen → Eskalationszeiten** konfigurierbar. Auswahl der fälligen Jobs, Einreihen der
+Einstellungen → Benachrichtigungen** (Ereignisse „Erinnerung“ und „Eskalation“, Block „Wann“ und „Wer“) konfigurierbar. Auswahl der fälligen Jobs, Einreihen der
 Mails (`mail_log.status = 'eingereiht'`) und Setzen des Markers geschehen in
 **einer** Datenbanktransaktion; parallele Auslöser (Timer und manueller
 Aufruf) können dieselbe Erinnerung deshalb nicht doppelt planen. Die
@@ -168,7 +168,7 @@ Beide Schwellen (`freigabe2_reminder_stunden`, Default 24h;
 `freigabe2_eskalation_stunden`, Default 48h) sowie die
 Eskalations-Empfängerliste (`freigabe2_eskalation_empfaenger`,
 E-Mail-Adressen oder `gruppe:buchhaltung`/`gruppe:admin`, Default
-`gruppe:admin`) sind unter **Admin → Einstellungen → Eskalationszeiten** konfigurierbar.
+`gruppe:admin`) sind unter **Admin → Einstellungen → Benachrichtigungen** (Bereich „Freigabe 2“) konfigurierbar.
 Der Lauf-Intervall selbst (Default 60 Minuten, Config-Key
 `cron_freigabe2_erinnerungen_intervall_minuten`) liegt dagegen — wie bei
 allen anderen Jobs dieser Liste — unter **Admin → Betrieb → Geplante Jobs**.
@@ -314,7 +314,7 @@ Person: wer von täglich auf wöchentlich wechselt (oder umgekehrt), verliert
 nichts. Überlappungsschutz wie bei `zeitstempel-nachholen`. Zeitplan,
 Vorlagen-Bearbeitung und manuelles "Jetzt ausführen" leben — wie bei
 `datenbank-sicherung` — nicht unter **Admin → Betrieb → Geplante Jobs**, sondern auf
-der eigenen Seite **Admin → Einstellungen → Mail-Einstellungen**.
+der Seite **Admin → Einstellungen → Benachrichtigungen** (Ereignis „Zusammenfassung & Versandzeit“).
 
 ### `mail-zustellung`
 
@@ -358,7 +358,7 @@ markierte Rapporte nicht liegenbleiben). Intervall
 Der Ferienmodus wird ignoriert: erinnert wird immer die genannte Person.
 Auswahl, Marker und Einreihen geschehen in einer Transaktion; die Zustellung
 folgt danach wie bei den übrigen Erinnerungs-Jobs. Einstellung unter
-**Admin → Eskalationszeiten**.
+**Admin → Einstellungen → Benachrichtigungen** (Bereich „Rapporte“).
 
 ### `kk-beleg-erinnerungen`
 
@@ -433,9 +433,28 @@ dauerhaft in `mail_log` gespeichert und durchläuft diese Status:
 `resolveEmpfaenger` löst die Tokens `gruppe:buchhaltung`/`gruppe:admin` zur
 Versandzeit gegen die **aktuelle** Gruppenmitgliedschaft auf (keine feste
 Liste, die veraltet). Betreff und Text jedes Typs kommen aus einer unter
-**Admin → Einstellungen → Mail-Einstellungen** editierbaren Vorlage mit `%variable%`-
+**Admin → Einstellungen → Benachrichtigungen** editierbaren Vorlage mit `%variable%`-
 Platzhaltern (`src/services/mailTemplates.js`), nicht mehr aus fest
 codierten Strings.
+
+### Admin-Seite „Benachrichtigungen“
+
+Eine Seite für alle Ereignisse: **Admin → Einstellungen → Benachrichtigungen**
+(`/admin/benachrichtigungen`, nur `superadmin`; Aufbau und Bedienung:
+[admin-bereich.md](admin-bereich.md#benachrichtigungen-adminbenachrichtigungen)).
+Sie ersetzt die früheren Seiten „Eskalationszeiten“ und „Mail-Einstellungen“.
+Pro Ereignis gibt es drei Blöcke: **Wann** (Zeiten bzw. Schwellen), **Wer**
+(automatische Empfänger als fester Text plus zusätzliche Empfänger) und
+**Was** (Betreff und Text mit Variablen-Knöpfen, Live-Vorschau, Test-Mail).
+Die Werte liegen unverändert in `admin_config`; die Seite ändert nur die
+Bedienung. Ereignis-Definitionen (Bereich, Variablen, Konfig-Schlüssel):
+`src/services/benachrichtigungsEreignisse.js`.
+
+Zusatzempfänger werden als Liste gespeichert, ein Eintrag pro Zeile oder
+komma-getrennt: `gruppe:buchhaltung`, `gruppe:admin`, `person:<ID>` oder eine
+E-Mail-Adresse. `person:<ID>` wird beim Versand zur **aktuellen** Mailadresse
+aufgelöst (`resolveEmpfaenger`, `src/services/empfaenger.js`); inaktive oder
+gelöschte Personen werden beim Versand still übersprungen.
 
 | Typ | Auslöser |
 |---|---|
@@ -446,7 +465,7 @@ codierten Strings.
 | `freigabe2-eskalation` | `freigabe2`-Job länger als `freigabe2_eskalation_stunden` unbeantwortet — geht erst nach erfolgter Übergabe an die Admin-Gruppe raus |
 | `ablehnung` | Rechnung bei Kontierung oder Freigabe 2 abgelehnt |
 | `sync-fehler` | ChurchTools-Sync fehlgeschlagen oder abgebrochen — **immer sofort**, unabhängig von der persönlichen Wahl |
-| `auffaelligkeiten-warnung` | Kontierung trotz Auffälligkeiten im Prüf-Popup bestätigt (ersetzt `iban-warnung`); an Freigeber 1 + 2, die kontierende Person und `iban_abweichung_empfaenger` — **immer sofort**, unabhängig von der persönlichen Wahl |
+| `auffaelligkeiten-warnung` | Kontierung trotz Auffälligkeiten im Prüf-Popup bestätigt (ersetzt `iban-warnung`; die alten `mail_vorlage_iban_warnung_*`-Schlüssel bleiben in bestehenden Datenbanken ungenutzt liegen); an Freigeber 1 + 2, die kontierende Person und `iban_abweichung_empfaenger` — **immer sofort**, unabhängig von der persönlichen Wahl |
 | `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Kreditor erfasst |
 | `duplikat-warnung` | Möglicher Doppelscan: gleicher Kreditor, Betrag und Zahlungsziel, Eingang binnen 14 Tagen |
 | `kk-abrechnung-zugewiesen` | Kreditkartenabrechnung (manuell oder automatisch erkannt) einer Karte zugeordnet — geht an die verantwortliche Person |
@@ -488,7 +507,7 @@ zeitkritischen Mails bekommt:
 | Wöchentlich | `woechentlich` | eine Zusammenfassung pro Woche am Wochentag `mail_digest_wochentag` |
 
 Die Administration legt den Standard (Default `sofort`) und den Wochentag
-(Default `1` = Montag) unter **Admin → Einstellungen → Mail-Einstellungen** fest.
+(Default `1` = Montag) unter **Admin → Einstellungen → Benachrichtigungen** (Ereignis „Zusammenfassung & Versandzeit“) fest.
 
 - **Wechsel auf „sofort“:** Wartende (`geplant`e) Mails der Person werden
   sofort als Digest zugestellt, die Seite meldet die Anzahl. Auch wer den

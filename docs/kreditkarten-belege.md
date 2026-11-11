@@ -176,7 +176,7 @@ beim Abgleich als Position auf die Stempelseite übernommen wird.
 
 Liste, Neu, Bearbeiten, Deaktivieren/Reaktivieren — gleiches Muster wie
 Konten. Geschützt durch das neue additive Recht `kreditkarten_verwalten`
-(`superadmin` hat es implizit über sein Rollen-Bundle). Das
+(`superadmin` hat es als Startwert der Gruppenrechte). Das
 Bearbeiten-Formular zeigt bei deaktivierter Checkbox „Alle Personen dürfen
 Belege erfassen“ eine Personen-Mehrfachauswahl für `kreditkarte_erfasser`.
 

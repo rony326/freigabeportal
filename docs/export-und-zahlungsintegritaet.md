@@ -145,7 +145,7 @@ angeboten markiert). `abholung-bestaetigen` und `exportnachweis` liefern 409.
 
 ### Entscheidung unter Admin → Vorgänge → Altfälle
 
-Recht: `workflow_eingreifen` (Superadmins; nicht im Manager-Bündel).
+Recht: `workflow_eingreifen` (Startwert: Superadmin; nicht für Manager).
 Die Seite zeigt jeden Wert mit seiner Herkunft:
 
 | Herkunft | Bedeutung |

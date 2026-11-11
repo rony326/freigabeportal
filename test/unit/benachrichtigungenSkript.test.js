@@ -52,3 +52,24 @@ test('vorschlaege bei nurEmail: keine Gruppen und keine Personen', () => {
   assert.equal(r.gruppen.length, 0);
   assert.equal(r.personen.length, 0);
 });
+
+test('personenLabels: gleiche Namen bekommen die ID als Zusatz, eindeutige Namen bleiben unverändert', () => {
+  const { personenLabels } = laden();
+  const labels = personenLabels([
+    { id: '1', name: 'Anna Keller' },
+    { id: '2', name: 'anna keller' },
+    { id: '3', name: 'Ben Frei' },
+  ]);
+  assert.equal(labels['1'], 'Anna Keller (ID 1)');
+  assert.equal(labels['2'], 'anna keller (ID 2)');
+  assert.equal(labels['3'], 'Ben Frei');
+});
+
+test('normalisiereEmpfaenger: CRLF, Leerraum und Leerzeilen zählen nicht', () => {
+  const { normalisiereEmpfaenger } = laden();
+  const a = normalisiereEmpfaenger('gruppe:admin\r\n  person:5 \r\n\r\nrev@example.org\n');
+  assert.equal(a, 'gruppe:admin\nperson:5\nrev@example.org');
+  assert.equal(normalisiereEmpfaenger('gruppe:admin\nperson:5\nrev@example.org'), a);
+  assert.equal(normalisiereEmpfaenger(' \n\r\n'), '');
+  assert.notEqual(normalisiereEmpfaenger('gruppe:admin\nperson:6'), normalisiereEmpfaenger('gruppe:admin\nperson:5'));
+});

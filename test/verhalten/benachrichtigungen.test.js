@@ -112,3 +112,26 @@ test('Speichern mit der Auswahl: gespeicherte Empfänger erscheinen wieder als K
   assert.ok(vorher.includes('neu@example.org'));
   await page.close();
 });
+
+test('Leere Kärtchenliste ist wirklich unsichtbar (hidden gegen d-flex), Hinweis erscheint; Zeilenenden zählen nicht als Änderung', async () => {
+  const page = await b.neueSeite('/admin/benachrichtigungen/reminder');
+  const liste = page.locator('[data-empfaenger-kaertchen]');
+  assert.notEqual(await liste.evaluate((el) => getComputedStyle(el).display), 'none', 'mit Kärtchen sichtbar');
+  await page.getByRole('button', { name: 'Gruppe Buchhaltung entfernen' }).click();
+  assert.deepEqual(await kaertchen(page), []);
+  assert.equal(await liste.evaluate((el) => getComputedStyle(el).display), 'none', 'leere Liste ist wirklich ausgeblendet, nicht nur leer');
+  assert.equal(await page.locator('[data-empfaenger-leer]').isVisible(), true);
+  await page.close();
+});
+
+test('Test-Mail-Hinweis: gleiche Empfängerliste mit anderem Zeilenende oder Leerzeilen gilt nicht als ungespeichert', async () => {
+  const page = await b.neueSeite('/admin/benachrichtigungen/reminder');
+  const hinweis = page.locator('#testmailHinweis');
+  const feld = page.locator('#empfaenger');
+  const wert = await feld.inputValue();
+  await feld.evaluate((f, v) => { f.value = `\r\n ${v.replace(/\n/g, '\r\n')} \r\n\r\n`; f.dispatchEvent(new Event('input', { bubbles: true })); }, wert);
+  assert.doesNotMatch(await hinweis.textContent(), /speichere zuerst/);
+  await feld.evaluate((f) => { f.value += '\nrev@example.org'; f.dispatchEvent(new Event('input', { bubbles: true })); });
+  assert.match(await hinweis.textContent(), /speichere zuerst/);
+  await page.close();
+});

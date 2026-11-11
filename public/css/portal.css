@@ -926,6 +926,8 @@ h1 .beleg-nr {
   background: var(--bs-tertiary-bg);
   font-size: .875rem;
 }
+/* Bootstrap-d-flex überschreibt [hidden]: die leere Kärtchenliste muss trotzdem verschwinden. */
+.zielwahl [hidden] { display: none !important; }
 .zielwahl-chip > .symbol { flex: none; }
 .zielwahl-chip-text { min-width: 0; overflow-wrap: anywhere; }
 .zielwahl-chip .btn-close { flex: none; font-size: .7rem; }

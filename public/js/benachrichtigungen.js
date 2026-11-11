@@ -48,7 +48,26 @@
     return { gruppen: gruppen, personen: personen, email: istEmail(eingabe) && frei(eingabe) ? eingabe : null };
   }
 
-  window.Benachrichtigungen = { vorschau: vorschau, vorschlaege: vorschlaege };
+  // Empfängerliste für den Vergleich "ungespeichert": CRLF vereinheitlicht, Zeilen getrimmt, Leerzeilen weg.
+  function normalisiereEmpfaenger(text) {
+    return String(text).split(/\r\n|\r|\n/).map(function (z) { return z.trim(); }).filter(Boolean).join('\n');
+  }
+
+  // Anzeigenamen der Personen: der Name, bei gleichen Namen (ohne Gross-/Kleinschreibung) mit "(ID n)".
+  function personenLabels(personen) {
+    var anzahl = {};
+    personen.forEach(function (p) {
+      var k = String(p.name).trim().toLowerCase();
+      anzahl[k] = (anzahl[k] || 0) + 1;
+    });
+    var labels = {};
+    personen.forEach(function (p) {
+      labels[p.id] = anzahl[String(p.name).trim().toLowerCase()] > 1 ? p.name + ' (ID ' + p.id + ')' : p.name;
+    });
+    return labels;
+  }
+
+  window.Benachrichtigungen = { vorschau: vorschau, vorschlaege: vorschlaege, normalisiereEmpfaenger: normalisiereEmpfaenger, personenLabels: personenLabels };
 
   var datenElement = document.getElementById('benachrichtigungDaten');
   if (!datenElement) return;
@@ -73,7 +92,14 @@
     var hinweis = document.getElementById('testmailHinweis');
     if (!form || !hinweis) return;
     var original = hinweis.textContent;
-    var stand = function () { return new URLSearchParams(new FormData(form)).toString(); };
+    // Die Empfängerliste wird normalisiert verglichen (Zeilenenden, Leerzeilen, Leerraum zählen nicht).
+    var stand = function () {
+      var paare = [];
+      new FormData(form).forEach(function (wert, name) {
+        paare.push([name, name === 'empfaenger' ? normalisiereEmpfaenger(wert) : wert]);
+      });
+      return new URLSearchParams(paare).toString();
+    };
     var gespeichert = stand();
     var vonAnfangAn = form.hasAttribute('data-ungespeichert');
     function pruefe() {
@@ -101,7 +127,8 @@
     var gruppenNamen = {};
     daten.gruppen.forEach(function (g) { gruppenNamen[g.wert] = g.label; });
     var personenNamen = {};
-    daten.personen.forEach(function (p) { personenNamen[PERSON + p.id] = p.name; });
+    var personenLabel = personenLabels(daten.personen);
+    daten.personen.forEach(function (p) { personenNamen[PERSON + p.id] = personenLabel[p.id]; });
     var gespeichert = {};
     daten.anzeige.forEach(function (e) { gespeichert[e.wert] = e; });
 
@@ -249,12 +276,12 @@
         return { label: g.label, aktion: function () { fuegeHinzu(g.wert); } };
       }));
       abschnitt('Personen', v.personen.map(function (p) {
-        return { label: p.name, aktion: function () { fuegeHinzu(PERSON + p.id); } };
+        return { label: personenLabel[p.id], aktion: function () { fuegeHinzu(PERSON + p.id); } };
       }));
       if (liste.firstChild) {
         var trenner = document.createElement('div');
         trenner.className = 'dropdown-divider';
-        trenner.setAttribute('role', 'separator');
+        trenner.setAttribute('aria-hidden', 'true');
         liste.appendChild(trenner);
       }
       if (v.email) option(liste, v.email + ' hinzufügen', function () { fuegeHinzu(v.email); });

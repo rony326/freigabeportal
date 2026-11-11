@@ -564,3 +564,12 @@ test('Komfort: nach Fehler ist das Formular als ungespeichert markiert (Hinweis 
   assert.equal(res.status, 400);
   assert.match(res.text, /id="ereignisForm" data-ungespeichert/);
 });
+
+test('Komfort: gleichnamige aktive Personen stehen mit verschiedenen IDs im Datenelement (Skript unterscheidet sie)', async (t) => {
+  const { db, als } = umgebung(t);
+  upsertPerson(db, { id: '41', vorname: 'Anna', nachname: 'Keller', email: 'a1@example.org', gruppen: [] });
+  upsertPerson(db, { id: '42', vorname: 'Anna', nachname: 'Keller', email: 'a2@example.org', gruppen: [] });
+  const daten = datenAus((await als().get('/admin/benachrichtigungen/reminder')).text);
+  const anna = daten.personen.filter((p) => p.name === 'Anna Keller');
+  assert.deepEqual(anna.map((p) => p.id).sort(), ['41', '42']);
+});

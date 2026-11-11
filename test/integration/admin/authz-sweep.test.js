@@ -72,9 +72,11 @@ const ADMIN_ROUTES = [
   { method: 'post', path: '/admin/kreditkarten/1' },
   { method: 'post', path: '/admin/kreditkarten/1/deaktivieren' },
   { method: 'post', path: '/admin/kreditkarten/1/aktivieren' },
-  // eskalation (2)
-  { method: 'get', path: '/admin/eskalation' },
-  { method: 'post', path: '/admin/eskalation' },
+  // benachrichtigungen (4)
+  { method: 'get', path: '/admin/benachrichtigungen/reminder' },
+  { method: 'post', path: '/admin/benachrichtigungen/reminder' },
+  { method: 'post', path: '/admin/benachrichtigungen/reminder/zuruecksetzen' },
+  { method: 'post', path: '/admin/benachrichtigungen/reminder/test-mail' },
   // erscheinungsbild (2)
   { method: 'get', path: '/admin/erscheinungsbild' },
   { method: 'post', path: '/admin/erscheinungsbild' },
@@ -106,8 +108,8 @@ const ADMIN_ROUTES = [
   { method: 'post', path: '/admin/geplante-jobs/pdf-bereinigung/jetzt-ausfuehren' },
 ];
 
-test('the real createApp wiring returns 401 on all 45 admin route/method combinations with no session present', async () => {
-  assert.equal(ADMIN_ROUTES.length, 45, 'sanity check: this sweep should cover exactly 45 route/method combinations');
+test('the real createApp wiring returns 401 on all 47 admin route/method combinations with no session present', async () => {
+  assert.equal(ADMIN_ROUTES.length, 47, 'sanity check: this sweep should cover exactly 47 route/method combinations');
 
   const db = openDatabase(':memory:');
   const brandingDir = mkdtempSync(join(tmpdir(), 'branding-test-'));
@@ -153,7 +155,7 @@ test('the real createApp wiring enforces the superadmin-only hard lock and the m
   const managerAgent = await loginAs(app, client, { id: 55, vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'] });
 
   const HART_GESPERRT = [
-    { method: 'get', path: '/admin/eskalation' },
+    { method: 'get', path: '/admin/benachrichtigungen/reminder' },
     { method: 'get', path: '/admin/erscheinungsbild' },
     { method: 'get', path: '/admin/zeitstempel' },
     // workflow_eingreifen is deliberately not part of the manager bundle.

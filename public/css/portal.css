@@ -879,3 +879,38 @@ h1 .beleg-nr {
 .auffaelligkeiten-modal-ohne-js .modal-dialog { margin: 0; max-width: none; }
 .auffaelligkeiten-modal-ohne-js .btn-close,
 .auffaelligkeiten-modal-ohne-js [data-bs-dismiss="modal"] { display: none; }
+
+/* ---------- Admin: Benachrichtigungen pro Ereignis ---------- */
+.benachrichtigung-bereich {
+  margin: .75rem 0 .25rem;
+  padding: 0 .75rem;
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+.benachrichtigung-liste .list-group-item {
+  border: 0;
+  border-radius: var(--bs-border-radius);
+  padding: .4rem .75rem;
+}
+.benachrichtigung-nummer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--bs-primary);
+  color: #fff;
+  font-size: .75rem;
+}
+.benachrichtigung-ziel {
+  font-size: .875rem;
+  padding: .35rem .7rem;
+}
+.benachrichtigung-vorschau-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

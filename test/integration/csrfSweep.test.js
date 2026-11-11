@@ -85,7 +85,9 @@ const SESSION_POST_ROUTES = [
   '/admin/kreditoren/1',
   '/admin/kreditoren/1/deaktivieren',
   '/admin/kreditoren/1/aktivieren',
-  '/admin/eskalation',
+  '/admin/benachrichtigungen/reminder',
+  '/admin/benachrichtigungen/reminder/zuruecksetzen',
+  '/admin/benachrichtigungen/reminder/test-mail',
   '/admin/erscheinungsbild',
   '/admin/zeitstempel',
   '/admin/zeitstempel/audit-pruefnummer-senden',
@@ -94,8 +96,7 @@ const SESSION_POST_ROUTES = [
   '/admin/budgets',
   '/admin/budgets/import',
   '/admin/budgets/import/bestaetigen',
-  '/admin/mail-einstellungen',
-  '/admin/mail-einstellungen/jetzt-ausfuehren',
+  '/admin/benachrichtigungen/zusammenfassung/jetzt-ausfuehren',
   '/pool/1/zuweisen',
   '/kontierung/1/an-gruppe-zurueck',
   '/admin/personen/1/berechtigungen',
@@ -152,8 +153,9 @@ const SESSION_POST_ROUTES = [
 
 test('the real createApp wiring rejects every session-authenticated POST route with no CSRF token, via the dedicated CSRF error page', async () => {
   // 47 base routes (the disabled restore has no state-changing handler) + 12 credit-card routes
-  // + 3 file-quarantine routes + 1 Audit-Prüfnummer route + 7 Betrieb-&-Nutzung routes + 7 Ersteinrichtung routes + 4 Testmodus routes + 1 Kommentar route.
-  assert.equal(SESSION_POST_ROUTES.length, 90, 'sanity check: this sweep should cover exactly 90 routes');
+  // + 3 file-quarantine routes + 1 Audit-Prüfnummer route + 7 Betrieb-&-Nutzung routes + 7 Ersteinrichtung routes + 4 Testmodus routes + 1 Kommentar route
+  // + 1 because the Benachrichtigungen page (4 routes) replaced Eskalation (1) and Mail-Einstellungen (2).
+  assert.equal(SESSION_POST_ROUTES.length, 91, 'sanity check: this sweep should cover exactly 91 routes');
 
   const db = openDatabase(':memory:');
   const dir = mkdtempSync(join(tmpdir(), 'csrf-sweep-test-'));

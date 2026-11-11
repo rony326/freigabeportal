@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
-import { validateEmpfaengerListe } from '../../src/routes/admin/eskalation.js';
+import { validateEmpfaengerListe, empfaengerAnzeige } from '../../src/services/empfaenger.js';
 
 function db1() {
   const db = openDatabase(':memory:');
@@ -50,4 +50,31 @@ test('validateEmpfaengerListe: leerErlaubt allows an empty list, default does no
   const b = [];
   validateEmpfaengerListe('', 'L', b);
   assert.equal(b.length, 1);
+});
+
+test('validateEmpfaengerListe prüft eine 100-kB-Zeile schnell und lehnt sie ab', () => {
+  const errors = [];
+  const t0 = performance.now();
+  validateEmpfaengerListe(`${'a'.repeat(100_000)}@${'b'.repeat(1000)}.`, 'Ziel', errors);
+  assert.ok(performance.now() - t0 < 100);
+  assert.equal(errors.length, 1);
+  assert.ok(errors[0].length < 500);
+  const ok = [];
+  validateEmpfaengerListe('a@b.ch\r\ngruppe:admin', 'Ziel', ok);
+  assert.deepEqual(ok, []);
+});
+
+test('empfaengerAnzeige: Gruppen, Personen (inaktiv/unbekannt) und Adressen lesbar', () => {
+  const db = db1();
+  upsertPerson(db, { id: '2', vorname: 'Ina', nachname: 'Aktiv', email: 'p2@example.org', gruppen: [], loggedInNow: false });
+  db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '2'").run();
+  assert.deepEqual(empfaengerAnzeige(db, 'gruppe:buchhaltung\ngruppe:admin\nperson:1\nperson:2\nperson:9\nx@example.org\n'), [
+    { art: 'gruppe', label: 'Gruppe Buchhaltung', inaktiv: false },
+    { art: 'gruppe', label: 'Gruppe Admin', inaktiv: false },
+    { art: 'person', label: 'A B', inaktiv: false },
+    { art: 'person', label: 'Ina Aktiv', inaktiv: true },
+    { art: 'person', label: 'Unbekannte Person (9)', inaktiv: true },
+    { art: 'mail', label: 'x@example.org', inaktiv: false },
+  ]);
+  db.close();
 });

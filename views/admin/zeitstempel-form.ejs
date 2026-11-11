@@ -41,16 +41,12 @@
       <p class="text-muted small">Das Audit-Protokoll wird jede Nacht exportiert und mit einem Zeitstempel versehen. Regelmässig geht die Prüfnummer des letzten Pakets per Mail an die Revision; damit kann sie später prüfen, dass das Protokoll nicht verändert wurde. Es werden keine personenbezogenen Daten versendet.</p>
       <input type="hidden" name="auditFormular" value="1">
       <% if (empfaengerFehlt) { %>
-        <div class="alert alert-warning">Kein Revisions-Empfänger festgelegt — es wird keine Prüfnummer versendet.</div>
+        <div class="alert alert-warning">Kein Revisions-Empfänger festgelegt — es wird keine Prüfnummer versendet. <a href="/admin/benachrichtigungen/audit-pruefnummer">Empfänger einstellen → Benachrichtigungen</a></div>
       <% } %>
       <% if (adminAdressen.length > 0) { %>
         <div class="alert alert-warning">Die Adresse <%= adminAdressen.join(', ') %> gehört einer Person mit Admin-Rechten. Für eine unabhängige Prüfung sollte die Revision eine eigene Adresse haben.</div>
       <% } %>
-      <div class="mb-3">
-        <label class="form-label" for="auditRevisionEmpfaenger">Empfänger der Prüfnummer (Mailadressen, durch Komma getrennt)</label>
-        <textarea class="form-control" id="auditRevisionEmpfaenger" name="auditRevisionEmpfaenger" rows="2"><%= auditRevisionEmpfaenger %></textarea>
-        <div class="form-text">Bei einer Änderung erhalten alte und neue Adressen eine Benachrichtigung.</div>
-      </div>
+      <p class="mb-3">Empfänger der Prüfnummer: <%= auditRevisionEmpfaenger || '(keine)' %> · <a href="/admin/benachrichtigungen/audit-pruefnummer">Empfänger einstellen → Benachrichtigungen</a></p>
       <div class="form-check mb-3">
         <input type="checkbox" class="form-check-input" id="auditNachweisAktiv" name="auditNachweisAktiv" value="1" <%= auditNachweisAktiv ? 'checked' : '' %>>
         <label class="form-check-label" for="auditNachweisAktiv">Automatischer Nachweis aktiv (nächtlicher Export und Versand)</label>

@@ -190,7 +190,6 @@ test('POST /admin/zeitstempel with a new password replaces the stored one', asyn
 const BASIS = { tsaUrl: '', tsaUser: '', warnungAbStunden: '2' };
 const AUDIT = {
   auditFormular: '1',
-  auditRevisionEmpfaenger: 'revision@example.org',
   auditNachweisAktiv: '1',
   auditPruefnummerRhythmus: 'monatlich',
   auditPruefnummerTag: '1',
@@ -219,17 +218,16 @@ function paket(db) {
     VALUES (1, 5, 5, '[]', ?, ?, '2026-10-01T03:15:00.000Z')`).run('a'.repeat(64), 'b'.repeat(64));
 }
 
-test('Superadmin speichert Empfänger; alte und neue Adresse bekommen Mail; admin_config-Änderung steht im Audit-Log', async (t) => {
+test('Empfänger der Prüfnummer werden hier nicht mehr gespeichert (→ Benachrichtigungen), keine Wechsel-Mail', async (t) => {
   const { db, app, mails } = await setup(t);
   setConfigValue(db, 'audit_revision_empfaenger', 'alt@example.org');
-  const res = await speichere(app, { auditRevisionEmpfaenger: ' neu@example.org , neu@example.org' });
+  const res = await speichere(app, { auditRevisionEmpfaenger: 'neu@example.org' });
   assert.equal(res.status, 302);
-  assert.equal(getConfigValue(db, 'audit_revision_empfaenger'), 'neu@example.org');
-  const wechsel = mails.filter((m) => /Empfänger der Audit-Prüfnummer/.test(m.subject));
-  assert.deepEqual(wechsel.map((m) => m.to).sort(), ['alt@example.org', 'neu@example.org']);
-  assert.match(wechsel[0].text, /Admina Portal/);
-  const audit = db.prepare("SELECT * FROM audit_ereignisse WHERE objekt = 'admin_config' AND objekt_id = 'audit_revision_empfaenger'").all();
-  assert.ok(audit.length >= 1);
+  assert.equal(getConfigValue(db, 'audit_revision_empfaenger'), 'alt@example.org');
+  assert.equal(mails.length, 0);
+  const seite = await request(app).get('/admin/zeitstempel').set('x-test-person-id', '99');
+  assert.doesNotMatch(seite.text, /name="auditRevisionEmpfaenger"/);
+  assert.match(seite.text, /href="\/admin\/benachrichtigungen\/audit-pruefnummer">Empfänger einstellen → Benachrichtigungen</);
 });
 
 test('unveränderter Empfänger → keine Wechsel-Mail', async (t) => {
@@ -258,15 +256,6 @@ test('Abschalten oder Rhythmus/Tag ändern → Änderungs-Mail an Revisions-Empf
   assert.match(mails[0].text, /Versandtag: 1 → 15/);
 });
 
-test('Empfänger und Rhythmus im selben Speichern → beide Mails', async (t) => {
-  const { db, app, mails } = await setup(t);
-  setConfigValue(db, 'audit_revision_empfaenger', 'alt@example.org');
-  await speichere(app, { auditRevisionEmpfaenger: 'neu@example.org', auditPruefnummerRhythmus: 'jaehrlich' });
-  assert.equal(mails.filter((m) => /Empfänger der Audit-Prüfnummer/.test(m.subject)).length, 2);
-  // Änderungsmail geht an alte und neue Adresse (Empfängerwechsel)
-  assert.equal(mails.filter((m) => /Einstellungen des Audit-Nachweises/.test(m.subject)).length, 2);
-});
-
 test('nur Uhrzeit oder Alarmschwelle ändern → keine Mail', async (t) => {
   const { db, app, mails } = await setup(t);
   setConfigValue(db, 'audit_revision_empfaenger', 'revision@example.org');
@@ -293,15 +282,6 @@ test('ungültige Werte → 400, nichts gespeichert', async (t) => {
   assert.equal(getConfigValue(db, 'audit_revision_empfaenger'), '');
 });
 
-test('ungültige Adresse → 400, nichts gespeichert, eingegebene Werte bleiben im Formular', async (t) => {
-  const { db, app } = await setup(t);
-  const res = await speichere(app, { auditRevisionEmpfaenger: 'gut@example.org, kaputt', auditPruefnummerTag: '12' });
-  assert.equal(res.status, 400);
-  assert.match(res.text, /kaputt/);
-  assert.match(res.text, /id="auditPruefnummerTag"[^>]*value="12"/);
-  assert.equal(getConfigValue(db, 'audit_revision_empfaenger'), '');
-});
-
 test('Seite zeigt alle Einstellungen vorbelegt mit den gespeicherten Werten', async (t) => {
   const { db, app } = await setup(t);
   setConfigValue(db, 'audit_revision_empfaenger', 'a@example.org, b@example.org');
@@ -315,7 +295,7 @@ test('Seite zeigt alle Einstellungen vorbelegt mit den gespeicherten Werten', as
   setConfigValue(db, 'audit_zeitstempel_alarm_tage', '6');
   const res = await request(app).get('/admin/zeitstempel').set('x-test-person-id', '99');
   assert.equal(res.status, 200);
-  assert.match(res.text, /id="auditRevisionEmpfaenger"[^>]*>a@example\.org, b@example\.org</);
+  assert.match(res.text, /Empfänger der Prüfnummer: a@example\.org, b@example\.org/);
   assert.doesNotMatch(res.text, /id="auditNachweisAktiv"[^>]*checked/);
   assert.match(res.text, /<option value="quartalsweise" selected>/);
   assert.match(res.text, /id="auditPruefnummerTag"[^>]*value="14"/);
@@ -326,11 +306,9 @@ test('Seite zeigt alle Einstellungen vorbelegt mit den gespeicherten Werten', as
   assert.match(res.text, /id="auditZeitstempelAlarmTage"[^>]*value="6"/);
 });
 
-test('Adresse eines Superadmins → gespeichert, Seite zeigt Warnung', async (t) => {
+test('Adresse eines Superadmins als Empfänger → Seite zeigt Warnung', async (t) => {
   const { db, app } = await setup(t);
-  const res = await speichere(app, { auditRevisionEmpfaenger: 'Admin@Example.org' });
-  assert.equal(res.status, 302);
-  assert.equal(getConfigValue(db, 'audit_revision_empfaenger'), 'Admin@Example.org');
+  setConfigValue(db, 'audit_revision_empfaenger', 'Admin@Example.org');
   const seite = await request(app).get('/admin/zeitstempel').set('x-test-person-id', '99');
   assert.match(seite.text, /gehört einer Person mit Admin-Rechten/);
 });
@@ -378,15 +356,6 @@ test('alter Formular-Post ohne Audit-Felder lässt die Audit-Einstellungen unver
   assert.equal(getConfigValue(db, 'audit_pruefnummer_tag'), '9');
   assert.equal(getConfigValue(db, 'modul_audit_nachweis_aktiv'), '0');
   assert.equal(mails.length, 0);
-});
-
-test('Empfänger ersetzen und abschalten im selben POST → "abgeschaltet"-Mail geht an alte und neue Adresse', async (t) => {
-  const { db, app, mails } = await setup(t);
-  setConfigValue(db, 'audit_revision_empfaenger', 'alt@example.org');
-  await speichere(app, { auditRevisionEmpfaenger: 'neu@example.org', auditNachweisAktiv: undefined });
-  const mailsAbgeschaltet = mails.filter((m) => /Einstellungen des Audit-Nachweises/.test(m.subject));
-  assert.deepEqual(mailsAbgeschaltet.map((m) => m.to).sort(), ['alt@example.org', 'neu@example.org']);
-  assert.match(mailsAbgeschaltet[0].text, /aktiv → abgeschaltet/);
 });
 
 test('http:// TSA-URL wird mit Zugangsdaten abgelehnt, ohne Zugangsdaten erlaubt', async () => {

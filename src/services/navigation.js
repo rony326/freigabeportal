@@ -59,8 +59,7 @@ const ADMIN = [
     { label: 'Personen', href: '/admin/personen', symbol: 'people', flag: 'personen' },
   ] },
   { titel: 'Einstellungen', punkte: [
-    { label: 'Eskalationszeiten', href: '/admin/eskalation', symbol: 'alarm', flag: 'eskalation' },
-    { label: 'Mail-Einstellungen', href: '/admin/mail-einstellungen', symbol: 'envelope-at', flag: 'mailEinstellungen' },
+    { label: 'Benachrichtigungen', href: '/admin/benachrichtigungen', symbol: 'envelope-at', flag: 'benachrichtigungen' },
     { label: 'Erscheinungsbild', href: '/admin/erscheinungsbild', symbol: 'palette', flag: 'erscheinungsbild' },
     { label: 'Module', href: '/admin/module', symbol: 'grid-3x3-gap', flag: 'module' },
     { label: 'Zeitstempel', href: '/admin/zeitstempel', symbol: 'clock-history', flag: 'zeitstempel' },

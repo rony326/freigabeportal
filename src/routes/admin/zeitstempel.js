@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
-import { listActivePersonsInGroup } from '../../db/personenRepo.js';
+import { adminAdressen } from '../../services/empfaenger.js';
 import {
-  parseEmpfaengerListe, sendeAuditPruefnummer, meldeAuditEmpfaengerWechsel,
+  parseEmpfaengerListe, sendeAuditPruefnummer,
   meldeAuditNachweisAenderung, listPaketeOhneZeitstempel, runAuditExportJob,
 } from '../../services/auditNachweisJobs.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
@@ -59,14 +59,6 @@ export function createZeitstempelAdminRouter({
     return werte;
   }
 
-  // Adressen, die einer aktiven Person mit Admin-Rechten gehören (Revision soll unabhängig sein).
-  function adminAdressen(adressen) {
-    const groupId = config?.churchtools?.groupIdAdmin;
-    if (!groupId) return [];
-    const adminMails = new Set(listActivePersonsInGroup(db, groupId).map((p) => (p.email ?? '').toLowerCase()).filter(Boolean));
-    return adressen.filter((a) => adminMails.has(a.toLowerCase()));
-  }
-
   function currentState() {
     return {
       tsaUrl: getConfigValue(db, 'zeitstempel_tsa_url') ?? '',
@@ -85,7 +77,7 @@ export function createZeitstempelAdminRouter({
       rhythmen: RHYTHMEN,
       versandHinweis: VERSAND_HINWEISE[versand] ?? null,
       exportHinweis: exportErgebnis,
-      adminAdressen: adminAdressen(adressen),
+      adminAdressen: adminAdressen(db, config, adressen),
       empfaengerFehlt: adressen.length === 0,
       letztesPaket: db.prepare('SELECT * FROM audit_export_pakete ORDER BY id DESC LIMIT 1').get() ?? null,
       paketeOhneZeitstempel: listPaketeOhneZeitstempel(db).length,
@@ -117,17 +109,15 @@ export function createZeitstempelAdminRouter({
 
     // Audit-Felder nur auswerten, wenn das Formular sie mitsendet (Marker auditFormular):
     // alte Posts ohne diese Felder lassen die Audit-Einstellungen unverändert, und eine fehlende
-    // Checkbox heisst sonst "abgeschaltet".
+    // Checkbox heisst sonst "abgeschaltet". Die Empfänger der Prüfnummer werden unter
+    // /admin/benachrichtigungen/audit-pruefnummer eingestellt, nicht hier.
     const aktuell = auditState();
     const audit = { ...aktuell };
     if (req.body.auditFormular === '1') {
-      audit.auditRevisionEmpfaenger = String(req.body.auditRevisionEmpfaenger ?? '').trim();
       audit.auditNachweisAktiv = req.body.auditNachweisAktiv === '1';
       audit.auditPruefnummerRhythmus = String(req.body.auditPruefnummerRhythmus ?? '');
       for (const feld of Object.keys(ZAHLENFELDER)) audit[feld] = String(req.body[feld] ?? '').trim();
     }
-    const { adressen, ungueltig } = parseEmpfaengerListe(audit.auditRevisionEmpfaenger);
-    if (ungueltig.length > 0) errors.push(`Ungültige Mailadresse: ${ungueltig.join(', ')}.`);
     if (!Object.hasOwn(RHYTHMEN, audit.auditPruefnummerRhythmus)) {
       errors.push('Versandrhythmus muss monatlich, quartalsweise oder jährlich sein.');
     }
@@ -149,10 +139,6 @@ export function createZeitstempelAdminRouter({
     else if (tsaPasswort) setConfigValue(db, 'zeitstempel_tsa_passwort', tsaPasswort);
     setConfigValue(db, 'zeitstempel_warnung_ab_stunden', trimmedWarnung);
 
-    // Normalisierte Liste speichern (ohne Duplikate/Leerzeichen).
-    const neueListe = adressen.join(', ');
-    const alteListe = parseEmpfaengerListe(aktuell.auditRevisionEmpfaenger).adressen.join(', ');
-    setConfigValue(db, 'audit_revision_empfaenger', neueListe);
     setConfigValue(db, 'modul_audit_nachweis_aktiv', audit.auditNachweisAktiv ? '1' : '0');
     setConfigValue(db, 'audit_pruefnummer_rhythmus', audit.auditPruefnummerRhythmus);
     for (const [feld, [key]] of Object.entries(ZAHLENFELDER)) setConfigValue(db, key, String(Number(audit[feld])));
@@ -169,11 +155,8 @@ export function createZeitstempelAdminRouter({
     }
     // Mails sind Nebenwirkung: ein Mailfehler macht das gespeicherte Ergebnis nicht rückgängig.
     try {
-      if (neueListe !== alteListe) {
-        await meldeAuditEmpfaengerWechsel(db, config, mailer, { alt: alteListe, neu: neueListe, person: req.currentPerson });
-      }
       if (aenderungen.length > 0) {
-        await meldeAuditNachweisAenderung(db, config, mailer, { aenderungen, person: req.currentPerson, zusaetzlicheEmpfaenger: parseEmpfaengerListe(alteListe).adressen });
+        await meldeAuditNachweisAenderung(db, config, mailer, { aenderungen, person: req.currentPerson });
       }
     } catch (err) {
       console.error('Audit-Nachweis: Änderungsmail fehlgeschlagen', err);

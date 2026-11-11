@@ -28,7 +28,7 @@ import { createBrandingRouter } from './routes/branding.js';
 import { createKontenRouter } from './routes/admin/konten.js';
 import { createKreditorenRouter } from './routes/admin/kreditoren.js';
 import { createKreditkartenAdminRouter } from './routes/admin/kreditkarten.js';
-import { createEskalationRouter } from './routes/admin/eskalation.js';
+import { createBenachrichtigungenRouter } from './routes/admin/benachrichtigungen.js';
 import { createErscheinungsbildRouter } from './routes/admin/erscheinungsbild.js';
 import { countZeitstempelUeberfaellig } from './db/jobsRepo.js';
 import { getConfigValue } from './db/adminConfigRepo.js';
@@ -47,7 +47,6 @@ import { createAuditLogRouter } from './routes/admin/auditLog.js';
 import { createGeplanteJobsRouter } from './routes/admin/geplanteJobs.js';
 import { createBackupRouter } from './routes/admin/backup.js';
 import { createModuleRouter } from './routes/admin/module.js';
-import { createMailEinstellungenRouter } from './routes/admin/mailEinstellungen.js';
 import { createAltfaelleRouter } from './routes/admin/altfaelle.js';
 import { createDateiQuarantaeneRouter } from './routes/admin/dateiQuarantaene.js';
 import { createHealthzRouter } from './routes/healthz.js';
@@ -312,7 +311,10 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/admin/debitoren', (req, res) => res.redirect(req.method === 'GET' || req.method === 'HEAD' ? 301 : 308, `/admin/kreditoren${req.url.replace(/^\/(?=\?|$)/, '')}`));
   app.use('/admin/kreditkarten', requirePermission(db, config, 'kreditkarten_verwalten'), createKreditkartenAdminRouter({ db, csrfProtection }));
   app.use('/admin/budgets', requirePermission(db, config, 'budgets_verwalten'), createBudgetsRouter({ db, csrfProtection }));
-  app.use('/admin/eskalation', requireRole(config, 'superadmin'), createEskalationRouter({ db, csrfProtection }));
+  app.use('/admin/benachrichtigungen', requireRole(config, 'superadmin'), createBenachrichtigungenRouter({ db, config, mailer, csrfProtection }));
+  // Frühere Seiten (Lesezeichen): Eskalationszeiten und Mail-Einstellungen sind jetzt Ereignisse dort.
+  app.get('/admin/eskalation', (req, res) => res.redirect('/admin/benachrichtigungen/reminder'));
+  app.get('/admin/mail-einstellungen', (req, res) => res.redirect('/admin/benachrichtigungen/zusammenfassung'));
   app.use('/admin/erscheinungsbild', requireRole(config, 'superadmin'), createErscheinungsbildRouter({ db, config, csrfProtection }));
   app.use('/admin/ersteinrichtung', requireRole(config, 'superadmin'), createErsteinrichtungRouter({ db, config, mailer, statusCache, csrfProtection }));
   // Test-Instanz: TSA-Zugang nicht speicherbar (die Spiel-DB hält ihn ohnehin leer), keine Backups.
@@ -329,7 +331,6 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   if (testmodus) app.use('/admin/backup', imTestmodusGesperrt('Backups sind im Testmodus nicht verfügbar.'));
   else app.use('/admin/backup', requireRole(config, 'superadmin'), createBackupRouter({ db, config, csrfProtection }));
   app.use('/admin/module', requireRole(config, 'superadmin'), createModuleRouter({ db, csrfProtection }));
-  app.use('/admin/mail-einstellungen', requireRole(config, 'superadmin'), createMailEinstellungenRouter({ db, config, mailer, csrfProtection }));
   app.use('/admin/altfaelle', requirePermission(db, config, 'workflow_eingreifen'), createAltfaelleRouter({ db, config, csrfProtection }));
   app.use('/admin/dateiquarantaene', requireRole(config, 'superadmin'), createDateiQuarantaeneRouter({ db, config, csrfProtection }));
   if (testmodus) app.use('/testmodus', sessionLimiter, requireLogin(), createTestmodusInstanzRouter({ db, config, mailer, csrfProtection }));

@@ -873,3 +873,9 @@ h1 .beleg-nr {
   height: 0.75rem;
   border-radius: 3px;
 }
+
+/* Prüf-Popup ohne JS: als normaler Block über dem Kontierungsformular (public/js/auffaelligkeiten.js). */
+.auffaelligkeiten-modal-ohne-js { display: block; position: static; }
+.auffaelligkeiten-modal-ohne-js .modal-dialog { margin: 0; max-width: none; }
+.auffaelligkeiten-modal-ohne-js .btn-close,
+.auffaelligkeiten-modal-ohne-js [data-bs-dismiss="modal"] { display: none; }

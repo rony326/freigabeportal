@@ -10,8 +10,8 @@ import { createFreigabe } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getKreditorById } from '../db/kreditorenRepo.js';
 import { listKreditorIbansByKreditor } from '../db/kreditorIbanRepo.js';
-import { kreditorNameVariablen } from './kreditorFelder.js';
-import { getConfigValue } from '../db/adminConfigRepo.js';
+import { sendeAuffaelligkeitenWarnung } from './auffaelligkeitenWarnung.js';
+import { ibanKurz } from './ibanUtils.js';
 import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from './notify.js';
 
 // teilPosition landet später wörtlich auf der gemeinsamen Stempelseite der Splitgruppe
@@ -289,28 +289,23 @@ export async function pruefeIbanNachAufsplitten(db, mailer, config, { job, teile
           kommentar: `QR-IBAN ${job.qr_iban} weicht von der/den für ${kreditor.name} hinterlegten IBAN(s) ab.`,
           eskaliertVon: null,
         });
-        const zusatzEmpfaenger = new Set(resolveEmpfaenger(db, config, getConfigValue(db, 'iban_abweichung_empfaenger')));
-        zusatzEmpfaenger.add(person.email);
+        // Bis Task 11 das Aufsplitten auf das Prüf-Popup umstellt: dieselbe Warn-Mail wie bei der
+        // Kontierung, mit dem IBAN-Befund als einziger Auffälligkeit.
+        const freigeberIds = [];
         for (const teil of teile) {
           if (!konten.some((k) => k.id === teil.konto.id)) continue;
-          const freigeber1 = getPersonById(db, teil.konto.freigeber1_id);
-          const freigeber2 = getPersonById(db, getEffectiveFreigeber2Id(job, teil.konto));
-          if (freigeber1) zusatzEmpfaenger.add(freigeber1.email);
-          if (freigeber2) zusatzEmpfaenger.add(freigeber2.email);
+          freigeberIds.push(teil.konto.freigeber1_id, getEffectiveFreigeber2Id(job, teil.konto));
         }
-        for (const email of zusatzEmpfaenger) {
-          await sendNotification(db, mailer, {
-            to: email,
-            typ: 'iban-warnung',
-            jobId: job.id,
-            variablen: {
-              jobDateiname: job.dateiname,
-              ...kreditorNameVariablen(kreditor.name),
-              tatsaechlicheIban: job.qr_iban,
-              link: `${config.publicBaseUrl}/kontierung/${job.id}`,
-            },
-          });
-        }
+        await sendeAuffaelligkeitenWarnung(db, mailer, config, {
+          job,
+          kreditor,
+          befunde: [{ code: 'iban_fremd', schwere: 'rot', titel: 'IBAN nicht hinterlegt',
+            text: `Die IBAN auf der Rechnung (${ibanKurz(job.qr_iban)}) stimmt mit keiner hinterlegten IBAN von «${kreditor.name}» überein.` }],
+          bemerkung: null,
+          person,
+          freigeberIds,
+          link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+        });
       }
     }
   }

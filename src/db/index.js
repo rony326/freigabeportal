@@ -1126,7 +1126,8 @@ function migrateRapporteSchema(db) {
   BEGIN SELECT RAISE(ABORT, 'kenntnisnahmen ist unveraenderlich'); END;`);
 }
 
-// Betrugserkennung: manuelle IBAN-Kontrolle und bestätigte Auffälligkeiten als freigaben-Rollen.
+// Betrugserkennung: manuelle IBAN-Kontrolle und bestätigte Auffälligkeiten als freigaben-Rollen, dazu der
+// Mailtyp auffaelligkeiten-warnung.
 // Läuft nach migrateRapportChecks und vor migrateSecuritySchema (das die Audit-Trigger neu anlegt).
 function migrateBetrugserkennungChecks(db) {
   erweitereCheckPerRebuild(db, {
@@ -1148,6 +1149,30 @@ function migrateBetrugserkennungChecks(db) {
     )`,
     spalten: ['id', 'job_id', 'person_id', 'rolle', 'zeitpunkt', 'ip', 'interessenskonflikt', 'kommentar', 'eskaliert_von', 'vertretung_fuer', 'vorher_zustaendig', 'ziel_person_id'],
   });
+  // Mailtyp auffaelligkeiten-warnung (ersetzt iban-warnung; der alte Wert bleibt für bestehende Zeilen erlaubt).
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'mail_log',
+    marker: 'auffaelligkeiten-warnung',
+    createSql: `CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation', 'auffaelligkeiten-warnung')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('eingereiht', 'versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL,
+      eingereiht_am TEXT,
+      versuche INTEGER NOT NULL DEFAULT 0,
+      naechster_versuch_am TEXT,
+      sperre_token TEXT,
+      sperre_bis TEXT,
+      versendet_am TEXT
+    )`,
+    spalten: ['id', 'typ', 'job_id', 'empfaenger', 'betreff', 'text', 'status', 'fehler_details', 'versucht_am', 'eingereiht_am', 'versuche', 'naechster_versuch_am', 'sperre_token', 'sperre_bis', 'versendet_am'],
+  });
+  db.exec('CREATE INDEX IF NOT EXISTS mail_log_zustellung_idx ON mail_log(status, naechster_versuch_am)');
 }
 
 // Rapporte: neue freigaben-Rollen, Mail-Typen und cron_log-Job. Gleiches Rebuild-Muster wie

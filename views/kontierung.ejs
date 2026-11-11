@@ -32,6 +32,7 @@
               </div>
             <% } %>
             <%- include('_fehler_liste', { errors, feldFehler: locals.feldFehler || {} }) %>
+            <% if (locals.auffaelligkeiten) { %><%- include('_auffaelligkeiten_modal', { auffaelligkeiten, values }) %><% } %>
 
             <form id="kontierung-form" method="post" action="/kontierung/<%= job.id %>" enctype="multipart/form-data">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
@@ -306,6 +307,7 @@
     </div>
     <% } %>
   <script src="/js/kontierung-iban.js?v=<%= locals.assetVersion || 0 %>" defer></script>
+  <% if (locals.auffaelligkeiten) { %><script src="/js/auffaelligkeiten.js?v=<%= locals.assetVersion || 0 %>" defer></script><% } %>
   <script nonce="<%= locals.cspNonce %>">
     // Eingebettetes PDF, "Vorschau neu laden" und Beleg/Formular-Umschalter: public/js/belegUmschalter.js.
     // Ablehnen deliberately needs none of these fields filled in (the server-side handler skips

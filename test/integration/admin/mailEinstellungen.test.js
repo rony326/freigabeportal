@@ -48,7 +48,7 @@ const VALID_BODY = {
   eskalationBetreff: 'B3', eskalationText: 'T3',
   ablehnungBetreff: 'B4', ablehnungText: 'T4',
   syncFehlerBetreff: 'B5', syncFehlerText: 'T5',
-  ibanWarnungBetreff: 'B6', ibanWarnungText: 'T6',
+  auffaelligkeitenWarnungBetreff: 'B6', auffaelligkeitenWarnungText: 'T6',
   rechnungsnummerWarnungBetreff: 'B7', rechnungsnummerWarnungText: 'T7',
   digestBetreff: 'B8', digestText: 'T8',
   freigabe2ReminderBetreff: 'B9', freigabe2ReminderText: 'T9',

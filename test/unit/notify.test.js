@@ -136,16 +136,16 @@ test('sendNotification ignores the batching switch for sync-fehler and always se
   db.close();
 });
 
-test('sendNotification ignores the batching switch for iban-warnung and always sends immediately', async () => {
+test('sendNotification ignores the batching switch for auffaelligkeiten-warnung and always sends immediately', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   setConfigValue(db, 'mail_standard_benachrichtigung', 'taeglich');
   const mailer = createStubMailer();
   await sendNotification(db, mailer, {
     to: 'a@example.org',
-    typ: 'iban-warnung',
+    typ: 'auffaelligkeiten-warnung',
     jobId: null,
-    variablen: { jobDateiname: 'a.pdf', kreditorName: 'ACME', tatsaechlicheIban: 'CH00', link: 'L' },
+    variablen: { jobDateiname: 'a.pdf', kreditorName: 'ACME', auffaelligkeiten: '- IBAN nicht hinterlegt: x', bestaetigtVon: 'Erika Muster', bemerkung: '–', link: 'L' },
   });
   assert.equal(mailer.sent.length, 1);
   assert.equal(listMailLog(db)[0].status, 'versendet');

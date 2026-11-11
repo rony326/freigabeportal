@@ -152,8 +152,12 @@ test('a scanned QR invoice runs intake → Kontierung → confirmed payment at F
   const freigeber1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
   const freigeber1Token = await fetchCsrfToken(freigeber1Agent, '/pool');
   assert.equal((await freigeber1Agent.post(`/api/pool/${jobId}/beanspruchen`).type('form').send({ _csrf: freigeber1Token })).status, 200);
-  const kontierungRes = await freigeber1Agent.post(`/kontierung/${jobId}`).type('form')
-    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-QR', betrag: '1949.75', zahlungsziel: '2026-10-15', interessenskonflikt: 'nein', begruendung: '', _csrf: freigeber1Token });
+  const kontierungsDaten = { kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-QR', betrag: '1949.75', zahlungsziel: '2026-10-15', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', _csrf: freigeber1Token };
+  // Lastschrift-Lieferant mit Einzahlungsschein: das Prüf-Popup verlangt zuerst eine Bestätigung.
+  const popupRes = await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send(kontierungsDaten);
+  assert.equal(popupRes.status, 200);
+  const auffaelligkeitenHash = popupRes.text.match(/name="auffaelligkeitenHash"[^>]*value="([0-9a-f]{64})"/)[1];
+  const kontierungRes = await freigeber1Agent.post(`/kontierung/${jobId}`).type('form').send({ ...kontierungsDaten, auffaelligkeitenHash });
   assert.equal(kontierungRes.status, 302);
 
   const freigeber2Agent = await loginAs(app, client, { id: 3, vorname: 'Freigeber', nachname: 'Zwei', email: 'f2@example.org', gruppen: ['10'] });

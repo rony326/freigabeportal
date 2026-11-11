@@ -2560,9 +2560,11 @@ test('POST /kontierung/:id/aufsplitten sends an IBAN-Abweichung warning mail and
   const auditEintrag = db.prepare("SELECT * FROM freigaben WHERE job_id = ? AND rolle = 'iban_abweichung'").get(id);
   assert.ok(auditEintrag, 'expected an iban_abweichung freigaben row on the parent job');
 
-  const mailLog = listMailLog(db).filter((m) => m.typ === 'iban-warnung');
-  assert.ok(mailLog.length > 0, 'expected at least one iban-warnung mail to be logged');
-  assert.ok(mailer.sent.some((m) => /IBAN-Abweichung/.test(m.subject)));
+  const mailLog = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.ok(mailLog.length > 0, 'expected at least one auffaelligkeiten-warnung mail to be logged');
+  assert.ok(mailLog.every((m) => m.text.includes('- IBAN nicht hinterlegt: ')));
+  assert.ok(mailer.sent.some((m) => /Auffälligkeiten/.test(m.subject)));
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'iban-warnung').length, 0);
 
   const kinder = listSplitKinder(db, id);
   assert.equal(kinder.length, 2, 'the split itself must still go through');
@@ -2601,7 +2603,7 @@ test('POST /kontierung/:id/aufsplitten sends no IBAN-Abweichung mail when the QR
     });
 
   assert.equal(res.status, 302);
-  const mailLog = listMailLog(db).filter((m) => m.typ === 'iban-warnung');
+  const mailLog = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
   assert.equal(mailLog.length, 0);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM freigaben WHERE job_id = ? AND rolle = 'iban_abweichung'").get(id).n, 0);
   db.close();
@@ -2804,35 +2806,160 @@ test('GET /kontierung/:id shows the IBAN as its own field but no longer offers t
   db.close();
 });
 
-test('POST /kontierung/:id sends an IBAN-Abweichung warning mail and logs it to the audit log on mismatch', async () => {
+// --- Prüf-Popup (Auffälligkeiten) ---------------------------------------------------------
+
+function hashAusAntwort(text) {
+  const treffer = text.match(/name="auffaelligkeitenHash"[^>]*value="([0-9a-f]{64})"/);
+  assert.ok(treffer, 'erwartet ein auffaelligkeitenHash-Feld mit Hash im Modal');
+  return treffer[1];
+}
+
+async function popupAufbau() {
   const { setQrDaten } = await import('../../src/db/jobsRepo.js');
-  const { createKreditorIban } = await import('../../src/db/kreditorIbanRepo.js');
-  const { createKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
   const db = openDatabase(':memory:');
   seedDefaults(db);
-  const kontoId = seedKontoAndPersonen(db);
-  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId });
-  createKreditorIban(db, { kreditorId, iban: 'CH0000000000000000000' }); // hinterlegte IBAN weicht ab
+  setConfigValue(db, 'iban_abweichung_empfaenger', 'revision@example.org');
+  const kontoId = seedKontoAndPersonen(db); // Freigeber 1 = '1' (kontiert selbst), Freigeber 2 = '3'
+  const kreditorId = kreditorMitIban(db, { name: 'Muster AG', kontoId, iban: 'CH0000000000000000000' }); // hinterlegte IBAN weicht ab
   const id = createJob(db, { eingangAm: '2026-08-22T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
   claimJob(db, id, '1');
   setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
   const mailer = createStubMailer();
   const app = buildTestApp(db, mailer);
+  const form = { kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' };
+  const senden = (body) => request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send(body);
+  return { db, id, mailer, form, senden };
+}
 
-  const res = await request(app)
-    .post(`/kontierung/${id}`)
-    .set('x-test-person-id', '1')
-    .type('form')
-    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
+function anzahlBestaetigungen(db, id) {
+  return db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten WHERE job_id = ?').get(id).n;
+}
 
-  assert.equal(res.status, 302, 'Kontierung must still complete despite the mismatch');
-  const mailLog = listMailLog(db).filter((m) => m.typ === 'iban-warnung');
-  assert.ok(mailLog.length > 0, 'expected at least one iban-warnung mail to be logged');
-  assert.ok(mailer.sent.some((m) => /IBAN-Abweichung/.test(m.subject)));
+test('POST /kontierung/:id mit fremder QR-IBAN und ohne Bestätigung zeigt das Prüf-Popup und speichert nichts', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, mailer, form, senden } = await popupAufbau();
 
-  const auditEintrag = db.prepare("SELECT * FROM freigaben WHERE job_id = ? AND rolle = 'iban_abweichung'").get(id);
-  assert.ok(auditEintrag, 'expected an iban_abweichung freigaben row');
+  const res = await senden(form);
+
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /Bitte Rechnung nochmals prüfen/);
+  assert.match(res.text, /IBAN nicht hinterlegt/);
+  assert.match(res.text, /Prüfe die Bankverbindung <strong>telefonisch beim Lieferanten<\/strong>/);
+  assert.match(res.text, /Wie hast du geprüft\?/);
+  assert.match(res.text, /Beim Speichern werden Freigeber 1 und 2 per Mail informiert\./);
+  assert.match(res.text, /name="pruefBemerkung"[^>]*form="kontierung-form"|form="kontierung-form"[^>]*name="pruefBemerkung"/);
+  assert.match(res.text, /type="submit" form="kontierung-form" name="aktion" value="kontieren"[^>]*>Geprüft, trotzdem speichern/);
+  assert.doesNotMatch(res.text, /Einen angehängten Beleg/);
+  assert.match(res.text, /name="absender" value="Muster AG"/, 'Formularwerte bleiben erhalten');
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(getJobById(db, id).konto_id, null);
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  assert.equal(anzahlBestaetigungen(db, id), 0);
+  assert.equal(listMailLog(db).length, 0);
+  assert.equal(mailer.sent.length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id mit passendem Hash speichert, protokolliert die Bestätigung und schickt eine Warn-Mail pro Empfänger', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, mailer, form, senden } = await popupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+
+  const res = await senden({ ...form, auffaelligkeitenHash: hash, pruefBemerkung: 'telefonisch bestätigt' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).status, 'freigabe2');
+  const zeilen = db.prepare('SELECT * FROM kontierung_auffaelligkeiten WHERE job_id = ?').all(id);
+  assert.equal(zeilen.length, 1);
+  assert.equal(zeilen[0].bemerkung, 'telefonisch bestätigt');
+  assert.equal(zeilen[0].person_id, '1');
+  assert.equal(JSON.parse(zeilen[0].befunde_json)[0].code, 'iban_fremd');
+  const bestaetigt = listFreigabenByJob(db, id).filter((f) => f.rolle === 'auffaelligkeiten_bestaetigt');
+  assert.equal(bestaetigt.length, 1);
+  assert.equal(bestaetigt[0].kommentar, 'IBAN nicht hinterlegt — Wie geprüft: telefonisch bestätigt');
+  assert.ok(!listFreigabenByJob(db, id).some((f) => f.rolle === 'iban_abweichung'), 'der alte iban_abweichung-Eintrag entfällt');
+  assert.ok(buildAuditLog(db, id).some((e) => e.ereignis === 'Auffälligkeiten bestätigt'));
+
+  const warnungen = listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung');
+  assert.deepEqual(warnungen.map((m) => m.empfaenger).sort(), ['p1@example.org', 'p3@example.org', 'revision@example.org']);
+  assert.ok(warnungen.every((m) => /Auffälligkeiten/.test(m.betreff)));
+  assert.ok(warnungen.every((m) => m.text.includes('- IBAN nicht hinterlegt: ') && m.text.includes('Wie geprüft: telefonisch bestätigt') && m.text.includes('Person1 Muster hat die Rechnung "a.pdf" (Lieferant: Muster AG)')));
+  assert.ok(warnungen.every((m) => m.text.includes(`https://portal.example.org/freigabe2/${id}`)));
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'iban-warnung').length, 0);
+  assert.ok(mailer.sent.length >= 3);
+  db.close();
+});
+
+test('POST /kontierung/:id ohne Bemerkung schreibt „–“ in die Warn-Mail', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, form, senden } = await popupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+  const res = await senden({ ...form, auffaelligkeitenHash: hash, pruefBemerkung: '  ' });
+  assert.equal(res.status, 302);
+  assert.equal(db.prepare('SELECT bemerkung FROM kontierung_auffaelligkeiten WHERE job_id = ?').get(id).bemerkung, null);
+  assert.equal(listFreigabenByJob(db, id).find((f) => f.rolle === 'auffaelligkeiten_bestaetigt').kommentar, 'IBAN nicht hinterlegt');
+  assert.ok(listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung').every((m) => m.text.includes('Wie geprüft: –')));
+  db.close();
+});
+
+test('POST /kontierung/:id mit veraltetem Hash (Betrag geändert, neuer Befund) zeigt das Popup erneut und speichert nichts', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, form, senden } = await popupAufbau();
+  const hash = hashAusAntwort((await senden(form)).text);
+
+  const res = await senden({ ...form, betrag: '120.00', auffaelligkeitenHash: hash, pruefBemerkung: 'telefonisch bestätigt' });
+
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /Betrag weicht ab/);
+  assert.notEqual(hashAusAntwort(res.text), hash);
+  assert.match(res.text, /telefonisch bestätigt/, 'die Bemerkung bleibt im Feld erhalten');
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+  assert.equal(anzahlBestaetigungen(db, id), 0);
+  assert.equal(listMailLog(db).length, 0);
+  db.close();
+});
+
+test('POST /kontierung/:id mit Beleg in der Popup-Runde weist im Modal auf den nicht gespeicherten Beleg hin', async () => {
+  const { db, id, form } = await popupAufbau();
+  const app = buildTestApp(db, createStubMailer());
+  let req = request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1');
+  for (const [k, v] of Object.entries(form)) req = req.field(k, v);
+  const res = await req.attach('beleg', PNG_1X1, { filename: 'beleg.png', contentType: 'image/png' });
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="auffaelligkeiten-modal"/);
+  assert.match(res.text, /Einen angehängten Beleg/);
+  assert.match(res.text, /id="auffaelligkeiten-beleg"[^>]*name="beleg"[^>]*form="kontierung-form"|form="kontierung-form"[^>]*name="beleg"/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  db.close();
+});
+
+test('POST /kontierung/:id mit Interessenskonflikt zeigt bei Auffälligkeiten ebenfalls das Popup, mit Hash wird eskaliert und bestätigt', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const { db, id, form, senden } = await popupAufbau();
+  const konflikt = { ...form, interessenskonflikt: 'ja', begruendung: 'Mein Bruder' };
+  const erste = await senden(konflikt);
+  assert.equal(erste.status, 200);
+  assert.match(erste.text, /id="auffaelligkeiten-modal"/);
+  assert.equal(getJobById(db, id).freigabe1_eskaliert_von, null);
+
+  const res = await senden({ ...konflikt, auffaelligkeitenHash: hashAusAntwort(erste.text) });
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).freigabe1_eskaliert_von, '1');
+  assert.equal(anzahlBestaetigungen(db, id), 1);
+  assert.ok(listFreigabenByJob(db, id).some((f) => f.rolle === 'auffaelligkeiten_bestaetigt'));
+  assert.ok(listMailLog(db).some((m) => m.typ === 'auffaelligkeiten-warnung'));
+  db.close();
+});
+
+test('POST /kontierung/:id Ablehnen mit Auffälligkeiten zeigt kein Popup', async () => {
+  const { db, id, form, senden } = await popupAufbau();
+  const res = await senden({ ...form, aktion: 'ablehnen', begruendung: 'Falsche Rechnung' });
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).status, 'abgelehnt');
+  assert.equal(anzahlBestaetigungen(db, id), 0);
   db.close();
 });
 
@@ -2858,7 +2985,9 @@ test('POST /kontierung/:id sends no IBAN-Abweichung mail when the QR-IBAN matche
     .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren' });
 
   assert.equal(res.status, 302);
-  assert.equal(listMailLog(db).filter((m) => m.typ === 'iban-warnung').length, 0);
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'auffaelligkeiten-warnung').length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kontierung_auffaelligkeiten WHERE job_id = ?').get(id).n, 0);
+  assert.ok(!listFreigabenByJob(db, id).some((f) => f.rolle === 'auffaelligkeiten_bestaetigt'));
   db.close();
 });
 
@@ -3027,11 +3156,15 @@ test('POST /kontierung/:id with a stale ibanMerken=on creates no kreditor_ibans 
   setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrReferenz: null, qrBetrag: '100.00', qrWaehrung: 'CHF', qrCreditorName: 'Muster AG' });
   const app = buildTestApp(db, createStubMailer());
 
+  const body = { kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', ibanMerken: 'on' };
+  // Lastschrift-Lieferant mit Einzahlungsschein: Auffälligkeit „zahlungsart_ohne_iban“, also erst bestätigen.
+  const popup = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send(body);
+  assert.equal(popup.status, 200);
   const res = await request(app)
     .post(`/kontierung/${id}`)
     .set('x-test-person-id', '1')
     .type('form')
-    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-09-01', interessenskonflikt: 'nein', begruendung: '', aktion: 'kontieren', ibanMerken: 'on' });
+    .send({ ...body, auffaelligkeitenHash: hashAusAntwort(popup.text) });
 
   assert.equal(res.status, 302);
   assert.equal(listKreditorIbansByKreditor(db, kreditorId).length, 0);
@@ -3491,12 +3624,22 @@ test('POST /kontierung/:id mit passender ibanEndung protokolliert iban_manuell_g
   db.close();
 });
 
-test('POST /kontierung/:id mit falscher ibanEndung speichert trotzdem, Kommentar „keine Übereinstimmung“', async () => {
+test('POST /kontierung/:id mit falscher ibanEndung zeigt das Popup; nach Bestätigung speichert es, Kommentar „keine Übereinstimmung“', async () => {
   const { db, id, form, app } = ibanTestAufbau();
-  const res = await request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send({ ...form, ibanEndung: '1111' });
+  const senden = (body) => request(app).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form').send(body);
+  const erste = await senden({ ...form, ibanEndung: '0000', aktion: 'kontieren' });
+  assert.equal(erste.status, 200);
+  assert.match(erste.text, /id="auffaelligkeiten-modal"/);
+  assert.match(erste.text, /IBAN nicht hinterlegt \(manuelle Prüfung\)/);
+  assert.match(erste.text, /telefonisch beim Lieferanten/);
+  assert.match(erste.text, /name="ibanEndung"[^>]*value="0000"/);
+  assert.equal(listFreigabenByJob(db, id).length, 0);
+
+  const res = await senden({ ...form, ibanEndung: '0000', aktion: 'kontieren', auffaelligkeitenHash: hashAusAntwort(erste.text) });
   assert.equal(res.status, 302);
   const eintrag = listFreigabenByJob(db, id).find((f) => f.rolle === 'iban_manuell_geprueft');
-  assert.equal(eintrag.kommentar, 'IBAN manuell geprüft: keine Übereinstimmung (Eingabe 1111)');
+  assert.equal(eintrag.kommentar, 'IBAN manuell geprüft: keine Übereinstimmung (Eingabe 0000)');
+  assert.ok(listFreigabenByJob(db, id).some((f) => f.rolle === 'auffaelligkeiten_bestaetigt'));
   db.close();
 });
 

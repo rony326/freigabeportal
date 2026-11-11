@@ -30,7 +30,9 @@ import {
 import { getKontoById, listKonten } from '../db/kontenRepo.js';
 import { listKreditorenWaehlbar, getKreditorById, istKreditorVollstaendig, ZAHLUNGSARTEN, ZAHLUNGSART_LABEL } from '../db/kreditorenRepo.js';
 import { findKreditorIbanByIban } from '../db/kreditorIbanRepo.js';
-import { brauchtManuelleIbanPruefung, ibanEndungPasst } from '../services/betrugspruefung.js';
+import { brauchtManuelleIbanPruefung, ibanEndungPasst, ermittleBefunde, befundeHash } from '../services/betrugspruefung.js';
+import { speichereBestaetigung } from '../db/auffaelligkeitenRepo.js';
+import { sendeAuffaelligkeitenWarnung, bestaetigungsKommentar } from '../services/auffaelligkeitenWarnung.js';
 import { normalizeIban } from '../services/ibanUtils.js';
 import { pruefeNeuenKreditor, legeKreditorAn } from '../services/kreditorAnlegen.js';
 import { kreditorIdAusEingabe, kreditorNameVariablen, KreditorFeldKonflikt } from '../services/kreditorFelder.js';
@@ -63,6 +65,7 @@ const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const IBAN_ENDUNG_PATTERN = /^[A-Z0-9]{4}$/;
 const IBAN_ENDUNG_FEHLER = 'Bitte gib die letzten 4 Zeichen der IBAN auf der Rechnung ein.';
+const PRUEF_BEMERKUNG_MAX = 500;
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 // Aufsplitten sends one optional beleg file per Teil row (teilBeleg_<i>) via uploadBeleg.any(),
 // which has no field-name allowlist — without a files cap, a request forging many parts could
@@ -226,13 +229,11 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, aktion, typ } = req.body;
       const jobTyp = typ === 'gutschrift' ? 'gutschrift' : 'rechnung';
       const ibanEndung = normalizeIban(typeof req.body.ibanEndung === 'string' ? req.body.ibanEndung : '');
-      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, kreditorId, typ: jobTyp, ibanEndung };
+      const pruefBemerkung = (typeof req.body.pruefBemerkung === 'string' ? req.body.pruefBemerkung.trim() : '').slice(0, PRUEF_BEMERKUNG_MAX);
+      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, kreditorId, typ: jobTyp, ibanEndung, pruefBemerkung };
 
-      // `messages`: Text oder neueFehler()-Sammler; `feld` ordnet einen einzelnen Text einem Feld zu.
-      const renderFehler = (messages, status = 400, feld = null) => {
-        const fehler = typeof messages === 'object' && messages && Array.isArray(messages.liste) ? messages : neueFehler();
-        if (fehler !== messages) fehler.add(feld, messages);
-        return res.status(status).render('kontierung', {
+      const renderSeite = (status, { fehler = neueFehler(), auffaelligkeiten = null } = {}) =>
+        res.status(status).render('kontierung', {
           job,
           konten,
           alleKonten: listKonten(db),
@@ -248,7 +249,14 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           feldFehler: fehler.proFeld,
           feldFehlerAttr,
           auditLog: buildAuditLog(db, job.id),
+          auffaelligkeiten,
         });
+
+      // `messages`: Text oder neueFehler()-Sammler; `feld` ordnet einen einzelnen Text einem Feld zu.
+      const renderFehler = (messages, status = 400, feld = null) => {
+        const fehler = typeof messages === 'object' && messages && Array.isArray(messages.liste) ? messages : neueFehler();
+        if (fehler !== messages) fehler.add(feld, messages);
+        return renderSeite(status, { fehler });
       };
 
       if (uploadErr) {
@@ -405,6 +413,23 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         ? ermittleStriktesWeiterleitungsZiel(db, job, konto, req.currentPerson.churchtools_person_id)
         : null;
 
+      // Prüf-Popup (Spec B6): gilt in allen Kontieren-Zweigen. Ohne Bestätigung der aktuell
+      // berechneten Befunde wird nichts gespeichert und keine Mail verschickt. Ändert sich ein
+      // Befund (anderer Betrag, neue Rechnung im Zeitfenster …), passt der Hash nicht mehr und das
+      // Popup erscheint erneut.
+      const befunde = ermittleBefunde(db, { job, kreditor, betrag, typ: jobTyp, ibanEndung: ibanManuellNoetig ? ibanEndung : null, rechnungsnummer });
+      const hash = befunde.length > 0 ? befundeHash(befunde) : null;
+      if (hash && req.body.auffaelligkeitenHash !== hash) {
+        return renderSeite(200, {
+          auffaelligkeiten: {
+            befunde,
+            hash,
+            zeigeTelefonHinweis: befunde.some((b) => b.code.startsWith('iban')),
+            belegNichtGespeichert: Boolean(req.file),
+          },
+        });
+      }
+
       db.exec('BEGIN');
       try {
         setKontierung(db, job.id, konto.id);
@@ -467,6 +492,19 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           });
           abschliessenFreigabe1(db, job.id);
         }
+        if (hash) {
+          speichereBestaetigung(db, { jobId: job.id, personId: req.currentPerson.churchtools_person_id, befunde, bemerkung: pruefBemerkung });
+          createFreigabe(db, {
+            jobId: job.id,
+            personId: req.currentPerson.churchtools_person_id,
+            rolle: 'auffaelligkeiten_bestaetigt',
+            zeitpunkt: new Date().toISOString(),
+            ip: req.ip,
+            interessenskonflikt: false,
+            kommentar: bestaetigungsKommentar(befunde, pruefBemerkung),
+            eskaliertVon: null,
+          });
+        }
         db.exec('COMMIT');
       } catch (err) {
         db.exec('ROLLBACK');
@@ -497,39 +535,19 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         });
       }
 
-      if (job.qr_iban && kreditor) {
-        const { status } = pruefeIbanAbgleich(db, kreditor.id, job.qr_iban);
-        if (status === 'mismatch') {
-          createFreigabe(db, {
-            jobId: job.id,
-            personId: req.currentPerson.churchtools_person_id,
-            rolle: 'iban_abweichung',
-            zeitpunkt: new Date().toISOString(),
-            ip: req.ip,
-            interessenskonflikt: false,
-            kommentar: `QR-IBAN ${job.qr_iban} weicht von der/den für ${kreditor.name} hinterlegten IBAN(s) ab.`,
-            eskaliertVon: null,
-          });
-          const zusatzEmpfaenger = new Set(resolveEmpfaenger(db, config, getConfigValue(db, 'iban_abweichung_empfaenger')));
-          zusatzEmpfaenger.add(req.currentPerson.email);
-          const freigeber1 = getPersonById(db, konto.freigeber1_id);
-          const freigeber2 = getPersonById(db, konto.freigeber2_id);
-          if (freigeber1) zusatzEmpfaenger.add(freigeber1.email);
-          if (freigeber2) zusatzEmpfaenger.add(freigeber2.email);
-          for (const email of zusatzEmpfaenger) {
-            await sendNotification(db, mailer, {
-              to: email,
-              typ: 'iban-warnung',
-              jobId: job.id,
-              variablen: {
-                jobDateiname: job.dateiname,
-                ...kreditorNameVariablen(kreditor.name),
-                tatsaechlicheIban: job.qr_iban,
-                link: `${config.publicBaseUrl}/kontierung/${job.id}`,
-              },
-            });
-          }
-        }
+      if (hash) {
+        const jobNachKontierung = getJobById(db, job.id);
+        await sendeAuffaelligkeitenWarnung(db, mailer, config, {
+          job,
+          kreditor,
+          befunde,
+          bemerkung: pruefBemerkung,
+          person: req.currentPerson,
+          freigeberIds: [konto.freigeber1_id, konto.freigeber2_id],
+          link: jobNachKontierung.status === 'freigabe2'
+            ? `${config.publicBaseUrl}/freigabe2/${job.id}`
+            : `${config.publicBaseUrl}/kontierung/${job.id}`,
+        });
       }
 
       if (kreditor) {

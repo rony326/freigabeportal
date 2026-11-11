@@ -113,7 +113,8 @@ test('seedDefaults sets the 8 mail template defaults (betreff + text each)', () 
   assert.equal(getConfigValue(db, 'mail_vorlage_eskalation_betreff'), 'Freigabeportal: Eskalation – Rechnung seit langem unbeansprucht');
   assert.equal(getConfigValue(db, 'mail_vorlage_ablehnung_betreff'), 'Freigabeportal: Rechnung abgelehnt');
   assert.equal(getConfigValue(db, 'mail_vorlage_sync_fehler_betreff'), 'Freigabeportal: ChurchTools-Sync fehlgeschlagen');
-  assert.equal(getConfigValue(db, 'mail_vorlage_iban_warnung_betreff'), 'Freigabeportal: IBAN-Abweichung bei Rechnung festgestellt');
+  assert.equal(getConfigValue(db, 'mail_vorlage_auffaelligkeiten_warnung_betreff'), 'Freigabeportal: Auffälligkeiten bei Rechnung %jobDateiname%');
+  assert.equal(getConfigValue(db, 'mail_vorlage_iban_warnung_betreff'), null);
   assert.equal(getConfigValue(db, 'mail_vorlage_rechnungsnummer_warnung_betreff'), 'Freigabeportal: Doppelte Rechnungsnummer festgestellt');
   assert.equal(getConfigValue(db, 'mail_vorlage_digest_betreff'), 'Freigabeportal: Deine %zusammenfassung% Zusammenfassung (%anzahl% Ereignisse)');
   assert.match(getConfigValue(db, 'mail_vorlage_zuweisung_text'), /%empfaengerName%/);

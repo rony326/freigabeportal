@@ -446,7 +446,7 @@ codierten Strings.
 | `freigabe2-eskalation` | `freigabe2`-Job länger als `freigabe2_eskalation_stunden` unbeantwortet — geht erst nach erfolgter Übergabe an die Admin-Gruppe raus |
 | `ablehnung` | Rechnung bei Kontierung oder Freigabe 2 abgelehnt |
 | `sync-fehler` | ChurchTools-Sync fehlgeschlagen oder abgebrochen — **immer sofort**, unabhängig von der persönlichen Wahl |
-| `iban-warnung` | QR-Code-IBAN weicht von der hinterlegten Lieferanten-IBAN ab — **immer sofort**, unabhängig von der persönlichen Wahl |
+| `auffaelligkeiten-warnung` | Kontierung trotz Auffälligkeiten im Prüf-Popup bestätigt (ersetzt `iban-warnung`); an Freigeber 1 + 2, die kontierende Person und `iban_abweichung_empfaenger` — **immer sofort**, unabhängig von der persönlichen Wahl |
 | `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Kreditor erfasst |
 | `duplikat-warnung` | Möglicher Doppelscan: gleicher Kreditor, Betrag und Zahlungsziel, Eingang binnen 14 Tagen |
 | `kk-abrechnung-zugewiesen` | Kreditkartenabrechnung (manuell oder automatisch erkannt) einer Karte zugeordnet — geht an die verantwortliche Person |
@@ -454,7 +454,7 @@ codierten Strings.
 | `rapport-reminder` | offene Kenntnisnahme länger als `rapport_reminder_stunden` unbestätigt — an die Person selbst, **immer sofort** |
 | `rapport-eskalation` | Rapport länger als `rapport_eskalation_stunden` nicht vollständig bestätigt — an `rapport_eskalation_empfaenger` (leer = Admin-Gruppe), **immer sofort** |
 | `kk-beleg-erinnerung` | seit langem offener Kreditkartenbeleg/-entwurf bzw. noch nicht abgeglichene Kreditkartenabrechnung (Job `kk-beleg-erinnerungen`, siehe oben) |
-| `admin-umzuweisung` | Admin hat einen laufenden Vorgang umgehängt; an die neue Person (plus deren Ferienvertretung) und die bisherige; **immer sofort** wie `sync-fehler`/`iban-warnung`/`kk-beleg-eingegangen` |
+| `admin-umzuweisung` | Admin hat einen laufenden Vorgang umgehängt; an die neue Person (plus deren Ferienvertretung) und die bisherige; **immer sofort** wie `sync-fehler`/`auffaelligkeiten-warnung`/`kk-beleg-eingegangen` |
 | `kk-beleg-eingegangen` | per Mail eingereichter Kreditkartenbeleg als Entwurf angelegt — **immer sofort**, unabhängig von der persönlichen Wahl (Link zum Vervollständigen soll nicht bis zum nächsten Digest warten) |
 | `neues-geraet` | Anmeldung von einem für die Person noch unbekannten Gerät (Cookie `fp_geraet`) — an die Person selbst, **immer sofort**; siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md) |
 | `kommentar` | neuer Kommentar an einem Vorgang — an Beteiligte und Erwähnte (nicht an den Schreiber); folgt der persönlichen Wahl; Details und Links: [kommentare.md](kommentare.md) |
@@ -465,7 +465,7 @@ codierten Strings.
 die Wahl des Empfängers (siehe nächster Abschnitt) — ausser bei den **immer
 sofort zugestellten Typen**, die nie warten. Das sind genau die Typen in
 `IMMER_SOFORT_TYPEN` (`src/services/notify.js`):
-`sync-fehler`, `iban-warnung`, `kk-beleg-eingegangen`, `admin-umzuweisung`,
+`sync-fehler`, `auffaelligkeiten-warnung`, `kk-beleg-eingegangen`, `admin-umzuweisung`,
 `audit-pruefnummer`, `neues-geraet`, `fehlermeldung`, `testmail`, `reminder`,
 `eskalation`, `freigabe2-reminder`, `freigabe2-eskalation`,
 `rapport-reminder`, `rapport-eskalation`, `kk-beleg-erinnerung`, `sicherheitsalarm`, `duplikat-warnung` und

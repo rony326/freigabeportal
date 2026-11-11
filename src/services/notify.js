@@ -15,7 +15,7 @@ export const FREIGABE2_AN_ADMIN_GRUND =
   'Eine Rechnung wartet auf Freigabe 2 und wurde an die Portal-Admin-Gruppe übergeben, da die zuständige Freigabe-2-Person für diese Rechnung bereits einen Interessenskonflikt erklärt hat.';
 
 // Typen, die nie auf den Digest warten -- unabhängig von der persönlichen Bündelung
-// (services/benachrichtigung.js). sync-fehler (ChurchTools-Ausfall) und iban-warnung
+// (services/benachrichtigung.js). sync-fehler (ChurchTools-Ausfall) und auffaelligkeiten-warnung
 // (Betrugsverdacht) sind betriebs-/sicherheitskritisch. kk-beleg-eingegangen: die Person, die per
 // Mail einen Beleg eingereicht hat, soll sofort den Ergänzen-Link bekommen. admin-umzuweisung: ein
 // Admin hat einen laufenden Vorgang umgehängt -- die neue Person soll sofort handeln können, die
@@ -24,7 +24,7 @@ export const FREIGABE2_AN_ADMIN_GRUND =
 // warten; sicherheitsalarm, duplikat-warnung und rechnungsnummer-warnung sind Warnungen.
 // rapport-reminder/-eskalation wie freigabe2-*; rapport-zuweisung folgt der Bündelung wie zuweisung.
 export const IMMER_SOFORT_TYPEN = new Set([
-  'sync-fehler', 'iban-warnung', 'kk-beleg-eingegangen', 'admin-umzuweisung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail',
+  'sync-fehler', 'auffaelligkeiten-warnung', 'kk-beleg-eingegangen', 'admin-umzuweisung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail',
   'reminder', 'eskalation', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-beleg-erinnerung',
   'rapport-reminder', 'rapport-eskalation',
   'sicherheitsalarm', 'duplikat-warnung', 'rechnungsnummer-warnung',

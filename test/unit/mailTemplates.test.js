@@ -100,3 +100,16 @@ test('getVorlage liefert die drei Rapport-Vorlagen mit ihren Variablen', () => {
   }
   db.close();
 });
+
+test('auffaelligkeiten-warnung hat die Standardtexte; iban-warnung gibt es nicht mehr', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const vorlage = getVorlage(db, 'auffaelligkeiten-warnung');
+  assert.equal(vorlage.betreff, 'Freigabeportal: Auffälligkeiten bei Rechnung %jobDateiname%');
+  assert.equal(
+    vorlage.text,
+    'Hallo\n\n%bestaetigtVon% hat die Rechnung "%jobDateiname%" (Lieferant: %kreditorName%) trotz folgender Auffälligkeiten kontiert:\n\n%auffaelligkeiten%\n\nWie geprüft: %bemerkung%\n\nBitte schau sie dir vor der Freigabe genau an: %link%\n\nFreundliche Grüsse\n%portalName%',
+  );
+  assert.throws(() => getVorlage(db, 'iban-warnung'), /Unbekannter Mail-Vorlagen-Typ/);
+  db.close();
+});

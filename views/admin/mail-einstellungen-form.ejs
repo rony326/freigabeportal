@@ -43,7 +43,7 @@
       <p class="text-muted small">Die Versandzeit gilt für tägliche und wöchentliche Zusammenfassungen. Erinnerungen, Eskalationen, Warnungen, Sync-Fehler und IBAN-Abweichungen werden immer sofort verschickt.</p>
 
       <h2 class="h5 mt-4">Vorlagen</h2>
-      <p class="text-muted small">Platzhalter: <code>%variable%</code>. Verfügbar je nach Vorlage u.a. <code>%empfaengerName%</code>, <code>%jobDateiname%</code>, <code>%grund%</code>, <code>%begruendung%</code>, <code>%link%</code>, <code>%portalName%</code>, <code>%stunden%</code>, <code>%fehlerDetails%</code>, <code>%zeitpunkt%</code>, <code>%kreditorName%</code> (frühere Bezeichnung <code>%debitorName%</code> wird weiterhin befüllt), <code>%tatsaechlicheIban%</code>, <code>%rechnungsnummer%</code>, <code>%dupJobIds%</code>, <code>%anzahl%</code>, <code>%eintraege%</code>, <code>%zusammenfassung%</code> (tägliche/wöchentliche), <code>%einstellungenLink%</code> — siehe Doku für die genaue Liste pro Vorlage.</p>
+      <p class="text-muted small">Platzhalter: <code>%variable%</code>. Verfügbar je nach Vorlage u.a. <code>%empfaengerName%</code>, <code>%jobDateiname%</code>, <code>%grund%</code>, <code>%begruendung%</code>, <code>%link%</code>, <code>%portalName%</code>, <code>%stunden%</code>, <code>%fehlerDetails%</code>, <code>%zeitpunkt%</code>, <code>%kreditorName%</code> (frühere Bezeichnung <code>%debitorName%</code> wird weiterhin befüllt), <code>%auffaelligkeiten%</code>, <code>%bestaetigtVon%</code>, <code>%bemerkung%</code>, <code>%rechnungsnummer%</code>, <code>%dupJobIds%</code>, <code>%anzahl%</code>, <code>%eintraege%</code>, <code>%zusammenfassung%</code> (tägliche/wöchentliche), <code>%einstellungenLink%</code> — siehe Doku für die genaue Liste pro Vorlage.</p>
 
       <div class="mb-3">
         <label class="form-label" for="zuweisungBetreff">Zuweisung — Betreff</label>
@@ -76,10 +76,10 @@
         <textarea class="form-control" id="syncFehlerText" name="syncFehlerText" rows="4" required><%= syncFehlerText %></textarea>
       </div>
       <div class="mb-3">
-        <label class="form-label" for="ibanWarnungBetreff">IBAN-Warnung — Betreff</label>
-        <input type="text" class="form-control" id="ibanWarnungBetreff" name="ibanWarnungBetreff" value="<%= ibanWarnungBetreff %>" required>
-        <label class="form-label mt-2" for="ibanWarnungText">IBAN-Warnung — Text</label>
-        <textarea class="form-control" id="ibanWarnungText" name="ibanWarnungText" rows="4" required><%= ibanWarnungText %></textarea>
+        <label class="form-label" for="auffaelligkeitenWarnungBetreff">Auffälligkeiten bei Kontierung — Betreff</label>
+        <input type="text" class="form-control" id="auffaelligkeitenWarnungBetreff" name="auffaelligkeitenWarnungBetreff" value="<%= auffaelligkeitenWarnungBetreff %>" required>
+        <label class="form-label mt-2" for="auffaelligkeitenWarnungText">Auffälligkeiten bei Kontierung — Text</label>
+        <textarea class="form-control" id="auffaelligkeitenWarnungText" name="auffaelligkeitenWarnungText" rows="4" required><%= auffaelligkeitenWarnungText %></textarea>
       </div>
       <div class="mb-3">
         <label class="form-label" for="rechnungsnummerWarnungBetreff">Rechnungsnummer-Warnung — Betreff</label>

@@ -242,7 +242,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
 
 CREATE TABLE IF NOT EXISTS mail_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation')),
+  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation', 'auffaelligkeiten-warnung')),
   job_id INTEGER REFERENCES jobs(id),
   empfaenger TEXT NOT NULL,
   betreff TEXT NOT NULL,
@@ -357,3 +357,19 @@ CREATE TABLE IF NOT EXISTS konto_budgets (
   geaendert_am TEXT NOT NULL,
   PRIMARY KEY (konto_id, jahr)
 );
+
+-- Bewusst bestätigte Auffälligkeiten bei der Kontierung (Prüf-Popup, services/betrugspruefung.js).
+-- befunde_json: die bestätigten Befunde [{code, schwere, titel, text}]. Append-only.
+CREATE TABLE IF NOT EXISTS kontierung_auffaelligkeiten (
+  id INTEGER PRIMARY KEY,
+  job_id INTEGER NOT NULL REFERENCES jobs(id),
+  person_id TEXT NOT NULL,
+  zeitpunkt TEXT NOT NULL,
+  befunde_json TEXT NOT NULL,
+  bemerkung TEXT
+);
+CREATE INDEX IF NOT EXISTS kontierung_auffaelligkeiten_job_idx ON kontierung_auffaelligkeiten(job_id);
+CREATE TRIGGER IF NOT EXISTS kontierung_auffaelligkeiten_no_update BEFORE UPDATE ON kontierung_auffaelligkeiten
+BEGIN SELECT RAISE(ABORT, 'kontierung_auffaelligkeiten ist unveraenderlich'); END;
+CREATE TRIGGER IF NOT EXISTS kontierung_auffaelligkeiten_no_delete BEFORE DELETE ON kontierung_auffaelligkeiten
+BEGIN SELECT RAISE(ABORT, 'kontierung_auffaelligkeiten ist unveraenderlich'); END;

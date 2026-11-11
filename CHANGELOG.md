@@ -3,6 +3,22 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.2.0] – 2026-11-11
+
+Release Notes: [docs/releases/v1.2.0.md](docs/releases/v1.2.0.md). Enthält eine
+Datenbank-Migration (läuft beim Start).
+
+- Rechte pro Gruppe: Admin → Gruppenrechte (Superadmin, Manager, Buchhaltung),
+  effektive Rechte = Gruppen ∪ Einzelrechte, Herkunft in der Personenliste,
+  «Gruppenrechte verwalten» fest für Superadmin, alle bisher rollengebundenen
+  Admin-Seiten mit eigenem Recht, Änderungen im Audit-Log.
+- Konten mit Buchungsart (Rechnung / Gutschrift / beides): Kontierung und
+  Aufsplitten filtern die Konto-Auswahl nach Typ, serverseitige Prüfung; Spesen
+  als Rechnung, Kreditkarten nach Vorzeichen; Standard-Konto von Lieferanten
+  muss Rechnungen erlauben.
+- Wartungsmodus für Updates: Wartungsseite (503), Mails zurückgehalten, n8n-Eingang
+  503 mit Retry-After, geplante Jobs pausiert (ausser Datenbank-Sicherung).
+
 ## [1.1.1] – 2026-11-11
 
 Wartungsversion. Release Notes:

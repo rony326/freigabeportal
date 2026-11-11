@@ -301,3 +301,29 @@ test('Migration: bestehende Konten ohne Spalte bekommen beides', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+import { kontoErlaubtFuerTyp, filterKontenFuerTyp } from '../../src/db/kontenRepo.js';
+
+test('kontoErlaubtFuerTyp: Rechnung nimmt rechnung und beides, Gutschrift gutschrift und beides', () => {
+  const erwartet = {
+    rechnung: { rechnung: true, gutschrift: false },
+    gutschrift: { rechnung: false, gutschrift: true },
+    beides: { rechnung: true, gutschrift: true },
+  };
+  for (const [art, proTyp] of Object.entries(erwartet)) {
+    for (const [typ, ok] of Object.entries(proTyp)) {
+      assert.equal(kontoErlaubtFuerTyp({ buchungsart: art }, typ), ok, `${art} für ${typ}`);
+    }
+  }
+});
+
+test('kontoErlaubtFuerTyp: unbekannter Typ (z. B. rapport) und fehlende Buchungsart schränken nicht ein', () => {
+  assert.equal(kontoErlaubtFuerTyp({ buchungsart: 'gutschrift' }, 'rapport'), true);
+  assert.equal(kontoErlaubtFuerTyp({}, 'rechnung'), true);
+});
+
+test('filterKontenFuerTyp behält nur passende Konten', () => {
+  const konten = [{ id: 1, buchungsart: 'rechnung' }, { id: 2, buchungsart: 'gutschrift' }, { id: 3, buchungsart: 'beides' }];
+  assert.deepEqual(filterKontenFuerTyp(konten, 'rechnung').map((k) => k.id), [1, 3]);
+  assert.deepEqual(filterKontenFuerTyp(konten, 'gutschrift').map((k) => k.id), [2, 3]);
+});

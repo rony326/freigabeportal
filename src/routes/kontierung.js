@@ -29,7 +29,7 @@ import {
   sendJobBackToGroup,
   hebeKkMarkierungAuf,
 } from '../db/jobsRepo.js';
-import { getKontoById, listKonten } from '../db/kontenRepo.js';
+import { getKontoById, listKonten, kontoErlaubtFuerTyp } from '../db/kontenRepo.js';
 import { listKreditorenWaehlbar, getKreditorById, istKreditorVollstaendig, ZAHLUNGSARTEN, ZAHLUNGSART_LABEL } from '../db/kreditorenRepo.js';
 import { findKreditorIbanByIban } from '../db/kreditorIbanRepo.js';
 import { brauchtManuelleIbanPruefung, ibanEndungPasst, ermittleBefunde, befundeHash } from '../services/betrugspruefung.js';
@@ -351,6 +351,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const konto = konten.find((k) => String(k.id) === kontoId);
       if (!konto) {
         errors.add('kontoId', 'Bitte ein gültiges Konto aus der Liste auswählen.');
+      } else if (!kontoErlaubtFuerTyp(konto, jobTyp)) {
+        errors.add('kontoId', `Dieses Konto kann nicht für ${jobTyp === 'gutschrift' ? 'Gutschriften' : 'Rechnungen'} verwendet werden.`);
       }
       if (!absender) {
         errors.add('absender', 'Bitte einen Absender angeben.');
@@ -981,6 +983,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         const konto = alleKonten.find((k) => String(k.id) === teil.kontoId);
         if (!konto) {
           errors.push('Bitte für jede Zeile ein gültiges Konto auswählen.');
+          return;
+        }
+        if (!kontoErlaubtFuerTyp(konto, typ)) {
+          errors.push(`Konto ${konto.kontonummer}: Dieses Konto kann nicht für ${typ === 'gutschrift' ? 'Gutschriften' : 'Rechnungen'} verwendet werden.`);
           return;
         }
         if (!teil.betrag || !BETRAG_PATTERN.test(teil.betrag)) {

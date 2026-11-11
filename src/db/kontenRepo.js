@@ -3,6 +3,19 @@ import { getPersonById, listActivePersons } from './personenRepo.js';
 export const BUCHUNGSARTEN = ['rechnung', 'gutschrift', 'beides'];
 export const BUCHUNGSART_LABEL = { rechnung: 'Rechnung', gutschrift: 'Gutschrift', beides: 'Rechnung / Gutschrift' };
 
+// Rechnung -> Konten 'rechnung' und 'beides'; Gutschrift -> 'gutschrift' und 'beides'. Andere Typen
+// (z. B. Rapport) und Konten ohne Angabe schränken nicht ein.
+export function kontoErlaubtFuerTyp(konto, typ) {
+  if (typ !== 'rechnung' && typ !== 'gutschrift') return true;
+  const art = konto?.buchungsart;
+  if (!art || art === 'beides') return true;
+  return art === typ;
+}
+
+export function filterKontenFuerTyp(konten, typ) {
+  return konten.filter((konto) => kontoErlaubtFuerTyp(konto, typ));
+}
+
 const ROLE_KEYS = ['freigeber1Id', 'stellvertreter1Id', 'freigeber2Id', 'stellvertreter2Id'];
 const ROLE_LABELS = {
   freigeber1Id: 'Freigeber 1',

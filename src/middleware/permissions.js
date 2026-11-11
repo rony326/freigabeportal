@@ -1,32 +1,66 @@
-import { personHasRole, verweigereNichtAngemeldet, verweigereOhneBerechtigung } from './roles.js';
+import { gruppenVon, verweigereNichtAngemeldet, verweigereOhneBerechtigung } from './roles.js';
+import { FESTE_RECHTE } from '../services/berechtigungKatalog.js';
+import { listGruppenBerechtigungen } from '../db/gruppenBerechtigungenRepo.js';
 import { listBerechtigungenForPerson, personHasBerechtigung } from '../db/personBerechtigungenRepo.js';
 
 export { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS } from '../services/berechtigungKatalog.js';
 
-// Superadmin und Manager bekommen jedes vergebbare Recht über ihr Rollen-Bundle, unabhängig von
-// person_berechtigungen -- Einzelrechte sind nur für alle anderen relevant (additiv, siehe Design).
-const NICHT_IM_MANAGER_BUNDLE = ['sync_verwalten', 'workflow_eingreifen', 'betrieb_einsehen'];
+// Effektives Recht = Rechte aller Gruppen der Person (gruppen_berechtigungen) plus ihre Einzelrechte
+// (person_berechtigungen). Rein additiv. Das feste Recht (gruppenrechte_verwalten) hängt allein an
+// der Superadmin-Gruppe, auch wenn die Tabelle es (z. B. nach einem alten Backup) nicht enthält.
+function gruppenRechteVon(db, gruppen) {
+  return gruppen.flatMap((gruppe) => listGruppenBerechtigungen(db, gruppe).map((recht) => ({ gruppe, recht })));
+}
 
 export function personHasPermission(db, config, person, permission) {
   if (!person) return false;
-  if (personHasRole(person, config, 'superadmin')) return true;
-  if (personHasRole(person, config, 'manager') && !NICHT_IM_MANAGER_BUNDLE.includes(permission)) return true;
+  const gruppen = gruppenVon(person, config);
+  if (FESTE_RECHTE.includes(permission)) return gruppen.includes('superadmin');
+  if (gruppen.some((gruppe) => db.prepare('SELECT 1 FROM gruppen_berechtigungen WHERE gruppe = ? AND berechtigung = ?').get(gruppe, permission))) return true;
   return personHasBerechtigung(db, person.churchtools_person_id, permission);
 }
 
-// Gleiche Regeln wie personHasPermission, aber die Einzelrechte der Person werden nur einmal (und
+// Gleiche Regeln wie personHasPermission, aber Gruppen- und Einzelrechte werden nur einmal (und
 // erst bei Bedarf) geladen -- für Stellen, die viele Rechte nacheinander prüfen (Navigation).
 export function erstellePermissionPruefer(db, config, person) {
   if (!person) return () => false;
-  const istSuperadmin = personHasRole(person, config, 'superadmin');
-  const istManager = personHasRole(person, config, 'manager');
-  let einzelrechte = null;
+  const gruppen = gruppenVon(person, config);
+  let rechte = null;
   return (permission) => {
-    if (istSuperadmin) return true;
-    if (istManager && !NICHT_IM_MANAGER_BUNDLE.includes(permission)) return true;
-    einzelrechte ??= new Set(listBerechtigungenForPerson(db, person.churchtools_person_id));
-    return einzelrechte.has(permission);
+    if (FESTE_RECHTE.includes(permission)) return gruppen.includes('superadmin');
+    rechte ??= new Set([
+      ...gruppenRechteVon(db, gruppen).map((r) => r.recht),
+      ...listBerechtigungenForPerson(db, person.churchtools_person_id),
+    ]);
+    return rechte.has(permission);
   };
+}
+
+// Nur die Rechte, die die Person effektiv hat, mit ihrer Herkunft: über welche Gruppen und/oder direkt.
+export function ermittleRechteMitHerkunft(db, config, person) {
+  const ergebnis = new Map();
+  if (!person) return ergebnis;
+  const gruppen = gruppenVon(person, config);
+  const eintrag = (recht) => {
+    if (!ergebnis.has(recht)) ergebnis.set(recht, { gruppen: [], direkt: false });
+    return ergebnis.get(recht);
+  };
+  for (const { gruppe, recht } of gruppenRechteVon(db, gruppen)) {
+    const e = eintrag(recht);
+    if (!e.gruppen.includes(gruppe)) e.gruppen.push(gruppe);
+  }
+  for (const recht of listBerechtigungenForPerson(db, person.churchtools_person_id)) eintrag(recht).direkt = true;
+  if (gruppen.includes('superadmin')) {
+    for (const recht of FESTE_RECHTE) {
+      const e = eintrag(recht);
+      if (!e.gruppen.includes('superadmin')) e.gruppen.push('superadmin');
+    }
+  }
+  return ergebnis;
+}
+
+export function hatIrgendeinAdminRecht(db, config, person) {
+  return ermittleRechteMitHerkunft(db, config, person).size > 0;
 }
 
 export function requirePermission(db, config, permission) {
@@ -42,11 +76,7 @@ export function requireAdminAreaAccess(db, config) {
   return (req, res, next) => {
     const person = req.currentPerson;
     if (!person || !person.aktiv) return verweigereNichtAngemeldet(req, res);
-    const hatZugriff =
-      personHasRole(person, config, 'superadmin') ||
-      personHasRole(person, config, 'manager') ||
-      listBerechtigungenForPerson(db, person.churchtools_person_id).length > 0;
-    if (!hatZugriff) return verweigereOhneBerechtigung(req, res, 'kein_adminbereich');
+    if (!hatIrgendeinAdminRecht(db, config, person)) return verweigereOhneBerechtigung(req, res, 'kein_adminbereich');
     next();
   };
 }

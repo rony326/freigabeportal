@@ -1,3 +1,4 @@
+import { GRUPPEN } from '../services/berechtigungKatalog.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
 import { BEISPIELPERSONEN } from '../services/testmodus/beispieldaten.js';
@@ -64,6 +65,11 @@ export function personHasRole(person, config, role) {
   // simply having nobody in it.
   if (!groupId) return false;
   return person.gruppen.includes(String(groupId));
+}
+
+// Alle Gruppen (Rollen) einer Person, in der festen Reihenfolge des Katalogs.
+export function gruppenVon(person, config) {
+  return GRUPPEN.filter((gruppe) => personHasRole(person, config, gruppe));
 }
 
 export function requireRole(config, role) {

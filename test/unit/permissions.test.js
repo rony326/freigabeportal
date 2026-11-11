@@ -5,6 +5,7 @@ import request from 'supertest';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
 import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
+import { startwerteFuerGruppe } from '../../src/services/berechtigungKatalog.js';
 import { loadCurrentPerson } from '../../src/middleware/roles.js';
 import { GRANTABLE_BERECHTIGUNGEN, BERECHTIGUNG_LABELS, personHasPermission, requirePermission, requireAdminAreaAccess } from '../../src/middleware/permissions.js';
 
@@ -37,11 +38,12 @@ test('personHasPermission: superadmin has every grantable permission without any
   db.close();
 });
 
-test('personHasPermission: manager must receive explicit grants for sensitive sync writes', () => {
+test('personHasPermission: manager hat genau die Startwert-Rechte der Gruppe', () => {
   const db = openDatabase(':memory:');
   const person = { churchtools_person_id: '1', gruppen: ['30'] };
+  const erwartet = startwerteFuerGruppe('manager');
   for (const permission of GRANTABLE_BERECHTIGUNGEN) {
-    assert.equal(personHasPermission(db, CONFIG, person, permission), !['sync_verwalten', 'workflow_eingreifen', 'betrieb_einsehen'].includes(permission), permission);
+    assert.equal(personHasPermission(db, CONFIG, person, permission), erwartet.includes(permission), permission);
   }
   db.close();
 });

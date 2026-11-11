@@ -126,7 +126,7 @@
                         <li class="badge rounded-pill text-bg-light border fw-normal benachrichtigung-ziel">
                           <% if (e.art === 'gruppe') { %><%- include('../_symbol', { name: 'people' }) %><% } %>
                           <%= e.label %>
-                          <% if (e.inaktiv) { %><span class="badge text-bg-secondary ms-1">inaktiv</span><% } %>
+                          <% if (e.unbekannt) { %><span class="badge text-bg-warning ms-1">unbekannt</span><% } else if (e.inaktiv) { %><span class="badge text-bg-secondary ms-1">inaktiv</span><% } %>
                         </li>
                       <% }) %>
                     </ul>
@@ -171,7 +171,7 @@
                   </ul>
                 </div>
                 <div class="col-12 col-xl-5">
-                  <p class="small mb-1">Vorschau <span class="text-muted">(gespeicherter Text mit Beispieldaten)</span></p>
+                  <p class="small mb-1">Vorschau <span class="text-muted">(<%= vorschauAusEingabe ? 'eingegebener, noch nicht gespeicherter Text' : 'gespeicherter Text' %> mit Beispieldaten)</span></p>
                   <div class="border rounded p-2 small benachrichtigung-vorschau">
                     <p class="fw-semibold mb-2"><%= vorschau.subject %></p>
                     <div class="benachrichtigung-vorschau-text"><%= vorschau.text %></div>
@@ -185,7 +185,8 @@
           <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
             <button type="submit" class="btn btn-primary">Speichern</button>
             <% if (hatVorlage) { %>
-              <button type="submit" class="btn btn-outline-secondary" form="testmailForm">Test-Mail an mich</button>
+              <button type="submit" class="btn btn-outline-secondary" form="testmailForm" aria-describedby="testmailHinweis">Test-Mail an mich</button>
+              <span class="text-muted small" id="testmailHinweis">Die Test-Mail verwendet den gespeicherten Text.</span>
             <% } %>
             <% if (gespeichert) { %>
               <div class="alert alert-success alert-dismissible alert-kompakt fade show d-inline-flex align-items-center py-1 ps-2 mb-0" role="alert">

@@ -13,6 +13,7 @@ import { parseEmpfaengerListe, meldeAuditEmpfaengerWechsel, meldeAuditNachweisAe
 import { BENACHRICHTIGUNG_WERTE, WOCHENTAG_NAMEN, benachrichtigungFuer } from '../../services/benachrichtigung.js';
 import { stelleWartendeSofortZu } from '../../services/mailZustellung.js';
 import { runMailDigestJob } from '../../services/cronJobs.js';
+import { kreditorNameVariablen } from '../../services/kreditorFelder.js';
 import { currentAuditActor } from '../../services/auditContext.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 
@@ -44,7 +45,11 @@ const vorlagenKeys = (ereignis) => {
 };
 // Textareas kommen als CRLF: auf LF vereinheitlichen, damit Vergleiche und Mails konsistent sind.
 const normalisiereText = (wert) => String(wert ?? '').replace(/\r\n?/g, '\n').trim();
-const beispielVariablen = (ereignis) => Object.fromEntries(ereignis.variablen.map((v) => [v.name, v.beispiel]));
+function beispielVariablen(ereignis) {
+  const werte = Object.fromEntries(ereignis.variablen.map((v) => [v.name, v.beispiel]));
+  // Ältere angepasste Vorlagen nutzen noch %debitorName%: wie beim Versand mitbefüllen.
+  return werte.kreditorName === undefined ? werte : { ...werte, ...kreditorNameVariablen(werte.kreditorName) };
+}
 const nurEmail = (ereignis) => ereignis.empfaengerArt === 'nurEmail';
 // Audit-Empfänger sind kommagetrennt gespeichert; im Formular eine Adresse pro Zeile.
 const auditAdressen = (wert) => parseEmpfaengerListe(String(wert ?? '').replace(/\r?\n|\r/g, ','));
@@ -83,6 +88,10 @@ function pruefeFormular(db, ereignis, body) {
       continue;
     }
     const regel = ZAHL_REGELN[key] ?? ZAHL_REGELN[einheit];
+    if (!regel) {
+      errors.push(`${label}: unbekannte Einheit „${einheit}“, der Wert kann nicht geprüft werden.`);
+      continue;
+    }
     if (regel.muster.test(wert) && regel.gueltig(Number(wert))) speichern[key] = String(Number(wert));
     else errors.push(`${label}: ${regel.fehler}.`);
   }
@@ -149,6 +158,7 @@ export function createBenachrichtigungenRouter({ db, config, mailer, csrfProtect
     const testmail = TESTMAIL_HINWEISE[req.query.testmail];
     const istZusammenfassung = ereignis.id === 'zusammenfassung';
     res.status(status).render('admin/benachrichtigungen', {
+      vorschauAusEingabe: errors.length > 0,
       bereiche: BEREICHE.map((name) => ({
         name,
         ereignisse: EREIGNISSE.filter((e) => e.bereich === name).map((e) => ({ id: e.id, titel: e.titel, angepasst: istAngepasst(db, e) })),
@@ -215,7 +225,9 @@ export function createBenachrichtigungenRouter({ db, config, mailer, csrfProtect
         await meldeAuditEmpfaengerWechsel(db, config, mailer, { alt: alteAuditListe, neu: speichern[ereignis.empfaengerKey], person: req.currentPerson });
       }
       if (vorlagenAenderungen.length > 0) {
-        await meldeAuditNachweisAenderung(db, config, mailer, { aenderungen: vorlagenAenderungen, person: req.currentPerson });
+        // Auch die bisherigen Adressen erfahren die Änderung, falls sie im selben Speichern ersetzt wurden.
+        const bisherige = alteAuditListe === null ? [] : parseEmpfaengerListe(alteAuditListe).adressen;
+        await meldeAuditNachweisAenderung(db, config, mailer, { aenderungen: vorlagenAenderungen, person: req.currentPerson, zusaetzlicheEmpfaenger: bisherige });
       }
     } catch (err) {
       console.error('Audit-Nachweis: Änderungsmail fehlgeschlagen', err);

@@ -437,3 +437,75 @@ test('Sync-Fehler: Empfänger werden hier gespeichert und geprüft', async (t) =
   assert.equal(res.status, 302);
   assert.equal(getConfigValue(db, 'sync_fehler_empfaenger'), 'gruppe:admin\nit@example.org');
 });
+
+test('Audit-Prüfnummer: neue Adresse und geänderter Betreff im selben Speichern → Änderungsmail an alte und neue Adresse', async (t) => {
+  const { db, als, mailer } = umgebung(t);
+  setConfigValue(db, 'audit_revision_empfaenger', 'alt@example.org');
+  const res = await sende(als(), 'audit-pruefnummer', { ...AUDIT, empfaenger: 'neu@example.org', betreff: 'Neuer Betreff' });
+  assert.equal(res.status, 302);
+  const aenderung = mailer.sent.filter((m) => /Einstellungen des Audit-Nachweises/.test(m.subject));
+  assert.deepEqual(aenderung.map((m) => m.to).sort(), ['alt@example.org', 'neu@example.org']);
+  assert.match(aenderung[0].text, /Betreff der Prüfnummer-Mail wurde geändert/);
+});
+
+test('Rechte: jetzt-ausfuehren und zuruecksetzen → 403 ohne Recht; POSTs ohne Sitzung → 401, nichts geändert', async (t) => {
+  const { db, als } = umgebung(t);
+  setConfigValue(db, 'mail_vorlage_reminder_text', 'Eigen');
+  for (const person of ['1', '55']) {
+    for (const pfad of ['/admin/benachrichtigungen/zusammenfassung/jetzt-ausfuehren', '/admin/benachrichtigungen/reminder/zuruecksetzen']) {
+      const res = await als(person).post(pfad).type('form').send({});
+      assert.equal(res.status, 403, `${person} ${pfad}`);
+    }
+  }
+  const ohneSitzung = request(createApp({ db, config: testConfig(tmpdir()) }));
+  for (const pfad of ['/admin/benachrichtigungen/zusammenfassung/jetzt-ausfuehren', '/admin/benachrichtigungen/reminder', '/admin/benachrichtigungen/reminder/zuruecksetzen']) {
+    const res = await ohneSitzung.post(pfad).type('form').send({ ...REMINDER, zeit_reminder_stunden: '5' });
+    assert.equal(res.status, 401, pfad);
+  }
+  assert.equal(getConfigValue(db, 'reminder_stunden'), '24');
+  assert.equal(getConfigValue(db, 'mail_vorlage_reminder_text'), 'Eigen');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM cron_log WHERE job = 'mail-digest'").get().n, 0);
+});
+
+test('Auffälligkeiten: ungültiger Zusatzempfänger → 400; Sicherheitsalarm: leere Liste → 400', async (t) => {
+  const { db, als } = umgebung(t);
+  let res = await sende(als(), 'auffaelligkeiten', { empfaenger: 'nicht-valide' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /nicht-valide/);
+  assert.equal(getConfigValue(db, 'iban_abweichung_empfaenger'), DEFAULTS.iban_abweichung_empfaenger);
+  res = await sende(als(), 'sicherheitsalarm', { zeit_sicherheitsalarm_wiederholung_stunden: '24', empfaenger: '' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /mindestens ein Ziel/);
+  assert.equal(getConfigValue(db, 'sicherheitsalarm_empfaenger'), 'gruppe:admin');
+});
+
+test('Vorschau: Beschriftung je nach gespeichertem/eingegebenem Text; %debitorName% wird befüllt; Hinweis zur Test-Mail', async (t) => {
+  const { db, als } = umgebung(t);
+  setConfigValue(db, 'mail_vorlage_duplikat_warnung_betreff', 'Doppelt bei %debitorName%');
+  const seite = await als().get('/admin/benachrichtigungen/duplikat-warnung');
+  assert.match(seite.text, /\(gespeicherter Text mit Beispieldaten\)/);
+  assert.match(seite.text, /Doppelt bei Muster AG/);
+  assert.match(seite.text, /Die Test-Mail verwendet den gespeicherten Text\./);
+  const res = await sende(als(), 'duplikat-warnung', { betreff: 'Entwurf %kreditorName%', text: '' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /\(eingegebener, noch nicht gespeicherter Text mit Beispieldaten\)/);
+  assert.match(res.text, /Entwurf Muster AG/);
+});
+
+test('Zusatzempfänger: unbekannte Person bekommt Badge „unbekannt“, inaktive „inaktiv“', async (t) => {
+  const { db, als } = umgebung(t);
+  upsertPerson(db, { id: '7', vorname: 'Ina', nachname: 'Weg', email: 'weg@example.org', gruppen: [] });
+  db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '7'").run();
+  setConfigValue(db, 'reminder_empfaenger', 'person:7\nperson:404');
+  const seite = await als().get('/admin/benachrichtigungen/reminder');
+  assert.match(seite.text, /Ina Weg\s*<span class="badge text-bg-secondary ms-1">inaktiv<\/span>/);
+  assert.match(seite.text, /Person 404\s*<span class="badge text-bg-warning ms-1">unbekannt<\/span>/);
+});
+
+test('Sync-Seite verweist für die Empfänger auf Benachrichtigungen', async (t) => {
+  const { als } = umgebung(t);
+  const seite = await als().get('/admin/sync');
+  assert.match(seite.text, /Wer bei einem Sync-Fehler eine Mail bekommt, legt eine Superadmin-Person unter „Benachrichtigungen“ fest\./);
+  assert.match(seite.text, /href="\/admin\/benachrichtigungen\/sync-fehler">Empfänger einstellen → Benachrichtigungen</);
+  assert.doesNotMatch(seite.text, /name="syncFehlerEmpfaenger"/);
+});

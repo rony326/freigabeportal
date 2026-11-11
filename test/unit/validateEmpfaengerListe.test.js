@@ -69,12 +69,12 @@ test('empfaengerAnzeige: Gruppen, Personen (inaktiv/unbekannt) und Adressen lesb
   upsertPerson(db, { id: '2', vorname: 'Ina', nachname: 'Aktiv', email: 'p2@example.org', gruppen: [], loggedInNow: false });
   db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '2'").run();
   assert.deepEqual(empfaengerAnzeige(db, 'gruppe:buchhaltung\ngruppe:admin\nperson:1\nperson:2\nperson:9\nx@example.org\n'), [
-    { art: 'gruppe', label: 'Gruppe Buchhaltung', inaktiv: false },
-    { art: 'gruppe', label: 'Gruppe Admin', inaktiv: false },
-    { art: 'person', label: 'A B', inaktiv: false },
-    { art: 'person', label: 'Ina Aktiv', inaktiv: true },
-    { art: 'person', label: 'Unbekannte Person (9)', inaktiv: true },
-    { art: 'mail', label: 'x@example.org', inaktiv: false },
+    { art: 'gruppe', label: 'Gruppe Buchhaltung', inaktiv: false, unbekannt: false },
+    { art: 'gruppe', label: 'Gruppe Admin', inaktiv: false, unbekannt: false },
+    { art: 'person', label: 'A B', inaktiv: false, unbekannt: false },
+    { art: 'person', label: 'Ina Aktiv', inaktiv: true, unbekannt: false },
+    { art: 'person', label: 'Person 9', inaktiv: false, unbekannt: true },
+    { art: 'mail', label: 'x@example.org', inaktiv: false, unbekannt: false },
   ]);
   db.close();
 });

@@ -45,17 +45,17 @@ export function validateEmpfaengerListe(value, label, errors, { db = null, leerE
 }
 
 // Lesbare Liste für die Admin-Seite: Gruppe → "Gruppe Buchhaltung", Person → "Vorname Nachname"
-// (inaktiv markiert), sonst die Adresse.
+// (inaktiv bzw. unbekannt markiert), sonst die Adresse.
 export function empfaengerAnzeige(db, value) {
   return empfaengerZeilen(value).map((zeile) => {
-    if (GRUPPEN[zeile]) return { art: 'gruppe', label: GRUPPEN[zeile], inaktiv: false };
+    if (GRUPPEN[zeile]) return { art: 'gruppe', label: GRUPPEN[zeile], inaktiv: false, unbekannt: false };
     if (zeile.startsWith(PERSON_PREFIX)) {
       const id = zeile.slice(PERSON_PREFIX.length).trim();
       const person = getPersonById(db, id);
-      if (!person) return { art: 'person', label: `Unbekannte Person (${id})`, inaktiv: true };
-      return { art: 'person', label: `${person.vorname} ${person.nachname}`.trim(), inaktiv: !person.aktiv };
+      if (!person) return { art: 'person', label: `Person ${id}`, inaktiv: false, unbekannt: true };
+      return { art: 'person', label: `${person.vorname} ${person.nachname}`.trim(), inaktiv: !person.aktiv, unbekannt: false };
     }
-    return { art: 'mail', label: zeile, inaktiv: false };
+    return { art: 'mail', label: zeile, inaktiv: false, unbekannt: false };
   });
 }
 

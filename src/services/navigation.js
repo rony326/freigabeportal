@@ -64,6 +64,7 @@ const ADMIN = [
     { label: 'Module', href: '/admin/module', symbol: 'grid-3x3-gap', flag: 'module' },
     { label: 'Zeitstempel', href: '/admin/zeitstempel', symbol: 'clock-history', flag: 'zeitstempel' },
     { label: 'Ersteinrichtung', href: '/admin/ersteinrichtung', symbol: 'list-check', flag: 'ersteinrichtung' },
+    { label: 'Gruppenrechte', href: '/admin/gruppenrechte', symbol: 'shield-lock', flag: 'gruppenrechte' },
   ] },
   { titel: 'Betrieb', punkte: [
     { label: 'Datenbank-Backup', href: '/admin/backup', symbol: 'database', flag: 'backup' },

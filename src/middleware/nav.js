@@ -30,6 +30,7 @@ export function loadNavFlags(db, config) {
       backup: res.locals.isSuperadmin,
       module: res.locals.isSuperadmin,
       ersteinrichtung: res.locals.isSuperadmin,
+      gruppenrechte: hasPermission('gruppenrechte_verwalten'),
       kreditkarten: hasPermission('kreditkarten_verwalten'),
       budgets: hasPermission('budgets_verwalten'),
       altfaelle: hasPermission('workflow_eingreifen'),

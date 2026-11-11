@@ -47,6 +47,7 @@ import { createAuditLogRouter } from './routes/admin/auditLog.js';
 import { createGeplanteJobsRouter } from './routes/admin/geplanteJobs.js';
 import { createBackupRouter } from './routes/admin/backup.js';
 import { createModuleRouter } from './routes/admin/module.js';
+import { createGruppenrechteRouter } from './routes/admin/gruppenrechte.js';
 import { createAltfaelleRouter } from './routes/admin/altfaelle.js';
 import { createDateiQuarantaeneRouter } from './routes/admin/dateiQuarantaene.js';
 import { createHealthzRouter } from './routes/healthz.js';
@@ -331,6 +332,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   if (testmodus) app.use('/admin/backup', imTestmodusGesperrt('Backups sind im Testmodus nicht verfügbar.'));
   else app.use('/admin/backup', requireRole(config, 'superadmin'), createBackupRouter({ db, config, csrfProtection }));
   app.use('/admin/module', requireRole(config, 'superadmin'), createModuleRouter({ db, csrfProtection }));
+  app.use('/admin/gruppenrechte', requirePermission(db, config, 'gruppenrechte_verwalten'), createGruppenrechteRouter({ db, config, csrfProtection }));
   app.use('/admin/altfaelle', requirePermission(db, config, 'workflow_eingreifen'), createAltfaelleRouter({ db, config, csrfProtection }));
   app.use('/admin/dateiquarantaene', requireRole(config, 'superadmin'), createDateiQuarantaeneRouter({ db, config, csrfProtection }));
   if (testmodus) app.use('/testmodus', sessionLimiter, requireLogin(), createTestmodusInstanzRouter({ db, config, mailer, csrfProtection }));

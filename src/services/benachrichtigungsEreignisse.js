@@ -91,7 +91,7 @@ export const EREIGNISSE = [
     titel: 'Abgelehnt',
     beschreibung: 'Eine Rechnung wird abgelehnt und geht zur Überarbeitung zurück.',
     vorlagenTyp: 'ablehnung',
-    automatisch: 'Die Person, die die Rechnung zuletzt bearbeitet hat bzw. der sie zur Überarbeitung zurückgegeben wird.',
+    automatisch: 'Die zuständige Person der Rechnung (bzw. ihre Vertretung); die Portal-Admin-Gruppe, wenn Freigabe 1 an die Administration eskaliert war; bei Spesen die einreichende Person.',
     variablen: [NAME, v('grund', 'Grund', 'Deine Rechnung wurde abgelehnt:'), DATEI, v('begruendung', 'Begründung', 'Betrag stimmt nicht'), LINK, PORTAL],
   }),
   ereignis({
@@ -235,7 +235,7 @@ export const EREIGNISSE = [
     beschreibung: 'Kreditkartenbelege oder -abrechnungen sind seit längerem offen.',
     vorlagenTyp: 'kk-beleg-erinnerung',
     automatisch: 'Die Personen mit offenen Belegen und die verantwortliche Person der Karte (bzw. ihre Vertretung).',
-    zeitKeys: [{ key: 'kk_beleg_erinnerung_tage', label: 'Erinnerung nach', einheit: 'Tage' }],
+    // Die Tage-Schwelle (kk_beleg_erinnerung_tage) wird unter /admin/geplante-jobs bearbeitet.
     sofort: true,
     variablen: [NAME, v('tage', 'Tage', '45'), v('anzahl', 'Anzahl', '3'), v('eintraege', 'Liste der offenen Belege', '- Beleg vom 01.10.2026'), LINK, PORTAL],
   }),
@@ -259,7 +259,7 @@ export const EREIGNISSE = [
     automatisch: null,
     empfaengerKey: 'sync_fehler_empfaenger',
     sofort: true,
-    variablen: [v('zeitpunkt', 'Zeitpunkt', '10.11.2026 02:00'), v('fehlerDetails', 'Fehlerdetails', 'ChurchTools nicht erreichbar'), LINK, PORTAL],
+    variablen: [v('zeitpunkt', 'Zeitpunkt', '2026-11-10T02:00:00.000Z'), v('fehlerDetails', 'Fehlerdetails', 'ChurchTools nicht erreichbar'), LINK, PORTAL],
   }),
   ereignis({
     id: 'neues-geraet',
@@ -310,7 +310,7 @@ export const EREIGNISSE = [
     id: 'sicherheitsalarm',
     bereich: 'System & Sicherheit',
     titel: 'Sicherheitsalarm',
-    beschreibung: 'Warnung bei Problemen mit Zeitstempel, Audit-Protokoll oder Sperrliste. Der Text ist fest und nicht anpassbar.',
+    beschreibung: 'Sammelwarnung bei Sicherheitsproblemen: ungeklärte Backup-Löschungen, Probleme mit dem Zeitstempel (Sperrliste/CRL) und dem Audit-Protokoll. Der Text ist fest und nicht anpassbar.',
     vorlagenTyp: null,
     automatisch: null,
     empfaengerKey: 'sicherheitsalarm_empfaenger',

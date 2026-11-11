@@ -265,3 +265,49 @@ test('GET /admin/konten returns 200 for a plain person with exactly this individ
   assert.equal(res2.status, 200);
   db.close();
 });
+
+const KONTO_FORM = { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' };
+
+test('Konto anlegen mit Buchungsart Gutschrift: gespeichert und in der Liste sichtbar', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  const app = buildTestApp(db);
+  const res = await request(app).post('/admin/konten').set('x-test-person-id', '99').type('form').send({ ...KONTO_FORM, buchungsart: 'gutschrift' });
+  assert.equal(res.status, 302);
+  assert.equal(db.prepare('SELECT buchungsart FROM konten').get().buchungsart, 'gutschrift');
+  const liste = await request(app).get('/admin/konten').set('x-test-person-id', '99');
+  assert.match(liste.text, /<th>Buchungsart<\/th>/);
+  assert.match(liste.text, /Gutschrift/);
+  db.close();
+});
+
+test('Konto ohne angegebene Buchungsart bekommt beides; ungültiger Wert wird mit 400 abgelehnt', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  const app = buildTestApp(db);
+  await request(app).post('/admin/konten').set('x-test-person-id', '99').type('form').send(KONTO_FORM);
+  assert.equal(db.prepare('SELECT buchungsart FROM konten').get().buchungsart, 'beides');
+  const res = await request(app).post('/admin/konten').set('x-test-person-id', '99').type('form').send({ ...KONTO_FORM, kontonummer: '3001', buchungsart: 'bar' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Buchungsart/);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM konten').get().n, 1);
+  db.close();
+});
+
+test('Bearbeiten zeigt die Buchungsart vorausgewählt; Änderung wird gespeichert und steht im Audit-Log', async () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  const app = buildTestApp(db);
+  await request(app).post('/admin/konten').set('x-test-person-id', '99').type('form').send({ ...KONTO_FORM, buchungsart: 'rechnung' });
+  const id = db.prepare('SELECT id FROM konten').get().id;
+  const form = await request(app).get(`/admin/konten/${id}/bearbeiten`).set('x-test-person-id', '99');
+  assert.match(form.text, /<option value="rechnung" selected>/);
+  const res = await request(app).post(`/admin/konten/${id}`).set('x-test-person-id', '99').type('form').send({ ...KONTO_FORM, buchungsart: 'gutschrift' });
+  assert.equal(res.status, 302);
+  assert.equal(db.prepare('SELECT buchungsart FROM konten WHERE id = ?').get(id).buchungsart, 'gutschrift');
+  const audit = db.prepare("SELECT vorher, nachher FROM audit_ereignisse WHERE objekt = 'konten' AND aktion = 'UPDATE'").all();
+  assert.equal(audit.length, 1);
+  assert.match(audit[0].vorher, /"buchungsart":"rechnung"/);
+  assert.match(audit[0].nachher, /"buchungsart":"gutschrift"/);
+  db.close();
+});

@@ -21,13 +21,14 @@
     <div class="table-responsive">
       <table class="table align-middle">
         <thead>
-          <tr><th>Kontonummer</th><th>Bezeichnung</th><th>Freigeber 1</th><th>Freigeber 2</th><th>Aktiv</th><th></th></tr>
+          <tr><th>Kontonummer</th><th>Bezeichnung</th><th>Buchungsart</th><th>Freigeber 1</th><th>Freigeber 2</th><th>Aktiv</th><th></th></tr>
         </thead>
         <tbody>
           <% konten.forEach((konto) => { %>
             <tr>
               <td><%= konto.kontonummer %></td>
               <td><%= konto.bezeichnung %></td>
+              <td><%= BUCHUNGSART_LABEL[konto.buchungsart] || konto.buchungsart %></td>
               <td><%= konto.freigeber1Name %></td>
               <td><%= konto.freigeber2Name %></td>
               <td><%= konto.aktiv ? 'Ja' : 'Nein' %></td>

@@ -83,7 +83,9 @@ CREATE TABLE IF NOT EXISTS konten (
   stellvertreter1_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
   freigeber2_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
   stellvertreter2_id TEXT NOT NULL REFERENCES personen(churchtools_person_id),
-  aktiv INTEGER NOT NULL DEFAULT 1
+  aktiv INTEGER NOT NULL DEFAULT 1,
+  -- Was auf das Konto gebucht werden darf: nur Rechnungen, nur Gutschriften oder beides.
+  buchungsart TEXT NOT NULL DEFAULT 'beides' CHECK (buchungsart IN ('rechnung', 'gutschrift', 'beides'))
 );
 
 CREATE TABLE IF NOT EXISTS kreditoren (

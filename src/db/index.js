@@ -107,6 +107,18 @@ function migrateKreditorenTable(db) {
   }
 }
 
+// Buchungsart pro Konto (Rechnung/Gutschrift/beides); bestehende Konten bleiben 'beides'.
+const KONTEN_TABLE_MIGRATIONS = [
+  { column: 'buchungsart', ddl: "ALTER TABLE konten ADD COLUMN buchungsart TEXT NOT NULL DEFAULT 'beides' CHECK (buchungsart IN ('rechnung', 'gutschrift', 'beides'))" },
+];
+
+function migrateKontenTable(db) {
+  const existing = new Set(db.prepare('PRAGMA table_info(konten)').all().map((col) => col.name));
+  for (const { column, ddl } of KONTEN_TABLE_MIGRATIONS) {
+    if (!existing.has(column)) db.exec(ddl);
+  }
+}
+
 const FREIGABEN_TABLE_VERTRETUNG_MIGRATIONS = [
   { column: 'vertretung_fuer', ddl: 'ALTER TABLE freigaben ADD COLUMN vertretung_fuer TEXT REFERENCES personen(churchtools_person_id)' },
 ];
@@ -1289,6 +1301,7 @@ export function openDatabase(dbPath) {
   migrateCronLogTableFreigabe2Erinnerungen(db);
   migratePersonenTable(db);
   migrateKreditorenTable(db);
+  migrateKontenTable(db);
   migrateFreigabenTableVertretung(db);
   migrateKreditkartenChecks(db);
   migrateMailLogSicherheitsalarm(db);

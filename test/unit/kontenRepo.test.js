@@ -249,3 +249,55 @@ test('listVertretungsKandidaten excludes inactive persons', () => {
   assert.deepEqual(kandidaten, ['2', '4']);
   db.close();
 });
+
+import { BUCHUNGSARTEN, BUCHUNGSART_LABEL } from '../../src/db/kontenRepo.js';
+
+const KONTO = { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' };
+
+test('Buchungsarten und Labels', () => {
+  assert.deepEqual([...BUCHUNGSARTEN], ['rechnung', 'gutschrift', 'beides']);
+  assert.deepEqual(BUCHUNGSART_LABEL, { rechnung: 'Rechnung', gutschrift: 'Gutschrift', beides: 'Rechnung / Gutschrift' });
+});
+
+test('createKonto ohne Buchungsart ergibt beides; mit Wert wird er gespeichert und per updateKonto geändert', () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  const a = createKonto(db, KONTO);
+  const b = createKonto(db, { ...KONTO, kontonummer: '3001', buchungsart: 'gutschrift' });
+  assert.equal(getKontoById(db, a).buchungsart, 'beides');
+  assert.equal(getKontoById(db, b).buchungsart, 'gutschrift');
+  updateKonto(db, b, { ...KONTO, kontonummer: '3001', buchungsart: 'rechnung' });
+  assert.equal(getKontoById(db, b).buchungsart, 'rechnung');
+  updateKonto(db, b, { ...KONTO, kontonummer: '3001' });
+  assert.equal(getKontoById(db, b).buchungsart, 'rechnung', 'fehlender Wert lässt die Buchungsart unverändert');
+  db.close();
+});
+
+test('ungültige Buchungsart wird von der Datenbank abgewiesen', () => {
+  const db = openDatabase(':memory:');
+  seedPersonen(db);
+  assert.throws(() => createKonto(db, { ...KONTO, buchungsart: 'bar' }));
+  db.close();
+});
+
+test('Migration: bestehende Konten ohne Spalte bekommen beides', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'konten-mig-'));
+  try {
+    const pfad = join(dir, 'db.sqlite');
+    const db = openDatabase(pfad);
+    seedPersonen(db);
+    const id = createKonto(db, KONTO);
+    // Alte Datenbank nachstellen: Audit-Trigger (kennen die Spalte) weg, dann die Spalte entfernen.
+    for (const aktion of ['INSERT', 'UPDATE', 'DELETE']) db.exec(`DROP TRIGGER audit_konten_${aktion}`);
+    db.exec('ALTER TABLE konten DROP COLUMN buchungsart');
+    db.close();
+    const neu = openDatabase(pfad);
+    assert.equal(getKontoById(neu, id).buchungsart, 'beides');
+    neu.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

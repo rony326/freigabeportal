@@ -286,6 +286,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           const personId = req.currentPerson.churchtools_person_id;
           const total = normalisiereBetrag(werte.gesamtbetrag);
           let ergebnis;
+          let parent;
           db.exec('BEGIN');
           try {
             setJobBetrag(db, job.id, total);
@@ -296,7 +297,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
               zahlungsziel: werte.zahlungsziel || job.zahlungsziel,
             });
             if (!markJobAufgesplittet(db, job.id)) throw new AbgleichKonflikt('Diese Abrechnung wurde inzwischen bereits bearbeitet.');
-            const parent = { ...job, betrag: total, ...db.prepare('SELECT kreditor_id, lieferant, rechnungsnummer, zahlungsziel FROM jobs WHERE id = ?').get(job.id) };
+            parent = { ...job, betrag: total, ...db.prepare('SELECT kreditor_id, lieferant, rechnungsnummer, zahlungsziel FROM jobs WHERE id = ?').get(job.id) };
             ergebnis = erzeugeTeilJobs(db, {
               job: parent,
               teile: vorbereitet,
@@ -342,7 +343,9 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           }
 
           await benachrichtigeNachAufsplitten(db, mailer, config, { job, ergebnis, person: req.currentPerson });
-          await pruefeIbanNachKkAbgleich(db, mailer, config, { job, teile: vorbereitet, konten, person: req.currentPerson, ip: req.ip });
+          // Mit dem nachgeladenen Elternjob: der Kartenherausgeber wird oft erst in diesem Formular
+          // gewählt (setKkAbrechnungKopfdaten), das vor dem Speichern geladene `job` kennt ihn nicht.
+          await pruefeIbanNachKkAbgleich(db, mailer, config, { job: parent, teile: vorbereitet, konten, person: req.currentPerson, ip: req.ip });
           res.redirect('/pool');
         } catch (err) {
           if (err instanceof KreditorFeldKonflikt) return res.status(400).render('error', { message: err.message });

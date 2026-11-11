@@ -1,5 +1,7 @@
 // Betrieb & Nutzung: Nutzungsdaten (ohne Audit-Trigger, Massendaten), Fehler, Fehlermeldungen, Banner.
 // Läuft VOR migrateSecuritySchema, damit banner und betrieb_fehlermeldungen dort Audit-Trigger bekommen.
+// Legt die Tabellen für Nutzung (Seitenaufrufe, Geräte, Anmeldungen), Fehler, Fehlermeldungen und Banner an.
+// Siehe docs/betrieb-und-nutzung.md. Idempotent.
 export function migrateBetriebSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS nutzung_seitenaufrufe (

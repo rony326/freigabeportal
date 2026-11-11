@@ -1,12 +1,16 @@
+// Admin → Konten (`/admin/konten`, Recht `konten_verwalten`, docs/admin-bereich.md): Konten mit Kontonummer, Bezeichnung, den vier Freigabe-Rollen (Freigeber 1/2 und Stellvertretungen, vier verschiedene aktive Personen) und der Buchungsart anlegen, ändern, (de)aktivieren.
+
 import { Router } from 'express';
 import { BUCHUNGSARTEN, BUCHUNGSART_LABEL, createKonto, updateKonto, deactivateKonto, activateKonto, getKontoById, listKonten, validateKontoRoles } from '../../db/kontenRepo.js';
 import { listActivePersons, getPersonById } from '../../db/personenRepo.js';
 
+// Anzeigename einer Person oder 'Unbekannt'.
 function personDisplayName(db, id) {
   const person = getPersonById(db, id);
   return person ? `${person.vorname} ${person.nachname}` : String(id);
 }
 
+// Liest die vier Rollenfelder aus dem Formular.
 function readRoleFields(body) {
   return {
     kontonummer: body.kontonummer,
@@ -31,6 +35,7 @@ function pruefeBuchungsart(values, errors) {
 export function createKontenRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // GET /admin/konten – Liste (aktive und inaktive).
   router.get('/', (req, res) => {
     const zeigtAlle = req.query.alle === '1';
     const konten = listKonten(db, { includeInactive: zeigtAlle }).map((konto) => ({
@@ -41,10 +46,12 @@ export function createKontenRouter({ db, csrfProtection = (req, res, next) => ne
     res.render('admin/konten-liste', { BUCHUNGSART_LABEL, konten, zeigtAlle, gespeichert: req.query.gespeichert === '1' });
   });
 
+  // GET /admin/konten/neu – Formular.
   router.get('/neu', (req, res) => {
     res.render('admin/konten-form', { BUCHUNGSARTEN, BUCHUNGSART_LABEL, konto: null, values: {}, errors: [], personen: listActivePersons(db) });
   });
 
+  // POST /admin/konten – legt ein Konto an (Validierung der Rollenbesetzung: validateKontoRoles).
   router.post('/', csrfProtection, (req, res) => {
     const values = readRoleFields(req.body);
     const errors = validateKontoRoles(db, values);
@@ -60,6 +67,7 @@ export function createKontenRouter({ db, csrfProtection = (req, res, next) => ne
     res.redirect('/admin/konten?gespeichert=1');
   });
 
+  // GET /admin/konten/:id/bearbeiten – Bearbeitungsformular.
   router.get('/:id/bearbeiten', (req, res) => {
     const konto = getKontoById(db, Number(req.params.id));
     if (!konto) {
@@ -81,6 +89,7 @@ export function createKontenRouter({ db, csrfProtection = (req, res, next) => ne
     });
   });
 
+  // POST /admin/konten/:id – speichert Änderungen.
   router.post('/:id', csrfProtection, (req, res) => {
     const id = Number(req.params.id);
     const konto = getKontoById(db, id);
@@ -108,11 +117,13 @@ export function createKontenRouter({ db, csrfProtection = (req, res, next) => ne
     res.redirect('/admin/konten?gespeichert=1');
   });
 
+  // POST /admin/konten/:id/deaktivieren – Konto abschalten (wird nie gelöscht).
   router.post('/:id/deaktivieren', csrfProtection, (req, res) => {
     deactivateKonto(db, Number(req.params.id));
     res.redirect('/admin/konten');
   });
 
+  // POST /admin/konten/:id/aktivieren – Konto wieder einschalten.
   router.post('/:id/aktivieren', csrfProtection, (req, res) => {
     activateKonto(db, Number(req.params.id));
     res.redirect('/admin/konten?alle=1');

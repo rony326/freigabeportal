@@ -1,3 +1,6 @@
+// Admin → Laufende Vorgänge (`/admin/vorgaenge`, Recht `vorgaenge_einsehen`, docs/admin-bereich.md und docs/rechnungs-workflow.md): Übersicht aller laufenden Vorgänge (Pool, Kontierung, Freigabe 2, abgelehnt, Rapporte) mit Zuständigkeit, Prognose, hängend/überfällig;
+// mit Recht `workflow_eingreifen` kann ein Vorgang an eine andere Person umgehängt werden (services/vorgangUmhaengen.js, harter Konfliktschutz) bzw. bei Rapporten Empfänger ersetzt/entfernt oder die Markierung aufgehoben werden.
+
 import { Router } from 'express';
 import { auffaelligkeitenKasten } from '../../services/auffaelligkeitenAnzeige.js';
 import { getJobById } from '../../db/jobsRepo.js';
@@ -17,16 +20,19 @@ import { kommentarBereich } from '../kommentare.js';
 import { kommentarInfoFuer } from '../../services/kommentare.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 
+// Filterbare Arten; NICHT_LAUFEND = Standardmeldung für einen nicht (mehr) laufenden Vorgang.
 const ARTEN = ['rechnung', 'gutschrift', 'spesen', 'rapport'];
 const NICHT_LAUFEND = 'Dieser Vorgang existiert nicht oder ist nicht (mehr) in Bearbeitung.';
 
 export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // true, wenn die Person das Recht `workflow_eingreifen` hat.
   function kannEingreifen(req) {
     return personHasPermission(db, config, req.currentPerson, 'workflow_eingreifen');
   }
 
+  // Lädt einen Vorgang in einem laufenden Status oder null.
   function ladeLaufendenJob(id) {
     const job = getJobById(db, Number(id));
     return job && LAUFENDE_STATUS.includes(job.status) ? job : null;
@@ -46,6 +52,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     return person ? { name: `${person.vorname} ${person.nachname}` } : null;
   }
 
+  // Daten für den Abschnitt "Rapport" (Empfänger, offene Zeilen, Ersatz-Kandidaten).
   function rapportDaten(job) {
     if (job.status !== 'kenntnisnahme') return null;
     const person = (id) => getPersonById(db, id);
@@ -69,6 +76,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     return { empfaenger, kandidaten, markiertVon: nameVon(job.rapport_markiert_von), markiertAm: job.rapport_markiert_am, bemerkung: job.rapport_bemerkung };
   }
 
+  // Rendert die Detailseite (Zuständigkeit, mögliche Ziele fürs Umhängen, Verlauf, Kommentare, Rapport-Daten).
   function renderDetail(req, res, status, job, { errors = [], werte = {}, umgehaengt = false, standOverride = null, rapportHinweis = null } = {}) {
     const darfEingreifen = kannEingreifen(req) && istUmhaengbar(job);
     res.status(status).render('admin/vorgang-detail', {
@@ -93,6 +101,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     });
   }
 
+  // GET /admin/vorgaenge – Liste mit Filtern (Status, Art, Person, nur Probleme).
   router.get('/', (req, res) => {
     const filter = {
       status: LAUFENDE_STATUS.includes(req.query.status) ? req.query.status : '',
@@ -115,12 +124,14 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     });
   });
 
+  // GET /admin/vorgaenge/:id – Detailseite.
   router.get('/:id', (req, res) => {
     const job = ladeLaufendenJob(req.params.id);
     if (!job) return res.status(404).render('error', { message: NICHT_LAUFEND });
     renderDetail(req, res, 200, job, { umgehaengt: req.query.umgehaengt === '1', rapportHinweis: { ersetzt: 'Empfänger ersetzt. Die neue Person wurde per Mail informiert.', entfernt: 'Empfänger entfernt.' }[req.query.rapport] || null });
   });
 
+  // POST /admin/vorgaenge/:id/umhaengen (Recht `workflow_eingreifen`) – hängt den Vorgang an die gewählte Person um; prüft Stand (409 bei Veränderung) und Ziel, Begründung Pflicht.
   router.post('/:id/umhaengen', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const job = ladeLaufendenJob(req.params.id);
@@ -155,6 +166,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
   }));
 
   // Rapport-Eingriffe: Fehler (400/409) zeigen die Detailseite mit Meldung neu an.
+  // Antwort auf einen Rapport-Eingriff (Fehler zeigen die Detailseite mit Meldung).
   function rapportAntwort(req, res, job, ergebnis, hinweis) {
     if (ergebnis.ok) return res.redirect(`/admin/vorgaenge/${job.id}?rapport=${hinweis}`);
     const aktuell = getJobById(db, job.id);
@@ -162,6 +174,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     return renderDetail(req, res, ergebnis.status, aktuell, { errors: [ergebnis.fehler] });
   }
 
+  // Lädt den Rapport-Vorgang oder rendert 404.
   function ladeRapportJob(req, res) {
     const job = ladeLaufendenJob(req.params.id);
     if (!job || job.status !== 'kenntnisnahme') {
@@ -173,6 +186,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
 
   const text = (v) => (typeof v === 'string' ? v : '');
 
+  // POST /admin/vorgaenge/:id/rapport/aufheben – hebt die Rapport-Markierung auf.
   router.post('/:id/rapport/aufheben', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, asyncHandler(async (req, res) => {
     const job = ladeRapportJob(req, res);
     if (!job) return;
@@ -181,6 +195,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     return rapportAntwort(req, res, job, ergebnis);
   }));
 
+  // POST /admin/vorgaenge/:id/rapport/:kid/ersetzen – ersetzt eine offene Empfänger:in durch eine andere Person.
   router.post('/:id/rapport/:kid/ersetzen', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, asyncHandler(async (req, res) => {
     const job = ladeRapportJob(req, res);
     if (!job) return;
@@ -191,6 +206,7 @@ export function createVorgaengeRouter({ db, config, mailer, csrfProtection = (re
     return rapportAntwort(req, res, job, ergebnis, 'ersetzt');
   }));
 
+  // POST /admin/vorgaenge/:id/rapport/:kid/entfernen – entfernt eine offene Empfänger:in ohne Ersatz.
   router.post('/:id/rapport/:kid/entfernen', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, asyncHandler(async (req, res) => {
     const job = ladeRapportJob(req, res);
     if (!job) return;

@@ -1,3 +1,6 @@
+// Admin → Betrieb & Nutzung (`/admin/betrieb`, Recht `betrieb_einsehen`, docs/betrieb-und-nutzung.md und docs/statusseite-und-monitoring.md): Nutzungsübersicht, Personen-Details, Fehler und Fehlermeldungen, Banner und Datenschutztext sowie die Statusseite
+// mit Grenzwerten und Überwachungsschlüssel (`/admin/betrieb/status`).
+
 import { Router } from 'express';
 import { getPersonById, listAllPersons } from '../../db/personenRepo.js';
 import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
@@ -36,6 +39,7 @@ const GRENZWERT_FELDER = [
   ['status_speicher_fehler_prozent', 'Speicher: Fehler unter', '% frei'],
 ];
 
+// Liest die Grenzwerte der Statusseite aus admin_config.
 function leseGrenzwerte(db) {
   return Object.fromEntries(GRENZWERT_FELDER.map(([k]) => {
     const roh = getConfigValue(db, k);
@@ -44,6 +48,7 @@ function leseGrenzwerte(db) {
 }
 
 // Alle zehn Werte müssen ganze Zahlen > 0 sein; Fehlergrenze nie vor der Warnungsgrenze.
+// (Siehe Kommentar oben.) @returns {{werte, fehler}}
 function pruefeGrenzwerte(body) {
   const werte = {};
   const fehler = [];
@@ -72,31 +77,37 @@ const FEHLER_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i;
 const LISTE_MAX = 200;
 
 // Locker: leer oder genau ein "@" ohne Leerzeichen, mit Text davor und danach.
+// (Siehe Kommentar oben.)
 function emailLockerGueltig(wert) {
   return wert === '' || /^[^\s@]+@[^\s@]+$/.test(wert);
 }
 
+// Map Personen-id → Name.
 function namenVerzeichnis(db) {
   const namen = new Map(listAllPersons(db).map((p) => [p.churchtools_person_id, `${p.vorname} ${p.nachname}`]));
   return (id) => (id == null ? '—' : namen.get(String(id)) || `Person ${id}`);
 }
 
 // Gemeinsame Werte aller Betrieb-Seiten.
+// (Siehe Kommentar oben.)
 function basis(db, reiter) {
   return { reiter, name: namenVerzeichnis(db), zeit: zeitpunktAnzeige };
 }
 
+// Sucht einen Fehler über eine volle oder verkürzte Request-ID.
 function findeFehler(db, id) {
   if (typeof id !== 'string' || !FEHLER_ID.test(id)) return null;
   const treffer = db.prepare("SELECT * FROM betrieb_fehler WHERE request_id LIKE ? ESCAPE '\\' ORDER BY zeitpunkt DESC LIMIT 2").all(`${id.toLowerCase()}%`);
   return treffer.length === 1 ? treffer[0] : null;
 }
 
+// Formularwerte eines Banners (leer für ein neues).
 function bannerFormular(banner) {
   if (!banner) return { id: null, art: 'info', text: '', link: '', von: '', bis: '' };
   return { id: banner.id, art: banner.art, text: banner.text, link: banner.link || '', von: isoZuZurichLokal(banner.von), bis: isoZuZurichLokal(banner.bis) };
 }
 
+// Router der Betriebsseiten; `statusCache` wird mit /healthz und dem Dashboard geteilt.
 export function createBetriebRouter({
   db, config = {}, tsaErreichbarkeit = createTsaErreichbarkeit(), tsaVersuch,
   statusCache = createStatusCache({ db, config, tsaErreichbarkeit, tsaVersuch }), csrfProtection = (req, res, next) => next(),
@@ -105,6 +116,7 @@ export function createBetriebRouter({
 
   const schluesselVorhanden = () => /^[0-9a-f]{64}$/.test(getConfigValue(db, 'monitoring_secret') || '');
 
+  // Rendert die Statusseite (Dienste, Grenzwerte, Überwachungsschlüssel).
   function zeigeStatus(req, res, { status = 200, werte = null, fehler = [], gespeichert = false, neuerSchluessel = null, neu = false } = {}) {
     const ergebnis = statusCache.ergebnis({ neu });
     const nav = res.locals.adminNav || {};
@@ -120,8 +132,10 @@ export function createBetriebRouter({
     });
   }
 
+  // GET /admin/betrieb/status – Statusseite.
   router.get('/status', (req, res) => zeigeStatus(req, res, { gespeichert: req.query.gespeichert === '1', neu: req.query.neu === '1' }));
 
+  // POST /admin/betrieb/status/grenzwerte – speichert die zehn Grenzwerte (ganze Zahlen > 0, Fehlergrenze nie vor Warnungsgrenze).
   router.post('/status/grenzwerte', csrfProtection, (req, res) => {
     const { werte, fehler } = pruefeGrenzwerte(req.body);
     if (fehler.length) return zeigeStatus(req, res, { status: 400, werte, fehler });
@@ -130,6 +144,7 @@ export function createBetriebRouter({
     res.redirect('/admin/betrieb/status?gespeichert=1');
   });
 
+  // POST /admin/betrieb/status/schluessel – erzeugt einen neuen Überwachungsschlüssel für /healthz (nur der SHA-256 wird gespeichert; der Klartext erscheint einmal).
   router.post('/status/schluessel', csrfProtection, (req, res) => {
     const aktion = req.body.aktion;
     if (aktion === 'erzeugen') {
@@ -148,6 +163,7 @@ export function createBetriebRouter({
     return zeigeStatus(req, res, { status: 400, fehler: ['Unbekannte Aktion.'] });
   });
 
+  // GET /admin/betrieb – Nutzungsübersicht (Zeitraum 7/30/90 Tage).
   router.get('/', (req, res) => {
     const tage = ZEITRAEUME.includes(Number(req.query.tage)) ? Number(req.query.tage) : STANDARD_TAGE;
     const personen = listAllPersons(db);
@@ -158,12 +174,14 @@ export function createBetriebRouter({
     res.render('admin/betrieb-uebersicht', { ...basis(db, 'uebersicht'), daten, tage, zeitraeume: ZEITRAEUME, personen, personId });
   });
 
+  // GET /admin/betrieb/personen/:id – Anmeldungen, Geräte, letzte Aufrufe, Fehler und Meldungen einer Person.
   router.get('/personen/:id', (req, res) => {
     const person = getPersonById(db, req.params.id);
     if (!person) return res.status(404).render('error', { message: 'Person nicht gefunden.' });
     res.render('admin/betrieb-person', { ...basis(db, 'uebersicht'), person, detail: personDetail(db, person.churchtools_person_id) });
   });
 
+  // GET /admin/betrieb/fehler – Liste der erfassten Serverfehler.
   router.get('/fehler', (req, res) => {
     const suche = typeof req.query.suche === 'string' ? req.query.suche.trim() : '';
     const sucheGueltig = FEHLER_ID.test(suche);
@@ -175,6 +193,7 @@ export function createBetriebRouter({
     });
   });
 
+  // GET /admin/betrieb/fehler/:requestId – Detail eines Fehlers (Stack) über die Fehler-ID.
   router.get('/fehler/:requestId', (req, res) => {
     const einzelfehler = findeFehler(db, req.params.requestId);
     if (!einzelfehler) return res.status(404).render('error', { message: 'Fehler nicht gefunden.' });
@@ -182,6 +201,7 @@ export function createBetriebRouter({
     res.render('admin/betrieb-fehler', { ...basis(db, 'fehler'), fehler: [], suche: '', sucheUngueltig: false, einzelfehler, meldungen });
   });
 
+  // GET /admin/betrieb/meldungen – über "Problem melden" eingegangene Meldungen.
   router.get('/meldungen', (req, res) => {
     const status = MELDUNG_STATUS.includes(req.query.status) ? req.query.status : '';
     const meldungen = status
@@ -190,16 +210,19 @@ export function createBetriebRouter({
     res.render('admin/betrieb-meldungen', { ...basis(db, 'meldungen'), meldungen, status, meldung: null, fehlerText: null, gespeichert: false });
   });
 
+  // Rendert die Detailseite einer Meldung.
   function zeigeMeldung(res, meldung, { status = 200, fehlerText = null, gespeichert = false } = {}) {
     res.status(status).render('admin/betrieb-meldungen', { ...basis(db, 'meldungen'), meldungen: [], status: '', meldung, fehlerText, gespeichert });
   }
 
+  // GET /admin/betrieb/meldungen/:id – Detail einer Meldung.
   router.get('/meldungen/:id', (req, res) => {
     const meldung = db.prepare('SELECT * FROM betrieb_fehlermeldungen WHERE id = ?').get(Number(req.params.id));
     if (!meldung) return res.status(404).render('error', { message: 'Meldung nicht gefunden.' });
     zeigeMeldung(res, meldung, { gespeichert: req.query.gespeichert === '1' });
   });
 
+  // POST /admin/betrieb/meldungen/:id – Status (offen / in Arbeit / erledigt) und Notiz setzen.
   router.post('/meldungen/:id', csrfProtection, (req, res) => {
     const meldung = db.prepare('SELECT * FROM betrieb_fehlermeldungen WHERE id = ?').get(Number(req.params.id));
     if (!meldung) return res.status(404).render('error', { message: 'Meldung nicht gefunden.' });
@@ -212,6 +235,7 @@ export function createBetriebRouter({
     res.redirect(`/admin/betrieb/meldungen/${meldung.id}?gespeichert=1`);
   });
 
+  // Rendert die Bannerverwaltung.
   function zeigeBanner(res, { status = 200, formular = bannerFormular(null), fehler = [], gespeichert = false } = {}) {
     const banner = db.prepare('SELECT * FROM banner ORDER BY aktiv DESC, von DESC, id DESC').all();
     res.status(status).render('admin/betrieb-banner', { ...basis(db, 'banner'), banner, formular, fehler, gespeichert, arten: BANNER_ARTEN });
@@ -230,8 +254,10 @@ export function createBetriebRouter({
     return { formular, werte, fehler: pruefeBannerEingabe(werte) };
   }
 
+  // GET /admin/betrieb/banner – Banner verwalten.
   router.get('/banner', (req, res) => zeigeBanner(res, { gespeichert: req.query.gespeichert === '1' }));
 
+  // POST /admin/betrieb/banner – neuen Banner anlegen (Art, Text, Link, von/bis in Zürcher Ortszeit).
   router.post('/banner', csrfProtection, (req, res) => {
     const { formular, werte, fehler } = leseBanner(req.body);
     if (fehler.length) return zeigeBanner(res, { status: 400, formular: { ...formular, id: null }, fehler });
@@ -240,12 +266,14 @@ export function createBetriebRouter({
     res.redirect('/admin/betrieb/banner?gespeichert=1');
   });
 
+  // GET /admin/betrieb/banner/:id – Banner bearbeiten.
   router.get('/banner/:id', (req, res) => {
     const banner = db.prepare('SELECT * FROM banner WHERE id = ?').get(Number(req.params.id));
     if (!banner) return res.status(404).render('error', { message: 'Banner nicht gefunden.' });
     zeigeBanner(res, { formular: bannerFormular(banner) });
   });
 
+  // POST /admin/betrieb/banner/:id – Banner speichern.
   router.post('/banner/:id', csrfProtection, (req, res) => {
     const banner = db.prepare('SELECT * FROM banner WHERE id = ?').get(Number(req.params.id));
     if (!banner) return res.status(404).render('error', { message: 'Banner nicht gefunden.' });
@@ -256,16 +284,19 @@ export function createBetriebRouter({
     res.redirect('/admin/betrieb/banner?gespeichert=1');
   });
 
+  // POST /admin/betrieb/banner/:id/deaktivieren – Banner abschalten.
   router.post('/banner/:id/deaktivieren', csrfProtection, (req, res) => {
     const ergebnis = db.prepare('UPDATE banner SET aktiv = 0 WHERE id = ?').run(Number(req.params.id));
     if (ergebnis.changes === 0) return res.status(404).render('error', { message: 'Banner nicht gefunden.' });
     res.redirect('/admin/betrieb/banner?gespeichert=1');
   });
 
+  // Rendert die Bearbeitung des Datenschutztextes und der Kontaktadresse.
   function zeigeDatenschutz(res, { status = 200, text, kontaktEmail, fehlerText = null, gespeichert = false }) {
     res.status(status).render('admin/betrieb-datenschutz', { ...basis(db, 'datenschutz'), text, kontaktEmail, fehlerText, gespeichert });
   }
 
+  // GET /admin/betrieb/datenschutz – Datenschutztext und Kontaktadresse bearbeiten.
   router.get('/datenschutz', (req, res) => {
     zeigeDatenschutz(res, {
       text: getConfigValue(db, 'datenschutz_text') || '',
@@ -274,6 +305,7 @@ export function createBetriebRouter({
     });
   });
 
+  // POST /admin/betrieb/datenschutz – speichert Text (höchstens 20'000 Zeichen) und Kontaktadresse.
   router.post('/datenschutz', csrfProtection, (req, res) => {
     const text = typeof req.body.datenschutzText === 'string' ? req.body.datenschutzText.replace(/\r\n/g, '\n').trim() : '';
     const kontaktEmail = typeof req.body.kontaktEmail === 'string' ? req.body.kontaktEmail.trim() : '';

@@ -1,6 +1,11 @@
+// Globaler, durchsuchbarer Audit-Log (Admin → Audit-Log, docs/admin-bereich.md): Zeitleiste über alle Vorgänge aus `freigaben`,
+// `job_loeschungen` und den Kreditkartenbeleg-Ereignissen. Das ist NICHT die unveränderliche Tabelle `audit_ereignisse`
+// (Datenbank-Trigger, docs/auth-und-rechte.md), sondern die fachliche Sicht auf den Verlauf.
+
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { EREIGNIS_LABEL, personName, formatZeitpunkt } from './auditLog.js';
 
+// Gemeinsame Basis: vereinigt die drei Quellen zu einheitlichen Spalten (Zeitpunkt, Quelle, Ereignistyp, Person, Vorgang, Konto, Kommentar).
 const BASE_QUERY = `
   WITH audit AS (
     SELECT
@@ -53,6 +58,7 @@ const BASE_QUERY = `
   )
 `;
 
+// Baut die WHERE-Klausel aus den Filtern (Person, Konto, Zeitraum, Ereignistyp, Suchbegriff) – nur gebundene Parameter.
 function buildWhere(filter) {
   const clauses = [];
   const params = [];
@@ -77,8 +83,8 @@ function buildWhere(filter) {
     params.push(filter.ereignisTyp);
   }
   if (filter.suchbegriff) {
-    // % and _ are LIKE wildcards; escape them so a search for a literal filename fragment like
-    // "a_b.pdf" doesn't also match "axb.pdf" via SQLite's default single-char wildcard semantics.
+    // % und _ sind LIKE-Platzhalter; sie werden maskiert, damit die Suche nach einem wörtlichen Dateinamen-Fragment wie
+    // "a_b.pdf" nicht über SQLites Einzelzeichen-Platzhalter auch "axb.pdf" trifft.
     clauses.push("(kommentar LIKE ? ESCAPE '\\' OR dateiname LIKE ? ESCAPE '\\')");
     const muster = `%${escapeLikeMuster(filter.suchbegriff)}%`;
     params.push(muster, muster);
@@ -86,6 +92,7 @@ function buildWhere(filter) {
   return { where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
 
+// Maskiert \, % und _ für LIKE ... ESCAPE '\'.
 function escapeLikeMuster(text) {
   return text.replace(/[\\%_]/g, (match) => `\\${match}`);
 }
@@ -97,10 +104,15 @@ function escapeLikeMuster(text) {
 // filter.bis muss bereits ein inklusives Tagesende sein (z.B. "...T23:59:59.999Z"), nicht ein
 // bloßes Datum -- der Aufrufer (siehe src/routes/admin/auditLog.js) ist dafür verantwortlich,
 // ein reines Datum entsprechend zu erweitern, bevor er hier ankommt.
+/**
+ * @param {object} filter `{personId, kontoId, von, bis, ereignisTyp, suchbegriff}`; `bis` muss ein inklusives Tagesende sein
+ * @param {{seite?: number, proSeite?: number}} [paging]
+ * @returns {{eintraege: object[], gesamtAnzahl: number, seite: number, proSeite: number}}
+ */
 export function queryGlobalAuditLog(db, filter = {}, { seite = 1, proSeite = 50 } = {}) {
-  // A non-positive or non-integer seite/proSeite must never reach the SQL LIMIT/OFFSET clause
-  // unclamped: SQLite treats a negative LIMIT as "no upper bound", which would silently return
-  // the entire, unbounded audit table instead of a page of it.
+  // Eine nicht positive oder nicht ganzzahlige seite/proSeite darf nie ungeklemmt in die SQL-Klausel LIMIT/OFFSET gelangen:
+  // SQLite behandelt ein negatives LIMIT als "keine Obergrenze" und würde still die gesamte, unbegrenzte Audit-Tabelle statt
+  // einer Seite davon zurückgeben.
   const seiteGewuenscht = Math.max(1, Math.trunc(seite) || 1);
   const proSeiteSicher = Math.max(1, Math.trunc(proSeite) || 50);
 

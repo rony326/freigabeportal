@@ -1,3 +1,7 @@
+// Stempelseite (Freigabe-Nachweis), die an das PDF angehängt wird – mit pdf-lib und der Standardschrift Helvetica (nur WinAnsi!). Drei Varianten:
+// `stampAndFinalize` (Einzelbeleg nach Freigabe 2), `stampGruppenDokument` (Splitgruppe, ein Block je Position) und `stampKenntnisnahme` (Rapport).
+// Alle werfen bei einem unbrauchbaren PDF oder nicht darstellbarem Text einen Fehler mit deutscher Meldung. Fachlich: docs/rechnungs-workflow.md.
+
 import { PDFDocument, StandardFonts, rgb, PageSizes } from 'pdf-lib';
 
 const [STAMP_WIDTH, STAMP_HEIGHT] = PageSizes.A4;
@@ -7,6 +11,7 @@ const PAGE_MARGIN = 100; // 60pt left draw origin + 40pt right margin
 const BLOCK_HEADING_GAP = 18;
 const BLOCK_GAP = 30;
 
+// UTC-Zeit → "TT.MM.JJJJ HH:MM" in Zürcher Zeit.
 function formatZeitpunkt(isoUtc) {
   return new Date(isoUtc).toLocaleString('de-CH', { timeZone: 'Europe/Zurich', dateStyle: 'medium', timeStyle: 'short' });
 }
@@ -29,6 +34,7 @@ const WINANSI_ZUSATZ = new Set([
   0x201a, 0x201c, 0x201d, 0x201e, 0x2020, 0x2021, 0x2022, 0x2026, 0x2030, 0x2039, 0x203a, 0x20ac, 0x2122,
 ]);
 
+// true, wenn die Standardschrift das Zeichen darstellen kann.
 function istWinAnsi(codePoint) {
   return (codePoint >= 0x20 && codePoint <= 0x7e) || (codePoint >= 0xa0 && codePoint <= 0xff) || WINANSI_ZUSATZ.has(codePoint);
 }
@@ -40,6 +46,7 @@ const GRAPHEME = new Intl.Segmenter('de', { granularity: 'grapheme' });
 // kodieren kann (Emoji, Kyrillisch, Steuerzeichen, ...), wird zu "?" -- ein "?" pro sichtbarem
 // Zeichen (Graphem), also auch bei ZWJ-Emoji, Flaggen und Variantenselektoren nur eins.
 // NFC zuerst, damit zerlegte Umlaute (a + U+0308) als "ä" erhalten bleiben.
+// (Siehe Kommentar oben.) @returns {string} der Text, bei dem nicht darstellbare Zeichen durch "?" ersetzt sind
 export function winAnsiSicher(text) {
   const normalisiert = String(text ?? '').normalize('NFC').replace(/\r\n?/g, '\n').replace(/\t/g, ' ');
   let ergebnis = '';
@@ -52,13 +59,13 @@ export function winAnsiSicher(text) {
 
 // Für einzeilige Felder (Namen, Titel, Verlauf-Kommentar): Umbrüche werden zu Leerzeichen, weil
 // drawText() keinen Zeilenumbruch kodieren kann.
+// (Siehe Kommentar oben.)
 function einzeilig(text) {
   return winAnsiSicher(text).replace(/\n/g, ' ');
 }
 
-// Greedily wraps `text` into lines that each fit within `maxWidth` at `size` for `font`, so
-// long free-text fields (rejection reasons, comments) never render partially or fully outside
-// the page's MediaBox — pdf-lib's drawText() does not wrap or clip on its own.
+// Bricht `text` gierig in Zeilen um, die je in `maxWidth` bei `size` für `font` passen, damit lange Freitextfelder (Ablehnungsgründe, Kommentare)
+// nie teilweise oder ganz ausserhalb der MediaBox der Seite landen — drawText() von pdf-lib bricht weder um noch schneidet es ab.
 function wrapLine(font, text, size, maxWidth) {
   const words = text.split(' ').flatMap((word) => zerlegeLangesWort(font, word, size, maxWidth));
   const lines = [];
@@ -94,9 +101,8 @@ function zerlegeLangesWort(font, word, size, maxWidth) {
   return teile;
 }
 
-// Draws a heading plus the Freigabe's fields starting at `startY`, and returns the y position
-// right after the last drawn line — the caller stacks blocks by feeding that back in as the
-// next block's startY, rather than relying on fixed, unrelated-to-content offsets.
+// Zeichnet eine Überschrift samt den Feldern der Freigabe ab `startY` und gibt die y-Position direkt nach der letzten gezeichneten Zeile zurück —
+// der Aufrufer stapelt Blöcke, indem er diesen Wert als startY des nächsten Blocks zurückgibt, statt sich auf feste, vom Inhalt unabhängige Abstände zu verlassen.
 function drawFreigabeBlock(page, font, heading, freigabe, startY, maxWidth) {
   let y = startY;
   page.drawText(heading, { x: 60, y, size: 11, font, color: rgb(0, 0, 0) });
@@ -130,11 +136,10 @@ function verlaufEntryLines(entry) {
   return lines;
 }
 
-// Draws a section heading and its lines starting at (page, startY), overflowing onto freshly
-// appended same-size pages (with "<Titel> (Fortsetzung)") whenever a line would fall below
-// VERLAUF_BOTTOM_MARGIN. Each line is { text, x, font, halte }; `halte` = so viele folgende Zeilen
-// müssen noch mit auf die Seite (Überschrift/Kopfzeile nie allein am Seitenende). Returns where
-// drawing stopped so a following section can continue right below.
+// Zeichnet eine Abschnittsüberschrift und ihre Zeilen ab (page, startY) und läuft auf frisch angehängte gleich grosse Seiten über (mit
+// "<Titel> (Fortsetzung)"), sobald eine Zeile unter VERLAUF_BOTTOM_MARGIN fiele. Jede Zeile ist { text, x, font, halte }; `halte` = so viele folgende
+// Zeilen müssen noch mit auf die Seite (Überschrift/Kopfzeile nie allein am Seitenende). Gibt zurück, wo das Zeichnen endete, damit ein folgender
+// Abschnitt direkt darunter weitermachen kann.
 function drawAbschnitt(doc, font, titel, lines, page, startY, pageWidth, pageHeight) {
   let currentPage = page;
   let y = startY;
@@ -215,8 +220,8 @@ function drawKommentare(doc, font, boldFont, gruppen, fortsetzung, pageWidth, pa
   drawAbschnitt(doc, font, KOMMENTAR_ABSCHNITT_TITEL, zeilen, page, y, pageWidth, pageHeight);
 }
 
-// Nur in der Test-Instanz (config.testmodus): Stempelseiten der Spielwiese sehen sonst aus wie eine
-// echte Freigabe. Die echte App setzt das Flag nie, ihre Stempelseite bleibt unverändert.
+// Nur in der Test-Instanz (config.testmodus): Stempelseiten der Spielwiese sähen sonst aus wie eine echte Freigabe. Die echte App setzt das Flag nie,
+// ihre Stempelseite bleibt unverändert.
 export const TESTMODUS_MARKE = 'TESTMODUS – keine echte Freigabe';
 
 function zeichneTestmodusMarke(page, boldFont, font, y) {
@@ -226,10 +231,11 @@ function zeichneTestmodusMarke(page, boldFont, font, y) {
   return y - 44;
 }
 
-// Appends one new page to the PDF itself — carrying both Freigaben (top) and the full audit-log
-// Verlauf (below, continuing onto further appended pages if it doesn't fit) — instead of relying
-// on a blank "Visum" page n8n pre-merged into the document before upload. The stamped page is
-// always the last one; there is no longer a position to choose.
+// Hängt dem PDF selbst eine neue Seite an — mit beiden Freigaben (oben) und dem vollständigen Audit-Verlauf (darunter, bei Bedarf auf weiteren
+// angehängten Seiten fortgesetzt) —, statt sich auf eine leere "Visum"-Seite zu verlassen, die n8n vor dem Hochladen ins Dokument gemergt hat.
+// Die gestempelte Seite ist immer die letzte; es gibt keine Position mehr zu wählen.
+// @param {Buffer} pdfBuffer das PDF  @param {object} stampData Konto, Betrag, Freigaben, Verlauf, Kommentare, Zahlungsdaten …
+// @returns {Promise<Buffer>} das gestempelte PDF
 export async function stampAndFinalize(pdfBuffer, stampData) {
   let doc;
   try {
@@ -238,22 +244,19 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
     throw new Error('PDF konnte nicht geladen werden – Datei ist beschädigt oder kein gültiges PDF.');
   }
 
-  // Everything below is guarded by a single catch: pdf-lib's load() parses leniently and can
-  // succeed on a file that is not really usable (e.g. only a "%PDF" header with garbage after
-  // it), with the real failure only surfacing on getPages()/save(). Text drawn with the
-  // Helvetica standard font is also limited to WinAnsi and throws if any of the stamped or
-  // Verlauf text contains characters outside that set (emoji, Cyrillic, Greek, ...).
-  // All of these are "this PDF could not be stamped" to a caller, so they share one
-  // German-language error rather than leaking pdf-lib's raw English exception.
+  // Alles Folgende ist durch ein einziges catch abgesichert: load() von pdf-lib parst nachsichtig und kann bei einer Datei gelingen, die nicht wirklich
+  // brauchbar ist (z. B. nur ein "%PDF"-Kopf mit Müll dahinter), wobei der echte Fehler erst bei getPages()/save() auftritt. Mit der Standardschrift
+  // Helvetica gezeichneter Text ist ausserdem auf WinAnsi beschränkt und wirft, wenn gestempelter oder Verlaufstext Zeichen ausserhalb davon enthält
+  // (Emoji, Kyrillisch, Griechisch, ...). Für einen Aufrufer heisst das alles "dieses PDF konnte nicht gestempelt werden"; deshalb teilen sich alle einen
+  // deutschen Fehler, statt die rohe englische Ausnahme von pdf-lib durchzureichen.
   try {
     const pages = doc.getPages();
     if (pages.length === 0) {
       throw new Error('PDF enthält keine Seiten und kann nicht gestempelt werden.');
     }
 
-    // Always a fixed A4 portrait page, regardless of the preceding pages' own size/orientation —
-    // an attached Beleg can end up A4 landscape (see belegAnhaengen.js), and the stamp page must
-    // stay portrait rather than inherit that.
+    // Immer eine feste A4-Seite im Hochformat, unabhängig von Grösse/Ausrichtung der vorhergehenden Seiten — ein angehängter Beleg kann A4 quer
+    // werden (siehe belegAnhaengen.js), und die Stempelseite muss im Hochformat bleiben, statt das zu übernehmen.
     const width = STAMP_WIDTH;
     const height = STAMP_HEIGHT;
     const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -274,9 +277,8 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
       }
       y -= 12;
     }
-    // Only ever populated for a Spesen position (see freigabe2.js) — same prominence/style as the
-    // Konto line above, since Titel/Verwendungszweck are what identify the document (a Spesen
-    // position has no separate Rechnungsnummer/Lieferant to serve that purpose).
+    // Nur bei einer Spesenposition gefüllt (siehe freigabe2.js) — gleiche Auffälligkeit/gleicher Stil wie die Kontozeile darüber, da Titel/Verwendungszweck
+    // das Dokument kennzeichnen (eine Spesenposition hat keine eigene Rechnungsnummer/keinen Lieferanten, die diesen Zweck erfüllten).
     if (stampData.titel) {
       for (const line of wrapLine(boldFont, `Titel: ${einzeilig(stampData.titel)}`, 14, maxWidth)) {
         stampPage.drawText(line, { x: 60, y, size: 14, font: boldFont, color: rgb(0, 0, 0) });
@@ -299,9 +301,8 @@ export async function stampAndFinalize(pdfBuffer, stampData) {
       }
       y -= 10;
     }
-    // The payment data confirmed at Freigabe 2 (see freigabe2.js): the reimbursement account of a
-    // Spesen position, or the QR-bill recipient of an invoice -- visible on the document itself and
-    // not only in the n8n/Paperless API response.
+    // Die bei Freigabe 2 bestätigten Zahlungsdaten (siehe freigabe2.js): das Rückerstattungskonto einer Spesenposition oder der Zahlungsempfänger einer
+    // QR-Rechnung — auf dem Dokument selbst sichtbar und nicht nur in der API-Antwort an n8n/Paperless.
     if (stampData.zahlungsdaten && (stampData.zahlungsdaten.iban || stampData.zahlungsdaten.kontoinhaber)) {
       stampPage.drawText('Zahlungsdaten', { x: 60, y, size: 11, font: boldFont, color: rgb(0, 0, 0) });
       y -= BLOCK_HEADING_GAP;
@@ -348,6 +349,7 @@ function kenntnisnahmeZeile(k) {
 // Vermerk eines Rapports (nur zur Kenntnis): ersetzt den Freigabestempel, trägt also weder Konto
 // noch Betrag. Eine angehängte A4-Hochformat-Seite (Folgeseiten bei vielen Empfängern/Kommentaren),
 // gleiche Fehlermeldungen wie stampAndFinalize.
+// @param {object} data Markierende Person, Bemerkung, Kenntnisnahmen (mit Ersetzungen/Entfernungen) und Kommentare. @returns {Promise<Buffer>} das PDF mit Vermerkseite
 export async function stampKenntnisnahme(pdfBuffer, data) {
   let doc;
   try {
@@ -410,10 +412,9 @@ export async function stampKenntnisnahme(pdfBuffer, data) {
   }
 }
 
-// Combined stamp page for a Splitgruppe: one Konto/Betrag/Position/Freigabe-1+2 block per split
-// line instead of stampAndFinalize's single Konto block, plus one shared Verlauf covering every
-// child's freigaben (caller pre-sorts/pre-labels it, see splitGruppenExport.js). Reuses
-// drawFreigabeBlock/drawVerlauf/wrapLine verbatim -- only the loop over multiple Positionen is new.
+// Gemeinsame Stempelseite für eine Splitgruppe: je Aufteilungszeile ein Block Konto/Betrag/Position/Freigabe 1+2 statt des einzelnen Konto-Blocks von
+// stampAndFinalize, dazu ein gemeinsamer Verlauf über alle Freigaben der Kinder (der Aufrufer sortiert/beschriftet ihn vor, siehe splitGruppenExport.js).
+// Nutzt drawFreigabeBlock/drawVerlauf/wrapLine unverändert — neu ist nur die Schleife über mehrere Positionen.
 export async function stampGruppenDokument(pdfBuffer, gruppenData) {
   let doc;
   try {
@@ -428,8 +429,7 @@ export async function stampGruppenDokument(pdfBuffer, gruppenData) {
       throw new Error('PDF enthält keine Seiten und kann nicht gestempelt werden.');
     }
 
-    // Always a fixed A4 portrait page — see stampAndFinalize for why this no longer copies the
-    // preceding pages' own size.
+    // Immer eine feste A4-Seite im Hochformat — warum sie nicht mehr die Grösse der vorhergehenden Seiten übernimmt, steht bei stampAndFinalize.
     const width = STAMP_WIDTH;
     const height = STAMP_HEIGHT;
     const font = await doc.embedFont(StandardFonts.Helvetica);

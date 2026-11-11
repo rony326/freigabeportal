@@ -1,3 +1,5 @@
+// (Admin → Altfälle, `/admin/altfaelle`, Recht `workflow_eingreifen`; Fachliches: docs/export-und-zahlungsintegritaet.md.)
+
 import { Router } from 'express';
 import { getAltfall, listAltfaelle, altfallAnzeige, altfallStand, entscheideAltfall, AltfallError } from '../../services/altfaelle.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../services/splitGruppenExport.js';
@@ -12,10 +14,12 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
     next();
   });
 
+  // GET /admin/altfaelle – Liste der offenen Altfälle.
   router.get('/', (req, res) => {
     res.render('admin/altfaelle-liste', { altfaelle: listAltfaelle(db), gespeichert: req.query.gespeichert === '1' });
   });
 
+  // Rendert die Entscheidungsseite mit dem Stand, der der Person gezeigt wird (inkl. Prüfsumme `stand`).
   async function renderAltfall(req, res, status, altfall, { errors = [], values = {} } = {}) {
     const anzeige = await altfallAnzeige(db, config, altfall);
     res.status(status).render('admin/altfall-entscheiden', {
@@ -26,6 +30,7 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
     });
   }
 
+  // GET /admin/altfaelle/:id – zeigt den Altfall mit Herkunft jedes Werts.
   router.get('/:id', asyncHandler(async (req, res, next) => {
     try {
       const altfall = getAltfall(db, Number(req.params.id));
@@ -36,6 +41,7 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
     }
   }));
 
+  // POST /admin/altfaelle/:id – speichert die Entscheidung ('nachbestaetigt' | 'nur_archiv', Begründung Pflicht) und finalisiert bei einer Splitgruppe das Gruppendokument.
   router.post('/:id', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const altfall = getAltfall(db, Number(req.params.id));
@@ -59,7 +65,7 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
         try {
           await pruefeUndFinalisiereSplitGruppe(db, altfall.job.id, config);
         } catch (err) {
-          // The split-gruppen-nachholen cron job retries a failed merge.
+          // Der Cron-Job split-gruppen-nachholen wiederholt einen fehlgeschlagenen Merge.
           console.error(`Splitgruppen-Finalisierung nach Altfall-Entscheidung für ${altfall.job.id} fehlgeschlagen:`, err.message);
         }
       }

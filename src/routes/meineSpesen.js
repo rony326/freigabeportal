@@ -1,3 +1,5 @@
+// "Meine Spesen" (`/meine-spesen`, docs/spesen-einreichung.md): Liste der eigenen eingereichten Spesenpositionen mit Status. Zugang: angemeldet.
+
 import { Router } from 'express';
 import { listSpesenForEinreicher } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';

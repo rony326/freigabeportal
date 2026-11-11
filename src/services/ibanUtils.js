@@ -6,14 +6,17 @@
 // Länderlängen für die Kreditor-Stammdaten (Admin-Formular, Lieferant anlegen aus der Kontierung).
 const IBAN_PATTERN = /^CH\d{2}[0-9A-Z]{17}$/;
 
+// Entfernt Leerzeichen und macht Grossbuchstaben (so sind IBANs überall vergleichbar).
 export function normalizeIban(iban) {
   return (iban || '').replace(/\s/g, '').toUpperCase();
 }
 
+// Strenge Form-Prüfung nur für Schweizer/Liechtensteiner IBANs (CH + 2 Prüfziffern + 17 Zeichen).
 export function isValidIban(iban) {
   return IBAN_PATTERN.test(iban);
 }
 
+// Prüfziffer nach ISO 13616 (Modulo 97).
 export function ibanChecksumValid(iban) {
   const digits = (iban.slice(4) + iban.slice(0, 4)).replace(/[A-Z]/g, (letter) => String(letter.charCodeAt(0) - 55));
   let remainder = 0;
@@ -33,6 +36,7 @@ export const IBAN_LAENGEN = {
   TN: 24, TR: 26, UA: 29, VA: 22, VG: 24, XK: 20,
 };
 
+// Länderlänge und Prüfziffer für beliebige Länder (Kreditor-Stammdaten).
 export function isValidIbanInternational(iban) {
   const normalized = normalizeIban(typeof iban === 'string' ? iban : '');
   if (!/^[A-Z]{2}\d{2}[0-9A-Z]+$/.test(normalized)) return false;
@@ -40,10 +44,12 @@ export function isValidIbanInternational(iban) {
   return ibanChecksumValid(normalized);
 }
 
+// Ländercode (erste zwei Zeichen).
 export function ibanLand(iban) {
   return normalizeIban(iban).slice(0, 2);
 }
 
+// Gekürzte Anzeige "CH93 … 2957", damit Meldungen nie die ganze IBAN zeigen.
 export function ibanKurz(iban) {
   const normalized = normalizeIban(iban);
   return `${normalized.slice(0, 4)} … ${normalized.slice(-4)}`;

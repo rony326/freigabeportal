@@ -1,3 +1,8 @@
+// Archivexport an n8n/Paperless (docs/n8n-paperless-archivierung.md): Exportmanifest, hashgebundener Download der Exportdatei
+// und die Archivquittung. Ablauf: n8n holt das Manifest (`createExportEvidence`), lädt die Datei (`readExportDocument`),
+// legt sie in Paperless ab und quittiert mit Dokument-ID (`confirmArchiveReceipt`). Erst die Quittung setzt den Vorgang
+// auf 'abgeholt'; lokale Dateien bleiben danach noch ARCHIVE_RETENTION_MS erhalten. Alle Fehler tragen einen HTTP-Status.
+
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { getJobById, listSplitKinder, confirmAbholung, confirmGruppenAbholung } from '../db/jobsRepo.js';
@@ -6,8 +11,10 @@ import { jobDocument } from './jobDocument.js';
 import { exportNachweis } from './exportSnapshot.js';
 import { rapportMetadaten } from './rapporte.js';
 
+// Aufbewahrung der lokalen Datei nach der Archivquittung (7 Tage), bevor die PDF-Bereinigung sie löschen darf.
 export const ARCHIVE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Fehler mit HTTP-Status (404 unbekannt, 409 Zustand/Hash passt nicht, 400 Eingabe).
 export class ArchiveError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -21,10 +28,13 @@ function loadJobOfArt(db, id, art) {
   return job;
 }
 
+// Basispfad der n8n-Schnittstelle je Art (für den `download_pfad` im Manifest).
 function exportPfad(art) {
   return art === 'rapport' ? '/api/n8n/rapporte' : '/api/n8n/jobs';
 }
 
+// Lädt den Vorgang und prüft, dass er exportiert werden darf (Status, bei Splitgruppen alle Teile fertig, Zeitstempel
+// vorhanden, wo verlangt). @returns {{job, children, group}}
 function loadExportable(db, id, art) {
   const job = loadJobOfArt(db, id, art);
   if (job.aufgesplittet_von || !['abgeschlossen', 'abgeholt', 'aufgesplittet', 'archiviert'].includes(job.status)) {
@@ -42,6 +52,7 @@ function loadExportable(db, id, art) {
   return { job, children, group };
 }
 
+// SHA-256 der Exportdatei; bricht ab, wenn sie fehlt oder nicht zum beim Stempeln gespeicherten Hash passt.
 function documentHash(job) {
   const document = jobDocument(job);
   let bytes;
@@ -78,12 +89,19 @@ function manifestInhalt(db, job, children, group, art) {
   };
 }
 
+/**
+ * Erzeugt (idempotent) das unveränderliche Exportmanifest eines Vorgangs und gibt es zurück. Bei erneutem Aufruf kommt
+ * dasselbe Manifest, solange die Datei unverändert ist.
+ * @param {number} id Vorgang
+ * @param {{art?: 'beleg'|'rapport'}} [opts]
+ * @throws {ArchiveError} 404/409, z. B. Zeitstempel fehlt, Nachweis unvollständig, Datei verändert
+ */
 export function createExportEvidence(db, id, { art = 'beleg' } = {}) {
   db.exec('BEGIN IMMEDIATE');
   try {
     loadJobOfArt(db, id, art);
     const existing = db.prepare('SELECT * FROM export_nachweise WHERE job_id = ?').get(id);
-    // Once receipted, the immutable manifest remains retrievable after local retention ends.
+    // Nach der Quittung bleibt das unveränderliche Manifest auch nach Ende der lokalen Aufbewahrung abrufbar.
     const receipted = existing && db.prepare('SELECT 1 FROM archiv_quittungen WHERE export_id = ?').get(existing.id);
     if (receipted) {
       db.exec('COMMIT');
@@ -110,6 +128,7 @@ export function createExportEvidence(db, id, { art = 'beleg' } = {}) {
   } catch (err) { db.exec('ROLLBACK'); throw err; }
 }
 
+// Liefert die Exportdatei (Bytes) zum Manifest `exportId` – nur, wenn der Hash noch dem festgeschriebenen entspricht.
 export function readExportDocument(db, id, exportId, { art = 'beleg' } = {}) {
   const job = loadJobOfArt(db, id, art);
   const evidence = db.prepare('SELECT * FROM export_nachweise WHERE job_id = ? AND id = ?').get(id, exportId);
@@ -124,6 +143,10 @@ export function readExportDocument(db, id, exportId, { art = 'beleg' } = {}) {
   return bytes;
 }
 
+/**
+ * Nimmt die Archivquittung von n8n entgegen (Export-ID, SHA-256, Paperless-Dokument-ID, Aufgaben-UUID), prüft sie gegen
+ * Manifest und lokale Datei und stellt den Vorgang auf 'abgeholt'. Idempotent bei identischer Wiederholung, 409 bei Abweichung.
+ */
 export function confirmArchiveReceipt(db, id, body, { art = 'beleg' } = {}) {
   const { export_id, sha256, dokument_id, task_id } = body || {};
   if (typeof export_id !== 'string' || export_id.length > 64 || typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256) ||
@@ -168,6 +191,7 @@ export function confirmArchiveReceipt(db, id, body, { art = 'beleg' } = {}) {
   } catch (err) { db.exec('ROLLBACK'); throw err; }
 }
 
+// true, wenn die Archivquittung älter als die Aufbewahrungsfrist ist (und bei Teilvorgängen im Manifest enthalten) – Voraussetzung fürs Löschen der Datei.
 export function hasMatureArchiveReceipt(db, job, now = Date.now()) {
   const receipt = db.prepare(`SELECT q.bestaetigt_am, e.manifest FROM archiv_quittungen q
     JOIN export_nachweise e ON e.id = q.export_id WHERE e.job_id = ?`).get(job.aufgesplittet_von || job.id);
@@ -175,6 +199,7 @@ export function hasMatureArchiveReceipt(db, job, now = Date.now()) {
   return !job.aufgesplittet_von || JSON.parse(receipt.manifest).positionen.some((position) => position.job_id === job.id);
 }
 
+// Prüft vor dem Löschen, dass die lokale Datei noch genau den archivierten Bytes entspricht (fehlt die Datei, gilt das als ok).
 export function archivedBytesMatch(db, job) {
   const document = jobDocument(job);
   if (!document.pdf_pfad || !existsSync(document.pdf_pfad)) return true;

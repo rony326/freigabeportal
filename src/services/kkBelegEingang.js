@@ -1,3 +1,4 @@
+// Eingang von Kreditkartenbelegen per Mail (über n8n, später nativ): Absender prüfen, Betrag/Datum vorschlagen, Entwurf anlegen (docs/kreditkarten-belege.md).
 import { findActivePersonByEmail, countActivePersonsByEmail } from '../db/personenRepo.js';
 import { normalizeAbsender } from '../db/jobsRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -13,6 +14,11 @@ import { sendNotification } from './notify.js';
 // Gemeinsamer Einstieg für Belege, die per Mail eintreffen -- heute über n8n
 // (routes/n8n/kkBelege.js), später auch vom nativen Mail-Modul aufrufbar. Liefert Status + Body,
 // damit der Aufrufer selbst entscheidet, wie er antwortet.
+/**
+ * Verarbeitet einen per Mail eingegangenen Kreditkartenbeleg: Absender → Person, Dateityp prüfen, Betrag per QR/Text-Analyse und
+ * Kaufdatum vorschlagen, Entwurf anlegen und die Person benachrichtigen.
+ * @returns {Promise<{status: number, body: object}>} 201 mit `{id, status: 'entwurf'}`, sonst 409 (Modul aus), 422 (Absender unbekannt/mehrdeutig), 400 (Datei ungültig)
+ */
 export async function nimmKkBelegEntgegen(db, config, mailer, { absender, buffer }) {
   if (getConfigValue(db, 'modul_kreditkarten_aktiv') !== '1') return { status: 409, body: { fehler: 'modul_deaktiviert' } };
   const email = normalizeAbsender(absender);

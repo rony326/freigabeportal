@@ -1,3 +1,4 @@
+// Anzeigename eines Belegs in Listen, Auswahlfeldern und Seitenköpfen (Regeln direkt unterhalb).
 import { zeitpunktAnzeige } from './auditLog.js';
 
 // Anzeigename eines Belegs in Listen, Auswahlfeldern und Seitenköpfen.
@@ -13,6 +14,7 @@ import { zeitpunktAnzeige } from './auditLog.js';
 const BILD_ENDUNG = /\.(png|jpe?g|gif|bmp|tiff?|webp|heic|heif|svg)$/i;
 const PDF_ENDUNG = /\.pdf$/i;
 
+// Anzeigename des Belegs nach den Regeln oben (nie leer).
 export function belegName(job) {
   const pdfName = String(job?.pdf_dateiname ?? '').trim();
   const anzeige = String(job?.dateiname ?? '').trim();
@@ -24,6 +26,7 @@ export function belegName(job) {
 
 // "#<id> <Name>": die Nummer erscheint auch auf Kacheln, Tabellen und Seitenköpfen, damit ein
 // Eintrag in einer Auswahl eindeutig einem Beleg zugeordnet werden kann.
+// "#<id> <Name>" – siehe Kommentar.
 export function belegLabel(job) {
   return job?.id ? `#${job.id} ${belegName(job)}` : belegName(job);
 }

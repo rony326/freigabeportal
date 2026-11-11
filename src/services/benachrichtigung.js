@@ -1,3 +1,4 @@
+// Persönliche Bündelung (sofort / täglich / wöchentlich) der Benachrichtigungen – Regeln direkt unterhalb; Zustellung: services/mailZustellung.js.
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
 // Persönliche Bündelung der Benachrichtigungen
@@ -19,6 +20,7 @@ function istGueltig(wert) {
   return BENACHRICHTIGUNG_WERTE.includes(wert);
 }
 
+// Standard-Bündelung der Gemeinde (Admin → Benachrichtigungen): 'sofort' | 'taeglich' | 'woechentlich'.
 export function standardBenachrichtigung(db) {
   const wert = getConfigValue(db, 'mail_standard_benachrichtigung');
   return istGueltig(wert) ? wert : 'sofort';
@@ -28,6 +30,7 @@ export function standardBenachrichtigung(db) {
 // Bündelung (sofort < täglich < wöchentlich), damit niemand Mails später bekommt als gewählt.
 // Aktive Personen gehen vor; nur wenn keine aktive passt, zählen deaktivierte. Adresse ohne
 // Person oder Person ohne (gültige) Wahl → Standard.
+// Wirksame Bündelung für eine Mailadresse (siehe Regeln oben).
 export function benachrichtigungFuer(db, email) {
   const standard = standardBenachrichtigung(db);
   const adresse = String(email ?? '').trim();
@@ -45,6 +48,7 @@ export function benachrichtigungFuer(db, email) {
 }
 
 // Wochentag (1 = Montag … 7 = Sonntag) nach Zürcher Kalenderdatum.
+// 1 = Montag … 7 = Sonntag
 export function zuercherWochentag(jetzt) {
   return WOCHENTAG_NUMMER[WOCHENTAG_FORMAT.format(new Date(jetzt))];
 }
@@ -73,15 +77,18 @@ export function kuerzesteFristStunden(db) {
   return werte.length ? Math.min(...werte) : null;
 }
 
+// Wartezeit in Stunden, die die Bündelung eine Mail verzögern kann (0, 24 oder 168).
 export function buendelungStunden(wert) {
   return wert === 'woechentlich' ? 168 : wert === 'taeglich' ? 24 : 0;
 }
 
+// Wochentag der wöchentlichen Zusammenfassung (Admin-Einstellung, Standard Montag).
 export function digestWochentag(db) {
   const n = Number(getConfigValue(db, 'mail_digest_wochentag'));
   return Number.isInteger(n) && n >= 1 && n <= 7 ? n : 1;
 }
 
+// Speichert die persönliche Wahl einer Person; `null` = Standard der Gemeinde verwenden.
 export function setzeBenachrichtigung(db, personId, wert) {
   if (wert !== null && !istGueltig(wert)) {
     throw new Error(`Ungültige Benachrichtigungs-Einstellung: ${wert}`);

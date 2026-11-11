@@ -1,3 +1,4 @@
+// Automatische Erkennung der Kreditkarte einer Abrechnung beim Rechnungseingang (Absender-Muster oder Endziffern im PDF-Text).
 import { listKreditkarten } from '../db/kreditkartenRepo.js';
 import { bewerteAbsenderMuster } from '../db/jobsRepo.js';
 import { findeEndziffern } from './kkTextAnalyse.js';
@@ -24,6 +25,7 @@ export function erkenneKarte(db, { absender, text }) {
 
 // Ohne aktive Karte mit Absender-Muster oder Endziffern kann erkenneKarte nie treffen -- der
 // Eingang spart sich dann die PDF-Textextraktion.
+// (Siehe Kommentar.)
 export function hatErkennbareKarten(db) {
   return listKreditkarten(db).some((karte) => karte.absender_muster || karte.karte_endziffern);
 }

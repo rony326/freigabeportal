@@ -3,10 +3,12 @@
 // verboten -- Entfernen/Ersetzen markiert Zeilen daher nur mit entfernt_am.
 import { getJobById } from './jobsRepo.js';
 
+// Eine Kenntnisnahme ist "offen", solange sie weder bestätigt noch entfernt/ersetzt wurde.
 const OFFEN = 'bestaetigt_am IS NULL AND entfernt_am IS NULL';
 
 // Geschachtelt aufrufbar: in einer bereits offenen Transaktion (z. B. Service, der zusaetzlich
 // freigaben und Mails schreibt) wird ein SAVEPOINT statt eines zweiten BEGIN verwendet.
+// Führt `fn` atomar aus: eigene Transaktion, oder SAVEPOINT, falls der Aufrufer schon eine offen hat.
 function inTransaktion(db, fn) {
   const verschachtelt = db.isTransaction;
   db.exec(verschachtelt ? 'SAVEPOINT rapport_tx' : 'BEGIN IMMEDIATE');
@@ -21,6 +23,9 @@ function inTransaktion(db, fn) {
   }
 }
 
+// Wandelt einen zugewiesenen Vorgang in einen Rapport um (Typ 'rapport', Status 'kenntnisnahme'), leert die
+// Rechnungsfelder und legt je Empfänger:in eine Kenntnisnahme-Zeile an. @returns {boolean} false, wenn der Vorgang
+// nicht (mehr) im Status 'zugewiesen' war.
 export function markiereAlsRapport(db, jobId, { markiertVon, empfaengerIds, bemerkung, zeitpunkt }) {
   const empfaenger = [...new Set(empfaengerIds.map(String))];
   return inTransaktion(db, () => {
@@ -43,14 +48,17 @@ export function markiereAlsRapport(db, jobId, { markiertVon, empfaengerIds, beme
   });
 }
 
+// Alle Zeilen (auch bestätigte, entfernte, ersetzte) – Grundlage für Verlauf und Sichtrecht.
 export function listKenntnisnahmen(db, jobId) {
   return db.prepare('SELECT * FROM kenntnisnahmen WHERE job_id = ? ORDER BY id').all(jobId);
 }
 
+// Nur noch offene Zeilen.
 export function listOffeneKenntnisnahmen(db, jobId) {
   return db.prepare(`SELECT * FROM kenntnisnahmen WHERE job_id = ? AND ${OFFEN} ORDER BY id`).all(jobId);
 }
 
+// @returns {'bestaetigt'|'bereits'|'nicht_berechtigt'}
 export function bestaetigeKenntnisnahme(db, jobId, personId, zeitpunkt) {
   const result = db
     .prepare(`UPDATE kenntnisnahmen SET bestaetigt_am = ? WHERE job_id = ? AND person_id = ? AND ${OFFEN}`)
@@ -62,6 +70,7 @@ export function bestaetigeKenntnisnahme(db, jobId, personId, zeitpunkt) {
   return bereits ? 'bereits' : 'nicht_berechtigt';
 }
 
+// Setzt den Rapport auf 'abgeschlossen', wenn niemand mehr offen und mindestens eine Person bestätigt hat.
 export function schliesseRapportAbWennVollstaendig(db, jobId, zeitpunkt) {
   const result = db
     .prepare(
@@ -74,6 +83,7 @@ export function schliesseRapportAbWennVollstaendig(db, jobId, zeitpunkt) {
   return result.changes > 0;
 }
 
+// Macht die Rapport-Markierung rückgängig (zurück auf 'zugewiesen'); nur solange noch niemand bestätigt hat.
 export function hebeRapportMarkierungAuf(db, jobId) {
   return inTransaktion(db, () => {
     const bestaetigt = db.prepare('SELECT 1 FROM kenntnisnahmen WHERE job_id = ? AND bestaetigt_am IS NOT NULL').get(jobId);
@@ -93,6 +103,7 @@ export function hebeRapportMarkierungAuf(db, jobId) {
   });
 }
 
+// Tauscht eine offene Empfänger:in aus (Admin): alte Zeile wird als ersetzt markiert, neue angelegt. @returns {number|null} neue id
 export function ersetzeEmpfaenger(db, kenntnisnahmeId, { neuePersonId, von, begruendung, zeitpunkt }) {
   return inTransaktion(db, () => {
     const alt = db.prepare(`SELECT * FROM kenntnisnahmen WHERE id = ? AND ${OFFEN}`).get(kenntnisnahmeId);
@@ -108,6 +119,7 @@ export function ersetzeEmpfaenger(db, kenntnisnahmeId, { neuePersonId, von, begr
   });
 }
 
+// Entfernt eine offene Empfänger:in. @returns {'entfernt'|'nicht_offen'|'letzter_offen_ohne_bestaetigung'}
 export function entferneEmpfaenger(db, kenntnisnahmeId, { von, begruendung, zeitpunkt }) {
   return inTransaktion(db, () => {
     const zeile = db.prepare(`SELECT * FROM kenntnisnahmen WHERE id = ? AND ${OFFEN}`).get(kenntnisnahmeId);
@@ -125,6 +137,7 @@ export function entferneEmpfaenger(db, kenntnisnahmeId, { von, begruendung, zeit
   });
 }
 
+// Rapporte, die die Person noch bestätigen muss ("Zur Kenntnis" im Dashboard).
 export function listOffeneRapporteForPerson(db, personId) {
   return db
     .prepare(
@@ -135,6 +148,7 @@ export function listOffeneRapporteForPerson(db, personId) {
     .all(personId);
 }
 
+// Offene Zeilen, die seit mehr als `stunden` zugeteilt und noch nie erinnert wurden (Cron `rapport-erinnerungen`).
 export function listRapporteFuerErinnerung(db, stunden) {
   const schwelle = new Date(Date.now() - stunden * 60 * 60 * 1000).toISOString();
   const rows = db
@@ -154,6 +168,7 @@ export function markErinnert(db, kenntnisnahmeId) {
     .run(new Date().toISOString(), kenntnisnahmeId).changes > 0;
 }
 
+// Rapporte mit überfälliger, deaktivierter oder nicht mehr auflösbarer Empfänger:in, noch nicht eskaliert.
 export function listRapporteFuerEskalation(db, stunden) {
   const schwelle = new Date(Date.now() - stunden * 60 * 60 * 1000).toISOString();
   return db
@@ -185,6 +200,7 @@ export function listRapportIdsZumAbschliessen(db) {
     .map((r) => r.id);
 }
 
+// Setzt die Eskalationsmarke nur einmal. @returns {boolean} false, wenn schon gesetzt (paralleler Lauf)
 export function markRapportEskaliert(db, jobId, zeitpunkt) {
   return db
     .prepare('UPDATE jobs SET rapport_eskaliert_am = ? WHERE id = ? AND rapport_eskaliert_am IS NULL')

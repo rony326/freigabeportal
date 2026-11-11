@@ -1,3 +1,6 @@
+// Erreichbarkeitsprobe des Zeitstempeldienstes für die Statusseite (docs/statusseite-und-monitoring.md): ein echter Zeitstempel-Request,
+// höchstens alle 15 Minuten, im Hintergrund und nur, wenn die Statusseite oder /healthz gerade abgefragt wird.
+
 import { randomBytes } from 'node:crypto';
 import { createTimestampRequest, sendTimestampRequest, parseTimestampResponse } from 'pdf-rfc3161';
 import { freshTimestampRequest, validateTimestampBinding } from './tsaResponse.js';
@@ -19,6 +22,7 @@ export async function tsaTestversuch(tsaConfig) {
 // Jeder Versuch ist ein echter Zeitstempel-Request (höchstens alle 15 min, nur bei Aufruf).
 // Ändert sich die TSA-URL, gilt das alte Ergebnis nicht mehr; ein später eintreffendes
 // Ergebnis für die alte URL wird verworfen (Generation).
+// @returns {Function} `(db, config, opts) → {erreichbar: boolean|null, geprueft_am: string|null}`; null = noch nicht geprüft oder keine TSA.
 export function createTsaErreichbarkeit() {
   const LEER = { erreichbar: null, geprueft_am: null };
   let letzter = LEER;

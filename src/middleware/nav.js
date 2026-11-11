@@ -1,3 +1,7 @@
+// Navigation und Seitenkopf: berechnet für jede Anfrage, welche Menüpunkte/Banner die angemeldete Person
+// sieht, und legt das Ergebnis in `res.locals` ab (`adminNav`, `navigation`, `banner`, `isBuchhaltung` …).
+// Die Struktur des Menüs selbst steckt in services/navigation.js; Rechte-Details in docs/auth-und-rechte.md.
+
 import { personHasRole } from './roles.js';
 import { erstellePermissionPruefer } from './permissions.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -7,6 +11,12 @@ import { aktiveBanner } from '../services/banner.js';
 import { zaehleOffeneAufgaben } from '../services/aufgabenZaehler.js';
 import { zugangFuer } from '../services/auswertung.js';
 
+/**
+ * Middleware-Fabrik. Setzt: Rollen-Flags (`isBuchhaltung`, `isSuperadmin`, `isManager`), `adminNav`
+ * (ein Flag je Admin-Seite = zugehöriges Recht), `currentPath`, sowie träge berechnete
+ * `kreditkartenModulAktiv`, `zeigeKreditkarteNav`, `banner` und `navigation`.
+ * Neue Admin-Seite: Flag hier ergänzen UND in services/navigation.js (baueAdminGruppen) einhängen.
+ */
 export function loadNavFlags(db, config) {
   return (req, res, next) => {
     const person = req.currentPerson;
@@ -39,8 +49,8 @@ export function loadNavFlags(db, config) {
       testmodus: hasPermission('testmodus_nutzen'),
       wartungsmodus: hasPermission('wartungsmodus_schalten'),
     };
-    // Strip a trailing slash (e.g. "/pool/") so nav highlighting/buttons keyed on an exact
-    // path like "/pool" still match — Express routes both with and without it identically.
+    // Schrägstrich am Ende entfernen (z. B. "/pool/"), damit Menü-Hervorhebung und Schaltflächen, die auf einen exakten
+    // Pfad wie "/pool" prüfen, weiter greifen — Express routet beide Schreibweisen gleich.
     res.locals.currentPath = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
     // Banner und Navigation (inkl. Aufgabenzähler) braucht nur eine gerenderte Seite. Als Getter
     // berechnet, erst wenn res.render sie liest -- Downloads, JSON und Weiterleitungen sparen sich
@@ -72,6 +82,7 @@ export function loadNavFlags(db, config) {
 
 // `rueckfall` (optional): Wert, falls das Berechnen scheitert -- so rendert z.B. die Fehlerseite bei
 // kaputter Datenbank noch, nur ohne Menü/Banner (vorher lief die Middleware gar nicht erst durch).
+// Definiert `res.locals[name]` als Getter, der erst beim ersten Lesen (also beim Rendern) rechnet.
 function lazyLocal(res, name, berechne, ...rueckfall) {
   let wert;
   let berechnet = false;

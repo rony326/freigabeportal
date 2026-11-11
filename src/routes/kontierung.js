@@ -1,3 +1,8 @@
+// Kontierung (`/kontierung/…`, docs/rechnungs-workflow.md): die zugewiesene Person (Freigeber 1 des Kontos, Stellvertretung oder bei Admin-Eskalation ein Superadmin) bearbeitet einen Vorgang: Konto, Lieferant, Betrag, Zahlungsziel, Rechnungsnummer, Typ
+// (Rechnung/Gutschrift), optional einen Beleg anhängen — und gibt Freigabe 1 oder lehnt ab, meldet einen Interessenskonflikt, legt zurück in den Pool bzw. an die Gruppe, markiert als Kreditkartenabrechnung oder gibt als Rapport zur Kenntnis weiter. Dazu das Aufsplitten
+// auf mehrere Konten (`/:id/aufsplitten`). Datei- und TSA-Arbeit läuft immer VOR der Datenbank-Transaktion. Die Prüfung "was ist auffällig?" liefert services/betrugspruefung.js (Prüf-Popup), das Aufsplitten services/aufsplitten.js.
+// Zugriffsprüfung: services/kontierungZugriff.js (`ladeKontierbarenJob`). Mount: app.js unter /kontierung (zusammen mit routes/kkAbgleich.js).
+
 import { Router } from 'express';
 import { auffaelligkeitenKasten } from '../services/auffaelligkeitenAnzeige.js';
 import { personHasRole } from '../middleware/roles.js';
@@ -69,9 +74,7 @@ const IBAN_ENDUNG_PATTERN = /^[A-Z0-9]{4}$/;
 const IBAN_ENDUNG_FEHLER = 'Bitte gib die letzten 4 Zeichen der IBAN auf der Rechnung ein.';
 const PRUEF_BEMERKUNG_MAX = 500;
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
-// Aufsplitten sends one optional beleg file per Teil row (teilBeleg_<i>) via uploadBeleg.any(),
-// which has no field-name allowlist — without a files cap, a request forging many parts could
-// force up to fileSize each into memory. No real form has anywhere near this many Teile.
+// Das Aufsplitten sendet über uploadBeleg.any() je Teil-Zeile eine optionale Belegdatei (teilBeleg_<i>), und .any() hat keine Feldnamen-Positivliste — ohne eine Obergrenze für Dateien könnte eine Anfrage mit vielen gefälschten Teilen je fileSize in den Speicher zwingen. Kein echtes Formular hat annähernd so viele Teile.
 const MAX_BELEG_FILES = 25;
 
 const uploadBeleg = multer({
@@ -79,6 +82,7 @@ const uploadBeleg = multer({
   limits: { fileSize: MAX_BELEG_SIZE, files: MAX_BELEG_FILES },
 });
 
+// Anzeigedaten zum QR-Befund (QR-IBAN/-Betrag/-Empfänger) und zum Abgleich mit den hinterlegten IBANs des gewählten Lieferanten.
 function buildQrInfo(db, job) {
   if (!job.qr_erkannt_am) return null;
   const ibanMapping = job.qr_iban ? findKreditorIbanByIban(db, job.qr_iban) : null;
@@ -93,9 +97,7 @@ function buildQrInfo(db, job) {
     waehrung: job.qr_waehrung,
     creditorName: job.qr_creditor_name,
     vorschlagKreditor,
-    // Only meaningful (and only resolved) when there's actually a conflict to name — kreditorFuerAbgleich
-    // already IS the currently-assigned kreditor in that case, since job.kreditor_id is truthy whenever
-    // konfliktMitZugewiesenemKreditor is true.
+    // Nur sinnvoll (und nur aufgelöst), wenn es wirklich einen Konflikt zu nennen gibt — kreditorFuerAbgleich IST in diesem Fall schon der aktuell zugewiesene Kreditor, da job.kreditor_id immer wahr ist, wenn konfliktMitZugewiesenemKreditor wahr ist.
     zugewiesenerKreditor: konfliktMitZugewiesenemKreditor ? kreditorFuerAbgleich : null,
     kreditorFuerAbgleich,
     konfliktMitZugewiesenemKreditor,
@@ -126,6 +128,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     return { rapportModulAktiv: aktiv, rapportEmpfaengerKandidaten: aktiv ? listRapportEmpfaengerKandidaten(db) : [] };
   }
 
+  // GET /kontierung/:id – das Kontierungsformular (Vorschau, vorbelegte Werte aus QR/Eingang, Verlauf, Kommentare); Kreditkartenabrechnungen leiten in den Abgleich um.
   router.get('/:id', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
@@ -163,9 +166,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     });
   });
 
-  // Must be registered before the generic /:id routes below — otherwise POST
-  // /kontierung/lieferanten would first match /:id (with id="lieferanten", a NaN Number()) and
-  // 404/403 before ever reaching this handler. Neue Lieferanten (mit Pflicht-IBAN) legt nur an,
+  // POST /kontierung/lieferanten – legt einen neuen Lieferanten an (per fetch() aus der Kontierung; Recht `kreditoren_verwalten`, IBAN-Pflicht je Zahlungsart).
+  // Muss vor den allgemeinen /:id-Routen unten registriert werden — sonst träfe POST /kontierung/lieferanten zuerst /:id (mit id="lieferanten", einem NaN-Number()) und endete mit 404/403, bevor es diesen Handler erreicht. Neue Lieferanten (mit Pflicht-IBAN) legt nur an,
   // wer Lieferanten verwalten darf; dieselbe Prüfung wie in POST /admin/kreditoren.
   router.post('/lieferanten', csrfProtection, (req, res) => {
     const person = req.currentPerson;
@@ -183,10 +185,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     res.status(201).json({ id, name: name.trim() });
   });
 
+  // POST /kontierung/:id – Hauptaktion: `aktion` = kontieren | ablehnen | rapport (Zweige siehe unten). Reihenfolge: Upload (multer) → CSRF → Validierung → Prüf-Popup → Datei-Arbeit → Transaktion → Mails.
   router.post('/:id', (req, res, next) => {
     mitAuditKontext(uploadBeleg.single('beleg'))(req, res, asyncCallback(next, async (uploadErr) => {
-    // csrfProtection runs after multer parses the multipart body (the _csrf field included) —
-    // any earlier and req.body would still be empty, rejecting every legitimate submission.
+    // csrfProtection läuft, nachdem multer den multipart-Body (inklusive des Felds _csrf) geparst hat — jede frühere Ausführung hätte req.body noch leer und lehnte jede legitime Einreichung ab.
     csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
     if (csrfErr) return next(csrfErr);
     try {
@@ -266,9 +268,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       if (uploadErr) {
         return renderFehler(uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Der Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.');
       }
-      // Applies regardless of aktion (kontieren or ablehnen) — a Beleg attached alongside a
-      // rejection is still merged, since the original PDF (with the Beleg now part of it) is
-      // what gets reworked and resubmitted afterwards.
+      // Gilt unabhängig von aktion (kontieren oder ablehnen) — ein zusammen mit einer Ablehnung angehängter Beleg wird trotzdem zusammengeführt, da das ursprüngliche PDF (in dem der Beleg nun enthalten ist) anschliessend überarbeitet und erneut eingereicht wird.
       let belegMimetype = null;
       if (req.file) {
         belegMimetype = detectBelegMimetype(req.file.buffer);
@@ -316,11 +316,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         // Bewusst nicht auf Splitkinder eingeschränkt -- bei einem gewöhnlichen Job liest diese
         // Spalte schlicht niemand.
         if (req.file) {
-          // Merge first, count second: if mergeBelegFuerJob throws (e.g. a truncated-but-
-          // well-signed image that only fails inside embedPng), beleg_seitenzahl must not have
-          // already been incremented for pages that were never actually written -- an inflated
-          // count later makes haengeBelegSeitenAn's slice over-reach into the child's own
-          // Freigabe-2 Stempelseite, corrupting the archival document silently.
+          // Erst zusammenführen, dann zählen: Wirft mergeBelegFuerJob (z. B. ein abgeschnittenes, aber gültig signiertes Bild, das erst in embedPng scheitert), darf beleg_seitenzahl nicht schon für Seiten erhöht worden sein, die nie tatsächlich geschrieben wurden — eine aufgeblähte Zahl lässt später den Ausschnitt von haengeBelegSeitenAn
+          // in die eigene Freigabe-2-Stempelseite des Kindes hineinreichen und beschädigt das Archivdokument still.
           await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
           addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
         }
@@ -398,12 +395,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         return renderFehler(errors);
       }
 
-      // SYNC-8: a conflict-driven escalation has no distinct named person to hand off to in two
-      // cases — this job was already escalated once (so the only person who could even reach
-      // this line, per loadAuthorizedJob, is the previously-escalated Stellvertreter1, and they
-      // ALSO have a conflict), or the chosen Konto's stellvertreter1 IS the current person
-      // (escalating would target themselves). Both route to the Portal-Admin group instead of
-      // blocking with the old "go back to pool / contact admin" dead end.
+      // SYNC-8: Eine durch einen Konflikt ausgelöste Eskalation hat in zwei Fällen keine eigene benannte Person zum Übergeben — dieser Vorgang wurde schon einmal eskaliert (die einzige Person, die laut loadAuthorizedJob überhaupt bis zu dieser Zeile gelangen kann, ist also die zuvor eskalierte Stellvertretung 1,
+      // und AUCH sie hat einen Konflikt), oder die Stellvertretung 1 des gewählten Kontos IST die aktuelle Person (die Eskalation träfe sie selbst). Beide gehen an die Portal-Admin-Gruppe, statt wie früher in der Sackgasse "zurück in den Pool / Admin kontaktieren" zu blockieren.
       // Zusätzlich: Stellvertreter 1 darf den Vorgang aus einem anderen Grund nicht bearbeiten
       // (früher erklärter Konflikt, Spesen-Einreicher, ...) — dann ebenfalls an die Admin-Gruppe,
       // siehe services/eskalationsZiel.js.
@@ -529,7 +522,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       // der Interessenskonflikt-Eskalationsmail heraus geöffnete. Ein hier angehängter Beleg muss
       // deshalb genauso in beleg_seitenzahl einfliessen, sonst fehlt er später im Gruppendokument.
       if (req.file) {
-        // Merge first, count second -- see the identical comment at the Ablehnungs-Pfad above.
+        // Erst zusammenführen, dann zählen — siehe den identischen Kommentar beim Ablehnungs-Pfad oben.
         await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
         addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
       }
@@ -740,25 +733,19 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     }));
   });
 
+  // POST /kontierung/:id/zurueck-in-pool – gibt den Vorgang in den Pool zurück (optional mit Hinweis-Konto), Neustart wie releaseJob.
   router.post('/:id/zurueck-in-pool', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const job = loadAuthorizedJob(req, res, { zurueckgeben: true });
       if (!job) return;
       if (sperreKkAbrechnung(job, res)) return;
 
-      // The hint is best-effort, not a hard requirement — an unparseable, non-existent, or
-      // deactivated Konto id is simply ignored (releases the job exactly as if no hint had been
-      // given) rather than blocking the release or erroring out.
+      // Der Hinweis ist ein Best-Effort und keine harte Vorgabe — eine nicht lesbare, nicht existierende oder deaktivierte Konto-id wird einfach ignoriert (gibt den Vorgang genau so frei, als wäre kein Hinweis angegeben worden), statt die Freigabe zu blockieren oder mit einem Fehler abzubrechen.
       const hinweisKonto = req.body.hinweisKontoId ? getKontoById(db, Number(req.body.hinweisKontoId)) : null;
       const gueltigerHinweis = hinweisKonto && hinweisKonto.aktiv ? hinweisKonto : null;
 
-      // Use job.zugewiesen_an, not req.currentPerson.churchtools_person_id: releaseJob's guard
-      // requires zugewiesen_an to match the person passed in, and for a Portal-Admin authorized
-      // via the freigabe1_eskaliert_an_admin branch, the admin's own ID never equals
-      // job.zugewiesen_an (still the excluded Stellvertreter1's ID) — passing the admin's ID would
-      // silently match zero rows while still redirecting to /pool as if it had succeeded. For the
-      // ordinary (non-admin) path this is definitionally identical, since loadAuthorizedJob already
-      // verified job.zugewiesen_an === req.currentPerson.churchtools_person_id to get here.
+      // job.zugewiesen_an verwenden, nicht req.currentPerson.churchtools_person_id: Der Schutz von releaseJob verlangt, dass zugewiesen_an zur übergebenen Person passt, und für einen Portal-Admin, der über den Zweig freigabe1_eskaliert_an_admin berechtigt ist, ist die eigene ID des Admins nie gleich job.zugewiesen_an (weiterhin die ID der
+      // ausgeschlossenen Stellvertretung 1) — mit der Admin-ID würde keine Zeile getroffen und trotzdem nach /pool umgeleitet, als wäre es gelungen. Für den normalen (Nicht-Admin-)Weg ist es per Definition identisch, da loadAuthorizedJob schon geprüft hat, dass job.zugewiesen_an === req.currentPerson.churchtools_person_id, um hierher zu kommen.
       releaseJob(db, job.id, job.zugewiesen_an, { hinweisKontoId: gueltigerHinweis ? gueltigerHinweis.id : null });
 
       if (gueltigerHinweis) {
@@ -784,6 +771,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     }
   }));
 
+  // POST /kontierung/:id/an-gruppe-zurueck – schickt den Vorgang mit Bemerkung als Rückläufer an die Buchhaltungs-Gruppe (Pool).
   router.post('/:id/an-gruppe-zurueck', csrfProtection, (req, res) => {
     const job = loadAuthorizedJob(req, res, { zurueckgeben: true });
     if (!job) return;
@@ -808,6 +796,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     res.redirect('/pool');
   });
 
+  // POST /kontierung/:id/als-kk-abrechnung – markiert den Vorgang als Abrechnung einer Kreditkarte (wer ihn kontieren darf; nur bei aktivem Modul). Ist die Person selbst verantwortlich, geht es direkt in den Abgleich.
   router.post('/:id/als-kk-abrechnung', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const job = loadAuthorizedJob(req, res);
@@ -825,6 +814,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     }
   }));
 
+  // POST /kontierung/:id/rapport-aufheben – hebt die Rapport-Markierung auf (nur solange niemand bestätigt hat); die markierende Person landet wieder in der Kontierung, andere im Pool.
   router.post('/:id/rapport-aufheben', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const vorher = getJobById(db, Number(req.params.id));
@@ -838,6 +828,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     }
   }));
 
+  // POST /kontierung/:id/kk-markierung-aufheben – macht die Markierung als Kreditkartenabrechnung rückgängig und schickt den Vorgang mit Bemerkung (Pflicht) zurück in den Pool.
   router.post('/:id/kk-markierung-aufheben', csrfProtection, (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
@@ -867,6 +858,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   // Ein unbestätigter Popup-Durchgang hinterlässt eine Spur im Audit-Log, damit das Popup nicht
   // unbemerkt als Orakel für die letzten 4 IBAN-Zeichen dienen kann (man tippt so lange, bis kein
   // iban_manuell_fremd mehr kommt). Bewusst nur die Befund-Codes — nie die Eingabe oder eine IBAN.
+  // (Siehe Kommentar oben.) Protokolliert einen unbestätigten Popup-Durchgang im Audit.
   function protokolliereAngezeigteAuffaelligkeiten(jobId, person, befunde) {
     db.prepare(`INSERT INTO audit_ereignisse (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher)
       VALUES (?, ?, ?, 'kontierung', ?, 'auffaelligkeiten_angezeigt', ?)`).run(
@@ -878,6 +870,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     );
   }
 
+  // Rendert das Aufsplitten-Formular (Zeilen, Gesamtbetrag, Typ, Lieferant, Fehler, optional Prüf-Popup).
   function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ, extra = {}) {
     const kreditoren = listKreditorenWaehlbar(db);
     const kreditorId = extra.kreditorId || '';
@@ -899,15 +892,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   // wie in der normalen Kontierung.
   const normalisiereTyp = (typ) => (typ === 'gutschrift' ? 'gutschrift' : 'rechnung');
 
+  // GET /kontierung/:id/aufsplitten – das Aufsplitten-Formular; Betrag, Typ und Lieferant können aus dem Kontierungsformular per Query vorbelegt werden.
   router.get('/:id/aufsplitten', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
     if (sperreKkAbrechnung(job, res)) return;
     const konten = ladeKontenFuerJob(req, job);
-    // The Kontierung form's own Betrag field (already pre-filled from the original Rechnung —
-    // QR-erkannt or previously saved) is passed in as ?betrag=... when the Aufsplitten-Popup is
-    // opened, so a value the person typed there but hasn't saved yet still shows up here instead
-    // of falling back to whatever is (or isn't) persisted on the job.
+    // Das eigene Betragsfeld des Kontierungsformulars (schon vorbelegt aus der ursprünglichen Rechnung — QR-erkannt oder zuvor gespeichert) wird beim Öffnen des Aufsplitten-Popups als ?betrag=... mitgegeben, damit ein dort getippter, aber noch nicht gespeicherter Wert hier erscheint, statt auf das zurückzufallen, was am Vorgang gespeichert ist (oder fehlt).
     const queryBetrag = typeof req.query.betrag === 'string' && BETRAG_PATTERN.test(req.query.betrag) ? req.query.betrag : null;
     // Wie beim Betrag: ein im Kontierungsformular gewählter, noch nicht gespeicherter Typ kommt
     // als ?typ=... mit und hat Vorrang vor dem gespeicherten.
@@ -921,10 +912,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     ], '', [], typ, { kreditorId: queryKreditorId || (job.kreditor_id ? String(job.kreditor_id) : '') });
   });
 
+  // POST /kontierung/:id/aufsplitten – prüft die Zeilen (Konto, Betrag, Typ, Position, Beleg, Lieferant), verlangt Summe = Gesamtbetrag, zeigt ggf. das Prüf-Popup, führt Dateiarbeit, Aufsplitten (services/aufsplitten.js) und Mails aus.
   router.post('/:id/aufsplitten', (req, res, next) => {
     mitAuditKontext(uploadBeleg.any())(req, res, asyncCallback(next, async (uploadErr) => {
-    // csrfProtection runs after multer parses the multipart body (the _csrf field included) —
-    // any earlier and req.body would still be empty, rejecting every legitimate submission.
+    // csrfProtection läuft, nachdem multer den multipart-Body (inklusive des Felds _csrf) geparst hat — jede frühere Ausführung hätte req.body noch leer und lehnte jede legitime Einreichung ab.
     csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
     if (csrfErr) return next(csrfErr);
     try {
@@ -962,9 +953,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         errors.push('Mindestens zwei Teilbeträge sind nötig, um aufzusplitten.');
       }
 
-      // The browser renames each row's file input to teilBeleg_<i> at submit time, matching that
-      // row's current position — see kontierung-aufsplitten.ejs. Matched against aufgeloesteTeile
-      // below via originalIndex, not array position, since blank rows are filtered out there.
+      // Der Browser benennt das Dateifeld jeder Zeile beim Absenden in teilBeleg_<i> um, passend zur aktuellen Position dieser Zeile — siehe kontierung-aufsplitten.ejs. Unten gegen aufgeloesteTeile über originalIndex abgeglichen, nicht über die Array-Position, da dort leere Zeilen herausgefiltert werden.
       const teilBelegByIndex = new Map();
       for (const file of req.files || []) {
         const match = /^teilBeleg_(\d+)$/.exec(file.fieldname);
@@ -1069,13 +1058,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         });
       }
 
-      // Persisted on the parent even though it's about to be retired: the parent may never have
-      // had a Betrag saved before (that's exactly the gap this Gesamtbetrag field closes), and
-      // its own record should reflect the real total the split was based on, not stay empty.
+      // Auch am Elternvorgang gespeichert, obwohl er gleich ausser Dienst geht: Dort war vielleicht nie ein Betrag gespeichert (genau diese Lücke schliesst das Feld Gesamtbetrag), und sein eigener Datensatz soll den echten Gesamtbetrag zeigen, auf dem das Aufsplitten beruhte, statt leer zu bleiben.
       job.betrag = gesamtbetrag.replace(',', '.');
 
-      // File I/O (including the async Beleg merge) happens before the DB transaction below —
-      // see bereiteTeilDateienVor in services/aufsplitten.js.
+      // Datei-I/O (auch das asynchrone Zusammenführen des Belegs) passiert vor der Datenbanktransaktion unten — siehe bereiteTeilDateienVor in services/aufsplitten.js.
       const vorbereiteteTeile = await bereiteTeilDateienVor(config, job, aufgeloesteTeile);
 
       let ergebnis;

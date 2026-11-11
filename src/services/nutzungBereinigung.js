@@ -1,3 +1,4 @@
+// Aufbewahrungsfristen der Nutzungsdaten (docs/betrieb-und-nutzung.md): löscht Altdaten per Job `nutzungsdaten-bereinigung`.
 import { auditedJob } from './auditOperation.js';
 
 const TAG_MS = 24 * 3600 * 1000;
@@ -5,10 +6,12 @@ const TAG_MS = 24 * 3600 * 1000;
 const FRIST_SEITENAUFRUFE = 90;
 const FRIST_UEBRIGE = 365;
 
+// Führt ein DELETE mit der Zeitgrenze aus. @returns {number} gelöschte Zeilen
 function laeuft(db, sql, grenze) {
   return Number(db.prepare(sql).run(grenze).changes);
 }
 
+// Löscht Nutzungsdaten nach den Aufbewahrungsfristen (Seitenaufrufe 90 Tage, übrige 1 Jahr). @returns {{status: 'erfolg', geloescht: object}}
 function bereinige(db, config, mailer, { jetzt = new Date() } = {}) {
   const grenze = (tage) => new Date(jetzt.getTime() - tage * TAG_MS).toISOString();
   const alt = grenze(FRIST_UEBRIGE);
@@ -25,4 +28,5 @@ function bereinige(db, config, mailer, { jetzt = new Date() } = {}) {
   return { status: 'erfolg', geloescht };
 }
 
+// Geplanter Job `nutzungsdaten-bereinigung` (Zeitplan: cron_nutzungsdaten_bereinigung_*; Audit-Klammer durch auditedJob).
 export const runNutzungsdatenBereinigungJob = auditedJob('nutzungsdaten-bereinigung', bereinige);

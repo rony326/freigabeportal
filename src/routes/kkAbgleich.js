@@ -1,3 +1,6 @@
+// Abgleich einer Kreditkartenabrechnung mit den vorab erfassten Belegen (`/kontierung/:id/kk-abgleich`, docs/kreditkarten-belege.md): die für die Karte verantwortliche Person ordnet jede Position der Abrechnung
+// einem Beleg zu (vorhandener Beleg, nachgereicht, ohne Beleg mit Begründung, Gebühr/Zins). Technisch ein erweitertes Aufsplitten (services/aufsplitten.js): aus der Abrechnung werden Teilvorgänge. Läuft unter /kontierung, Zugang wie die Kontierung.
+
 import { Router } from 'express';
 import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
@@ -27,6 +30,7 @@ const MAX_ZEILEN = 100;
 const POSITION_AUS_BESCHREIBUNG_MAX = 80;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BELEG_SIZE, files: MAX_ZEILEN } });
 
+// "Vorname Nachname" oder 'Unbekannt'.
 function personLabel(db, id) {
   const p = id ? getPersonById(db, id) : null;
   return p ? `${p.vorname} ${p.nachname}` : 'Unbekannt';
@@ -35,6 +39,7 @@ function personLabel(db, id) {
 export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // Lädt die Abrechnung wie die Kontierung (Berechtigung!) und verlangt, dass sie einer Karte zugeordnet ist (sonst 409).
   function ladeAbrechnung(req, res) {
     const job = ladeKontierbarenJob(db, config, req, res);
     if (!job) return null;
@@ -70,6 +75,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
     return analyse;
   }
 
+  // Offene Belege der Karte samt Namen und Zuordnungsvorschlag ('betrag' | 'betrag_datum') aus der Textanalyse.
   function offeneBelege(karteId, analyse) {
     const roheBelege = listOffeneKkBelegeFuerKarte(db, karteId);
     const vorschlaege = berechneVorschlaege(roheBelege, analyse);
@@ -81,6 +87,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
     }));
   }
 
+  // Rendert die Abgleichsseite.
   function renderSeite(req, res, status, job, { werte, zeilen, errors }) {
     const karte = getKreditkarteById(db, job.kreditkarte_id);
     const analyse = ladeAnalyse(job);
@@ -100,6 +107,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
     });
   }
 
+  // GET /kontierung/:id/kk-abgleich – die Abgleichsseite (Total vorbelegt aus Betrag, QR-Betrag oder Textanalyse).
   router.get('/:id/kk-abgleich', (req, res) => {
     const job = ladeAbrechnung(req, res);
     if (!job) return;
@@ -121,6 +129,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
 
   class AbgleichKonflikt extends Error {}
 
+  // POST /kontierung/:id/kk-abgleich – prüft alle Positionen (Konto, signierter Betrag, Art, Beleg/Datei/Begründung), verlangt Summe = Total, führt in einer Transaktion Aufsplitten und Beleg-Zuordnung aus und benachrichtigt die Freigeber 1.
   router.post('/:id/kk-abgleich', (req, res, next) => {
     mitAuditKontext(upload.any())(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {

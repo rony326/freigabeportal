@@ -1,6 +1,7 @@
 // Quarantaene fuer verwaiste finale Dokumente (services/verwaisteDateien.js). Eine Zeile entsteht
 // beim Verschieben in dieselbe Transaktion wie das Audit-Ereignis. Danach ist nur noch genau ein
 // Statuswechsel aus 'quarantaene' heraus erlaubt; Loeschen der Zeile ist gesperrt.
+// Tabelle `datei_quarantaene` mit Schutz-Triggern (kein Löschen, nur eine Entscheidung 'wiederhergestellt'/'geloescht').
 export function migrateDateiQuarantaeneSchema(db) {
   db.exec('SAVEPOINT datei_quarantaene_schema');
   try {

@@ -1,3 +1,7 @@
+// CLI für die Offline-Wiederherstellung (Server muss gestoppt sein): `npm run backup:verify|restore|rollback|status`.
+// Optionen: `--archive <.fpbak>`, `--sha256 <erwarteter Hash>`, `--operator <Name>`, `--reason <Grund>`.
+// Die eigentliche Logik steckt in services/offlineRestore.js; Ablauf und Sicherheitsregeln: docs/offline-restore.md.
+
 import { parseArgs } from 'node:util';
 import { readFileSync, statSync } from 'node:fs';
 import { basename } from 'node:path';

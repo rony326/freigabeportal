@@ -1,13 +1,19 @@
+// Rechte pro ChurchTools-Gruppe (Tabelle `gruppen_berechtigungen`); Verwaltung unter Admin → Gruppenrechte.
+// Der Katalog gültiger Rechte steht in services/berechtigungKatalog.js, Modell: docs/auth-und-rechte.md.
+
 import { GRUPPEN, GRANTABLE_BERECHTIGUNGEN, FESTE_RECHTE, startwerteFuerGruppe } from '../services/berechtigungKatalog.js';
 
+// Wirft bei einer Gruppe, die der Katalog nicht kennt.
 function pruefeGruppe(gruppe) {
   if (!GRUPPEN.includes(gruppe)) throw new Error(`Unbekannte Gruppe: ${gruppe}`);
 }
 
+// Rechte einer Gruppe, alphabetisch.
 export function listGruppenBerechtigungen(db, gruppe) {
   return db.prepare('SELECT berechtigung FROM gruppen_berechtigungen WHERE gruppe = ? ORDER BY berechtigung').all(gruppe).map((r) => r.berechtigung);
 }
 
+// @returns {Object<string, string[]>} Gruppe → Rechte (alle bekannten Gruppen, auch leere)
 export function listAlleGruppenBerechtigungen(db) {
   const alle = Object.fromEntries(GRUPPEN.map((g) => [g, []]));
   for (const row of db.prepare('SELECT gruppe, berechtigung FROM gruppen_berechtigungen ORDER BY berechtigung').all()) {

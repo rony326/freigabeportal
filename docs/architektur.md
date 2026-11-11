@@ -24,7 +24,7 @@ flowchart LR
 
     subgraph Portal["Freigabeportal (Node.js/Express)"]
         App["Express-App<br/>(Routen, Middleware)"]
-        Scheduler["In-Process-Scheduler<br/>(11 Hintergrund-Jobs)"]
+        Scheduler["In-Process-Scheduler<br/>(16 Hintergrund-Jobs)"]
         DB[("SQLite<br/>DB_PATH")]
         Files[("Dateisystem<br/>JOBS_DIR / BRANDING_DIR")]
     end
@@ -74,14 +74,17 @@ Middleware, bevor sie den passenden Router erreicht:
 
 ```mermaid
 flowchart TD
-    A["Security-Header<br/>(nosniff, X-Frame-Options: SAMEORIGIN,<br/>Referrer-Policy, CSP)"] --> R["auditRequestContext<br/>serverseitige UUID / X-Request-ID"]
+    A["Security-Header<br/>(nosniff, X-Frame-Options: SAMEORIGIN,<br/>Referrer-Policy, HSTS, Permissions-Policy,<br/>COOP/CORP, CSP mit Nonce)"] --> R["auditRequestContext<br/>serverseitige UUID / X-Request-ID"]
     R --> B["compression + express.static<br/>(public/; mit ?v= ein Jahr immutable)"]
     B --> C["loadBranding(db)<br/>res.locals.branding auf JEDER Antwort,<br/>auch Fehlerseiten"]
     C --> D["express.json() /<br/>express.urlencoded()"]
-    D --> E["express-session<br/>(SqliteSessionStore,<br/>Cookie: httpOnly, sameSite=lax,<br/>secure nur bei https:// PUBLIC_BASE_URL)"]
-    E --> CS["cookieParser + attachCsrfToken<br/>(ausser n8n/Cron)"]
+    D --> E["express-session<br/>(SqliteSessionStore, 8 h,<br/>Cookie: httpOnly, sameSite=lax, secure +<br/>Name __Host-portal.sid bei https:// PUBLIC_BASE_URL)"]
+    E --> CS["cookieParser + ansichtWahl + attachCsrfToken<br/>(CSRF ausser n8n/Cron)"]
     CS --> F["loadCurrentPerson(db)<br/>req.currentPerson aus session.personId"]
-    F --> AU["auditContext + zugriffsAuditMiddleware<br/>Akteur / verweigerte Zugriffe"]
+    F --> TW["testmodusWeiche<br/>(nur echte App)"]
+    TW --> WM["wartungsmodusSperre<br/>503 / Wartungsseite, ausser Berechtigte"]
+    WM --> NU["nutzungErfassen<br/>Seitenaufrufe nach der Antwort"]
+    NU --> AU["auditContext + zugriffsAuditMiddleware<br/>Akteur / verweigerte Zugriffe"]
     AU --> G["loadNavFlags(db, config)<br/>res.locals.isBuchhaltung/isSuperadmin/isManager,<br/>res.locals.adminNav (pro Bereich);<br/>Banner + Navigation erst beim Rendern"]
     G --> H{"Router-Mount<br/>(eigener Rate-Limiter +<br/>eigene Zugriffsprüfung)"}
 ```
@@ -164,7 +167,7 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
 | `/banner` | session | eingeloggt | Info-Banner ausblenden (`POST /banner/:id/ausblenden`) |
 | `/datenschutz` | session | eingeloggt | Datenschutzhinweis zu den Nutzungsdaten |
 | `/audit-pruefen` | public (`publicLimiter`) | offen, nur lesend | Prüfseite des Audit-Nachweises für die Revision, siehe [audit-externe-nachweise.md](audit-externe-nachweise.md) |
-| `/admin/testmodus` | session | `superadmin` oder `manager` | Testmodus ein/aus, Zurücksetzen, Personenwechsel |
+| `/admin/testmodus` | session | `testmodus_nutzen` (Standard: Superadmin und Manager) | Testmodus ein/aus, Zurücksetzen, Personenwechsel |
 | `/testmodus` (nur Test-Instanz) | session | eingeloggt (Beispielperson) | Test-Postfach (`/postfach`) und Jobs (`POST /jobs`) |
 | `/auth` | public | offen | ChurchTools-OAuth2-Login/-Logout |
 | `/internal/cron` | machine | `X-Cron-Secret` | manuelles/externes Auslösen von zehn Hintergrund-Jobs (nicht: `datenbank-sicherung`, `mail-digest`, `sicherheitsalarme`, `audit-export`, `audit-pruefnummer`, `nutzungsdaten-bereinigung`) |
@@ -177,7 +180,10 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
   `X-Frame-Options: SAMEORIGIN` (nicht `DENY`, weil PDF-Vorschauen als
   same-origin `<iframe>` eingebettet werden), `Referrer-Policy: no-referrer`
   (signierte Download-URLs tragen ihre Signatur in der Query-String),
-  restriktive `Content-Security-Policy`: Skripte und `<style>`-Blöcke nur aus
+  `Strict-Transport-Security` (nur auf HTTPS-Anfragen, ein Jahr, inklusive
+  Subdomains), `Permissions-Policy` (Kamera, Mikrofon, Standort, Zahlung, USB
+  gesperrt), `Cross-Origin-Opener-Policy` und `Cross-Origin-Resource-Policy`
+  (`same-origin`), restriktive `Content-Security-Policy`: Skripte und `<style>`-Blöcke nur aus
   eigenen Dateien oder mit der Nonce der Anfrage (`res.locals.cspNonce`, pro
   Anfrage neu; jede View setzt sie, `test/integration/cspSweep.test.js` und
   `test/verhalten/csp.test.js` prüfen das), keine Inline-Ereignis-Attribute

@@ -1,19 +1,32 @@
+// Vorgänge (Tabelle `jobs`) – das Herzstück des Portals: Lieferantenrechnungen, Gutschriften, Rapporte, Spesenpositionen,
+// Kreditkartenabrechnungen und deren Teilvorgänge (Aufsplitten). Reine SQL-Schicht ohne Geschäftsregeln der Oberfläche;
+// Routen und Services (routes/kontierung.js, routes/freigabe2.js, services/aufsplitten.js …) rufen diese Funktionen auf.
+//
+// Status-Lebenslauf (Details: docs/rechnungs-workflow.md):
+//   unzugewiesen (Pool) → zugewiesen (Kontierung) → freigabe2 → abgeschlossen → abgeholt (n8n) → archiviert
+//   Seitenwege: abgelehnt (mit Wiederöffnen), aufgesplittet (Elternvorgang einer Aufteilung), kenntnisnahme (Rapport),
+//   geloescht (weich gelöscht, Datei bleibt). 'zugewiesen' trägt die Stufe Freigabe 1, 'freigabe2' die Stufe Freigabe 2.
+//
+// Konventionen:
+//   - Übergangsfunktionen liefern `true`/`false` (oder null), wenn die WHERE-Bedingung auf den Status keine Zeile traf –
+//     so verlieren gleichzeitige Aufrufer ehrlich, statt zu überschreiben.
+//   - Eskalationsflags (`freigabeN_eskaliert_*`) gehören zur Rechnung, nicht zu einem Durchlauf; wer sie wann löscht,
+//     steht an den jeweiligen Funktionen.
+//   - Manche Felder sind per Trigger unveränderlich, sobald gesetzt (Zeitstempel, Freigabe-Snapshot, Endhash): siehe securitySchema.js.
+
 import { getKontoById } from './kontenRepo.js';
 import { getPersonById } from './personenRepo.js';
 import { listZuweisungsregeln } from './zuweisungsregelnRepo.js';
 import { getKreditorById, istKreditorVollstaendig } from './kreditorenRepo.js';
 
-// Reused by listZugewiesenJobsForPerson/listFreigabe2JobsForPerson/listAbgelehntJobsForPerson
-// below: matches any person whose active Ferienmodus (today falls within
-// ferienmodus_von..ferienmodus_bis) names the bound parameter as their Stellvertreter. See
-// src/services/vertretung.js for the single-job version of this same check.
+// Wiederverwendet von listZugewiesenJobsForPerson/listFreigabe2JobsForPerson/listAbgelehntJobsForPerson weiter unten:
+// trifft jede Person, deren aktiver Ferienmodus (heute liegt zwischen ferienmodus_von..ferienmodus_bis) den gebundenen
+// Parameter als Stellvertretung nennt. Die Einzelvorgang-Variante derselben Prüfung steht in src/services/vertretung.js.
 //
-// The EXISTS clause requires that Stellvertreter (== the bound parameter, since
-// ferienmodus_stellvertreter_id = ? already pins the two to be equal) to still be aktiv = 1 --
-// mirrors the identical guard added to getAktivenVertreter, closing the same gap here: a
-// deactivated substitute must stop seeing the vertretene jobs in their own dashboard. This
-// intentionally does not touch the absent person's own aktiv flag, which this subquery has never
-// checked either way.
+// Die EXISTS-Klausel verlangt, dass die Stellvertretung (== der gebundene Parameter, da ferienmodus_stellvertreter_id = ?
+// beide schon gleichsetzt) weiterhin aktiv = 1 ist — entspricht der gleichen Absicherung in getAktivenVertreter und
+// schliesst hier dieselbe Lücke: eine deaktivierte Stellvertretung darf die vertretenen Vorgänge nicht mehr im eigenen
+// Dashboard sehen. Das aktiv-Flag der abwesenden Person selbst bleibt absichtlich unberührt; das hat diese Unterabfrage nie geprüft.
 const VERTRETUNG_ZIEL_SUBQUERY = `
   SELECT churchtools_person_id FROM personen
   WHERE ferienmodus_stellvertreter_id = ?
@@ -35,22 +48,26 @@ export const EFFEKTIVER_FREIGEBER2_SQL = `(CASE
     ELSE konten.freigeber2_id
   END)`;
 
+// Domain-Teil einer Adresse in Kleinschreibung, oder null ohne "@".
 function extractDomain(email) {
   const at = email.lastIndexOf('@');
   return at === -1 ? null : email.slice(at + 1).toLowerCase();
 }
 
-// n8n forwards absender as-is from the invoice mail's From: header, which may be a bare
-// address ("rechnung@lieferant.ch") or a display-name form ("Lieferant AG"
-// <rechnung@lieferant.ch>"). Naively taking the last "@" over the raw header lets a crafted
-// multi-address value (e.g. "billing@attacker.example, buchhaltung@lieferant.ch") match a
-// legitimate rule via whichever address happens to contain the last "@" — steering an
-// externally-supplied invoice to a chosen Konto/approver. Extract exactly one clean address
-// (preferring the last "<...>" if present) and refuse to guess when the result is still
-// ambiguous, falling through to no match (the job lands in the pool) rather than matching
-// the wrong thing.
+// n8n reicht den Absender unverändert aus dem From:-Header der Rechnungsmail weiter; das kann eine nackte Adresse
+// ("rechnung@lieferant.ch") oder eine Form mit Anzeigenamen ("Lieferant AG <rechnung@lieferant.ch>") sein. Würde man naiv
+// das letzte "@" im Rohheader nehmen, könnte ein präparierter Wert mit mehreren Adressen (z. B.
+// "billing@attacker.example, buchhaltung@lieferant.ch") über die Adresse mit dem letzten "@" eine legitime Regel treffen —
+// und eine von aussen eingespeiste Rechnung auf ein gewähltes Konto/einen gewählten Freigeber lenken. Deshalb genau EINE
+// saubere Adresse extrahieren (bevorzugt die letzte "<...>") und bei Mehrdeutigkeit nicht raten: kein Treffer, der Vorgang
+// landet im Pool, statt das Falsche zu treffen.
 const EMAIL_PATTERN = /^[^\s@,<>"]+@[^\s@,<>"]+$/;
 
+/**
+ * Macht aus dem rohen From:-Header genau eine saubere E-Mail-Adresse (siehe Begründung oben).
+ * @param {string|null|undefined} absender Rohwert aus der Rechnungsmail
+ * @returns {string|null} die Adresse, oder null, wenn sie fehlt oder mehrdeutig ist
+ */
 export function normalizeAbsender(absender) {
   if (!absender) return null;
   const trimmed = absender.trim();
@@ -58,11 +75,10 @@ export function normalizeAbsender(absender) {
   if (!angleMatch) {
     return EMAIL_PATTERN.test(trimmed) ? trimmed : null;
   }
-  // Reject if anything before the final "<...>" still looks like it could hide another
-  // address — a bare "@" or a "," separating multiple addresses — once quoted display names
-  // are stripped out. Without this, "billing@attacker.example <buchhaltung@lieferant.ch>"
-  // would extract only the trailing bracketed address and silently ignore the leading one,
-  // exactly the ambiguity this function exists to refuse rather than guess at.
+  // Ablehnen, wenn vor dem letzten "<...>" noch etwas steht, das eine weitere Adresse verstecken könnte — ein nacktes "@"
+  // oder ein "," zwischen mehreren Adressen —, nachdem in Anführungszeichen stehende Anzeigenamen entfernt wurden. Ohne das
+  // würde "billing@attacker.example <buchhaltung@lieferant.ch>" nur die hintere Adresse in Klammern extrahieren und die
+  // vordere still ignorieren — genau die Mehrdeutigkeit, die diese Funktion verweigern statt erraten soll.
   const prefix = trimmed.slice(0, angleMatch.index).replace(/"[^"]*"/g, '');
   if (/[@,]/.test(prefix)) return null;
   const candidate = angleMatch[1].trim();
@@ -84,6 +100,7 @@ export function bewerteAbsenderMuster(absender, muster) {
   return null;
 }
 
+// Sucht die Zuweisungsregel zum Absender: erst ein exakter Adress-Treffer, dann ein Domain-Treffer, sonst null.
 export function findMatchingZuweisungsregel(db, absender) {
   const regeln = listZuweisungsregeln(db);
   return (
@@ -93,17 +110,19 @@ export function findMatchingZuweisungsregel(db, absender) {
   );
 }
 
+// Speichert die aus dem PDF-Text gelesenen Beträge der Kreditkartenabrechnung (JSON, services/kkTextAnalyse.js).
 export function setKkTextAnalyse(db, jobId, analyse) {
   db.prepare('UPDATE jobs SET kk_text_betraege = ? WHERE id = ?').run(JSON.stringify(analyse), jobId);
 }
 
+// Sucht einen Vorgang mit identischen PDF-Bytes (Duplikaterkennung Szenario 1, exakt gleiche Datei).
 export function findJobByDateiHash(db, dateiHash) {
   return db.prepare('SELECT * FROM jobs WHERE datei_hash = ? ORDER BY id LIMIT 1').get(dateiHash) ?? null;
 }
 
-// 'abgelehnt' jobs are deliberately still matched -- a rejected job's Rechnungsnummer resurfacing
-// on a new job is still worth flagging, even though it carries no double-payment risk by itself.
-// Only 'geloescht' (soft-deleted) rows are excluded.
+// Abgelehnte Vorgänge werden bewusst weiterhin gefunden — taucht die Rechnungsnummer eines abgelehnten Vorgangs bei einem
+// neuen wieder auf, ist das trotzdem eine Meldung wert, auch wenn es für sich kein Risiko einer Doppelzahlung gibt.
+// Nur 'geloescht' (weich gelöschte) Zeilen sind ausgeschlossen.
 export function findJobsByKreditorUndRechnungsnummer(db, kreditorId, rechnungsnummer, excludeJobId) {
   if (!kreditorId || !rechnungsnummer) return [];
   return db
@@ -135,6 +154,12 @@ export function findMoeglicheDoppelrechnungen(db, { job, kreditorId, betrag, zah
     .all(kreditorId, zahlungsziel, betragZahl, job.eingang_am, tage, job.id, familie, familie);
 }
 
+/**
+ * Legt einen eingehenden Vorgang an (Eingang per n8n). Greift eine Zuweisungsregel auf den Absender und sind Kreditor
+ * (aktiv, mit IBAN wo nötig) und dessen Standardkonto brauchbar, startet der Vorgang gleich als 'zugewiesen' beim
+ * Freigeber 1 des Kontos; sonst landet er als 'unzugewiesen' im Pool.
+ * @returns {number} id des neuen Vorgangs
+ */
 export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad, dateiHash, pdfDateiname }) {
   const regel = findMatchingZuweisungsregel(db, absender);
   let kontoId = null;
@@ -148,8 +173,8 @@ export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad,
     if (kreditor && kreditor.aktiv && istKreditorVollstaendig(db, kreditor)) {
       kreditorId = kreditor.id;
       lieferant = kreditor.name;
-      // A Kreditor without its own default Konto still auto-fills Lieferant, but there's no
-      // Konto to resolve a Freigeber1 from — the job stays unzugewiesen, same as no match at all.
+      // Ein Kreditor ohne eigenes Standardkonto füllt den Lieferanten trotzdem automatisch aus, aber es gibt kein Konto, aus dem
+      // sich ein Freigeber 1 ableiten liesse — der Vorgang bleibt 'unzugewiesen', wie bei keinem Treffer.
       if (kreditor.konto_id) {
         const konto = getKontoById(db, kreditor.konto_id);
         if (konto && konto.aktiv) {
@@ -171,20 +196,24 @@ export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad,
   return Number(result.lastInsertRowid);
 }
 
+// @returns {object|null} die Zeile aus `jobs` oder null
 export function getJobById(db, id) {
   return db.prepare('SELECT * FROM jobs WHERE id = ?').get(id) ?? null;
 }
 
+// Pool: unzugewiesene Vorgänge (ohne Spesen und ohne Rückläufer), älteste zuerst.
 export function listPoolJobs(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'unzugewiesen' AND quelle != 'spesen' AND pool_rueckgesendet_bemerkung IS NULL ORDER BY eingang_am").all();
 }
 
+// Rückläufer: von einer Person an die Gruppe zurückgeschickte Vorgänge im Pool (mit Bemerkung).
 export function listPoolRuecklaeufer(db) {
   return db
     .prepare("SELECT * FROM jobs WHERE status = 'unzugewiesen' AND quelle != 'spesen' AND pool_rueckgesendet_bemerkung IS NOT NULL ORDER BY pool_rueckgesendet_am")
     .all();
 }
 
+// Person beansprucht einen Pool-Vorgang. @returns {boolean} false, wenn er nicht mehr 'unzugewiesen' ist (jemand war schneller)
 export function claimJob(db, id, personId) {
   const result = db
     .prepare(
@@ -197,6 +226,7 @@ export function claimJob(db, id, personId) {
   return result.changes > 0;
 }
 
+// Wie claimJob, aber die Buchhaltung weist den Vorgang einer anderen Person zu (Pool-Weiterleitung ohne Kontierung).
 export function assignJobToPerson(db, jobId, personId) {
   const result = db
     .prepare(
@@ -209,16 +239,16 @@ export function assignJobToPerson(db, jobId, personId) {
   return result.changes > 0;
 }
 
-// listAbholbereitJobs runs entirely synchronously (node:sqlite has no async I/O), so the
-// SELECT and the per-row claim UPDATE below cannot interleave with any other request in this
-// single Node process — safe without an explicit transaction. This would need one under a
-// multi-process deployment.
-// nurMitZeitstempel: when the RFC3161 feature is active (a TSA URL is configured), a job
-// without a timestamp must not reach n8n yet — it stays invisible to /abholbereit until the
-// timestamp is set (by Freigabe-2 completion or the zeitstempel-nachholen cron job). When the
-// feature is off (no TSA configured), the caller passes false so nothing changes.
+// listAbholbereitJobs läuft vollständig synchron (node:sqlite kennt kein asynchrones I/O); das SELECT und das UPDATE je
+// Zeile unten können sich in diesem einen Node-Prozess also mit keiner anderen Anfrage überschneiden — sicher ohne
+// ausdrückliche Transaktion. Bei mehreren Prozessen wäre eine nötig.
+// nurMitZeitstempel: Ist die RFC3161-Funktion aktiv (eine TSA-URL ist konfiguriert), darf ein Vorgang ohne Zeitstempel
+// noch nicht zu n8n gelangen — er bleibt für /abholbereit unsichtbar, bis der Zeitstempel gesetzt ist (durch den Abschluss
+// von Freigabe 2 oder den Cron-Job zeitstempel-nachholen). Ist die Funktion aus (keine TSA), übergibt der Aufrufer false,
+// und nichts ändert sich.
 // istExportierbar: optionaler Filter (Export-/Zahlungsnachweis, siehe services/exportSnapshot.js);
 // ein gesperrter Beleg wird weder angeboten noch als abgeholt vorgemerkt.
+// Rückgabe: die abholbereiten Vorgänge; jeder wird dabei als "von n8n geholt" markiert (erneut angeboten erst nach `staleAfterMs`).
 export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false, istExportierbar = () => true) {
   const staleThreshold = new Date(Date.now() - staleAfterMs).toISOString();
   const zeitstempelBedingung = nurMitZeitstempel ? ' AND zeitstempel_gesetzt_am IS NOT NULL' : ' AND (zeitstempel_erforderlich = 0 OR zeitstempel_gesetzt_am IS NOT NULL)';
@@ -238,9 +268,9 @@ export function listAbholbereitJobs(db, staleAfterMs = 15 * 60 * 1000, nurMitZei
   return rows;
 }
 
-// See listAbholbereitJobs above for nurMitZeitstempel — this is the second half of the same
-// gate: even a job n8n already knows about (e.g. from before the feature was enabled) must not
-// be confirmable without a timestamp while the feature is active.
+// Zu nurMitZeitstempel siehe listAbholbereitJobs oben — das ist die zweite Hälfte derselben Sperre: Auch ein Vorgang, den
+// n8n schon kennt (z. B. aus der Zeit vor Aktivierung der Funktion), darf bei aktiver Funktion nicht ohne Zeitstempel
+// bestätigt werden. Rückgabe: der Vorgang (jetzt 'abgeholt') oder null, wenn die Bestätigung nicht zulässig war.
 export function confirmAbholung(db, id, nurMitZeitstempel = false) {
   const zeitstempelBedingung = nurMitZeitstempel ? " AND zeitstempel_gesetzt_am IS NOT NULL" : ' AND (zeitstempel_erforderlich = 0 OR zeitstempel_gesetzt_am IS NOT NULL)';
   const result = db
@@ -250,10 +280,12 @@ export function confirmAbholung(db, id, nurMitZeitstempel = false) {
   return getJobById(db, id);
 }
 
+// Hinterlegt den Pfad der Vorschaubild-Datei.
 export function setThumbnailPfad(db, id, thumbnailPfad) {
   db.prepare('UPDATE jobs SET thumbnail_pfad = ? WHERE id = ?').run(thumbnailPfad, id);
 }
 
+// Speichert die aus dem Swiss-QR-Code gelesenen Zahlungsdaten (services/qrBill.js) samt Erkennungszeitpunkt.
 export function setQrDaten(db, id, { qrIban, qrReferenz, qrBetrag, qrWaehrung, qrCreditorName }) {
   db.prepare(
     `UPDATE jobs SET qr_iban = ?, qr_referenz = ?, qr_betrag = ?, qr_waehrung = ?, qr_creditor_name = ?, qr_erkannt_am = ?
@@ -261,37 +293,37 @@ export function setQrDaten(db, id, { qrIban, qrReferenz, qrBetrag, qrWaehrung, q
   ).run(qrIban ?? null, qrReferenz ?? null, qrBetrag ?? null, qrWaehrung ?? null, qrCreditorName ?? null, new Date().toISOString(), id);
 }
 
-// setKontierung, eskalierenFreigabe1, abschliessenFreigabe1, and eskalierenFreigabe2 need no
-// WHERE-status guard: every route that calls them is a fully synchronous handler with no
-// `await` between its authorization/status check and COMMIT, so node:sqlite's synchronous
-// execution rules out interleaving with another request. abschliessenFreigabe2 is guarded
-// because its route awaits stampAndFinalize before completing. ablehnenJob is guarded too,
-// even though its own route path has no such await — it mirrors abschliessenFreigabe2's
-// "terminal transition with an honest boolean result" semantics rather than assuming success,
-// and costs nothing to keep consistent.
+// setKontierung, eskalierenFreigabe1, abschliessenFreigabe1 und eskalierenFreigabe2 brauchen keinen WHERE-Status-Schutz:
+// Jede Route, die sie aufruft, ist ein vollständig synchroner Handler ohne `await` zwischen Berechtigungs-/Statusprüfung
+// und COMMIT, und die synchrone Ausführung von node:sqlite schliesst ein Verschränken mit einer anderen Anfrage aus.
+// abschliessenFreigabe2 ist geschützt, weil seine Route vor dem Abschluss auf stampAndFinalize wartet. ablehnenJob ist
+// ebenfalls geschützt, obwohl sein Routenpfad kein solches await hat — es folgt der Semantik von abschliessenFreigabe2
+// ("Endübergang mit ehrlichem Boolean-Ergebnis"), statt Erfolg vorauszusetzen, und die Einheitlichkeit kostet nichts.
 export function setKontierung(db, jobId, kontoId) {
   db.prepare('UPDATE jobs SET konto_id = ? WHERE id = ?').run(kontoId, jobId);
 }
 
-// Narrow, single-field update — deliberately separate from updateKontierungMetadaten, which
-// requires every field and would null out absender/zahlungsziel/etc. if called with only a
-// betrag. Used by the Aufsplitten flow to capture a Betrag that was never saved on the main
-// Kontierung form (Kontieren there completes Freigabe 1 immediately, moving the job out of
-// 'zugewiesen' — so it can no longer serve as a "just save the Betrag first" step for splitting).
+// Schmale Ein-Feld-Änderung — bewusst getrennt von updateKontierungMetadaten, das jedes Feld verlangt und bei einem
+// alleinigen Betrag absender/zahlungsziel/usw. auf NULL setzen würde. Wird vom Aufsplitten genutzt, um einen Betrag zu
+// erfassen, der im Hauptformular der Kontierung nie gespeichert wurde (Kontieren schliesst dort Freigabe 1 sofort ab und
+// nimmt den Vorgang aus 'zugewiesen' — es taugt fürs Aufsplitten also nicht mehr als Schritt "erst den Betrag speichern").
 export function setJobBetrag(db, jobId, betrag) {
   db.prepare('UPDATE jobs SET betrag = ? WHERE id = ?').run(betrag || null, jobId);
 }
 
 // Beim Aufsplitten gewählter Lieferant: am Elternjob gespeichert, bevor die Kinder ihn über
 // createSplitJob übernehmen.
+// (Kreditor und Lieferantenname gemeinsam setzen.)
 export function setJobKreditor(db, jobId, { kreditorId, lieferant }) {
   db.prepare('UPDATE jobs SET kreditor_id = ?, lieferant = ? WHERE id = ?').run(kreditorId, lieferant, jobId);
 }
 
+// Setzt den Vorgangstyp ('rechnung' | 'gutschrift' | 'rapport' …).
 export function setJobTyp(db, jobId, typ) {
   db.prepare('UPDATE jobs SET typ = ? WHERE id = ?').run(typ, jobId);
 }
 
+// Speichert die Formularfelder der Kontierung auf einmal (leere Werte werden NULL, der Typ fällt auf 'rechnung' zurück).
 export function updateKontierungMetadaten(db, jobId, { absender, betrag, zahlungsziel, rechnungsnummer, lieferant, kreditorId, typ }) {
   db.prepare('UPDATE jobs SET absender = ?, betrag = ?, zahlungsziel = ?, rechnungsnummer = ?, lieferant = ?, kreditor_id = ?, typ = ? WHERE id = ?').run(
     absender || null,
@@ -305,32 +337,34 @@ export function updateKontierungMetadaten(db, jobId, { absender, betrag, zahlung
   );
 }
 
+// Freigabe 1 wegen Interessenskonflikt an die Stellvertretung übergeben (merkt Person und Grund).
 export function eskalierenFreigabe1(db, jobId, { eskaliertVon, grund, stellvertreterId }) {
   db.prepare(
     'UPDATE jobs SET zugewiesen_an = ?, freigabe1_eskaliert_von = ?, freigabe1_eskalationsgrund = ? WHERE id = ?'
   ).run(stellvertreterId, eskaliertVon, grund, jobId);
 }
 
+// Pool-Weiterleitung: der Vorgang geht an den eigentlichen Freigeber 1 des Kontos.
 export function weiterleitenAnEchtenFreigeber1(db, jobId, freigeber1Id) {
   db.prepare('UPDATE jobs SET zugewiesen_an = ? WHERE id = ?').run(freigeber1Id, jobId);
 }
 
+// Schliesst Freigabe 1 ab: Status → 'freigabe2', Uhr für Erinnerung/Eskalation startet. Ist die für Freigabe 2
+// zuständige Person schon als befangen bekannt, geht der Vorgang gleich an die Admin-Gruppe.
 export function abschliessenFreigabe1(db, jobId) {
-  // freigabe1_eskaliert_an_admin is deliberately NOT reset here (Batch 4 correction — an
-  // earlier version of this function did clear it). A declared conflict of interest belongs to
-  // the invoice, not to one Kontierung attempt: if Freigabe 2 later rejects this job for an
-  // unrelated reason and it's reopened via wiederOeffnenJob, the excluded Stellvertreter1 must
-  // still be excluded — same principle already applied to freigabe2_eskaliert_von (see
-  // wiederOeffnenJob's own comment). The flag is only ever cleared by a genuine full reset to
-  // the pool (releaseJob, forceReleaseJob), where the job effectively starts over, possibly even
-  // under a different Konto.
-  // freigabe2_reminder_gesendet_at/freigabe2_eskalation_gesendet_at are also cleared here (same
-  // reasoning as eskalierenFreigabe2 a few lines below): a job that reaches this function again
-  // after rework (rejected at Freigabe 2, wiederOeffnenJob, re-Kontiert) restarts responsibility
-  // under freigabe2, but a prior round may have already sent one or both mails. Since
-  // listFreigabe2JobsForReminder/listFreigabe2JobsForEskalation filter on `..._gesendet_at IS
-  // NULL`, leaving a marker set from the previous round would make the job permanently invisible
-  // to both queries on every subsequent round.
+  // freigabe1_eskaliert_an_admin wird hier bewusst NICHT zurückgesetzt (Korrektur aus Batch 4 — eine frühere Version dieser
+  // Funktion löschte es). Ein erklärter Interessenskonflikt gehört zur Rechnung, nicht zu einem Kontierungsversuch: Lehnt
+  // Freigabe 2 den Vorgang später aus einem anderen Grund ab und er wird über wiederOeffnenJob wieder geöffnet, muss die
+  // ausgeschlossene Stellvertretung 1 weiterhin ausgeschlossen bleiben — dasselbe Prinzip gilt schon für
+  // freigabe2_eskaliert_von (siehe den Kommentar bei wiederOeffnenJob). Das Flag wird nur durch einen echten vollständigen
+  // Rücksprung in den Pool gelöscht (releaseJob, forceReleaseJob), wo der Vorgang praktisch neu beginnt, womöglich sogar
+  // unter einem anderen Konto.
+  // freigabe2_reminder_gesendet_at/freigabe2_eskalation_gesendet_at werden hier ebenfalls gelöscht (gleiche Begründung wie
+  // bei eskalierenFreigabe2 einige Zeilen weiter unten): Ein Vorgang, der nach einer Überarbeitung erneut hier ankommt
+  // (bei Freigabe 2 abgelehnt, wiederOeffnenJob, neu kontiert), startet die Zuständigkeit bei Freigabe 2 neu, aber eine frühere
+  // Runde kann schon eine oder beide Mails verschickt haben. Da listFreigabe2JobsForReminder/listFreigabe2JobsForEskalation auf
+  // `..._gesendet_at IS NULL` filtern, bliebe der Vorgang bei einer gesetzten Marke aus der letzten Runde in allen weiteren
+  // Runden dauerhaft für beide Abfragen unsichtbar.
   db.prepare(
     "UPDATE jobs SET status = 'freigabe2', freigabe1_eskaliert_von = NULL, freigabe1_eskalationsgrund = NULL, freigabe2_seit = ?, freigabe2_reminder_gesendet_at = NULL, freigabe2_eskalation_gesendet_at = NULL WHERE id = ?"
   ).run(new Date().toISOString(), jobId);
@@ -350,24 +384,24 @@ export function abschliessenFreigabe1(db, jobId) {
   ).run(jobId);
 }
 
+// Freigabe 2 wegen Interessenskonflikt an die Stellvertretung 2 übergeben (Uhr startet neu, siehe Kommentar).
 export function eskalierenFreigabe2(db, jobId, { eskaliertVon, grund }) {
-  // freigabe2_seit restarts here (and both gesendet_at markers clear): responsibility just moved
-  // to Stellvertreter2, so the reminder/eskalation clock for the *new* responsible person must
-  // start from zero rather than inheriting however long the original Freigeber2 already sat on it.
+  // freigabe2_seit startet hier neu (und beide gesendet_at-Marken werden gelöscht): Die Zuständigkeit ist gerade an die
+  // Stellvertretung 2 gegangen, die Erinnerungs-/Eskalationsuhr für die *neue* zuständige Person muss bei null beginnen,
+  // statt zu erben, wie lange der ursprüngliche Freigeber 2 den Vorgang schon liegen liess.
   db.prepare(
     'UPDATE jobs SET freigabe2_eskaliert_von = ?, freigabe2_eskalationsgrund = ?, freigabe2_seit = ?, freigabe2_reminder_gesendet_at = NULL, freigabe2_eskalation_gesendet_at = NULL WHERE id = ?'
   ).run(eskaliertVon, grund, new Date().toISOString(), jobId);
 }
 
+// Schliesst Freigabe 2 ab: Status → 'abgeschlossen'. @returns {boolean} false, wenn der Vorgang nicht (mehr) in 'freigabe2' war
 export function abschliessenFreigabe2(db, jobId) {
-  // Also clears freigabe2_eskaliert_an_admin: this is the one place Freigabe 2 legitimately
-  // completes (regardless of whether an admin or a regular person did it), so it's the correct
-  // single source to reset the admin-only authorization gate (see loadAuthorized in
-  // freigabe2.js). Without this, a job that was ever escalated to admin would stay locked to
-  // Portal-Admin-only access permanently, even across later, unrelated rework cycles. (Freigabe
-  // 1's equivalent flag, freigabe1_eskaliert_an_admin, deliberately does NOT get the same
-  // treatment as of this batch — see abschliessenFreigabe1's own comment for why the two flags
-  // now behave differently.)
+  // Löscht auch freigabe2_eskaliert_an_admin: Das ist die einzige Stelle, an der Freigabe 2 regulär abgeschlossen wird
+  // (egal ob durch Admin oder eine normale Person), also die richtige einzige Quelle, um die Nur-Admin-Zugriffssperre
+  // zurückzusetzen (siehe loadAuthorized in freigabe2.js). Ohne das bliebe ein einmal an den Admin eskalierter Vorgang
+  // dauerhaft nur für Portal-Admins zugänglich, auch über spätere, unabhängige Überarbeitungsrunden hinweg. (Das
+  // Gegenstück bei Freigabe 1, freigabe1_eskaliert_an_admin, wird seit diesem Batch bewusst NICHT gleich behandelt — warum
+  // sich die beiden Flags jetzt unterscheiden, steht im Kommentar bei abschliessenFreigabe1.)
   const result = db
     .prepare(
       "UPDATE jobs SET status = 'abgeschlossen', abgeschlossen_am = ?, freigabe2_eskaliert_von = NULL, freigabe2_eskalationsgrund = NULL, freigabe2_eskaliert_an_admin = 0, freigabe2_umgeleitet_an = NULL WHERE id = ? AND status = 'freigabe2'"
@@ -376,19 +410,17 @@ export function abschliessenFreigabe2(db, jobId) {
   return result.changes > 0;
 }
 
-// Every abgeschlossen job that still has no RFC3161 timestamp — the work list of the
-// zeitstempel-nachholen cron job (cronJobs.js). Deliberately the exact inverse of the
-// `zeitstempel_gesetzt_am IS NOT NULL` gate in listAbholbereitJobs/confirmAbholung above: what
-// n8n is not allowed to pick up yet is precisely what the nachhol-job must still stamp.
+// Jeder abgeschlossene Vorgang, der noch keinen RFC3161-Zeitstempel hat — die Arbeitsliste des Cron-Jobs
+// zeitstempel-nachholen (cronJobs.js). Bewusst das genaue Gegenstück zur Sperre `zeitstempel_gesetzt_am IS NOT NULL`
+// in listAbholbereitJobs/confirmAbholung oben: Was n8n noch nicht abholen darf, muss der Nachhol-Job noch stempeln.
 export function listZeitstempelAusstehendJobs(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'abgeschlossen' AND zeitstempel_gesetzt_am IS NULL").all();
 }
 
-// Powers the admin-dashboard warning banner: counts abgeschlossen jobs whose RFC3161 timestamp
-// is still missing after schwellenStunden hours. abgeschlossen_am IS NOT NULL is a safety net
-// only — db/index.js backfills abgeschlossen_am for every already-abgeschlossen job at migration
-// time, so a job reaching this state without the column set should no longer occur; the guard
-// stays so a NULL can never silently be compared as "infinitely overdue".
+// Speist den Warnbanner im Admin-Dashboard: zählt abgeschlossene Vorgänge, deren RFC3161-Zeitstempel nach
+// schwellenStunden Stunden noch fehlt. `abgeschlossen_am IS NOT NULL` ist nur ein Sicherheitsnetz — db/index.js füllt
+// abgeschlossen_am bei der Migration für jeden schon abgeschlossenen Vorgang nach, ein Vorgang in diesem Zustand ohne die
+// Spalte sollte also nicht mehr vorkommen; die Bedingung bleibt, damit ein NULL nie still als "unendlich überfällig" gilt.
 export function countZeitstempelUeberfaellig(db, schwellenStunden) {
   const schwelle = new Date(Date.now() - schwellenStunden * 60 * 60 * 1000).toISOString();
   const row = db
@@ -399,41 +431,44 @@ export function countZeitstempelUeberfaellig(db, schwellenStunden) {
   return row.anzahl;
 }
 
-// SYNC-8: a second-tier escalation, triggered when the person already escalated to (Tier 1)
-// also has their own conflict of interest — routes the job to any active Portal-Admin instead
-// of blocking. zugewiesen_an is deliberately left untouched: once this flag is set, job
-// authorization stops checking zugewiesen_an for this stage entirely (see kontierung.js/
-// freigabe2.js), so the field just stays as a historical record of the last named person in
-// the chain rather than needing a sentinel value.
+// SYNC-8: eine Eskalation der zweiten Stufe, ausgelöst, wenn auch die Person, an die bereits eskaliert wurde (Stufe 1),
+// einen eigenen Interessenskonflikt hat — leitet den Vorgang an einen beliebigen aktiven Portal-Admin, statt zu blockieren.
+// zugewiesen_an bleibt bewusst unberührt: Ist dieses Flag gesetzt, prüft die Vorgangsberechtigung zugewiesen_an für diese
+// Stufe gar nicht mehr (siehe kontierung.js/freigabe2.js), das Feld bleibt also als historischer Hinweis auf die letzte
+// genannte Person der Kette stehen, ohne einen Platzhalterwert zu brauchen.
+// (Stufe 2 der Eskalation bei Freigabe 1: an die Admin-Gruppe, Begründung siehe oben.)
 export function eskalierenFreigabe1AnAdmin(db, jobId, { eskaliertVon, grund }) {
   db.prepare(
     'UPDATE jobs SET freigabe1_eskaliert_an_admin = 1, freigabe1_eskaliert_von = ?, freigabe1_eskalationsgrund = ? WHERE id = ?'
   ).run(eskaliertVon, grund, jobId);
 }
 
+// Wie eskalierenFreigabe1AnAdmin, für Freigabe 2; eine eventuelle Admin-Umleitung wird dabei aufgehoben.
 export function eskalierenFreigabe2AnAdmin(db, jobId, { eskaliertVon, grund }) {
   db.prepare(
     'UPDATE jobs SET freigabe2_eskaliert_an_admin = 1, freigabe2_eskaliert_von = ?, freigabe2_eskalationsgrund = ?, freigabe2_umgeleitet_an = NULL WHERE id = ?'
   ).run(eskaliertVon, grund, jobId);
 }
 
+/**
+ * Die zugewiesene Person gibt den Vorgang in den Pool zurück (echter Neustart, siehe Kommentar).
+ * @param {object} [opts] `hinweisKontoId`: Konto, das später als Hinweis bei der nächsten Kontierung erscheint
+ * @returns {boolean} false, wenn der Vorgang nicht (mehr) dieser Person zugewiesen war
+ */
 export function releaseJob(db, jobId, personId, { hinweisKontoId } = {}) {
-  // Also clears freigabe1_eskaliert_von/-grund: a stellvertreter1 who was escalated to can
-  // release the job too (loadAuthorizedJob only checks current zugewiesen_an), and a fresh
-  // claimer must not inherit a stale escalation record from a previous claim cycle. Also
-  // clears reminder_gesendet_at/eskalation_gesendet_at so a fresh pool cycle after release
-  // is eligible for its own reminder/escalation mail rather than being silently skipped
-  // because the *previous* cycle already sent one. Also clears freigabe1_eskaliert_an_admin:
-  // unlike wiederOeffnenJob (which deliberately preserves the flag, since a rework cycle on the
-  // same job/Konto means the conflict is still real), releaseJob is a genuine fresh start — the
-  // job may be reassigned to an entirely different Konto, for which the old exclusion no longer
-  // applies. hinweis_konto_id is always written (to the given value or NULL), not left untouched,
-  // for the same "fresh start" reason — a hint from a prior, possibly-wrong release must not
-  // silently survive into the next pool cycle just because this one didn't set a new one. Also
-  // clears pool_rueckgesendet_bemerkung/-von/-am: a job can be claimed and released again while
-  // still carrying a stale Rückläufer marker from before it was last claimed, and without this it
-  // would silently reappear (and stay forever) under the Rückläufer section instead of the normal
-  // Pool listing, even though nobody sent it back this cycle.
+  // Löscht auch freigabe1_eskaliert_von/-grund: Eine Stellvertretung 1, an die eskaliert wurde, kann den Vorgang ebenfalls
+  // freigeben (loadAuthorizedJob prüft nur das aktuelle zugewiesen_an), und wer ihn neu beansprucht, darf keinen veralteten
+  // Eskalationseintrag aus einer früheren Runde erben. Löscht ausserdem reminder_gesendet_at/eskalation_gesendet_at, damit ein
+  // frischer Pool-Durchlauf nach der Freigabe eine eigene Erinnerung/Eskalation bekommen kann, statt still übersprungen zu
+  // werden, weil die *vorherige* Runde schon eine verschickt hat. Löscht auch freigabe1_eskaliert_an_admin: Anders als
+  // wiederOeffnenJob (das das Flag bewusst behält, weil bei einer Überarbeitung desselben Vorgangs/Kontos der Konflikt echt
+  // bleibt) ist releaseJob ein echter Neustart — der Vorgang kann einem ganz anderen Konto zugewiesen werden, für das der
+  // alte Ausschluss nicht mehr gilt. hinweis_konto_id wird immer geschrieben (mit dem übergebenen Wert oder NULL), nicht
+  // unberührt gelassen, aus demselben "Neustart"-Grund — ein Hinweis aus einer früheren, womöglich falschen Freigabe darf
+  // nicht still in den nächsten Pool-Durchlauf übergehen, nur weil dieser keinen neuen setzt. Löscht ausserdem
+  // pool_rueckgesendet_bemerkung/-von/-am: Ein Vorgang kann beansprucht und wieder freigegeben werden, während er noch eine
+  // veraltete Rückläufer-Markierung aus der Zeit vor der letzten Beanspruchung trägt; ohne das würde er still (und dauerhaft)
+  // im Bereich Rückläufer statt in der normalen Pool-Liste erscheinen, obwohl ihn in dieser Runde niemand zurückgeschickt hat.
   const result = db
     .prepare(
       `UPDATE jobs
@@ -452,12 +487,13 @@ export function releaseJob(db, jobId, personId, { hinweisKontoId } = {}) {
   return result.changes > 0;
 }
 
-// Same "genuine fresh start" reset as releaseJob (see its own comment above for the rationale
-// behind each field) — a job sent back to the group can be reclaimed by anyone, possibly onto an
-// entirely different Konto, so every stale konto_id/escalation/reminder trace from the attempt
-// that just got sent back must not silently survive into the next pool cycle. The three
-// pool_rueckgesendet_* columns are the one exception: those are this function's whole purpose and
-// are written to the given values, not cleared.
+// Derselbe "echte Neustart"-Reset wie bei releaseJob (die Begründung zu jedem Feld steht dort) — ein an die Gruppe
+// zurückgeschickter Vorgang kann von jeder Person neu beansprucht werden, womöglich unter einem ganz anderen Konto; jede
+// veraltete Spur von konto_id/Eskalation/Erinnerung aus dem eben zurückgeschickten Versuch darf also nicht still in den
+// nächsten Pool-Durchlauf übergehen. Die drei Spalten pool_rueckgesendet_* sind die einzige Ausnahme: sie sind der
+// ganze Zweck dieser Funktion und werden mit den übergebenen Werten geschrieben, nicht gelöscht.
+// Rückläufer: die zugewiesene Person schickt ihren Vorgang mit Bemerkung zurück in den Pool (echter Neustart wie releaseJob,
+// aber mit Rückläufer-Markierung). @returns {boolean} false, wenn er nicht mehr 'zugewiesen' und dieser Person zugewiesen war
 export function sendJobBackToGroup(db, jobId, currentZugewiesenAn, { bemerkung }) {
   const result = db
     .prepare(
@@ -476,10 +512,10 @@ export function sendJobBackToGroup(db, jobId, currentZugewiesenAn, { bemerkung }
   return result.changes > 0;
 }
 
-// Accepts both 'freigabe2' (the original Freigabe-2 rejection) and 'zugewiesen' (rejection
-// directly at the Kontierung/Freigabe-1 stage, added later — an invoice can be invalid or a
-// duplicate before anyone has even chosen a Konto for it, so waiting until Freigabe 2 to allow
-// rejecting it would be a dead end for the person doing the Kontierung).
+// Akzeptiert sowohl 'freigabe2' (die ursprüngliche Ablehnung bei Freigabe 2) als auch 'zugewiesen' (Ablehnung direkt in
+// der Kontierungs-/Freigabe-1-Phase, später ergänzt — eine Rechnung kann ungültig oder ein Duplikat sein, bevor überhaupt
+// jemand ein Konto gewählt hat; die Ablehnung erst bei Freigabe 2 zu erlauben, wäre für die kontierende Person eine Sackgasse).
+// Lehnt einen Vorgang ab (Status 'abgelehnt', mit Person und Grund). @returns {boolean} false, wenn die Phase nicht passte
 export function ablehnenJob(db, jobId, { abgelehntVon, grund }) {
   const result = db
     .prepare(
@@ -489,12 +525,13 @@ export function ablehnenJob(db, jobId, { abgelehntVon, grund }) {
   return result.changes > 0;
 }
 
-// wiederOeffnenJob deliberately does NOT clear freigabe2_eskaliert_von/-grund: if the job was
-// rejected by a stellvertreter2 who took over after a Freigabe-2 conflict escalation, that
-// conflict is still real after rework — the reopened job's next Freigabe-2 round should route
-// back to the same stellvertreter2, not silently reassign to the original (conflicted)
-// freigeber2_id. (freigabe1_eskaliert_von/-grund need no such note here: abschliessenFreigabe1
-// already clears them before a job can ever reach freigabe2/abgelehnt in the first place.)
+// wiederOeffnenJob löscht freigabe2_eskaliert_von/-grund bewusst NICHT: Wurde der Vorgang von einer Stellvertretung 2
+// abgelehnt, die nach einem Freigabe-2-Konflikt eingesprungen war, ist dieser Konflikt nach der Überarbeitung weiterhin
+// echt — die nächste Freigabe-2-Runde des wieder geöffneten Vorgangs soll wieder zur selben Stellvertretung 2 gehen und
+// nicht still zum ursprünglichen (befangenen) freigeber2_id zurückspringen. (freigabe1_eskaliert_von/-grund brauchen hier
+// keinen solchen Hinweis: abschliessenFreigabe1 löscht sie schon, bevor ein Vorgang überhaupt in freigabe2/abgelehnt landen kann.)
+// Öffnet einen abgelehnten Vorgang zur Überarbeitung wieder (zurück zu 'zugewiesen'); nur die Person, der er zugewiesen ist.
+// @returns {boolean} false, wenn er nicht (mehr) abgelehnt oder anderen Personen zugewiesen ist
 export function wiederOeffnenJob(db, jobId, personId) {
   const result = db
     .prepare(
@@ -505,6 +542,7 @@ export function wiederOeffnenJob(db, jobId, personId) {
   return result.changes > 0;
 }
 
+// Abgelehnte Vorgänge, die bei der Person (oder ihrer Vertretung) zur Überarbeitung liegen.
 export function listAbgelehntJobsForPerson(db, personId) {
   return db
     .prepare(
@@ -515,20 +553,21 @@ export function listAbgelehntJobsForPerson(db, personId) {
     .all(personId, personId);
 }
 
-// Admin-wide, unlike listAbgelehntJobsForPerson: a Portal-Admin cleaning up rejected invoices
-// needs to see all of them, not just ones assigned to (or escalated to) them personally.
+// Admin-weit, anders als listAbgelehntJobsForPerson: Ein Portal-Admin, der abgelehnte Rechnungen aufräumt, muss alle sehen,
+// nicht nur die ihm persönlich zugewiesenen oder an ihn eskalierten.
+// (siehe Kommentar oben)
 export function listAlleAbgelehntenJobs(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'abgelehnt' ORDER BY eingang_am").all();
 }
 
-// Returns the job row as it was immediately before deletion (its pdf_pfad/thumbnail_pfad/
-// dateiname are needed by the caller for file cleanup and the job_loeschungen log entry, which
-// can no longer be looked up afterwards), or null if it wasn't in status 'abgelehnt' — deletion
-// is deliberately restricted to already-rejected invoices, never an open/active one. Also
-// deletes the job's freigaben rows: they reference job_id without an enforced foreign key, but
-// leaving them behind as orphans once the job is gone serves no purpose.
-// Soft-delete: the row and its PDF/Thumbnail survive with status 'geloescht' for
-// compliance/audit purposes (see job_loeschungen) instead of being hard-deleted.
+// Liefert die Vorgangszeile so, wie sie unmittelbar vor der Löschung war (pdf_pfad/thumbnail_pfad/dateiname braucht der
+// Aufrufer für das Aufräumen der Dateien und den Eintrag in job_loeschungen, danach lassen sie sich nicht mehr nachschlagen),
+// oder null, wenn er nicht im Status 'abgelehnt' war — gelöscht werden darf bewusst nur ein bereits abgelehnter Vorgang,
+// nie ein offener/aktiver. Löscht auch die freigaben-Zeilen des Vorgangs: Sie verweisen ohne erzwungenen Fremdschlüssel auf
+// job_id, und sie als Waisen zurückzulassen, wenn der Vorgang weg ist, hat keinen Zweck.
+// Weiches Löschen: Die Zeile und ihr PDF/Thumbnail bleiben mit Status 'geloescht' für Compliance/Audit erhalten (siehe
+// job_loeschungen), statt hart gelöscht zu werden.
+// Löscht einen abgelehnten Vorgang weich (Status 'geloescht').
 export function loeschenJob(db, jobId) {
   const job = getJobById(db, jobId);
   if (!job || job.status !== 'abgelehnt') return null;
@@ -536,6 +575,7 @@ export function loeschenJob(db, jobId) {
   return job;
 }
 
+// Pool-Vorgänge, die seit mehr als `stunden` Stunden unbeansprucht sind und noch keine Erinnerung bekamen.
 export function listPoolJobsForReminder(db, stunden) {
   const schwelle = new Date(Date.now() - stunden * 60 * 60 * 1000).toISOString();
   return db
@@ -546,10 +586,12 @@ export function listPoolJobsForReminder(db, stunden) {
 }
 
 // Nur setzen, wenn noch nicht gesetzt: liefert false, wenn ein paralleler Lauf schneller war.
+// Merkt, dass die Pool-Erinnerung verschickt wurde (damit sie nur einmal kommt).
 export function markReminderGesendet(db, jobId) {
   return db.prepare('UPDATE jobs SET reminder_gesendet_at = ? WHERE id = ? AND reminder_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
+// Pool-Vorgänge, die seit mehr als `stunden` Stunden unbeansprucht sind und noch nicht eskaliert wurden.
 export function listPoolJobsForEskalation(db, stunden) {
   const schwelle = new Date(Date.now() - stunden * 60 * 60 * 1000).toISOString();
   return db
@@ -560,10 +602,12 @@ export function listPoolJobsForEskalation(db, stunden) {
 }
 
 // Nur setzen, wenn noch nicht gesetzt: liefert false, wenn ein paralleler Lauf schneller war.
+// Merkt, dass die Pool-Eskalation verschickt wurde.
 export function markEskalationGesendet(db, jobId) {
   return db.prepare('UPDATE jobs SET eskalation_gesendet_at = ? WHERE id = ? AND eskalation_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
+// Vorgänge in Freigabe 2, die seit mehr als `stunden` Stunden warten und noch keine Erinnerung bekamen.
 export function listFreigabe2JobsForReminder(db, stunden) {
   const schwelle = new Date(Date.now() - stunden * 60 * 60 * 1000).toISOString();
   return db
@@ -579,6 +623,7 @@ export function markFreigabe2ReminderGesendet(db, jobId) {
   return db.prepare('UPDATE jobs SET freigabe2_reminder_gesendet_at = ? WHERE id = ? AND freigabe2_reminder_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
+// Vorgänge in Freigabe 2, die seit mehr als `stunden` Stunden warten und noch nicht an die Admin-Gruppe eskaliert wurden.
 export function listFreigabe2JobsForEskalation(db, stunden) {
   const schwelle = new Date(Date.now() - stunden * 60 * 60 * 1000).toISOString();
   return db
@@ -594,10 +639,12 @@ export function markFreigabe2EskalationGesendet(db, jobId) {
   return db.prepare('UPDATE jobs SET freigabe2_eskalation_gesendet_at = ? WHERE id = ? AND freigabe2_eskalation_gesendet_at IS NULL').run(new Date().toISOString(), jobId).changes > 0;
 }
 
+// Von n8n abgeholte Vorgänge, die noch auf die Archivquittung warten.
 export function listAbgeholtJobs(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'abgeholt' ORDER BY id").all();
 }
 
+// Setzt einen abgeholten Vorgang auf 'archiviert' (nach der Archivquittung von n8n).
 export function archivierenJob(db, id) {
   const result = db
     .prepare("UPDATE jobs SET status = 'archiviert', archiviert_am = ? WHERE id = ? AND status = 'abgeholt'")
@@ -605,10 +652,12 @@ export function archivierenJob(db, id) {
   return result.changes > 0;
 }
 
+// Hält Zeitpunkt und Datei-Hash des RFC3161-Zeitstempels fest (danach per Trigger unveränderlich).
 export function markZeitstempelGesetzt(db, jobId, zeitpunkt, hash = null) {
   db.prepare('UPDATE jobs SET zeitstempel_gesetzt_am = ?, zeitstempel_datei_hash = ? WHERE id = ?').run(zeitpunkt, hash, jobId);
 }
 
+// "Meine Kontierungen": Vorgänge in Freigabe 1, die der Person (oder einer von ihr vertretenen Person) zugewiesen sind.
 export function listZugewiesenJobsForPerson(db, personId) {
   return db
     .prepare(
@@ -619,14 +668,14 @@ export function listZugewiesenJobsForPerson(db, personId) {
     .all(personId, personId);
 }
 
-// AND NOT (quelle = 'spesen' AND eingereicht_von = ?): a Spesen position whose submitter is
-// this Konto's own freigeber2/stellvertreter2 gets rerouted away from them at Freigabe-1
-// completion time (see spesenFreigabe1.js's "Freigeben" branch, which calls eskalierenFreigabe2
-// to hand it to the Stellvertreter2 instead) — but the submitter, still nominally matching this
-// query's freigeber2/stellvertreter2 condition on some *other* job, must never see their OWN
-// now-escalated claim listed here either. Without this, the Pool dashboard's "Meine Freigaben"
-// section would show a job that 403s the instant they click it (see freigabe2.js's loadAuthorized
-// submitter check), a dead end rather than an absent row.
+// AND NOT (quelle = 'spesen' AND eingereicht_von = ?): Eine Spesenposition, deren Einreicher:in selbst Freigeber 2 bzw.
+// Stellvertretung 2 dieses Kontos ist, wird beim Abschluss von Freigabe 1 von ihr weggeleitet (siehe den Zweig "Freigeben"
+// in spesenFreigabe1.js, der eskalierenFreigabe2 aufruft, um sie an die Stellvertretung 2 zu geben) — aber die einreichende
+// Person, die auf einem *anderen* Vorgang noch nominell zur freigeber2/stellvertreter2-Bedingung dieser Abfrage passt, darf
+// ihren EIGENEN nun eskalierten Vorgang auch hier nie aufgelistet sehen. Sonst zeigte der Bereich "Meine Freigaben" des
+// Pool-Dashboards einen Vorgang, der beim Anklicken sofort mit 403 antwortet (siehe die Einreicher-Prüfung in loadAuthorized
+// von freigabe2.js) — eine Sackgasse statt einer fehlenden Zeile.
+// "Meine Freigaben": Vorgänge in Freigabe 2, bei denen die Person (oder Stellvertretung/Umleitung) zuständig ist.
 export function listFreigabe2JobsForPerson(db, personId) {
   return db
     .prepare(
@@ -642,26 +691,23 @@ export function listFreigabe2JobsForPerson(db, personId) {
     .all(personId, personId, personId, personId);
 }
 
-// listAbgeschlossenJobsForPerson feeds the dedicated "Meine abgeschlossenen Rechnungen" page
-// (/meine-abgeschlossenen) — a person's completed invoices only ever accumulate, so it's paginated
-// rather than capped: the newest page (ORDER BY eingang_am DESC) by default, any page on request.
+// listAbgeschlossenJobsForPerson speist die eigene Seite "Meine abgeschlossenen Rechnungen" (/meine-abgeschlossenen) —
+// die abgeschlossenen Rechnungen einer Person wachsen nur, deshalb wird seitenweise geblättert statt gekappt: standardmässig
+// die neueste Seite (ORDER BY eingang_am DESC), auf Wunsch jede Seite.
 const ABGESCHLOSSEN_SEITENGROESSE = 20;
 
-// Same konto-membership logic as listFreigabe2JobsForPerson (including the
-// freigabe2_eskaliert_an_admin = 0 guard: a job that reached admin-escalation stays excluded from
-// the recused freigeber2/stellvertreter2's own lists, matching listFreigabe2JobsForPerson's
-// intent), widened to the three completed-and-beyond statuses (so it keeps listing a job after
-// n8n abholt/archiviert it, even though its PDF file is no longer available to preview/verify by
-// then) plus a direct zugewiesen_an match (the person who did the Kontierung, not necessarily the
-// Freigeber2). In practice abschliessenFreigabe2 always clears freigabe2_eskaliert_an_admin back
-// to 0 by the time a job reaches 'abgeschlossen', so this guard is defense-in-depth rather than
-// something normal completion flows can trip — but it keeps the two queries' access rules
-// identical rather than relying on that invariant holding forever.
+// Dieselbe Konto-Zugehörigkeitslogik wie listFreigabe2JobsForPerson (inklusive der Bedingung freigabe2_eskaliert_an_admin = 0:
+// ein an den Admin eskalierter Vorgang bleibt aus den eigenen Listen des befangenen freigeber2/stellvertreter2 ausgeschlossen,
+// wie es listFreigabe2JobsForPerson beabsichtigt), erweitert auf die drei Status "abgeschlossen und danach" (damit ein
+// Vorgang auch nach dem Abholen/Archivieren durch n8n gelistet bleibt, obwohl seine PDF-Datei dann nicht mehr zur Vorschau/
+// Prüfung verfügbar ist) plus einen direkten zugewiesen_an-Treffer (die Person, die kontiert hat, nicht zwingend der
+// Freigeber 2). In der Praxis setzt abschliessenFreigabe2 freigabe2_eskaliert_an_admin bis 'abgeschlossen' immer auf 0
+// zurück, die Bedingung ist also eine zusätzliche Absicherung und nichts, was normale Abschlüsse auslösen könnten — sie hält
+// aber die Zugriffsregeln beider Abfragen identisch, statt sich darauf zu verlassen, dass diese Invariante ewig hält.
 //
-// Returns { jobs, gesamtAnzahl, seite, proSeite } rather than a bare array, mirroring
-// queryGlobalAuditLog's pagination shape — a seite beyond the last real page (e.g. after some
-// jobs got archived off, or a hand-edited URL) clamps back to the last valid page instead of
-// rendering an empty page with no way back.
+// Gibt { jobs, gesamtAnzahl, seite, proSeite } statt eines nackten Arrays zurück (analog zur Seitenform von
+// queryGlobalAuditLog) — eine Seite hinter der letzten echten Seite (z. B. weil Vorgänge inzwischen archiviert wurden, oder
+// bei einer von Hand geänderten URL) wird auf die letzte gültige Seite begrenzt, statt eine leere Seite ohne Rückweg zu rendern.
 export function listAbgeschlossenJobsForPerson(db, personId, { seite = 1, proSeite = ABGESCHLOSSEN_SEITENGROESSE } = {}) {
   const seiteGewuenscht = Math.max(1, Math.trunc(seite) || 1);
   const proSeiteSicher = Math.max(1, Math.trunc(proSeite) || ABGESCHLOSSEN_SEITENGROESSE);
@@ -704,34 +750,36 @@ export function listAbgeschlossenJobsForPerson(db, personId, { seite = 1, proSei
   return { jobs, gesamtAnzahl, seite: seiteSicher, proSeite: proSeiteSicher };
 }
 
-// Both listZugewiesenJobsForPerson and listFreigabe2JobsForPerson deliberately exclude
-// admin-escalated jobs (freigabeN_eskaliert_an_admin = 1) — they're "my jobs" lists for the
-// person who was escalated away FROM, not for the admin group escalated TO. Without these two,
-// nothing in the dashboard ever lists such a job for the Portal-Admin group that a
-// SYNC-8-style second-tier escalation (see kontierung.js/freigabe2.js) is actually routed to —
-// it exists in the database and its notification email links straight to it, but there is no
-// list a Portal-Admin can browse to find it without already knowing its ID.
+// listZugewiesenJobsForPerson und listFreigabe2JobsForPerson schliessen an den Admin eskalierte Vorgänge
+// (freigabeN_eskaliert_an_admin = 1) bewusst aus — sie sind "meine Vorgänge"-Listen für die Person, von der weg eskaliert
+// wurde, nicht für die Admin-Gruppe, an die eskaliert wurde. Ohne diese beiden Funktionen würde ein solcher Vorgang im
+// Dashboard nirgends für die Portal-Admin-Gruppe aufgelistet, an die eine Eskalation der zweiten Stufe im Stil von SYNC-8
+// (siehe kontierung.js/freigabe2.js) tatsächlich geleitet wird — er existiert in der Datenbank und seine Benachrichtigungsmail
+// verlinkt direkt darauf, aber es gibt keine Liste, in der ein Portal-Admin ihn finden könnte, ohne die ID schon zu kennen.
+// (Siehe Kommentar oben) Vorgänge in Freigabe 1, die an die Admin-Gruppe eskaliert wurden.
 export function listAdminEskalierteKontierungen(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND freigabe1_eskaliert_an_admin = 1 AND quelle != 'spesen' ORDER BY eingang_am").all();
 }
 
+// Vorgänge in Freigabe 2, die an die Admin-Gruppe eskaliert wurden.
 export function listAdminEskalierteFreigaben(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 1 ORDER BY eingang_am").all();
 }
 
 // Muss exakt EFFEKTIVER_FREIGEBER2_SQL (oben) entsprechen. Die Admin-Eskalation prüfen die
 // Aufrufer selbst (sie hat Vorrang vor allem hier).
+// Effektive Freigabe-2-Person eines Vorgangs: Admin-Umleitung vor Stellvertretung 2 (nach Eskalation) vor Freigeber 2.
 export function getEffectiveFreigeber2Id(job, konto) {
   if (job.freigabe2_umgeleitet_an) return job.freigabe2_umgeleitet_an;
   return job.freigabe2_eskaliert_von ? konto.stellvertreter2_id : konto.freigeber2_id;
 }
 
-// SYNC-3: a job "stalls" when its current required actor can no longer act — deactivated or
-// no longer resolvable in ChurchTools, both set by the person sync. Checked per status: for
-// 'zugewiesen'/'abgelehnt', the actor is zugewiesen_an directly; for 'freigabe2', it's the
-// effective freigeber2, unless the job already carries SYNC-8's admin-escalation flag — an
-// admin-routed job is never "stalled" by this definition (a simultaneous outage of the entire
-// Portal-Admin group is out of scope).
+// SYNC-3: Ein Vorgang "hängt", wenn die aktuell nötige handelnde Person nicht mehr handeln kann — deaktiviert oder in
+// ChurchTools nicht mehr auflösbar, beides vom Personen-Sync gesetzt. Geprüft wird je Status: bei 'zugewiesen'/'abgelehnt'
+// ist die handelnde Person zugewiesen_an direkt; bei 'freigabe2' der effektive Freigeber 2, ausser der Vorgang trägt schon
+// das Admin-Eskalationsflag aus SYNC-8 — ein an den Admin geleiteter Vorgang "hängt" nach dieser Definition nie (ein
+// gleichzeitiger Ausfall der gesamten Portal-Admin-Gruppe ist nicht vorgesehen).
+// Vorgänge, bei denen die aktuell nötige Person nicht mehr handeln kann (deaktiviert/nicht auflösbar).
 export function listStalledJobs(db) {
   const ergebnisse = [];
 
@@ -755,9 +803,10 @@ export function listStalledJobs(db) {
   return ergebnisse;
 }
 
-// Resets a stalled 'zugewiesen'/'abgelehnt' job to 'unzugewiesen' so anyone can reclaim it —
-// nothing irreversible has happened yet at these stages (no Freigabe-1/2 approval recorded),
-// so a full reset is safe. Clears the same fields releaseJob/wiederOeffnenJob already clear.
+// Setzt einen hängenden 'zugewiesen'/'abgelehnt'-Vorgang auf 'unzugewiesen' zurück, damit ihn jede Person neu beanspruchen
+// kann — in diesen Phasen ist noch nichts Unumkehrbares passiert (keine Freigabe 1/2 verbucht), der vollständige Reset
+// ist also sicher. Löscht dieselben Felder, die releaseJob/wiederOeffnenJob schon löschen.
+// Gibt einen hängenden Vorgang ohne Zutun der Person in den Pool frei (Systemaktion des Personen-Syncs).
 export function forceReleaseJob(db, jobId) {
   const result = db
     .prepare(
@@ -775,10 +824,10 @@ export function forceReleaseJob(db, jobId) {
   return result.changes > 0;
 }
 
-// A stalled 'freigabe2' job does NOT get released to the pool — that would discard the
-// already-completed, already-recorded Freigabe-1 approval and force kontierung + Freigabe 1 to
-// be redone for no reason. Instead it gets the same admin-escalation flag SYNC-8 introduces,
-// which is the correct next legitimate actor for a job already past Freigabe 1.
+// Ein hängender 'freigabe2'-Vorgang wird NICHT in den Pool freigegeben — das würde die bereits abgeschlossene und
+// verbuchte Freigabe-1-Zustimmung verwerfen und Kontierung + Freigabe 1 ohne Grund erneut erzwingen. Stattdessen bekommt er
+// das Admin-Eskalationsflag aus SYNC-8, die richtige nächste Instanz für einen Vorgang, der Freigabe 1 schon hinter sich hat.
+// Eskaliert einen hängenden Freigabe-2-Vorgang an die Admin-Gruppe (Systemaktion des Personen-Syncs).
 export function forceEskalierenFreigabe2AnAdmin(db, jobId) {
   const result = db
     .prepare("UPDATE jobs SET freigabe2_eskaliert_an_admin = 1, freigabe2_umgeleitet_an = NULL WHERE id = ? AND status = 'freigabe2' AND freigabe2_eskaliert_an_admin = 0")
@@ -789,6 +838,7 @@ export function forceEskalierenFreigabe2AnAdmin(db, jobId) {
 // Admin-Eingriff (/admin/vorgaenge): übergibt einen laufenden Vorgang an zielId. Pro Phase genau
 // die Felder, die die Spec nennt; die WHERE-Klausel auf den Status schützt gegen einen Wechsel
 // zwischen Prüfung und Update. Prüfung von Ziel und Stand macht services/vorgangUmhaengen.js.
+// Admin-Eingriff: übergibt einen Vorgang in `status` an die Person `zielId` (siehe Kommentar unten).
 export function adminUmhaengen(db, jobId, { status, zielId }) {
   const jetzt = new Date().toISOString();
   const statements = {
@@ -823,23 +873,24 @@ export function adminUmhaengen(db, jobId, { status, zielId }) {
   return db.prepare(sql).run(...params).changes > 0;
 }
 
-// The parent stays in the table (never deleted) as a historical reference — its own approval
-// chain is superseded by its split children, so it must leave every active list (Pool,
-// Kontierung, Freigabe 1/2) without pretending it was ever itself approved or rejected.
+// Der Elternvorgang bleibt als historischer Verweis in der Tabelle (wird nie gelöscht) — seine eigene Freigabekette wird
+// durch seine Teilvorgänge ersetzt, er muss also aus allen aktiven Listen (Pool, Kontierung, Freigabe 1/2) verschwinden,
+// ohne so zu tun, als wäre er je selbst freigegeben oder abgelehnt worden.
+// Markiert den Elternvorgang als aufgesplittet (siehe Kommentar oben). @returns {boolean} false, wenn er nicht mehr 'zugewiesen' war
 export function markJobAufgesplittet(db, jobId) {
   const result = db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ? AND status = 'zugewiesen'").run(jobId);
   return result.changes > 0;
 }
 
-// Each split line becomes its own fully independent job — own file, own approval chain, own
-// lifecycle (so deleting/rejecting one split part can never affect another). eingang_am, quelle,
-// absender, dateiname, zahlungsziel, rechnungsnummer, lieferant, kreditor_id and the QR-decode
-// results are carried over from the parent; konto_id, betrag, zugewiesen_an are specific to this
-// one split line.
-// belegSeitenzahl: how many pages the (optional) attached Beleg contributed to pdfPfad, recorded
-// here at Aufsplitten time rather than re-derived later — see countBelegSeiten (belegAnhaengen.js)
-// and haengeBelegSeitenAn (splitGruppenExport.js) for why a later page-count delta cannot answer
-// this question any more once the child has been individually stamped.
+// Jede Aufteilungszeile wird ein völlig eigenständiger Vorgang — eigene Datei, eigene Freigabekette, eigener Lebenslauf
+// (so kann das Löschen/Ablehnen eines Teils nie einen anderen beeinflussen). eingang_am, quelle, absender, dateiname,
+// zahlungsziel, rechnungsnummer, lieferant, kreditor_id und die QR-Dekodierergebnisse werden vom Elternvorgang übernommen;
+// konto_id, betrag, zugewiesen_an gehören nur zu dieser einen Aufteilungszeile.
+// belegSeitenzahl: wie viele Seiten der (optionale) angehängte Beleg zu pdfPfad beigetragen hat, hier beim Aufsplitten
+// festgehalten statt später abgeleitet — siehe countBelegSeiten (belegAnhaengen.js) und haengeBelegSeitenAn
+// (splitGruppenExport.js), warum eine spätere Seitenzahl-Differenz diese Frage nicht mehr beantworten kann, sobald das
+// Kind einzeln gestempelt wurde.
+// @returns {number} id des neuen Teilvorgangs ('zugewiesen', wenn ein Konto gewählt wurde, sonst 'unzugewiesen')
 export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId, hinweisKontoId, betrag, zugewiesenAn, position, belegSeitenzahl, typ, beschreibung, kkEigenbelegGrund }) {
   const status = kontoId ? 'zugewiesen' : 'unzugewiesen';
   const result = db
@@ -884,6 +935,7 @@ export function createSplitJob(db, parentJob, { pdfPfad, thumbnailPfad, kontoId,
   return Number(result.lastInsertRowid);
 }
 
+// Legt eine Spesenposition an (quelle 'spesen', startet bei 'zugewiesen' beim Freigeber 1 des Kontos). @returns {number} id
 export function createSpesenPosition(
   db,
   {
@@ -924,28 +976,27 @@ export function createSpesenPosition(
       zugewiesenAn,
       freigabe1EskaliertVon ?? null,
       freigabe1Eskalationsgrund ?? null,
-      // Paperless' Date custom field wants the Einreichedatum (submission date) for a Spesen
-      // position — not auslage_datum (when the expense happened). eingangAm is a full ISO
-      // timestamp (new Date().toISOString(), see spesen.js), so only its date portion is kept;
-      // Paperless rejects anything but a bare YYYY-MM-DD for a Date custom field. See
-      // GET /abholbereit (n8n/jobs.js), which falls back to zahlungsziel for a non-Spesen job.
+      // Das Date-Feld von Paperless will bei einer Spesenposition das Einreichedatum — nicht auslage_datum (wann die Auslage
+      // anfiel). eingangAm ist ein vollständiger ISO-Zeitstempel (new Date().toISOString(), siehe spesen.js), deshalb wird nur
+      // der Datumsteil behalten; Paperless lehnt für ein Date-Feld alles ausser einem reinen YYYY-MM-DD ab. Siehe GET /abholbereit
+      // (n8n/jobs.js), das bei einem Nicht-Spesen-Vorgang auf zahlungsziel zurückfällt.
       eingangAm.slice(0, 10)
     );
   return Number(result.lastInsertRowid);
 }
 
-// Accumulates onto beleg_seitenzahl rather than overwriting it -- mergeBelegInPdf always
-// APPENDS a Beleg's pages after whatever is already on the PDF (never inserts), so if a job
-// already has N recorded Beleg pages (e.g. from its own Aufsplitten-time upload) and gets
-// another Beleg merged in later (Kontierung/Ablehnung-rework), the total grows by exactly the
-// new Beleg's page count. This invariant only holds because every mergeBelegFuerJob call
-// happens strictly before a job's own Freigabe-2 stamping (the one-time, always-last append) --
-// no route merges a Beleg into an already-'abgeschlossen' job.
+// Addiert auf beleg_seitenzahl, statt es zu überschreiben — mergeBelegInPdf HÄNGT die Seiten eines Belegs immer hinter das
+// an, was schon im PDF steht (fügt nie ein). Hat ein Vorgang also schon N erfasste Belegseiten (z. B. vom eigenen Upload beim
+// Aufsplitten) und bekommt später einen weiteren Beleg zugemergt (Kontierung/Überarbeitung nach Ablehnung), wächst die
+// Summe genau um die Seitenzahl des neuen Belegs. Diese Invariante hält nur, weil jeder Aufruf von mergeBelegFuerJob strikt
+// vor dem eigenen Freigabe-2-Stempeln des Vorgangs passiert (dem einmaligen, immer letzten Anhängen) — keine Route mergt
+// einen Beleg in einen bereits 'abgeschlossenen' Vorgang.
 export function addBelegSeiten(db, jobId, zusatzSeitenzahl) {
   if (!zusatzSeitenzahl) return;
   db.prepare('UPDATE jobs SET beleg_seitenzahl = COALESCE(beleg_seitenzahl, 0) + ? WHERE id = ?').run(zusatzSeitenzahl, jobId);
 }
 
+// Alle Teilvorgänge eines Elternvorgangs (auch gelöschte und abgelehnte).
 export function listSplitKinder(db, parentJobId) {
   return db.prepare('SELECT * FROM jobs WHERE aufgesplittet_von = ? ORDER BY id').all(parentJobId);
 }
@@ -956,6 +1007,8 @@ export function listSplitKinder(db, parentJobId) {
 // die normale Kontierung claimt und sie danach den ganz normalen Weg bis 'abgeschlossen' geht.
 // Bis dahin zählt sie ganz normal als "noch offen", genau wie jede andere nicht-abgeschlossene
 // Zeile -- nur eine mit status='geloescht' aufgelöste (vormals abgelehnte) Zeile wird ignoriert.
+// @returns {{vollstaendig: boolean, blockiert: boolean, kinder: object[]}} vollständig = alle Teile abgeschlossen;
+// blockiert = mindestens ein Teil ist abgelehnt (die Gruppe kann dann nicht exportiert werden).
 export function pruefeSplitGruppenVollstaendigkeit(db, parentJobId) {
   const kinder = listSplitKinder(db, parentJobId).filter((k) => k.status !== 'geloescht');
   if (kinder.length === 0) return { vollstaendig: false, blockiert: false, kinder: [] };
@@ -964,11 +1017,12 @@ export function pruefeSplitGruppenVollstaendigkeit(db, parentJobId) {
   return { vollstaendig, blockiert, kinder };
 }
 
-// Conditional on gruppe_pdf_pfad still being NULL, and reports (boolean) whether it actually
-// wrote: pruefeUndFinalisiereSplitGruppe's own "already exported?" early return happens several
-// awaits before this UPDATE, so two concurrent trigger points (e.g. the nachhol-Cron-Job and a
-// Freigabe-2-Abschluss) can both get past it. The loser of that race must not overwrite the
-// winner's merged document. The caller also validates the source state inside its transaction.
+// Bedingt darauf, dass gruppe_pdf_pfad noch NULL ist, und meldet (Boolean), ob tatsächlich geschrieben wurde:
+// Der frühe Rücksprung "schon exportiert?" in pruefeUndFinalisiereSplitGruppe liegt mehrere awaits vor diesem UPDATE,
+// zwei gleichzeitige Auslöser (z. B. der Nachhol-Cron-Job und ein Freigabe-2-Abschluss) können also beide daran vorbeikommen.
+// Wer das Rennen verliert, darf das zusammengeführte Dokument des Gewinners nicht überschreiben. Der Aufrufer prüft den
+// Ausgangszustand zusätzlich innerhalb seiner Transaktion.
+// Hält das zusammengeführte Gruppen-PDF samt Zeitstempel- und Hash-Daten am Elternvorgang fest (siehe Kommentar oben).
 export function markGruppeExportiert(db, parentJobId, { pdfPfad, zeitstempelGesetztAm, zeitstempelDateiHash, finalDateiHash = null, gruppeFreigabeSnapshot = null }) {
   const result = db
     .prepare(
@@ -978,16 +1032,16 @@ export function markGruppeExportiert(db, parentJobId, { pdfPfad, zeitstempelGese
   return result.changes > 0;
 }
 
-// Mirrors listAbholbereitJobs's stale/refetch semantics, scoped to Splitgruppen-Elternjobs
+// Entspricht der stale/refetch-Semantik von listAbholbereitJobs, begrenzt auf Splitgruppen-Elternjobs
 // (status bleibt 'aufgesplittet', nie 'abgeschlossen' -- daher eine eigene Query statt eines
 // Filters auf listAbholbereitJobs).
-// gruppe_abgeholt_am IS NULL is this listing's terminal-state gate, standing in for the
-// status='abgeschlossen' -> 'abgeholt' flip that retires an ordinary Job from
-// listAbholbereitJobs: an Elternjob keeps status 'aufgesplittet' forever, so without this the
-// stale-Fenster alone would re-offer an already collected group to n8n every 15 minutes for good.
-// aufgesplittet_von IS NULL mirrors listAbholbereitJobs's identical guard: a Splitkind that was
-// itself split further is part of an outer group's document and must never be offered to n8n as
-// a standalone top-level group.
+// gruppe_abgeholt_am IS NULL ist die Endzustandssperre dieser Liste und ersetzt den Wechsel status='abgeschlossen' ->
+// 'abgeholt', der einen gewöhnlichen Vorgang aus listAbholbereitJobs nimmt: Ein Elternjob behält den Status 'aufgesplittet'
+// für immer, ohne diese Bedingung würde allein das stale-Fenster eine bereits abgeholte Gruppe alle 15 Minuten dauerhaft
+// erneut an n8n anbieten.
+// aufgesplittet_von IS NULL entspricht der identischen Bedingung in listAbholbereitJobs: Ein Splitkind, das selbst weiter
+// aufgeteilt wurde, gehört zum Dokument einer äusseren Gruppe und darf nie als eigenständige oberste Gruppe an n8n
+// angeboten werden.
 export function listAbholbereitGruppen(db, staleAfterMs = 15 * 60 * 1000, nurMitZeitstempel = false, istExportierbar = () => true) {
   const staleThreshold = new Date(Date.now() - staleAfterMs).toISOString();
   const zeitstempelBedingung = nurMitZeitstempel ? ' AND gruppe_zeitstempel_gesetzt_am IS NOT NULL' : ` AND (gruppe_zeitstempel_gesetzt_am IS NOT NULL OR (zeitstempel_erforderlich = 0 AND NOT EXISTS (
@@ -1009,6 +1063,7 @@ export function listAbholbereitGruppen(db, staleAfterMs = 15 * 60 * 1000, nurMit
   return rows;
 }
 
+// true, wenn für den Vorgang bereits ein zusammengeführtes Gruppen-PDF vorliegt (Elternvorgang einer exportierten Splitgruppe).
 export function istGruppenElternjob(db, id) {
   const job = getJobById(db, id);
   return Boolean(job && job.gruppe_pdf_pfad);
@@ -1021,6 +1076,7 @@ export function istGruppenElternjob(db, id) {
 // Elternjob-Status ('aufgesplittet') selbst nie erreicht. Damit ist der Aufruf idempotent wie
 // confirmAbholung: ein zweiter Aufruf liefert null (und der n8n-Route damit ihren bestehenden
 // 409-Pfad), statt bereits gelöschte Dateien erneut zur Abholung zu bestätigen.
+// (Siehe Kommentar) Bestätigt die Abholung einer ganzen Splitgruppe durch n8n.
 export function confirmGruppenAbholung(db, parentJobId, nurMitZeitstempel = false) {
   const parent = getJobById(db, parentJobId);
   if (!parent || !parent.gruppe_pdf_pfad || parent.gruppe_abgeholt_am) return null;
@@ -1039,10 +1095,12 @@ export function confirmGruppenAbholung(db, parentJobId, nurMitZeitstempel = fals
 // Arbeitsliste für den split-gruppen-nachholen Cron-Job: Elternjobs, deren Splitgruppe noch nicht
 // gemergt wurde (unabhängig davon, ob sie schon vollständig ist -- die Vollständigkeitsprüfung
 // passiert im Aufrufer, pruefeUndFinalisiereSplitGruppe).
+// (Siehe Kommentar) Elternvorgänge, deren Gruppe noch nicht zusammengeführt wurde.
 export function listSplitGruppenAusstehend(db) {
   return db.prepare("SELECT * FROM jobs WHERE status = 'aufgesplittet' AND gruppe_pdf_pfad IS NULL").all();
 }
 
+// Spesenpositionen, die der Person direkt zur Freigabe 1 zugewiesen sind (ohne an den Admin eskalierte).
 export function listSpesenFreigabe1JobsForPerson(db, personId) {
   return db
     .prepare(
@@ -1051,10 +1109,12 @@ export function listSpesenFreigabe1JobsForPerson(db, personId) {
     .all(personId);
 }
 
+// Alle Spesenpositionen, die die Person selbst eingereicht hat ("Meine Spesen").
 export function listSpesenForEinreicher(db, personId) {
   return db.prepare("SELECT * FROM jobs WHERE quelle = 'spesen' AND eingereicht_von = ? ORDER BY eingang_am DESC").all(personId);
 }
 
+// Spesenpositionen in Freigabe 1, die an die Admin-Gruppe eskaliert wurden.
 export function listAdminEskalierteSpesenFreigaben(db) {
   return db
     .prepare("SELECT * FROM jobs WHERE status = 'zugewiesen' AND quelle = 'spesen' AND freigabe1_eskaliert_an_admin = 1 ORDER BY eingang_am")
@@ -1064,6 +1124,7 @@ export function listAdminEskalierteSpesenFreigaben(db) {
 // Markiert eine Abrechnung als "Kreditkartenabrechnung dieser Karte" und übergibt sie der
 // verantwortlichen Person. ausStatus ist 'unzugewiesen' (aus dem Pool) oder 'zugewiesen' (aus der
 // Kontierung) -- die WHERE-Bedingung schützt gegen einen parallelen Vorgang auf demselben Job.
+// (Siehe Kommentar) Markiert einen Vorgang als Kreditkartenabrechnung. @returns {boolean} false bei parallelem Statuswechsel
 export function markiereJobAlsKkAbrechnung(db, jobId, { kreditkarteId, verantwortlichId, ausStatus }) {
   const result = db
     .prepare(
@@ -1077,6 +1138,7 @@ export function markiereJobAlsKkAbrechnung(db, jobId, { kreditkarteId, verantwor
   return result.changes > 0;
 }
 
+// Macht die Markierung als Kreditkartenabrechnung rückgängig (Karte und Markierungszeiten werden geleert; der Status bleibt 'zugewiesen').
 export function hebeKkMarkierungAuf(db, jobId) {
   const result = db
     .prepare("UPDATE jobs SET kreditkarte_id = NULL, kk_markiert_am = NULL, kk_erinnert_am = NULL WHERE id = ? AND status = 'zugewiesen' AND kreditkarte_id IS NOT NULL")
@@ -1093,6 +1155,7 @@ export function setKkAbrechnungKopfdaten(db, jobId, { kreditorId, lieferant, rec
   );
 }
 
+// true, wenn der Person eine zugewiesene (markierte) Abrechnung dieser Karte zum Abgleich vorliegt.
 export function hatZugewieseneKkAbrechnungFuer(db, kreditkarteId, personId) {
   return Boolean(
     db.prepare("SELECT 1 FROM jobs WHERE kreditkarte_id = ? AND status = 'zugewiesen' AND zugewiesen_an = ? LIMIT 1").get(kreditkarteId, personId)
@@ -1103,7 +1166,7 @@ export function hatZugewieseneKkAbrechnungFuer(db, kreditkarteId, personId) {
 // Kreditkartenabrechnung, die seit der Markierung (kk_markiert_am) die Schwelle überschritten hat
 // und noch nicht abgeglichen wurde (Status bleibt 'zugewiesen', bis der Abgleich sie abschliesst),
 // UND seit der letzten Erinnerung (falls je eine verschickt wurde) mindestens ein weiteres
-// Intervall vergangen ist -- mirrors listKkBelegeFuerErinnerung's gleiches Muster.
+// Intervall vergangen ist -- gleiches Muster wie listKkBelegeFuerErinnerung.
 export function listKkAbrechnungenFuerErinnerung(db, schwelleIso) {
   return db
     .prepare(
@@ -1114,6 +1177,7 @@ export function listKkAbrechnungenFuerErinnerung(db, schwelleIso) {
     .all(schwelleIso, schwelleIso);
 }
 
+// Merkt den Zeitpunkt der letzten Erinnerung zur Abrechnung.
 export function markKkAbrechnungErinnert(db, jobId) {
   db.prepare('UPDATE jobs SET kk_erinnert_am = ? WHERE id = ?').run(new Date().toISOString(), jobId);
 }

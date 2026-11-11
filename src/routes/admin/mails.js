@@ -1,3 +1,5 @@
+// Admin → Mail-Protokoll (`/admin/mails`, Recht `mails_einsehen`, docs/admin-bereich.md): alle versendeten, geplanten und fehlgeschlagenen Mails; fehlgeschlagene lassen sich erneut versenden.
+
 import { Router } from 'express';
 import { istWartungsmodusAktiv } from '../../services/wartungsmodus.js';
 import { listMailLog, getMailLogById } from '../../db/mailLogRepo.js';
@@ -8,10 +10,12 @@ import { asyncHandler } from '../../middleware/asyncHandler.js';
 export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // GET /admin/mails – das Protokoll (neueste zuerst).
   router.get('/', (req, res) => {
     res.render('admin/mails', { mails: listMailLog(db), gespeichert: req.query.gespeichert === '1', zurueckgehalten: req.query.zurueckgehalten === '1' });
   });
 
+  // POST /admin/mails/:id/erneut-versenden – sendet eine protokollierte Mail unverändert nochmals (sofort, nie gebündelt).
   router.post('/:id/erneut-versenden', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       // Wartungsmodus: nichts versenden und keine neue Zeile anlegen.

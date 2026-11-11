@@ -2,6 +2,7 @@
 // Die ersten Verweigerungen je Fenster und Schluessel stehen als unveraenderliche Ereignisse in
 // audit_ereignisse; diese Tabelle zaehlt nur das darueber hinausgehende Volumen. Die Zaehler sind
 // bewusst veraenderbar (Inkrement) und deshalb kein Manipulationsnachweis.
+// Tabelle `audit_zugriff_drosselung` und der Index für die Abfrage der Zugriffsverweigerungen.
 export function migrateZugriffsAuditSchema(db) {
   db.exec('SAVEPOINT zugriffs_audit_schema');
   try {

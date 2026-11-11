@@ -1,3 +1,5 @@
+// Rapporte (nur zur Kenntnis, docs/rechnungs-workflow.md Abschnitt 9; Logik: services/rapporte.js). Zugang: angemeldet; die Sichtberechtigung je Rapport prüft `ladeRapport`.
+
 import { Router } from 'express';
 import { getJobById } from '../db/jobsRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -30,6 +32,7 @@ export function createRapporteRouter({ db, config, csrfProtection = (req, res, n
     return job;
   }
 
+  // GET /rapporte/:id – Detailseite: Empfängerstand, PDF-Vorschau (wer sie sehen darf), Kommentare und Knöpfe "Zur Kenntnis genommen" bzw. "Markierung aufheben".
   router.get('/:id', (req, res) => {
     const job = ladeRapport(req, res);
     if (!job) return;
@@ -64,6 +67,7 @@ export function createRapporteRouter({ db, config, csrfProtection = (req, res, n
     });
   });
 
+  // POST /rapporte/:id/bestaetigen – die angemeldete Empfänger:in bestätigt die Kenntnisnahme (schliesst den Rapport ab, wenn niemand mehr offen ist).
   router.post('/:id/bestaetigen', csrfProtection, asyncHandler(async (req, res) => {
     const job = ladeRapport(req, res);
     if (!job) return;

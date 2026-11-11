@@ -1,3 +1,7 @@
+// Spesen einreichen (`/spesen/neu`, `POST /spesen`, docs/spesen-einreichung.md): eine Person reicht eine Abrechnung mit mehreren Positionen (Konto, Betrag, Datum, Zweck, Beleg) ein. Jede Position
+// wird ein eigener Vorgang (quelle 'spesen') beim Freigeber 1 des Kontos. Reicht die Person selbst als Freigeber 1 ein, geht die Position als Interessenskonflikt an die Stellvertretung. Zugang: angemeldet;
+// bei deaktiviertem Spesenmodul 403.
+
 import { Router } from 'express';
 import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
@@ -22,10 +26,8 @@ const MAX_POSITIONEN = 25;
 
 const uploadBelege = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BELEG_SIZE, files: MAX_POSITIONEN } });
 
-// A Spesen-Beleg upload is always turned into a real PDF by buildBelegPdf, regardless of whether
-// it arrived as PDF/PNG/JPEG — so the stored download filename must always carry a .pdf extension
-// too, otherwise an image upload keeps its original .jpg/.png name even though the served bytes
-// are now a PDF.
+// Ein Spesenbeleg-Upload wird von buildBelegPdf immer zu einem echten PDF, egal ob er als PDF/PNG/JPEG ankam — der gespeicherte Download-Dateiname muss also immer ebenfalls eine .pdf-Endung tragen,
+// sonst behält ein Bild-Upload seinen ursprünglichen Namen .jpg/.png, obwohl die ausgelieferten Bytes jetzt ein PDF sind.
 function mitPdfEndung(originalname) {
   return `${originalname.replace(/\.[^./]+$/, '')}.pdf`;
 }
@@ -40,6 +42,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
     next();
   });
 
+  // GET /spesen/neu – das Formular (zwei leere Positionen).
   router.get('/neu', (req, res) => {
     res.render('spesen-neu', {
       alleKonten: filterKontenFuerTyp(listKonten(db), 'rechnung'),
@@ -48,10 +51,9 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
     });
   });
 
+  // POST /spesen – prüft alle Positionen (Konto, Betrag, Datum nicht in der Zukunft, Zweck, Beleg PDF/PNG/JPEG), legt Abrechnung und Positionen in einer Transaktion an und benachrichtigt die Zuständigen.
   router.post('/', (req, res, next) => {
-    // multer must run before csrfProtection: CSRF validation reads req.body._csrf, which only
-    // exists once multer has parsed the multipart body — same ordering kontierung.js already
-    // uses for its own multipart POST routes.
+    // multer muss vor csrfProtection laufen: Die CSRF-Prüfung liest req.body._csrf, das erst existiert, wenn multer den multipart-Body geparst hat — gleiche Reihenfolge wie bei den eigenen multipart-POST-Routen in kontierung.js.
     mitAuditKontext(uploadBelege.any())(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
@@ -64,10 +66,8 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
           const auslageDaten = [].concat(req.body.posAuslageDatum || []);
           const beschreibungen = [].concat(req.body.posBeschreibung || []);
 
-          // Each row's Beleg input is renamed to a positional fieldname (posBeleg_<i>) by the
-          // page's own JS right before submit — same trick kontierung-aufsplitten.ejs already
-          // uses for its own per-row optional file, needed here because a plain shared fieldname
-          // would silently misalign once any row's <input type="file"> submits nothing at all.
+          // Das Beleg-Eingabefeld jeder Zeile wird von der Seite selbst unmittelbar vor dem Absenden in einen positionsbezogenen Feldnamen (posBeleg_<i>) umbenannt — derselbe Kniff, den kontierung-aufsplitten.ejs für seine eigene optionale Datei je Zeile nutzt;
+          // hier nötig, weil ein einfacher gemeinsamer Feldname sich still verschöbe, sobald das <input type="file"> irgendeiner Zeile gar nichts absendet.
           const belegByIndex = new Map();
           for (const file of req.files || []) {
             const match = /^posBeleg_(\d+)$/.exec(file.fieldname);
@@ -82,9 +82,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
             beleg: belegByIndex.get(i) || null,
           }));
 
-          // A multer error (oversized Beleg, too many files) must not discard the whole
-          // submission with a generic 500 — fold it into the same 400 re-render as every other
-          // validation failure below, mirroring kontierung.js's identical uploadErr handling.
+          // Ein multer-Fehler (zu grosser Beleg, zu viele Dateien) darf nicht die ganze Einreichung mit einer allgemeinen 500 verwerfen — er wird in dieselbe 400-Neudarstellung gefaltet wie jeder andere Validierungsfehler unten, entsprechend der identischen uploadErr-Behandlung in kontierung.js.
           if (uploadErr) {
             return res.status(400).render('spesen-neu', {
               alleKonten,
@@ -151,8 +149,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
             return res.status(400).render('spesen-neu', { alleKonten, values: { titel: req.body.titel || '', positionen }, errors });
           }
 
-          // File I/O happens before the DB transaction (mirrors kontierung.js's Aufsplitten
-          // handler): better-sqlite3-style synchronous transactions can't hold an await open.
+          // Datei-I/O passiert vor der Datenbanktransaktion (wie im Aufsplitten-Handler von kontierung.js): synchrone Transaktionen im Stil von better-sqlite3 können ein await nicht offen halten.
           mkdirSync(config.jobsDir, { recursive: true });
           const vorbereitetePositionen = [];
           for (const pos of aufgeloestePositionen) {

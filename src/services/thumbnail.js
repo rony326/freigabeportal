@@ -1,15 +1,17 @@
+// Vorschaubild (PNG) der ersten PDF-Seite mit mupdf.
+
 import * as mupdf from 'mupdf';
 
 const THUMBNAIL_WIDTH_PX = 200;
 
-// Ceiling on the total number of pixels rasterized for one page, regardless of how the source PDF
-// declares its MediaBox. Same defense as qrBillScan.js's MAX_SCAN_PIXELS: without it, a PDF with a
-// pathological narrow/tall page (reachable here from untrusted attachments ingested via
-// POST /n8n/jobs) lets `scale = THUMBNAIL_WIDTH_PX / width` blow the height up to match, producing
-// an arbitrarily large in-memory pixmap. A 200px-wide A4 thumbnail is ~200 x ~283 ≈ 57K px; this cap
-// gives generous headroom for unusual-but-legitimate page shapes while still bounding worst case.
+// Obergrenze für die Gesamtzahl der je Seite gerasterten Pixel, egal wie das Quell-PDF seine MediaBox angibt. Gleiche Absicherung wie
+// MAX_SCAN_PIXELS in qrBillScan.js: Ohne sie lässt ein PDF mit pathologisch schmaler/hoher Seite (hier über nicht vertrauenswürdige
+// Anhänge aus POST /n8n/jobs erreichbar) `scale = THUMBNAIL_WIDTH_PX / width` die Höhe entsprechend aufblähen und ein beliebig grosses
+// Pixmap im Speicher erzeugen. Ein A4-Thumbnail mit 200 px Breite hat ca. 200 x ~283 ≈ 57'000 px; diese Grenze lässt reichlich Spielraum
+// für ungewöhnliche, aber legitime Seitenformen und begrenzt trotzdem den schlimmsten Fall.
 const MAX_THUMBNAIL_PIXELS = 2_000_000;
 
+// @param {Buffer} pdfBuffer  @returns {Buffer} PNG (200 px Breite, durch MAX_THUMBNAIL_PIXELS begrenzt); wirft, wenn sich das PDF nicht öffnen lässt
 export function renderFirstPageThumbnail(pdfBuffer) {
   let doc;
   try {

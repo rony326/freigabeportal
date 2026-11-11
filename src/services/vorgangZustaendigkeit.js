@@ -1,11 +1,14 @@
+// Wer ist bei einem laufenden Vorgang jetzt zuständig (Pool, Person, Admin-Gruppe)?
 import { getEffectiveFreigeber2Id } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 
+// Status, in denen ein Vorgang noch läuft (Admin → Laufende Vorgänge, Umhängen, Kommentare).
 export const LAUFENDE_STATUS = ['unzugewiesen', 'zugewiesen', 'freigabe2', 'abgelehnt', 'kenntnisnahme'];
 
 // Wer muss bei diesem Job jetzt handeln? Spiegelt die Autorisierung der Workflow-Seiten
 // (kontierungZugriff.js, ablehnung.js, freigabe2.js), ohne Ferienvertretung -- die kommt additiv
 // dazu und ändert die Zuständigkeit nicht.
+// @returns {{art: 'pool'|'person'|'admin'|'keine', personId: string|null}} wer jetzt handeln muss
 export function ermittleZustaendigkeit(db, job) {
   if (job.status === 'unzugewiesen') return { art: 'pool', personId: null };
   if (job.status === 'zugewiesen' || job.status === 'abgelehnt') {
@@ -22,6 +25,7 @@ export function ermittleZustaendigkeit(db, job) {
 
 // Kompakter Fingerabdruck des Stands, den der Admin im Formular gesehen hat. Ändert sich Status
 // oder zuständige Person bis zum Absenden, passt der Token nicht mehr.
+// (Siehe Kommentar oben.)
 export function standToken(job, zustaendigkeit) {
   return `${job.status}|${zustaendigkeit.art}|${zustaendigkeit.personId ?? ''}`;
 }

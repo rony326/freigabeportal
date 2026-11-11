@@ -1,3 +1,6 @@
+// Kreditkartenbelege der Mitarbeitenden (`/kreditkarte`, docs/kreditkarten-belege.md): Beleg vorab hochladen (Karte, Betrag, Kaufdatum, Beschreibung, optional Konto), eigene Belege ansehen/bearbeiten/verwerfen
+// und Entwürfe aus dem Mail-Eingang ergänzen. Der Abgleich mit der Monatsabrechnung steht in routes/kkAbgleich.js. Zugang: angemeldet; bei deaktiviertem Modul 403. Rechte: services/kkRechte.js.
+
 import { Router } from 'express';
 import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
@@ -19,6 +22,7 @@ import { asyncCallback } from '../middleware/asyncHandler.js';
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 const uploadBeleg = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BELEG_SIZE, files: 1 } });
 
+// Heutiges Datum (UTC, YYYY-MM-DD).
 function heute() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -63,6 +67,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     };
   }
 
+  // Prüft den Upload (PDF/PNG/JPEG anhand der Dateikennung). @returns {{mimetype?: string, error?: string}}
   function pruefeDatei(file, pflicht) {
     if (!file) return pflicht ? { error: 'Bitte einen Beleg hochladen.' } : { mimetype: null };
     const mimetype = detectBelegMimetype(file.buffer);
@@ -70,6 +75,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     return { mimetype };
   }
 
+  // Rendert die Übersicht (Formular, offene Belege, Entwürfe, erledigte Belege, Belege der verantwortlichen Karten).
   function renderSeite(req, res, status, { values = {}, errors = [] } = {}) {
     const id = personId(req);
     const meine = listKkBelegeFuerPerson(db, id);
@@ -87,11 +93,13 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     });
   }
 
+  // GET /kreditkarte – Übersicht und Erfassungsformular.
   router.get('/', (req, res) => {
     if (!modulAktiv()) return res.status(403).render('error', { message: 'Die Kreditkarten-Belege sind derzeit deaktiviert.' });
     renderSeite(req, res, 200);
   });
 
+  // POST /kreditkarte/belege – neuen Beleg erfassen (Upload, Prüfung, Datei als PDF + Thumbnail speichern, Ereignis 'kk_beleg_erfasst').
   router.post('/belege', (req, res, next) => {
     mitAuditKontext(uploadBeleg.single('beleg'))(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
@@ -120,6 +128,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     });
   });
 
+  // Lädt einen Beleg, den die Person bearbeiten darf (sonst 403 gerendert und null geliefert).
   function ladeBearbeitbarenBeleg(req, res) {
     const beleg = getKkBelegById(db, Number(req.params.id));
     if (!beleg || !darfBelegBearbeiten(db, beleg, personId(req))) {
@@ -145,6 +154,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     res.status(status).render('kreditkarte-beleg-bearbeiten', { beleg, karten, alleKonten: listKonten(db), personen, values, errors });
   }
 
+  // GET /kreditkarte/belege/:id/bearbeiten – Bearbeitungsformular (auch zum Ergänzen eines Mail-Entwurfs).
   router.get('/belege/:id/bearbeiten', (req, res) => {
     const beleg = ladeBearbeitbarenBeleg(req, res);
     if (!beleg) return;
@@ -154,6 +164,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     }, []);
   });
 
+  // POST /kreditkarte/belege/:id – Beleg ändern oder Entwurf ergänzen (macht ihn zu 'offen'); optional neue Datei.
   router.post('/belege/:id', (req, res, next) => {
     mitAuditKontext(uploadBeleg.single('beleg'))(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
@@ -197,6 +208,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     });
   });
 
+  // POST /kreditkarte/belege/:id/verwerfen – Beleg mit Grund verwerfen (nur solange offen/Entwurf).
   router.post('/belege/:id/verwerfen', csrfProtection, (req, res) => {
     const beleg = ladeBearbeitbarenBeleg(req, res);
     if (!beleg) return;
@@ -209,6 +221,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     res.redirect('/kreditkarte');
   });
 
+  // Liefert PDF oder Thumbnail eines Belegs aus, wenn die Person ihn sehen darf (kkRechte.darfBelegSehen).
   function streamDatei(req, res, feld, contentType) {
     const beleg = getKkBelegById(db, Number(req.params.id));
     if (!beleg || !darfBelegSehen(db, config, beleg, req.currentPerson)) return res.status(404).json({ error: 'Nicht gefunden.' });
@@ -221,10 +234,8 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     }
     const stream = createReadStream(pfad);
     stream.on('error', () => {
-      // Mirrors downloads.js's error handler: a stream failure that occurs before any bytes
-      // were sent (e.g. the file vanished between the existsSync check above and this read)
-      // must still produce a clean JSON 404 rather than a half-written/hung response — once
-      // headers are already sent there is nothing left to do but abort the connection.
+      // Entspricht dem Fehlerhandler in downloads.js: Ein Stream-Fehler, der auftritt, bevor Bytes gesendet wurden (z. B. weil die Datei zwischen der obigen existsSync-Prüfung und diesem Lesen verschwand), muss trotzdem eine saubere JSON-404 liefern statt einer halb
+      // geschriebenen/hängenden Antwort — sind die Header schon gesendet, bleibt nur noch, die Verbindung abzubrechen.
       if (res.headersSent) {
         res.destroy();
         return;
@@ -234,6 +245,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     stream.pipe(res);
   }
 
+  // GET /kreditkarte/belege/:id/datei bzw. /thumbnail – die Dateien des Belegs (Sitzungs-Authentifizierung).
   router.get('/belege/:id/datei', (req, res) => streamDatei(req, res, 'pdf_pfad', 'application/pdf'));
   router.get('/belege/:id/thumbnail', (req, res) => streamDatei(req, res, 'thumbnail_pfad', 'image/png'));
 

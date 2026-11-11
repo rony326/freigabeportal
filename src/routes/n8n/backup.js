@@ -1,3 +1,5 @@
+// Maschinenroute `GET /api/n8n/backup/latest` (Header `X-API-Key` mit dem eigenen BACKUP_API_KEY, docs/backup-verschluesselung.md): liefert die neueste verschlüsselte Sicherung (.fpbak) zum Abholen durch n8n.
+
 import { Router } from 'express';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -7,6 +9,7 @@ import { openBackupDownload } from '../../services/backupDownload.js';
 export function createN8nBackupRouter({ config }) {
   const router = Router();
 
+  // GET /api/n8n/backup/latest – 404 ohne Sicherung; sonst die neueste `.fpbak` als Download (Wartungsmodus lässt diese Route durch).
   router.get('/latest', (req, res) => {
     if (!existsSync(config.backupDir)) {
       return res.status(404).json({ error: 'Kein Backup vorhanden.' });

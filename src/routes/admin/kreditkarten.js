@@ -1,3 +1,5 @@
+// Admin → Kreditkarten (`/admin/kreditkarten`, Recht `kreditkarten_verwalten`, docs/kreditkarten-belege.md): Karten mit Bezeichnung, Endziffern, Karteninhaber, verantwortlicher Person, offener oder eingeschränkter Erfassung (Erfasser-Liste) und Absender-Muster für die Erkennung anlegen, ändern, (de)aktivieren.
+
 import { Router } from 'express';
 import {
   createKreditkarte, updateKreditkarte, setKreditkarteAktiv, getKreditkarteById, listKreditkarten, listErfasserIds, setErfasser,
@@ -7,6 +9,7 @@ import { isValidAbsenderMuster, ABSENDER_MUSTER_FEHLER } from '../../utils/absen
 
 const ENDZIFFERN_PATTERN = /^\d{4}$/;
 
+// Liest und bereinigt die Formularwerte.
 function formWerte(body) {
   return {
     bezeichnung: (body.bezeichnung || '').trim(),
@@ -23,6 +26,7 @@ function formWerte(body) {
 export function createKreditkartenAdminRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // Prüft die Werte (Bezeichnung, 4 Endziffern, verantwortliche Person, Absender-Muster).
   function validiere(werte) {
     const errors = [];
     if (!werte.bezeichnung) errors.push('Bitte eine Bezeichnung angeben.');
@@ -35,19 +39,23 @@ export function createKreditkartenAdminRouter({ db, csrfProtection = (req, res, 
     return errors;
   }
 
+  // Rendert das Formular.
   function renderForm(res, status, { karte, werte, errors }) {
     res.status(status).render('admin/kreditkarten-form', { karte, werte, errors, personen: listActivePersons(db) });
   }
 
+  // GET /admin/kreditkarten – Liste.
   router.get('/', (req, res) => {
     const karten = listKreditkarten(db, { includeInactive: true }).map((k) => ({ ...k, verantwortlich: getPersonById(db, k.verantwortlich_id) }));
     res.render('admin/kreditkarten-liste', { karten });
   });
 
+  // GET /admin/kreditkarten/neu – Formular.
   router.get('/neu', (req, res) => {
     renderForm(res, 200, { karte: null, werte: formWerte({ erfassungOffen: '1' }), errors: [] });
   });
 
+  // POST /admin/kreditkarten – legt eine Karte an.
   router.post('/', csrfProtection, (req, res) => {
     const werte = formWerte(req.body);
     const errors = validiere(werte);
@@ -57,6 +65,7 @@ export function createKreditkartenAdminRouter({ db, csrfProtection = (req, res, 
     res.redirect('/admin/kreditkarten');
   });
 
+  // GET /admin/kreditkarten/:id/bearbeiten – Bearbeitungsformular.
   router.get('/:id/bearbeiten', (req, res) => {
     const karte = getKreditkarteById(db, Number(req.params.id));
     if (!karte) return res.status(404).render('error', { message: 'Kreditkarte nicht gefunden.' });
@@ -75,6 +84,7 @@ export function createKreditkartenAdminRouter({ db, csrfProtection = (req, res, 
     });
   });
 
+  // POST /admin/kreditkarten/:id – speichert Änderungen (Erfasser-Liste wird komplett ersetzt).
   router.post('/:id', csrfProtection, (req, res) => {
     const karte = getKreditkarteById(db, Number(req.params.id));
     if (!karte) return res.status(404).render('error', { message: 'Kreditkarte nicht gefunden.' });
@@ -86,11 +96,13 @@ export function createKreditkartenAdminRouter({ db, csrfProtection = (req, res, 
     res.redirect('/admin/kreditkarten');
   });
 
+  // POST /admin/kreditkarten/:id/deaktivieren – Karte abschalten.
   router.post('/:id/deaktivieren', csrfProtection, (req, res) => {
     setKreditkarteAktiv(db, Number(req.params.id), false);
     res.redirect('/admin/kreditkarten');
   });
 
+  // POST /admin/kreditkarten/:id/aktivieren – Karte wieder einschalten.
   router.post('/:id/aktivieren', csrfProtection, (req, res) => {
     setKreditkarteAktiv(db, Number(req.params.id), true);
     res.redirect('/admin/kreditkarten');

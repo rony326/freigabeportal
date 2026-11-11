@@ -1,3 +1,6 @@
+// PDF-Auslieferung und Vorschau (`/downloads/…`, docs/n8n-schnittstelle.md und docs/rechnungs-workflow.md): der PDF-Strom `GET /:jobId` läuft ohne Sitzung über eine
+// signierte, kurzlebige Adresse (n8n und die Vorschau im <iframe>); `refresh-url`, `oeffnen` und `thumbnail` verlangen eine Sitzung und prüfen die Sichtberechtigung je Vorgang.
+
 import { Router } from 'express';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { getJobById } from '../db/jobsRepo.js';
@@ -7,21 +10,18 @@ import { canViewJobPdf } from '../services/jobAuthorization.js';
 
 const GENERIC_DENIAL = { error: 'Link ungültig oder abgelaufen.' };
 
-// sessionLimiter/publicLimiter are injected rather than applied once at the /downloads mount
-// point in app.js: refresh-url and thumbnail both require a session (requireLogin below) and are
-// requested once per dashboard row on every reload, so they belong on the session tier (keyed per
-// person, generous budget) alongside the rest of the logged-in app. The bare PDF stream at
-// GET /:jobId is the opposite — unauthenticated, reached only via a short-lived signed URL — and
-// stays on the IP-keyed public tier. Before this split, all three shared one IP-keyed budget, so a
-// dashboard with more than a handful of rows could exhaust it after only a few page reloads.
+// sessionLimiter/publicLimiter werden hereingereicht, statt einmal an der Einbindung von /downloads in app.js angewendet zu werden: refresh-url und thumbnail
+// verlangen beide eine Sitzung (requireLogin unten) und werden bei jedem Neuladen einmal je Dashboard-Zeile abgerufen, gehören also zur Sitzungsstufe (je Person gezählt,
+// grosszügiges Budget) neben dem übrigen angemeldeten Teil der App. Der blosse PDF-Strom unter GET /:jobId ist das Gegenteil — unauthentifiziert, nur über eine
+// kurzlebige signierte Adresse erreichbar — und bleibt auf der IP-gezählten öffentlichen Stufe. Vor dieser Trennung teilten sich alle drei ein IP-gezähltes Budget,
+// ein Dashboard mit mehr als einer Handvoll Zeilen konnte es also schon nach wenigen Seitenaufrufen aufbrauchen.
 const NOOP_LIMITER = (req, res, next) => next();
 
 export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITER, publicLimiter = NOOP_LIMITER }) {
   const router = Router();
 
-  // Used by the "Neu laden" button next to an expired PDF preview: re-authorizes the current
-  // session against the job (not the old signature) and mints a fresh short-lived signed URL,
-  // so a browser idle past PDF_PREVIEW_TTL_SECONDS doesn't need a full page reload.
+  // GET /downloads/:jobId/refresh-url – für den Knopf "Neu laden" neben einer abgelaufenen PDF-Vorschau: prüft die aktuelle Sitzung erneut gegen den Vorgang (nicht die alte
+  // Signatur) und stellt eine frische, kurzlebige signierte Adresse aus; ein Browser, der länger als PDF_PREVIEW_TTL_SECONDS untätig war, braucht so kein vollständiges Neuladen.
   router.get('/:jobId/refresh-url', sessionLimiter, requireLogin(), (req, res) => {
     const jobId = Number(req.params.jobId);
     const job = getJobById(db, jobId);
@@ -34,10 +34,9 @@ export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITE
     res.json({ url: buildSignedDownloadUrl(config, jobId, PDF_PREVIEW_TTL_SECONDS) });
   });
 
-  // "PDF öffnen" on phones/tablets (views/_beleg_umschalter.ejs, pool thumbnails): a stable link
-  // in the markup instead of a signed URL that expires while the page is open. Same
-  // re-authorization as refresh-url, then a redirect to a freshly signed URL — works without JS
-  // and opens in a new tab (target=_blank) without tripping popup blockers.
+  // GET /downloads/:jobId/oeffnen – "PDF öffnen" auf Handy/Tablet (views/_beleg_umschalter.ejs, Pool-Thumbnails): ein stabiler Link im Markup statt einer signierten Adresse, die
+  // abläuft, solange die Seite offen ist. Gleiche erneute Prüfung wie refresh-url, danach eine Weiterleitung auf eine frisch signierte Adresse — funktioniert ohne JS und öffnet in einem
+  // neuen Tab (target=_blank), ohne Popup-Blocker auszulösen.
   router.get('/:jobId/oeffnen', sessionLimiter, requireLogin(), (req, res) => {
     const jobId = Number(req.params.jobId);
     const job = getJobById(db, jobId);
@@ -51,9 +50,8 @@ export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITE
     res.redirect(302, buildSignedDownloadUrl(config, jobId, PDF_PREVIEW_TTL_SECONDS));
   });
 
-  // Same authorization as /:jobId/refresh-url — any session that may see this job's PDF may
-  // also see its thumbnail (dashboard table, Pool section included). Session-authenticated,
-  // unlike the PDF stream below (which uses a signed URL so n8n can fetch it without a session).
+  // GET /downloads/:jobId/thumbnail – gleiche Berechtigung wie /:jobId/refresh-url: jede Sitzung, die das PDF dieses Vorgangs sehen darf, darf auch sein Thumbnail sehen (Dashboard-Tabelle,
+  // inklusive Pool-Bereich). Per Sitzung authentifiziert, anders als der PDF-Strom unten (der eine signierte Adresse nutzt, damit n8n ihn ohne Sitzung abrufen kann).
   router.get('/:jobId/thumbnail', sessionLimiter, requireLogin(), (req, res) => {
     const jobId = Number(req.params.jobId);
     const job = getJobById(db, jobId);
@@ -73,6 +71,7 @@ export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITE
     stream.pipe(res);
   });
 
+  // GET /downloads/:jobId?expires=…&signature=… – streamt das PDF (bei einer Splitgruppe das zusammengeführte Gruppen-PDF, sofern noch vorhanden); jeder Fehler antwortet gleich (403), damit nichts verraten wird.
   router.get('/:jobId', publicLimiter, (req, res) => {
     const jobId = Number(req.params.jobId);
     const { expires, signature } = req.query;
@@ -98,25 +97,22 @@ export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITE
         res.destroy();
         return;
       }
-      // res.type() below already primed the Content-Type header for the happy path;
-      // reset it explicitly here so this error response is a real application/json
-      // 403 like every other denial, not application/pdf with a JSON body.
+      // res.type() unten hat den Content-Type-Header für den Normalfall schon gesetzt; hier ausdrücklich zurücksetzen, damit diese Fehlerantwort wie jede andere Ablehnung ein
+      // echtes application/json-403 ist und nicht application/pdf mit einem JSON-Body.
       res.status(403).type('json').json(GENERIC_DENIAL);
     });
     res.type('application/pdf');
-    // Without an explicit Content-Disposition, some browsers (and browser/OS PDF-handling
-    // policies) fall back to downloading the file instead of rendering it in the <iframe>
-    // preview used by pool.ejs, kontierung.ejs, and freigabe2.ejs. "inline" plus a sanitized
-    // filename (CR/LF stripped, quotes escaped) makes every browser render it in place.
+    // Ohne ausdrückliches Content-Disposition fallen manche Browser (und Browser-/Betriebssystem-Richtlinien für PDFs) auf das Herunterladen zurück, statt die Datei in der von
+    // pool.ejs, kontierung.ejs und freigabe2.ejs genutzten <iframe>-Vorschau darzustellen. "inline" plus ein bereinigter Dateiname (CR/LF entfernt, Anführungszeichen maskiert) lässt
+    // jeden Browser sie an Ort und Stelle darstellen.
     // filename*= (RFC 5987) trägt Zeichen ausserhalb von ASCII (€, Umlaute aus UTF-8, Emoji);
     // Node lehnt sie im normalen filename="" ab (ERR_INVALID_CHAR → 500).
     const safeName = job.dateiname.replace(/[\r\n"]/g, '');
     const asciiName = safeName.replace(/[^\x20-\x7e]/gu, '_');
     const kodiert = encodeURIComponent(safeName).replace(/['()*]/g, (z) => `%${z.charCodeAt(0).toString(16).toUpperCase()}`);
     res.setHeader('Content-Disposition', `inline; filename="${asciiName}"${asciiName === safeName ? '' : `; filename*=UTF-8''${kodiert}`}`);
-    // A chunked response with no Content-Length is a known trigger for some PDF viewers
-    // (notably Safari/iOS) to fall back to a download prompt instead of rendering inline —
-    // setting it explicitly removes that ambiguity for every browser.
+    // Eine Antwort in Stücken ohne Content-Length löst bei manchen PDF-Betrachtern (vor allem Safari/iOS) bekanntermassen eine Download-Abfrage statt der Darstellung an Ort und Stelle
+    // aus — die ausdrückliche Angabe beseitigt diese Unklarheit für jeden Browser.
     res.setHeader('Content-Length', statSync(pfad).size);
     stream.pipe(res);
   });

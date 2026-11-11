@@ -1,3 +1,7 @@
+// Benachrichtigungs-Mails: Vorlage rendern, dauerhaft einreihen und zustellen; Empfängerlisten auflösen; Vertretung mitbedienen.
+// Zustellung mit Wiederholung: services/mailZustellung.js, Bündelung (Digest): services/benachrichtigung.js. Einstieg für die meisten
+// Aufrufer: `sendNotification` bzw. `sendNotificationMitVertretung`.
+
 import { logMailAttempt } from '../db/mailLogRepo.js';
 import { listActivePersonsInGroup, getPersonById } from '../db/personenRepo.js';
 import { getVorlage, renderTemplate } from './mailTemplates.js';
@@ -30,15 +34,13 @@ export const IMMER_SOFORT_TYPEN = new Set([
   'sicherheitsalarm', 'duplikat-warnung', 'rechnungsnummer-warnung',
 ]);
 
-// The low-level "enqueue and try now" primitive for an already-rendered mail. /admin/mails'
-// "erneut versenden" replays an already-rendered mail_log row verbatim through here and must
-// bypass both the template layer (there's no `variablen` to re-render from) and the batching
-// queue (a manual resend is always immediate).
+// Der Baustein auf unterer Ebene "einreihen und jetzt versuchen" für eine bereits gerenderte Mail. Das erneute Versenden unter
+// /admin/mails spielt eine bereits gerenderte mail_log-Zeile unverändert hierüber ab und muss sowohl die Vorlagenschicht
+// (es gibt keine `variablen` zum erneuten Rendern) als auch die Bündelung (ein manuelles Erneut-Senden geht immer sofort) umgehen.
 //
-// The row is stored as 'eingereiht' BEFORE the SMTP call (services/mailZustellung.js), so a
-// failed or interrupted send is retried automatically by the mail-zustellung job with growing
-// back-off. Never throws; returns { id, status } with status 'versendet' | 'eingereiht' (retry
-// pending) | 'fehlgeschlagen'.
+// Die Zeile wird VOR dem SMTP-Aufruf als 'eingereiht' gespeichert (services/mailZustellung.js), ein fehlgeschlagener oder
+// unterbrochener Versand wird also vom Job mail-zustellung mit wachsendem Abstand automatisch wiederholt. Wirft nie; liefert
+// { id, status } mit status 'versendet' | 'eingereiht' (Wiederholung ausstehend) | 'fehlgeschlagen'.
 export async function sendRenderedMail(db, mailer, { to, subject, text, typ, jobId }) {
   let id;
   try {
@@ -50,24 +52,22 @@ export async function sendRenderedMail(db, mailer, { to, subject, text, typ, job
   try {
     return await stelleMailZu(db, mailer, id);
   } catch (err) {
-    // Only reachable if recording the attempt itself failed -- the row stays 'eingereiht' and the
-    // lock expires, so the retry job picks it up.
+    // Nur erreichbar, wenn das Festhalten des Versuchs selbst scheiterte — die Zeile bleibt 'eingereiht', die Sperre läuft ab, und der Wiederholungsjob holt sie.
     console.error('sendRenderedMail: Zustellversuch konnte nicht gespeichert werden', err);
     return { id, status: 'eingereiht', fehler: err.message };
   }
 }
 
-// `vorlage` optional: eine bereits gewählte Vorlage { betreff, text } statt der aus admin_config.
+// `vorlage` optional: eine bereits gewählte Vorlage { betreff, text } statt der aus admin_config. Ergänzt automatisch %portalName%.
 export function renderBenachrichtigung(db, typ, variablen, vorlage = getVorlage(db, typ)) {
   const portalName = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
   const alleVariablen = { ...variablen, portalName };
   return { subject: renderTemplate(vorlage.betreff, alleVariablen), text: renderTemplate(vorlage.text, alleVariablen) };
 }
 
-// Synchronous: renders and durably enqueues one notification, without any SMTP call. Throws if the
-// template cannot be rendered -- meant for callers that enqueue inside the same transaction as
-// their own business marker (cronJobs.js reminders) and deliver afterwards via stelleEintraegeZu.
-// Returns { id, status } with status 'eingereiht' or 'geplant' (batching).
+// Synchron: rendert und reiht eine Benachrichtigung dauerhaft ein, ohne SMTP-Aufruf. Wirft, wenn die Vorlage nicht gerendert werden
+// kann — gedacht für Aufrufer, die in derselben Transaktion wie ihre eigene fachliche Marke einreihen (Erinnerungen in cronJobs.js)
+// und danach über stelleEintraegeZu zustellen. Liefert { id, status } mit status 'eingereiht' oder 'geplant' (Bündelung).
 // `gerendert` optional: bereits gerenderte { subject, text } (der Aufrufer hat Vorlagenfehler selbst behandelt).
 export function reiheBenachrichtigungEin(db, { to, typ, jobId, variablen = {}, gerendert = null }) {
   const { subject, text } = gerendert ?? renderBenachrichtigung(db, typ, variablen);
@@ -78,16 +78,16 @@ export function reiheBenachrichtigungEin(db, { to, typ, jobId, variablen = {}, g
   return { id, status: geplant ? 'geplant' : 'eingereiht' };
 }
 
-// Never throws on SMTP or template problems. Returns { id, status } with status 'versendet' |
-// 'eingereiht' (retry pending) | 'geplant' (digest) | 'fehlgeschlagen'.
+// Wirft nie bei SMTP- oder Vorlagenproblemen. Liefert { id, status } mit status 'versendet' | 'eingereiht' (Wiederholung ausstehend) |
+// 'geplant' (Digest) | 'fehlgeschlagen'. Das ist der normale Weg, eine Benachrichtigung zu verschicken.
 export async function sendNotification(db, mailer, { to, typ, jobId, variablen = {} }) {
   let eintrag;
   try {
     eintrag = reiheBenachrichtigungEin(db, { to, typ, jobId, variablen });
   } catch (err) {
-    // logMailAttempt itself can fail here too (e.g. `typ` isn't even one of the values
-    // mail_log's CHECK constraint allows -- a genuinely unknown typ is a programmer error that
-    // never occurs via today's callers, but must still not escape this function).
+    // Auch logMailAttempt selbst kann hier scheitern (z. B. wenn `typ` nicht einmal zu den Werten gehört, die der CHECK von mail_log
+    // erlaubt — ein wirklich unbekannter typ ist ein Programmierfehler, der über die heutigen Aufrufer nie vorkommt, darf diese
+    // Funktion aber trotzdem nicht verlassen).
     try {
       logMailAttempt(db, {
         typ,
@@ -114,6 +114,8 @@ export async function sendNotification(db, mailer, { to, typ, jobId, variablen =
 
 const PERSON_TOKEN_PREFIX = 'person:';
 
+// Löst eine Empfängerliste aus der Konfiguration (Zeilen: `gruppe:buchhaltung`, `gruppe:admin`, `person:<id>` oder Adresse) zu
+// Mailadressen auf; Gruppen und Personen nur aktiv, Duplikate entfallen. @returns {string[]}
 export function resolveEmpfaenger(db, config, konfigWert) {
   if (!konfigWert) return [];
   const zeilen = konfigWert
@@ -141,6 +143,7 @@ export function resolveEmpfaenger(db, config, konfigWert) {
   return [...empfaenger];
 }
 
+// Empfängerliste der Person plus ihrer aktiven Ferienmodus-Stellvertretung (mit Hinweis im Grund).
 function vertretungsEmpfaenger(db, { person, variablen }) {
   const empfaenger = [{ to: person.email, variablen: { ...variablen, empfaengerName: `${person.vorname} ${person.nachname}` } }];
   const vertreterId = getAktivenVertreter(db, person.churchtools_person_id);
@@ -158,10 +161,9 @@ function vertretungsEmpfaenger(db, { person, variablen }) {
   return empfaenger;
 }
 
-// Wraps sendNotification so every call site that currently mails "the person responsible for
-// this job" also reaches their active Ferienmodus-Stellvertreter, without each call site having
-// to know about Ferienmodus itself. See docs/superpowers/specs/2026-09-07-ferienmodus-design.md.
-// Returns one result per recipient (see sendNotification).
+// Umhüllt sendNotification, damit jede Stelle, die "die für diesen Vorgang zuständige Person" anmailt, auch deren aktive
+// Ferienmodus-Stellvertretung erreicht, ohne dass jede Stelle den Ferienmodus selbst kennen muss. Siehe
+// docs/superpowers/specs/2026-09-07-ferienmodus-design.md. Liefert je Empfänger ein Ergebnis (siehe sendNotification).
 export async function sendNotificationMitVertretung(db, mailer, { person, typ, jobId, variablen }) {
   const ergebnisse = [];
   for (const empfaenger of vertretungsEmpfaenger(db, { person, variablen })) {
@@ -170,7 +172,7 @@ export async function sendNotificationMitVertretung(db, mailer, { person, typ, j
   return ergebnisse;
 }
 
-// Synchronous counterpart of sendNotificationMitVertretung for transactional enqueueing.
+// Synchrones Gegenstück zu sendNotificationMitVertretung für das Einreihen innerhalb einer Transaktion.
 export function reiheBenachrichtigungMitVertretungEin(db, { person, typ, jobId, variablen }) {
   return vertretungsEmpfaenger(db, { person, variablen }).map((empfaenger) =>
     reiheBenachrichtigungEin(db, { to: empfaenger.to, typ, jobId, variablen: empfaenger.variablen })

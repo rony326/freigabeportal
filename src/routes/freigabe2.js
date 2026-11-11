@@ -1,3 +1,7 @@
+// Freigabe 2 (`/freigabe2/:id`, docs/rechnungs-workflow.md): die zweite Person (Freigeber 2 des Kontos, deren Stellvertretung, bei Admin-Eskalation ein Superadmin) gibt die Rechnung frei, lehnt ab oder meldet einen Interessenskonflikt.
+// Beim Freigeben: Zahlungsdaten bestätigen (Spesen live aus ChurchTools, QR-Rechnungen aus dem Eingangsscan), Freigabe-Snapshot einfrieren, Stempelseite anhängen, RFC3161-Zeitstempel setzen (ausserhalb der Transaktion) und Splitgruppen zusammenführen.
+// Vier-Augen-Prinzip und Selbstfreigabe-Sperren: siehe `loadAuthorized`.
+
 import { personHasRole } from '../middleware/roles.js';
 import { Router } from 'express';
 import { readFileSync, unlinkSync } from 'node:fs';
@@ -44,18 +48,19 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     return personHasRole(person, config, 'superadmin');
   }
 
-  // Payment data for everything except Spesen comes from the locally stored intake scan (QR bill)
-  // of the invoice -- for a split child that is the whole invoice, identical in every child.
+  // Die Zahlungsdaten für alles ausser Spesen stammen aus dem lokal gespeicherten Eingangsscan (QR-Rechnung) der Rechnung — bei einem Splitkind ist das die ganze Rechnung, in jedem Kind identisch.
   function rechnungsZahlung(job) {
     const parent = job.aufgesplittet_von ? getJobById(db, job.aufgesplittet_von) : null;
     return ermittleRechnungsZahlung(db, job, parent);
   }
 
+  // Zahlungsdaten samt Fingerabdruck (gegen veraltete Formulare) und Hinweistexten für die Bestätigung im Formular.
   function zahlungsReview(job, konto, zahlung, personId) {
     const payment = { art: zahlung.art, daten: zahlung.daten, abgleich: zahlung.abgleich, hinweise: zahlung.hinweise };
     return { ...payment, fingerprint: paymentReviewFingerprint(job, konto, payment, personId), hinweisTexte: zahlung.hinweise.map((h) => ZAHLUNGSHINWEIS_TEXT[h]) };
   }
 
+  // Lädt den Vorgang und prüft die Berechtigung (effektiver Freigeber 2 oder Vertretung; bei Admin-Eskalation Superadmin) samt Sperren gegen Selbstfreigabe; bei Mangel 403 gerendert und null geliefert.
   function loadAuthorized(req, res) {
     const job = getJobById(db, Number(req.params.id));
     if (!job || job.status !== 'freigabe2') {
@@ -74,11 +79,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       res.status(403).render('error', { message: 'Du bist für die Freigabe 2 dieses Jobs nicht zuständig.' });
       return null;
     }
-    // Vier-Augen-Prinzip: the Konto's role assignment is only checked at admin-edit time
-    // (validateKontoRoles), which is a point-in-time check on the Konto row, not on this
-    // specific job. If the Konto is edited while a job sits in freigabe2 — or the same person
-    // holds both Buchhaltung and Portal-Admin — the person who already approved Freigabe 1
-    // could otherwise end up as the resolved Freigabe-2 approver too. Re-check per job.
+    // Vier-Augen-Prinzip: Die Rollenzuweisung des Kontos wird nur beim Bearbeiten durch den Admin geprüft (validateKontoRoles), also als Momentaufnahme der Kontozeile und nicht für diesen konkreten Vorgang. Wird das Konto bearbeitet, während ein Vorgang in freigabe2 liegt
+    // — oder hat dieselbe Person Buchhaltung und Portal-Admin —, könnte die Person, die Freigabe 1 schon erteilt hat, sonst auch als aufgelöster Freigeber-2-Genehmiger enden. Deshalb je Vorgang erneut prüfen.
     const freigabe1 = listFreigabenByJob(db, job.id).findLast((f) => f.rolle === 'freigeber1');
     if (freigabe1 && freigabe1.person_id === req.currentPerson.churchtools_person_id) {
       res.status(403).render('error', {
@@ -95,12 +97,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       });
       return null;
     }
-    // Belt-and-suspenders: spesenFreigabe1.js's "Freigeben" branch already reroutes a Spesen
-    // position to Stellvertreter2 the instant Freigabe 1 completes, whenever the submitter is
-    // this Konto's own Freigeber2 — so getEffectiveFreigeber2Id should never resolve back to the
-    // submitter in the first place. This is a direct, independent check in case that reroute is
-    // ever bypassed (a bug, a future code path creating a Spesen job without going through
-    // spesenFreigabe1.js) — the core guarantee (never approve your own claim) must hold either way.
+    // Doppelt gesichert: Der Zweig "Freigeben" in spesenFreigabe1.js leitet eine Spesenposition schon in dem Moment an die Stellvertretung 2 um, in dem Freigabe 1 abgeschlossen ist, sobald die einreichende Person der eigene Freigeber 2 dieses Kontos ist — getEffectiveFreigeber2Id sollte also
+    // gar nie auf die einreichende Person zurückführen. Dies hier ist eine direkte, unabhängige Prüfung für den Fall, dass diese Umleitung je umgangen wird (ein Fehler, ein künftiger Codepfad, der einen Spesenvorgang erzeugt, ohne über spesenFreigabe1.js zu laufen) — die zentrale Zusicherung (nie die eigene Forderung freigeben) muss in jedem Fall gelten.
     if (job.quelle === 'spesen' && job.eingereicht_von === req.currentPerson.churchtools_person_id) {
       res.status(403).render('error', {
         message: 'Du hast diese Spesen-Position selbst eingereicht und kannst sie nicht selbst freigeben.',
@@ -110,6 +108,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     return { job, konto };
   }
 
+  // Rendert das Freigabeformular (Freigabe 1, Verlauf, Kommentare, Zahlungsprüfung, Vorschau).
   function renderForm(req, res, status, { job, konto }, values, errors, paymentReview = null, feldFehler = {}) {
     const freigaben = listFreigabenByJob(db, job.id);
     const freigabe1 = freigaben.findLast((f) => f.rolle === 'freigeber1');
@@ -119,8 +118,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     const freigeber1Person = getPersonById(db, freigabe1.person_id);
     const spesenEinreicher = job.quelle === 'spesen' ? getPersonById(db, job.eingereicht_von) : null;
     const spesenabrechnungTitel = job.quelle === 'spesen' ? getSpesenabrechnungById(db, job.spesenabrechnung_id)?.titel || null : null;
-    // Invoice payment data is local, so its review is shown right away; Spesen need the live
-    // ChurchTools lookup that only the first POST performs.
+    // Die Zahlungsdaten einer Rechnung liegen lokal vor, ihre Prüfung wird also sofort angezeigt; Spesen brauchen die Live-Abfrage bei ChurchTools, die nur der erste POST ausführt.
     let zahlungsart = job.quelle === 'spesen' ? 'spesen' : null;
     if (job.quelle !== 'spesen') {
       const zahlung = rechnungsZahlung(job);
@@ -150,12 +148,14 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
     });
   }
 
+  // GET /freigabe2/:id – das Freigabeformular.
   router.get('/:id', (req, res) => {
     const result = loadAuthorized(req, res);
     if (!result) return;
     renderForm(req, res, 200, result, { interessenskonflikt: '', begruendung: '' }, []);
   });
 
+  // POST /freigabe2/:id – Interessenskonflikt (→ Stellvertretung 2 bzw. Admin-Gruppe), `aktion=ablehnen` (→ Überarbeitung, Begründung Pflicht), sonst Freigeben (Zahlungsbestätigung, Stempeln, Zeitstempel, Abschluss).
   router.post('/:id', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const result = loadAuthorized(req, res);
@@ -175,10 +175,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       }
 
       if (hatKonflikt) {
-        // SYNC-8: job.freigabe2_eskaliert_von being already set here means this job was already
-        // escalated once — and per loadAuthorized, the only person who could reach this line for
-        // an already-escalated job is that Tier-1 escalated Stellvertreter2 themselves, now also
-        // declaring their own conflict. Route to Portal-Admin instead of blocking.
+        // SYNC-8: Ist job.freigabe2_eskaliert_von hier schon gesetzt, wurde dieser Vorgang bereits einmal eskaliert — und laut loadAuthorized kann die einzige Person, die für einen bereits eskalierten Vorgang bis zu dieser Zeile gelangt, jene eskalierte Stellvertretung 2 der ersten Stufe selbst sein,
+        // die nun ebenfalls ihren eigenen Konflikt erklärt. Statt zu blockieren an den Portal-Admin leiten.
         // Eine vom Admin umgeleitete Person, die selbst einen Konflikt erklärt, geht direkt an die
         // Admin-Gruppe: der Admin hat die reguläre Kette (Freigeber2/Stellvertreter2) bewusst
         // übergangen, ein Rücksprung dorthin wäre unklar. eskalierenFreigabe2AnAdmin löscht die
@@ -329,9 +327,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const freigeber1Person = getPersonById(db, freigabe1.person_id);
       const zeitpunkt = new Date().toISOString();
 
-      // Plain local DB reads, unlike the live ChurchTools lookup below — a Spesen position has
-      // no separate invoice date, so its Titel (Spesenabrechnung) and Verwendungszweck are what
-      // identify the document on the permanently archived stamp page.
+      // Einfache lokale Datenbankabfragen, anders als die Live-Abfrage bei ChurchTools unten — eine Spesenposition hat kein eigenes Rechnungsdatum, ihr Titel (Spesenabrechnung) und der Verwendungszweck kennzeichnen also das Dokument auf der dauerhaft archivierten Stempelseite.
       const titel = job.quelle === 'spesen' ? getSpesenabrechnungById(db, job.spesenabrechnung_id)?.titel || null : null;
       const verwendungszweck = job.quelle === 'spesen' ? job.beschreibung || null : null;
 
@@ -371,8 +367,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         }
         zahlungsStand = review.fingerprint;
       }
-      // Printed on the archived stamp page: Spesen keep their established shape, a QR invoice shows
-      // the confirmed recipient, IBAN and reference.
+      // Auf der archivierten Stempelseite gedruckt: Spesen behalten ihre bestehende Form, eine QR-Rechnung zeigt den bestätigten Empfänger, die IBAN und die Referenz.
       const stampZahlungsdaten = zahlung.art === 'spesen'
         ? zahlungsdaten
         : zahlung.daten ? { empfaenger: zahlung.daten.empfaenger, iban: zahlung.daten.iban, referenz: zahlung.daten.referenz } : null;
@@ -407,10 +402,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           kommentar: freigabe1.kommentar,
         },
         freigeber2: freigeber2Eintrag,
-        // `freigaben` was loaded before this request's own freigeber2 approval is persisted
-        // (that insert happens later, atomically alongside abschliessenFreigabe2). Without
-        // appending it here, the Verlauf page on the final stamped PDF would omit the very
-        // approval that completed the job.
+        // `freigaben` wurde geladen, bevor die eigene Freigabe 2 dieser Anfrage gespeichert ist (dieses Einfügen geschieht später, atomar zusammen mit abschliessenFreigabe2). Ohne sie hier anzuhängen, fehlte auf der Verlaufsseite des fertig gestempelten PDFs genau die Freigabe, die den Vorgang abschloss.
         verlauf: [
           ...freigaben.map((f) => {
             const person = getPersonById(db, f.person_id);
@@ -439,8 +431,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, [err.message]);
       }
 
-      // TSA I/O stays outside the transaction. On outage, persist the timestamp requirement
-      // so export remains blocked until the retry job succeeds, even if TSA is disabled later.
+      // TSA-I/O bleibt ausserhalb der Transaktion. Bei einem Ausfall wird die Zeitstempelpflicht gespeichert, damit der Export gesperrt bleibt, bis der Wiederholungsjob erfolgreich war, auch wenn die TSA später abgeschaltet wird.
       const tsaUrl = getConfigValue(db, 'zeitstempel_tsa_url');
       let zeitstempelGesetztAm = null;
       let zeitstempelDateiHash = null;
@@ -460,7 +451,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         }
       }
 
-      // The old document remains intact until a durable new file can be referenced.
+      // Das alte Dokument bleibt unverändert, bis eine dauerhafte neue Datei referenziert werden kann.
       const tmpPfad = writeFinalDocument(job.pdf_pfad, stamped);
 
       const effektiverFreigeber2FuerFreigabe = getEffectiveFreigeber2Id(job, konto);
@@ -507,7 +498,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         const abgeschlossen = abschliessenFreigabe2(db, job.id);
         if (!abgeschlossen) {
           db.exec('ROLLBACK');
-          try { unlinkSync(tmpPfad); } catch { /* best-effort cleanup of the losing attempt's tmp file */ }
+          try { unlinkSync(tmpPfad); } catch { /* Best-Effort-Aufräumen der tmp-Datei des unterlegenen Versuchs */ }
           return renderForm(req, res, 409, result, { interessenskonflikt, begruendung }, [
             'Diese Freigabe wurde inzwischen bereits von einem anderen Vorgang abgeschlossen.',
           ]);

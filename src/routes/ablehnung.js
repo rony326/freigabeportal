@@ -1,3 +1,7 @@
+// Seite "Abgelehnt" (`/abgelehnt/:id`): die zugewiesene Person (oder ihre Vertretung; bei Eskalation ein Superadmin) sieht den Ablehnungsgrund und
+// öffnet den Vorgang zur Überarbeitung wieder (Rückweg in die Kontierung). Spesen gehören nicht hierher. Fachlich: docs/rechnungs-workflow.md, "Ablehnung".
+// Zugang: angemeldet (app.js `requireLogin`); die Berechtigung je Vorgang prüft `loadAuthorizedJob`.
+
 import { personHasRole } from '../middleware/roles.js';
 import { Router } from 'express';
 import { getJobById, wiederOeffnenJob } from '../db/jobsRepo.js';
@@ -14,15 +18,15 @@ export function createAblehnungRouter({ db, config, csrfProtection = (req, res, 
     return personHasRole(person, config, 'superadmin');
   }
 
+  // Lädt den abgelehnten Vorgang und prüft die Berechtigung; bei Mangel 403 gerendert und null geliefert.
   function loadAuthorizedJob(req, res) {
     const job = getJobById(db, Number(req.params.id));
     if (!job || job.status !== 'abgelehnt') {
       res.status(403).render('error', { message: 'Dieser Job ist für dich aktuell nicht zur Überarbeitung verfügbar.' });
       return null;
     }
-    // A rejected Spesen position satisfies the status/zugewiesen_an checks below exactly like an
-    // ordinary invoice, which would let /:id/ueberarbeiten silently clear ablehnungsgrund and
-    // redirect to /kontierung/:id — wrong for Spesen (see kontierung.js's identical guard).
+    // Eine abgelehnte Spesenposition erfüllt die Prüfungen auf Status/zugewiesen_an unten genau wie eine gewöhnliche Rechnung; /:id/ueberarbeiten würde so
+    // still ablehnungsgrund löschen und nach /kontierung/:id umleiten — falsch für Spesen (siehe die identische Sperre in kontierung.js).
     if (job.quelle === 'spesen') {
       res.status(403).render('error', { message: 'Diese Spesen-Position kann nicht über die Kontierung bearbeitet werden.' });
       return null;
@@ -38,6 +42,7 @@ export function createAblehnungRouter({ db, config, csrfProtection = (req, res, 
     return job;
   }
 
+  // GET /abgelehnt/:id – zeigt Ablehnungsgrund, Verlauf und Kommentare.
   router.get('/:id', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
@@ -52,18 +57,16 @@ export function createAblehnungRouter({ db, config, csrfProtection = (req, res, 
     });
   });
 
+  // POST /abgelehnt/:id/ueberarbeiten – öffnet den Vorgang wieder (Status 'zugewiesen') und leitet in die Kontierung.
   router.post('/:id/ueberarbeiten', csrfProtection, (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
-    // Use job.zugewiesen_an, not req.currentPerson.churchtools_person_id: wiederOeffnenJob's
-    // guard requires zugewiesen_an to match the person passed in, and for a Portal-Admin
-    // authorized via the freigabe1_eskaliert_an_admin branch, the admin's own ID never equals
-    // job.zugewiesen_an (still the excluded Stellvertreter1's ID) — passing the admin's ID would
-    // silently match zero rows while still returning the generic 409 as if a race had occurred.
-    // For the ordinary (non-admin) path this is definitionally identical, since
-    // loadAuthorizedJob already verified job.zugewiesen_an === req.currentPerson.churchtools_person_id
-    // to get here. Mirrors the identical fix already applied to kontierung.js's zurueck-in-pool
-    // route in Batch 3.
+    // job.zugewiesen_an verwenden, nicht req.currentPerson.churchtools_person_id: Der Schutz von wiederOeffnenJob verlangt, dass zugewiesen_an zur
+    // übergebenen Person passt, und für einen Portal-Admin, der über den Zweig freigabe1_eskaliert_an_admin berechtigt ist, ist die eigene ID des Admins nie gleich
+    // job.zugewiesen_an (weiterhin die ID der ausgeschlossenen Stellvertretung 1) — mit der Admin-ID würde keine Zeile getroffen und trotzdem die allgemeine 409
+    // wie bei einem Wettlauf geliefert. Für den normalen (Nicht-Admin-)Weg ist es per Definition identisch, da loadAuthorizedJob schon geprüft hat, dass
+    // job.zugewiesen_an === req.currentPerson.churchtools_person_id, um hierher zu kommen. Entspricht der identischen Korrektur an der Route "zurück in den Pool"
+    // in kontierung.js (Batch 3).
     const reopened = wiederOeffnenJob(db, job.id, job.zugewiesen_an);
     if (!reopened) {
       return res.status(409).render('error', { message: 'Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.' });

@@ -1,3 +1,6 @@
+// Statusseite und /healthz (docs/statusseite-und-monitoring.md): elf Dienstprüfungen, die je 'ok' | 'warnung' | 'fehler' liefern; der
+// Gesamtstatus ist der schlechteste. Alle Prüfungen sind rein lesend und fangen eigene Fehler ab. Grenzwerte: admin_config `status_*`.
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -29,6 +32,7 @@ export const DEFAULTS = {
   zeitstempel_warnung_ab_stunden: 2,
   audit_zeitstempel_alarm_tage: 3,
 };
+// Grenzwert aus admin_config oder Standard.
 function grenze(db, key) {
   const roh = getConfigValue(db, key);
   const wert = Number(roh);
@@ -39,6 +43,7 @@ const zeit = (iso) => Date.parse(iso);
 const jetztMs = (ctx) => (ctx.jetzt ?? new Date()).getTime();
 
 // Installationsdatum: aeltestes Audit-Ereignis, sonst jetzt (siehe Rulings).
+// Zeitpunkt der Inbetriebnahme (ältestes Audit-Ereignis) – davor gilt "noch kein Lauf" nicht als Fehler.
 function installationsMs(db, ctx) {
   const row = db.prepare('SELECT MIN(zeitpunkt) AS z FROM audit_ereignisse').get();
   const t = row?.z ? zeit(row.z) : NaN;
@@ -46,6 +51,7 @@ function installationsMs(db, ctx) {
 }
 
 // Gemeinsame Logik fuer "letzter Erfolg"-Dienste (Sicherung, ChurchTools).
+// Gemeinsame Bewertung für Dienste, die regelmässig laufen sollen (Sicherung, ChurchTools-Abgleich).
 function pruefeLetzterErfolg(db, ctx, { letzterErfolg, letzterLauf, warnH, fehlerH, name }) {
   const jetzt = jetztMs(ctx);
   const erfolgMs = letzterErfolg ? zeit(letzterErfolg) : NaN;
@@ -63,6 +69,7 @@ function pruefeLetzterErfolg(db, ctx, { letzterErfolg, letzterLauf, warnH, fehle
   return { status, grund, seit: letzterErfolg };
 }
 
+// Antwortet die Datenbank?
 export function pruefeDatenbank(db) {
   try {
     db.prepare('SELECT 1').get();
@@ -72,6 +79,7 @@ export function pruefeDatenbank(db) {
   }
 }
 
+// Letzte erfolgreiche Datenbank-Sicherung nicht zu alt, letzter Lauf nicht fehlgeschlagen.
 export function pruefeSicherung(db, config, ctx = {}) {
   const erfolg = db.prepare("SELECT beendet_am FROM cron_log WHERE job = 'datenbank-sicherung' AND status = 'erfolg' ORDER BY id DESC LIMIT 1").get();
   const letzter = db.prepare("SELECT status FROM cron_log WHERE job = 'datenbank-sicherung' AND status != 'laufend' ORDER BY id DESC LIMIT 1").get();
@@ -83,6 +91,7 @@ export function pruefeSicherung(db, config, ctx = {}) {
   });
 }
 
+// Mails, die zu lange auf den Versand warten (Fehler) bzw. Fehlversuche der letzten 24 Stunden (Warnung).
 export function pruefeMailversand(db, config, ctx = {}) {
   const jetzt = jetztMs(ctx);
   const wartegrenze = new Date(jetzt - grenze(db, 'status_mail_wartezeit_fehler_minuten') * MIN).toISOString();
@@ -99,6 +108,7 @@ export function pruefeMailversand(db, config, ctx = {}) {
   return { status: 'ok', grund: 'keine Störungen', ...(letzte ? { seit: letzte.versendet_am } : {}) };
 }
 
+// Letzter erfolgreicher ChurchTools-Personenabgleich nicht zu alt.
 export function pruefeChurchtools(db, config, ctx = {}) {
   const erfolg = db.prepare("SELECT beendet_am FROM sync_log WHERE status = 'erfolg' AND beendet_am IS NOT NULL ORDER BY id DESC LIMIT 1").get();
   const letzter = db.prepare("SELECT status FROM sync_log WHERE beendet_am IS NOT NULL ORDER BY id DESC LIMIT 1").get();
@@ -108,6 +118,7 @@ export function pruefeChurchtools(db, config, ctx = {}) {
   });
 }
 
+// Zeitstempeldienst: erreichbar, Sperrliste gültig, keine überfälligen Belege ohne Zeitstempel (nur wenn eine TSA eingetragen ist).
 export function pruefeZeitstempel(db, config, ctx = {}) {
   if (!String(getConfigValue(db, 'zeitstempel_tsa_url') ?? '').trim()) return NICHT_EINGERICHTET();
   const jetzt = jetztMs(ctx);
@@ -136,6 +147,7 @@ export function pruefeZeitstempel(db, config, ctx = {}) {
   return { status, grund: probleme.length ? probleme.join('; ') : 'in Ordnung' };
 }
 
+// Audit-Nachweis-Pakete ohne Zeitstempel (Warnung, nach `audit_zeitstempel_alarm_tage` Fehler).
 export function pruefeAuditNachweis(db, config, ctx = {}) {
   if (String(getConfigValue(db, 'modul_audit_nachweis_aktiv') ?? '0') !== '1') return NICHT_EINGERICHTET();
   const offen = listPaketeOhneZeitstempel(db);
@@ -147,6 +159,7 @@ export function pruefeAuditNachweis(db, config, ctx = {}) {
   return { status: 'warnung', grund: `${offen.length} Paket(e) ohne Zeitstempel`, seit };
 }
 
+// Abgeschlossene Belege/Splitgruppen, die n8n noch nicht abgeholt hat (Warnung nach 48 h, Fehler nach 7 Tagen).
 export function pruefeArchivuebergabe(db, config, ctx = {}) {
   const jetzt = jetztMs(ctx);
   // Gesperrte (nicht abholbare) Belege zaehlen mit, daher der Hinweis im Grund.
@@ -165,6 +178,7 @@ export function pruefeArchivuebergabe(db, config, ctx = {}) {
   return { status, grund: status === 'ok' ? `${row.n} Beleg(e) noch nicht abgeholt (inkl. gesperrter Belege)` : `${row.n} Beleg(e) zu lange nicht abgeholt (inkl. gesperrter Belege)`, seit: row.aelteste };
 }
 
+// Freier Speicherplatz am Ort der Datenbank in Prozent.
 export function pruefeSpeicher(db, config, ctx = {}) {
   let frei;
   try {
@@ -193,6 +207,7 @@ export function pruefeJobs(db, config, ctx = {}) {
   return { status: 'ok', grund: 'alle Läufe erfolgreich' };
 }
 
+// Offene Sicherheitsalarme sind immer ein Fehler.
 export function pruefeSicherheitsalarme(db) {
   const n = db.prepare("SELECT COUNT(*) AS n FROM sicherheitsalarme WHERE status != 'erledigt'").get().n;
   if (n > 0) return { status: 'fehler', grund: `${n} offene(r) Sicherheitsalarm(e)` };
@@ -212,6 +227,7 @@ export function pruefeEinrichtung(db, config, ctx = {}) {
   return { status: 'ok', aktiv: false, grund: `Einrichtung abgeschlossen am ${datumAnzeige(am)}` };
 }
 
+// Reihenfolge der Dienste auf der Statusseite (Schlüssel = Name im JSON von /healthz).
 const PRUEFUNGEN = [
   ['datenbank', pruefeDatenbank],
   ['sicherung', pruefeSicherung],
@@ -226,6 +242,9 @@ const PRUEFUNGEN = [
   ['einrichtung', pruefeEinrichtung],
 ];
 
+/**
+ * @returns {{status: 'ok'|'warnung'|'fehler', geprueft_am: string, dienste: Object<string, {status: string, grund: string, seit?: string, aktiv?: boolean}>}}
+ */
 export function pruefeAlleDienste(db, config, { jetzt = new Date(), tsaErgebnis = null, statfs = fs.statfsSync, ladeCrls } = {}) {
   const ctx = { jetzt, tsaErgebnis, statfs, ladeCrls };
   const dienste = {};
@@ -243,6 +262,7 @@ export const STATUS_CACHE_TTL_MS = 30 * 1000;
 
 // Gemeinsamer Zwischenspeicher fuer /healthz, Dashboard-Karte und Statusseite (eine Instanz pro App).
 // neu=true umgeht ihn ("Jetzt neu pruefen"); leeren() nach geaenderten Grenzwerten.
+// @returns {{tsaErgebnis: Function, ergebnis: Function, leeren: Function}}; `ergebnis({neu: true})` umgeht den Zwischenspeicher.
 export function createStatusCache({
   db, config, tsaErreichbarkeit = null, tsaVersuch, ttlMs = STATUS_CACHE_TTL_MS,
   pruefe = pruefeAlleDienste, jetzt = Date.now,

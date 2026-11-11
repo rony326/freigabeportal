@@ -1,3 +1,6 @@
+// Admin → Kreditoren (`/admin/kreditoren`, Recht `kreditoren_verwalten`, docs/qr-bill-und-betrugserkennung.md und docs/kreditoren-statt-debitoren.md): Lieferanten mit Standardkonto, Zahlungsart und "Beträge schwanken", ihre IBANs und die Zuweisungsregeln (Absender-Muster → Kreditor).
+// (Bis 2026-09 hiess die Seite "Debitoren"; der alte Pfad /admin/debitoren leitet weiter.) Bei Überweisung und Dauerauftrag ist mindestens eine IBAN Pflicht.
+
 import { Router } from 'express';
 import {
   createKreditor, updateKreditor, deactivateKreditor, activateKreditor, getKreditorById, listKreditoren,
@@ -24,6 +27,7 @@ const LETZTE_IBAN_FEHLER = 'Die letzte IBAN kann nicht gelöscht werden, solange
 
 // Auswahl für das Standard-Konto: nur Konten, die Rechnungen erlauben. Ein schon gesetztes Konto bleibt
 // sichtbar (auch wenn es inzwischen nicht mehr passt), damit Speichern es nicht still entfernt.
+// (Siehe Kommentar oben.)
 function kontenFuerBearbeiten(db, kreditor) {
   const konten = filterKontenFuerTyp(listKonten(db), 'rechnung');
   if (kreditor.konto_id && !konten.some((k) => k.id === kreditor.konto_id)) {
@@ -36,10 +40,12 @@ function kontenFuerBearbeiten(db, kreditor) {
 export function createKreditorenRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // Liest die Zahlungsart aus dem Formular.
   function zahlungsartAusEingabe(body) {
     return body.zahlungsart || 'ueberweisung';
   }
 
+  // Rendert die Liste mit Kreditoren, IBANs, Regeln und Formularen (Fehler und Werte aus overrides).
   function renderListe(req, res, status, overrides = {}) {
     const konten = listKonten(db, { includeInactive: true });
     const kreditoren = listKreditoren(db, { includeInactive: true }).map((kreditor) => ({
@@ -76,11 +82,13 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     });
   }
 
+  // GET /admin/kreditoren – Liste (Lieferanten, Regeln).
   router.get('/', (req, res) => {
     renderListe(req, res, 200);
   });
 
   // Anlegen auf einer eigenen Seite (wie „Bearbeiten“), nicht als Formular unter der Liste.
+  // Rendert die Seite zum Anlegen.
   function renderNeu(res, status, { errors = [], values = {} } = {}) {
     res.status(status).render('admin/kreditoren-form', {
       kreditor: null,
@@ -92,10 +100,12 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     });
   }
 
+  // GET /admin/kreditoren/neu – Formular zum Anlegen.
   router.get('/neu', (req, res) => {
     renderNeu(res, 200);
   });
 
+  // POST /admin/kreditoren – legt einen Kreditor (mit erster IBAN) an.
   router.post('/', csrfProtection, (req, res) => {
     const { name, kontoId, iban } = req.body;
     const zahlungsart = zahlungsartAusEingabe(req.body);
@@ -110,9 +120,8 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     res.redirect('/admin/kreditoren?gespeichert=1');
   });
 
-  // The /regeln* routes must be registered before the generic /:id* kreditor routes below —
-  // otherwise POST/GET /admin/kreditoren/regeln(...) would first match router's `/:id` pattern
-  // (with id="regeln", a NaN Number()) and 404 before ever reaching these handlers.
+  // Die /regeln*-Routen müssen vor den allgemeinen /:id*-Kreditor-Routen unten registriert werden — sonst träfe POST/GET /admin/kreditoren/regeln(...) zuerst das Muster `/:id` des Routers (mit id="regeln", einem NaN-Number()) und endete mit 404, bevor es diese Handler erreicht.
+  // POST /admin/kreditoren/regeln – legt eine Zuweisungsregel an (Absender-Muster = E-Mail oder Domain, Ziel-Kreditor); doppelte Muster werden abgelehnt.
   router.post('/regeln', csrfProtection, (req, res) => {
     const { absenderMuster } = req.body;
     const kreditorId = kreditorIdAusEingabe(req.body);
@@ -134,6 +143,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     res.redirect('/admin/kreditoren?gespeichert=1');
   });
 
+  // GET /admin/kreditoren/regeln/:id/bearbeiten – Regel bearbeiten.
   router.get('/regeln/:id/bearbeiten', (req, res) => {
     const regel = getZuweisungsregelById(db, Number(req.params.id));
     if (!regel) {
@@ -147,6 +157,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     });
   });
 
+  // POST /admin/kreditoren/regeln/:id – Regel speichern.
   router.post('/regeln/:id', csrfProtection, (req, res) => {
     const id = Number(req.params.id);
     const regel = getZuweisungsregelById(db, id);
@@ -175,14 +186,14 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     res.redirect('/admin/kreditoren?gespeichert=1');
   });
 
+  // POST /admin/kreditoren/regeln/:id/loeschen – Regel löschen.
   router.post('/regeln/:id/loeschen', csrfProtection, (req, res) => {
     deleteZuweisungsregel(db, Number(req.params.id));
     res.redirect('/admin/kreditoren');
   });
 
-  // The /ibans* routes must be registered before the generic /:id* kreditor routes below —
-  // otherwise POST /admin/kreditoren/ibans(...) would first match router's `/:id` pattern
-  // (with id="ibans", a NaN Number()) and 404 before ever reaching these handlers.
+  // Die /ibans*-Routen müssen vor den allgemeinen /:id*-Kreditor-Routen unten registriert werden — sonst träfe POST /admin/kreditoren/ibans(...) zuerst das Muster `/:id` des Routers (mit id="ibans", einem NaN-Number()) und endete mit 404, bevor es diese Handler erreicht.
+  // POST /admin/kreditoren/ibans – fügt einem Kreditor eine IBAN hinzu (normalisiert, Prüfziffer/Länge, noch keinem anderen Kreditor zugeordnet).
   router.post('/ibans', csrfProtection, (req, res) => {
     const { iban } = req.body;
     const kreditorId = kreditorIdAusEingabe(req.body);
@@ -205,6 +216,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     res.redirect('/admin/kreditoren?gespeichert=1');
   });
 
+  // POST /admin/kreditoren/ibans/:id/loeschen – löscht eine IBAN (die letzte nur, wenn keine IBAN-Pflicht besteht).
   router.post('/ibans/:id/loeschen', csrfProtection, (req, res) => {
     const row = getKreditorIbanById(db, Number(req.params.id));
     if (row) {
@@ -217,6 +229,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     res.redirect('/admin/kreditoren');
   });
 
+  // GET /admin/kreditoren/:id/bearbeiten – Bearbeitungsformular.
   router.get('/:id/bearbeiten', (req, res) => {
     const kreditor = getKreditorById(db, Number(req.params.id));
     if (!kreditor) {
@@ -237,6 +250,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     });
   });
 
+  // POST /admin/kreditoren/:id – speichert Name, Standardkonto, Zahlungsart, "Beträge schwanken".
   router.post('/:id', csrfProtection, (req, res) => {
     const id = Number(req.params.id);
     const kreditor = getKreditorById(db, id);
@@ -266,11 +280,13 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     res.redirect('/admin/kreditoren?gespeichert=1');
   });
 
+  // POST /admin/kreditoren/:id/deaktivieren – Kreditor abschalten.
   router.post('/:id/deaktivieren', csrfProtection, (req, res) => {
     deactivateKreditor(db, Number(req.params.id));
     res.redirect('/admin/kreditoren?gespeichert=1');
   });
 
+  // POST /admin/kreditoren/:id/aktivieren – Kreditor wieder einschalten.
   router.post('/:id/aktivieren', csrfProtection, (req, res) => {
     activateKreditor(db, Number(req.params.id));
     res.redirect('/admin/kreditoren?gespeichert=1');

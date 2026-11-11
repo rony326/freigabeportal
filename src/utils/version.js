@@ -1,5 +1,12 @@
+// Ermittelt die angezeigte Version (Fusszeile) direkt aus Git – siehe Kommentar unten.
+
 import { execFileSync } from 'node:child_process';
 
+/**
+ * Macht aus einer Git-Remote-URL eine https-Adresse ohne `.git` (für Links auf Commit/Release).
+ * @param {string|null|undefined} remoteUrl z. B. `git@github.com:org/repo.git`
+ * @returns {string|null} `https://github.com/org/repo` oder null ohne Remote
+ */
 export function normalizeRepoUrl(remoteUrl) {
   if (!remoteUrl) return null;
   let url = remoteUrl.trim();
@@ -9,12 +16,18 @@ export function normalizeRepoUrl(remoteUrl) {
   return url.replace(/\.git$/, '');
 }
 
+// Führt git ohne Shell aus und liefert die getrimmte Ausgabe (wirft bei Fehler, z. B. kein Repository).
 function runGit(args, cwd) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 }
 
-// Reads the deployed commit/tag straight from git rather than package.json, so the footer
-// always matches what's actually running instead of relying on someone bumping a version field.
+// Liest den ausgelieferten Commit bzw. Tag direkt aus git statt aus package.json, damit die Fusszeile immer
+// dem entspricht, was wirklich läuft – und nicht davon abhängt, dass jemand ein Versionsfeld hochzählt.
+/**
+ * @param {string} cwd Verzeichnis des Repositories
+ * @returns {{display: string|null, url: string|null, repoUrl: string|null}} Versionstext, Link auf
+ *   Release bzw. Commit und Repository-URL; alles null, wenn kein Git verfügbar ist (z. B. ZIP-Deployment).
+ */
 export function getVersionInfo(cwd) {
   try {
     const display = runGit(['describe', '--tags', '--always'], cwd);
@@ -26,7 +39,7 @@ export function getVersionInfo(cwd) {
       const exactTag = runGit(['describe', '--tags', '--exact-match'], cwd);
       if (repoUrl) url = `${repoUrl}/releases/tag/${exactTag}`;
     } catch {
-      // HEAD isn't exactly on a tag — keep linking to the commit.
+      // HEAD liegt nicht genau auf einem Tag – der Link zeigt weiter auf den Commit.
     }
 
     return { display, url, repoUrl };

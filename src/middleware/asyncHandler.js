@@ -1,3 +1,5 @@
+// Fehlerweiterleitung für async-Routen (Express 4) – Begründung direkt unterhalb.
+
 // Express 4 leitet abgelehnte Promises aus async-Handlern NICHT an den Fehler-Handler weiter: ein
 // Fehler (auch ein synchron werfender DB-Aufruf wie SQLITE_FULL/BUSY in einem async-Handler) würde
 // zur unhandledRejection und damit zum Prozess-Exit (Review Task 5, Fund 1). Jeder async-Handler

@@ -1,3 +1,5 @@
+// Logo-Auslieferung (`/branding/logo`, `/branding/logo-dunkel`): öffentlich und ohne Rate-Limiter (das Logo hängt an jeder Seite), mit Caching über ETag und Versionsparameter.
+
 import { Router } from 'express';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';

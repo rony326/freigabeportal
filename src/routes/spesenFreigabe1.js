@@ -1,3 +1,6 @@
+// Freigabe 1 für Spesenpositionen (`/spesen-freigabe1/:id`, docs/spesen-einreichung.md): reine Prüfseite (ohne Konto ändern oder Aufsplitten) mit Freigeben, Ablehnen oder Interessenskonflikt (→ Stellvertretung 1 bzw. Admin-Gruppe).
+// Vier-Augen-Prinzip: die einreichende Person und wer einen Konflikt erklärt hat, dürfen nie prüfen; ist die einreichende Person selbst Freigeber 2 des Kontos, geht Freigabe 2 an die Stellvertretung 2 bzw. die Admin-Gruppe.
+
 import { personHasRole } from '../middleware/roles.js';
 import { Router } from 'express';
 import { feldFehlerAttr } from '../utils/feldFehler.js';
@@ -29,19 +32,16 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
     return personHasRole(person, config, 'superadmin');
   }
 
+  // Lädt die Position und prüft Berechtigung und Selbstfreigabe-Sperren; bei Mangel 403 gerendert und null geliefert. @returns {{job, konto}|null}
   function loadAuthorized(req, res) {
     const job = getJobById(db, Number(req.params.id));
     if (!job || job.quelle !== 'spesen' || job.status !== 'zugewiesen') {
       res.status(403).render('error', { message: 'Für diese Spesen-Position ist aktuell keine Freigabe 1 möglich.' });
       return null;
     }
-    // Must be checked unconditionally, before the admin-escalation branch below: a superadmin
-    // who is also this claim's own submitter must never be authorized here just because the
-    // admin-escalated branch only checks group membership. Reachable via: submitter is this
-    // Konto's own Freigeber1 -> auto-escalates to Stellvertreter1 at submission -> Stellvertreter1
-    // also declares a conflict -> since freigabe1_eskaliert_von is already set, that second
-    // conflict routes straight to the admin group (SYNC-8), where the submitter — if also a
-    // superadmin — would otherwise pass isSuperadmin() and approve their own claim.
+    // Muss bedingungslos geprüft werden, vor dem Zweig der Admin-Eskalation unten: Ein Superadmin, der zugleich die einreichende Person dieser Forderung ist, darf hier nie berechtigt werden, nur weil der Zweig der an
+    // den Admin eskalierten Fälle bloss die Gruppenzugehörigkeit prüft. Erreichbar so: Einreichende Person ist der eigene Freigeber 1 dieses Kontos → wird bei der Einreichung automatisch an Stellvertretung 1 eskaliert → Stellvertretung 1
+    // erklärt ebenfalls einen Konflikt → da freigabe1_eskaliert_von schon gesetzt ist, geht dieser zweite Konflikt direkt an die Admin-Gruppe (SYNC-8), wo die einreichende Person — falls auch Superadmin — isSuperadmin() bestehen und ihre eigene Forderung freigeben würde.
     if (job.eingereicht_von === req.currentPerson.churchtools_person_id) {
       res.status(403).render('error', {
         message: 'Du hast diese Spesen-Position selbst eingereicht und kannst sie nicht selbst freigeben.',
@@ -66,6 +66,7 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
     return { job, konto: getKontoById(db, job.konto_id) };
   }
 
+  // Rendert die Prüfseite (Beleg-Vorschau, Verlauf, Kommentare, Formularwerte und Fehler).
   function renderForm(req, res, status, { job, konto }, values, errors, feldFehler = {}) {
     const spesenabrechnung = getSpesenabrechnungById(db, job.spesenabrechnung_id);
     res.status(status).render('spesen-freigabe1', {
@@ -83,12 +84,14 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
     });
   }
 
+  // GET /spesen-freigabe1/:id – die Prüfseite.
   router.get('/:id', (req, res) => {
     const result = loadAuthorized(req, res);
     if (!result) return;
     renderForm(req, res, 200, result, { interessenskonflikt: '', begruendung: '' }, []);
   });
 
+  // POST /spesen-freigabe1/:id – `aktion=ablehnen` (Begründung Pflicht, Mail an die einreichende Person), Interessenskonflikt (Eskalation) oder Freigeben (weiter zu Freigabe 2).
   router.post('/:id', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const result = loadAuthorized(req, res);
@@ -224,13 +227,9 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
           eskaliertVon: job.freigabe1_eskaliert_von,
         });
         abschliessenFreigabe1(db, job.id);
-        // Vier-Augen-Prinzip, second half: Freigabe 1 just completed, but if the submitter of
-        // this Spesen position is ALSO this Konto's own Freigeber2, letting the job proceed
-        // unmodified would resolve back to the submitter for Freigabe 2 too (getEffectiveFreigeber2Id
-        // would pick konto.freigeber2_id === job.eingereicht_von). Reroute to Stellvertreter2 right
-        // here, atomically with the Freigabe-1 completion, rather than ever reaching Freigabe 2 with
-        // no valid non-self approver (see freigabe2.js's loadAuthorized submitter check, which is
-        // the belt-and-suspenders backstop for this same rule).
+        // Vier-Augen-Prinzip, zweite Hälfte: Freigabe 1 ist gerade abgeschlossen, aber ist die einreichende Person dieser Spesenposition AUCH der eigene Freigeber 2 dieses Kontos, würde ein unveränderter Fortgang auch für Freigabe 2 zur einreichenden Person
+        // zurückführen (getEffectiveFreigeber2Id würde konto.freigeber2_id === job.eingereicht_von wählen). Hier sofort an die Stellvertretung 2 umleiten, atomar mit dem Abschluss von Freigabe 1, statt Freigabe 2 je ohne gültige Person
+        // ohne Selbstfreigabe zu erreichen (siehe die Prüfung der einreichenden Person in loadAuthorized von freigabe2.js, die dieselbe Regel zusätzlich absichert).
         if (job.quelle === 'spesen' && konto.freigeber2_id === job.eingereicht_von) {
           // Darf Stellvertreter 2 selbst nicht freigeben (z. B. weil er gerade Freigabe 1 erteilt hat),
           // geht Freigabe 2 direkt an die Admin-Gruppe.

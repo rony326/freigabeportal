@@ -1,3 +1,5 @@
+// Maschinenroute `POST /api/n8n/kk-belege` (Header `X-API-Key`, docs/n8n-schnittstelle.md und docs/kreditkarten-belege.md): nimmt einen per Mail eingehenden Kreditkartenbeleg an (multipart: Feld `pdf`, Text `absender`). Antwort 201 `{id, status: 'entwurf'}`, sonst 400/409/422.
+
 import { Router } from 'express';
 import multer from 'multer';
 import { nimmKkBelegEntgegen } from '../../services/kkBelegEingang.js';
@@ -15,6 +17,7 @@ export function createN8nKkBelegeRouter({ db, config, mailer }) {
   const router = Router();
   // Wie /api/n8n/jobs: Audit-Ereignisse dieser Route gehören dem n8n-Dienst, nicht 'anonymous'.
   router.use(machineAuditContext('service:n8n', 'n8n'));
+  // POST /api/n8n/kk-belege – ein Anhang je Aufruf (höchstens 20 MB).
   router.post('/', (req, res, next) => {
     mitAuditKontext(upload.single('pdf'))(req, res, asyncCallback(next, async (uploadErr) => {
       try {

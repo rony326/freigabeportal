@@ -1,3 +1,8 @@
+// Sicherungsarchiv (ZIP mit db.sqlite, jobs/, branding/ und manifest.json) erstellen und streng prüfen. Die Verschlüsselung
+// liegt in backupEnvelope.js, Ablauf und Aufbewahrung im Cron-Job, die Wiederherstellung in offlineRestore.js
+// (docs/backup-verschluesselung.md, docs/backup-sicherheit.md). Archive gelten als nicht vertrauenswürdig: Pfade, Grössen,
+// Hashes, Datenbankintegrität und alle Dateiverweise werden vor jeder Wiederherstellung geprüft.
+
 import AdmZip from 'adm-zip';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync, readdirSync, readFileSync, lstatSync, openSync, closeSync, fstatSync, constants } from 'node:fs';
@@ -5,8 +10,10 @@ import { tmpdir } from 'node:os';
 import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 
+// Tabellen, die jede gültige Sicherung enthalten muss (Plausibilitätsprüfung).
 const REQUIRED_TABLES = ['jobs', 'personen', 'konten', 'sessions', 'admin_config', 'freigaben', 'audit_ereignisse', 'export_nachweise', 'archiv_quittungen'];
 const FORMAT_VERSION = 2;
+// Obergrenzen gegen ZIP-Bomben und Speicherüberlauf (Archiv, Einzeldatei, Summe, Anzahl Einträge, Manifest).
 export const BACKUP_LIMITS = Object.freeze({
   archiveBytes: 256 * 1024 * 1024,
   entryBytes: 128 * 1024 * 1024,
@@ -17,6 +24,7 @@ export const BACKUP_LIMITS = Object.freeze({
 
 function sha256(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
 
+// Lässt nur erwartete, portable Pfade zu (db.sqlite, manifest.json, jobs/…, branding/…) – keine Sonderzeichen, kein `..`.
 function checkArchivePath(name, directory = false) {
   const parts = (directory ? name.slice(0, -1) : name).split('/');
   if (typeof name !== 'string' || name.length > 1024 || /[\\\x00-\x1f\x7f:]/.test(name) ||
@@ -26,6 +34,7 @@ function checkArchivePath(name, directory = false) {
   }
 }
 
+// Prüft, dass jede in der Datenbank referenzierte Datei (Belege, Thumbnails, Logos) im Archiv liegt und zum gespeicherten Hash passt.
 function validateFileReferences(db, manifest, zip) {
   const roots = manifest.quellpfade;
   if (!roots || !['jobs', 'branding', 'cwd'].every((key) => typeof roots[key] === 'string' && isAbsolute(roots[key]))) {
@@ -61,13 +70,16 @@ function validateFileReferences(db, manifest, zip) {
   }
 }
 
+// Erlaubte Dateinamen von Sicherungen (`.fpbak`; `.zip` nur noch für Altsicherungen).
 export const BACKUP_DATEINAME_PATTERN = /^backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.(?:zip|fpbak)$/;
 export const ENCRYPTED_BACKUP_DATEINAME_PATTERN = /^backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.fpbak$/;
 
+// Dateiname einer neuen Sicherung mit Zeitstempel, z. B. backup-2026-11-11T03-00-00-000Z.fpbak.
 export function backupDateiname(date = new Date()) {
   return `backup-${date.toISOString().replace(/[:.]/g, '-')}.fpbak`;
 }
 
+// Fehler mit verständlicher deutscher Meldung für die Admin-Seite.
 export class BackupValidationError extends Error {}
 
 // Zählt die echten Dateien (keine Verzeichniseinträge) unterhalb eines Präfixes im Archiv.
@@ -156,8 +168,9 @@ export function buildBackupArchive(db, config) {
   }
 }
 
-// Validates untrusted archive structure/content before offline staging writes any data.
-// Content hashes are consistency checks, not an independent proof of archive origin.
+// Prüft Struktur und Inhalt eines nicht vertrauenswürdigen Archivs, bevor die Offline-Bereitstellung Daten schreibt.
+// Inhalts-Hashes sind Konsistenzprüfungen, kein unabhängiger Beweis der Herkunft des Archivs.
+// (Siehe Kommentar unten.) @returns {{zip: AdmZip, manifest: object}} nach bestandener Prüfung
 export function validateBackupArchive(buffer) {
   let zip;
   try {
@@ -287,7 +300,7 @@ export function validateBackupArchive(buffer) {
   return { zip, manifest };
 }
 
-// Retained as an explicit failure for callers of the unsafe legacy service API.
+// Bleibt als ausdrücklicher Fehler für Aufrufer der unsicheren alten Service-API bestehen.
 export function restoreBackupArchive() {
   throw new Error('Live-Restore ist gesperrt. Den Offline-Wartungsprozess backup:restore verwenden.');
 }

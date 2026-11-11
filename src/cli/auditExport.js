@@ -1,3 +1,7 @@
+// CLI: `npm run audit:export` / `audit:verify` (siehe docs/audit-externe-nachweise.md).
+// Befehle: `export --out <Verzeichnis> [--max N] [--paket N]`, `verify`, `status`.
+// `verify` beendet mit Exitcode 2, wenn das lokale Register Befunde enthält.
+
 import { parseArgs } from 'node:util';
 import { openSync, writeFileSync, fsyncSync, closeSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';

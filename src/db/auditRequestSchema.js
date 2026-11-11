@@ -1,3 +1,9 @@
+// Zuordnung von Audit-Ereignissen zu HTTP-Anfragen (Request-ID) und zu Läufen (Backup, Cron, Wiederherstellung).
+// Das Audit-Ereignis selbst bleibt unverändert; die Zuordnung wird per Trigger beim Einfügen angelegt und ist
+// danach unveränderlich. Konzept: docs/audit-paket-request-korrelation.md.
+
+// Legt Zuordnungstabellen, Schutz- und Erfassungs-Trigger sowie die Indizes für Backup-Nachweise an.
+// SAVEPOINT: bei einem Fehler bleibt die Datenbank im Zustand davor.
 export function migrateAuditRequestSchema(db) {
   db.exec('SAVEPOINT audit_request_schema');
   try {

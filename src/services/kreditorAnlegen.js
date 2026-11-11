@@ -1,3 +1,5 @@
+// Gemeinsame Prüfung und Anlage von Kreditoren (Lieferanten) für das Admin-Formular und die Schnellanlage in der Kontierung.
+
 import { getKontoById, kontoErlaubtFuerTyp } from '../db/kontenRepo.js';
 import { createKreditor, ZAHLUNGSARTEN, brauchtIban } from '../db/kreditorenRepo.js';
 import { createKreditorIban, findKreditorIbanByIban } from '../db/kreditorIbanRepo.js';
@@ -8,6 +10,7 @@ export const IBAN_UNGUELTIG_FEHLER = 'IBAN ist ungültig (Prüfziffer oder Läng
 export const IBAN_BEREITS_ZUGEORDNET_FEHLER = 'Diese IBAN ist bereits einem Lieferanten zugeordnet.';
 
 // Gemeinsame Prüfung für das Anlegen eines Lieferanten (Admin und Kontierungs-Schnellanlage).
+// (Siehe Kommentar oben.)
 export const STANDARD_KONTO_FEHLER = 'Das Standard-Konto muss Rechnungen erlauben (Buchungsart «Rechnung» oder «Rechnung / Gutschrift»).';
 
 // Das Standard-Konto steuert eingehende Rechnungen: ein reines Gutschrift-Konto ist dafür nicht zulässig.
@@ -17,6 +20,10 @@ export function pruefeStandardKonto(db, kontoId) {
   return konto && !kontoErlaubtFuerTyp(konto, 'rechnung') ? STANDARD_KONTO_FEHLER : null;
 }
 
+/**
+ * Prüft die Eingaben für einen neuen Lieferanten (Name, Zahlungsart, IBAN-Pflicht und -Gültigkeit, Standardkonto).
+ * @returns {{errors: string[], normalizedIban: string}}
+ */
 export function pruefeNeuenKreditor(db, { name, zahlungsart, iban, kontoId = null }) {
   const normalizedIban = normalizeIban(iban);
   const errors = [];
@@ -36,6 +43,7 @@ export function pruefeNeuenKreditor(db, { name, zahlungsart, iban, kontoId = nul
 }
 
 // Kreditor und erste IBAN atomar: scheitert die IBAN, bleibt kein IBAN-loser Lieferant zurück.
+// Legt den Kreditor samt erster IBAN in einer Transaktion an. @returns {number} id
 export function legeKreditorAn(db, { name, kontoId, zahlungsart, betragSchwankt = false, normalizedIban }) {
   db.exec('BEGIN');
   try {

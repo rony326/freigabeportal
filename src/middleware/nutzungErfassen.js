@@ -1,3 +1,6 @@
+// Nutzungsdaten: zählt Seitenaufrufe angemeldeter Personen (Pfad, Dauer, Gerät) für die Betriebsseite
+// (docs/betrieb-und-nutzung.md). Erfasst wird erst NACH der Antwort und nur bei HTML-Seiten.
+
 import { currentAuditRequestId } from '../services/auditContext.js';
 import { erfasseSeitenaufruf, geraeteIdAusCookie } from '../services/nutzung.js';
 
@@ -5,6 +8,7 @@ import { erfasseSeitenaufruf, geraeteIdAusCookie } from '../services/nutzung.js'
 const AUSGENOMMEN = ['/api/n8n', '/internal/cron', '/branding', '/downloads/'];
 const STATISCH = /\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|eot|pdf|txt|json)$/i;
 
+// true für Maschinenrouten, Dateistreams und statische Dateien – die zählen nicht als Seitenaufruf.
 function ausgenommen(pfad) {
   return STATISCH.test(pfad) || AUSGENOMMEN.some((praefix) => pfad === praefix || pfad.startsWith(praefix.endsWith('/') ? praefix : `${praefix}/`));
 }
@@ -22,6 +26,7 @@ export function nutzungErfassen(db) {
   };
 }
 
+// Merkt sich Startzeit und Kennungen und schreibt beim `finish` der Antwort einen Nutzungseintrag.
 function erfasseBeiEnde(db, req, res, person, pfad) {
   const start = process.hrtime.bigint();
   req.nutzung = {

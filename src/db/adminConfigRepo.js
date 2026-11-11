@@ -1,38 +1,54 @@
+// Zugriff auf die Tabelle `admin_config` (Schlüssel/Wert) – alle in der Oberfläche einstellbaren Werte
+// (Fristen, Empfänger, Mail-Vorlagen, Modul-Schalter, Zeitpläne, Grenzwerte).
+//
+// `DEFAULTS` ist die Werkseinstellung UND die Liste aller bekannten Schlüssel: `seedDefaults()` legt beim Start
+// fehlende Schlüssel an und überschreibt nie einen bestehenden Wert. Ein neuer Schlüssel gehört hier hinein.
+// Werte sind immer Strings ('0'/'1' für Schalter, Zahlen als Text, Empfänger als `gruppe:xyz` oder Personenlisten,
+// siehe services/empfaenger.js). Die Bedeutung der Gruppen ist in docs/admin-bereich.md beschrieben.
+
 export const DEFAULTS = {
+  // --- Pool-Erinnerung/-Eskalation (Stunden bis zur Mail; Empfänger siehe services/empfaenger.js) ---
   reminder_stunden: '24',
   eskalation_stunden: '48',
   reminder_empfaenger: 'gruppe:buchhaltung',
   eskalation_empfaenger: 'gruppe:buchhaltung',
+  // --- Freigabe 2: Erinnerung und Eskalation an die Administration ---
   freigabe2_reminder_stunden: '24',
   freigabe2_eskalation_stunden: '48',
   freigabe2_eskalation_empfaenger: 'gruppe:admin',
+  // --- Erscheinungsbild (middleware/branding.js, Admin → Erscheinungsbild) ---
   branding_farbe_primaer: '#2f4858',
   branding_farbe_sekundaer: '#4d7ea8',
   branding_theme_default: 'system',
   branding_logo_ausrichtung: 'links',
   footer_text: 'Freigabeportal',
   seiten_titel: 'Freigabeportal',
+  // --- Mail-Log, Personen-Sync-Schutzgrenzen und Audit-Anzeige ---
   mail_log_aufbewahrung_tage: '90',
   sync_max_deaktivierung_prozent: '50',
   sync_max_deaktivierung_anzahl: '10',
   sync_fehler_empfaenger: 'gruppe:admin',
   iban_abweichung_empfaenger: 'gruppe:admin',
   audit_log_lokale_zeit: '0',
+  // --- Zeitpläne der Hintergrund-Jobs (services/scheduler.js; Stunde/Minute bzw. Intervall in Minuten) ---
   cron_sync_personen_stunde: '2',
   cron_sync_personen_minute: '0',
   cron_pdf_bereinigung_stunde: '2',
   cron_pdf_bereinigung_minute: '30',
   cron_pool_erinnerungen_intervall_minuten: '60',
   cron_freigabe2_erinnerungen_intervall_minuten: '60',
+  // --- Zeitstempeldienst (RFC 3161): leere URL = Zeitstempel deaktiviert ---
   zeitstempel_tsa_url: '',
   zeitstempel_tsa_user: '',
   zeitstempel_tsa_passwort: '',
   cron_zeitstempel_nachholen_intervall_minuten: '5',
   cron_split_gruppen_nachholen_intervall_minuten: '15',
   zeitstempel_warnung_ab_stunden: '2',
+  // --- Datenbank-Sicherung ---
   backup_cron_stunde: '3',
   backup_cron_minute: '0',
   backup_aufbewahrung_anzahl: '14',
+  // --- Wartungsmodus und Modul-Schalter (Spesen, Kreditkarten) ---
   wartungsmodus_aktiv: '0',
   wartungsmodus_hinweis: '',
   wartungsmodus_seit: '',
@@ -46,6 +62,7 @@ export const DEFAULTS = {
   rapport_eskalation_empfaenger: '',
   cron_rapport_erinnerungen_intervall_minuten: '60',
   kontierung_strikte_freigeber1_pruefung: '0',
+  // --- Mail-Vorlagen: je Ereignis Betreff + Text mit %platzhaltern% (services/mailTemplates.js, Admin → Benachrichtigungen) ---
   mail_vorlage_zuweisung_betreff: 'Freigabeportal: Neue Rechnung zur Bearbeitung',
   mail_vorlage_zuweisung_text: 'Hallo %empfaengerName%,\n\n%grund%\n\nBeleg: %jobDateiname%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_reminder_betreff: 'Freigabeportal: Rechnung wartet im Pool',
@@ -100,6 +117,7 @@ export const DEFAULTS = {
   mail_vorlage_rapport_reminder_text: 'Hallo %empfaengerName%,\n\ndieses Dokument wartet seit mehr als %stunden% Stunden auf deine Kenntnisnahme: %jobDateiname%\n\nBitte im Freigabeportal ansehen und bestätigen: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_rapport_eskalation_betreff: 'Freigabeportal: Kenntnisnahme seit langem ausstehend',
   mail_vorlage_rapport_eskalation_text: 'Das Dokument %jobDateiname% wartet seit mehr als %stunden% Stunden auf die Kenntnisnahme folgender Personen:\n\n%offenePersonen%\n\nZum Vorgang: %link%\n\nFreundliche Grüsse\n%portalName%',
+  // --- Betrieb & Nutzung: Datenschutztext, Revisionsnachweis, Aufbewahrung, Sicherheitsalarme ---
   betrieb_kontakt_email: '',
   datenschutz_text: 'Das Portal speichert Nutzungsdaten, damit es zuverlässig läuft, weiterentwickelt werden kann und sicher bleibt.\n\nWelche Daten: Seitenaufrufe (wer wann welche Seite aufgerufen hat, mit Gerät, Browser und Betriebssystem), Anmeldungen (mit IP-Adresse und Gerät), die Geräte, mit denen du dich angemeldet hast, aufgetretene Fehler sowie Fehlermeldungen, die du über "Problem melden" abschickst. Nicht gespeichert werden Formularinhalte und Suchbegriffe.\n\nCookie: Das Portal setzt das Cookie "fp_geraet" mit einer zufälligen Geräte-ID. Es dient der Erkennung neuer Geräte.\n\nZweck: Wartung, Weiterentwicklung und Sicherheit (zum Beispiel Warnung bei Anmeldung von einem neuen Gerät).\n\nAufbewahrung: Seitenaufrufe 90 Tage; Anmeldungen, Fehler und Fehlermeldungen 1 Jahr; Geräte 1 Jahr nach der letzten Nutzung. Danach werden die Daten automatisch gelöscht.\n\nZugriff: Nur Personen mit dem Recht "Betrieb & Nutzung" können diese Daten einsehen.\n\nKontakt bei Fragen: %kontakt%.',
   audit_revision_empfaenger: '',
@@ -122,6 +140,7 @@ export const DEFAULTS = {
   cron_sicherheitsalarme_intervall_minuten: '30',
   cron_mail_zustellung_intervall_minuten: '5',
   mail_zustellung_max_versuche: '8',
+  // --- Grenzwerte der Statusseite /admin/betrieb/status (services/statusPruefungen.js) ---
   status_sicherung_warnung_stunden: '26',
   status_sicherung_fehler_stunden: '50',
   status_mail_wartezeit_fehler_minuten: '60',
@@ -143,6 +162,7 @@ export const DEFAULTS = {
   pruefung_gleicher_betrag_tage: '30',
 };
 
+/** Legt alle fehlenden Standardwerte an (`ON CONFLICT DO NOTHING`: bestehende Einstellungen bleiben). */
 export function seedDefaults(db) {
   const insert = db.prepare('INSERT INTO admin_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING');
   for (const [key, value] of Object.entries(DEFAULTS)) {
@@ -155,6 +175,7 @@ export function getDefaultConfigValue(key) {
   return Object.prototype.hasOwnProperty.call(DEFAULTS, key) ? DEFAULTS[key] : null;
 }
 
+/** @returns {string|null} gespeicherter Wert oder null, wenn der Schlüssel nicht existiert */
 export function getConfigValue(db, key) {
   const row = db.prepare('SELECT value FROM admin_config WHERE key = ?').get(key);
   return row ? row.value : null;
@@ -170,12 +191,14 @@ export function getConfigValues(db, keys) {
   return werte;
 }
 
+// Schreibt (oder überschreibt) einen Wert; Aufrufer prüfen vorher selbst die Gültigkeit.
 export function setConfigValue(db, key, value) {
   db.prepare(
     'INSERT INTO admin_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
   ).run(key, value);
 }
 
+// Entfernt einen Schlüssel (z. B. eine zurückgesetzte Mail-Vorlage – dann greift wieder der Standard).
 export function deleteConfigValue(db, key) {
   db.prepare('DELETE FROM admin_config WHERE key = ?').run(key);
 }

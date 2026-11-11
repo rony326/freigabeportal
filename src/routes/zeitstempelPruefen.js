@@ -1,3 +1,6 @@
+// Zeitstempel prüfen (`/zeitstempel-pruefen`, docs/zeitstempel-und-pruefbescheinigung.md): Prüfseite zu einem Vorgang (`?jobId=`) oder zu einer hochgeladenen PDF, plus druckbare Prüfbescheinigung
+// (`/zertifikat`). Sichtrecht wie beim PDF-Zugriff (services/jobAuthorization.js). Zugang: angemeldet.
+
 import { Router } from 'express';
 import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
@@ -14,6 +17,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 
 export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // GET /zeitstempel-pruefen[?jobId=] – ohne jobId das Upload-Formular, mit jobId die Prüfung des gespeicherten PDFs (samt Kommentarbereich).
   router.get('/', asyncHandler(async (req, res, next) => {
     try {
       const jobId = req.query.jobId ? Number(req.query.jobId) : null;
@@ -28,10 +32,8 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
       // #kommentare für Beteiligte ohne Arbeitsseite (z. B. die Spesen-Einreicherin).
       const kommentare = kommentarBereich(db, config, req.currentPerson, job, `/zeitstempel-pruefen?jobId=${job.id}`);
       if (!job.pdf_pfad || !existsSync(job.pdf_pfad)) {
-        // n8n deletes the local PDF once a job is abgeholt — but zeitstempel_datei_hash survives
-        // in the DB regardless, so verification is still possible via the plain upload form
-        // (hash-compared against that stored value). A bare 404 here was a dead end for anyone
-        // whose job had already been picked up; pre-filling jobId spares them hunting it down.
+        // n8n löscht das lokale PDF, sobald ein Vorgang abgeholt ist — aber zeitstempel_datei_hash bleibt in der DB in jedem Fall erhalten, die Prüfung ist also weiterhin über das einfache
+        // Upload-Formular möglich (Hash-Vergleich mit diesem gespeicherten Wert). Ein blosses 404 war hier eine Sackgasse für alle, deren Vorgang schon abgeholt war; die vorbelegte jobId erspart das Suchen.
         return res.render('zeitstempel-pruefen', {
           ergebnis: null,
           errors: [],
@@ -49,6 +51,7 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
     }
   }));
 
+  // GET /zeitstempel-pruefen/zertifikat?jobId= – druckbare Prüfbescheinigung zum gespeicherten PDF.
   router.get('/zertifikat', asyncHandler(async (req, res, next) => {
     try {
       const jobId = Number(req.query.jobId);
@@ -66,11 +69,10 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
     }
   }));
 
+  // POST /zeitstempel-pruefen – Prüfung einer hochgeladenen PDF (höchstens 25 MB), optional mit Hash-Vergleich gegen einen Vorgang (`jobId`) und dann als Prüfbescheinigung.
   router.post('/', (req, res, next) => {
     mitAuditKontext(upload.single('pdf'))(req, res, asyncCallback(next, async (uploadErr) => {
-      // csrfProtection must run after multer, not before: multer is what parses the multipart
-      // body (including the _csrf text field) — running csrfProtection any earlier would find
-      // req.body empty and reject every submission.
+      // csrfProtection muss nach multer laufen, nicht davor: multer parst den multipart-Body (inklusive des Textfelds _csrf) — liefe csrfProtection früher, wäre req.body leer und jede Einreichung würde abgelehnt.
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
       if (csrfErr) return next(csrfErr);
       try {

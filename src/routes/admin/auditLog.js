@@ -1,3 +1,6 @@
+// Admin → Audit-Log (`/admin/audit-log`, Recht `audit_log_einsehen`, docs/admin-bereich.md): zwei Sichten – die fachliche Zeitleiste über alle Vorgänge (services/globalAuditLog.js) und darunter die Änderungshistorie
+// aus der unveränderlichen Tabelle `audit_ereignisse` (jede Änderung wichtiger Tabellen mit Vorher/Nachher, Anfrage-/Lauf-Zuordnung). Nur lesend.
+
 import { Router } from 'express';
 import { queryGlobalAuditLog } from '../../services/globalAuditLog.js';
 import { listAllPersons } from '../../db/personenRepo.js';
@@ -7,6 +10,7 @@ import { EREIGNIS_LABEL } from '../../services/auditLog.js';
 // Ein Von-Datum ("2026-08-01") ist als reiner Tages-Präfix bereits inklusiv (String-Vergleich:
 // "2026-08-01T09:00:00Z" > "2026-08-01"). Ein Bis-Datum muss dagegen auf das Tagesende erweitert
 // werden, sonst schneidet "zeitpunkt <= '2026-08-01'" jeden Eintrag mit Uhrzeit an diesem Tag ab.
+// Erweitert ein reines Bis-Datum auf das Tagesende.
 function bisEndeDesTages(bis) {
   if (!bis) return null;
   return bis.length === 10 ? `${bis}T23:59:59.999Z` : bis;
@@ -21,6 +25,7 @@ const HISTORISCHE_OBJEKTNAMEN = {
   person_berechtigungen: 'Einzelrechte',
 };
 
+// Anzeigename eines Audit-Objekts (alte Tabellennamen werden erläutert).
 export function objektLabel(objekt) {
   return HISTORISCHE_OBJEKTNAMEN[objekt] || objekt;
 }
@@ -32,6 +37,7 @@ const HISTORIE_LIMIT = 50;
 
 const likeMuster = (wert) => `%${String(wert).replace(/[\\%_]/g, (z) => `\\${z}`)}%`;
 
+// Liest die Änderungshistorie (50 Einträge je Seite, absteigend) mit den Filtern h_* und liefert Filterwerte, Auswahllisten und den Link zur nächsten Seite.
 function ladeHistorie(db, query) {
   const werte = {};
   for (const feld of HISTORIE_FELDER) {
@@ -75,6 +81,7 @@ function ladeHistorie(db, query) {
 export function createAuditLogRouter({ db }) {
   const router = Router();
 
+  // GET /admin/audit-log – beide Sichten mit Filtern und Seitenblätterung.
   router.get('/', (req, res) => {
     const filter = {
       personId: req.query.person || null,

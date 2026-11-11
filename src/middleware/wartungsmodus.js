@@ -1,3 +1,7 @@
+// Wartungsmodus (docs/admin-bereich.md, Seite "Wartungsmodus"): solange aktiv, antworten Maschinenrouten
+// mit 503 + `Retry-After`, normale Nutzer sehen die Wartungsseite. Ausnahmen (Admins mit Recht, Backup,
+// Healthcheck, Login, Bestätigungen von n8n) stehen als Muster direkt unterhalb. Ein-/Ausschalten: services/wartungsmodus.js.
+
 import { istWartungsmodusAktiv, wartungsHinweis, wartungsmodusLaeuftLange } from '../services/wartungsmodus.js';
 import { personHasPermission } from './permissions.js';
 
@@ -18,6 +22,7 @@ const DOWNLOADS = /^\/downloads(\/|$)/i;
 const BESTAETIGUNGEN = /^\/api\/n8n\/(jobs|rapporte)\/\d+\/(abholung-bestaetigen|archivierung-bestaetigen)\/?$/i;
 const RETRY_AFTER_SEKUNDEN = '300';
 
+// Middleware-Fabrik; muss NACH `loadCurrentPerson` laufen, weil Berechtigte durchgelassen werden.
 export function wartungsmodusSperre(db, config) {
   return (req, res, next) => {
     if (!istWartungsmodusAktiv(db)) return next();

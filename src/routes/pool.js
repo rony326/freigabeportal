@@ -1,9 +1,12 @@
+// JSON-Schnittstelle des Pools (`/api/pool`, nur Buchhaltung, mit Sitzung): Liste der unzugewiesenen Vorgänge und "beanspruchen" per fetch() (CSRF über den Header `x-csrf-token`).
+
 import { Router } from 'express';
 import { listPoolJobs, claimJob } from '../db/jobsRepo.js';
 
 export function createPoolRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // GET /api/pool – die unzugewiesenen Vorgänge (nur Kernfelder).
   router.get('/', (req, res) => {
     const jobs = listPoolJobs(db).map((job) => ({
       id: job.id,
@@ -18,6 +21,7 @@ export function createPoolRouter({ db, csrfProtection = (req, res, next) => next
     res.json(jobs);
   });
 
+  // POST /api/pool/:id/beanspruchen – Person beansprucht den Vorgang (409, wenn schon vergeben).
   router.post('/:id/beanspruchen', csrfProtection, (req, res) => {
     const claimed = claimJob(db, Number(req.params.id), req.currentPerson.churchtools_person_id);
     if (!claimed) {

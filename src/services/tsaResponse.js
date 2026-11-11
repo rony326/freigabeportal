@@ -1,3 +1,6 @@
+// Prüfung von RFC3161-Antworten der TSA: Token zerlegen, Bindung an die Anfrage (Hash, Nonce, Policy) und das Signierzertifikat
+// (Gültigkeit, nur Zeitstempel-Zweck, ESS-Bindung) prüfen. Vertrauenskette: tsaTrust.js, Sperrprüfung: tsaRevocation.js.
+
 import * as asn1js from 'asn1js';
 import { ContentInfo, SignedData, TSTInfo, TimeStampReq, Certificate, IssuerAndSerialNumber, IssuerSerial, AlgorithmIdentifier, ExtKeyUsage } from 'pkijs';
 import { randomBytes, createHash } from 'node:crypto';
@@ -6,21 +9,24 @@ const ESS_V1 = '1.2.840.113549.1.9.16.2.12';
 const ESS_V2 = '1.2.840.113549.1.9.16.2.47';
 const HASHES = { '2.16.840.1.101.3.4.2.1': 'sha256', '2.16.840.1.101.3.4.2.2': 'sha384', '2.16.840.1.101.3.4.2.3': 'sha512' };
 
+// Parst ASN.1-Daten vollständig (Restbytes sind ein Fehler).
 function schema(bytes) {
   const parsed = asn1js.fromBER(Uint8Array.from(bytes).buffer);
   if (parsed.offset !== bytes.length) throw new Error('Ungueltige ASN.1-Daten der TSA.');
   return parsed.result;
 }
 
+// Inhalt einer ASN.1-Sequenz; wirft bei einem anderen Typ.
 function sequence(value) {
   if (!(value instanceof asn1js.Sequence)) throw new Error('Ungueltige ESS-Zertifikatsbindung.');
   return value.valueBlock.value;
 }
 
+// Prüft das Signierzertifikat der TSA (siehe Kopfkommentar). @returns {Certificate} das Zertifikat
 export function validateTimestampCertificate(signed, genTime, now = new Date()) {
   const signer = signed.signerInfos[0];
   if (!HASHES[signer?.digestAlgorithm.algorithmId]) throw new Error('Nicht unterstuetzter TSA-Signatur-Hashalgorithmus.');
-  // Restrict to the issuer/serial identifier used by our supported TSA profile.
+  // Beschränkt auf die Kennung Aussteller/Seriennummer, wie sie unser unterstütztes TSA-Profil nutzt.
   if (!(signer?.sid instanceof IssuerAndSerialNumber)) throw new Error('Nicht unterstuetzte TSA-Unterzeichnerkennung.');
   const candidates = (signed.certificates || []).filter((cert) => cert instanceof Certificate &&
     cert.issuer.isEqual(signer.sid.issuer) && cert.serialNumber.isEqual(signer.sid.serialNumber));
@@ -66,6 +72,7 @@ export function validateTimestampCertificate(signed, genTime, now = new Date()) 
   return cert;
 }
 
+// Ergänzt eine Anfrage um eine frische 128-Bit-Nonce und gibt die DER-Bytes zurück.
 export function freshTimestampRequest(bytes) {
   const request = new TimeStampReq({ schema: schema(bytes) });
   const nonce = Uint8Array.from(randomBytes(16));
@@ -86,6 +93,7 @@ export function leseTimestampToken(token) {
   return { signed, info };
 }
 
+// Prüft, dass das Token zur Anfrage passt (Hash, Nonce, Policy, Zeitpunkt) und das Signierzertifikat zulässig ist. @returns {{signed, info, signer}}
 export function validateTimestampBinding(requestBytes, token) {
   const request = new TimeStampReq({ schema: schema(requestBytes) });
   const { signed, info } = leseTimestampToken(token);

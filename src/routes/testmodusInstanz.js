@@ -1,3 +1,5 @@
+// Routen, die es nur in der Test-Instanz gibt (docs/testmodus.md): Test-Postfach und das Auslösen einzelner Jobs per Knopf – siehe Kommentar direkt unterhalb.
+
 import { Router } from 'express';
 import { runPoolErinnerungenJob, runFreigabe2ErinnerungenJob, runRapportErinnerungenJob, runMailDigestJob, runMailZustellungJob } from '../services/cronJobs.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -18,12 +20,14 @@ const STATUS_TEXT = { erfolg: 'erfolgreich', fehler: 'fehlgeschlagen', ueberspru
 export function createTestmodusInstanzRouter({ db, config, mailer, csrfProtection }) {
   const router = Router();
 
+  // GET /testmodus/postfach – die in der Spielwiese "versendeten" Mails (nichts verlässt das System).
   router.get('/postfach', (req, res) => {
     const mails = db.prepare('SELECT id, typ, empfaenger, betreff, text, status, versucht_am FROM mail_log ORDER BY versucht_am DESC, id DESC LIMIT 200').all();
     const ergebnis = String(req.query.ergebnis || '');
     res.render('testmodus-postfach', { mails, ergebnis: ergebnis ? ergebnis.split('|').slice(0, TESTMODUS_JOBS.length) : null });
   });
 
+  // POST /testmodus/jobs – führt die Testmodus-Jobs nacheinander aus und zeigt das Ergebnis im Postfach.
   router.post('/jobs', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       const teile = [];

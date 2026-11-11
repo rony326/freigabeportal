@@ -1,3 +1,13 @@
+// Verlauf der Freigaben (Tabelle `freigaben`): jede Aktion einer Person an einem Vorgang – Freigabe 1/2,
+// Eskalation, Weiterleitung, Admin-Umhängen, Duplikatverdacht, Betrugs-Rollen usw. (erlaubte Rollen: CHECK in schema.sql
+// bzw. migrate*-Funktionen in index.js). Die Tabelle ist per Trigger auditiert und wird nie verändert, nur ergänzt.
+
+/**
+ * Fügt einen Verlaufseintrag an.
+ * @param {object} e Eintrag: `jobId`, `personId`, `rolle`, `zeitpunkt`, `ip`, `interessenskonflikt`, optional
+ *   `kommentar`, `eskaliertVon`, `vertretungFuer` (Stellvertreter-Fall), `vorherZustaendig`/`zielPersonId` (Umhängen)
+ * @returns {number} id des neuen Eintrags
+ */
 export function createFreigabe(db, { jobId, personId, rolle, zeitpunkt, ip, interessenskonflikt, kommentar, eskaliertVon, vertretungFuer = null, vorherZustaendig = null, zielPersonId = null }) {
   const result = db
     .prepare(
@@ -8,6 +18,7 @@ export function createFreigabe(db, { jobId, personId, rolle, zeitpunkt, ip, inte
   return Number(result.lastInsertRowid);
 }
 
+// Gesamter Verlauf eines Vorgangs in zeitlicher Reihenfolge.
 export function listFreigabenByJob(db, jobId) {
   return db.prepare('SELECT * FROM freigaben WHERE job_id = ? ORDER BY id').all(jobId);
 }
@@ -27,6 +38,7 @@ export function listKonfliktmelder(db, jobId, stufe) {
   return melder;
 }
 
+// true, wenn die Person auf dieser Stufe einen Interessenskonflikt gemeldet hat (darf dann nicht selbst freigeben).
 export function istKonfliktmelder(db, jobId, stufe, personId) {
   return Boolean(personId) && listKonfliktmelder(db, jobId, stufe).has(personId);
 }

@@ -1,5 +1,10 @@
+// Mail-Vorlagen: Auswahl der Vorlage je Mailtyp und Ersetzen der `%platzhalter%`. Die Vorlagen liegen in `admin_config`
+// und sind unter Admin → Benachrichtigungen bearbeitbar (docs/admin-bereich.md).
+
 import { getConfigValue } from '../db/adminConfigRepo.js';
 
+// Mailtyp (mail_log.typ) → Schlüsselteil der Vorlagen in admin_config (`mail_vorlage_<infix>_betreff|_text`). Neuer Mailtyp: hier eintragen,
+// Standardtexte in db/adminConfigRepo.js DEFAULTS ergänzen und den mail_log-CHECK in db/index.js erweitern.
 export const TYP_ZU_KEY_INFIX = {
   zuweisung: 'zuweisung',
   reminder: 'reminder',
@@ -25,12 +30,14 @@ export const TYP_ZU_KEY_INFIX = {
   'rapport-eskalation': 'rapport_eskalation',
 };
 
+// Ersetzt jedes `%name%` durch den Wert aus `variablen`; unbekannte Platzhalter bleiben unverändert stehen.
 export function renderTemplate(vorlage, variablen) {
   return vorlage.replace(/%([a-zA-Z0-9_]+)%/g, (match, key) =>
     Object.prototype.hasOwnProperty.call(variablen, key) ? String(variablen[key]) : match
   );
 }
 
+// @returns {{betreff: string|null, text: string|null}} die gespeicherte Vorlage zum Mailtyp; wirft bei unbekanntem Typ
 export function getVorlage(db, typ) {
   const infix = TYP_ZU_KEY_INFIX[typ];
   if (!infix) {

@@ -1,26 +1,29 @@
+// Maschinenroute `/internal/cron/*` (Header `X-Cron-Secret`, docs/n8n-schnittstelle.md bzw. docs/geplante-jobs-und-benachrichtigungen.md): löst die Hintergrund-Jobs von
+// aussen aus. Antwort 200 bei Erfolg, 409 bei "übersprungen" (z. B. läuft schon), 500 bei Fehler (siehe httpStatusFuer).
+
 import { Router } from 'express';
 import { machineAuditContext } from '../services/auditContext.js';
 import { runTsaCrlAktualisierungJob } from '../services/tsaCrlUpdate.js';
 import { runSyncPersonenJob, runPoolErinnerungenJob, runPdfBereinigungJob, runZeitstempelNachholenJob, runSplitGruppenNachholenJob, runFreigabe2ErinnerungenJob, runRapportErinnerungenJob, runKkBelegErinnerungenJob, runMailZustellungJob } from '../services/cronJobs.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 
+// Bildet den Job-Status auf einen HTTP-Status ab.
 function httpStatusFuer(status) {
   if (status === 'uebersprungen') return 409;
   if (status === 'fehler') return 500;
   return 200;
 }
 
-// requireCronSecret is applied once at the app.js mount, not per-route here — matching the
-// blanket-guard pattern /admin already uses, so a future route added to this router is
-// gated automatically rather than needing its own explicit guard.
+// requireCronSecret wird einmal bei der Einbindung in app.js angewendet, nicht je Route hier — entsprechend dem Sammelschutz, den /admin schon nutzt, damit
+// eine später in diesen Router eingefügte Route automatisch abgesichert ist, statt einen eigenen ausdrücklichen Schutz zu brauchen.
 //
-// The in-process scheduler (services/scheduler.js) now runs these same jobs on its own timers —
-// these endpoints stay in place for on-demand/manual triggering (see README's go-live checklist)
-// and as a fallback for anyone who does have a working external scheduler.
+// Der In-Process-Scheduler (services/scheduler.js) führt dieselben Jobs inzwischen mit eigenen Timern aus — diese Endpunkte bleiben für das bedarfsweise/manuelle
+// Auslösen (siehe die Go-Live-Checkliste im README) und als Rückfall für alle bestehen, die einen funktionierenden externen Scheduler haben.
 export function createCronRouter({ db, config, mailer }) {
   const router = Router();
   router.use(machineAuditContext('service:cron', 'Cron API'));
 
+  // POST /internal/cron/sync-personen – Personen-Sync mit ChurchTools. (Die anderen Routen unten lösen den gleichnamigen Job aus.)
   router.post('/sync-personen', asyncHandler(async (req, res, next) => {
     try {
       const result = await runSyncPersonenJob(db, config, mailer);

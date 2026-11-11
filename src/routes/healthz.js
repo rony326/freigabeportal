@@ -1,3 +1,5 @@
+// Statusprüfung `/healthz` (docs/statusseite-und-monitoring.md): ohne Überwachungsschlüssel nur "ok"/"fehler" der Datenbank; mit dem Header `x-monitoring-key` (SHA-256 in admin_config) der Gesamtstatus aller Dienste. Ohne Sitzung, eigener Limiter.
+
 import { Router } from 'express';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';

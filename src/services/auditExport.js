@@ -1,3 +1,5 @@
+// Audit-Export-Pakete (CLI: `npm run audit:export`; Konzept: docs/audit-externe-nachweise.md) – siehe Erläuterung unten.
+
 import { createHash } from 'node:crypto';
 import { kanonischesJson } from './tsaNachweis.js';
 
@@ -16,6 +18,7 @@ export const AUDIT_EXPORT_FORMAT = 'freigabeportal-audit-export/1';
 export const MAX_EREIGNISSE_PRO_PAKET = 5000;
 const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 
+// Liest Audit-Ereignisse im ID-Bereich samt Request-/Lauf-Zuordnung als einfache Objekte.
 function ereignisse(db, vonId, bisId, limit) {
   return db.prepare(`SELECT e.id, e.zeitpunkt, e.person_id, e.person_name, e.objekt, e.objekt_id, e.aktion, e.vorher, e.nachher, e.begruendung,
       r.request_id, l.lauf_id, l.lauf_typ
@@ -25,10 +28,12 @@ function ereignisse(db, vonId, bisId, limit) {
     WHERE e.id >= ? AND e.id <= ? ORDER BY e.id LIMIT ?`).all(vonId, bisId, limit).map((row) => ({ ...row }));
 }
 
+// Kanonisches JSONL (eine Zeile je Ereignis) – Grundlage des Inhalts-Hashes.
 function inhaltAus(rows) {
   return rows.map((row) => kanonischesJson(row)).join('\n') + '\n';
 }
 
+// Findet Lücken in den Ereignis-IDs eines Pakets (fehlende IDs deuten auf entfernte Ereignisse hin).
 function lueckenIn(vonId, rows) {
   const luecken = [];
   let erwartet = vonId;
@@ -39,11 +44,13 @@ function lueckenIn(vonId, rows) {
   return luecken;
 }
 
+// Hash des Manifests ohne das Feld `paketSha256` selbst.
 function paketHash(manifest) {
   const { paketSha256, ...ohneHash } = manifest;
   return sha256(kanonischesJson(ohneHash));
 }
 
+// Baut das Manifest aus einer Registerzeile (`audit_export_pakete`).
 function manifestAusZeile(row, paketNr) {
   const manifest = {
     format: AUDIT_EXPORT_FORMAT, paketNr, vonId: row.von_id, bisId: row.bis_id, anzahl: row.anzahl,
@@ -52,6 +59,7 @@ function manifestAusZeile(row, paketNr) {
   return { ...manifest, paketSha256: row.paket_sha256 };
 }
 
+// Anzahl der Ereignisse, die noch in kein Paket exportiert wurden.
 export function ausstehendeAuditEreignisse(db) {
   const letzter = db.prepare('SELECT bis_id FROM audit_export_pakete ORDER BY id DESC LIMIT 1').get();
   return db.prepare('SELECT count(*) AS n FROM audit_ereignisse WHERE id > ?').get(letzter?.bis_id ?? 0).n;
@@ -125,6 +133,9 @@ export function pruefeAuditExportRegister(db) {
 
 // Pruefung eines ausgelieferten Pakets ohne Datenbank (fuer den spaeteren Empfaenger oder eine
 // Abnahme): Inhalt passt zum Manifest, IDs aufsteigend im Bereich, Kette zum Vorgaenger.
+/**
+ * Prüft ein Paket ohne Datenbank. @returns {string[]} Befunde (leer = in Ordnung), z. B. 'inhalt_hash_abweichend', 'kette_unterbrochen'
+ */
 export function pruefeAuditExportPaket(manifest, inhalt, vorgaengerManifest = null) {
   const befunde = [];
   if (manifest?.format !== AUDIT_EXPORT_FORMAT) return ['format_unbekannt'];

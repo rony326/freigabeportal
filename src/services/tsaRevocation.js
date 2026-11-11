@@ -1,3 +1,6 @@
+// Sperrprüfung der TSA-Zertifikatskette anhand lokal bereitgestellter Sperrlisten (CRL). Nur "volle" CRLs werden akzeptiert; die
+// unterstützten Erweiterungen sind bewusst eng gefasst (docs/tsa-vertrauensanker.md).
+
 import { openSync, closeSync, fstatSync, readFileSync, constants } from 'node:fs';
 import * as asn1js from 'asn1js';
 import { CertificateRevocationList } from 'pkijs';
@@ -5,6 +8,7 @@ import { CertificateRevocationList } from 'pkijs';
 // Original-DER jeder geladenen Sperrliste, damit die tatsaechlich verwendete Evidenz byte-genau
 // aufbewahrt werden kann (services/tsaNachweis.js), ohne die Rueckgabeform von loadTsaCrls zu aendern.
 const CRL_DER = new WeakMap();
+// Original-DER einer geladenen Sperrliste.
 export function crlDer(crl) {
   return CRL_DER.get(crl) || Buffer.from(crl.toSchema().toBER(false));
 }
@@ -14,6 +18,7 @@ const signatureAlgorithms = new Set([
   '1.2.840.10045.4.3.2', '1.2.840.10045.4.3.3', '1.2.840.10045.4.3.4',
 ]);
 
+// Liest die PEM-Sperrlistendatei (nur reguläre Datei, höchstens 16 Listen). @returns {CertificateRevocationList[]}
 export function loadTsaCrls(path) {
   if (!path) throw new Error('TSA-Sperrlisten muessen konfiguriert sein.');
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -32,6 +37,7 @@ export function loadTsaCrls(path) {
   return blocks.map((block) => parseTsaCrl(Buffer.from(block[1], 'base64')));
 }
 
+// Parst eine DER-Sperrliste und merkt sich deren Original-Bytes.
 export function parseTsaCrl(der) {
   const parsed = asn1js.fromBER(Uint8Array.from(der).buffer);
   if (parsed.offset === -1 || parsed.offset !== der.length) throw new Error('Ungueltige TSA-Sperrliste.');
@@ -40,6 +46,7 @@ export function parseTsaCrl(der) {
   return crl;
 }
 
+// DER → PEM-Block.
 export function crlZuPem(crl) {
   const zeilen = crlDer(crl).toString('base64').match(/.{1,64}/g);
   return `-----BEGIN X509 CRL-----\n${zeilen.join('\n')}\n-----END X509 CRL-----\n`;
@@ -65,6 +72,7 @@ function checkIssuingDistributionPoint(idp, certificate) {
   }
 }
 
+// Lehnt alle Erweiterungen ab, die diese Prüfung nicht sicher auswerten kann (Delta-, abgegrenzte, indirekte CRLs, kritische Erweiterungen).
 function checkExtensions(extensions = [], entry = false, certificate = null) {
   const seen = new Set();
   for (const extension of extensions) {
@@ -73,7 +81,7 @@ function checkExtensions(extensions = [], entry = false, certificate = null) {
       seen.add(extension.extnID);
       continue;
     }
-    // Delta, scoped and indirect CRLs need different processing and cannot prove full coverage here.
+    // Delta-, abgegrenzte und indirekte Sperrlisten brauchen eine andere Verarbeitung und können hier keine vollständige Abdeckung belegen.
     if (seen.has(extension.extnID) || extension.critical ||
         (entry ? extension.extnID === '2.5.29.29' : ['2.5.29.27', '2.5.29.46'].includes(extension.extnID))) {
       throw new Error('Nicht unterstuetzte TSA-Sperrlisten-Erweiterung.');
@@ -82,7 +90,9 @@ function checkExtensions(extensions = [], entry = false, certificate = null) {
   }
 }
 
-// The caller supplies a validated leaf-first chain, including the locally trusted root.
+// Der Aufrufer liefert eine geprüfte Kette (Blatt zuerst, inklusive des lokal vertrauten Wurzelzertifikats).
+// Prüft je Zertifikat: cRLSign-Recht des Ausstellers, aktuelle Liste (thisUpdate/nextUpdate), Signatur und ob das Zertifikat gesperrt ist
+// (dann Fehler mit `code: 'TSA_GESPERRT'`). @returns {Promise<{sperrstatus: 'crl_geprueft', sperrlisten: CertificateRevocationList[]}>}
 export async function verifyTsaRevocation(chain, crls, now = new Date()) {
   if (chain.length < 2 || !crls.length || crls.length > 16 || !Number.isFinite(now.getTime())) {
     throw new Error('TSA-Sperrlisten fuer die Zertifikatskette fehlen.');

@@ -1,3 +1,5 @@
+// Maschinenroute `/api/n8n/rapporte` (Header `X-API-Key`, docs/n8n-schnittstelle.md, Abschnitt Rapporte): Archivweg für abgeschlossene Rapporte – abholbereit, Exportnachweis, hashgebundener Download der Exportdatei und Archivquittung. Aufbau wie /api/n8n/jobs, aber strikt getrennt.
+
 import { Router, json } from 'express';
 import { getConfigValue } from '../../db/adminConfigRepo.js';
 import { createExportEvidence, readExportDocument, confirmArchiveReceipt, ArchiveError } from '../../services/archiveReceipt.js';
@@ -8,6 +10,7 @@ import { machineAuditContext } from '../../services/auditContext.js';
 // das Manifest trägt darum weder Rechnungs- noch Zahlungsfelder (zahlung: null).
 const ART = { art: 'rapport' };
 
+// Antwortet bei einem ArchiveError mit dessen Status, sonst an den Fehler-Handler.
 function sendeFehler(res, next, err) {
   if (err instanceof ArchiveError) return res.status(err.status).json({ error: err.message });
   next(err);
@@ -23,7 +26,7 @@ export function createN8nRapporteRouter({ db }) {
     next();
   });
 
-  // Gleiche Zeitstempel-Bedingung wie listAbholbereitJobs (Rechnungsweg).
+  // GET /api/n8n/rapporte/abholbereit – abgeschlossene Rapporte, deren Zeitstempel (falls verlangt) vorliegt. Gleiche Zeitstempel-Bedingung wie listAbholbereitJobs (Rechnungsweg).
   router.get('/abholbereit', (req, res) => {
     const nurMitZeitstempel = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
     const zeitstempelBedingung = nurMitZeitstempel ? ' AND zeitstempel_gesetzt_am IS NOT NULL' : ' AND (zeitstempel_erforderlich = 0 OR zeitstempel_gesetzt_am IS NOT NULL)';
@@ -39,6 +42,7 @@ export function createN8nRapporteRouter({ db }) {
     })));
   });
 
+  // GET /api/n8n/rapporte/archivierung-ausstehend?nach_id= – abgeholte/archivierte Rapporte ohne Archivquittung (Cursor, höchstens 100).
   router.get('/archivierung-ausstehend', (req, res) => {
     const after = req.query.nach_id ?? '0';
     if (typeof after !== 'string' || !/^\d+$/.test(after) || !Number.isSafeInteger(Number(after))) {
@@ -51,12 +55,14 @@ export function createN8nRapporteRouter({ db }) {
     res.set('Cache-Control', 'no-store').json(rows.map((row) => ({ ...row, export_nachweis_url: `/api/n8n/rapporte/${row.id}/exportnachweis` })));
   });
 
+  // GET /api/n8n/rapporte/:id/exportnachweis – unveränderliches Exportmanifest (idempotent).
   router.get('/:id/exportnachweis', (req, res, next) => {
     try {
       res.set('Cache-Control', 'no-store').json(createExportEvidence(db, Number(req.params.id), ART));
     } catch (err) { sendeFehler(res, next, err); }
   });
 
+  // GET /api/n8n/rapporte/:id/exportdatei/:exportId – die Exportdatei (PDF), nur wenn der Hash zum Manifest passt.
   router.get('/:id/exportdatei/:exportId', (req, res, next) => {
     try {
       const bytes = readExportDocument(db, Number(req.params.id), req.params.exportId, ART);
@@ -64,6 +70,7 @@ export function createN8nRapporteRouter({ db }) {
     } catch (err) { sendeFehler(res, next, err); }
   });
 
+  // POST /api/n8n/rapporte/:id/archivierung-bestaetigen – Archivquittung von n8n (Export-ID, SHA-256, Paperless-Dokument-ID, Aufgaben-UUID); setzt den Rapport auf 'abgeholt'.
   router.post('/:id/archivierung-bestaetigen', json({ limit: '8kb' }), (req, res, next) => {
     try {
       const quittung = confirmArchiveReceipt(db, Number(req.params.id), req.body, ART);

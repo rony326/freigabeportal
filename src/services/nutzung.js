@@ -1,3 +1,4 @@
+// Nutzungsdaten, Geräte, Anmeldungen und Fehler für "Betrieb & Nutzung" (docs/betrieb-und-nutzung.md); Grundsätze direkt unterhalb. Aufruf: middleware/nutzungErfassen.js, routes/auth.js, app.js.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { currentAuditRequestId } from './auditContext.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -8,6 +9,7 @@ import { sendNotification } from './notify.js';
 //   pro Stunde gemeldet.
 // - Gespeichert werden nie Body, Query oder Header ausser dem User-Agent.
 
+// Geräte-Cookie (`fp_geraet`, 2 Jahre) und Grenzen für gespeicherte Texte.
 export const GERAET_COOKIE = 'fp_geraet';
 const GERAET_COOKIE_MAX_AGE = 2 * 365 * 24 * 60 * 60 * 1000;
 const GERAET_ID_MUSTER = /^[0-9a-f]{32}$/;
@@ -35,6 +37,7 @@ const BROWSER_REGELN = [
   ['Safari', /Version\/(\d+)[^ ]* (?:Mobile\/\S+ )?Safari\//],
 ];
 
+// Browser und Hauptversion aus dem User-Agent ('Andere', wenn unbekannt).
 function erkenneBrowser(ua) {
   for (const [name, muster] of BROWSER_REGELN) {
     const treffer = ua.match(muster);
@@ -43,6 +46,7 @@ function erkenneBrowser(ua) {
   return 'Andere';
 }
 
+// Betriebssystem aus dem User-Agent ('Andere', wenn unbekannt).
 function erkenneBetriebssystem(ua) {
   if (/iPad/.test(ua)) return 'iPadOS';
   if (/iPhone|iPod/.test(ua)) return 'iOS';
@@ -53,6 +57,7 @@ function erkenneBetriebssystem(ua) {
   return 'Andere';
 }
 
+// @returns {{geraetTyp: 'desktop'|'handy'|'tablet'|'unbekannt', browser: string, betriebssystem: string}}
 export function geraetAusUserAgent(ua) {
   const text = typeof ua === 'string' ? ua : '';
   const betriebssystem = erkenneBetriebssystem(text);
@@ -65,6 +70,7 @@ export function geraetAusUserAgent(ua) {
 
 const ID_SEGMENT = /^(?:\d+|[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
+// Ersetzt Zahlen, 32-stellige Hex-Werte und UUIDs im Pfad durch `:id` (damit Aufrufe derselben Seite zusammenzählen).
 export function normalisierePfad(pfad) {
   return String(pfad).split('/').map((teil) => (ID_SEGMENT.test(teil) ? ':id' : teil)).join('/');
 }
@@ -84,11 +90,13 @@ export function geraeteIdAusCookie(req, res) {
   return neu;
 }
 
+// Geräte-ID der Anfrage (aus dem Kontext der Middleware oder dem Cookie), nur wenn sie dem Muster entspricht.
 function gueltigeGeraeteId(req) {
   const wert = req.nutzung?.geraetId ?? req.cookies?.[GERAET_COOKIE];
   return typeof wert === 'string' && GERAET_ID_MUSTER.test(wert) ? wert : null;
 }
 
+// User-Agent der Anfrage, auf UA_MAX Zeichen gekürzt.
 function userAgent(req) {
   const ua = req.headers?.['user-agent'];
   return typeof ua === 'string' ? ua.slice(0, UA_MAX) : '';
@@ -102,12 +110,14 @@ export function portalPfad(wert) {
   return /[\\\s?#]/.test(wert) ? null : wert;
 }
 
+// Pfad der Anfrage ohne Query-String.
 function pfadOhneQuery(req) {
   return String(req.originalUrl ?? req.url ?? '').split('?')[0];
 }
 
 // req.nutzung wird von der Middleware beim Eintritt gesetzt (Pfad, Person, Gerät, Request-ID),
 // weil sich req.url in eingehängten Routern ändert und 'finish' ausserhalb des Kontexts läuft.
+// Schreibt einen Seitenaufruf (und aktualisiert das Gerät); wirft nie – Fehler werden höchstens einmal pro Stunde gemeldet.
 export function erfasseSeitenaufruf(db, { req, res, dauerMs }) {
   try {
     const kontext = req.nutzung || {};
@@ -141,6 +151,7 @@ export function erfasseSeitenaufruf(db, { req, res, dauerMs }) {
 
 // Body-Parser-Fehler (err.type 'entity.*') enthalten in Meldung und erster Stack-Zeile Auszüge
 // des Anfrage-Inhalts: dann nur eine allgemeine Meldung und die Stack-Frames.
+// Meldung und Stack für die Fehlertabelle; bei Body-Parser-Fehlern ohne Auszüge des Anfrage-Inhalts. @returns {[string, string|null]}
 function meldungUndStack(err) {
   const stack = String(err?.stack ?? '');
   if (typeof err?.type === 'string' && err.type.startsWith('entity.')) {
@@ -152,6 +163,7 @@ function meldungUndStack(err) {
 }
 
 // Speichert einen Serverfehler und gibt die Request-ID (= Fehler-ID) zurück; wirft nie.
+// (Siehe Kommentar.) @returns {string} die vollständige Request-ID (die Seite zeigt nur die ersten 8 Zeichen)
 export function erfasseFehler(db, { req, err, status }) {
   let requestId = null;
   try {
@@ -208,12 +220,14 @@ export function erfasseAnmeldung(db, { req, res, personId, erfolg, grund = null 
   return ergebnis;
 }
 
+// Lesbare Beschreibung für die Neues-Gerät-Mail, z. B. "Firefox 130 auf Linux (Desktop)".
 function geraetBeschreibung(ua) {
   const { geraetTyp, browser, betriebssystem } = geraetAusUserAgent(ua);
   const typ = { desktop: 'Desktop', handy: 'Handy', tablet: 'Tablet' }[geraetTyp] ?? 'Gerät unbekannt';
   return `${browser} auf ${betriebssystem} (${typ})`;
 }
 
+// "TT.MM.JJJJ HH:MM" in Zürcher Zeit.
 function zeitpunktZurich(datum) {
   const teile = Object.fromEntries(new Intl.DateTimeFormat('de-CH', {
     timeZone: 'Europe/Zurich', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',

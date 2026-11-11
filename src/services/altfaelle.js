@@ -1,3 +1,8 @@
+// Altfälle (Admin → Altfälle, docs/export-und-zahlungsintegritaet.md): abgeschlossene Belege und Splitgruppen, für die es
+// keinen belastbaren Freigabe-/Zahlungsnachweis gibt (z. B. vor Einführung des Snapshots abgeschlossen). Dieses Modul
+// findet sie, stellt den der entscheidenden Person gezeigten Stand samt Herkunft zusammen und speichert die Entscheidung
+// ('nachbestaetigt' oder 'nur_archiv') als unveränderlichen Nachweis in `altfall_entscheidungen`.
+
 import { createHash } from 'node:crypto';
 import { getJobById, listSplitKinder, pruefeSplitGruppenVollstaendigkeit } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
@@ -14,10 +19,12 @@ import { kkHinweisFuerJob } from './kkStempel.js';
 // berechtigte Person ausdruecklich entscheidet. Jeder angezeigte Wert traegt seine Herkunft;
 // aktuelle Stammdaten werden nie stillschweigend als historischer Freigabestand ausgegeben.
 
+// Fehler mit HTTP-Status (400 Eingabe, 403 Selbstentscheidung, 409 Stand veraltet); die Route zeigt ihn an.
 export class AltfallError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
+// Kandidaten: noch nicht übergebene (kein Exportnachweis) und noch nicht entschiedene Belege bzw. Splitgruppen-Elternvorgänge.
 const OFFEN_EINZEL = `SELECT * FROM jobs j WHERE j.status = 'abgeschlossen' AND j.aufgesplittet_von IS NULL AND COALESCE(j.typ,'') <> 'rapport'
   AND NOT EXISTS (SELECT 1 FROM export_nachweise e WHERE e.job_id = j.id)
   AND NOT EXISTS (SELECT 1 FROM altfall_entscheidungen a WHERE a.job_id = j.id)`;
@@ -26,6 +33,7 @@ const OFFEN_GRUPPEN = `SELECT * FROM jobs j WHERE j.status = 'aufgesplittet' AND
   AND NOT EXISTS (SELECT 1 FROM export_nachweise e WHERE e.job_id = j.id)
   AND NOT EXISTS (SELECT 1 FROM altfall_entscheidungen a WHERE a.job_id = j.id)`;
 
+// Grund, warum eine vollständige Splitgruppe nicht exportierbar ist (null = in Ordnung bzw. noch nicht vollständig).
 function gruppenGrund(db, parent) {
   const { vollstaendig, kinder } = pruefeSplitGruppenVollstaendigkeit(db, parent.id);
   if (!vollstaendig) return null;
@@ -33,6 +41,7 @@ function gruppenGrund(db, parent) {
   return bereiteGruppenSnapshotVor(db, parent, kinder).nachpruefung || null;
 }
 
+// Macht aus einem Kandidaten einen Altfall `{job, gruppe, grund}` – oder null, wenn der Nachweis in Ordnung ist.
 function altfallFuer(db, job) {
   if (job.status === 'aufgesplittet') {
     const grund = gruppenGrund(db, job);
@@ -42,22 +51,26 @@ function altfallFuer(db, job) {
   return nachweis.exportierbar ? null : { job, gruppe: false, grund: nachweis.grund };
 }
 
+// Alle offenen Altfälle (Einzelbelege und Gruppen), älteste zuerst.
 export function listAltfaelle(db) {
   return [...db.prepare(`${OFFEN_EINZEL} ORDER BY j.id`).all(), ...db.prepare(`${OFFEN_GRUPPEN} ORDER BY j.id`).all()]
     .map((job) => altfallFuer(db, job))
     .filter(Boolean);
 }
 
+// Ein offener Altfall oder null (nicht mehr offen/kein Altfall).
 export function getAltfall(db, jobId) {
   const job = db.prepare(`SELECT * FROM (${OFFEN_EINZEL} UNION ALL ${OFFEN_GRUPPEN}) WHERE id = ?`).get(jobId);
   return job ? altfallFuer(db, job) : null;
 }
 
+// JSON lesen; bei kaputtem oder leerem Inhalt null statt Fehler.
 function parse(json) {
   if (!json) return null;
   try { return JSON.parse(json); } catch { return null; }
 }
 
+// Anzeigeblock zu einer Freigabe (Name, Zeitpunkt, IP, Konflikt, Kommentar) oder null.
 function freigabeBlock(db, freigabe) {
   if (!freigabe) return null;
   const person = getPersonById(db, freigabe.person_id);
@@ -83,6 +96,8 @@ function positionAusDatensatz(db, kind) {
   };
 }
 
+// Zahlungsdaten einer Spesenposition: aus dem eingefrorenen Snapshot (unbestätigt) oder – ausdrücklich gekennzeichnet –
+// aus dem aktuellen ChurchTools-Stand; sonst ohne Daten (dann ist nur "nur archivieren" möglich).
 async function spesenZahlung(config, job, snapshot) {
   if (snapshot?.zahlungsdaten) {
     return { zahlung: { art: 'spesen', daten: snapshot.zahlungsdaten, abgleich: null, hinweise: [] }, herkunft: 'freigabe_snapshot_unbestaetigt' };
@@ -95,7 +110,7 @@ async function spesenZahlung(config, job, snapshot) {
     );
     if (daten) return { zahlung: { art: 'spesen', daten, abgleich: null, hinweise: [] }, herkunft: 'churchtools_aktuell' };
   } catch {
-    // An unavailable or incomplete master record only allows the archive-only decision.
+    // Ein nicht erreichbarer oder unvollständiger Stammdatensatz erlaubt nur die Entscheidung "nur archivieren".
   }
   return { zahlung: { art: 'spesen', daten: null, abgleich: null, hinweise: [] }, herkunft: 'nicht_verfuegbar', fehler: 'Aktuelle ChurchTools-Zahlungsdaten sind nicht abrufbar oder ungültig.' };
 }
@@ -166,12 +181,20 @@ export async function altfallAnzeige(db, config, altfall) {
   };
 }
 
+// Prüfsumme über Fall, angezeigten Stand und entscheidende Person: schützt davor, dass auf einen anderen Stand entschieden wird.
 export function altfallStand(jobId, daten, personId) {
   return createHash('sha256').update(JSON.stringify({ jobId, daten, personId })).digest('hex');
 }
 
 // Speichert die Entscheidung genau fuer den angezeigten Stand. Die Pruefung, ob der Fall noch
 // offen ist, und das Einfuegen laufen in einer Transaktion; eine zweite Entscheidung scheitert.
+/**
+ * Speichert die Entscheidung. Regeln: Begründung Pflicht (max. 2000 Zeichen), "nachbestätigt" nur mit brauchbaren
+ * Zahlungsdaten, eigene Spesen nie selbst entscheiden, angezeigter Stand muss noch dem aktuellen entsprechen.
+ * @param {object} p `{anzeige, entscheidung, stand, begruendung, person}`
+ * @returns {{id: number, zeitpunkt: string}}
+ * @throws {AltfallError} bei jeder verletzten Regel
+ */
 export function entscheideAltfall(db, { anzeige, entscheidung, stand, begruendung, person }) {
   if (entscheidung !== 'nachbestaetigt' && entscheidung !== 'nur_archiv') throw new AltfallError(400, 'Bitte eine Entscheidung waehlen.');
   const text = typeof begruendung === 'string' ? begruendung.trim() : '';

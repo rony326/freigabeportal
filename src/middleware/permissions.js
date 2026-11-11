@@ -1,3 +1,8 @@
+// Berechtigungsprüfung für den Adminbereich. Modell (docs/auth-und-rechte.md):
+//   Gruppe (ChurchTools: buchhaltung, superadmin, manager) → Rechte aus Tabelle `gruppen_berechtigungen`
+//   + Einzelrechte aus `person_berechtigungen`. Rein additiv: wer ein Recht über irgendeinen Weg hat, hat es.
+// Die Liste der Rechte steht in services/berechtigungKatalog.js.
+
 import { gruppenVon, verweigereNichtAngemeldet, verweigereOhneBerechtigung } from './roles.js';
 import { FESTE_RECHTE } from '../services/berechtigungKatalog.js';
 import { listGruppenBerechtigungen } from '../db/gruppenBerechtigungenRepo.js';
@@ -12,6 +17,14 @@ function gruppenRechteVon(db, gruppen) {
   return gruppen.flatMap((gruppe) => listGruppenBerechtigungen(db, gruppe).map((recht) => ({ gruppe, recht })));
 }
 
+/**
+ * Hat die Person das Recht (über Gruppe oder direkt)? Für feste Rechte zählt nur die Superadmin-Gruppe.
+ * @param {object} db Datenbank
+ * @param {object} config Laufzeitkonfiguration (Gruppen-IDs)
+ * @param {object|null} person Zeile aus `personen` inkl. `gruppen`
+ * @param {string} permission Rechte-Schlüssel, z. B. `konten_verwalten`
+ * @returns {boolean}
+ */
 export function personHasPermission(db, config, person, permission) {
   if (!person) return false;
   const gruppen = gruppenVon(person, config);
@@ -22,6 +35,7 @@ export function personHasPermission(db, config, person, permission) {
 
 // Gleiche Regeln wie personHasPermission, aber Gruppen- und Einzelrechte werden nur einmal (und
 // erst bei Bedarf) geladen -- für Stellen, die viele Rechte nacheinander prüfen (Navigation).
+// Liefert eine Funktion `(recht) => boolean`; siehe Begründung oben (Rechte werden einmal geladen).
 export function erstellePermissionPruefer(db, config, person) {
   if (!person) return () => false;
   const gruppen = gruppenVon(person, config);
@@ -37,6 +51,7 @@ export function erstellePermissionPruefer(db, config, person) {
 }
 
 // Nur die Rechte, die die Person effektiv hat, mit ihrer Herkunft: über welche Gruppen und/oder direkt.
+// Rückgabe: Map `recht → { gruppen: string[], direkt: boolean }` (Anzeige auf der Personen-Seite).
 export function ermittleRechteMitHerkunft(db, config, person) {
   const ergebnis = new Map();
   if (!person) return ergebnis;
@@ -59,10 +74,12 @@ export function ermittleRechteMitHerkunft(db, config, person) {
   return ergebnis;
 }
 
+// Entscheidet, ob das Menü "Admin" überhaupt erscheint und ob `/admin` betreten werden darf.
 export function hatIrgendeinAdminRecht(db, config, person) {
   return ermittleRechteMitHerkunft(db, config, person).size > 0;
 }
 
+// Route-Guard: 401 ohne Anmeldung, 403 ohne das Recht (beides wird im Zugriffs-Audit protokolliert).
 export function requirePermission(db, config, permission) {
   return (req, res, next) => {
     const person = req.currentPerson;
@@ -72,6 +89,7 @@ export function requirePermission(db, config, permission) {
   };
 }
 
+// Guard für den gesamten `/admin`-Bereich: mindestens ein Admin-Recht genügt, die Einzelseiten prüfen danach genauer.
 export function requireAdminAreaAccess(db, config) {
   return (req, res, next) => {
     const person = req.currentPerson;

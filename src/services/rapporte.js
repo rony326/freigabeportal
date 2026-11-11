@@ -1,3 +1,7 @@
+// (Fachlich: docs/rechnungs-workflow.md, Abschnitt "Rapporte (Status Kenntnisnahme)".) Ablauf: markieren → alle Empfänger:innen
+// bestätigen → Abschluss mit Vermerk-Stempel und Zeitstempel → Export über eigene n8n-Endpunkte. Rückgaben sind
+// `{ok: true…}` oder `{ok: false, status, fehler}` (HTTP-Status für die Route).
+
 // Rapporte: Dokumente, die nur zur Kenntnis weitergegeben werden (kein Rechnungsweg).
 import { readFileSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -27,6 +31,7 @@ import { stelleEintraegeZu } from './mailZustellung.js';
 import { personHasPermission } from '../middleware/permissions.js';
 import { MIN_BEMERKUNG_LAENGE } from './vorgangUmhaengen.js';
 
+// Höchstlänge von Bemerkung und Begründung; NICHT_OFFEN ist die Standardmeldung für eine nicht mehr offene Empfängerzeile.
 export const MAX_BEMERKUNG_LAENGE = 2000;
 const NICHT_OFFEN = 'Diese Empfängerzeile ist nicht (mehr) offen: sie wurde inzwischen bestätigt, ersetzt oder entfernt.';
 
@@ -34,20 +39,24 @@ function name(person) {
   return `${person.vorname} ${person.nachname}`;
 }
 
+// Ist das Rapporte-Modul eingeschaltet (admin_config `modul_rapporte_aktiv`)?
 export function istRapportModulAktiv(db) {
   return getConfigValue(db, 'modul_rapporte_aktiv') === '1';
 }
 
+// Mögliche Empfänger:innen: aktive, in ChurchTools auflösbare Personen.
 export function listRapportEmpfaengerKandidaten(db) {
   return listAllPersons(db).filter((p) => p.aktiv && !p.ct_person_unresolved);
 }
 
+// Nur ein Vorgang aus Scanner oder Lieferantenmail, der nicht aufgesplittet und keine Kreditkartenabrechnung ist, kann Rapport werden.
 function istZulaessig(db, job) {
   if (!['scanner', 'lieferant'].includes(job.quelle)) return false;
   if (job.aufgesplittet_von || job.kreditkarte_id) return false;
   return !db.prepare('SELECT 1 FROM jobs WHERE aufgesplittet_von = ? LIMIT 1').get(job.id);
 }
 
+// Markiert einen zugewiesenen Vorgang als Rapport an die gewählten Personen (Verlaufseintrag, Mails an alle Empfänger:innen).
 export async function markiereRapport(db, config, mailer, { job, person, empfaengerIds, bemerkung, ip }) {
   if (!istRapportModulAktiv(db)) return { ok: false, status: 409, fehler: 'Das Rapporte-Modul ist derzeit deaktiviert.' };
   if (!istZulaessig(db, job)) return { ok: false, status: 409, fehler: 'Dieser Vorgang kann nicht als Rapport weitergegeben werden.' };
@@ -102,6 +111,7 @@ export async function markiereRapport(db, config, mailer, { job, person, empfaen
   return { ok: true };
 }
 
+// Hebt die Markierung auf (nur die markierende Person oder mit Eingriffsrecht; nur solange niemand bestätigt hat).
 export async function hebeRapportAuf(db, config, { jobId, person, ip }) {
   const job = getJobById(db, jobId);
   if (!job || job.status !== 'kenntnisnahme') {
@@ -133,6 +143,7 @@ export function aktuelleKenntnisnahmen(db, job) {
   return listKenntnisnahmen(db, job.id).filter((k) => !job.rapport_markiert_am || k.zugeteilt_am >= job.rapport_markiert_am);
 }
 
+// Name der Person, "Unbekannte Person (id)" oder null.
 function personNameOder(db, personId) {
   const p = personId ? getPersonById(db, personId) : null;
   return p ? name(p) : personId ? `Unbekannte Person (${personId})` : null;
@@ -163,6 +174,7 @@ export function rapportMetadaten(db, job) {
   };
 }
 
+// Kennzahl "Anzahl:letzte id" der Kommentare, um neue während des Stempelns zu erkennen.
 function kommentarStand(kommentare) {
   return `${kommentare.length}:${kommentare.at(-1)?.id ?? 0}`;
 }
@@ -185,6 +197,7 @@ export async function finalisiereRapport(db, config, jobId) {
   return false;
 }
 
+// Ein Abschlussversuch (siehe finalisiereRapport). @returns {Promise<boolean|'kommentar_neu'>}
 async function finalisiereRapportEinmal(db, config, jobId) {
   const job = getJobById(db, jobId);
   if (!job || job.typ !== 'rapport' || job.status !== 'kenntnisnahme') return false;
@@ -309,6 +322,7 @@ export async function bestaetigeRapport(db, config, { jobId, person, ip }) {
 
 // Holt Rapporte nach, die vollständig bestätigt sind, aber noch in 'kenntnisnahme' stehen. Fehler
 // eines Rapports (z. B. unlesbares PDF) werden protokolliert und stoppen die übrigen nicht.
+// Hintergrund-Nachholen (Cron): schliesst vollständig bestätigte, aber noch nicht abgeschlossene Rapporte ab (siehe Kommentar oben).
 export async function schliesseRapporteNach(db, config) {
   let nachgeholt = 0;
   const fehlgeschlagen = [];
@@ -332,6 +346,7 @@ function ladeOffeneZeile(db, jobId, kenntnisnahmeId) {
   return { job, zeile: listOffeneKenntnisnahmen(db, jobId).find((k) => k.id === kenntnisnahmeId) ?? null };
 }
 
+// Prüft Länge der Begründung (Mindestlänge wie beim Umhängen, Höchstlänge 2000). @returns {object|null} Fehlerobjekt oder null
 function pruefeBegruendung(begruendung) {
   if ((begruendung || '').trim().length < MIN_BEMERKUNG_LAENGE) {
     return { ok: false, status: 400, fehler: `Bitte eine Begründung mit mindestens ${MIN_BEMERKUNG_LAENGE} Zeichen angeben.` };
@@ -345,6 +360,7 @@ function pruefeBegruendung(begruendung) {
 // Ersetzt einen offenen Empfänger durch eine andere Person (Admin-Eingriff). Die Zeile und die
 // Prüfungen laufen in einer Transaktion; wer schon offen ist (auch die ersetzte Person selbst),
 // wird abgewiesen, bevor die UNIQUE-Bedingung der Tabelle greift.
+// Admin-Eingriff: ersetzt eine offene Empfänger:in (siehe Kommentar oben); Mail an die neue Person.
 export async function ersetzeRapportEmpfaenger(db, config, { jobId, kenntnisnahmeId, neuePersonId, begruendung, admin, ip, mailer = null }) {
   const fehler = pruefeBegruendung(begruendung);
   if (fehler) return fehler;
@@ -399,6 +415,7 @@ export async function ersetzeRapportEmpfaenger(db, config, { jobId, kenntnisnahm
 
 // Entfernt einen offenen Empfänger ohne Ersatz. Der letzte Offene darf nur gehen, wenn schon
 // jemand bestätigt hat; dann ist der Rapport vollständig und wird abgeschlossen.
+// Admin-Eingriff: entfernt eine offene Empfänger:in ohne Ersatz (siehe Kommentar oben).
 export async function entferneRapportEmpfaenger(db, config, { jobId, kenntnisnahmeId, begruendung, admin, ip }) {
   const fehler = pruefeBegruendung(begruendung);
   if (fehler) return fehler;

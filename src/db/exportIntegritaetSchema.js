@@ -1,6 +1,8 @@
 // Paket "Export- und Zahlungsintegritaet": unveraenderlicher Gruppen-Freigabe-Snapshot und
 // append-only Entscheidungen zu Altfaellen ohne belastbaren Snapshot. Laeuft vor
 // migrateSecuritySchema, damit dessen Audit-Trigger die neue jobs-Spalte bereits mitprotokollieren.
+// Spalte `jobs.gruppe_freigabe_snapshot` (unveränderlich, sobald gesetzt) und Tabelle `altfall_entscheidungen`
+// (append-only). Siehe docs/export-und-zahlungsintegritaet.md.
 export function migrateExportIntegritaetSchema(db) {
   const jobColumns = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name));
   if (!jobColumns.has('gruppe_freigabe_snapshot')) db.exec('ALTER TABLE jobs ADD COLUMN gruppe_freigabe_snapshot TEXT');

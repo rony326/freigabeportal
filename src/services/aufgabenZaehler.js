@@ -1,3 +1,4 @@
+// Zähler "offene Aufgaben" einer Person (Zahl am Menüpunkt "Aufgaben").
 import {
   listZugewiesenJobsForPerson,
   listFreigabe2JobsForPerson,
@@ -13,6 +14,7 @@ import { listOffeneRapporteForPerson } from '../db/rapporteRepo.js';
 // «Zur Kenntnis» -- diese ohne Vertretung). Superadmins sehen
 // auf /pool zusätzlich die drei Eskalations-Abschnitte; die zählen dann ebenfalls mit.
 // Pool, Rückläufer und abgelehnte Jobs zählen bewusst nicht mit.
+// @returns {number} Summe offener Aufgaben (Zahl im Menü neben "Pool/Aufgaben")
 export function zaehleOffeneAufgaben(db, personId, { istSuperadmin = false } = {}) {
   let summe =
     listZugewiesenJobsForPerson(db, personId).length +

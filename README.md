@@ -18,11 +18,11 @@ in [`docs/`](docs/README.md).
 
 ## Version
 
-Aktuelle Version: **1.2.1** (2026-11-11).
+Aktuelle Version: **1.2.2** (2026-11-11).
 Änderungen je Version: [`CHANGELOG.md`](CHANGELOG.md), ausführliche
-Release Notes in [`docs/releases/`](docs/releases/v1.2.1.md). Die
+Release Notes in [`docs/releases/`](docs/releases/v1.2.2.md). Die
 Fusszeile im Portal zeigt den laufenden Stand per `git describe` (Tag
-`v1.2.1` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
+`v1.2.2` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
 Version aus `package.json`.
 
 ## Setup (lokal)
@@ -198,6 +198,9 @@ und dürfen nicht `changeme` enthalten — die App verweigert sonst den Start
 | `CT_BASE_URL`, `CT_CLIENT_ID`, `CT_CLIENT_SECRET`, `CT_REDIRECT_URI`, `CT_GROUP_ID_BUCHHALTUNG`, `CT_GROUP_ID_ADMIN` | aus der bereits registrierten ChurchTools-OAuth2-Anwendung |
 | `CT_GROUP_ID_MANAGER` (optional) | ChurchTools-Gruppe für die Manager-Rolle — Zugriff auf die meisten, aber nicht alle Admin-Bereiche; ohne diese Variable existiert die Rolle schlicht nicht |
 | `CT_SYNC_SERVICE_TOKEN` | Login-Token des technischen Service-Accounts für den nächtlichen Sync |
+| `CT_CUSTOM_FIELD_IBAN`, `CT_CUSTOM_FIELD_KONTOINHABER` | Eigenschaftsschlüssel der ChurchTools-Personenfelder mit IBAN und Kontoinhaber (für die Auszahlung von Spesen), z. B. `iban_1` — genau der Schlüssel am Personenobjekt, nicht der Anzeigename |
+| `BACKUP_KEYRING_FILE` | Pfad zum Schlüsselbund für die verschlüsselten Sicherungen (ausserhalb aller Datenverzeichnisse, Modus 0600), siehe [Verschlüsselte Backups](docs/backup-verschluesselung.md) |
+| `TSA_TRUST_ANCHORS_FILE`, `TSA_TRUST_ANCHORS_SHA256`, `TSA_CRL_FILE`, `TSA_CRL_AUTO_UPDATE` | Vertrauensanker und Sperrlisten für den Zeitstempeldienst, siehe oben und [TSA-Vertrauensanker](docs/tsa-vertrauensanker.md) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | aus den bereits vorhandenen Produktions-SMTP-Zugangsdaten |
 
 ### Vor dem ersten Login — Superadmin-Bootstrap
@@ -302,6 +305,7 @@ Schritt für Schritt durch die Einrichtung.
 Die vollständige fachliche/technische Dokumentation mit Diagrammen liegt
 in [`docs/`](docs/README.md):
 
+- [Code-Landkarte](docs/code-landkarte.md) — Einstieg für Übernehmende: Verzeichnisse, Konventionen, Checklisten für typische Änderungen
 - [Architektur](docs/architektur.md) — Systemüberblick, Middleware-Pipeline, Router-Übersicht
 - [Authentifizierung und Rechte](docs/auth-und-rechte.md) — OAuth2-Login, Rollen, Einzelrechte, Job-Autorisierung
 - [Datenmodell](docs/datenmodell.md) — ER-Diagramm und Tabellenbeschreibung

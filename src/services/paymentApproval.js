@@ -1,14 +1,20 @@
+// Zahlungsdaten und Zahlungsbestätigung: welche Zahlung ein freigegebener Beleg auslöst (Spesen, QR-Rechnung, ohne Daten, keine) und wie
+// die Angaben geprüft werden. Fachlich: docs/export-und-zahlungsintegritaet.md und docs/qr-bill-und-betrugserkennung.md. n8n zahlt nur,
+// wenn die Zahlung ausdrücklich bestätigt wurde (services/exportSnapshot.js, `freigegeben`).
+
 import { createHash } from 'node:crypto';
 import { normalizeIban, isValidIban, ibanChecksumValid } from './ibanUtils.js';
 import { listKreditorIbansByKreditor } from '../db/kreditorIbanRepo.js';
 
 const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
 
+// Bereinigter Name (getrimmt, höchstens 200 Zeichen, keine Steuerzeichen) oder null.
 function cleanName(value) {
   const name = typeof value === 'string' ? value.trim() : '';
   return name && name.length <= 200 && !CONTROL_CHARS.test(name) ? name : null;
 }
 
+// Prüft IBAN (CH, Prüfziffer) und Kontoinhaber einer Spesenauszahlung. @returns {{iban: string, kontoinhaber: string}|null}
 export function validateSpesenPayment(iban, owner) {
   const normalized = typeof iban === 'string' ? normalizeIban(iban) : '';
   const kontoinhaber = cleanName(owner);
@@ -40,12 +46,14 @@ export function bestimmeZahlungsart(job, parent = null) {
   return basis.qr_iban ? 'qr_rechnung' : 'ohne_zahlungsdaten';
 }
 
+// Spesen und QR-Rechnungen (und alles mit Hinweisen) müssen bei Freigabe 2 ausdrücklich bestätigt werden.
 export function zahlungBestaetigungspflichtig(zahlung) {
   return zahlung.art === 'spesen' || zahlung.art === 'qr_rechnung' || zahlung.hinweise.length > 0;
 }
 
 const QR_FELDER = ['qr_iban', 'qr_referenz', 'qr_betrag', 'qr_waehrung', 'qr_creditor_name'];
 
+// true, wenn beide Beträge vorliegen und um mindestens einen Rappen abweichen.
 function betragWeichtAb(a, b) {
   if (a == null || a === '' || b == null || b === '') return false;
   const x = Number(a);
@@ -56,6 +64,11 @@ function betragWeichtAb(a, b) {
 // Zahlungsstand einer Nicht-Spesen-Freigabe aus lokal gespeicherten Eingangsdaten (QR-Scan) und
 // dem aktuellen Abgleich mit den hinterlegten Lieferanten-IBANs. Der Abgleich ist eine Pruefung,
 // kein Datenlieferant: er wird im Snapshot eingefroren, die IBAN selbst stammt immer aus dem Beleg.
+/**
+ * @returns {{art, daten, abgleich, hinweise}|{fehler: string}} Zahlungsstand; `abgleich` ∈ kein_lieferant | keine_iban_hinterlegt |
+ *   uebereinstimmung | abweichung, `hinweise` u. a. 'iban_abweichung', 'betrag_abweichung', 'qr_ungueltig'. `fehler`, wenn ein Teilbeleg
+ *   andere QR-Daten als die Gesamtrechnung trägt.
+ */
 export function ermittleRechnungsZahlung(db, job, parent = null) {
   if (parent && QR_FELDER.some((feld) => (parent[feld] ?? null) !== (job[feld] ?? null))) {
     return { fehler: 'Die QR-Zahlungsdaten dieses Teilbelegs weichen von der Gesamtrechnung ab. Bitte ablehnen und die Rechnung prüfen lassen.' };
@@ -75,13 +88,14 @@ export function ermittleRechnungsZahlung(db, job, parent = null) {
   return { art, daten, abgleich, hinweise };
 }
 
+// Anzeigetexte der Hinweise (für Freigabe 2 und die Altfall-Ansicht).
 export const ZAHLUNGSHINWEIS_TEXT = {
   qr_ungueltig: 'Die QR-Zahlungsdaten sind unvollständig oder ungültig. Es werden keine Zahlungsdaten exportiert; die Zahlung muss manuell erfasst werden.',
   iban_abweichung: 'Die QR-IBAN ist für diesen Lieferanten nicht hinterlegt.',
   betrag_abweichung: 'Der QR-Betrag weicht vom erfassten Rechnungsbetrag ab.',
 };
 
-// A stale-form fingerprint, not an authorization token; authorization is checked by the route.
+// Fingerabdruck gegen veraltete Formulare, kein Autorisierungs-Token; die Berechtigung prüft die Route.
 export function paymentReviewFingerprint(job, konto, payment, personId) {
   return createHash('sha256').update(JSON.stringify({ job, konto, payment, personId })).digest('hex');
 }

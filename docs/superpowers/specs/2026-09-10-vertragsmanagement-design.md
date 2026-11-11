@@ -3,6 +3,9 @@
 Datum: 2026-09-10
 Status: Zur Review
 
+Ergänzt am 2026-11-11: Abos, optionale Snipe-IT-Anbindung und
+Nextcloud als Dokumentenspeicher.
+
 ## Ziel
 
 Laufende Verträge/Abos (Internet, Versicherungen, Software-Lizenzen,
@@ -97,19 +100,80 @@ CREATE TABLE vertrag_dokumente (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   vertrag_id INTEGER NOT NULL REFERENCES vertraege(id),
   dateiname TEXT NOT NULL,
-  speicherpfad TEXT NOT NULL,
+  nextcloud_datei_id TEXT,
+  nextcloud_pfad TEXT NOT NULL UNIQUE,
+  sha256 TEXT NOT NULL,
+  etag TEXT,
+  mime_typ TEXT NOT NULL,
+  groesse_bytes INTEGER NOT NULL,
   hochgeladen_von_person_id INTEGER REFERENCES personen(id),
   hochgeladen_am TEXT NOT NULL DEFAULT (datetime('now'))
 );
 ```
 
-Dateien werden analog zu `JOBS_DIR`/`BRANDING_DIR` in einem neuen
-`VERTRAEGE_DIR` abgelegt (Env-Variable, gleiche Konvention). PDF/JPG/PNG,
-gleiche 20-MB-Grenze wie beim bestehenden Beleg-Upload. **Wichtig:**
-`VERTRAEGE_DIR` muss zusätzlich in den `datenbank-sicherung`-Job
-aufgenommen werden (`src/services/cronJobs.js`, dort werden aktuell DB +
-`JOBS_DIR` + `BRANDING_DIR` gezippt) — sonst gehen Vertragsdokumente bei
-einem Restore verloren.
+Dateien werden zentral in Nextcloud gespeichert und vom Portal über
+WebDAV hochgeladen und gelesen. Ein lokales `VERTRAEGE_DIR` als dauerhafte
+Ablage entfällt. Erlaubt bleiben PDF/JPG/PNG mit maximal 20 MB pro Datei;
+Dateityp und Grösse werden vor der Übertragung serverseitig geprüft.
+Die Tabelle speichert Zuordnung, Nextcloud-Dateikennung (soweit von der
+Installation geliefert), relativen Pfad, SHA-256-Prüfsumme, ETag und
+Dateimetadaten. Konkrete Migration und Schnittstellen werden im
+Implementierungsplan ausgearbeitet.
+
+### Nextcloud-Ablage und Zugriff
+
+- Eigener Basisordner für das Portal, mit einem Unterordner je Vertrag,
+  z. B. `Vertraege/123-Adobe/`. Die Vertrags-ID ist massgeblich;
+  Anbieteränderungen benennen Ordner nicht automatisch um. Dateien
+  erhalten kollisionsfreie interne Namen, der Originalname bleibt in
+  der Datenbank erhalten.
+- Upload, Vorschau und Download erfolgen im Portal. Vor jedem Zugriff
+  prüft es Eigentümerschaft bzw. `vertraege_verwalten` und liefert die
+  Datei serverseitig aus. Ein persönlicher Nextcloud-Zugang ist dafür
+  nicht nötig; es werden keine öffentlichen Freigabelinks erzeugt.
+- Technischer Zugang über ein separates Nextcloud-Konto mit Zugriff
+  ausschliesslich auf die Vertragsablage und eigenem App-Passwort über
+  HTTPS. Zugangsdaten bleiben in der geschützten Serverkonfiguration
+  und erscheinen weder im Browser noch in Protokollen oder Datei-URLs.
+- Direkte Zugriffe in Nextcloud folgen deren eigenen Rechten und können
+  die feinere Portalprüfung umgehen. Der Basisordner darf deshalb nicht
+  pauschal an alle Vertragsverantwortlichen freigegeben werden.
+- Pfade entstehen serverseitig unter dem konfigurierten Basisordner;
+  vom Benutzer übergebene externe URLs oder beliebige WebDAV-Pfade
+  werden nicht als Dokumentziel akzeptiert.
+
+### Konsistenz und Ausfälle
+
+- Ein Upload gilt erst nach bestätigter Speicherung in Nextcloud und
+  erfolgreicher Metadatenspeicherung als abgeschlossen. Da Datenbank und
+  WebDAV keine gemeinsame Transaktion besitzen, muss die Umsetzung
+  abgebrochene Uploads und verwaiste Dateien erkennen und bereinigen
+  können. Wiederholungen dürfen keine bestehenden Dateien überschreiben.
+- Extern verschobene oder gelöschte Dateien werden anhand von Kennung
+  und Pfad erkannt; geänderte Inhalte anhand von ETag und Prüfsumme.
+  Vor Auslieferung wird der Inhalt gegen die gespeicherte Prüfsumme
+  geprüft. Abweichungen erscheinen als verständlicher Hinweis; eine
+  geänderte Fassung wird nicht stillschweigend als Original ausgegeben.
+- Die erste Version führt keine automatische bidirektionale
+  Ordnersynchronisation ein. Externe Änderungen müssen ausdrücklich
+  zugeordnet oder als neues Dokument übernommen und auditiert werden.
+- Bei Nextcloud-Ausfall bleiben Vertragsdaten, Bearbeitung ohne
+  Dateioperationen und Erinnerungen verfügbar. Upload und Download
+  melden den Ausfall mit erneuter Versuchsmöglichkeit; fehlgeschlagene
+  Uploads werden nicht als erfolgreich dargestellt.
+- Auch Dokumentlöschung benötigt eine nachvollziehbare Behandlung
+  partieller Fehler. Metadaten dürfen nicht vor bestätigter Dateilöschung
+  unwiederbringlich verschwinden; offene Bereinigungen bleiben sichtbar.
+
+### Backup und Wiederherstellung
+
+Das Portal-Backup sichert Vertragsdaten, Dokumentzuordnungen, Pfade und
+Prüfsummen. Die PDFs sind darin nicht enthalten. Nextcloud benötigt eine
+eigene vollständige Sicherung mit Dateien, Datenbank und Konfiguration.
+Die Sicherungen müssen zeitlich zuordenbar sein; ein dokumentierter
+gemeinsamer Restore mit Prüfung der Dateizuordnungen und Prüfsummen ist
+Voraussetzung für die Betriebsabnahme. Nextcloud-Zugangsdaten werden
+nach den bestehenden Regeln für Geheimnisse separat abgesichert.
 
 ### Additive Rechte — neuer 9. Wert
 
@@ -232,8 +296,10 @@ Sichtbarkeits-Logik wie bei anderen rollenabhängigen Menüpunkten).
   Dokument-Upload/-Löschung werden ins bestehende globale Audit-Log
   geschrieben (gleiche Helper-Funktion wie andere Module) — macht das
   Feature von Anfang an durchsuchbar, ohne eigenes Log zu bauen.
-- **Backup-Job:** `VERTRAEGE_DIR` wird in `datenbank-sicherung`
-  aufgenommen (siehe oben).
+- **Nextcloud und Backup:** Dokumente liegen in Nextcloud; das Portal
+  sichert die Metadaten. Die separate Nextcloud-Sicherung und der
+  gemeinsame Restore werden wie oben beschrieben in die Betriebsabnahme
+  aufgenommen.
 - **Geplante Jobs:** `vertrag-erinnerungen` erscheint unter **Admin →
   Geplante Jobs** wie jeder andere Job.
 
@@ -246,6 +312,79 @@ Sichtbarkeits-Logik wie bei anderen rollenabhängigen Menüpunkten).
 - Integration: Zugriffskontrolle pro Route (Eigentümer sieht nur eigene,
   `vertraege_verwalten` sieht alle, Person ohne beides bekommt 403).
 - `csrfSweep.test.js`-Routenanzahl-Check aktualisieren (neue POST-Routen).
+- Nextcloud: Upload/Download mit Berechtigungsprüfung, Dateityp- und
+  Grössenbegrenzung, keine Pfadüberschreitung und keine öffentlichen Links.
+- Nextcloud: Ausfall, abgebrochener Upload, partielle Löschung und
+  Wiederholungen; keine falschen Erfolgsmeldungen oder Überschreibungen.
+- Nextcloud: extern verschobene, fehlende oder inhaltlich geänderte
+  Dokumente erkennen; Erinnerungen laufen bei Speicherausfall weiter.
+- Betriebsabnahme: gemeinsamer Restore von Portal und Nextcloud mit
+  Prüfung von Zuordnungen und Dateiprüfsummen.
+
+## Ergänzung: Abos und Snipe-IT
+
+Software- und Dienst-Abos (z. B. Adobe oder Spotify) werden als Verträge
+geführt. Die folgenden Anforderungen ergänzen das obige Datenmodell;
+eine konkrete Migration und ein Implementierungsplan stehen noch aus.
+
+### Zusätzliche Abo-Daten
+
+- Vertragsart (Abo, Versicherung, Miete, Wartung oder Sonstiges),
+  Produkt/Tarif und gegebenenfalls Anzahl Lizenzplätze.
+- Konto-E-Mail-Adresse und Verwaltungslink beim Anbieter. Passwörter
+  bleiben im Passwortmanager; optional wird dessen Eintrag referenziert.
+- Zahlungsweg (Rechnung, Lastschrift oder Firmenkarte) und optionaler
+  Verweis auf die vorhandene Karte; keine zusätzlichen Kartengeheimnisse.
+- Bereich/Kostenstelle sowie automatische oder manuelle Verlängerung.
+- Kündigungsfrist, Abrechnungsintervall und tatsächliches Nutzungsende
+  bleiben getrennte Angaben, auch bei monatlich kündbaren Abos.
+
+### Zuständigkeiten
+
+Das Portal führt Vertragsdokumente, Kosten samt Zahlungsintervall,
+Verantwortlichkeit, Kündigungsfristen und Erinnerungen. Snipe-IT führt
+Software-Lizenzen und deren Zuweisung an Personen oder Geräte.
+Lizenzzuweisungen werden zunächst ausschliesslich in Snipe-IT gepflegt.
+
+### Optionale Übertragung Portal → Snipe-IT
+
+- Pro geeignetem Software-Abo lässt sich eine vorhandene Snipe-IT-Lizenz
+  verknüpfen oder ausdrücklich eine neue anlegen. Nicht jedes Abo muss
+  synchronisiert werden.
+- Übertragen werden Produktname, Lizenzanzahl, Lizenznehmer-E-Mail,
+  Anbieter sowie ein ausdrücklich gepflegtes Lizenzablaufdatum, soweit
+  die Zielinstallation diese Felder unterstützt. Die Kündigungsfrist
+  darf nicht als Lizenzablauf verwendet werden.
+- Kosten werden erst übertragen, wenn die Bedeutung des Snipe-IT-
+  Kostenfelds festgelegt ist: monatliche Abo-Kosten dürfen nicht ohne
+  vereinbarte Umrechnung als Anschaffungskosten erscheinen.
+- Die externe Lizenz-ID wird dauerhaft gespeichert. Wiederholungen
+  aktualisieren dieselbe Lizenz; nach unklarem Ausgang einer Neuanlage
+  wird zuerst abgeglichen, bevor nochmals angelegt wird.
+- Beide Einträge erhalten einen gegenseitigen Verweis. Welche Felder
+  das Portal führt und überschreiben darf, wird bei der Verknüpfung
+  sichtbar gemacht; Zuweisungen werden nicht überschrieben.
+- Synchronisation erfolgt nach erfolgreicher Speicherung des Vertrags.
+  Fehler verhindern die lokale Speicherung nicht, bleiben sichtbar und
+  können erneut versucht werden. Letzter Erfolg und Fehlerstatus werden
+  protokolliert; Zugangstoken erscheinen nicht im Audit-Log.
+- Kündigung und Löschung eines Vertrags löschen keine Lizenz automatisch
+  und ziehen keine Lizenzplätze ein. Das Nutzungsende wird separat geprüft.
+- Verknüpfung und Übertragung benötigen das Verwaltungsrecht
+  `vertraege_verwalten` und werden im Audit-Log erfasst.
+
+Ob die Anbindung direkt per API oder über n8n erfolgt, bleibt für den
+Implementierungsplan offen. Vor Umsetzung werden Snipe-IT-Version,
+Feldzuordnung und ein eingeschränkt berechtigter API-Zugang geprüft.
+
+### Zusätzliche Abnahmekriterien
+
+- Verknüpfen bestehender Lizenzen erzeugt keine Duplikate.
+- Wiederholte Übertragung und Wiederaufnahme nach einem Fehler bleiben
+  ohne doppelte Neuanlage; bestehende Lizenzzuweisungen bleiben erhalten.
+- Kündigungsfrist und Nutzungsende werden unabhängig getestet.
+- API-Ausfall lässt Vertragsbearbeitung und Erinnerungen weiterlaufen.
+- Unberechtigte Personen können keine Verknüpfung oder Übertragung auslösen.
 
 ## Offene Punkte für die Review
 

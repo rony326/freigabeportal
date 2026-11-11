@@ -3,6 +3,17 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.2.2] – 2026-11-11
+
+Dokumentations-Release, keine Code-Änderung. Release Notes: [docs/releases/v1.2.2.md](docs/releases/v1.2.2.md).
+
+- Dokumentation: sämtliche Quelldateien (`src/`) haben jetzt einen Dateikopf, kurze
+  Funktionsdoku (JSDoc bei Services und Repos) und Routenkommentare; alle
+  Kommentare sind deutsch. Neu: [docs/code-landkarte.md](docs/code-landkarte.md)
+  (Einstieg für Übernehmende). Korrigiert: Zahl der Hintergrund-Jobs in
+  `architektur.md`, Sitzung/Cookie und Sicherheits-Header in `architektur.md` und
+  `auth-und-rechte.md`, fehlende Variablen im README. Keine Code-Änderung.
+
 ## [1.2.1] – 2026-11-11
 
 Sicherheits-Wartungsversion nach einem vollständigen Sicherheitsdurchgang (keine

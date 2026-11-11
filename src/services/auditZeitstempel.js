@@ -1,3 +1,5 @@
+// RFC3161-Zeitstempel für Audit-Pakete – siehe Erläuterung unten. Gestempelt wird die Prüfnummer, nicht das Paket.
+
 import { createHash } from 'node:crypto';
 import { createTimestampRequest, sendTimestampRequest, parseTimestampResponse } from 'pdf-rfc3161';
 import { freshTimestampRequest, validateTimestampBinding, leseTimestampToken } from './tsaResponse.js';
@@ -18,6 +20,7 @@ const SHA256_OID = '2.16.840.1.101.3.4.2.1';
 const imprint = (paketSha256) => createHash('sha256').update(Buffer.from(paketSha256, 'utf8')).digest();
 
 // Gleicher Aufbau wie in tsaCrlUpdate.js; null, solange keine TSA konfiguriert ist.
+// TSA-Konfiguration (URL, Zugang, Vertrauensanker) aus Admin-Einstellungen und Umgebung; null ohne konfigurierte TSA.
 export function tsaConfigAusDb(db, config) {
   const url = getConfigValue(db, 'zeitstempel_tsa_url');
   if (!url) return null;
@@ -30,6 +33,8 @@ export function tsaConfigAusDb(db, config) {
 }
 
 // Wirft bei jedem Fehler (Netz, TSA-Ablehnung, Bindung, Kette) eine deutsche Meldung.
+// Holt einen Zeitstempel für die Prüfnummer, prüft ihn vollständig (Bindung, Signatur, Vertrauenskette) und liefert
+// `{token, genTime, nachweis}`; Wirft bei jedem Fehler eine deutsche Meldung.
 export async function stempleAuditPaket(paketSha256, tsaConfig) {
   try {
     const anchors = tsaConfig.trustAnchorsFile || tsaConfig.requireTrustedChain !== false
@@ -55,6 +60,7 @@ export async function stempleAuditPaket(paketSha256, tsaConfig) {
 }
 
 // Wirft nie: prueft Imprint und CMS-Signatur eines gespeicherten Tokens (ohne Vertrauenskette).
+// @returns {Promise<{gueltig: boolean, genTime: Date|null, fehler: string|null}>}
 export async function pruefeAuditZeitstempelToken(token, paketSha256) {
   let genTime = null;
   try {

@@ -1,3 +1,5 @@
+// Admin → Personen (`/admin/personen`, Recht `personen_einsehen`, docs/auth-und-rechte.md): Liste der Personen mit Rolle (aus ChurchTools-Gruppen), Status, effektiven Rechten samt Herkunft; Einzelrechte vergibt nur, wer `gruppenrechte_verwalten` hat.
+
 import { Router } from 'express';
 import { listAllPersons, getPersonById } from '../../db/personenRepo.js';
 import { personHasRole } from '../../middleware/roles.js';
@@ -9,6 +11,7 @@ import { personName } from '../../services/auditLog.js';
 const GRUPPEN_LABEL = { superadmin: 'Superadmin', manager: 'Manager', buchhaltung: 'Buchhaltung' };
 
 // Effektive Rechte einer Person in Katalog-Reihenfolge, je mit den Quellen ("direkt", "über Gruppe X").
+// (Siehe Kommentar oben.)
 function rechteMitHerkunft(db, config, person) {
   const herkunft = ermittleRechteMitHerkunft(db, config, person);
   return [...GRANTABLE_BERECHTIGUNGEN, ...FESTE_RECHTE]
@@ -24,6 +27,7 @@ function rechteMitHerkunft(db, config, person) {
     });
 }
 
+// Höchste Rolle der Person für die Anzeige (Superadmin > Manager > Buchhaltung).
 function rolleVon(person, config) {
   if (personHasRole(person, config, 'superadmin')) return 'Superadmin';
   if (personHasRole(person, config, 'manager')) return 'Manager';
@@ -33,6 +37,7 @@ function rolleVon(person, config) {
 export function createPersonenRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // GET /admin/personen – Liste mit Warnhinweisen (z. B. nicht mehr auflösbar, Konto-Person nach Gruppenaustritt).
   router.get('/', (req, res) => {
     const bearbeitbar = personHasPermission(db, config, req.currentPerson, 'gruppenrechte_verwalten');
     const personen = listAllPersons(db).map((p) => ({
@@ -50,6 +55,7 @@ export function createPersonenRouter({ db, config, csrfProtection = (req, res, n
     });
   });
 
+  // POST /admin/personen/:id/berechtigungen – ersetzt die Einzelrechte einer Person (Recht `gruppenrechte_verwalten`).
   router.post('/:id/berechtigungen', csrfProtection, requirePermission(db, config, 'gruppenrechte_verwalten'), (req, res) => {
     if (!getPersonById(db, req.params.id)) {
       return res.status(404).render('error', { message: 'Person nicht gefunden.' });

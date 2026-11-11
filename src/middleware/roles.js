@@ -1,3 +1,8 @@
+// Rollen und Zugriffssperren: lädt die angemeldete Person aus der Session und stellt die einfachen
+// Guards (`requireLogin`, `requireRole`, `requireAnyRole`) bereit. Rolle = Mitgliedschaft in einer
+// ChurchTools-Gruppe, deren ID in der Konfiguration steht (`CT_GROUP_ID_*`). Feinere Rechte:
+// middleware/permissions.js. Alle Verweigerungen laufen über `verweigere*` ins Zugriffs-Audit.
+
 import { GRUPPEN } from '../services/berechtigungKatalog.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
@@ -5,16 +10,19 @@ import { BEISPIELPERSONEN } from '../services/testmodus/beispieldaten.js';
 
 // Protokolliert (fail-safe) und verweigert. Die Entscheidung ist bereits gefallen, bevor hier
 // irgendetwas protokolliert wird; ein Protokollfehler aendert weder Status noch Antwort.
+// 401-Antwort (Fehlerseite) + Zugriffs-Audit `nicht_angemeldet`.
 export function verweigereNichtAngemeldet(req, res) {
   meldeZugriffVerweigert(req, { grund: 'nicht_angemeldet', status: 401 });
   return res.status(401).render('error', { message: 'Bitte melde dich an, um fortzufahren.' });
 }
 
+// 403-Antwort + Zugriffs-Audit mit Grund (`fehlende_rolle`, `fehlendes_recht`, `kein_adminbereich`) und ggf. dem fehlenden Recht.
 export function verweigereOhneBerechtigung(req, res, grund, recht = null) {
   meldeZugriffVerweigert(req, { grund, status: 403, recht });
   return res.status(403).render('error', { message: 'Du hast keine Berechtigung für diesen Bereich.' });
 }
 
+// Setzt `req.currentPerson` (Zeile aus `personen`, inkl. Gruppen) aus `session.personId`; null ohne Anmeldung.
 export function loadCurrentPerson(db) {
   return (req, res, next) => {
     if (!req.session.personId) {
@@ -23,9 +31,8 @@ export function loadCurrentPerson(db) {
       return next();
     }
     req.currentPerson = getPersonById(db, req.session.personId);
-    // Exposed as a template local (mirroring middleware/branding.js's res.locals.branding
-    // pattern) so views can render a logout link without every route handler needing to pass
-    // it through explicitly.
+    // Als Template-Variable bereitgestellt (analog zu res.locals.branding in middleware/branding.js), damit Views einen
+    // Abmelde-Link rendern können, ohne dass jeder Route-Handler die Person einzeln durchreichen muss.
     res.locals.currentPerson = req.currentPerson;
     next();
   };
@@ -48,21 +55,21 @@ export function loadBeispielperson(db) {
   };
 }
 
+// Rolle → Feld in `config.churchtools`, das die ChurchTools-Gruppen-ID enthält.
 const GROUP_ID_KEY_BY_ROLE = {
   buchhaltung: 'groupIdBuchhaltung',
   superadmin: 'groupIdAdmin',
   manager: 'groupIdManager',
 };
 
-// Shared by requireRole/requireAnyRole (the HTTP gates) and middleware/nav.js's loadNavFlags
-// (Phase F's nav-tab visibility computation) — both need the identical "is this person in
-// ChurchTools group X" check. Extracted here rather than duplicated a third time.
+// Gemeinsam genutzt von requireRole/requireAnyRole (den HTTP-Toren) und loadNavFlags in middleware/nav.js
+// (Sichtbarkeit der Menüreiter) — beide brauchen exakt dieselbe Prüfung "ist diese Person in der
+// ChurchTools-Gruppe X". Hier ausgelagert, statt sie ein drittes Mal zu duplizieren.
 export function personHasRole(person, config, role) {
   if (!person) return false;
   const groupId = config.churchtools[GROUP_ID_KEY_BY_ROLE[role]];
-  // groupIdManager is optional (CT_GROUP_ID_MANAGER is not required in env.js) — without this
-  // guard an unconfigured role would compare against the string "null"/"undefined" instead of
-  // simply having nobody in it.
+  // groupIdManager ist optional (CT_GROUP_ID_MANAGER ist in env.js nicht Pflicht) — ohne diese Absicherung würde eine
+  // nicht konfigurierte Rolle gegen den Text "null"/"undefined" vergleichen, statt einfach niemanden zu enthalten.
   if (!groupId) return false;
   return person.gruppen.includes(String(groupId));
 }
@@ -72,6 +79,7 @@ export function gruppenVon(person, config) {
   return GRUPPEN.filter((gruppe) => personHasRole(person, config, gruppe));
 }
 
+// Guard: genau diese Rolle nötig (sonst 401/403).
 export function requireRole(config, role) {
   return (req, res, next) => {
     const person = req.currentPerson;
@@ -81,6 +89,7 @@ export function requireRole(config, role) {
   };
 }
 
+// Guard: mindestens eine der Rollen nötig.
 export function requireAnyRole(config, roles) {
   return (req, res, next) => {
     const person = req.currentPerson;
@@ -90,6 +99,7 @@ export function requireAnyRole(config, roles) {
   };
 }
 
+// Guard: nur angemeldet und aktiv, keine bestimmte Rolle.
 export function requireLogin() {
   return (req, res, next) => {
     const person = req.currentPerson;

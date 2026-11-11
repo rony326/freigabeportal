@@ -1,3 +1,6 @@
+// Serverseitige Prüfung einer Audit-Prüfnummer für die öffentliche Seite /audit-pruefen (routes/auditPruefen.js,
+// docs/audit-externe-nachweise.md): drei Prüfpunkte – Prüfnummer, Verkettung/Inhalt, Zeitstempel.
+
 import { pruefeAuditExportRegister } from './auditExport.js';
 import { pruefeAuditZeitstempelToken } from './auditZeitstempel.js';
 import { ladeAuditZeitstempel } from './auditNachweisJobs.js';
@@ -16,6 +19,7 @@ const BEFUND_TEXTE = {
   inhalt_abweichend: 'Inhalt weicht vom heutigen Audit-Log ab',
 };
 
+// Entfernt Leerzeichen und Bindestriche, prüft 64 Hex-Zeichen. @returns {string|null} normalisierte Nummer oder null
 export function normalisierePruefnummer(eingabe) {
   if (typeof eingabe !== 'string') return null;
   const wert = eingabe.replace(/[\s-]/g, '').toLowerCase();
@@ -23,6 +27,8 @@ export function normalisierePruefnummer(eingabe) {
 }
 
 // 'ok' | 'fehlt' | 'ungueltig' | 'verspaetet' | 'zu_frueh'
+// Prüft den Zeitstempel eines Pakets: 'ok' | 'fehlt' | 'ungueltig' | 'verspaetet' (mehr als 7 Tage nach Erstellung) |
+// 'zu_frueh' (vor der Erstellung). VORLAUF_MS/NACHLAUF_MS sind die Toleranzen.
 async function zeitstempelStatus(db, paket) {
   const zeile = ladeAuditZeitstempel(db, paket.id);
   if (!zeile) return 'fehlt';
@@ -38,6 +44,7 @@ async function zeitstempelStatus(db, paket) {
 
 const liste = (nummern) => nummern.map((nr) => `Paket ${nr}`).join(', ');
 
+// Formuliert das Ergebnis des Zeitstempel-Prüfpunkts als Satz (kumulativ: "Paket N und alle älteren …").
 function zeitstempelText(db, paketNr, maengel, spaet = false) {
   if (!spaet && !Object.values(maengel).some((n) => n.length)) {
     return paketNr === 1
@@ -58,6 +65,11 @@ function zeitstempelText(db, paketNr, maengel, spaet = false) {
   return teile.join(' ');
 }
 
+/**
+ * @param {{paketNr: number, pruefnummer: string}} eingabe
+ * @returns {Promise<{status: 'ok'|'abweichung'|'kein_paket'|'unbekannt', punkte: object[], neuere: {anzahl: number, alleGestempelt: boolean}}>}
+ *   `neuere` beschreibt Pakete nach dem geprüften – sie dürfen den geprüften nicht entwerten, werden aber gemeldet.
+ */
 export async function pruefeAuditNachweis(db, { paketNr, pruefnummer }) {
   const neuereLeer = { anzahl: 0, alleGestempelt: true };
   const pakete = db.prepare('SELECT * FROM audit_export_pakete ORDER BY id').all();

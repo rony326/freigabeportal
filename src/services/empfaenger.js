@@ -14,6 +14,7 @@ export const EMPFAENGER_GRUPPEN = Object.freeze({ ...GRUPPEN });
 
 const kuerze = (zeile) => (zeile.length > 80 ? `${zeile.slice(0, 80)}…` : zeile);
 
+// Zerlegt die gespeicherte Empfängerliste (eine Zeile je Ziel) in getrimmte, nicht leere Zeilen.
 export function empfaengerZeilen(value) {
   return String(value ?? '')
     .split(/\r?\n|\r/)
@@ -23,6 +24,13 @@ export function empfaengerZeilen(value) {
 
 // Zeilen: "gruppe:..."-Token, "person:<churchtools_person_id>" (nur mit db; die Person muss existieren,
 // aktiv oder nicht) oder eine E-Mail-Adresse. leerErlaubt: leer = Default des Aufrufers.
+/**
+ * Prüft eine Empfängerliste beim Speichern und ergänzt Fehlermeldungen in `errors`.
+ * @param {string} value Rohtext (eine Zeile je Ziel)
+ * @param {string} label Feldbezeichnung für die Meldung
+ * @param {string[]} errors Fehlerliste, an die angehängt wird
+ * @param {{db?: object, leerErlaubt?: boolean}} [opts]
+ */
 export function validateEmpfaengerListe(value, label, errors, { db = null, leerErlaubt = false } = {}) {
   const zeilen = empfaengerZeilen(value);
   if (zeilen.length === 0) {
@@ -47,6 +55,7 @@ export function validateEmpfaengerListe(value, label, errors, { db = null, leerE
 
 // Lesbare Liste für die Admin-Seite: Gruppe → "Gruppe Buchhaltung", Person → "Vorname Nachname"
 // (inaktiv bzw. unbekannt markiert), sonst die Adresse.
+// @returns {{art: 'gruppe'|'person'|'mail', label: string, inaktiv: boolean, unbekannt: boolean}[]}
 export function empfaengerAnzeige(db, value) {
   return empfaengerZeilen(value).map((zeile) => {
     if (GRUPPEN[zeile]) return { art: 'gruppe', label: GRUPPEN[zeile], inaktiv: false, unbekannt: false };

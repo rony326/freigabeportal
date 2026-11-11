@@ -1,3 +1,6 @@
+// Beispieldaten der Spielwiese (docs/testmodus.md): fünf Beispielpersonen, zwei Konten, Lieferanten und Vorgänge in jedem Zustand (Pool, zugewiesen,
+// Freigabe 2, abgelehnt, abgeschlossen, Rapporte, Spesen). Alles läuft über die normalen Repo-Funktionen, nichts wird von Hand in die Tabellen geschrieben.
+
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,6 +18,7 @@ import { createFreigabe } from '../../db/freigabenRepo.js';
 import { createSpesenabrechnung } from '../../db/spesenabrechnungenRepo.js';
 import { renderFirstPageThumbnail } from '../thumbnail.js';
 
+// Die Beispielpersonen (id, Name, Rolle in der Demo, Gruppen der Test-Instanz); "Dora" ist die Admin-Rolle.
 export const BEISPIELPERSONEN = [
   { id: 'test-1', vorname: 'Anna', nachname: 'Beispiel', rolle: 'Freigeberin 1', gruppen: ['test-buchhaltung'] },
   { id: 'test-2', vorname: 'Ben', nachname: 'Beispiel', rolle: 'Freigeber 2', gruppen: ['test-buchhaltung'] },
@@ -23,6 +27,7 @@ export const BEISPIELPERSONEN = [
   { id: 'test-5', vorname: 'Emil', nachname: 'Beispiel', rolle: 'Stellvertretung', gruppen: ['test-buchhaltung'] },
 ];
 
+// Erzeugt ein einfaches Einseiten-PDF "Beispielrechnung - kein echtes Dokument".
 async function beispielPdf(titel, lieferant, betrag) {
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
@@ -36,6 +41,7 @@ async function beispielPdf(titel, lieferant, betrag) {
 
 let zaehler = 0;
 
+// Legt das Beispiel-PDF im Belegverzeichnis der Spielwiese an. @returns {{pdfPfad, hash, buf}}
 async function legeDateiAn(config, titel, lieferant, betrag) {
   mkdirSync(config.jobsDir, { recursive: true });
   const buf = await beispielPdf(titel, lieferant, betrag);
@@ -44,6 +50,7 @@ async function legeDateiAn(config, titel, lieferant, betrag) {
   return { pdfPfad, hash: createHash('sha256').update(buf).digest('hex'), buf };
 }
 
+// Erzeugt und hinterlegt das Vorschaubild (ohne Vorschau geht es weiter, wenn das Rendern scheitert).
 function setzeThumbnail(db, id, pdfPfad, buf) {
   try {
     const pfad = pdfPfad.replace(/\.pdf$/, '.png');
@@ -52,6 +59,7 @@ function setzeThumbnail(db, id, pdfPfad, buf) {
   } catch { /* ohne Vorschau weiter */ }
 }
 
+// Legt einen Beispielvorgang im Pool an.
 async function neuerJob(db, config, titel, lieferant, betrag) {
   const { pdfPfad, hash, buf } = await legeDateiAn(config, titel, lieferant, betrag);
   const id = createJob(db, {
@@ -82,6 +90,7 @@ function rapportAlsRapport(db, id, empfaengerIds, bemerkung) {
   createFreigabe(db, { jobId: id, personId: 'test-1', rolle: 'rapport_markiert', zeitpunkt, ip: '127.0.0.1', interessenskonflikt: false, kommentar: empfaengerIds.join(', ') });
 }
 
+// Befüllt eine frische Spiel-Datenbank mit allen Beispielen (Personen, Konten, Kreditoren, Vorgänge, Rapporte, Spesen).
 export async function spieleBeispieldatenEin(db, testConfig) {
   for (const p of BEISPIELPERSONEN) {
     upsertPerson(db, { id: p.id, vorname: p.vorname, nachname: p.nachname, email: `${p.vorname.toLowerCase()}@beispiel.invalid`, gruppen: p.gruppen });

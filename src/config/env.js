@@ -1,5 +1,15 @@
+// Liest und validiert alle Umgebungsvariablen (Quelle der Wahrheit für die Konfiguration).
+//
+// `loadConfig()` bricht den Start mit einer klaren Fehlermeldung ab, wenn ein Pflichtwert fehlt,
+// ein Geheimnis zu kurz ist (< 32 Zeichen) oder noch den Platzhalter aus `.env.example` enthält.
+// Die Konfiguration wird einmal beim Start gelesen und als `config`-Objekt durchgereicht – kein
+// Modul liest `process.env` selbst (Ausnahme: die CLI-Werkzeuge für die TSA-Dateien).
+// Beschreibung aller Variablen: README.md (Abschnitt Konfiguration) und docs/betrieb-und-nutzung.md.
+
+// Mindestlänge für alle Geheimnisse (Session, Download-Signatur, Cron, n8n, ChurchTools-Token …).
 const MIN_SECRET_LENGTH = 32;
 
+// Pflichtvariable: wirft, wenn sie nicht gesetzt oder leer ist.
 function required(env, name) {
   const value = env[name];
   if (!value) {
@@ -8,6 +18,7 @@ function required(env, name) {
   return value;
 }
 
+// Pflichtvariable, die zusätzlich als Geheimnis gilt: Mindestlänge und kein `changeme`-Platzhalter.
 function requiredSecret(env, name) {
   const value = required(env, name);
   if (value.length < MIN_SECRET_LENGTH) {
@@ -21,6 +32,10 @@ function requiredSecret(env, name) {
   return value;
 }
 
+// Nur die Speicherorte (DB, Branding, Jobs/PDFs, Backups) – eigene Funktion, weil die CLI-Werkzeuge
+// (Backup-Wiederherstellung, Audit-Export, TSA-Sperrlisten) den Datenspeicher ohne die restlichen
+// Pflichtgeheimnisse öffnen müssen. Der tatsächlich aktive Speicher kann nach einem Restore davon
+// abweichen und wird über `resolveStorageConfig()` (services/storageState.js) aufgelöst.
 export function loadStorageConfig(env = process.env) {
   return {
     dbPath: env.DB_PATH || './data/freigabeportal.sqlite',
@@ -31,6 +46,11 @@ export function loadStorageConfig(env = process.env) {
   };
 }
 
+// Vollständige Laufzeitkonfiguration für den Server. Wirft bei fehlenden/ungültigen Werten.
+// Gegenseitige Abhängigkeiten, die hier geprüft werden:
+//   - TSA-Vertrauensanker-Datei und ihr SHA-256 müssen zusammen gesetzt sein
+//   - TSA_CRL_AUTO_UPDATE=true setzt TSA_CRL_FILE und Vertrauensanker voraus
+//   - BACKUP_API_KEY (optional) darf nicht mit N8N_API_KEY übereinstimmen (getrennte Rechte)
 export function loadConfig(env = process.env) {
   if (Boolean(env.TSA_TRUST_ANCHORS_FILE) !== Boolean(env.TSA_TRUST_ANCHORS_SHA256) ||
       env.TSA_TRUST_ANCHORS_SHA256 && !/^[a-f0-9]{64}$/.test(env.TSA_TRUST_ANCHORS_SHA256)) {
@@ -65,6 +85,7 @@ export function loadConfig(env = process.env) {
     cronSecret: requiredSecret(env, 'CRON_SECRET'),
     n8nApiKey: requiredSecret(env, 'N8N_API_KEY'),
     backupApiKey: env.BACKUP_API_KEY ? requiredSecret(env, 'BACKUP_API_KEY') : null,
+    // Zeitstempel ohne gültigen Vertrauensanker gelten nie als geprüft (siehe docs/tsa-vertrauensanker.md).
     tsaTrustRequired: true,
     tsaCrlFile: env.TSA_CRL_FILE || null,
     tsaCrlAutoUpdate: env.TSA_CRL_AUTO_UPDATE === 'true',

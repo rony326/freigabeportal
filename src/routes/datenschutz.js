@@ -1,3 +1,5 @@
+// Datenschutzseite (`GET /datenschutz`, docs/betrieb-und-nutzung.md): Text aus admin_config mit Kontaktadresse; Zugang: angemeldet.
+
 import { Router } from 'express';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 

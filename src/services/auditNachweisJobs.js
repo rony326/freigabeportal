@@ -1,3 +1,7 @@
+// Audit-Nachweis für die Revision (docs/audit-externe-nachweise.md, Release 1.1.0): nächtlicher Export des Audit-Logs in verkettete Pakete mit
+// RFC3161-Zeitstempel (`audit-export`), regelmässiger Versand der Prüfnummer an die Revision (`audit-pruefnummer`), Alarm bei fehlenden Zeitstempeln
+// und Meldungen bei Änderungen der Einstellungen. Die öffentliche Prüfung steht in services/auditPruefung.js und routes/auditPruefen.js.
+
 import { auditedJob } from './auditOperation.js';
 import { erstelleAuditExportPaket } from './auditExport.js';
 import { stempleAuditPaket, tsaConfigAusDb } from './auditZeitstempel.js';
@@ -6,18 +10,22 @@ import { resolveEmpfaenger, sendRenderedMail, sendNotification } from './notify.
 import { getConfigValue, setConfigValue } from '../db/adminConfigRepo.js';
 
 const TAG_MS = 24 * 3600 * 1000;
+// Marker in admin_config: wann zuletzt der Alarm "Pakete ohne Zeitstempel" verschickt wurde (höchstens alle 24 h).
 const ALARM_KEY = 'audit_zeitstempel_alarm_gesendet_am';
 
+// Pakete ohne gespeicherten Zeitstempel, älteste zuerst.
 export function listPaketeOhneZeitstempel(db) {
   return db.prepare(`SELECT p.* FROM audit_export_pakete p
     LEFT JOIN audit_export_zeitstempel z ON z.paket_nr = p.id
     WHERE z.paket_nr IS NULL ORDER BY p.id`).all().map((row) => ({ ...row }));
 }
 
+// Zeitstempelzeile zum Paket oder undefined.
 export function ladeAuditZeitstempel(db, paketNr) {
   return db.prepare('SELECT * FROM audit_export_zeitstempel WHERE paket_nr = ?').get(paketNr);
 }
 
+// Ab welchem Rückstand (in ms) alarmiert wird (admin_config `audit_zeitstempel_alarm_tage`, mindestens 1, Standard 3 Tage).
 function alarmSchwelleMs(db) {
   const tage = Number(getConfigValue(db, 'audit_zeitstempel_alarm_tage'));
   return (Number.isFinite(tage) && tage >= 1 ? tage : 3) * TAG_MS;
@@ -48,6 +56,7 @@ async function alarmiereBeiRueckstand(db, config, mailer, offen, jetzt) {
   return true;
 }
 
+// Ein Lauf des Jobs `audit-export`: neue Pakete erzeugen, ungestempelte stempeln (bei Fehler abbrechen), bei Rückstand alarmieren. Nur mit eingeschaltetem Modul.
 async function runAuditExportJobInternal(db, config, mailer, { jetzt = new Date(), stemple = stempleAuditPaket } = {}) {
   if (getConfigValue(db, 'modul_audit_nachweis_aktiv') !== '1') return { status: 'uebersprungen' };
   let neuePakete = 0;
@@ -78,12 +87,15 @@ async function runAuditExportJobInternal(db, config, mailer, { jetzt = new Date(
   return result;
 }
 
+// Geplanter Job `audit-export` (nachts, Zeitplan cron_audit_export_*).
 export const runAuditExportJob = auditedJob('audit-export', runAuditExportJobInternal);
 
 const ZEITZONE = 'Europe/Zurich';
 const ZULETZT_KEY = 'audit_pruefnummer_zuletzt_monat';
+// Versandmonate je Rhythmus (null = jeden Monat).
 const RHYTHMUS_MONATE = { monatlich: null, quartalsweise: [1, 4, 7, 10], jaehrlich: [1] };
 
+// Liest eine kommagetrennte Adressliste. @returns {{adressen: string[], ungueltig: string[]}} gültige (ohne Duplikate) und ungültige Einträge
 export function parseEmpfaengerListe(wert) {
   const adressen = [];
   const ungueltig = [];
@@ -96,10 +108,12 @@ export function parseEmpfaengerListe(wert) {
   return { adressen, ungueltig };
 }
 
+// Gruppiert die 64 Hex-Zeichen in Blöcke zu 8 (besser lesbar/abtippbar).
 export function formatierePruefnummer(hex) {
   return String(hex).match(/.{1,8}/g)?.join(' ') ?? '';
 }
 
+// Datums- und Zeitteile in Zürcher Zeit.
 function zuericherTeile(datum) {
   const teile = new Intl.DateTimeFormat('en-US', {
     timeZone: ZEITZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
@@ -116,6 +130,7 @@ function formatiereZeit(wert) {
   return `${String(z.tag).padStart(2, '0')}.${String(z.monat).padStart(2, '0')}.${z.jahr} ${z.stunde}:${z.minute}`;
 }
 
+// true, wenn heute (Zürcher Datum) nach Rhythmus und Versandtag eine Prüfnummer verschickt werden soll.
 export function istVersandtag(jetzt, { rhythmus, tag }) {
   const z = zuericherTeile(jetzt);
   const monate = RHYTHMUS_MONATE[rhythmus] === undefined ? null : RHYTHMUS_MONATE[rhythmus];
@@ -127,6 +142,7 @@ function revisionsEmpfaenger(db) {
   return parseEmpfaengerListe(getConfigValue(db, 'audit_revision_empfaenger')).adressen;
 }
 
+// Schickt die aktuelle Prüfnummer (letztes Paket) mit Zeitraum, Anzahl und Link zur Prüfseite an alle Revisions-Empfänger. @returns {Promise<{status: string, ...}>}
 export async function sendeAuditPruefnummer(db, config, mailer) {
   const empfaenger = revisionsEmpfaenger(db);
   if (!empfaenger.length) return { status: 'kein_empfaenger' };
@@ -154,6 +170,7 @@ export async function sendeAuditPruefnummer(db, config, mailer) {
   return { status: 'versendet', paketNr: letztes.id, empfaenger: empfaenger.length };
 }
 
+// Täglicher Lauf des Jobs `audit-pruefnummer`; verschickt höchstens einmal je Monat und nur am Versandtag.
 async function runAuditPruefnummerJobInternal(db, config, mailer, { jetzt = new Date() } = {}) {
   if (getConfigValue(db, 'modul_audit_nachweis_aktiv') !== '1') return { status: 'uebersprungen' };
   const rhythmus = getConfigValue(db, 'audit_pruefnummer_rhythmus') ?? 'monatlich';
@@ -167,6 +184,7 @@ async function runAuditPruefnummerJobInternal(db, config, mailer, { jetzt = new 
   return { ...result, status: result.status === 'versendet' ? 'erfolg' : 'uebersprungen', grund: result.status };
 }
 
+// Geplanter Job `audit-pruefnummer` (täglich, Zeitplan cron_audit_pruefnummer_*).
 export const runAuditPruefnummerJob = auditedJob('audit-pruefnummer', runAuditPruefnummerJobInternal);
 
 function personName(person) {
@@ -180,6 +198,7 @@ async function sendeAnAlle(db, mailer, adressen, subject, text) {
 }
 
 // zusaetzlicheEmpfaenger: z. B. die bisherigen Adressen, damit auch sie die Aenderung erfahren.
+// Informiert die Revisions-Empfänger (und optional weitere) über geänderte Einstellungen des Audit-Nachweises.
 export async function meldeAuditNachweisAenderung(db, config, mailer, { aenderungen, person, zusaetzlicheEmpfaenger = [] }) {
   const portal = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
   const text = 'Guten Tag\n\nDie Einstellungen des Audit-Nachweises wurden geändert:\n\n'
@@ -195,6 +214,7 @@ export async function meldeAuditNachweisAenderung(db, config, mailer, { aenderun
   await sendeAnAlle(db, mailer, empfaenger, 'Freigabeportal: Einstellungen des Audit-Nachweises geändert', text);
 }
 
+// Informiert alte und neue Empfänger über einen Wechsel der Empfängerliste.
 export async function meldeAuditEmpfaengerWechsel(db, config, mailer, { alt, neu, person }) {
   const portal = getConfigValue(db, 'seiten_titel') || 'Freigabeportal';
   const altListe = parseEmpfaengerListe(alt).adressen;

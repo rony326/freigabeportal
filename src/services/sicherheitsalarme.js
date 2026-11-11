@@ -1,3 +1,4 @@
+// Sicherheitsalarme per Mail (heute: ungeklärte Backup-Löschabsichten) mit persistenter Deduplizierung und Wiederholung – Regeln direkt unterhalb.
 import { randomUUID } from 'node:crypto';
 import { istWartungsmodusAktiv } from './wartungsmodus.js';
 import { currentAuditActor } from './auditContext.js';
@@ -20,6 +21,7 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 //   zwischenzeitlich geklaert, endet nur der Alarm ('erledigt').
 // - Mails enthalten Absichts-ID, Backup-Dateiname und Zeitpunkt, keine Schluessel oder Inhalte.
 
+// Alarmtyp, Mindestalter einer Absicht vor dem ersten Alarm (30 Min.), Sperrdauer und Wiederholungsabstände.
 export const ALARM_TYP = 'backup_loeschung_offen';
 export const MINDESTALTER_MS = 30 * 60 * 1000;
 export const SPERRE_MS = 10 * 60 * 1000;
@@ -29,6 +31,7 @@ const MAX_ALARME_PRO_MAIL = 50;
 
 function iso(ms) { return new Date(ms).toISOString(); }
 
+// Liest alle ungeklärten Löschabsichten seitenweise aus dem Audit.
 function alleOffenenAbsichten(db) {
   const offen = [];
   let before = Number.MAX_SAFE_INTEGER;
@@ -40,6 +43,7 @@ function alleOffenenAbsichten(db) {
   }
 }
 
+// Hält den Versand eines Alarms als Audit-Ereignis ('sicherheitsalarm') fest.
 function schreibeAudit(db, aktion, nachher) {
   const actor = currentAuditActor();
   db.prepare(`INSERT INTO audit_ereignisse (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, nachher)
@@ -98,6 +102,7 @@ function beanspruche(db, jetzt) {
   });
 }
 
+// Betreff und Text der Alarmmail (nur Absichts-ID, Dateiname und Zeitpunkt, keine Schlüssel).
 function mailInhalt(db, config, absichten) {
   const zeilen = absichten.map((a) => `- Vorgang ${a.id}: ${a.dateiname} (Absicht vom ${a.zeitpunkt}${a.operation_id ? `, operationId ${a.operation_id}` : ''})`);
   return {
@@ -109,6 +114,7 @@ function mailInhalt(db, config, absichten) {
   };
 }
 
+// Reduziert einen Fehler auf einen ungefährlichen Code für das Protokoll (nie Fehlertext mit Daten).
 function fehlerCode(err) {
   if (typeof err?.code === 'string' && /^[A-Z0-9_]{1,40}$/.test(err.code)) return err.code;
   if (typeof err?.responseCode === 'number') return `SMTP_${err.responseCode}`;
@@ -167,6 +173,7 @@ export async function versendeFaelligeAlarme(db, config, mailer, { jetzt = Date.
     : { versendet: aktuell.length, fehlgeschlagen: 0, erledigt: erledigt.length };
 }
 
+// Ein Lauf: erkennen, dann versenden. @returns {Promise<object>} Status 'erfolg'/'fehler' plus Zähler
 async function runSicherheitsalarmeJobInternal(db, config, mailer, options = {}) {
   try {
     const erkennung = erkenneOffeneBackupLoeschungen(db, options);
@@ -178,4 +185,5 @@ async function runSicherheitsalarmeJobInternal(db, config, mailer, options = {})
   }
 }
 
+// Geplanter Job `sicherheitsalarme` (alle 30 Min.; Audit-Klammer durch auditedJob).
 export const runSicherheitsalarmeJob = auditedJob('sicherheitsalarme', runSicherheitsalarmeJobInternal);

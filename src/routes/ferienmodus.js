@@ -1,3 +1,6 @@
+// Seite "Ferienmodus" (`/ferienmodus`, docs/superpowers/specs/2026-09-07-ferienmodus-design.md): eine Person trägt Abwesenheit (von/bis) und eine Stellvertretung ein; für die Dauer
+// gelten Mails und Berechtigungen zusätzlich für die Stellvertretung (services/vertretung.js). Zugang: angemeldet.
+
 import { Router } from 'express';
 import { setFerienmodus, clearFerienmodus } from '../db/personenRepo.js';
 import { listVertretungsKandidaten } from '../db/kontenRepo.js';
@@ -5,11 +8,9 @@ import { personName } from '../services/auditLog.js';
 
 const DATUM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-// Same UTC-date-string comparison approach src/services/vertretung.js already uses for
-// "aktiv" -- lexicographic comparison against YYYY-MM-DD, never a separate stored flag. Returns
-// null when no Ferienmodus is set at all (the "keiner" case from the design spec), otherwise one
-// of 'geplant' (starts in the future), 'aktiv' (today falls within the period) or 'abgelaufen'
-// (the period is already over but the record hasn't been cleared yet).
+// Gleiches Vorgehen beim Vergleich von UTC-Datumstexten wie in src/services/vertretung.js für "aktiv" — lexikografischer Vergleich mit YYYY-MM-DD, nie ein eigenes gespeichertes Flag.
+// Liefert null, wenn gar kein Ferienmodus gesetzt ist (der Fall "keiner" aus der Entwurfsbeschreibung), sonst 'geplant' (beginnt in der Zukunft), 'aktiv' (heute liegt im Zeitraum) oder 'abgelaufen' (der Zeitraum
+// ist vorbei, der Eintrag aber noch nicht gelöscht).
 function berechneStatus(person) {
   if (!person.ferienmodus_von) return null;
   const heute = new Date().toISOString().slice(0, 10);
@@ -18,11 +19,8 @@ function berechneStatus(person) {
   return 'aktiv';
 }
 
-// Resolves the Stellvertreter's display name via personName (falls back to "Unbekannt" for an
-// unresolvable id) rather than looking it up in the `kandidaten` array -- a person who has since
-// been deactivated or lost the shared-Konto role that made them a candidate drops out of
-// `kandidaten`, which would otherwise silently render a blank name while they still hold real
-// elevated access.
+// Löst den Anzeigenamen der Stellvertretung über personName auf (fällt bei einer nicht auflösbaren id auf "Unbekannt" zurück), statt ihn im Array `kandidaten` nachzuschlagen — eine Person, die inzwischen
+// deaktiviert wurde oder die gemeinsame Konto-Rolle verlor, die sie zur Kandidatin machte, fällt aus `kandidaten` heraus, was sonst still einen leeren Namen rendern würde, während sie noch echte erweiterte Zugriffe hat.
 function stellvertreterNameFuer(db, person) {
   return person.ferienmodus_stellvertreter_id ? personName(db, person.ferienmodus_stellvertreter_id) : null;
 }
@@ -30,6 +28,7 @@ function stellvertreterNameFuer(db, person) {
 export function createFerienmodusRouter({ db, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
+  // GET /ferienmodus – Formular mit aktuellem Stand (geplant / aktiv / abgelaufen) und Kandidaten.
   router.get('/', (req, res) => {
     const person = req.currentPerson;
     res.render('ferienmodus', {
@@ -46,6 +45,7 @@ export function createFerienmodusRouter({ db, csrfProtection = (req, res, next) 
     });
   });
 
+  // POST /ferienmodus – speichert Zeitraum und Stellvertretung (Validierung) oder beendet den Ferienmodus (`aktion=beenden`).
   router.post('/', csrfProtection, (req, res) => {
     const person = req.currentPerson;
     const kandidaten = listVertretungsKandidaten(db, person.churchtools_person_id);

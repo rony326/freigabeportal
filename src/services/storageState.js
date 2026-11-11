@@ -1,8 +1,13 @@
+// Datenspeicher-Zustand: exklusive Prozesssperre und der "aktive Datenstand" nach einer Offline-Wiederherstellung (docs/offline-restore.md).
+// Die Sperre ist ein Verzeichnis neben der Datenbank (`<DB_PATH>.process-lock`); der Zeiger `<DB_PATH>.active.json` verweist nach einem
+// Restore auf den aktiven Satz aus Datenbank, Belegen und Erscheinungsbild.
+
 import { mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync, rmdirSync, realpathSync, openSync, closeSync, fsyncSync, renameSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 
+// Berechnet Sperr-, Zeiger- und Generationenpfade (realpath-aufgelöst; DB_PATH darf kein Symlink sein).
 export function storagePaths(config) {
   if (!config.dbPath || config.dbPath === ':memory:') throw new Error('Wartungsbetrieb verlangt einen persistenten DB_PATH.');
   const configured = resolve(config.dbPath);
@@ -12,6 +17,7 @@ export function storagePaths(config) {
   return { baseDbPath, lockPath: `${baseDbPath}.process-lock`, pointerPath: `${baseDbPath}.active.json`, generationsPath: `${baseDbPath}.generations` };
 }
 
+// Sperrt den Datenspeicher exklusiv. Wirft, wenn schon ein Prozess ihn hält. @returns {{release: Function, assertHeld: Function}}
 export function acquireStorageLock(config, purpose = 'server') {
   const paths = storagePaths(config);
   try { mkdirSync(paths.lockPath, { mode: 0o700 }); }
@@ -40,11 +46,13 @@ export function acquireStorageLock(config, purpose = 'server') {
   };
 }
 
+// fsync auf ein Verzeichnis (macht Umbenennungen dauerhaft).
 export function syncDirectory(path) {
   const fd = openSync(path, 'r');
   try { fsyncSync(fd); } finally { closeSync(fd); }
 }
 
+// Schreibt eine JSON-Datei atomar (temporär, fsync, rename).
 export function atomicJson(path, value) {
   const temporary = `${path}.${randomUUID()}.tmp`;
   let fd;
@@ -62,6 +70,7 @@ export function atomicJson(path, value) {
   }
 }
 
+// Prüft die Pfade eines aktiven Datenstands (absolut, vollständig vorhanden).
 function checkedPaths(paths, requireComplete = true) {
   if (!paths || !['dbPath', 'jobsDir', 'brandingDir'].every((key) => typeof paths[key] === 'string' && isAbsolute(paths[key]))) {
     throw new Error('Ungültiger aktiver Datenstand.');
@@ -72,6 +81,7 @@ function checkedPaths(paths, requireComplete = true) {
   return { dbPath: paths.dbPath, jobsDir: paths.jobsDir, brandingDir: paths.brandingDir };
 }
 
+// Liest den Zeiger auf den aktiven Datenstand oder null, wenn es keinen gibt.
 export function readStoragePointer(config, { requireComplete = true } = {}) {
   const { pointerPath, baseDbPath } = storagePaths(config);
   if (!existsSync(pointerPath)) return null;
@@ -81,11 +91,13 @@ export function readStoragePointer(config, { requireComplete = true } = {}) {
   return pointer;
 }
 
+// Liefert die Konfiguration mit den Pfaden des aktiven Datenstands (nach einem Restore weichen sie von den Umgebungsvariablen ab).
 export function resolveStorageConfig(config) {
   const pointer = readStoragePointer(config);
   return pointer ? { ...config, ...pointer.current } : config;
 }
 
+// Die drei Speicherpfade als absolute Pfade.
 export function absoluteStorageConfig(config) {
   return { dbPath: resolve(config.dbPath), jobsDir: resolve(config.jobsDir), brandingDir: resolve(config.brandingDir) };
 }

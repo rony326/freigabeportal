@@ -2,6 +2,7 @@
 // (services/sicherheitsalarme.js). Ein Alarm gehoert genau zu einem erkannten Zustand
 // (alarm_typ + schluessel) und dokumentiert nur den Benachrichtigungsstand. Er ist bewusst
 // getrennt vom Auditprotokoll: ein versendeter Alarm klaert keine Loeschabsicht.
+// Tabelle `sicherheitsalarme` (Deduplizierung + Versandstatus); Zeilen werden nie gelöscht.
 export function migrateSicherheitsalarmSchema(db) {
   db.exec('SAVEPOINT sicherheitsalarm_schema');
   try {

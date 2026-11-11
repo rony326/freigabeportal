@@ -1,5 +1,8 @@
+// Audit der Gruppenrechte: schreibt je entzogenem/erteiltem Recht ein Ereignis in `audit_ereignisse` (Einzelrechte erfasst schon ein Trigger).
+
 import { currentAuditActor } from './auditContext.js';
 
+// Vergleicht alten und neuen Rechtestand und protokolliert jede Änderung. @returns {number} Anzahl geschriebener Ereignisse
 function auditiere(db, objekt, objektId, vorher, nachher) {
   const alt = new Set(vorher);
   const neu = new Set(nachher);

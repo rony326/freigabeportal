@@ -33,6 +33,8 @@ export const DEFAULTS = {
   backup_cron_stunde: '3',
   backup_cron_minute: '0',
   backup_aufbewahrung_anzahl: '14',
+  wartungsmodus_aktiv: '0',
+  wartungsmodus_hinweis: '',
   modul_spesen_aktiv: '1',
   modul_kreditkarten_aktiv: '0',
   // Rapporte (nur zur Kenntnis): Modul standardmässig aus; Erinnerung/Eskalation in Stunden.

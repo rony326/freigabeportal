@@ -125,10 +125,10 @@
                     <% if (empfaengerListe.length > 0) { %>
                       <ul class="list-unstyled d-flex flex-wrap gap-2 mb-2">
                         <% empfaengerListe.forEach((e) => { %>
-                          <li class="badge rounded-pill text-bg-light border fw-normal benachrichtigung-ziel">
-                            <% if (e.art === 'gruppe') { %><%- include('../_symbol', { name: 'people' }) %><% } %>
-                            <%= e.label %>
-                            <% if (e.unbekannt) { %><span class="badge text-bg-warning ms-1">unbekannt</span><% } else if (e.inaktiv) { %><span class="badge text-bg-secondary ms-1">inaktiv</span><% } %>
+                          <li class="zielwahl-chip zielwahl-chip-ruhig">
+                            <% if (e.art === 'gruppe') { %><%- include('../_symbol', { name: 'people' }) %><% } else if (e.art === 'person') { %><%- include('../_symbol', { name: 'person' }) %><% } else { %><%- include('../_symbol', { name: 'envelope-at' }) %><% } %>
+                            <span class="zielwahl-chip-text"><%= e.label %></span>
+                            <% if (e.unbekannt) { %><span class="badge text-bg-warning">unbekannt</span><% } else if (e.inaktiv) { %><span class="badge text-bg-secondary">inaktiv</span><% } %>
                           </li>
                         <% }) %>
                       </ul>
@@ -153,6 +153,7 @@
                   <span data-art="gruppe"><%- include('../_symbol', { name: 'people' }) %></span>
                   <span data-art="person"><%- include('../_symbol', { name: 'person' }) %></span>
                   <span data-art="mail"><%- include('../_symbol', { name: 'envelope-at' }) %></span>
+                  <span data-art="entfernen"><%- include('../_symbol', { name: 'x-lg' }) %></span>
                 </template>
                 <div data-empfaenger-ohne-js>
                   <label class="form-label" for="empfaenger"><%= nurEmail ? 'Empfänger (E-Mail-Adressen)' : (ereignis.automatisch ? 'Zusätzliche Empfänger bearbeiten' : 'Empfänger bearbeiten') %></label>

@@ -101,6 +101,43 @@ test('POST /admin/kreditoren without a name is rejected', async () => {
   db.close();
 });
 
+test('Anlegen liegt auf einer eigenen Seite: Liste hat nur den Knopf, /neu das Formular, Fehler bleiben dort', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  seedKonto(db);
+  const app = buildTestApp(db);
+
+  const liste = await request(app).get('/admin/kreditoren').set('x-test-person-id', '99');
+  assert.match(liste.text, /href="\/admin\/kreditoren\/neu"[^>]*>Neuer Kreditor</);
+  assert.doesNotMatch(liste.text, /id="kreditorName"/, 'kein Anlege-Formular mehr unter der Liste');
+  assert.doesNotMatch(liste.text, /Kreditor anlegen/);
+
+  const neu = await request(app).get('/admin/kreditoren/neu').set('x-test-person-id', '99');
+  assert.equal(neu.status, 200);
+  assert.match(neu.text, /<h1[^>]*>Neuer Kreditor<\/h1>/);
+  assert.match(neu.text, /<form method="post" action="\/admin\/kreditoren"/);
+  assert.match(neu.text, /name="iban"/);
+  assert.match(neu.text, /value="ueberweisung" checked/);
+  assert.match(neu.text, /Kreditor anlegen/);
+
+  // Fehler: gleiche Seite, Eingaben bleiben stehen.
+  const fehler = await request(app).post('/admin/kreditoren').set('x-test-person-id', '99').type('form')
+    .send({ name: 'Muster AG', zahlungsart: 'ueberweisung' });
+  assert.equal(fehler.status, 400);
+  assert.match(fehler.text, /<h1[^>]*>Neuer Kreditor<\/h1>/);
+  assert.match(fehler.text, /value="Muster AG"/);
+  db.close();
+});
+
+test('/admin/kreditoren/neu verlangt wie die Liste das Recht kreditoren_verwalten', async () => {
+  const db = openDatabase(':memory:');
+  seedAdmin(db);
+  const app = buildTestApp(db);
+  const ohne = await request(app).get('/admin/kreditoren/neu');
+  assert.ok([401, 403].includes(ohne.status), `ohne Anmeldung ${ohne.status}`);
+  db.close();
+});
+
 test('GET /admin/kreditoren lists Kreditoren with their Standard-Konto resolved', async () => {
   const db = openDatabase(':memory:');
   seedAdmin(db);

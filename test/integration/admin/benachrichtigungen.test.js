@@ -499,8 +499,11 @@ test('Zusatzempfänger: unbekannte Person bekommt Badge „unbekannt“, inaktiv
   db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '7'").run();
   setConfigValue(db, 'reminder_empfaenger', 'person:7\nperson:404');
   const seite = await als().get('/admin/benachrichtigungen/reminder');
-  assert.match(seite.text, /Ina Weg\s*<span class="badge text-bg-secondary ms-1">inaktiv<\/span>/);
-  assert.match(seite.text, /Person 404\s*<span class="badge text-bg-warning ms-1">unbekannt<\/span>/);
+  assert.match(seite.text, /Ina Weg<\/span>\s*<span class="badge text-bg-secondary">inaktiv<\/span>/);
+  assert.match(seite.text, /Person 404<\/span>\s*<span class="badge text-bg-warning">unbekannt<\/span>/);
+  // Ohne JS sehen die Kärtchen aus wie die mit JS: gleiche Klasse, kein eigenes Abzeichen-Design.
+  assert.match(seite.text, /<li class="zielwahl-chip zielwahl-chip-ruhig">/);
+  assert.doesNotMatch(seite.text, /benachrichtigung-ziel/);
 });
 
 test('Sync-Seite verweist für die Empfänger auf Benachrichtigungen', async (t) => {

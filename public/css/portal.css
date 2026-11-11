@@ -906,31 +906,66 @@ h1 .beleg-nr {
   color: #fff;
   font-size: .75rem;
 }
-.benachrichtigung-ziel {
-  font-size: .875rem;
-  padding: .35rem .7rem;
-}
 .benachrichtigung-vorschau-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* Empfänger-Auswahl mit JS (public/js/benachrichtigungen.js): Kärtchen mit ✕ und Suche mit Vorschlagsliste. */
+/* Empfänger-Auswahl mit JS (public/js/benachrichtigungen.js): Kärtchen mit ✕ und Suche mit Vorschlagsliste.
+   Kärtchen sehen aus wie die übrigen Bedienelemente der Seite (Feldfarbe, Rand, Eckenradius der Knöpfe und
+   Felder, Höhe eines kleinen Knopfs) und nicht wie eine eigene Tag-Sorte. */
 .zielwahl-chip {
   display: inline-flex;
   align-items: center;
-  gap: .4rem;
+  gap: .5rem;
   max-width: 100%;
-  padding: .2rem .35rem .2rem .7rem;
-  border: 1px solid var(--bs-border-color);
-  border-radius: var(--bs-border-radius-pill);
-  background: var(--bs-tertiary-bg);
+  min-height: 2rem;
+  padding: .25rem .25rem .25rem .625rem;
+  border: var(--bs-border-width) solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
   font-size: .875rem;
+  line-height: 1.25;
 }
+/* Ohne JS gibt es nichts zu entfernen: weniger Platz rechts. */
+.zielwahl-chip-ruhig { padding-right: .625rem; }
 /* Bootstrap-d-flex überschreibt [hidden]: die leere Kärtchenliste muss trotzdem verschwinden. */
 .zielwahl [hidden] { display: none !important; }
-.zielwahl-chip > .symbol { flex: none; }
+.zielwahl-chip > .symbol { flex: none; color: var(--bs-secondary-color); }
 .zielwahl-chip-text { min-width: 0; overflow-wrap: anywhere; }
-.zielwahl-chip .btn-close { flex: none; font-size: .7rem; }
+.zielwahl-chip-entfernen {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--bs-border-radius-sm);
+  background: transparent;
+  color: var(--bs-secondary-color);
+  font-size: .75rem;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out, transform 120ms ease-out;
+}
+/* Grössere Trefferfläche für Finger, ohne das Kärtchen optisch zu vergrössern. */
+.zielwahl-chip-entfernen::before { content: ""; position: absolute; inset: -.4rem; }
+.zielwahl-chip-entfernen:hover { background: var(--bs-secondary-bg); color: var(--bs-emphasis-color); }
+.zielwahl-chip-entfernen:active { transform: scale(.92); }
+.zielwahl-chip-entfernen:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: 1px; }
+/* Touch: Entfernen-Knopf mindestens 44 px, das Kärtchen wächst mit. */
+@media (pointer: coarse) {
+  .zielwahl-chip { min-height: 2.75rem; padding-block: 0; padding-right: 0; }
+  .zielwahl-chip-ruhig { padding-right: .625rem; }
+  .zielwahl-chip-entfernen { width: 2.75rem; height: 2.75rem; font-size: .875rem; }
+  .zielwahl-chip-entfernen::before { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zielwahl-chip-entfernen { transition: none; }
+  .zielwahl-chip-entfernen:active { transform: none; }
+}
 .zielwahl-suche { max-width: 28rem; }
 .zielwahl-liste {
   top: 100%;

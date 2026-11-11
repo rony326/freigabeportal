@@ -9,12 +9,10 @@
       </div>
     <% } %>
 
-    <h2 class="h5 mt-4">Kreditoren</h2>
-    <% if (kreditorErrors.length > 0) { %>
-      <div class="alert alert-danger">
-        <ul class="mb-0"><% kreditorErrors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
-      </div>
-    <% } %>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4 mb-2">
+      <h2 class="h5 mb-0">Kreditoren</h2>
+      <a href="/admin/kreditoren/neu" class="btn btn-primary btn-sm">Neuer Kreditor</a>
+    </div>
     <% if (ohneIbanAnzahl > 0) { %>
       <div class="alert alert-warning">
         <%= ohneIbanAnzahl %> <%= ohneIbanAnzahl === 1 ? 'Lieferant' : 'Lieferanten' %> ohne IBAN
@@ -49,48 +47,6 @@
         </tbody>
       </table>
     </div>
-    <form method="post" action="/admin/kreditoren" class="row g-3 align-items-start mb-4">
-      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-      <div class="col-auto">
-        <label class="form-label" for="kreditorName">Name</label>
-        <input type="text" class="form-control" id="kreditorName" name="name" value="<%= kreditorValues.name || '' %>" required>
-      </div>
-      <div class="col-auto">
-        <label class="form-label" for="kreditorKontoId">Standard-Konto (optional)</label>
-        <select class="form-select" id="kreditorKontoId" name="kontoId">
-          <option value="">— keins —</option>
-          <% konten.forEach((k) => { %>
-            <option value="<%= k.id %>" <%= String(k.id) === String(kreditorValues.kontoId) ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
-          <% }) %>
-        </select>
-      </div>
-      <div class="col-auto">
-        <label class="form-label" for="kreditorIban">IBAN</label>
-        <input type="text" class="form-control" id="kreditorIban" name="iban" value="<%= kreditorValues.iban || '' %>" placeholder="z.B. CH93 0076 2011 6238 5295 7">
-      </div>
-      <div class="col-12">
-        <span class="form-label d-block">Zahlungsart</span>
-        <% ZAHLUNGSARTEN.forEach((art) => { %>
-          <div class="form-check form-check-inline">
-            <input class="form-check-input" type="radio" name="zahlungsart" id="kreditorZahlungsart-<%= art %>" value="<%= art %>" <%= (kreditorValues.zahlungsart || 'ueberweisung') === art ? 'checked' : '' %>>
-            <label class="form-check-label" for="kreditorZahlungsart-<%= art %>"><%= ZAHLUNGSART_LABEL[art] %></label>
-          </div>
-        <% }) %>
-        <div class="form-text">Überweisung und Dauerauftrag: mindestens eine IBAN ist Pflicht.</div>
-      </div>
-      <div class="col-12">
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" name="betragSchwankt" id="kreditorBetragSchwankt" <%= kreditorValues.betragSchwankt ? 'checked' : '' %>>
-          <label class="form-check-label" for="kreditorBetragSchwankt">Beträge schwanken stark: keine Warnung bei ungewöhnlich hohem Betrag</label>
-        </div>
-        <div class="form-text">z. B. bei Handwerkern oder Projekt-Lieferanten. Alle IBAN- und Duplikat-Prüfungen bleiben aktiv.</div>
-      </div>
-      <div class="col-12 text-muted small">Neue IBANs bitte nur aus einer unabhängigen Quelle übernehmen (Vertrag, Telefonat), nicht von einer Rechnung. Ausländische IBANs sind erlaubt.</div>
-      <div class="col-12">
-        <button type="submit" class="btn btn-primary">Kreditor anlegen</button>
-      </div>
-    </form>
-
     <h2 class="h5 mt-4">Zuweisungsregeln</h2>
     <p class="text-muted">Ordnet einen Absender (E-Mail-Adresse oder Domain) automatisch einem Kreditor zu. Trägt der Kreditor ein Standard-Konto, wird die Rechnung zusätzlich direkt diesem Konto samt Freigeber 1 zugewiesen.</p>
     <% if (regelErrors.length > 0) { %>
@@ -118,25 +74,30 @@
         </tbody>
       </table>
     </div>
-    <form method="post" action="/admin/kreditoren/regeln" class="row g-2 align-items-end">
-      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-      <div class="col-auto">
-        <label class="form-label" for="regelAbsenderMuster">Absender-Muster</label>
-        <input type="text" class="form-control" id="regelAbsenderMuster" name="absenderMuster" value="<%= regelValues.absenderMuster || '' %>" placeholder="z.B. lieferant.ch" required>
+    <section class="card mb-4">
+      <div class="card-body">
+        <h2 class="h5 card-title">Neue Zuweisungsregel</h2>
+          <form method="post" action="/admin/kreditoren/regeln" class="row g-2 align-items-end">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <div class="col-auto">
+              <label class="form-label" for="regelAbsenderMuster">Absender-Muster</label>
+              <input type="text" class="form-control" id="regelAbsenderMuster" name="absenderMuster" value="<%= regelValues.absenderMuster || '' %>" placeholder="z.B. lieferant.ch" required>
+            </div>
+            <div class="col-auto">
+              <label class="form-label" for="regelKreditorId">Kreditor</label>
+              <select class="form-select" id="regelKreditorId" name="kreditorId" required>
+                <option value="">— wählen —</option>
+                <% aktiveKreditoren.forEach((d) => { %>
+                  <option value="<%= d.id %>" <%= String(d.id) === String(regelValues.kreditorId) ? 'selected' : '' %>><%= d.name %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-auto">
+              <button type="submit" class="btn btn-primary">Regel anlegen</button>
+            </div>
+          </form>
       </div>
-      <div class="col-auto">
-        <label class="form-label" for="regelKreditorId">Kreditor</label>
-        <select class="form-select" id="regelKreditorId" name="kreditorId" required>
-          <option value="">— wählen —</option>
-          <% aktiveKreditoren.forEach((d) => { %>
-            <option value="<%= d.id %>" <%= String(d.id) === String(regelValues.kreditorId) ? 'selected' : '' %>><%= d.name %></option>
-          <% }) %>
-        </select>
-      </div>
-      <div class="col-auto">
-        <button type="submit" class="btn btn-primary">Regel anlegen</button>
-      </div>
-    </form>
+    </section>
 
     <h2 class="h5 mt-4">Lieferanten-IBANs</h2>
     <p class="text-muted">Hinterlegt pro Lieferant die erwartete(n) IBAN(s). Weicht die im QR-Code einer Rechnung gefundene IBAN davon ab, warnt das Portal bei der Kontierung.</p>
@@ -166,23 +127,28 @@
         </tbody>
       </table>
     </div>
-    <form method="post" action="/admin/kreditoren/ibans" class="row g-2 align-items-end">
-      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-      <div class="col-auto">
-        <label class="form-label" for="ibanIban">IBAN</label>
-        <input type="text" class="form-control" id="ibanIban" name="iban" value="<%= ibanValues.iban || '' %>" placeholder="z.B. CH93 0076 2011 6238 5295 7" required>
+    <section class="card mb-4">
+      <div class="card-body">
+        <h2 class="h5 card-title">IBAN hinzufügen</h2>
+          <form method="post" action="/admin/kreditoren/ibans" class="row g-2 align-items-end">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <div class="col-auto">
+              <label class="form-label" for="ibanIban">IBAN</label>
+              <input type="text" class="form-control" id="ibanIban" name="iban" value="<%= ibanValues.iban || '' %>" placeholder="z.B. CH93 0076 2011 6238 5295 7" required>
+            </div>
+            <div class="col-auto">
+              <label class="form-label" for="ibanKreditorId">Lieferant</label>
+              <select class="form-select" id="ibanKreditorId" name="kreditorId" required>
+                <option value="">— wählen —</option>
+                <% aktiveKreditoren.forEach((d) => { %>
+                  <option value="<%= d.id %>" <%= String(d.id) === String(ibanValues.kreditorId) ? 'selected' : '' %>><%= d.name %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-auto">
+              <button type="submit" class="btn btn-primary">IBAN hinzufügen</button>
+            </div>
+          </form>
       </div>
-      <div class="col-auto">
-        <label class="form-label" for="ibanKreditorId">Lieferant</label>
-        <select class="form-select" id="ibanKreditorId" name="kreditorId" required>
-          <option value="">— wählen —</option>
-          <% aktiveKreditoren.forEach((d) => { %>
-            <option value="<%= d.id %>" <%= String(d.id) === String(ibanValues.kreditorId) ? 'selected' : '' %>><%= d.name %></option>
-          <% }) %>
-        </select>
-      </div>
-      <div class="col-auto">
-        <button type="submit" class="btn btn-primary">IBAN hinzufügen</button>
-      </div>
-    </form>
+    </section>
 <%- include('../_seite_ende') %>

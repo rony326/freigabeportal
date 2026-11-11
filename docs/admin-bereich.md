@@ -117,7 +117,11 @@ und [kreditkarten-belege.md](kreditkarten-belege.md#6b-automatische-kartenerkenn
 
 ## Kreditoren (`/admin/kreditoren`)
 
-Drei zusammengehörige Tabellen auf einer Seite: **Kreditoren**
+Drei zusammengehörige Tabellen auf einer Seite. Neue Kreditoren legst du über
+den Knopf **Neuer Kreditor** an: Das Formular (`/admin/kreditoren/neu`) ist
+eine eigene Seite, genau wie „Bearbeiten“, mit den Abschnitten „Lieferant“ und
+„Bezahlung“; bei einem Fehler bleibst du dort und die Eingaben bleiben
+stehen. Die Tabellen: **Kreditoren**
 (Lieferanten mit **Zahlungsart** Überweisung, Dauerauftrag, Lastschrift oder
 Kreditkarte, optional mit Default-Konto und „Beträge schwanken stark“), **Zuweisungsregeln**
 (Absender-Adresse/-Domain → Kreditor, steuert die Auto-Zuweisung beim
@@ -132,9 +136,9 @@ die Zahlungsart, gekürzte IBANs und das Abzeichen „vollständig“ / „IBAN
 fehlt“. Unvollständige Kreditoren sind bei der Kontierung nicht wählbar.
 Ein
 Kreditor lässt sich auch direkt aus der Kontierungs-Seite heraus neu
-anlegen (`POST /kontierung/lieferanten`) — erlaubt für `buchhaltung`, `superadmin`,
-Einzelrecht `kreditoren_verwalten` oder wer selbst eine offene Kontierung bzw.
-Überarbeitung hat (sonst 403).
+anlegen (`POST /kontierung/lieferanten`) — erlaubt nur für `superadmin` und das
+Einzelrecht `kreditoren_verwalten` (sonst 403) und nur mit Zahlungsart und,
+bei Überweisung/Dauerauftrag, einer gültigen IBAN.
 
 ## Benachrichtigungen (`/admin/benachrichtigungen`)
 

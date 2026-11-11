@@ -135,3 +135,26 @@ test('Test-Mail-Hinweis: gleiche Empfängerliste mit anderem Zeilenende oder Lee
   assert.match(await hinweis.textContent(), /speichere zuerst/);
   await page.close();
 });
+
+test('Kärtchen sehen aus wie die übrigen Bedienelemente: gleicher Eckenradius und Rand wie Felder, ✕ mit Symbol statt Bootstrap-Kreuz', async () => {
+  const page = await b.neueSeite('/admin/benachrichtigungen/reminder');
+  const stil = await page.evaluate(() => {
+    const chip = getComputedStyle(document.querySelector('.zielwahl-chip'));
+    const feld = getComputedStyle(document.querySelector('#empfaengerSuche'));
+    const knopf = document.querySelector('.zielwahl-chip-entfernen');
+    return {
+      chipRadius: chip.borderTopLeftRadius, feldRadius: feld.borderTopLeftRadius,
+      chipRand: chip.borderTopColor, feldRand: feld.borderTopColor,
+      chipHintergrund: chip.backgroundColor, feldHintergrund: feld.backgroundColor,
+      hatSymbol: !!knopf.querySelector('svg'), alteKlasse: !!document.querySelector('.zielwahl-chip .btn-close'),
+      knopfBreite: knopf.getBoundingClientRect().width,
+    };
+  });
+  assert.equal(stil.chipRadius, stil.feldRadius, 'Eckenradius wie das Suchfeld');
+  assert.equal(stil.chipRand, stil.feldRand, 'Randfarbe wie das Suchfeld');
+  assert.equal(stil.chipHintergrund, stil.feldHintergrund, 'Hintergrund wie das Suchfeld');
+  assert.equal(stil.hatSymbol, true, '✕ kommt aus dem Symbolsatz');
+  assert.equal(stil.alteKlasse, false, 'kein Bootstrap-btn-close mehr');
+  assert.ok(stil.knopfBreite >= 24, 'Trefferfläche mindestens 24 px');
+  await page.close();
+});

@@ -54,7 +54,7 @@ test('GET /meine-spesen shows the empty-state text when this person has no Spese
   const app = buildTestApp(db);
   const res = await request(app).get('/meine-spesen').set('x-test-person-id', '60');
   assert.equal(res.status, 200);
-  assert.match(res.text, /Keine eigenen Spesen-Einreichungen\./);
+  assert.match(res.text, /Noch keine Spesen eingereicht\./);
   db.close();
 });
 

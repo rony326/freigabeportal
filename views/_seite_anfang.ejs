@@ -10,7 +10,7 @@
   const sZeigeLieferant = sPfad.startsWith('/kontierung') && Boolean(locals.darfLieferantAnlegen);
   const sEingeloggt = Boolean(locals.currentPerson);
 %><!DOCTYPE html>
-<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %>>
+<html lang="de"<% if (branding.themeAttr) { %> data-theme="<%= branding.themeAttr %>" data-bs-theme="<%= branding.bsThemeAttr %>"<% } %> data-schrift="<%= branding.schrift || 'normal' %>">
 <head>
   <meta charset="utf-8">
   <script nonce="<%= locals.cspNonce %>">
@@ -112,6 +112,19 @@
           <% }); %>
         </ul>
       </div>
+      <% if (sEingeloggt && locals.hilfe) { %>
+        <button type="button" class="btn btn-outline-secondary btn-sm hilfe-knopf" data-bs-toggle="offcanvas" data-bs-target="#hilfe-leiste" aria-controls="hilfe-leiste"><%- include('_symbol', { name: 'question-circle' }) %> <span>Hilfe</span></button>
+      <% } %>
+      <% if (sEingeloggt) { %>
+      <div class="dropdown schrift-menue">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Schriftgrösse wählen" title="Schriftgrösse"><span class="schrift-a" aria-hidden="true">A<small>A</small></span></button>
+        <ul class="schrift-liste dropdown-menu dropdown-menu-end">
+          <% [['normal', 'Normal'], ['gross', 'Gross'], ['sehr-gross', 'Sehr gross']].forEach(function (m) { %>
+            <li><button type="button" class="dropdown-item" data-schrift="<%= m[0] %>" aria-pressed="<%= branding.schrift === m[0] %>"><%= m[1] %></button></li>
+          <% }); %>
+        </ul>
+      </div>
+      <% } %>
       <% if (sEingeloggt) { %>
         <form method="post" action="/auth/logout" class="d-inline">
           <%# Abmelden geht an die echte App: im Testmodus deren Token (setzt die Weiche). %>
@@ -123,6 +136,23 @@
   </div>
 </header>
 </div>
+<% if (sRahmen !== 'ohne' && sEingeloggt && locals.hilfe) { %>
+  <aside class="offcanvas offcanvas-end hilfe-leiste" tabindex="-1" id="hilfe-leiste" aria-labelledby="hilfe-leiste-titel">
+    <div class="offcanvas-header">
+      <h2 class="h5 offcanvas-title" id="hilfe-leiste-titel"><%= hilfe.titel %></h2>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schliessen"></button>
+    </div>
+    <div class="offcanvas-body">
+      <p class="hilfe-worum"><%= hilfe.worum %></p>
+      <% if (hilfe.schritte && hilfe.schritte.length) { %>
+        <p class="fw-semibold mb-1">So gehst du vor</p>
+        <ol class="hilfe-schritte"><% hilfe.schritte.forEach(function (st) { %><li><%= st %></li><% }); %></ol>
+      <% } %>
+      <% if (hilfe.tipp) { %><p class="hilfe-tipp"><strong>Gut zu wissen:</strong> <%= hilfe.tipp %></p><% } %>
+      <p class="text-muted small mb-0">Keine Sorge: Du kannst beim Ansehen nichts kaputt machen. Erst ein Klick auf den grossen Knopf löst etwas aus.</p>
+    </div>
+  </aside>
+<% } %>
 <% if (sEingeloggt) { %><%- include('_banner') %><% } %>
 <% if (locals.testmodusEchteSeite) { %>
 <div class="container-xxl"><div class="alert alert-warning testmodus-echt-hinweis" role="status">Testmodus ist an – diese Seite gehört zum echten Betrieb; Änderungen hier wirken echt. <a href="/pool">Zurück in den Testmodus</a></div></div>
@@ -136,6 +166,9 @@
   <%- include('_seitenleiste', { gruppen: sNavigation.gruppen, eingeklappt: sRahmen === 'kompakt' }) %>
 <% } %>
 <main class="portal-inhalt">
+<% if (locals.erledigtHinweis) { %>
+  <div class="alert alert-success erledigt-hinweis" role="status"><strong><%= erledigtHinweis.titel %></strong> <%= erledigtHinweis.text %></div>
+<% } %>
 <% } %>
 <% if (sRahmen !== 'ohne' && sZeigeAktionen) { %>
   <div class="portal-aktionen d-flex flex-wrap align-items-center gap-2 mb-3">

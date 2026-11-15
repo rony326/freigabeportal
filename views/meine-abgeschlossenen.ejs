@@ -11,7 +11,10 @@
     </div>
 
     <% if (jobs.length === 0) { %>
-      <p>Keine abgeschlossenen Rechnungen.</p>
+      <div class="leerzustand">
+        <p class="leerzustand-titel">Noch nichts abgeschlossen.</p>
+        <p class="leerzustand-text mb-0">Rechnungen, die du bearbeitet hast und die fertig sind, erscheinen hier. Offene Aufgaben findest du unter <a href="/pool">Aufgaben</a>.</p>
+      </div>
     <% } else { %>
       <p class="text-muted"><%= gesamtAnzahl %> Rechnungen</p>
       <% if (zeigeTabelle) { %><div class="<%= klasseTabelle %>"><%- include('_abgeschlossen_table', { jobs }) %></div><% } %>

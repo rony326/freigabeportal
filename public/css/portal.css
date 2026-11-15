@@ -982,3 +982,37 @@ h1 .beleg-nr {
 .zielwahl-liste .dropdown-item { cursor: pointer; white-space: normal; overflow-wrap: anywhere; }
 .benachrichtigung-variablen .var { font-size: .8125rem; }
 .var-platzhalter { font-family: var(--bs-font-monospace); font-size: .75rem; opacity: .75; }
+
+
+/* ---------- Einfache Bedienung: Schriftgrösse, Hilfe, Bestätigung, leere Listen ----------
+   Schriftgrösse pro Person (Cookie `schrift`, Umschalter im Seitenkopf): alles in rem folgt der Wurzelschrift. */
+html[data-schrift="gross"] { font-size: 112.5%; }
+html[data-schrift="sehr-gross"] { font-size: 125%; }
+.schrift-a { font-weight: 600; line-height: 1; letter-spacing: -.02em; }
+.schrift-a small { font-size: .7em; }
+.hilfe-knopf { display: inline-flex; align-items: center; gap: .35rem; }
+.hilfe-leiste { --bs-offcanvas-width: 400px; }
+.hilfe-worum { font-size: 1.05rem; }
+.hilfe-schritte { padding-left: 1.25rem; }
+.hilfe-schritte li { margin-bottom: .5rem; }
+.hilfe-tipp {
+  padding: .75rem 1rem;
+  border-radius: calc(var(--bs-border-radius) + 2px);
+  background: var(--bs-tertiary-bg);
+}
+.erledigt-hinweis { font-size: 1.05rem; }
+.leerzustand {
+  margin-top: 1.5rem;
+  padding: 2rem 1.5rem;
+  max-width: 40rem;
+  border-radius: calc(var(--bs-border-radius) + 4px);
+  background: var(--bs-tertiary-bg);
+}
+.leerzustand-titel { font-size: 1.35rem; font-weight: 600; margin-bottom: .5rem; }
+.leerzustand-text { color: var(--bs-secondary-color); }
+/* Grössere Klickflächen im Menü und bei Knöpfen, damit man sie auch mit unruhiger Hand trifft. */
+.portal-punkt { min-height: 2.5rem; }
+.btn-sm { --bs-btn-padding-y: .4rem; --bs-btn-padding-x: .75rem; --bs-btn-font-size: .9rem; }
+@media (max-width: 575.98px) {
+  .hilfe-knopf span { display: none; }
+}

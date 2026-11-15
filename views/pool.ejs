@@ -98,7 +98,11 @@
          && adminEskalierteSpesenFreigaben.length === 0 && meineKontierungen.length === 0 && meineSpesenFreigaben.length === 0
          && meineFreigaben.length === 0 && meineAbgelehnten.length === 0
          && (typeof meineRapporte === 'undefined' || meineRapporte.length === 0)) { %>
-      <p class="text-muted mt-4">Keine offenen Aufgaben. Abgeschlossene Rechnungen findest du unter <a href="/meine-abgeschlossenen">Abgeschlossene Rechnungen</a>, deine Spesen-Einreichungen unter <a href="/meine-spesen">Meine Spesen</a>.</p>
+      <div class="leerzustand">
+        <p class="leerzustand-titel">Alles erledigt.</p>
+        <p class="leerzustand-text">Im Moment wartet nichts auf dich. Du musst nichts tun. Sobald etwas für dich bereitliegt, erscheint es hier und du bekommst eine E-Mail.</p>
+        <p class="leerzustand-text mb-0">Fertige Rechnungen findest du unter <a href="/meine-abgeschlossenen">Abgeschlossene Rechnungen</a>, deine eingereichten Spesen unter <a href="/meine-spesen">Meine Spesen</a>.</p>
+      </div>
     <% } %>
 
     <dialog id="preview-dialog" class="vorschau-dialog p-0 border-0 rounded">

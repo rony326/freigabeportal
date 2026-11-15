@@ -9,6 +9,7 @@ import { zeigeKreditkartenBereich } from '../services/kkRechte.js';
 import { bereichFuerPfad, bauePortalGruppen, baueAdminGruppen } from '../services/navigation.js';
 import { aktiveBanner } from '../services/banner.js';
 import { zaehleOffeneAufgaben } from '../services/aufgabenZaehler.js';
+import { hilfeFuer } from '../services/hilfetexte.js';
 import { zugangFuer } from '../services/auswertung.js';
 
 /**
@@ -57,6 +58,7 @@ export function loadNavFlags(db, config) {
     // die Abfragen. Ergebnis je Anfrage gemerkt.
     lazyLocal(res, 'kreditkartenModulAktiv', () => getConfigValue(db, 'modul_kreditkarten_aktiv') === '1', false);
     lazyLocal(res, 'zeigeKreditkarteNav', () => Boolean(person) && res.locals.kreditkartenModulAktiv && zeigeKreditkartenBereich(db, person.churchtools_person_id), false);
+    res.locals.hilfe = hilfeFuer(res.locals.currentPath);
     lazyLocal(res, 'banner', () => (person ? aktiveBanner(db, person.churchtools_person_id) : []), []);
     lazyLocal(res, 'navigation', () => {
       if (!person) return null;

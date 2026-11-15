@@ -40,6 +40,17 @@
     });
   });
 
+  // Schriftgrösse: Cookie `schrift` (normal | gross | sehr-gross); das <html>-Attribut data-schrift steuert die Grundschrift (portal.css).
+  var schriftEintraege = document.querySelectorAll('[data-schrift]');
+  schriftEintraege.forEach(function (eintrag) {
+    eintrag.addEventListener('click', function () {
+      var wahl = eintrag.getAttribute('data-schrift');
+      root.setAttribute('data-schrift', wahl);
+      document.cookie = 'schrift=' + wahl + ';path=/;max-age=31536000;samesite=lax';
+      schriftEintraege.forEach(function (e) { e.setAttribute('aria-pressed', e === eintrag ? 'true' : 'false'); });
+    });
+  });
+
   // Eingeklappte Seitenleiste (PDF-Seiten): Label als Tooltip neben dem Symbol.
   if (window.bootstrap && window.bootstrap.Tooltip) {
     document.querySelectorAll('.portal-seitenleiste.eingeklappt [title]').forEach(function (el) {

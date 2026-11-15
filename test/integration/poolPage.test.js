@@ -172,7 +172,7 @@ test('GET /pool returns 200 for a logged-in person without the buchhaltung or po
   // No jobs exist anywhere for this person — every section is empty, so the dashboard shows
   // the summary empty-state instead of a heading with nothing under it.
   assert.doesNotMatch(res.text, /Meine offenen Kontierungen/);
-  assert.match(res.text, /Keine offenen Aufgaben/);
+  assert.match(res.text, /Alles erledigt\./);
   db.close();
 });
 
@@ -430,7 +430,7 @@ test('GET /pool hides the "Meine abgelehnten Jobs" section entirely when this pe
   assert.equal(res.status, 200);
   assert.doesNotMatch(res.text, /Meine abgelehnten Jobs/);
   // No jobs exist anywhere for this person either — every section is empty.
-  assert.match(res.text, /Keine offenen Aufgaben/);
+  assert.match(res.text, /Alles erledigt\./);
   db.close();
 });
 
@@ -479,7 +479,7 @@ test('GET /pool no longer shows a "Meine Spesen" section — it moved to its own
   db.close();
 });
 
-test('GET /pool shows "Keine offenen Aufgaben" when the only thing for this person is a Spesen submission, since that now lives on its own page', async () => {
+test('GET /pool shows "Alles erledigt" when the only thing for this person is a Spesen submission, since that now lives on its own page', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedBuchhaltungPerson(db, '50');
@@ -496,7 +496,7 @@ test('GET /pool shows "Keine offenen Aufgaben" when the only thing for this pers
   });
   const app = buildTestApp(db);
   const res = await request(app).get('/pool').set('x-test-person-id', '60');
-  assert.match(res.text, /Keine offenen Aufgaben/);
+  assert.match(res.text, /Alles erledigt\./);
   db.close();
 });
 

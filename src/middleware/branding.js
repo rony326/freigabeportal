@@ -29,6 +29,15 @@ function parseThemeCookie(cookieHeader) {
   return value === 'hell' || value === 'dunkel' || value === 'system' ? value : null;
 }
 
+// Liest die persönliche Schriftgrösse aus dem Cookie `schrift` (normal | gross | sehr-gross); alles andere → 'normal'.
+function parseSchriftCookie(cookieHeader) {
+  if (!cookieHeader) return 'normal';
+  const entry = cookieHeader.split(';').map((part) => part.trim()).find((part) => part.startsWith('schrift='));
+  if (!entry) return 'normal';
+  const value = decodeURIComponent(entry.slice('schrift='.length));
+  return value === 'gross' || value === 'sehr-gross' ? value : 'normal';
+}
+
 // Eine Abfrage pro Anfrage statt elf. Bewusst kein Zwischenspeicher: admin_config wird auch
 // direkt per SQL (Testmodus-Trigger, Wiederherstellung) geändert.
 const BRANDING_SCHLUESSEL = [
@@ -79,6 +88,7 @@ export function loadBranding(db) {
       logoAusrichtung,
       themeAttr,
       farbmodusWahl,
+      schrift: parseSchriftCookie(req.headers.cookie),
       footerText,
       seitenTitel,
       // Bootstrap 5.3 hat sein eigenes Dark-Mode-Attribut, getrennt vom data-theme="dunkel"/"hell" dieser App. Es wird

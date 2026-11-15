@@ -1,6 +1,9 @@
 <%
   // Gemeinsames Grundgerüst jeder Seite. Aufruf: include('_seite_anfang', { titel, rahmen })
   //   rahmen 'voll' (Standard) | 'kompakt' (eingeklappte Seitenleiste, PDF-Seiten) | 'ohne' (iframe, nur <main>)
+  //   Seitenkopf rechts: Farbmodus, "Hilfe" (nur wo services/hilfetexte.js einen Text hat; Seitenleiste am Ende des Kopfes),
+  //   Schriftgrösse (Cookie `schrift`, public/js/portal.js). Nach Belegaktionen zeigt <main> einmal `erledigtHinweis`
+  //   (middleware/erledigtHinweis.js).
   // Gegenstück: include('_seite_ende') bzw. include('_seite_ende', { rahmen: 'ohne' }).
   const sRahmen = locals.rahmen === 'kompakt' || locals.rahmen === 'ohne' ? locals.rahmen : 'voll';
   const sNavigation = locals.navigation || null;

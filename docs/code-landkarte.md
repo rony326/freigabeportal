@@ -12,7 +12,7 @@ anfassen. Fachlicher Hintergrund steht in den übrigen Dokumenten
 | `src/index.js` | Start: Konfiguration laden, Datenspeicher sperren, Datenbank öffnen, App bauen, Scheduler starten ([architektur.md](architektur.md#bootstrap-srcindexjs)) |
 | `src/app.js` | Zusammenbau der Express-App: Sicherheits-Header, Session, CSRF, Rechte-Guards und **alle Router-Mounts**. Die Reihenfolge der `app.use`-Aufrufe ist Teil der Sicherheit |
 | `src/config/env.js` | Einzige Stelle, die Umgebungsvariablen liest und prüft |
-| `src/middleware/` | Wiederverwendbare Express-Middleware: Rollen (`roles.js`), Rechte (`permissions.js`), Navigation (`nav.js`), CSRF, Rate-Limits, Wartungsmodus, Testmodus-Weiche, Nutzungserfassung |
+| `src/middleware/` | Wiederverwendbare Express-Middleware: Rollen (`roles.js`), Rechte (`permissions.js`), Navigation und Seitenhilfe (`nav.js`), Bestätigungshinweis (`erledigtHinweis.js`), Erscheinungsbild inkl. Schriftgrösse (`branding.js`), CSRF, Rate-Limits, Wartungsmodus, Testmodus-Weiche, Nutzungserfassung |
 | `src/routes/` | Eine Datei je Seite oder Schnittstelle (`createXxxRouter`); `routes/admin/` für `/admin/*`, `routes/n8n/` für die Maschinenschnittstelle |
 | `src/services/` | Fachlogik ohne HTTP: Workflow-Helfer, Mail, PDF, Zeitstempel, Backup, Audit, Hintergrund-Jobs. `services/testmodus/` baut die Spielwiese |
 | `src/db/` | Datenbank: `schema.sql` (frische DB), Migrationen (`index.js`, `*Schema.js`) und je Tabelle ein `*Repo.js` mit den SQL-Zugriffen |
@@ -75,7 +75,7 @@ enthalten SQL. Datenbankzugriff in Routen ist die Ausnahme (einfache Listen).
 2. In `src/app.js` mit dem passenden Guard einhängen (`requireLogin`, `requireRole`, `requirePermission`) und mit Rate-Limiter.
 3. Schreibende Routen mit `csrfProtection`, Async-Handler mit `asyncHandler`.
 4. Menüeintrag in `src/services/navigation.js` (Admin-Seite: zusätzlich Flag in `src/middleware/nav.js`), Symbol in `SYMBOLE` und `node scripts/baueSymbole.js`.
-5. View unter `views/`, Eintrag in `test/responsive/seiten.js`.
+5. View unter `views/`, Eintrag in `test/responsive/seiten.js`. Für Personen mit wenig Technikerfahrung: Hilfetext in `src/services/hilfetexte.js` ergänzen.
 6. Doku: [admin-bereich.md](admin-bereich.md) bzw. [architektur.md](architektur.md).
 
 **Neues Admin-Recht**

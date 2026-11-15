@@ -256,6 +256,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // CSRF-Middleware, die ihr eigenes, von der Session getrenntes Cookie liest und schreibt.
   app.use(cookieParser());
   app.use(ansichtWahl());
+  // Grüner Bestätigungshinweis auf /pool nach Freigeben/Ablehnen/Kontieren (Cookie `erledigt`, einmalig). Braucht cookie-parser.
   app.use(erledigtHinweis());
   const { attachCsrfToken, csrfProtection, generateCsrfToken } = createCsrfProtection(config);
   app.use((req, res, next) => {

@@ -1,5 +1,6 @@
 // Navigation und Seitenkopf: berechnet für jede Anfrage, welche Menüpunkte/Banner die angemeldete Person
 // sieht, und legt das Ergebnis in `res.locals` ab (`adminNav`, `navigation`, `banner`, `isBuchhaltung` …).
+// Ausserdem `res.locals.hilfe`: der Hilfetext der aktuellen Seite (services/hilfetexte.js) für den Knopf "Hilfe" im Seitenkopf.
 // Die Struktur des Menüs selbst steckt in services/navigation.js; Rechte-Details in docs/auth-und-rechte.md.
 
 import { personHasRole } from './roles.js';

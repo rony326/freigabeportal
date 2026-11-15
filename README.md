@@ -18,9 +18,9 @@ in [`docs/`](docs/README.md).
 
 ## Version
 
-Aktuelle Version: **1.2.2** (2026-11-11).
+Aktuelle Version: **1.2.3** (2026-11-15).
 Änderungen je Version: [`CHANGELOG.md`](CHANGELOG.md), ausführliche
-Release Notes in [`docs/releases/`](docs/releases/v1.2.2.md). Die
+Release Notes in [`docs/releases/`](docs/releases/v1.2.3.md). Die
 Fusszeile im Portal zeigt den laufenden Stand per `git describe` (Tag
 `v1.2.2` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
 Version aus `package.json`.

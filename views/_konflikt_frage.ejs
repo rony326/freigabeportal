@@ -1,0 +1,33 @@
+<%
+  // Befangenheits-Frage (Interessenskonflikt) als Karte mit zwei grossen Auswahlknöpfen. Gemeinsam für Kontierung,
+  // Freigabe 2 und Spesen-Freigabe 1. Aufruf: include('_konflikt_frage', { praefix, values, beispiel })
+  //   praefix  '' | 'f2' | 'sf1' – Vorsatz der Radio-IDs (<praefix>konfliktNein / <praefix>konfliktJa); die IDs bleiben wie früher,
+  //            weil die Begründungs-Pflicht (data-begruendung-pflicht-bei, portal.js) und die Browser-Tests darauf zeigen.
+  //   beispiel optionaler Satz mit einem Beispiel, wann "Ja" gilt.
+  // Formularwerte bleiben unverändert (name="interessenskonflikt", Werte "ja"/"nein"): die Server-Logik ist dieselbe wie zuvor.
+  // Bei "Ja" passt public/js/portal.js die Knöpfe an: [data-konflikt-knopf="<Text>"] bekommt den Text, [data-konflikt-verstecken] verschwindet.
+  const kfP = locals.praefix || '';
+  const kfJa = Boolean(locals.values && locals.values.interessenskonflikt === 'ja');
+  const kfBeispiel = locals.beispiel || 'Die Rechnung ist von deiner Firma, von deiner Familie oder von einem Verein, in dem du im Vorstand bist.';
+%>
+<fieldset class="konflikt-karte mb-3" data-konflikt-gruppe>
+  <legend class="visually-hidden">Persönlicher Bezug zum Beleg</legend>
+  <p class="konflikt-frage">Betrifft dieser Beleg dich oder jemanden aus deinem Umfeld persönlich?</p>
+  <p class="konflikt-beispiel"><%= kfBeispiel %></p>
+  <div class="konflikt-wahlen">
+    <label class="konflikt-wahl" for="<%= kfP %>konfliktNein">
+      <input type="radio" name="interessenskonflikt" id="<%= kfP %>konfliktNein" value="nein" <%= kfJa ? '' : 'checked' %>>
+      <span class="konflikt-wahl-titel">Nein, kein Bezug</span>
+      <span class="konflikt-wahl-text">Normal weiterarbeiten</span>
+    </label>
+    <label class="konflikt-wahl konflikt-wahl-ja" for="<%= kfP %>konfliktJa">
+      <input type="radio" name="interessenskonflikt" id="<%= kfP %>konfliktJa" value="ja" <%= kfJa ? 'checked' : '' %>>
+      <span class="konflikt-wahl-titel">Ja, ich bin befangen</span>
+      <span class="konflikt-wahl-text">Eine andere Person entscheidet</span>
+    </label>
+  </div>
+  <div class="konflikt-folge alert alert-warning mb-0" data-konflikt-folge<%= kfJa ? '' : ' hidden' %>>
+    <strong>Was passiert jetzt?</strong>
+    Der Beleg geht an die Stellvertretung oder an die Administration. Du kannst ihn danach nicht mehr bearbeiten. Bitte schreibe unten kurz, warum.
+  </div>
+</fieldset>

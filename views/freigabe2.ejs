@@ -83,23 +83,14 @@
                   <% } %>
                 </div>
               <% } %>
-              <div class="mb-3">
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="interessenskonflikt" id="f2konfliktNein" value="nein" <%= values.interessenskonflikt !== 'ja' ? 'checked' : '' %>>
-                  <label class="form-check-label" for="f2konfliktNein">Kein Interessenskonflikt</label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="interessenskonflikt" id="f2konfliktJa" value="ja" <%= values.interessenskonflikt === 'ja' ? 'checked' : '' %>>
-                  <label class="form-check-label" for="f2konfliktJa">Interessenskonflikt</label>
-                </div>
-              </div>
+              <%- include('_konflikt_frage', { praefix: 'f2', values }) %>
               <div class="mb-3">
                 <label class="form-label" for="f2begruendung">Begründung <span class="text-muted" data-begruendung-hinweis><%= values.interessenskonflikt === 'ja' ? '(Pflicht)' : '(bei Ablehnung Pflicht)' %></span></label>
                 <textarea class="form-control<%= ff.f2begruendung ? ' is-invalid' : '' %>" id="f2begruendung" name="begruendung" data-begruendung-pflicht-bei="f2konfliktJa"<%- ffAttr(ff, 'f2begruendung') %>><%= values.begruendung || '' %></textarea>
 <% if (ff.f2begruendung) { %><div class="invalid-feedback d-block" id="f2begruendung-fehler"><%= ff.f2begruendung %></div><% } %>
               </div>
-              <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2"><%= job.quelle === 'spesen' && !paymentReview ? 'Zahlungsdaten prüfen' : 'Freigeben' %></button>
-              <button type="submit" name="aktion" value="ablehnen" class="btn btn-outline-danger">Ablehnen</button>
+              <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2" data-konflikt-knopf="An andere Person weitergeben"><%= job.quelle === 'spesen' && !paymentReview ? 'Zahlungsdaten prüfen' : 'Freigeben' %></button>
+              <button type="submit" name="aktion" value="ablehnen" class="btn btn-outline-danger" data-konflikt-verstecken>Ablehnen</button>
             </form>
           </div>
         </div>

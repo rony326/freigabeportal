@@ -151,6 +151,7 @@
         <p class="fw-semibold mb-1">So gehst du vor</p>
         <ol class="hilfe-schritte"><% hilfe.schritte.forEach(function (st) { %><li><%= st %></li><% }); %></ol>
       <% } %>
+      <% if (hilfe.konflikt) { %><p class="hilfe-tipp"><%= hilfe.konflikt %></p><% } %>
       <% if (hilfe.tipp) { %><p class="hilfe-tipp"><strong>Gut zu wissen:</strong> <%= hilfe.tipp %></p><% } %>
       <p class="text-muted small mb-0">Keine Sorge: Du kannst beim Ansehen nichts kaputt machen. Erst ein Klick auf den grossen Knopf löst etwas aus.</p>
     </div>

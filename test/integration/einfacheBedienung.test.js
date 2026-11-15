@@ -59,3 +59,16 @@ test('Bestätigung: Cookie erledigt zeigt einmal den Hinweis und wird gelöscht;
   assert.doesNotMatch(falsch.text, /erledigt-hinweis/);
   db.close();
 });
+
+test('Befangenheits-Frage: Kontierung zeigt Karte mit beiden Antworten, IDs und Formularwerte bleiben', async () => {
+  const { default: ejs } = await import('ejs');
+  const html = await ejs.renderFile(new URL('../../views/_konflikt_frage.ejs', import.meta.url).pathname, { praefix: 'f2', values: { interessenskonflikt: 'ja' } });
+  assert.match(html, /Betrifft dieser Beleg dich oder jemanden aus deinem Umfeld persönlich\?/);
+  assert.match(html, /id="f2konfliktNein" value="nein"/);
+  assert.match(html, /id="f2konfliktJa" value="ja" checked/);
+  assert.match(html, /name="interessenskonflikt"/);
+  assert.doesNotMatch(html, /data-konflikt-folge hidden/);
+  const nein = await ejs.renderFile(new URL('../../views/_konflikt_frage.ejs', import.meta.url).pathname, { praefix: '', values: {} });
+  assert.match(nein, /id="konfliktNein" value="nein" checked/);
+  assert.match(nein, /data-konflikt-folge hidden/);
+});

@@ -3,6 +3,9 @@
 // Neue Seite: Eintrag mit `pfad` ergänzen. Der längste passende Pfad gewinnt; Seiten ohne Eintrag zeigen keinen Knopf.
 // Ansprache wie im übrigen Portal: "du".
 
+// Erklärung zur Befangenheits-Frage (views/_konflikt_frage.ejs), erscheint bei Seiten mit `konflikt: true`.
+const KONFLIKT = 'Wann sage ich "Ja, ich bin befangen"? Wenn die Rechnung von dir selbst, deiner Familie, deiner Firma oder einem Verein kommt, in dem du im Vorstand bist. Dann entscheidet eine andere Person, und du kannst den Beleg danach nicht mehr bearbeiten. Im Zweifel lieber "Ja" wählen.';
+
 const TEXTE = [
   {
     pfad: '/pool',
@@ -17,6 +20,7 @@ const TEXTE = [
   },
   {
     pfad: '/kontierung',
+    konflikt: KONFLIKT,
     titel: 'Hilfe: Beleg kontieren',
     worum: 'Links siehst du die Rechnung, rechts legst du fest, auf welches Konto sie gehört.',
     schritte: [
@@ -28,6 +32,7 @@ const TEXTE = [
   },
   {
     pfad: '/freigabe2',
+    konflikt: KONFLIKT,
     titel: 'Hilfe: Rechnung freigeben',
     worum: 'Du bestätigst, dass die Rechnung bezahlt werden darf.',
     schritte: [
@@ -39,6 +44,7 @@ const TEXTE = [
   },
   {
     pfad: '/spesen-freigabe1',
+    konflikt: KONFLIKT,
     titel: 'Hilfe: Spesen prüfen',
     worum: 'Eine Person hat Spesen eingereicht. Du prüfst, ob sie in Ordnung sind.',
     schritte: [

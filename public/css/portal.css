@@ -141,9 +141,8 @@
   display: flex;
   align-items: center;
   gap: .5rem;
-  padding: .35rem .625rem;
-  border-left: 3px solid transparent;
-  border-radius: 0 var(--bs-border-radius) var(--bs-border-radius) 0;
+  padding: .4rem .625rem;
+  border-radius: calc(var(--bs-border-radius) + 2px);
   color: var(--bs-body-color);
   text-decoration: none;
 }
@@ -153,10 +152,12 @@
   color: var(--bs-emphasis-color);
 }
 .portal-punkt.aktiv {
-  border-left-color: var(--brand-primary);
   background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
   color: var(--bs-emphasis-color);
   font-weight: 600;
+}
+.portal-punkt.aktiv .portal-symbol {
+  color: var(--brand-primary);
 }
 .symbol {
   width: 1em;
@@ -206,11 +207,6 @@
     position: relative;
     justify-content: center;
     padding: .4rem 0;
-    border-left: 0;
-    border-radius: var(--bs-border-radius);
-  }
-  .portal-seitenleiste.eingeklappt .portal-punkt.aktiv {
-    box-shadow: inset 0 -2px 0 var(--brand-primary);
   }
   .portal-seitenleiste.eingeklappt .portal-zaehler {
     position: absolute;
@@ -892,14 +888,12 @@ h1 .beleg-nr {
 }
 .benachrichtigung-liste .list-group-item {
   border: 0;
-  border-left: 3px solid transparent;
-  border-radius: 0 var(--bs-border-radius) var(--bs-border-radius) 0;
+  border-radius: calc(var(--bs-border-radius) + 2px);
   padding: .4rem .75rem;
 }
-/* Gewähltes Ereignis wie der aktive Punkt der Seitenleiste (Markenfarbe als Balken und Tönung),
+/* Gewähltes Ereignis wie der aktive Punkt der Seitenleiste (Markenfarbe als Tönung),
    nicht als Bootstrap-Blau-Fläche. */
 .benachrichtigung-liste .list-group-item.active {
-  border-left-color: var(--brand-primary);
   background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
   color: var(--bs-emphasis-color);
   font-weight: 600;

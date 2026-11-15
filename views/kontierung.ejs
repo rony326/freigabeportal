@@ -129,16 +129,7 @@
                 </div>
               </div>
 
-              <div class="mb-3">
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="interessenskonflikt" id="konfliktNein" value="nein" <%= values.interessenskonflikt !== 'ja' ? 'checked' : '' %>>
-                  <label class="form-check-label" for="konfliktNein">Kein Interessenskonflikt</label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="interessenskonflikt" id="konfliktJa" value="ja" <%= values.interessenskonflikt === 'ja' ? 'checked' : '' %>>
-                  <label class="form-check-label" for="konfliktJa">Interessenskonflikt</label>
-                </div>
-              </div>
+              <%- include('_konflikt_frage', { praefix: '', values }) %>
 
               <div class="mb-3">
                 <label class="form-label" for="begruendung">Begründung <span class="text-muted" data-begruendung-hinweis><%= values.interessenskonflikt === 'ja' ? '(Pflicht)' : '(bei Ablehnung Pflicht)' %></span></label>
@@ -176,8 +167,8 @@
             </form>
 
             <div class="d-flex flex-wrap gap-2 align-items-center">
-              <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary">Kontieren</button>
-              <button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger">Ablehnen</button>
+              <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary" data-konflikt-knopf="An andere Person weitergeben">Kontieren</button>
+              <button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger" data-konflikt-verstecken>Ablehnen</button>
               <% if (typeof rapportModulAktiv !== 'undefined' && rapportModulAktiv) { %>
                 <button type="submit" form="kontierung-form" name="aktion" value="rapport" id="rapport-btn" class="btn btn-primary d-none" disabled>Zur Kenntnis weitergeben</button>
               <% } %>

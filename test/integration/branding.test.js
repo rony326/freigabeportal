@@ -111,7 +111,7 @@ test('Cookie system überschreibt Admin-Standard dunkel', async () => {
   const app = createApp({ db, config: testConfig() });
   const res = await request(app).get('/does-not-exist').set('Cookie', 'theme=system');
   assert.equal(res.status, 404);
-  assert.match(res.text, /<html lang="de">/);
+  assert.match(res.text, /<html lang="de"( data-schrift="normal")?>/);
   assert.match(res.text, /data-farbmodus="system"[^>]*aria-pressed="true"/);
   db.close();
 });

@@ -31,6 +31,7 @@ import { requireApiKey } from './middleware/apiKey.js';
 import { requireCronSecret } from './middleware/cronAuth.js';
 import { createCsrfProtection } from './middleware/csrf.js';
 import { ansichtWahl } from './middleware/ansicht.js';
+import { erledigtHinweis } from './middleware/erledigtHinweis.js';
 import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { createN8nBackupRouter } from './routes/n8n/backup.js';
 import { createN8nKkBelegeRouter } from './routes/n8n/kkBelege.js';
@@ -255,6 +256,8 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // CSRF-Middleware, die ihr eigenes, von der Session getrenntes Cookie liest und schreibt.
   app.use(cookieParser());
   app.use(ansichtWahl());
+  // Grüner Bestätigungshinweis auf /pool nach Freigeben/Ablehnen/Kontieren (Cookie `erledigt`, einmalig). Braucht cookie-parser.
+  app.use(erledigtHinweis());
   const { attachCsrfToken, csrfProtection, generateCsrfToken } = createCsrfProtection(config);
   app.use((req, res, next) => {
     // /api/n8n/* und /internal/cron/* sind Maschinenrouten, die über die Header X-API-Key bzw. X-Cron-Secret

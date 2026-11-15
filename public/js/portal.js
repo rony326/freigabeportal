@@ -40,6 +40,17 @@
     });
   });
 
+  // Schriftgrösse: Cookie `schrift` (normal | gross | sehr-gross); das <html>-Attribut data-schrift steuert die Grundschrift (portal.css).
+  var schriftEintraege = document.querySelectorAll('[data-schrift]');
+  schriftEintraege.forEach(function (eintrag) {
+    eintrag.addEventListener('click', function () {
+      var wahl = eintrag.getAttribute('data-schrift');
+      root.setAttribute('data-schrift', wahl);
+      document.cookie = 'schrift=' + wahl + ';path=/;max-age=31536000;samesite=lax';
+      schriftEintraege.forEach(function (e) { e.setAttribute('aria-pressed', e === eintrag ? 'true' : 'false'); });
+    });
+  });
+
   // Eingeklappte Seitenleiste (PDF-Seiten): Label als Tooltip neben dem Symbol.
   if (window.bootstrap && window.bootstrap.Tooltip) {
     document.querySelectorAll('.portal-seitenleiste.eingeklappt [title]').forEach(function (el) {
@@ -126,6 +137,30 @@ window.Portal = window.Portal || {};
     aktualisiere();
   }
   document.querySelectorAll('[data-begruendung-pflicht-bei]').forEach(init);
+})();
+
+// Befangenheits-Frage (views/_konflikt_frage.ejs): Bei "Ja" erscheint der Hinweis zur Folge, der Hauptknopf
+// ([data-konflikt-knopf="<Text>"]) heisst dann z. B. "An andere Person weitergeben" und "Ablehnen"
+// ([data-konflikt-verstecken]) verschwindet – der Server lehnt "befangen + ablehnen" ohnehin ab.
+// Ohne JS bleibt alles sichtbar, der Server prüft weiterhin selbst.
+(function () {
+  var gruppe = document.querySelector('[data-konflikt-gruppe]');
+  if (!gruppe) return;
+  var ja = gruppe.querySelector('input[type="radio"][value="ja"]');
+  var folge = gruppe.querySelector('[data-konflikt-folge]');
+  var knoepfe = document.querySelectorAll('[data-konflikt-knopf]');
+  var versteckte = document.querySelectorAll('[data-konflikt-verstecken]');
+  knoepfe.forEach(function (k) { k.setAttribute('data-text-normal', k.textContent); });
+  function aktualisiere() {
+    var befangen = ja.checked;
+    if (folge) folge.hidden = !befangen;
+    knoepfe.forEach(function (k) {
+      k.textContent = befangen ? k.getAttribute('data-konflikt-knopf') : k.getAttribute('data-text-normal');
+    });
+    versteckte.forEach(function (k) { k.hidden = befangen; });
+  }
+  gruppe.querySelectorAll('input[type="radio"]').forEach(function (r) { r.addEventListener('change', aktualisiere); });
+  aktualisiere();
 })();
 
 // Bestätigungsdialog (views/_bestaetigen_dialog.ejs) statt window.confirm.

@@ -982,3 +982,76 @@ h1 .beleg-nr {
 .zielwahl-liste .dropdown-item { cursor: pointer; white-space: normal; overflow-wrap: anywhere; }
 .benachrichtigung-variablen .var { font-size: .8125rem; }
 .var-platzhalter { font-family: var(--bs-font-monospace); font-size: .75rem; opacity: .75; }
+
+
+/* ---------- Einfache Bedienung: Schriftgrösse, Hilfe, Bestätigung, leere Listen ----------
+   Schriftgrösse pro Person (Cookie `schrift`, Umschalter im Seitenkopf): alles in rem folgt der Wurzelschrift. */
+html[data-schrift="gross"] { font-size: 112.5%; }
+html[data-schrift="sehr-gross"] { font-size: 125%; }
+.schrift-a { font-weight: 600; line-height: 1; letter-spacing: -.02em; }
+.schrift-a small { font-size: .7em; }
+.hilfe-knopf { display: inline-flex; align-items: center; gap: .35rem; }
+.hilfe-leiste { --bs-offcanvas-width: 400px; }
+.hilfe-worum { font-size: 1.05rem; }
+.hilfe-schritte { padding-left: 1.25rem; }
+.hilfe-schritte li { margin-bottom: .5rem; }
+.hilfe-tipp {
+  padding: .75rem 1rem;
+  border-radius: calc(var(--bs-border-radius) + 2px);
+  background: var(--bs-tertiary-bg);
+}
+.erledigt-hinweis { font-size: 1.05rem; }
+.leerzustand {
+  margin-top: 1.5rem;
+  padding: 2rem 1.5rem;
+  max-width: 40rem;
+  border-radius: calc(var(--bs-border-radius) + 4px);
+  background: var(--bs-tertiary-bg);
+}
+.leerzustand-titel { font-size: 1.35rem; font-weight: 600; margin-bottom: .5rem; }
+.leerzustand-text { color: var(--bs-secondary-color); }
+/* Grössere Klickflächen im Menü und bei Knöpfen, damit man sie auch mit unruhiger Hand trifft. */
+.portal-punkt { min-height: 2.5rem; }
+.btn-sm { --bs-btn-padding-y: .4rem; --bs-btn-padding-x: .75rem; --bs-btn-font-size: .9rem; }
+@media (max-width: 575.98px) {
+  .hilfe-knopf span { display: none; }
+}
+
+/* Befangenheits-Frage (views/_konflikt_frage.ejs): Karte mit zwei grossen Auswahlknöpfen. */
+.konflikt-karte {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: calc(var(--bs-border-radius) + 4px);
+  background: var(--bs-tertiary-bg);
+}
+.konflikt-frage { font-weight: 600; margin-bottom: .25rem; }
+.konflikt-beispiel { color: var(--bs-secondary-color); font-size: .9rem; margin-bottom: .75rem; }
+.konflikt-wahlen { display: grid; grid-template-columns: 1fr 1fr; gap: .625rem; }
+@media (max-width: 575.98px) { .konflikt-wahlen { grid-template-columns: 1fr; } }
+.konflikt-wahl {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: .125rem;
+  padding: .75rem .875rem;
+  border: 2px solid var(--bs-border-color);
+  border-radius: calc(var(--bs-border-radius) + 2px);
+  background: var(--bs-body-bg);
+  cursor: pointer;
+}
+/* Das Radio füllt die ganze Fläche (anklickbar, per Tastatur erreichbar), bleibt aber unsichtbar. */
+.konflikt-wahl input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.konflikt-wahl-titel { font-weight: 600; }
+.konflikt-wahl-text { font-size: .85rem; color: var(--bs-secondary-color); }
+.konflikt-wahl:has(input:checked) {
+  border-color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+}
+.konflikt-wahl-ja:has(input:checked) {
+  border-color: var(--bs-warning-border-subtle);
+  background: var(--bs-warning-bg-subtle);
+}
+.konflikt-wahl:has(input:focus-visible) { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+.konflikt-folge { margin-top: .75rem; }
+.konflikt-folge[hidden] { display: none; }

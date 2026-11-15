@@ -24,23 +24,14 @@
           <div class="card-body">
             <form method="post" action="/spesen-freigabe1/<%= job.id %>" id="spesen-freigabe1-form">
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-              <div class="mb-3">
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="interessenskonflikt" id="sf1konfliktNein" value="nein" <%= values.interessenskonflikt !== 'ja' ? 'checked' : '' %>>
-                  <label class="form-check-label" for="sf1konfliktNein">Kein Interessenskonflikt</label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="interessenskonflikt" id="sf1konfliktJa" value="ja" <%= values.interessenskonflikt === 'ja' ? 'checked' : '' %>>
-                  <label class="form-check-label" for="sf1konfliktJa">Interessenskonflikt</label>
-                </div>
-              </div>
+              <%- include('_konflikt_frage', { praefix: 'sf1', values, beispiel: 'Die Spesen stammen von dir selbst oder von einer Person, die dir persönlich sehr nahesteht.' }) %>
               <div class="mb-3">
                 <label class="form-label" for="sf1begruendung">Begründung <span class="text-muted" data-begruendung-hinweis><%= values.interessenskonflikt === 'ja' ? '(Pflicht)' : '(bei Ablehnung Pflicht)' %></span></label>
                 <textarea class="form-control<%= ff.sf1begruendung ? ' is-invalid' : '' %>" id="sf1begruendung" name="begruendung" data-begruendung-pflicht-bei="sf1konfliktJa"<%- ffAttr(ff, 'sf1begruendung') %>><%= values.begruendung || '' %></textarea>
 <% if (ff.sf1begruendung) { %><div class="invalid-feedback d-block" id="sf1begruendung-fehler"><%= ff.sf1begruendung %></div><% } %>
               </div>
-              <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2">Freigeben</button>
-              <button type="submit" name="aktion" value="ablehnen" class="btn btn-outline-danger">Ablehnen</button>
+              <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2" data-konflikt-knopf="An andere Person weitergeben">Freigeben</button>
+              <button type="submit" name="aktion" value="ablehnen" class="btn btn-outline-danger" data-konflikt-verstecken>Ablehnen</button>
             </form>
           </div>
         </div>

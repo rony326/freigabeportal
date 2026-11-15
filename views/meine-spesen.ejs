@@ -10,7 +10,10 @@
       <div class="seitenkopf-aktionen"><%- include('_ansicht_umschalter') %></div>
     </div>
     <% if (jobs.length === 0) { %>
-      <p>Keine eigenen Spesen-Einreichungen.</p>
+      <div class="leerzustand">
+        <p class="leerzustand-titel">Noch keine Spesen eingereicht.</p>
+        <p class="leerzustand-text mb-0">Hast du etwas selbst bezahlt? Dann reiche den Beleg unter <a href="/spesen/neu">Spesen einreichen</a> ein. Danach siehst du hier, wie weit er ist.</p>
+      </div>
     <% } else { %>
       <% if (zeigeTabelle) { %><div class="<%= klasseTabelle %>"><%- include('_spesen_meine_tabelle', { jobs }) %></div><% } %>
       <% if (zeigeKacheln) { %><div class="<%= klasseKacheln %>"><%- include('_spesen_meine_kacheln', { jobs }) %></div><% } %>

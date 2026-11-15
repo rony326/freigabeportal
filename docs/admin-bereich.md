@@ -19,7 +19,7 @@ Alle Seiten teilen dasselbe Grundgerüst:
 
 - **Obere Leiste:** Logo (Ausrichtung aus dem Erscheinungsbild), die Reiter
   „Portal“ und „Admin“ (Admin nur mit mindestens einem Admin-Recht), rechts
-  „Angemeldet als“, Farbmodus und Abmelden. Unter 992 px öffnet „☰“ die
+  „Angemeldet als“, Farbmodus, Hilfe, Schriftgrösse und Abmelden. Unter 992 px öffnet „☰“ die
   Seitenleiste als Offcanvas.
 - **Seitenleiste mit Gruppen** (Quelle: `src/services/navigation.js`). Portal:
   Arbeit (Aufgaben, mit Zähler offener Aufgaben), Spesen, Belege, Persönlich.
@@ -32,6 +32,25 @@ Alle Seiten teilen dasselbe Grundgerüst:
 - **Einheitliche Breite** (max. 1320 px) und derselbe Seitenkopf (Titel,
   Hauptaktion, Ansichtsumschalter) auf jeder Seite. Der Titel von `/admin`
   lautet „Übersicht“.
+
+### Einfache Bedienung (für Gelegenheitsnutzer)
+
+- **Schriftgrösse:** Menü „A“ in der oberen Leiste (Normal, Gross, Sehr gross),
+  pro Person im Cookie `schrift`. Es skaliert die Wurzelschrift in `portal.css`.
+- **Hilfe:** Der Knopf „Hilfe“ öffnet eine Seitenleiste mit „Worum geht’s“ und
+  „So gehst du vor“. Die Texte stehen in `src/services/hilfetexte.js`; eine neue
+  Seite bekommt dort einen Eintrag (sonst gibt es keinen Knopf). Ansprache: „du“.
+- **Bestätigung:** Nach Freigeben, Ablehnen, Kontieren oder Weitergabe wegen
+  Befangenheit zeigt `/pool` einmal einen grünen Hinweis
+  (`src/middleware/erledigtHinweis.js`, Cookie `erledigt`, 60 s).
+- **Befangenheits-Frage:** Kontierung, Freigabe 2 und Spesen-Freigabe 1 fragen
+  „Betrifft dieser Beleg dich oder jemanden aus deinem Umfeld persönlich?“
+  (gemeinsamer Baustein `views/_konflikt_frage.ejs`). Bei „Ja, ich bin befangen“
+  erscheint der Hinweis zur Folge, der Hauptknopf heisst „An andere Person
+  weitergeben“ und „Ablehnen“ verschwindet. Formularfelder und Server-Logik
+  (`interessenskonflikt` = `ja`/`nein`) sind unverändert.
+- **Leere Listen** (Aufgaben, Meine Spesen, Abgeschlossene Rechnungen) erklären,
+  was zu tun ist oder dass nichts zu tun ist.
 
 ### Farbmodus, Symbole, Kopfleiste
 

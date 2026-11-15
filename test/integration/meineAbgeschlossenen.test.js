@@ -47,7 +47,7 @@ test('GET /meine-abgeschlossenen shows the empty-state text when there are no ab
   const app = buildTestApp(db);
   const res = await request(app).get('/meine-abgeschlossenen').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.match(res.text, /Keine abgeschlossenen Rechnungen\./);
+  assert.match(res.text, /Noch nichts abgeschlossen\./);
   db.close();
 });
 

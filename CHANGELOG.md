@@ -3,6 +3,19 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.2.3] – 2026-11-15
+
+Bedienungs-Release für Gelegenheitsnutzer. Release Notes: [docs/releases/v1.2.3.md](docs/releases/v1.2.3.md).
+Keine Datenbank-Migration, keine neuen Umgebungsvariablen.
+
+- Schriftgrösse pro Person (Menü „A“: Normal, Gross, Sehr gross), grössere Klickflächen.
+- Hilfe-Knopf mit Kurzanleitung je Seite (`src/services/hilfetexte.js`).
+- Grüner Bestätigungshinweis nach Freigeben, Ablehnen, Kontieren und Weitergabe wegen Befangenheit.
+- Leere Listen erklären, was zu tun ist.
+- Befangenheits-Frage als Karte mit zwei Auswahlknöpfen (Kontierung, Freigabe 2, Spesen-Freigabe 1);
+  bei „Ja“ erscheint die Folge, „Ablehnen“ verschwindet. Server-Logik unverändert.
+- Menü-Design: aktiver Punkt ohne Balken links, als getönte abgerundete Fläche.
+
 ## [1.2.2] – 2026-11-11
 
 Dokumentations-Release, keine Code-Änderung. Release Notes: [docs/releases/v1.2.2.md](docs/releases/v1.2.2.md).

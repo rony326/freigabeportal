@@ -5,6 +5,16 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 
 ## Unveröffentlicht
 
+- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 1): Eingangsprüfung, Vorschaubild, QR-Erkennung und
+  Textauszug des n8n-Rechnungseingangs (`POST /api/n8n/jobs`) sowie QR/Text der Kreditkartenbelege per Mail
+  blockieren das Portal nicht mehr (bisher bis zu 19 s Stillstand je PDF). Pool mit 2 Workern, Zeitlimit,
+  Speichergrenze und Alarm, wenn die Worker nicht starten (kein Rückfall auf den Hauptthread). Neue optionale
+  Umgebungsvariablen `PDF_WORKER`, `PDF_WORKER_ANZAHL`, `PDF_WORKER_SPEICHER_MB`, `PDF_WORKER_ZEITLIMIT_FAKTOR`.
+  **n8n:** `POST /api/n8n/jobs` antwortet neu mit **503** und `Retry-After: 60`
+  (`code: pdf_verarbeitung_ausgelastet`), wenn die Eingangsprüfung wegen Überlastung oder Zeitlimit nicht
+  möglich war – der Workflow soll dann wiederholen. Gleichzeitig eingereichte identische PDFs ergeben weiterhin
+  genau einen Job. Statusseite und `/healthz` haben den neuen Dienst «PDF-Verarbeitung» (`pdf_verarbeitung`).
+  Spesen, Kreditkarten-Abgleich, Stempel und Splitgruppen folgen in Etappe 2.
 - Abhängigkeiten aktualisiert (ohne Hauptversionssprung): mupdf 1.28.0 → 1.28.6, express-rate-limit
   8.6.2 → 8.7.4, nodemailer 10.2.1 → 10.6.0, csrf-csrf 4.0.3 → 4.1.0, read-excel-file 9.3.12 → 9.3.17.
 - Doku: `docs/betrieb-und-nutzung.md` hält einen monatlichen Termin fest (`npm audit` und Prüfung der

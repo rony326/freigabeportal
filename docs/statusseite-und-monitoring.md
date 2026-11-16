@@ -51,6 +51,7 @@ Admin → Zeitstempel eingestellt.
 | `jobs` | letzter Lauf jedes geplanten Jobs der letzten 7 Tage | mindestens ein Job zuletzt fehlgeschlagen | — |
 | `sicherheitsalarme` | offene Sicherheitsalarme | — | mindestens ein offener Alarm |
 | `einrichtung` | offene Pflichtschritte des Einrichtungsassistenten (`/admin/ersteinrichtung`); nach dem ersten Abschluss dauerhaft `ok` und inaktiv | mindestens ein Pflichtschritt offen, solange die Einrichtung noch nie abgeschlossen war (Grund nennt die Anzahl) | — |
+| `pdf_verarbeitung` | PDF-Worker (Befund B2, [Betrieb & Nutzung](betrieb-und-nutzung.md#pdf-verarbeitung-in-worker-threads)); der Grund nennt aktive Worker, Neustarts, Zeitüberschreitungen und Abstürze seit dem Start; bei `PDF_WORKER=aus` «im Hauptthread» | 50 oder mehr wartende Aufträge | Worker 3× hintereinander nicht startbar (Alarm) |
 
 `audit_nachweis` ist nur aktiv, wenn das Modul Audit-Nachweis eingeschaltet ist,
 `zeitstempel` nur mit konfigurierter TSA-URL; sonst `aktiv: false`.
@@ -101,7 +102,7 @@ Mit gültigem Header `X-Monitoring-Key: <schluessel>` das volle JSON:
 }
 ```
 
-(Gekürzt; die Antwort enthält alle elf Dienste.) Das Feld `grund` ist deutsch
+(Gekürzt; die Antwort enthält alle zwölf Dienste.) Das Feld `grund` ist deutsch
 und kurz und enthält keine Personen-, Rechnungs- oder Konfigurationswerte.
 
 HTTP-Status: 200; 503 nur, wenn die Datenbank nicht erreichbar ist (ohne

@@ -203,6 +203,7 @@ und dürfen nicht `changeme` enthalten — die App verweigert sonst den Start
 | `TSA_TRUST_ANCHORS_FILE`, `TSA_TRUST_ANCHORS_SHA256`, `TSA_CRL_FILE`, `TSA_CRL_AUTO_UPDATE` | Vertrauensanker und Sperrlisten für den Zeitstempeldienst, siehe oben und [TSA-Vertrauensanker](docs/tsa-vertrauensanker.md) |
 | `TSA_PASSWORT` (optional) | Passwort des Zeitstempeldienstes. Hat Vorrang vor dem unter Admin → Zeitstempel gespeicherten Passwort (das im Klartext in der Datenbank und damit in jeder Sicherung läge); ist die Variable gesetzt, zeigt das Admin-Formular einen Hinweis und der Datenbankwert wird nicht benutzt. Ohne die Variable gilt weiter der Datenbankwert |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | aus den bereits vorhandenen Produktions-SMTP-Zugangsdaten |
+| `PDF_WORKER`, `PDF_WORKER_ANZAHL`, `PDF_WORKER_SPEICHER_MB`, `PDF_WORKER_ZEITLIMIT_FAKTOR` (optional) | PDF-Verarbeitung in Worker-Threads: `an`/`aus` (Standard `an`), Anzahl 1–4 (Standard 2), Speichergrenze je Worker in MB (Standard 250), Faktor auf die Zeitlimits (Standard 1). Siehe [Betrieb & Nutzung](docs/betrieb-und-nutzung.md#pdf-verarbeitung-in-worker-threads) |
 
 ### Vor dem ersten Login — Superadmin-Bootstrap
 

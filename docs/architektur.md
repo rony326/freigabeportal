@@ -7,7 +7,7 @@
 - **Views**: server-seitig gerenderte EJS-Templates (kein Client-Framework, kein SPA-Bundling).
 - **Datenbank**: SQLite über das eingebaute `node:sqlite` — eine einzelne Datei (`DB_PATH`), kein separater DB-Server.
 - **Dateiablage**: Rechnungs-PDFs/Thumbnails unter `JOBS_DIR`, Branding-Logo unter `BRANDING_DIR` — beides normales Dateisystem, keine Objectstorage-Anbindung.
-- **PDF-Verarbeitung**: `mupdf` (Rendering/QR-Scan-Rasterung), `pdf-lib` (Stempel-Seite anhängen, Beleg mergen), `pdf-rfc3161` (RFC3161-Zeitstempel).
+- **PDF-Verarbeitung**: `mupdf` (Rendering/QR-Scan-Rasterung, im n8n-Eingang in Worker-Threads, siehe [PDF-Worker](#pdf-worker-srcservicespdfworkerpooljs-befund-b2)), `pdf-lib` (Stempel-Seite anhängen, Beleg mergen), `pdf-rfc3161` (RFC3161-Zeitstempel).
 - **QR-Code**: `jsqr` (Dekodierung), eigener Parser für das Swiss-QR-Bill-Zeilenformat.
 - **Mail**: `nodemailer` gegen ein beliebiges SMTP-Konto.
 - **Hosting**: Infomaniak Node.js-Webhosting; der Node-Prozess läuft dauerhaft und übernimmt Scheduling selbst (siehe unten) — kein externer Task-Scheduler nötig.
@@ -66,6 +66,11 @@ Siehe [n8n-schnittstelle.md](n8n-schnittstelle.md).
    In-Process-Hintergrund-Jobs (siehe
    [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)).
 6. `app.listen(config.port)`.
+
+Vor Schritt 2 übernimmt `konfigurierePdfArbeit(config.pdfWorker)` die
+Einstellungen der PDF-Worker (Worker starten erst beim ersten Auftrag). Beim
+Herunterfahren wartet `shutdown()` nach `server.close()` auf
+`schliessePdfWorker()`.
 
 ## Middleware-Pipeline (`src/app.js`)
 
@@ -136,6 +141,69 @@ immer in der echten App; deren Seiten zeigen bei eingeschaltetem Testmodus einen
 Hinweis statt des Bands. Die Test-Instanz wird mit einem eigenen Abschluss statt
 des `next` der echten App aufgerufen: was aus ihr entweicht, beantwortet die
 Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
+
+## PDF-Worker (`src/services/pdfWorkerPool.js`, Befund B2)
+
+mupdf (WASM) rechnet synchron. Im Hauptthread blockiert jede PDF-Arbeit die
+Event-Loop für ihre ganze Laufzeit: die QR-Erkennung braucht bei zwei
+Vektorseiten ~1,5 s, im schlimmsten Fall 10–19 s; Eingangsprüfung und
+Vorschaubild bei grossen Scans bis ~760 ms. Während dieser Zeit beantwortet das
+Portal keine andere Anfrage.
+
+Deshalb laufen diese Aufgaben in Worker-Threads:
+
+- **Aufgabenliste** `src/workers/pdfAufgaben.js`: Name → bestehende reine
+  Funktion (`eingangPruefen` = `pruefeEingangsPdf`, `vorschaubild`,
+  `qrErkennen`, `textExtrahieren`) plus `eingangAnalysieren` (Vorschaubild, QR
+  und optional Text in einem Auftrag). Einzige Quelle für Worker- und
+  Inline-Betrieb.
+- **Worker** `src/workers/pdfWorker.js`: lädt die Aufgaben (inkl. mupdf,
+  ~120 ms, ~+55 MB RSS je Worker), bearbeitet einen Auftrag nach dem anderen und
+  meldet nach jedem Auftrag `process.memoryUsage().external` mit.
+- **Pool** `src/services/pdfWorkerPool.js`: feste Grösse (`PDF_WORKER_ANZAHL`,
+  Standard 2), Worker starten erst bei Bedarf.
+  - Zwei Spuren: `interaktiv` vor `hintergrund`; Hintergrundaufträge (n8n-Eingang,
+    Kreditkartenbelege per Mail) belegen höchstens einen Worker gleichzeitig.
+  - Warteschlange höchstens 100 → `PdfWorkerUeberlastet`.
+  - Zeitlimit je Auftrag (Eingangsprüfung, Vorschaubild, Text je 10 s, QR 15 s,
+    kombiniert 20 s; mal `PDF_WORKER_ZEITLIMIT_FAKTOR`): der Worker wird mit
+    `terminate()` beendet (bricht auch laufende WASM-Arbeit nach wenigen ms ab),
+    der Auftrag scheitert mit `PdfWorkerZeitueberschreitung`.
+  - Der WASM-Speicher von mupdf wächst und schrumpft nie, und `resourceLimits`
+    begrenzt nur den JS-Heap (`maxOldGenerationSizeMb` 512). Darum wird ein
+    Worker nach dem Auftrag ersetzt, wenn sein `external` über
+    `PDF_WORKER_SPEICHER_MB` (Standard 250) liegt, und spätestens nach 200 Aufträgen.
+  - Absturz (`error`/`exit`) → laufender Auftrag scheitert mit
+    `PdfWorkerAbsturz`, Ersatz bei Bedarf. Scheitert der Start 3× hintereinander,
+    steht `ALARM: PDF-Worker …` im Log, der Dienst `pdf_verarbeitung` der
+    Statusseite und von `/healthz` steht auf Fehler, wartende Aufträge scheitern
+    mit `PdfWorkerNichtVerfuegbar`. Jeder neue Auftrag versucht einen neuen Start.
+    Es gibt **keinen automatischen Rückfall** auf den Hauptthread.
+  - Leerlauf-Worker sind `unref()` (halten den Prozess nicht am Leben) und enden
+    nach 5 min; `shutdown()` in `src/index.js` wartet auf `schliessePdfWorker()`.
+  - Bytes gehen als eigene Kopie per `transferList` in den Worker und zurück.
+    Der Buffer des Aufrufers wird nie übertragen: kleine Buffer liegen im
+    gemeinsamen Speicherpool von Node, und Aufrufer brauchen ihn danach noch.
+- **Fassade** `src/services/pdfArbeit.js`: `await pdfArbeit().ausfuehren(aufgabe,
+  [buffer], { spur })`. Fehler kommen wie beim direkten Aufruf an
+  (`PdfEingangFehler` mit `code` wird wieder aufgebaut), dazu die Pool-Fehler
+  (Basisklasse `PdfWorkerFehler`). Mit `PDF_WORKER=aus` laufen dieselben
+  Aufgaben im Hauptthread (dynamischer `import()` beim ersten Auftrag) – ein
+  bewusster Betriebs-/Testschalter.
+
+**Etappe 1** (umgestellt): `POST /api/n8n/jobs` (Eingangsprüfung → 422 bei
+Prüffehler, 503 mit `Retry-After` bei Überlastung/Zeitlimit/Absturz;
+`eingangAnalysieren` danach) und der Kreditkarten-Mailbeleg
+(`services/kkBelegEingang.js`, QR und Text). Weil zwischen der
+Dublettenprüfung und `createJob` jetzt ein `await` liegt und
+`idx_jobs_datei_hash` nicht eindeutig ist, prüft die Route die Dublette
+unmittelbar vor Dateischreiben und Jobanlage im selben synchronen Abschnitt
+erneut.
+
+**Noch im Hauptthread (Etappe 2)**: Spesen-Eingang (`routes/spesen.js`),
+Beleg-Dateien der Kreditkarte (`kkBelegDatei.js`), Kreditkarten-Abgleich
+(`routes/kkAbgleich.js`), Stempel/Beleg anhängen/Splitgruppen (pdf-lib),
+Testmodus-Beispieldaten.
 
 ## Router-Übersicht
 

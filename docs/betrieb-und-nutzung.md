@@ -148,6 +148,17 @@ Solange der Modus aktiv ist:
   (`wartungsmodus_aktiv`, `wartungsmodus_hinweis`, `wartungsmodus_seit`) mit Person und Zeitpunkt im Audit-Log.
 - **`/healthz`** (mit Monitoring-Schlüssel) enthält `"wartungsmodus": true|false`; der Modus ist kein Fehler.
 
+## Monatliche Abhängigkeitsprüfung
+
+Einmal im Monat (Termin fest im Kalender der Betriebsverantwortlichen):
+
+- `npm audit` im Projektverzeichnis ausführen und Meldungen bewerten; behebbare Funde über ein Update im selben
+  Hauptstand schliessen.
+- Die **Version von `public/vendor/pdfjs`** gegen neue Sicherheitsmeldungen prüfen. Diese Kopie von pdf.js liegt
+  fest im Projekt und wird von `npm audit` **nicht** erfasst. Die Version steht in der Kopfzeile von
+  `public/vendor/pdfjs/build/pdf.mjs` (`pdfjsVersion`). Stand: **6.2.108** (behebt CVE-2026-16633). Gibt es eine
+  neuere Version mit Sicherheitskorrektur, die Kopie ersetzen (inkl. `LICENSE`) und die PDF-Vorschau von Hand testen.
+
 ## Bekannte Grenzen
 
 - Für Problemmeldungen gibt es **kein eigenes Rate-Limit**, nur den allgemeinen

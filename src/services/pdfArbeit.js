@@ -8,8 +8,9 @@
 //   ein bewusster Betriebs-/Testschalter, nie ein automatischer Rückfall – fällt der Pool aus, scheitern
 //   die Aufträge mit PdfWorkerNichtVerfuegbar und die Statusseite zeigt den Alarm.
 //
-// Fehler: PdfEingangFehler (mit `code`) und andere Fehler der Aufgaben kommen wie beim direkten Aufruf an;
-// dazu die Pool-Fehler (PdfWorkerFehler und Unterklassen), bei denen ein erneuter Versuch sinnvoll ist.
+// Fehler: PdfEingangFehler (mit `code`), BelegBildFehler und andere Fehler der Aufgaben kommen wie beim direkten
+// Aufruf an; dazu die Pool-Fehler (PdfWorkerFehler und Unterklassen), bei denen ein erneuter Versuch sinnvoll ist.
+// Menschen bekommen dann PDF_VORUEBERGEHEND_MELDUNG mit Status 503 und Retry-After (antworteSpaeterErneut).
 
 import {
   erstellePdfWorkerPool, PdfWorkerFehler, PdfWorkerUeberlastet, PdfWorkerZeitueberschreitung, PdfWorkerAbsturz, PdfWorkerNichtVerfuegbar,
@@ -18,6 +19,27 @@ import {
 export { PdfWorkerFehler, PdfWorkerUeberlastet, PdfWorkerZeitueberschreitung, PdfWorkerAbsturz, PdfWorkerNichtVerfuegbar };
 
 const STANDARD_AUFGABEN = new URL('../workers/pdfAufgaben.js', import.meta.url).href;
+
+// Sekunden für Retry-After, wenn die PDF-Verarbeitung vorübergehend nicht verfügbar ist (503).
+export const PDF_WIEDERHOLEN_NACH_SEKUNDEN = 60;
+
+// Meldung für Personen in den Formularen (Spesen, Kreditkarten-Belege, KK-Abgleich), wenn ein PdfWorkerFehler auftritt.
+// Gespeichert wurde in diesem Fall nichts; Dateien muss man im Browser erneut auswählen.
+export const PDF_VORUEBERGEHEND_MELDUNG = 'Die PDF-Verarbeitung ist gerade ausgelastet. Es wurde nichts gespeichert. Bitte versuche es in einer Minute erneut und wähle dabei die Datei(en) noch einmal aus.';
+
+/**
+ * Setzt Status 503 und Retry-After für eine Antwort nach einem PdfWorkerFehler und protokolliert kurz den Grund
+ * (ohne Stack: kein Programmfehler). Der Aufrufer rendert danach sein Formular mit PDF_VORUEBERGEHEND_MELDUNG.
+ * @param {import('express').Response} res
+ * @param {Error} err
+ * @param {string} wo kurze Angabe für das Log, z. B. 'Spesen-Einreichung'
+ * @returns {import('express').Response}
+ */
+export function antworteSpaeterErneut(res, err, wo) {
+  console.warn(`${wo}: PDF-Verarbeitung vorübergehend nicht verfügbar (${err.name}: ${err.message})`);
+  res.set('Retry-After', String(PDF_WIEDERHOLEN_NACH_SEKUNDEN));
+  return res.status(503);
+}
 
 /**
  * Erzeugt eine eigene Fassade (Server: einmal über konfigurierePdfArbeit; Tests: mit eigenen Optionen).

@@ -9,6 +9,7 @@ import { pruefeEingangsPdf } from '../services/pdfEingang.js';
 import { renderFirstPageThumbnail } from '../services/thumbnail.js';
 import { scanQrBill } from '../services/qrBillScan.js';
 import { extrahierePdfText } from '../services/pdfText.js';
+import { buildBelegPdf } from '../services/belegAnhaengen.js';
 
 // Fehlermeldung ohne Stack (geht als Text an den Aufrufer, der sie wie bisher protokolliert).
 function meldung(err) {
@@ -32,6 +33,23 @@ function eingangAnalysieren(buffer, { text = false } = {}) {
   return ergebnis;
 }
 
+/**
+ * Belegdatei für Spesen und Kreditkarten-Belege: Upload als PDF (ein Bild wird auf eine A4-Seite eingebettet, ein PDF
+ * bleibt unverändert, siehe buildBelegPdf) plus Vorschaubild der ersten Seite. Ein Bild bis 40 Megapixel zu dekodieren
+ * (pdf-lib embedPng) dauert Sekunden – deshalb im Worker, nicht nur das Vorschaubild.
+ * Ein Fehlschlag des Vorschaubilds ist kein Fehler des Auftrags (vorschaubildFehler); ein Fehler von buildBelegPdf
+ * (z. B. BelegBildFehler) scheitert wie beim direkten Aufruf.
+ * @param {Buffer} buffer
+ * @param {'application/pdf'|'image/png'|'image/jpeg'} mimetype
+ * @returns {Promise<{pdf: Buffer, vorschaubild: Buffer|null, vorschaubildFehler: string|null}>}
+ */
+async function belegDateiErstellen(buffer, mimetype) {
+  const pdf = await buildBelegPdf(buffer, mimetype);
+  const ergebnis = { pdf, vorschaubild: null, vorschaubildFehler: null };
+  try { ergebnis.vorschaubild = renderFirstPageThumbnail(pdf); } catch (err) { ergebnis.vorschaubildFehler = meldung(err); }
+  return ergebnis;
+}
+
 // Aufgabenname → Funktion. Alle Argumente und Ergebnisse müssen per structured clone übertragbar sein.
 export const AUFGABEN = {
   eingangPruefen: pruefeEingangsPdf,
@@ -39,4 +57,5 @@ export const AUFGABEN = {
   qrErkennen: scanQrBill,
   textExtrahieren: extrahierePdfText,
   eingangAnalysieren,
+  belegDateiErstellen,
 };

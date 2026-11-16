@@ -25,6 +25,7 @@ import { createN8nJobsRouter } from '../../src/routes/n8n/jobs.js';
 import * as mupdf from 'mupdf';
 import { readFileSync } from 'node:fs';
 import { freigabeSnapshotsFuerTest } from '../helpers/freigabeSnapshot.js';
+import { mitPdfStoerung } from '../helpers/pdfStoerung.js';
 
 async function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'kk-abgleich-'));
@@ -541,4 +542,48 @@ test('POST kk-abgleich lehnt eine nachgereichte Bilddatei über 40 Megapixel ver
   assert.match(res.text, /Das Bild ist zu gross/);
   assert.equal(getJobById(t.db, t.jobId).status, 'zugewiesen');
   t.cleanup();
+});
+
+// ---------------------------------------------------------------------------------------------
+// B2, Etappe 2: Textanalyse und nachgereichte Belege laufen im PDF-Worker.
+
+test('B2: Zeitlimit beim nachgereichten Beleg → 503 mit Formular und Hinweis, nichts aufgesplittet, keine Datei', async () => {
+  const t = await setup();
+  try {
+    const b = await t.beleg('30.00', 'Papier', t.eigen);
+    const dateienVorher = readdirSync(t.dir).sort();
+    const langsam = Buffer.concat([await buildPdfFixture(['Nachgereicht']), Buffer.from('\n%LANGSAM_ERSTELLEN\n')]);
+    const res = await mitPdfStoerung('zeitlimit', () => post(t, '1', {
+      gesamtbetrag: '35.00',
+      zeilen: [
+        { art: 'beleg', belegId: b, kontoId: t.eigen, betrag: '30.00', beschreibung: 'Papier' },
+        { art: 'nachreichen', kontoId: t.eigen, betrag: '5.00', beschreibung: 'Parkhaus' },
+      ],
+      dateien: { zeileDatei_1: { buffer: langsam, name: 'park.pdf', type: 'application/pdf' } },
+    }));
+    assert.equal(res.status, 503);
+    assert.equal(res.headers['retry-after'], '60');
+    assert.match(res.text, /in einer Minute erneut/);
+    assert.match(res.text, /Parkhaus/, 'die Zeilen bleiben im Formular');
+    assert.equal(getJobById(t.db, t.jobId).status, 'zugewiesen');
+    assert.equal(listSplitKinder(t.db, t.jobId).length, 0);
+    assert.equal(getKkBelegById(t.db, b).status, 'offen');
+    assert.equal(t.db.prepare('SELECT COUNT(*) AS n FROM kk_belege').get().n, 1);
+    assert.deepEqual(readdirSync(t.dir).sort(), dateienVorher);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('B2: überlastete Textanalyse → Abgleichsseite ohne Vorschläge, Analyse wird nicht als leer gespeichert', async () => {
+  const t = await setup();
+  try {
+    await t.beleg('12.50', 'Zugticket');
+    const res = await mitPdfStoerung('ueberlastet', () => request(t.app).get(`/kontierung/${t.jobId}/kk-abgleich`).set('x-test-person-id', '1'));
+    assert.equal(res.status, 200);
+    assert.doesNotMatch(res.text, /Vorschlag:/);
+    assert.equal(getJobById(t.db, t.jobId).kk_text_betraege, null, 'beim nächsten Aufruf wird erneut analysiert');
+  } finally {
+    t.cleanup();
+  }
 });

@@ -8,6 +8,7 @@ import {
 } from '../../src/services/pdfWorkerPool.js';
 import { erstellePdfArbeit } from '../../src/services/pdfArbeit.js';
 import { PdfEingangFehler } from '../../src/services/pdfEingang.js';
+import { BelegBildFehler } from '../../src/services/pdfFehler.js';
 
 const TEST_AUFGABEN = new URL('../helpers/pdfTestAufgaben.js', import.meta.url).href;
 const KAPUTT = new URL('../helpers/pdfTestAufgabenKaputt.js', import.meta.url).href;
@@ -84,6 +85,11 @@ test('PdfEingangFehler behält Klasse und code; andere Fehler Name, code und Mel
       return true;
     });
     await assert.rejects(p.ausfuehren('wirfTypFehler'), { name: 'TypeError', code: 'E_TEST', message: 'kaputt' });
+    await assert.rejects(p.ausfuehren('wirfBelegBildFehler'), (err) => {
+      assert.ok(err instanceof BelegBildFehler, 'BelegBildFehler bleibt über die Worker-Grenze erhalten (Etappe 2)');
+      assert.equal(err.message, 'Testmeldung Bild zu gross');
+      return true;
+    });
     await assert.rejects(p.ausfuehren('gibtEsNicht'), /Unbekannte PDF-Aufgabe/);
   } finally { await p.schliessen(); }
 });

@@ -20,7 +20,7 @@
 // - Bytes werden nur als eigene Kopie übertragen (workers/pdfUebergabe.js), nie der Buffer des Aufrufers.
 
 import { Worker } from 'node:worker_threads';
-import { PdfEingangFehler } from './pdfFehler.js';
+import { PdfEingangFehler, BelegBildFehler } from './pdfFehler.js';
 import { kopiereFuerTransfer, alsBuffer } from '../workers/pdfUebergabe.js';
 
 // Gemeinsame Basis der Pool-Fehler (Aufrufer unterscheiden damit "Worker-Problem" von "Prüfergebnis").
@@ -42,6 +42,8 @@ export const STANDARD_ZEITLIMITS_MS = {
   textExtrahieren: 10_000,
   qrErkennen: 15_000,
   eingangAnalysieren: 20_000,
+  // Bildbeleg bis 40 Megapixel: Dekodieren und Einbetten allein ~6 s auf dem Entwicklungsrechner.
+  belegDateiErstellen: 30_000,
 };
 const ZEITLIMIT_UNBEKANNT_MS = 10_000;
 const START_ZEITLIMIT_MS = 30_000;
@@ -49,9 +51,11 @@ const MAX_STARTFEHLER = 3;
 const SPUREN = new Set(['interaktiv', 'hintergrund']);
 const MB = 1024 * 1024;
 
-// Baut einen Fehler aus {klasse, code, message} wieder auf (PdfEingangFehler behält `code` für den 422-Eingang).
+// Baut einen Fehler aus {klasse, code, message} wieder auf: die Prüffehler als ihre eigene Klasse (PdfEingangFehler
+// behält `code` für den 422-Eingang, BelegBildFehler seine Meldung für die Person), alle übrigen als Error mit Name und code.
 function baueFehler({ klasse, code, message }) {
   if (klasse === 'PdfEingangFehler') return new PdfEingangFehler(code, message);
+  if (klasse === 'BelegBildFehler') return new BelegBildFehler(message);
   const err = new Error(message);
   if (klasse && klasse !== 'Error') err.name = klasse;
   if (code) err.code = code;

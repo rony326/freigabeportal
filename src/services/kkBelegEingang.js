@@ -7,7 +7,7 @@ import { detectBelegMimetype, pruefeBelegBild } from './belegAnhaengen.js';
 import { listErfassbareKarten } from './kkRechte.js';
 import { speichereKkBelegDatei } from './kkBelegDatei.js';
 import { analysiereText } from './kkTextAnalyse.js';
-import { pdfArbeit } from './pdfArbeit.js';
+import { pdfArbeit, PdfWorkerFehler } from './pdfArbeit.js';
 import { sendNotification } from './notify.js';
 
 // Gemeinsamer Einstieg für Belege, die per Mail eintreffen -- heute über n8n
@@ -16,7 +16,8 @@ import { sendNotification } from './notify.js';
 /**
  * Verarbeitet einen per Mail eingegangenen Kreditkartenbeleg: Absender → Person, Dateityp prüfen, Betrag per QR/Text-Analyse und
  * Kaufdatum vorschlagen, Entwurf anlegen und die Person benachrichtigen.
- * @returns {Promise<{status: number, body: object}>} 201 mit `{id, status: 'entwurf'}`, sonst 409 (Modul aus), 422 (Absender unbekannt/mehrdeutig), 400 (Datei ungültig)
+ * @returns {Promise<{status: number, body: object}>} 201 mit `{id, status: 'entwurf'}`, sonst 409 (Modul aus), 422 (Absender unbekannt/mehrdeutig), 400 (Datei ungültig),
+ *   503 `{fehler: 'pdf_verarbeitung_ausgelastet'}`, wenn die Belegdatei im PDF-Worker vorübergehend nicht erstellt werden kann (nichts angelegt)
  */
 export async function nimmKkBelegEntgegen(db, config, mailer, { absender, buffer }) {
   if (getConfigValue(db, 'modul_kreditkarten_aktiv') !== '1') return { status: 409, body: { fehler: 'modul_deaktiviert' } };
@@ -34,8 +35,7 @@ export async function nimmKkBelegEntgegen(db, config, mailer, { absender, buffer
   let betrag = null;
   let kaufdatum = null;
   // QR und Text im PDF-Worker (B2, Spur hintergrund). Zeitlimit/Überlastung wie jeder andere Fehler:
-  // nur kein Vorschlag, der Beleg wird trotzdem angelegt. Die Dateierzeugung (speichereKkBelegDatei)
-  // rechnet noch im Hauptthread (Etappe 2).
+  // nur kein Vorschlag, der Beleg wird trotzdem angelegt.
   if (mimetype === 'application/pdf') {
     try {
       const qr = await pdfArbeit().ausfuehren('qrErkennen', [buffer], { spur: 'hintergrund' });
@@ -55,7 +55,17 @@ export async function nimmKkBelegEntgegen(db, config, mailer, { absender, buffer
   }
 
   const karten = listErfassbareKarten(db, person.churchtools_person_id);
-  const { pdfPfad, thumbnailPfad } = await speichereKkBelegDatei(config, buffer, mimetype);
+  // Die Belegdatei (PDF + Vorschaubild) entsteht ebenfalls im Worker (Etappe 2). Ohne sie gibt es keinen Entwurf:
+  // vorübergehende Störung → 503, der Aufrufer (n8n) wiederholt die Einreichung; es wurde nichts angelegt.
+  let pdfPfad;
+  let thumbnailPfad;
+  try {
+    ({ pdfPfad, thumbnailPfad } = await speichereKkBelegDatei(config, buffer, mimetype, { spur: 'hintergrund' }));
+  } catch (err) {
+    if (!(err instanceof PdfWorkerFehler)) throw err;
+    console.warn(`Mail-Beleg: PDF-Verarbeitung vorübergehend nicht verfügbar (${err.name}), Einreichung abgewiesen.`);
+    return { status: 503, body: { fehler: 'pdf_verarbeitung_ausgelastet' } };
+  }
   const id = createKkBeleg(db, {
     kreditkarteId: karten.length === 1 ? karten[0].id : null,
     hochgeladenVon: person.churchtools_person_id,

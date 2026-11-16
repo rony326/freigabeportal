@@ -2,6 +2,7 @@
 // (Kontierung, Aufsplitten, Spesen). Bilder werden auf A4 eingepasst. Siehe docs/rechnungs-workflow.md.
 
 import { PDFDocument, PageSizes } from 'pdf-lib';
+import { BelegBildFehler } from './pdfFehler.js';
 
 const A4_HOCH = PageSizes.A4; // [595.28, 841.89] pt
 const A4_QUER = [A4_HOCH[1], A4_HOCH[0]];
@@ -99,8 +100,9 @@ function stelleBildGroesseSicher(buffer, mimetype) {
   if (fehler) throw new BelegBildFehler(fehler);
 }
 
-// Ein Bildbeleg, der nicht eingebettet werden darf (zu gross oder nicht lesbar); die Meldung ist für die Person bestimmt.
-export class BelegBildFehler extends Error {}
+// Ein Bildbeleg, der nicht eingebettet werden darf (zu gross oder nicht lesbar); liegt ohne pdf-lib in pdfFehler.js,
+// damit der Hauptthread ihn aus Antworten des PDF-Workers wieder aufbauen kann.
+export { BelegBildFehler };
 
 // embedJpg/embedPng von pdf-lib lesen `bytes.buffer` direkt (das zugrunde liegende ArrayBuffer), ohne byteOffset/byteLength zu
 // beachten. Ein kleiner Node-Buffer (z. B. ein winziges hochgeladenes Belegbild) stammt oft aus Nodes gemeinsamem Buffer-Pool,

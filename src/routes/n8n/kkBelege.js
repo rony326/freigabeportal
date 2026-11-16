@@ -1,10 +1,11 @@
-// Maschinenroute `POST /api/n8n/kk-belege` (Header `X-API-Key`, docs/n8n-schnittstelle.md und docs/kreditkarten-belege.md): nimmt einen per Mail eingehenden Kreditkartenbeleg an (multipart: Feld `pdf`, Text `absender`). Antwort 201 `{id, status: 'entwurf'}`, sonst 400/409/422.
+// Maschinenroute `POST /api/n8n/kk-belege` (Header `X-API-Key`, docs/n8n-schnittstelle.md und docs/kreditkarten-belege.md): nimmt einen per Mail eingehenden Kreditkartenbeleg an (multipart: Feld `pdf`, Text `absender`). Antwort 201 `{id, status: 'entwurf'}`, sonst 400/409/422; 503 mit Retry-After, wenn die PDF-Verarbeitung vorübergehend ausgelastet ist (B2).
 
 import { Router } from 'express';
 import multer from 'multer';
 import { nimmKkBelegEntgegen } from '../../services/kkBelegEingang.js';
 import { machineAuditContext, mitAuditKontext } from '../../services/auditContext.js';
 import { asyncCallback } from '../../middleware/asyncHandler.js';
+import { PDF_WIEDERHOLEN_NACH_SEKUNDEN } from '../../services/pdfArbeit.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 1 } });
 
@@ -23,6 +24,7 @@ export function createN8nKkBelegeRouter({ db, config, mailer }) {
       try {
         if (uploadErr) return res.status(400).json({ fehler: uploadErr.code === 'LIMIT_FILE_SIZE' ? 'datei_zu_gross' : 'upload_fehler' });
         const { status, body } = await nimmKkBelegEntgegen(db, config, mailer, { absender: req.body.absender, buffer: req.file?.buffer });
+        if (status === 503) res.set('Retry-After', String(PDF_WIEDERHOLEN_NACH_SEKUNDEN));
         res.status(status).json(body);
       } catch (err) {
         next(err);

@@ -5,6 +5,10 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 
 ## Unveröffentlicht
 
+- Abhängigkeiten aktualisiert (ohne Hauptversionssprung): mupdf 1.28.0 → 1.28.6, express-rate-limit
+  8.6.2 → 8.7.4, nodemailer 10.2.1 → 10.6.0, csrf-csrf 4.0.3 → 4.1.0, read-excel-file 9.3.12 → 9.3.17.
+- Doku: `docs/betrieb-und-nutzung.md` hält einen monatlichen Termin fest (`npm audit` und Prüfung der
+  mitgelieferten pdf.js-Kopie, aktuell 6.2.108, auf neue Meldungen).
 - ChurchTools-Gruppenmitglieder (S1, B1, B5): Es zählen nur noch aktive Mitgliedschaften
   (`group_member_statuses[]=active`, zusätzlich im Code geprüft); Anfragen, Wartelisten und
   zur Löschung vorgemerkte Einträge erhalten keine Rolle mehr. Die Mitgliederliste wird mit

@@ -240,6 +240,7 @@ export function erstellePdfWorkerPool({
       slot.auftrag = null;
       leerlauf(slot);
       a.reject(err);
+      queueMicrotask(pump);
       return;
     }
     const limit = zeitlimitFuer(a.aufgabe);

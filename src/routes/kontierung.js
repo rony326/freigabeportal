@@ -201,7 +201,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     const id = legeKreditorAn(db, { name, kontoId, zahlungsart, normalizedIban });
     // Prüfung 2026-11-15 (S4): Eine neue Lieferanten-IBAN wird wie in POST /admin/kreditoren an Buchhaltung und Admin gemeldet.
     if (normalizedIban) {
-      await meldeIbanAenderung(db, config, mailer, { kreditor: { name: name.trim() }, iban: normalizedIban, art: 'hinzugefuegt', person, neuerLieferant: true });
+      await meldeIbanAenderung(db, config, mailer, { kreditor: { id, name: name.trim() }, iban: normalizedIban, art: 'hinzugefuegt', person, neuerLieferant: true });
     }
     res.status(201).json({ id, name: name.trim() });
   }));

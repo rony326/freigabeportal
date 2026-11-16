@@ -15,49 +15,54 @@
               <td data-label="Status"><span class="badge <%= p.aktiv ? 'text-bg-success' : 'text-bg-secondary' %>"><%= p.aktiv ? 'Aktiv' : 'Inaktiv' %></span></td>
               <td data-label="Rolle"><span class="badge text-bg-info"><%= p.rolle %></span></td>
               <td data-label="Einzelrechte" class="stapel-block">
-                <% if (p.rechteHerkunft.length > 0) { %>
-                  <ul class="list-unstyled small mb-1 personen-herkunft">
-                    <% p.rechteHerkunft.forEach((r) => { %>
-                      <li data-herkunft="<%= r.recht %>"><%= r.label %> <span class="text-muted">(<%= r.quellen.join(', ') %>)</span></li>
-                    <% }) %>
-                  </ul>
-                <% } %>
+                <%# Rechte aus Gruppen: angehakt und grau (disabled), daneben die Gruppe(n). Ein zusätzlich direkt vergebenes
+                    Recht geht als verstecktes Feld mit, weil disabled-Felder nicht gesendet werden – sonst ginge es beim
+                    Speichern verloren. Feste Rechte (ohne Checkbox) stehen als Textzeile darunter. %>
+                <% const checkboxen = () => grantableBerechtigungen.map((berechtigung) => {
+                     const herkunft = p.rechteHerkunft.find((r) => r.recht === berechtigung);
+                     const gruppenText = herkunft && herkunft.gruppen.length ? `über Gruppe ${herkunft.gruppen.join(', ')}` : null;
+                     return { berechtigung, gruppenText, direkt: p.berechtigungen.includes(berechtigung) };
+                   }); %>
                 <% if (bearbeitbar) { %>
                 <form method="post" action="/admin/personen/<%= p.churchtools_person_id %>/berechtigungen" class="personen-rechte d-flex flex-wrap gap-2 mt-1">
                   <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-                  <% grantableBerechtigungen.forEach((berechtigung) => { %>
-                    <div class="form-check form-check-inline">
+                  <% checkboxen().forEach(({ berechtigung, gruppenText, direkt }) => { %>
+                    <div class="form-check form-check-inline" data-recht="<%= p.churchtools_person_id %>-<%= berechtigung %>">
                       <input
                         class="form-check-input"
                         type="checkbox"
                         name="berechtigungen"
                         value="<%= berechtigung %>"
                         id="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"
-                        <%= p.berechtigungen.includes(berechtigung) ? 'checked' : '' %>
+                        <%= gruppenText || direkt ? 'checked' : '' %>
+                        <% if (gruppenText) { %>disabled title="<%= gruppenText %>"<% } %>
                       >
-                      <label class="form-check-label small" for="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"><%= berechtigungLabels[berechtigung] %></label><% const ausGruppe = p.rechteHerkunft.find((r) => r.recht === berechtigung); %><% if (ausGruppe && ausGruppe.gruppen.length) { %><span class="text-muted small ms-1">auch über Gruppe <%= ausGruppe.gruppen.join(', ') %></span><% } %>
+                      <label class="form-check-label small" for="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"><%= berechtigungLabels[berechtigung] %></label><% if (gruppenText) { %><span class="text-muted small ms-1"><%= gruppenText %><% if (direkt) { %> (auch direkt)<% } %></span><% if (direkt) { %><input type="hidden" name="berechtigungen" value="<%= berechtigung %>"><% } %><% } %>
                     </div>
                   <% }) %>
                   <button type="submit" class="btn btn-sm btn-outline-primary">Speichern</button>
                 </form>
                 <% } else { %>
                 <div class="personen-rechte d-flex flex-wrap gap-2 mt-1">
-                  <% grantableBerechtigungen.forEach((berechtigung) => { %>
-                    <div class="form-check form-check-inline">
+                  <% checkboxen().forEach(({ berechtigung, gruppenText, direkt }) => { %>
+                    <div class="form-check form-check-inline" data-recht="<%= p.churchtools_person_id %>-<%= berechtigung %>">
                       <input
                         class="form-check-input"
                         type="checkbox"
                         name="berechtigungen"
                         value="<%= berechtigung %>"
                         id="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"
-                        <%= p.berechtigungen.includes(berechtigung) ? 'checked' : '' %>
-                        disabled
+                        <%= gruppenText || direkt ? 'checked' : '' %>
+                        disabled<% if (gruppenText) { %> title="<%= gruppenText %>"<% } %>
                       >
-                      <label class="form-check-label small" for="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"><%= berechtigungLabels[berechtigung] %></label><% const ausGruppe = p.rechteHerkunft.find((r) => r.recht === berechtigung); %><% if (ausGruppe && ausGruppe.gruppen.length) { %><span class="text-muted small ms-1">auch über Gruppe <%= ausGruppe.gruppen.join(', ') %></span><% } %>
+                      <label class="form-check-label small" for="berechtigung-<%= p.churchtools_person_id %>-<%= berechtigung %>"><%= berechtigungLabels[berechtigung] %></label><% if (gruppenText) { %><span class="text-muted small ms-1"><%= gruppenText %><% if (direkt) { %> (auch direkt)<% } %></span><% } %>
                     </div>
                   <% }) %>
                 </div>
                 <% } %>
+                <% p.rechteHerkunft.filter((r) => r.fest).forEach((r) => { %>
+                  <div class="small text-muted mt-1" data-festes-recht="<%= p.churchtools_person_id %>-<%= r.recht %>"><%= r.label %> – <%= r.quellen.join(', ') %></div>
+                <% }) %>
               </td>
               <td data-label="Hinweis" class="stapel-block<%= hatHinweis ? '' : ' stapel-leer' %>">
                 <% if (p.ct_person_unresolved) { %><span class="text-warning d-block">⚠️ Person in ChurchTools nicht auflösbar (nicht auflösbar)</span><% } %>

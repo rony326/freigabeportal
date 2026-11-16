@@ -5,8 +5,8 @@ import { readFileSync } from 'node:fs';
 // U3: Heikle Formulare (Löschen, Verwerfen, Deaktivieren, Markierung aufheben) fragen vorher nach
 // (data-bestaetigen, ausgewertet in public/js/portal.js). Quelltextprüfung der Formular-Anfangstags.
 const STELLEN = [
-  { datei: 'views/admin/kreditoren-liste.ejs', action: '/admin/kreditoren/ibans/', gefahr: true },
-  { datei: 'views/admin/kreditoren-liste.ejs', action: '/admin/kreditoren/regeln/<%= regel.id %>/loeschen', gefahr: true },
+  { datei: 'views/admin/kreditoren-form.ejs', action: '/admin/kreditoren/ibans/', gefahr: true },
+  { datei: 'views/admin/kreditoren-form.ejs', action: '/admin/kreditoren/regeln/<%= regel.id %>/loeschen', gefahr: true },
   { datei: 'views/admin/datei-quarantaene.ejs', action: '/loeschen', gefahr: true },
   { datei: 'views/admin/konten-liste.ejs', action: '/deaktivieren', gefahr: false },
   { datei: 'views/kreditkarte-beleg-bearbeiten.ejs', action: '/verwerfen', gefahr: true },

@@ -137,23 +137,32 @@ und [kreditkarten-belege.md](kreditkarten-belege.md#6b-automatische-kartenerkenn
 
 ## Kreditoren (`/admin/kreditoren`)
 
-Drei zusammengehörige Tabellen auf einer Seite. Neue Kreditoren legst du über
-den Knopf **Neuer Kreditor** an: Das Formular (`/admin/kreditoren/neu`) ist
-eine eigene Seite, genau wie „Bearbeiten“, mit den Abschnitten „Lieferant“ und
-„Bezahlung“; bei einem Fehler bleibst du dort und die Eingaben bleiben
-stehen. Die Tabellen: **Kreditoren**
-(Lieferanten mit **Zahlungsart** Überweisung, Dauerauftrag, Lastschrift oder
-Kreditkarte, optional mit Default-Konto und „Beträge schwanken stark“), **Zuweisungsregeln**
-(Absender-Adresse/-Domain → Kreditor, steuert die Auto-Zuweisung beim
-Rechnungseingang) und **hinterlegte IBANs** je Kreditor (Basis des
-Betrugserkennungs-Abgleichs, siehe
-[qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md)). Neue
+Die **Liste** zeigt nur die Kreditoren (Lieferanten mit **Zahlungsart**
+Überweisung, Dauerauftrag, Lastschrift oder Kreditkarte, optional mit
+Default-Konto und „Beträge schwanken stark“) samt Anzahl hinterlegter IBANs und
+Regeln („2 IBANs · 1 Regel“), Deaktivieren/Reaktivieren und dem Knopf
+**Öffnen**. Er führt auf die **Kreditor-Seite** (`/admin/kreditoren/:id/bearbeiten`,
+Titel = Name) mit drei Karten: **Lieferant & Bezahlung** (Stammdaten),
+**IBANs** dieses Kreditors (Basis des Betrugserkennungs-Abgleichs, siehe
+[qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md); hinzufügen
+und löschen) und **Zuweisungsregeln** dieses Kreditors (Absender-Adresse/-Domain
+→ Kreditor, steuert die Auto-Zuweisung beim Rechnungseingang; hinzufügen,
+bearbeiten, löschen). Hinzufügen, Löschen und Speichern führen auf die
+Kreditor-Seite zurück, Fehler erscheinen dort in der betroffenen Karte. Bei
+einem deaktivierten Kreditor fehlen die Formulare zum Hinzufügen; die
+Kreditor-ID aus dem Formular prüft der Server (bestehend, aktiv). Neue
+Kreditoren legst du über den Knopf **Neuer Kreditor** an
+(`/admin/kreditoren/neu`, Abschnitte „Lieferant“ und „Bezahlung“); das
+optionale Feld **Absender (E-Mail-Adresse oder Domain)** legt gleich die erste
+Zuweisungsregel an – Kreditor, erste IBAN und Regel entstehen gemeinsam oder gar
+nicht (gleiche Prüfung wie bei „Regel hinzufügen“). Bei einem Fehler bleibst du
+auf dem Formular, die Eingaben bleiben stehen. Neue
 IBANs entstehen **nur hier** (aus unabhängiger Quelle wie Vertrag oder
 Telefonat), nicht mehr von einer Rechnung („IBAN merken“ entfällt). Bei
 Überweisung und Dauerauftrag ist mindestens eine IBAN Pflicht (Feldfehler
 beim Speichern; die letzte IBAN lässt sich nicht löschen); die Liste zeigt
-die Zahlungsart, gekürzte IBANs und das Abzeichen „vollständig“ / „IBAN
-fehlt“. Unvollständige Kreditoren sind bei der Kontierung nicht wählbar.
+die Zahlungsart und das Abzeichen „IBAN fehlt“, die Kreditor-Seite die
+gekürzten IBANs. Unvollständige Kreditoren sind bei der Kontierung nicht wählbar.
 Ein
 Kreditor lässt sich auch direkt aus der Kontierungs-Seite heraus neu
 anlegen (`POST /kontierung/lieferanten`) — erlaubt nur für `superadmin` und das
@@ -320,7 +329,8 @@ gilt sofort. Jede Änderung steht im Audit-Log (ein Eintrag pro Recht und Gruppe
 ## Personen (`/admin/personen`)
 
 Liste aller aus ChurchTools synchronisierten Personen mit
-abgeleiteter Rolle und den effektiven Rechten samt Herkunft («direkt», «über Gruppe X») (Superadmin/Manager/Benutzer). Aktive Personen ohne
+abgeleiteter Rolle (Superadmin/Manager/Benutzer) und den effektiven Rechten: Rechte aus einer Gruppe als
+angehakte, graue Checkbox mit «über Gruppe X», feste Rechte als Textzeile. Aktive Personen ohne
 Verwaltungsgruppe werden neutral als „Portalzugang über ChurchTools-Login“
 gekennzeichnet (kein Fehlerzustand); bei deaktivierten Personen steht der
 Grund (in ChurchTools gelöscht bzw. archiviert) samt Datum — siehe

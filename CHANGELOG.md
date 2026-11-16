@@ -12,6 +12,8 @@ Korrekturrunde nach der Prüfung vom 2026-11-15 (Admin-Bereich).
   README und `.env.example` ergänzt.
 - B4: Der Download einer TSA-Sperrliste zählt die Bytes beim Lesen mit und bricht bei mehr als 4 MB ab
   (Verbindung wird geschlossen), statt die Grenze erst nach dem vollständigen Laden zu prüfen.
+- U3: Rückfrage vor heiklen Aktionen: IBAN löschen, Zuweisungsregel löschen, Datei endgültig löschen (Quarantäne),
+  Konto deaktivieren, Kreditkartenbeleg verwerfen, Rapport-Markierung aufheben (Rapport-Seite und Vorgang im Admin).
 
 ## [1.2.3] – 2026-11-15
 

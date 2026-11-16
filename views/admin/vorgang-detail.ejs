@@ -77,7 +77,7 @@
         </table>
       </div>
       <% if (darfRapportEingreifen) { %>
-        <form method="post" action="/admin/vorgaenge/<%= vorgang.id %>/rapport/aufheben" class="mb-3">
+        <form method="post" action="/admin/vorgaenge/<%= vorgang.id %>/rapport/aufheben" class="mb-3" data-bestaetigen="Die Markierung wird aufgehoben. Der Beleg geht zurück in die Kontierung der markierenden Person, und die Empfänger müssen ihn nicht mehr zur Kenntnis nehmen." data-bestaetigen-knopf="Markierung aufheben">
           <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
           <button type="submit" class="btn btn-outline-secondary btn-sm">Markierung aufheben</button>
           <span class="form-text">Nur möglich, solange noch niemand bestätigt hat.</span>

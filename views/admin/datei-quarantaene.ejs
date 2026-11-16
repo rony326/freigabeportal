@@ -31,7 +31,7 @@
                       <input type="text" name="begruendung" class="form-control form-control-sm mb-1" minlength="10" maxlength="2000" required placeholder="Begründung">
                       <button type="submit" class="btn btn-outline-secondary btn-sm">Zurückholen</button>
                     </form>
-                    <form method="post" action="/admin/dateiquarantaene/<%= eintrag.id %>/loeschen">
+                    <form method="post" action="/admin/dateiquarantaene/<%= eintrag.id %>/loeschen" data-bestaetigen="Die Datei wird endgültig gelöscht. Das lässt sich nicht rückgängig machen. Die Begründung bleibt im Protokoll." data-bestaetigen-knopf="Endgültig löschen" data-bestaetigen-gefahr>
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                       <input type="text" name="begruendung" class="form-control form-control-sm mb-1" minlength="10" maxlength="2000" required placeholder="Begründung">
                       <button type="submit" class="btn btn-outline-danger btn-sm">Endgültig löschen</button>

@@ -54,7 +54,7 @@
     </form>
 
     <hr class="my-4">
-    <form method="post" action="/kreditkarte/belege/<%= beleg.id %>/verwerfen" class="row g-2 align-items-end">
+    <form method="post" action="/kreditkarte/belege/<%= beleg.id %>/verwerfen" class="row g-2 align-items-end" data-bestaetigen="Der Beleg wird verworfen und nicht mehr zum Abgleich vorgeschlagen. Das lässt sich hier nicht rückgängig machen. Der Grund bleibt im Protokoll." data-bestaetigen-knopf="Verwerfen" data-bestaetigen-gefahr>
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="col-md-9">
         <label class="form-label" for="grund">Beleg verwerfen — Grund</label>

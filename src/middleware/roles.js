@@ -37,6 +37,13 @@ export function verweigereNichtAngemeldet(req, res) {
   return res.status(401).render('error', { titel: NICHT_ANGEMELDET_TITEL, message: NICHT_ANGEMELDET_MELDUNG, anmelden: true, hinweisArt: 'warning' });
 }
 
+// Ablaufzeitpunkt der Sitzung für die Views (Hinweis kurz vor Ablauf, public/js/sitzungHinweis.js). Das Cookie läuft
+// absolut 8 Stunden nach der Anmeldung ab und wird durch Aktivität nicht verlängert (app.js: kein `rolling`).
+function setzeSitzungAblauf(req, res) {
+  const ablauf = req.session?.cookie?.expires;
+  res.locals.sitzungAblauf = ablauf ? new Date(ablauf).toISOString() : null;
+}
+
 // 403-Antwort + Zugriffs-Audit mit Grund (`fehlende_rolle`, `fehlendes_recht`, `kein_adminbereich`) und ggf. dem fehlenden Recht.
 export function verweigereOhneBerechtigung(req, res, grund, recht = null) {
   meldeZugriffVerweigert(req, { grund, status: 403, recht });
@@ -52,6 +59,7 @@ export function loadCurrentPerson(db) {
       return next();
     }
     req.currentPerson = getPersonById(db, req.session.personId);
+    setzeSitzungAblauf(req, res);
     // Als Template-Variable bereitgestellt (analog zu res.locals.branding in middleware/branding.js), damit Views einen
     // Abmelde-Link rendern können, ohne dass jeder Route-Handler die Person einzeln durchreichen muss.
     res.locals.currentPerson = req.currentPerson;
@@ -69,6 +77,7 @@ export function loadBeispielperson(db) {
     req.currentPerson = person;
     res.locals.currentPerson = person;
     res.locals.testmodus = { person, beispielpersonen };
+    setzeSitzungAblauf(req, res);
     // Die Band-Formulare gehen an die echte App: Token von dort (setzt die Weiche), sonst leer.
     res.locals.testmodusEchterCsrfToken = req.testmodusEchterCsrfToken || '';
     if (!person) return res.status(403).render('error', { message: 'Im Testmodus kannst du nur als Beispielperson handeln.' });

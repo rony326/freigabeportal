@@ -173,6 +173,10 @@
 <% if (locals.erledigtHinweis) { %>
   <div class="alert alert-success erledigt-hinweis" role="status"><strong><%= erledigtHinweis.titel %></strong> <%= erledigtHinweis.text %></div>
 <% } %>
+<% if (sEingeloggt && locals.sitzungAblauf) { %>
+  <%# Platz für den Hinweis «Anmeldung läuft bald ab» (public/js/sitzungHinweis.js füllt ihn; Screenreader über role=status). %>
+  <div id="sitzung-hinweis" role="status" aria-live="polite" data-ablauf="<%= sitzungAblauf %>"></div>
+<% } %>
 <% } %>
 <% if (sRahmen !== 'ohne' && sZeigeAktionen) { %>
   <div class="portal-aktionen d-flex flex-wrap align-items-center gap-2 mb-3">

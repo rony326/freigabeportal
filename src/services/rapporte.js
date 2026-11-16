@@ -20,7 +20,7 @@ import {
   ersetzeEmpfaenger,
   entferneEmpfaenger,
 } from '../db/rapporteRepo.js';
-import { stampKenntnisnahme } from './pdfStamp.js';
+import { pdfArbeit } from './pdfArbeit.js';
 import { setZeitstempelMitNachweis } from './zeitstempel.js';
 import { speichereTsaNachweis } from './tsaNachweis.js';
 import { tsaTrustOptions } from './tsaTrust.js';
@@ -188,9 +188,12 @@ const MAX_FINALISIERUNGSVERSUCHE = 3;
 // räumt der Verlierer selbst weg). Wirft bei Stempel-/Schreibfehlern; der Rapport bleibt dann
 // 'kenntnisnahme' mit 0 offen und wird später nachgeholt. Geht während Stempel/TSA ein Kommentar
 // ein, wird neu gestempelt (sonst fehlte er auf dem archivierten PDF).
-export async function finalisiereRapport(db, config, jobId) {
+// Der Vermerk wird im PDF-Worker gestempelt (B2, Etappe 3), vor jeder Datei- und Datenbankarbeit: eine Störung des
+// Workers (PdfWorkerFehler) wirft wie ein Stempelfehler, ohne dass etwas geschrieben ist. `spur`: 'interaktiv', wenn eine
+// Person auf die Antwort wartet (Bestätigung, Admin-Eingriff), 'hintergrund' im Nachhol-Cron.
+export async function finalisiereRapport(db, config, jobId, { spur = 'interaktiv' } = {}) {
   for (let versuch = 1; versuch <= MAX_FINALISIERUNGSVERSUCHE; versuch++) {
-    const ergebnis = await finalisiereRapportEinmal(db, config, jobId);
+    const ergebnis = await finalisiereRapportEinmal(db, config, jobId, spur);
     if (ergebnis !== 'kommentar_neu') return ergebnis;
   }
   console.error(`Rapport ${jobId}: Abschluss nach ${MAX_FINALISIERUNGSVERSUCHE} Versuchen wegen neuer Kommentare verschoben.`);
@@ -198,7 +201,7 @@ export async function finalisiereRapport(db, config, jobId) {
 }
 
 // Ein Abschlussversuch (siehe finalisiereRapport). @returns {Promise<boolean|'kommentar_neu'>}
-async function finalisiereRapportEinmal(db, config, jobId) {
+async function finalisiereRapportEinmal(db, config, jobId, spur) {
   const job = getJobById(db, jobId);
   if (!job || job.typ !== 'rapport' || job.status !== 'kenntnisnahme') return false;
   if (listOffeneKenntnisnahmen(db, jobId).length > 0) return false;
@@ -209,7 +212,7 @@ async function finalisiereRapportEinmal(db, config, jobId) {
   const kommentare = listeKommentare(db, jobId);
   const stand = kommentarStand(kommentare);
   const pdfBuffer = readFileSync(job.pdf_pfad);
-  let stamped = await stampKenntnisnahme(pdfBuffer, {
+  let stamped = await pdfArbeit().ausfuehren('kenntnisnahmeStempeln', [pdfBuffer, {
     ...(config.testmodus ? { testmodus: true } : {}),
     jobId,
     markiertVon: { name: personNameOder(db, job.rapport_markiert_von), zeitpunkt: job.rapport_markiert_am },
@@ -223,7 +226,7 @@ async function finalisiereRapportEinmal(db, config, jobId) {
       ersetztDurch: k.ersetzt_durch_id ? personNameOder(db, nachId.get(k.ersetzt_durch_id)?.person_id) : null,
     })),
     kommentare: kommentare.map((k) => ({ zeitpunkt: k.erstellt_am, verfasser: k.verfasser_name, text: k.text })),
-  });
+  }], { spur });
 
   // TSA-I/O ausserhalb der Transaktion (wie Freigabe 2). Bei Ausfall bleibt zeitstempel_erforderlich
   // gesetzt, die Abholung wartet, bis zeitstempel-nachholen erfolgreich war.
@@ -279,7 +282,7 @@ async function finalisiereRapportEinmal(db, config, jobId) {
 
 // Bestätigt die Kenntnisnahme der angemeldeten Person (nur die genannte Person selbst, keine
 // Ferienvertretung). Die Bestätigung wird zuerst für sich committet; scheitert danach der
-// Abschluss (Stempel), bleibt sie gültig und der Abschluss wird nachgeholt.
+// Abschluss (Stempel, auch eine Störung des PDF-Workers), bleibt sie gültig und der Abschluss wird nachgeholt.
 export async function bestaetigeRapport(db, config, { jobId, person, ip }) {
   const job = getJobById(db, jobId);
   if (!job || job.typ !== 'rapport') return { ok: false, status: 404, fehler: 'Rapport nicht gefunden.' };
@@ -328,7 +331,7 @@ export async function schliesseRapporteNach(db, config) {
   const fehlgeschlagen = [];
   for (const jobId of listRapportIdsZumAbschliessen(db)) {
     try {
-      if (await finalisiereRapport(db, config, jobId)) nachgeholt += 1;
+      if (await finalisiereRapport(db, config, jobId, { spur: 'hintergrund' })) nachgeholt += 1;
     } catch (err) {
       console.error(`Rapport ${jobId}: Nachholen des Abschlusses fehlgeschlagen:`, err.message);
       fehlgeschlagen.push(jobId);

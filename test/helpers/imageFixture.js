@@ -8,7 +8,7 @@ export const PNG_1X1 = Buffer.from(
   'base64'
 );
 
-function pngChunk(type, data) {
+export function pngChunk(type, data) {
   const typeBuf = Buffer.from(type, 'ascii');
   const lengthBuf = Buffer.alloc(4);
   lengthBuf.writeUInt32BE(data.length, 0);

@@ -24,6 +24,7 @@ const STATUS_DIENSTE = [
   ['jobs', 'Geplante Jobs', ['/admin/geplante-jobs', 'geplanteJobs']],
   ['sicherheitsalarme', 'Sicherheitsalarme', ['/admin/backup', 'backup']],
   ['einrichtung', 'Ersteinrichtung', ['/admin/ersteinrichtung', 'ersteinrichtung']],
+  ['pdf_verarbeitung', 'PDF-Verarbeitung', null],
 ];
 // Grenzwert-Felder: Schlüssel, Beschriftung, Einheit
 const GRENZWERT_FELDER = [

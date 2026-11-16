@@ -79,7 +79,7 @@ export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, 
 
       if (geloescht.aufgesplittet_von) {
         try {
-          await pruefeUndFinalisiereSplitGruppe(db, geloescht.aufgesplittet_von, config);
+          await pruefeUndFinalisiereSplitGruppe(db, geloescht.aufgesplittet_von, config, { spur: 'interaktiv' });
         } catch (err) {
           console.error(`Splitgruppen-Prüfung für Elternjob ${geloescht.aufgesplittet_von} fehlgeschlagen:`, err.message);
         }

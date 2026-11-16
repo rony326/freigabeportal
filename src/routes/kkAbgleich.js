@@ -1,5 +1,6 @@
 // Abgleich einer Kreditkartenabrechnung mit den vorab erfassten Belegen (`/kontierung/:id/kk-abgleich`, docs/kreditkarten-belege.md): die für die Karte verantwortliche Person ordnet jede Position der Abrechnung
 // einem Beleg zu (vorhandener Beleg, nachgereicht, ohne Beleg mit Begründung, Gebühr/Zins). Technisch ein erweitertes Aufsplitten (services/aufsplitten.js): aus der Abrechnung werden Teilvorgänge. Läuft unter /kontierung, Zugang wie die Kontierung.
+// B2: Textanalyse der Abrechnung und Belegdateien nachgereichter Belege rechnen im PDF-Worker (Spur interaktiv).
 
 import { Router } from 'express';
 import multer from 'multer';
@@ -20,10 +21,10 @@ import { detectBelegMimetype, countBelegSeiten, pruefeBelegBild } from '../servi
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { bereiteTeilDateienVor, erzeugeTeilJobs, benachrichtigeNachAufsplitten, pruefeIbanNachKkAbgleich, alleKindIds, POSITION_PATTERN } from '../services/aufsplitten.js';
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
-import { extrahierePdfText } from '../services/pdfText.js';
+import { pdfArbeit, PdfWorkerFehler, antworteSpaeterErneut, PDF_VORUEBERGEHEND_MELDUNG } from '../services/pdfArbeit.js';
 import { analysiereText, LEERE_ANALYSE, berechneVorschlaege } from '../services/kkTextAnalyse.js';
 import { kommentarBereich } from './kommentare.js';
-import { asyncCallback } from '../middleware/asyncHandler.js';
+import { asyncHandler, asyncCallback } from '../middleware/asyncHandler.js';
 import { begrenzeUploadGroesse, zustaendigkeitVorUpload } from '../middleware/uploadLimit.js';
 
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
@@ -53,8 +54,10 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
 
   // Einmal pro Abrechnung berechnet und in jobs.kk_text_betraege gecacht. Scheitert die
   // Extraktion, wird eine leere Analyse gecacht -- keine Vorschläge, aber auch kein erneuter Versuch
-  // bei jedem Seitenaufruf.
-  function ladeAnalyse(job) {
+  // bei jedem Seitenaufruf. Ausnahme (B2): ist nur der PDF-Worker vorübergehend gestört
+  // (PdfWorkerFehler), erscheint die Seite ohne Vorschläge und der nächste Aufruf versucht es erneut.
+  async function ladeAnalyse(job) {
+    if (job.analyseVoruebergehendLeer) return LEERE_ANALYSE;
     if (job.kk_text_betraege) {
       try {
         return JSON.parse(job.kk_text_betraege);
@@ -64,8 +67,14 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
     }
     let analyse = LEERE_ANALYSE;
     try {
-      analyse = analysiereText(extrahierePdfText(readFileSync(job.pdf_pfad)));
+      analyse = analysiereText(await pdfArbeit().ausfuehren('textExtrahieren', [readFileSync(job.pdf_pfad)], { spur: 'interaktiv' }));
     } catch (err) {
+      if (err instanceof PdfWorkerFehler) {
+        console.warn(`Textanalyse der Abrechnung ${job.id} vorübergehend nicht möglich (${err.name}); Seite ohne Vorschläge.`);
+        // Nur für diesen Request merken (nicht speichern): kein zweiter Versuch beim zweiten Aufruf im selben Request.
+        job.analyseVoruebergehendLeer = true;
+        return LEERE_ANALYSE;
+      }
       console.error(`Textanalyse der Abrechnung ${job.id} fehlgeschlagen:`, err.message);
     }
     setKkTextAnalyse(db, job.id, analyse);
@@ -89,9 +98,9 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
   }
 
   // Rendert die Abgleichsseite.
-  function renderSeite(req, res, status, job, { werte, zeilen, errors }) {
+  async function renderSeite(req, res, status, job, { werte, zeilen, errors }) {
     const karte = getKreditkarteById(db, job.kreditkarte_id);
-    const analyse = ladeAnalyse(job);
+    const analyse = await ladeAnalyse(job);
     res.status(status).render('kk-abgleich', {
       job,
       karte,
@@ -109,12 +118,12 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
   }
 
   // GET /kontierung/:id/kk-abgleich – die Abgleichsseite (Total vorbelegt aus Betrag, QR-Betrag oder Textanalyse).
-  router.get('/:id/kk-abgleich', (req, res) => {
+  router.get('/:id/kk-abgleich', asyncHandler(async (req, res) => {
     const job = ladeAbrechnung(req, res);
     if (!job) return;
-    renderSeite(req, res, 200, job, {
+    await renderSeite(req, res, 200, job, {
       werte: {
-        gesamtbetrag: job.betrag || job.qr_betrag || ladeAnalyse(job).total || '',
+        gesamtbetrag: job.betrag || job.qr_betrag || (await ladeAnalyse(job)).total || '',
         kreditorId: job.kreditor_id ? String(job.kreditor_id) : '',
         rechnungsnummer: job.rechnungsnummer || '',
         zahlungsziel: job.zahlungsziel || '',
@@ -123,7 +132,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
       zeilen: [],
       errors: [],
     });
-  });
+  }));
 
   const ARTEN = new Set(['beleg', 'nachreichen', 'eigenbeleg', 'gebuehr']);
   const DATUM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -279,7 +288,7 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
           if (hatKonflikt && !werte.begruendung) errors.push('Bei einem Interessenskonflikt ist eine Begründung Pflicht.');
 
           if (errors.length > 0) {
-            return renderSeite(req, res, 400, job, { werte, zeilen, errors });
+            return await renderSeite(req, res, 400, job, { werte, zeilen, errors });
           }
 
           // Dateiarbeit vor der Transaktion (siehe aufsplitten.js). Nachgereichte Belege werden
@@ -297,6 +306,11 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
             for (const t of vorbereitet) angelegteDateien.push(t.pdfPfad, t.thumbnailPfad);
           } catch (err) {
             loescheDateienStill(...angelegteDateien);
+            // B2: Belegdatei im PDF-Worker vorübergehend nicht erstellbar → Formular mit 503 und Hinweis, nichts gespeichert.
+            if (err instanceof PdfWorkerFehler) {
+              antworteSpaeterErneut(res, err, 'KK-Abgleich');
+              return await renderSeite(req, res, 503, job, { werte, zeilen, errors: [PDF_VORUEBERGEHEND_MELDUNG] });
+            }
             throw err;
           }
 

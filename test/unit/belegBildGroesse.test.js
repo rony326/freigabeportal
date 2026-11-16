@@ -2,20 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildBelegPdf, mergeBelegInPdf, pruefeBelegBild, MAX_BILD_MEGAPIXEL } from '../../src/services/belegAnhaengen.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
-import { PNG_1X1, JPEG_1X1, buildSolidPng } from '../helpers/imageFixture.js';
+import { PNG_1X1, JPEG_1X1, buildSolidPng, pngChunk } from '../helpers/imageFixture.js';
 
-// PNG mit gefälschtem Kopf: nur Signatur + IHDR mit den gewünschten Massen, der Rest ist Müll.
-// So braucht der Test kein echtes Riesenbild; ein ungeprüfter Aufrufer würde erst im Dekodieren scheitern.
+// PNG mit den gewünschten Massen im Kopf: Signatur, IHDR, ein leeres IDAT und IEND mit gültigen Prüfsummen.
+// So braucht der Test kein echtes Riesenbild; die Struktur ist vollständig, nur die Bilddaten sind leer.
 function pngMitMassen(breite, hoehe) {
-  const kopf = Buffer.alloc(33);
-  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(kopf, 0);
-  kopf.writeUInt32BE(13, 8);
-  kopf.write('IHDR', 12, 'ascii');
-  kopf.writeUInt32BE(breite, 16);
-  kopf.writeUInt32BE(hoehe, 20);
-  kopf[24] = 8;
-  kopf[25] = 2;
-  return kopf;
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(breite, 0);
+  ihdr.writeUInt32BE(hoehe, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk('IHDR', ihdr), pngChunk('IDAT', Buffer.alloc(0)), pngChunk('IEND', Buffer.alloc(0))]);
 }
 
 // JPEG-Kopf: SOI, ein APP0-Segment, ein DHT-Segment (dessen Nutzbytes wie Masse aussehen), dann der SOF-Marker.
@@ -79,4 +76,27 @@ test('buildBelegPdf und mergeBelegInPdf lehnen ein Riesenbild ab, bevor sie es d
   await assert.rejects(buildBelegPdf(jpegMitMassen(10000, 5000), 'image/jpeg'), /Megapixel/);
   const pdf = await buildPdfFixture(['x']);
   await assert.rejects(mergeBelegInPdf(pdf, pngMitMassen(14000, 14000), 'image/png'), /Megapixel/);
+});
+
+// Befund 2026-11-16: Ein abgeschnittenes PNG liess pdf-lib (embedPng) endlos hängen – im PDF-Worker bis zum Zeitlimit,
+// bei jedem neuen Versuch wieder. Die Bildprüfung verlangt darum eine vollständige Chunk-Struktur (IHDR … IDAT … IEND,
+// jede Länge passt in die Datei, Prüfsummen stimmen).
+test('ein abgeschnittenes PNG wird abgelehnt, egal an welcher Stelle es endet', () => {
+  const voll = buildSolidPng(40, 40);
+  for (let laenge = 24; laenge < voll.length; laenge++) {
+    assert.match(pruefeBelegBild(voll.subarray(0, laenge), 'image/png') ?? 'durchgelassen', /gelesen/, `abgeschnitten auf ${laenge} Bytes`);
+  }
+  assert.equal(pruefeBelegBild(voll, 'image/png'), null);
+});
+
+test('ein PNG mit beschädigter Prüfsumme, ohne IDAT oder mit Daten vor IHDR wird abgelehnt', () => {
+  const voll = buildSolidPng(40, 40);
+  const kaputt = Buffer.from(voll);
+  kaputt[45] ^= 0xff; // ein Byte in den IDAT-Daten
+  assert.match(pruefeBelegBild(kaputt, 'image/png'), /gelesen/);
+  const ihdr = voll.subarray(8, 33);
+  const iend = voll.subarray(voll.length - 12);
+  assert.match(pruefeBelegBild(Buffer.concat([voll.subarray(0, 8), ihdr, iend]), 'image/png'), /gelesen/);
+  const text = pngChunk('tEXt', Buffer.from('a\0b'));
+  assert.match(pruefeBelegBild(Buffer.concat([voll.subarray(0, 8), text, voll.subarray(8)]), 'image/png'), /gelesen/);
 });

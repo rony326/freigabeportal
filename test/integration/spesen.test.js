@@ -12,6 +12,10 @@ import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createSpesenRouter } from '../../src/routes/spesen.js';
 import { setConfigValue, seedDefaults } from '../../src/db/adminConfigRepo.js';
+import { mkdtempSync, rmSync, readdirSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { mitPdfStoerung } from '../helpers/pdfStoerung.js';
 
 function createStubMailer() {
   const sent = [];
@@ -422,4 +426,94 @@ test('GET /spesen/neu nennt die Grössengrenzen für Belege (je Datei, Megapixel
   assert.match(res.text, /Bilder höchstens 40 Megapixel/);
   assert.match(res.text, /alle Belege zusammen höchstens 60 MB/);
   db.close();
+});
+
+// ---------------------------------------------------------------------------------------------
+// B2, Etappe 2: Spesen-Belege werden im PDF-Worker geprüft und zu PDF + Vorschaubild verarbeitet.
+
+async function spesenMitBelegen(app, belege) {
+  let req = request(app).post('/spesen').set('x-test-person-id', '5').field('_csrf', 'valid-token');
+  belege.forEach(({ kontoId }) => {
+    req = req.field('posKontoId', String(kontoId)).field('posBetrag', '10.00').field('posAuslageDatum', '2026-08-20').field('posBeschreibung', 'Beleg');
+  });
+  belege.forEach(({ bytes, name, type }, i) => {
+    req = req.attach(`posBeleg_${i}`, bytes, { filename: name, contentType: type });
+  });
+  return req;
+}
+
+function spesenSetupMitOrdner() {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedGrundlagen(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'spesen-b2-'));
+  const app = buildTestApp(db, createStubMailer(), { ...testConfig(), jobsDir });
+  return { db, kontoId, jobsDir, app, cleanup: () => { db.close(); rmSync(jobsDir, { recursive: true, force: true }); } };
+}
+
+test('B2: Zeitlimit beim Erstellen des zweiten Belegs → 503 mit Formular und Hinweis, kein Job, keine Abrechnung, keine Datei', async () => {
+  const t = spesenSetupMitOrdner();
+  try {
+    const normal = await buildPdfFixture(['Beleg 1']);
+    const langsam = Buffer.concat([await buildPdfFixture(['Beleg 2']), Buffer.from('\n%LANGSAM_ERSTELLEN\n')]);
+    const res = await mitPdfStoerung('zeitlimit', () => spesenMitBelegen(t.app, [
+      { kontoId: t.kontoId, bytes: normal, name: 'a.pdf', type: 'application/pdf' },
+      { kontoId: t.kontoId, bytes: langsam, name: 'b.pdf', type: 'application/pdf' },
+    ]));
+    assert.equal(res.status, 503);
+    assert.equal(res.headers['retry-after'], '60');
+    assert.match(res.text, /in einer Minute erneut/);
+    assert.match(res.text, /name="posBeschreibung"/, 'das Formular wird mit den Eingaben neu dargestellt');
+    assert.equal(t.db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 0);
+    assert.equal(t.db.prepare('SELECT COUNT(*) AS n FROM spesenabrechnungen').get().n, 0);
+    assert.deepEqual(readdirSync(t.jobsDir), [], 'die Datei der ersten Position wird wieder entfernt');
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('B2: Zeitlimit bei der Eingangsprüfung eines PDF-Belegs → 503, kein Job, keine Datei', async () => {
+  const t = spesenSetupMitOrdner();
+  try {
+    const langsam = Buffer.concat([await buildPdfFixture(['Beleg']), Buffer.from('\n%LANGSAM_PRUEFEN\n')]);
+    const res = await mitPdfStoerung('zeitlimit', () => spesenMitBelegen(t.app, [{ kontoId: t.kontoId, bytes: langsam, name: 'a.pdf', type: 'application/pdf' }]));
+    assert.equal(res.status, 503);
+    assert.match(res.text, /in einer Minute erneut/);
+    assert.equal(t.db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 0);
+    assert.deepEqual(readdirSync(t.jobsDir), []);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('B2: überlastete PDF-Verarbeitung beim Bildbeleg → 503, kein Job, keine Datei', async () => {
+  const t = spesenSetupMitOrdner();
+  try {
+    const res = await mitPdfStoerung('ueberlastet', () => spesenMitBelegen(t.app, [{ kontoId: t.kontoId, bytes: PNG_1X1, name: 'foto.png', type: 'image/png' }]));
+    assert.equal(res.status, 503);
+    assert.match(res.text, /in einer Minute erneut/);
+    assert.equal(t.db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 0);
+    assert.deepEqual(readdirSync(t.jobsDir), []);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('B2: Spesen im Worker-Betrieb – Bildbeleg wird PDF mit Vorschaubild; kaputtes PDF bleibt 400 mit derselben Meldung', async () => {
+  const { PDF_EINGANG_MELDUNGEN } = await import('../../src/services/pdfFehler.js');
+  const t = spesenSetupMitOrdner();
+  try {
+    const ok = await spesenMitBelegen(t.app, [{ kontoId: t.kontoId, bytes: PNG_1X1, name: 'foto.png', type: 'image/png' }]);
+    assert.equal(ok.status, 302, ok.text);
+    const job = t.db.prepare("SELECT * FROM jobs WHERE quelle = 'spesen'").get();
+    assert.ok(readFileSync(job.pdf_pfad).subarray(0, 4).equals(Buffer.from('%PDF')));
+    assert.ok(job.thumbnail_pfad && readFileSync(job.thumbnail_pfad).subarray(1, 4).equals(Buffer.from('PNG')));
+
+    const kaputt = await spesenMitBelegen(t.app, [{ kontoId: t.kontoId, bytes: Buffer.from('%PDF-1.4\n%kaputt\n'), name: 'k.pdf', type: 'application/pdf' }]);
+    assert.equal(kaputt.status, 400);
+    assert.ok(kaputt.text.includes(`Position 1: ${PDF_EINGANG_MELDUNGEN.pdf_beschaedigt}`));
+    assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE quelle = 'spesen'").get().n, 1);
+  } finally {
+    t.cleanup();
+  }
 });

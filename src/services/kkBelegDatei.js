@@ -2,8 +2,7 @@
 
 import { mkdirSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildBelegPdf } from './belegAnhaengen.js';
-import { renderFirstPageThumbnail } from './thumbnail.js';
+import { pdfArbeit } from './pdfArbeit.js';
 
 // Betrag darf beim Kreditkarten-Beleg negativ sein (Rückerstattung) -- im Gegensatz zum
 // BETRAG_PATTERN der Kontierung.
@@ -17,15 +16,20 @@ export function normalisiereBetrag(betrag) {
 
 // Speichert einen hochgeladenen Beleg immer als PDF (Bilder werden wie bei Spesen in eine
 // A4-Seite umgewandelt) plus Thumbnail (best effort) in jobsDir.
-export async function speichereKkBelegDatei(config, buffer, mimetype) {
+// B2: PDF und Vorschaubild entstehen im PDF-Worker (Aufgabe belegDateiErstellen), bevor eine Datei geschrieben wird.
+// Scheitert der Worker (PdfWorkerFehler: Überlastung, Zeitlimit, Absturz), wirft die Funktion ohne angelegte Datei;
+// der Aufrufer antwortet dann mit 503 (Formular) bzw. kkBelegEingang mit 503 an n8n.
+// @param {{spur?: 'interaktiv'|'hintergrund'}} [optionen] Spur im Worker-Pool; Standard interaktiv (eine Person wartet)
+export async function speichereKkBelegDatei(config, buffer, mimetype, { spur = 'interaktiv' } = {}) {
+  const { pdf, vorschaubild, vorschaubildFehler } = await pdfArbeit().ausfuehren('belegDateiErstellen', [buffer, mimetype], { spur });
   mkdirSync(config.jobsDir, { recursive: true });
-  const pdfBuffer = await buildBelegPdf(buffer, mimetype);
   const pdfPfad = join(config.jobsDir, `kkbeleg-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
-  writeFileSync(pdfPfad, pdfBuffer);
+  writeFileSync(pdfPfad, pdf);
   let thumbnailPfad = null;
   try {
+    if (!vorschaubild) throw new Error(vorschaubildFehler ?? 'kein Vorschaubild');
     thumbnailPfad = pdfPfad.replace(/\.pdf$/, '.png');
-    writeFileSync(thumbnailPfad, renderFirstPageThumbnail(pdfBuffer));
+    writeFileSync(thumbnailPfad, vorschaubild);
   } catch (err) {
     console.error(`Thumbnail-Rendering für Kreditkarten-Beleg fehlgeschlagen (${pdfPfad}):`, err.message);
     thumbnailPfad = null;

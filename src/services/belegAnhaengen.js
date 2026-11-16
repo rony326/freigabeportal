@@ -2,6 +2,10 @@
 // (Kontierung, Aufsplitten, Spesen). Bilder werden auf A4 eingepasst. Siehe docs/rechnungs-workflow.md.
 
 import { PDFDocument, PageSizes } from 'pdf-lib';
+import { BelegBildFehler } from './pdfFehler.js';
+import { crc32 } from 'node:zlib';
+
+const PNG_SIGNATUR = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 const A4_HOCH = PageSizes.A4; // [595.28, 841.89] pt
 const A4_QUER = [A4_HOCH[1], A4_HOCH[0]];
@@ -78,6 +82,29 @@ function leseBildMasse(buffer, mimetype) {
   return null;
 }
 
+// Befund 2026-11-16: pdf-lib (embedPng) hängt bei manchen abgeschnittenen PNGs endlos. Darum muss ein PNG vollständig
+// sein, bevor es eingebettet wird: Signatur, zuerst IHDR, mindestens ein IDAT, am Ende IEND; jede Chunk-Länge passt in die
+// Datei und jede Prüfsumme (CRC-32) stimmt. Das ist ein reiner Durchlauf über die Bytes, ohne zu dekodieren.
+function pngStrukturVollstaendig(buffer) {
+  if (buffer.length < 8 || !buffer.subarray(0, 8).equals(PNG_SIGNATUR)) return false;
+  let pos = 8;
+  let ersterChunk = true;
+  let idatGesehen = false;
+  while (pos + 12 <= buffer.length) {
+    const laenge = buffer.readUInt32BE(pos);
+    const ende = pos + 12 + laenge;
+    if (laenge > 0x7fffffff || ende > buffer.length) return false;
+    const typ = buffer.toString('latin1', pos + 4, pos + 8);
+    if (ersterChunk && typ !== 'IHDR') return false;
+    ersterChunk = false;
+    if (crc32(buffer.subarray(pos + 4, pos + 8 + laenge)) >>> 0 !== buffer.readUInt32BE(pos + 8 + laenge)) return false;
+    if (typ === 'IDAT') idatGesehen = true;
+    if (typ === 'IEND') return idatGesehen;
+    pos = ende;
+  }
+  return false;
+}
+
 // Prüft einen Bildbeleg vor dem Einbetten anhand des Bildkopfs (siehe MAX_BILD_MEGAPIXEL). Ein Bild, dessen Masse sich nicht
 // bestimmen lassen, wird ebenfalls abgelehnt: es ginge sonst ungeprüft an embedPng/embedJpg. PDFs sind nicht betroffen.
 // @returns {string|null} verständliche Fehlermeldung für die Person, oder null wenn der Beleg in Ordnung ist
@@ -90,6 +117,9 @@ export function pruefeBelegBild(buffer, mimetype) {
   if (masse.breite * masse.hoehe > MAX_BILD_MEGAPIXEL * 1_000_000) {
     return `Das Bild ist zu gross (${masse.breite} × ${masse.hoehe} Pixel). Erlaubt sind höchstens ${MAX_BILD_MEGAPIXEL} Megapixel. Bitte verkleinere das Bild oder lade stattdessen ein PDF hoch.`;
   }
+  if (mimetype === 'image/png' && !pngStrukturVollstaendig(buffer)) {
+    return 'Das Bild konnte nicht gelesen werden. Bitte lade eine andere Datei hoch oder fotografiere den Beleg neu.';
+  }
   return null;
 }
 
@@ -99,8 +129,9 @@ function stelleBildGroesseSicher(buffer, mimetype) {
   if (fehler) throw new BelegBildFehler(fehler);
 }
 
-// Ein Bildbeleg, der nicht eingebettet werden darf (zu gross oder nicht lesbar); die Meldung ist für die Person bestimmt.
-export class BelegBildFehler extends Error {}
+// Ein Bildbeleg, der nicht eingebettet werden darf (zu gross oder nicht lesbar); liegt ohne pdf-lib in pdfFehler.js,
+// damit der Hauptthread ihn aus Antworten des PDF-Workers wieder aufbauen kann.
+export { BelegBildFehler };
 
 // embedJpg/embedPng von pdf-lib lesen `bytes.buffer` direkt (das zugrunde liegende ArrayBuffer), ohne byteOffset/byteLength zu
 // beachten. Ein kleiner Node-Buffer (z. B. ein winziges hochgeladenes Belegbild) stammt oft aus Nodes gemeinsamem Buffer-Pool,
@@ -143,6 +174,18 @@ export async function mergeBelegInPdf(pdfBuffer, belegBuffer, belegMimetype) {
   }
 
   return Buffer.from(await doc.save());
+}
+
+/**
+ * Beleg anhängen in einem Durchgang (B2, Etappe 4; Aufgabe `belegAnhaengen` im PDF-Worker, siehe workers/pdfAufgaben.js):
+ * zusammenführen wie mergeBelegInPdf und die Seitenzahl des Belegs wie countBelegSeiten. Erst zusammenführen, dann zählen:
+ * scheitert das Zusammenführen (z. B. ein abgeschnittenes Bild, das erst in embedPng scheitert), gibt es auch keine Seitenzahl.
+ * @returns {Promise<{pdf: Buffer, belegSeiten: number}>}
+ */
+export async function belegInPdfAnhaengen(pdfBuffer, belegBuffer, belegMimetype) {
+  const pdf = await mergeBelegInPdf(pdfBuffer, belegBuffer, belegMimetype);
+  const belegSeiten = await countBelegSeiten(belegBuffer, belegMimetype);
+  return { pdf, belegSeiten };
 }
 
 // Anders als bei mergeBelegInPdf gibt es hier kein vorhandenes Vorgangs-PDF, in das gemergt würde — der Beleg einer Spesenposition

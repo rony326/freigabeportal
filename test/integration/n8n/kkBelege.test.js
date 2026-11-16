@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../../src/db/index.js';
@@ -14,6 +14,7 @@ import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nKkBelegeRouter } from '../../../src/routes/n8n/kkBelege.js';
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
 import { PNG_1X1, buildPngHeaderOnly } from '../../helpers/imageFixture.js';
+import { mitPdfStoerung } from '../../helpers/pdfStoerung.js';
 
 function setup({ modul = '1' } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'kk-mail-'));
@@ -29,7 +30,7 @@ function setup({ modul = '1' } = {}) {
   const sent = [];
   const app = express();
   app.use('/api/n8n/kk-belege', requireApiKey(config), createN8nKkBelegeRouter({ db, config, mailer: { async sendMail(m) { sent.push(m); } } }));
-  return { db, app, karte, sent, cleanup: () => { db.close(); rmSync(dir, { recursive: true, force: true }); } };
+  return { db, app, dir, karte, sent, cleanup: () => { db.close(); rmSync(dir, { recursive: true, force: true }); } };
 }
 
 test('a known sender creates an Entwurf with the only allowed card pre-filled, plus suggestions, and gets an immediate mail', async () => {
@@ -114,4 +115,22 @@ test('an image receipt over 40 megapixels by mail → 400 datei_ungueltig, nothi
   assert.equal(res.body.fehler, 'datei_ungueltig');
   assert.equal(t.db.prepare('SELECT COUNT(*) AS n FROM kk_belege').get().n, 0);
   t.cleanup();
+});
+
+// B2, Etappe 2: die Belegdatei entsteht im PDF-Worker (Spur hintergrund). Ist er gestört, ist das kein
+// Prüfergebnis: 503 mit Retry-After, n8n wiederholt die Einreichung; es entsteht weder Entwurf noch Datei.
+test('B2: Zeitlimit beim Erstellen der Belegdatei → 503 mit Retry-After, kein Entwurf, keine Datei, keine Mail', async () => {
+  const t = setup();
+  try {
+    const langsam = Buffer.concat([await buildPdfFixture(['Quittung']), Buffer.from('\n%LANGSAM_ERSTELLEN\n')]);
+    const res = await mitPdfStoerung('zeitlimit', () => request(t.app).post('/api/n8n/kk-belege').set('X-API-Key', 'n8n-key').field('absender', 'anna.kauf@example.org').attach('pdf', langsam, 'q.pdf'));
+    assert.equal(res.status, 503);
+    assert.equal(res.headers['retry-after'], '60');
+    assert.deepEqual(res.body, { fehler: 'pdf_verarbeitung_ausgelastet' });
+    assert.equal(t.db.prepare('SELECT COUNT(*) AS n FROM kk_belege').get().n, 0);
+    assert.deepEqual(readdirSync(t.dir), []);
+    assert.equal(t.sent.length, 0);
+  } finally {
+    t.cleanup();
+  }
 });

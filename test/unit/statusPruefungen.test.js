@@ -254,7 +254,7 @@ test('Gesamtstatus ist der schlechteste Dienst, alle Schluessel vorhanden', (t) 
   cron(db, 'datenbank-sicherung', 'erfolg', vor(1 * H));
   db.prepare("INSERT INTO sync_log (gestartet_am, beendet_am, status) VALUES (?, ?, 'erfolg')").run(vor(H), vor(H));
   let r = pruefeAlleDienste(db, config, ctx());
-  assert.deepEqual(Object.keys(r.dienste), ['datenbank', 'sicherung', 'mailversand', 'churchtools', 'zeitstempel', 'audit_nachweis', 'archivuebergabe', 'speicher', 'jobs', 'sicherheitsalarme', 'einrichtung']);
+  assert.deepEqual(Object.keys(r.dienste), ['datenbank', 'sicherung', 'mailversand', 'churchtools', 'zeitstempel', 'audit_nachweis', 'archivuebergabe', 'speicher', 'jobs', 'sicherheitsalarme', 'einrichtung', 'pdf_verarbeitung']);
   // Frische Installation: nur die Ersteinrichtung warnt, alle übrigen Dienste sind in Ordnung.
   assert.equal(r.status, 'warnung');
   assert.deepEqual(Object.entries(r.dienste).filter(([, d]) => d.status !== 'ok').map(([k]) => k), ['einrichtung']);
@@ -347,4 +347,15 @@ test('Status-Cache: tsaErgebnis() liefert die zwischengespeicherte TSA-Erreichba
   assert.deepEqual(cache.tsaErgebnis(), { erreichbar: false });
   assert.equal(createStatusCache({ db: {}, config, pruefe: () => ({ status: 'ok' }) }).tsaErgebnis(), null);
   assert.equal(createStatusCache({ db: {}, config, tsaErreichbarkeit: () => { throw new Error('x'); }, pruefe: () => ({}) }).tsaErgebnis(), null);
+});
+
+test('B2: PDF-Verarbeitung – Alarm ist Fehler, Inline-Betrieb ok, lange Warteschlange Warnung', async () => {
+  const { pruefePdfVerarbeitung } = await import('../../src/services/statusPruefungen.js');
+  assert.equal(pruefePdfVerarbeitung(null, {}, { pdfZustand: { modus: 'inline' } }).status, 'ok');
+  assert.equal(pruefePdfVerarbeitung(null, {}, { pdfZustand: { modus: 'worker', worker: [], alarm: { seit: '2026-11-16T00:00:00Z' } } }).status, 'fehler');
+  const warte = pruefePdfVerarbeitung(null, {}, { pdfZustand: { modus: 'worker', worker: [], warteschlange: { interaktiv: 10, hintergrund: 45 }, statistik: {} } });
+  assert.equal(warte.status, 'warnung');
+  const ok = pruefePdfVerarbeitung(null, {}, { pdfZustand: { modus: 'worker', worker: [{}], warteschlange: { interaktiv: 0, hintergrund: 0 }, statistik: { neustarts: 2, zeitueberschreitungen: 1 } } });
+  assert.equal(ok.status, 'ok');
+  assert.match(ok.grund, /2 Neustart\(s\), 1 Zeitüberschreitung/);
 });

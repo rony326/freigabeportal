@@ -1469,3 +1469,102 @@ test('POST /api/n8n/jobs: Zuweisungsregel auf einen Lieferanten ohne IBAN weist 
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------------------------
+// B2: PDF-Arbeit im Worker – Wettlauf bei gleichzeitigen Dubletten, 503 bei vorübergehender Störung.
+
+async function sendePdf(app, bytes, dateiname = 'scan.pdf') {
+  return request(app).post('/api/n8n/jobs').set('X-API-Key', 'n8n-key').field('quelle', 'scanner').field('dateiname', dateiname)
+    .attach('pdf', bytes, { filename: dateiname, contentType: 'application/pdf' });
+}
+
+test('B2: dieselben PDF-Bytes gleichzeitig eingereicht → genau ein Job und eine Datei', async () => {
+  const { readdirSync } = await import('node:fs');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+  const bytes = await buildPdfFixture(['Gleichzeitige Dublette']);
+
+  const antworten = await Promise.all([sendePdf(app, bytes), sendePdf(app, bytes), sendePdf(app, bytes)]);
+  const status = antworten.map((r) => r.status).sort();
+  assert.deepEqual(status, [200, 200, 201], JSON.stringify(antworten.map((r) => r.body)));
+  const ids = new Set(antworten.map((r) => r.body.id));
+  assert.equal(ids.size, 1, 'alle Antworten nennen denselben Job');
+  assert.ok(antworten.filter((r) => r.status === 200).every((r) => r.body.duplikat === true));
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 1);
+  assert.equal(readdirSync(jobsDir).filter((n) => n.endsWith('.pdf')).length, 1, 'keine verwaiste zweite Datei');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('B2: Zeitlimit der Eingangsprüfung im Worker → 503 mit Retry-After, weder Job noch Datei', async () => {
+  const { erstellePdfArbeit } = await import('../../../src/services/pdfArbeit.js');
+  const arbeit = erstellePdfArbeit({
+    aufgabenModul: new URL('../../helpers/pdfTestAufgaben.js', import.meta.url).href,
+    zeitlimits: { eingangPruefen: 200 },
+    logger: { log() {}, warn() {}, error() {} },
+  });
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = express();
+  app.use('/api/n8n/jobs', requireApiKey(testConfig(jobsDir)), createN8nJobsRouter({ db, config: testConfig(jobsDir), mailer: createStubMailer(), pdfArbeit: arbeit }));
+  try {
+    const res = await sendePdf(app, PDF_BYTES);
+    assert.equal(res.status, 503);
+    assert.equal(res.headers['retry-after'], '60');
+    assert.equal(res.body.code, 'pdf_verarbeitung_ausgelastet');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 0);
+    const { readdirSync } = await import('node:fs');
+    assert.deepEqual(readdirSync(jobsDir), []);
+  } finally {
+    await arbeit.schliessen();
+    db.close();
+    rmSync(jobsDir, { recursive: true, force: true });
+  }
+});
+
+test('B2: Überlastung bei der Eingangsprüfung → 503; Prüffehler bleiben 422', async () => {
+  const { PdfWorkerUeberlastet } = await import('../../../src/services/pdfArbeit.js');
+  const { PdfEingangFehler } = await import('../../../src/services/pdfEingang.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  let fehler = new PdfWorkerUeberlastet('voll');
+  const arbeit = { async ausfuehren() { throw fehler; } };
+  const app = express();
+  app.use('/api/n8n/jobs', requireApiKey(testConfig(jobsDir)), createN8nJobsRouter({ db, config: testConfig(jobsDir), mailer: createStubMailer(), pdfArbeit: arbeit }));
+  const res = await sendePdf(app, PDF_BYTES);
+  assert.equal(res.status, 503);
+  assert.ok(res.headers['retry-after']);
+  fehler = new PdfEingangFehler('pdf_beschaedigt', 'kaputt');
+  const res422 = await sendePdf(app, PDF_BYTES);
+  assert.equal(res422.status, 422);
+  assert.equal(res422.body.code, 'pdf_beschaedigt');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n, 0);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('B2: Zeitlimit der Analyse → Job wird trotzdem angelegt, ohne Vorschaubild und QR-Daten', async () => {
+  const { pdfArbeit, PdfWorkerZeitueberschreitung } = await import('../../../src/services/pdfArbeit.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const arbeit = {
+    ausfuehren(aufgabe, args, optionen) {
+      if (aufgabe === 'eingangAnalysieren') return Promise.reject(new PdfWorkerZeitueberschreitung('zu langsam'));
+      return pdfArbeit().ausfuehren(aufgabe, args, optionen);
+    },
+  };
+  const app = express();
+  app.use('/api/n8n/jobs', requireApiKey(testConfig(jobsDir)), createN8nJobsRouter({ db, config: testConfig(jobsDir), mailer: createStubMailer(), pdfArbeit: arbeit }));
+  const res = await sendePdf(app, PDF_BYTES);
+  assert.equal(res.status, 201);
+  const job = getJobById(db, res.body.id);
+  assert.equal(job.thumbnail_pfad, null);
+  assert.equal(job.qr_iban, null);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});

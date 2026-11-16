@@ -8,6 +8,53 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 - Öffentlicher Begrenzer (100 Anfragen je 15 Min., u. a. PDF-Vorschau über `/downloads/:jobId`, Login,
   Prüfseiten): Angemeldete zählen jetzt je Person statt je IP. Bisher teilten sich alle Angemeldeten hinter
   derselben Büro-IP ein Kontingent und konnten sich gegenseitig sperren. Unangemeldete zählen weiter je IP.
+- Bildbelege: Ein PNG wird nur noch angenommen, wenn es vollständig ist (Chunk-Struktur IHDR … IDAT … IEND,
+  alle Prüfsummen). Ein abgeschnittenes PNG liess pdf-lib beim Einbetten endlos hängen – im PDF-Worker bis zum
+  Zeitlimit von 30 s und bei jedem neuen Versuch wieder, ohne Worker hätte es das ganze Portal angehalten.
+  Betroffen waren Kontierung, Ablehnung, Aufsplitten, KK-Abgleich, Spesen und Kreditkartenbelege. Jetzt kommt
+  sofort 400 «Das Bild konnte nicht gelesen werden».
+- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 1): Eingangsprüfung, Vorschaubild, QR-Erkennung und
+  Textauszug des n8n-Rechnungseingangs (`POST /api/n8n/jobs`) sowie QR/Text der Kreditkartenbelege per Mail
+  blockieren das Portal nicht mehr (bisher bis zu 19 s Stillstand je PDF). Pool mit 2 Workern, Zeitlimit,
+  Speichergrenze und Alarm, wenn die Worker nicht starten (kein Rückfall auf den Hauptthread). Neue optionale
+  Umgebungsvariablen `PDF_WORKER`, `PDF_WORKER_ANZAHL`, `PDF_WORKER_SPEICHER_MB`, `PDF_WORKER_ZEITLIMIT_FAKTOR`.
+  **n8n:** `POST /api/n8n/jobs` antwortet neu mit **503** und `Retry-After: 60`
+  (`code: pdf_verarbeitung_ausgelastet`), wenn die Eingangsprüfung wegen Überlastung oder Zeitlimit nicht
+  möglich war – der Workflow soll dann wiederholen. Gleichzeitig eingereichte identische PDFs ergeben weiterhin
+  genau einen Job. Statusseite und `/healthz` haben den neuen Dienst «PDF-Verarbeitung» (`pdf_verarbeitung`).
+  Spesen, Kreditkarten-Abgleich, Stempel und Splitgruppen folgen in Etappe 2.
+- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 2): Spesen-Einreichung (Prüfung der PDF-Belege, PDF aus
+  Bildbelegen, Vorschaubild), Kreditkarten-Belege (Upload, Datei ersetzen, nachgereichte Belege im Abgleich,
+  Belege per Mail) und die Textanalyse der Kreditkartenabrechnung rechnen jetzt ebenfalls im Worker. Ein grosses
+  Bild (bis 40 Megapixel) hielt das Portal bisher ~6 s an. Ist die PDF-Verarbeitung vorübergehend ausgelastet,
+  sehen Personen ihr Formular mit Status 503 und dem Hinweis, es in einer Minute erneut zu versuchen; es bleibt
+  weder ein halber Datensatz noch eine Datei zurück (Kreditkarten-Beleg bearbeiten: neue Datei wird vor der
+  Datenänderung erstellt). Echte Prüffehler (beschädigtes/verschlüsseltes PDF, zu grosses Bild) melden sich wie
+  bisher. Die Abgleichsseite erscheint bei einer Störung ohne Vorschläge und versucht es beim nächsten Aufruf
+  erneut. **n8n:** `POST /api/n8n/kk-belege` antwortet in diesem Fall mit **503**, `Retry-After: 60` und
+  `{fehler: 'pdf_verarbeitung_ausgelastet'}` – wiederholen. Auch die Testmodus-Beispieldaten
+  rechnen ihre Vorschaubilder im Worker; der Hauptprozess lädt mupdf damit gar nicht mehr (rund 25 MB weniger
+  Speicher im Leerlauf). Offen für spätere Etappen: Stempel, Beleg anhängen, Splitgruppen, Freigabe 2.
+- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 4): «Beleg anhängen» bei Kontierung, Ablehnung,
+  Aufsplitten und Kreditkarten-Abgleich rechnet im Worker (ein grosses Bild hielt das Portal bisher
+  sekundenlang an). Der Beleg wird jetzt **vor** dem Speichern angehängt: Ist die PDF-Verarbeitung
+  ausgelastet, kommt das Formular mit 503 und dem Hinweis zurück, und es ist nichts gespeichert. Ein Beleg,
+  der sich erst beim Anhängen als beschädigt erweist, ergab bisher Fehler 500 bei bereits gespeicherter
+  Kontierung ohne Beleg und ohne Mails; jetzt erscheint das Formular mit einem Hinweis (422) und nichts ist
+  gespeichert. Zwei gleichzeitige Kontierungen mit Beleg auf denselben Vorgang: genau eine wird gespeichert,
+  die andere erhält 409. Offen: Stempel (Etappe 3) und Splitgruppen-Export (Etappe 5).
+- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 3): Die Stempelseite bei Freigabe 2 und der Vermerk beim
+  Abschluss eines Rapports werden im Worker erzeugt (bei grossen PDFs hielt das Portal bisher bis zu einigen hundert
+  Millisekunden am Stück an). Ist die PDF-Verarbeitung bei Freigabe 2 ausgelastet, kommt das Formular mit 503 und dem
+  Hinweis zurück, es in einer Minute erneut zu versuchen; gespeichert ist nichts. Ein unlesbares PDF meldet sich wie
+  bisher (400). Beim Rapport bleibt die Kenntnisnahme gespeichert und der Abschluss wird wie bei jedem Stempelfehler
+  vom stündlichen Job nachgeholt. Neues Zeitlimit für Stempel: 30 s (mal `PDF_WORKER_ZEITLIMIT_FAKTOR`).
+- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 5): Das gemeinsame Archivdokument einer Splitgruppe
+  (Zusammenführen der Belegseiten und Gruppenstempel) entsteht im Worker; Prüfungen und Speichern bleiben, wie sie
+  waren. Bei einer Störung gilt die Freigabe 2 des letzten Teils trotzdem, die Gruppe bleibt ausstehend (keine Datei)
+  und wird alle 15 Minuten nachgeholt. Schliessen mehrere Teile oder Freigabe 2 und der Nachhol-Job gleichzeitig ab,
+  entsteht genau ein Gruppendokument. Zeitlimit 60 s. Damit läuft keine nennenswerte PDF-Arbeit mehr im Hauptprozess
+  ausser dem RFC3161-Zeitstempel.
 - Abhängigkeiten aktualisiert (ohne Hauptversionssprung): mupdf 1.28.0 → 1.28.6, express-rate-limit
   8.6.2 → 8.7.4, nodemailer 10.2.1 → 10.6.0, csrf-csrf 4.0.3 → 4.1.0, read-excel-file 9.3.12 → 9.3.17.
 - Doku: `docs/betrieb-und-nutzung.md` hält einen monatlichen Termin fest (`npm audit` und Prüfung der

@@ -634,7 +634,7 @@ async function runSplitGruppenNachholenJobInternal(db, config) {
     let fehlgeschlagen = 0;
     let uebersprungen = 0;
     for (const parent of ausstehend) {
-      const ergebnis = await pruefeUndFinalisiereSplitGruppe(db, parent.id, config);
+      const ergebnis = await pruefeUndFinalisiereSplitGruppe(db, parent.id, config, { spur: 'hintergrund' });
       if (ergebnis.status === 'exportiert') nachgeholt += 1;
       else if (ergebnis.status === 'fehler') fehlgeschlagen += 1;
       else uebersprungen += 1;

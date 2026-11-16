@@ -4356,3 +4356,21 @@ test('POST /kontierung/:id/aufsplitten lehnt einen Bildbeleg über 40 Megapixel 
   rmSync(jobsDir, { recursive: true, force: true });
   db.close();
 });
+
+// S4: Auch die Schnellanlage eines Lieferanten mit Erst-IBAN in der Kontierung meldet die neue IBAN (wie POST /admin/kreditoren).
+test('POST /kontierung/lieferanten: Lieferant mit IBAN löst die Meldung «IBAN geändert» an Admin aus; ohne IBAN keine Meldung', async () => {
+  const { listMailLog } = await import('../../src/db/mailLogRepo.js');
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedKontoAndPersonen(db);
+  upsertPerson(db, { id: '9', vorname: 'Super', nachname: 'Admin', email: 'sa@example.org', gruppen: ['20'], loggedInNow: true });
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
+  const app = buildTestApp(db, createStubMailer());
+  const post = (body) => request(app).post('/kontierung/lieferanten').set('x-test-person-id', '1').type('form').send(body);
+  assert.equal((await post({ name: 'Abo AG', zahlungsart: 'lastschrift' })).status, 201);
+  assert.equal(listMailLog(db).filter((m) => m.typ === 'iban-aenderung').length, 0, 'ohne IBAN keine Meldung');
+  assert.equal((await post({ name: 'Neue Firma AG', zahlungsart: 'ueberweisung', iban: 'CH93 0076 2011 6238 5295 7', kontoId: String(kontoId) })).status, 201);
+  const meldungen = listMailLog(db).filter((m) => m.typ === 'iban-aenderung');
+  assert.ok(meldungen.some((m) => m.empfaenger === 'sa@example.org'), 'Admin wird informiert');
+  db.close();
+});

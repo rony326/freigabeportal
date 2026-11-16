@@ -66,6 +66,7 @@ import {
   alleKindIds,
 } from '../services/aufsplitten.js';
 import { asyncCallback, asyncHandler } from '../middleware/asyncHandler.js';
+import { meldeIbanAenderung } from '../services/ibanAenderung.js';
 import { begrenzeUploadGroesse, zustaendigkeitVorUpload } from '../middleware/uploadLimit.js';
 import { neueFehler, feldFehlerAttr } from '../utils/feldFehler.js';
 
@@ -170,7 +171,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   // POST /kontierung/lieferanten – legt einen neuen Lieferanten an (per fetch() aus der Kontierung; Recht `kreditoren_verwalten`, IBAN-Pflicht je Zahlungsart).
   // Muss vor den allgemeinen /:id-Routen unten registriert werden — sonst träfe POST /kontierung/lieferanten zuerst /:id (mit id="lieferanten", einem NaN-Number()) und endete mit 404/403, bevor es diesen Handler erreicht. Neue Lieferanten (mit Pflicht-IBAN) legt nur an,
   // wer Lieferanten verwalten darf; dieselbe Prüfung wie in POST /admin/kreditoren.
-  router.post('/lieferanten', csrfProtection, (req, res) => {
+  router.post('/lieferanten', csrfProtection, asyncHandler(async (req, res) => {
     const person = req.currentPerson;
     if (!darfLieferantenAnlegen(person)) {
       meldeZugriffVerweigert(req, { grund: 'fehlendes_recht', status: 403, recht: 'kreditoren_verwalten' });
@@ -183,8 +184,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       return res.status(400).json({ error: errors.join(' ') });
     }
     const id = legeKreditorAn(db, { name, kontoId, zahlungsart, normalizedIban });
+    // Prüfung 2026-11-15 (S4): Eine neue Lieferanten-IBAN wird wie in POST /admin/kreditoren an Buchhaltung und Admin gemeldet.
+    if (normalizedIban) {
+      await meldeIbanAenderung(db, config, mailer, { kreditor: { name: name.trim() }, iban: normalizedIban, art: 'hinzugefuegt', person, neuerLieferant: true });
+    }
     res.status(201).json({ id, name: name.trim() });
-  });
+  }));
 
   // POST /kontierung/:id – Hauptaktion: `aktion` = kontieren | ablehnen | rapport (Zweige siehe unten). Reihenfolge: Upload (multer) → CSRF → Validierung → Prüf-Popup → Datei-Arbeit → Transaktion → Mails.
   // Die Zuständigkeit hängt nur von :id und der Sitzung ab und wird deshalb schon vor dem Upload geprüft (zustaendigkeitVorUpload); der Handler lädt den Vorgang nach dem Upload erneut.

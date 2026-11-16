@@ -49,11 +49,9 @@ function mupdfPfade(kanten) {
 
 const OHNE_HOOKS = typeof registerHooks !== 'function' && 'module.registerHooks fehlt in dieser Node-Version';
 
-// Bekannter Restpfad bis zu einer späteren Etappe: middleware/roles.js und routes/admin/testmodus.js importieren
-// BEISPIELPERSONEN aus services/testmodus/beispieldaten.js, das für die Beispieldaten thumbnail.js (mupdf) statisch lädt.
-// Fast jede Route hängt über middleware/roles.js daran. Ein neuer Pfad lässt die Tests scheitern; ist der Restpfad
-// behoben, RESTPFAD leeren.
-const RESTPFAD = { 'services/thumbnail.js': ['services/testmodus/beispieldaten.js'] };
+// Erlaubte Restpfade zu mupdf (Modul → Importeure). Leer: Seit die Testmodus-Beispieldaten ihre Vorschaubilder über
+// den PDF-Worker rechnen (B2), lädt der Hauptprozess mupdf gar nicht mehr. Ein neuer Pfad lässt die Tests scheitern.
+const RESTPFAD = {};
 
 function nurBekannterRestpfad(ziel, { direkt, importeure }) {
   for (const modul of direkt) {
@@ -68,18 +66,18 @@ test('B2 Etappe 2: Spesen und die Erzeugung von KK-Belegdateien laden mupdf übe
   }
 });
 
-test('B2 Etappe 2: KK-Belege, KK-Abgleich und die n8n-Eingänge laden mupdf nur noch über den bekannten Restpfad', { skip: OHNE_HOOKS, timeout: 60_000 }, () => {
+test('B2 Etappe 2: KK-Belege, KK-Abgleich und die n8n-Eingänge laden mupdf nicht', { skip: OHNE_HOOKS, timeout: 60_000 }, () => {
   for (const ziel of ['routes/kreditkarte.js', 'routes/kkAbgleich.js', 'services/kkBelegEingang.js', 'routes/n8n/kkBelege.js', 'routes/n8n/jobs.js']) {
     nurBekannterRestpfad(ziel, mupdfPfade(ladeKanten([ziel])));
   }
 });
 
 // Alle statischen Importe von src/index.js (ohne index.js selbst, das den Server starten würde).
-test('B2: der Hauptprozess lädt mupdf nur noch über den bekannten Restpfad testmodus/beispieldaten.js', { skip: OHNE_HOOKS, timeout: 60_000 }, () => {
+test('B2: der Hauptprozess lädt mupdf nicht (auch nicht über die Testmodus-Beispieldaten)', { skip: OHNE_HOOKS, timeout: 60_000 }, () => {
   const index = readFileSync(new URL('index.js', SRC), 'utf8');
   const ziele = [...index.matchAll(/^import\s[^;]*?from\s+'(\.\/[^']+)'/gm)].map((m) => m[1].slice(2));
   assert.ok(ziele.includes('app.js'), 'Importe von src/index.js nicht gefunden');
   const pfade = mupdfPfade(ladeKanten(ziele));
   nurBekannterRestpfad('src/index.js', pfade);
-  assert.deepEqual(pfade.direkt, Object.keys(RESTPFAD), 'Restpfad behoben? Dann RESTPFAD leeren.');
+  assert.deepEqual(pfade.direkt, Object.keys(RESTPFAD), 'Hauptprozess lädt mupdf');
 });

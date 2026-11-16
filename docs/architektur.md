@@ -225,18 +225,14 @@ Prüfung würde die Blockade nicht verkürzen, das gehört zu Etappe 3–5).
 `buildBelegPdf` dagegen läuft im Worker: ein PNG bis 40 Megapixel zu dekodieren
 und einzubetten (pdf-lib `embedPng`) blockierte den Hauptthread ~6 s.
 
-**Hauptprozess und mupdf**: Spesen (`routes/spesen.js`) und
-`services/kkBelegDatei.js` importieren mupdf nicht mehr, auch nicht transitiv
-(Test `test/integration/pdfWorkerMupdfImport.test.js`). Der Hauptprozess lädt
-mupdf beim Start aber weiterhin über **einen** Restpfad:
-`middleware/roles.js` (und `routes/admin/testmodus.js`) →
-`services/testmodus/beispieldaten.js` (für `BEISPIELPERSONEN`) →
-`services/thumbnail.js` → `mupdf`. Fast jede Route hängt über
-`middleware/roles.js` daran. Ohne diesen Pfad sinkt der RSS im Leerlauf um
-rund 25 MB (gemessen ~155 → ~131 MB).
+**Hauptprozess und mupdf**: Im Worker-Betrieb lädt der Hauptprozess mupdf
+nicht mehr, auch nicht transitiv (Test
+`test/integration/pdfWorkerMupdfImport.test.js`). Auch die
+Testmodus-Beispieldaten (`services/testmodus/beispieldaten.js`, über
+`middleware/roles.js` bei jedem Start geladen) rechnen ihre Vorschaubilder über
+den PDF-Worker. Das spart im Leerlauf rund 25 MB RSS (gemessen ~155 → ~131 MB).
 
-**Noch im Hauptthread (Etappe 3–5)**: Testmodus-Beispieldaten (Vorschaubild,
-Restpfad oben), Stempel (`pdfStamp.js`), Beleg anhängen in der Kontierung und
+**Noch im Hauptthread (Etappe 3–5)**: Stempel (`pdfStamp.js`), Beleg anhängen in der Kontierung und
 beim Aufsplitten (`belegAnhaengen.js`/`aufsplitten.js`, pdf-lib),
 Splitgruppen-Export, Freigabe 2.
 

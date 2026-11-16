@@ -24,8 +24,9 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   Datenänderung erstellt). Echte Prüffehler (beschädigtes/verschlüsseltes PDF, zu grosses Bild) melden sich wie
   bisher. Die Abgleichsseite erscheint bei einer Störung ohne Vorschläge und versucht es beim nächsten Aufruf
   erneut. **n8n:** `POST /api/n8n/kk-belege` antwortet in diesem Fall mit **503**, `Retry-After: 60` und
-  `{fehler: 'pdf_verarbeitung_ausgelastet'}` – wiederholen. Offen für spätere Etappen: Testmodus-Beispieldaten
-  (über sie lädt der Hauptprozess mupdf noch beim Start), Stempel, Beleg anhängen, Splitgruppen, Freigabe 2.
+  `{fehler: 'pdf_verarbeitung_ausgelastet'}` – wiederholen. Auch die Testmodus-Beispieldaten
+  rechnen ihre Vorschaubilder im Worker; der Hauptprozess lädt mupdf damit gar nicht mehr (rund 25 MB weniger
+  Speicher im Leerlauf). Offen für spätere Etappen: Stempel, Beleg anhängen, Splitgruppen, Freigabe 2.
 - Abhängigkeiten aktualisiert (ohne Hauptversionssprung): mupdf 1.28.0 → 1.28.6, express-rate-limit
   8.6.2 → 8.7.4, nodemailer 10.2.1 → 10.6.0, csrf-csrf 4.0.3 → 4.1.0, read-excel-file 9.3.12 → 9.3.17.
 - Doku: `docs/betrieb-und-nutzung.md` hält einen monatlichen Termin fest (`npm audit` und Prüfung der

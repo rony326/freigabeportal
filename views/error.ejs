@@ -1,8 +1,11 @@
 <%- include('_seite_anfang', { titel: 'Fehler' }) %>
     <div class="seitenkopf">
-      <h1 class="seitenkopf-titel">Es ist ein Fehler aufgetreten</h1>
+      <h1 class="seitenkopf-titel"><%= locals.titel || 'Es ist ein Fehler aufgetreten' %></h1>
     </div>
-    <p class="alert alert-danger"><%= message %></p>
+    <p class="alert alert-<%= locals.hinweisArt === 'warning' ? 'warning' : 'danger' %>"><%= message %></p>
+    <% if (locals.anmelden) { %>
+      <p><a href="/auth/login" class="btn btn-primary">Anmelden</a></p>
+    <% } %>
     <% if (locals.fehlerId) { %>
       <p class="text-muted">Fehler-ID: <code><%= fehlerId %></code></p>
       <% if (locals.currentPerson) { %>
@@ -18,5 +21,7 @@
         </form>
       <% } %>
     <% } %>
-    <p><a href="/" class="btn btn-outline-secondary">Zurück zur Startseite</a></p>
+    <% if (!locals.anmelden) { %>
+      <p><a href="/" class="btn btn-outline-secondary">Zurück zur Startseite</a></p>
+    <% } %>
 <%- include('_seite_ende') %>

@@ -46,7 +46,7 @@ ist es nicht verifiziert.
 
 ```mermaid
 flowchart TD
-    A["Lauf startet"] --> B["Für jede der bis zu drei<br/>Kandidaten-Gruppen (Buchhaltung,<br/>Admin, Manager):<br/>Mitgliederliste von ChurchTools holen"]
+    A["Lauf startet"] --> B["Für jede der bis zu drei<br/>Kandidaten-Gruppen (Buchhaltung,<br/>Admin, Manager):<br/>aktive Mitglieder von ChurchTools holen<br/>(seitenweise, alle Seiten)"]
     B -->|Fehler| X["Lauf abbrechen,<br/>nichts ändern"]
     B --> C["Zu prüfende Personen:<br/>Gruppenmitglieder + Konto-Rolleninhaber<br/>(SYNC-WIDEN-1) + alle bisher aktiven"]
     C --> E["Für jede Person:<br/>Profil per ChurchTools-API nachladen"]
@@ -60,6 +60,18 @@ flowchart TD
     I -- nein --> K["Transaktion: Profile upserten,<br/>Gruppen nachführen,<br/>vorgemerkte Personen deaktivieren"]
     K --> L["sync_log-Eintrag: erfolg"]
 ```
+
+## Gruppenmitglieder aus ChurchTools
+
+`fetchGroupMemberIds` (`src/services/churchtools.js`) fragt `/api/groups/{id}/members` mit
+`group_member_statuses[]=active` und `limit=200` ab und zählt im Code nur Einträge mit
+`groupMemberStatus === 'active'` (Anfragen, Wartelisten und zur Löschung vorgemerkte
+Mitgliedschaften erhalten keine Rolle). Es wird über `meta.pagination` geblättert, bis die letzte
+Seite gelesen ist (ohne `lastPage`: bis zu einer Seite mit weniger als 200 Einträgen; Obergrenze
+50 Seiten). Die Personen-ID kommt aus `person.domainIdentifier`, ersatzweise aus dem veralteten
+`personId`. Schlägt eine Seite fehl oder wird die Obergrenze erreicht, wirft die Funktion: der Sync
+bricht ab und ändert nichts, die Anmeldung schlägt fehl, statt mit einer unvollständigen Liste
+Rollen zu entziehen.
 
 ## Sicherheitsmechanismen
 

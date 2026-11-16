@@ -36,7 +36,7 @@ import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { createN8nBackupRouter } from './routes/n8n/backup.js';
 import { createN8nKkBelegeRouter } from './routes/n8n/kkBelege.js';
 import { createN8nRapporteRouter } from './routes/n8n/rapporte.js';
-import { loadCurrentPerson, loadBeispielperson, requireRole, requireLogin } from './middleware/roles.js';
+import { loadCurrentPerson, loadBeispielperson, requireRole, requireLogin, ANMELDUNG_ABGELAUFEN_MELDUNG } from './middleware/roles.js';
 import { requireAdminAreaAccess, requirePermission } from './middleware/permissions.js';
 import { loadNavFlags } from './middleware/nav.js';
 import { loadBranding } from './middleware/branding.js';
@@ -100,7 +100,7 @@ import { testmodusWeiche } from './middleware/testmodusWeiche.js';
 import { createTestmodusRouter } from './routes/admin/testmodus.js';
 import { createTestmodusInstanzRouter } from './routes/testmodusInstanz.js';
 import { zeitpunktAnzeige } from './services/auditLog.js';
-import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
+import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter, createSpesenRateLimiter, createFehlerMeldenRateLimiter, nurPost } from './middleware/rateLimit.js';
 import { getVersionInfo } from './utils/version.js';
 import { auditContext, auditRequestContext } from './services/auditContext.js';
 import { zugriffsAuditMiddleware, meldeZugriffVerweigert } from './services/zugriffsAudit.js';
@@ -147,7 +147,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // Versions-Parameter für /js/portal.js und /css/portal.css (aus dem Dateistand beim Start): neue
   // Stände werden sofort geladen, und eine im Browser gespeicherte alte Umleitung der nackten URL
   // greift nicht mehr (Rückmeldung 2026-10-27: ERR_TOO_MANY_REDIRECTS auf portal.js).
-  app.locals.assetVersion = ['js/portal.js', 'js/belegUmschalter.js', 'css/portal.css', 'vendor/bootstrap-icons/symbole.svg', 'vendor/bootstrap/bootstrap.min.css', 'vendor/bootstrap/bootstrap.bundle.min.js']
+  app.locals.assetVersion = ['js/portal.js', 'js/belegUmschalter.js', 'js/sitzungHinweis.js', 'css/portal.css', 'vendor/bootstrap-icons/symbole.svg', 'vendor/bootstrap/bootstrap.min.css', 'vendor/bootstrap/bootstrap.bundle.min.js']
     .map((datei) => Math.trunc(statSync(join(__dirname, '..', 'public', datei)).mtimeMs).toString(36))
     .join('');
   app.use((req, res, next) => {
@@ -300,6 +300,11 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   const publicLimiter = limiter?.publicLimiter ?? createPublicRateLimiter();
   const sessionLimiter = limiter?.sessionLimiter ?? createSessionRateLimiter();
   const machineLimiter = limiter?.machineLimiter ?? createMachineRateLimiter();
+  // Eigenlimits je Person für die schreibenden POST-Routen (Spesen 10/h, Fehlermeldung 5/h). Sie sitzen hinter
+  // requireLogin (Person bekannt, Fremde zählen nicht) und vor multer/CSRF: Bei multipart liest CSRF erst nach multer den
+  // Body, ein Limit dahinter würde die Uploads bereits annehmen. Fehlschläge (>= 400) zählen nicht mit.
+  const spesenLimiter = nurPost(limiter?.spesenLimiter ?? createSpesenRateLimiter());
+  const fehlerMeldenLimiter = nurPost(limiter?.fehlerMeldenLimiter ?? createFehlerMeldenRateLimiter());
 
   // Ohne Limiter, wie die statischen Dateien: das Logo hängt an jeder Seite (bis zu zwei Bilder je
   // Aufruf). Am öffentlichen Limiter teilte es sich dessen IP-Zähler mit /, /auth und /audit-pruefen
@@ -344,7 +349,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   });
   // ---- Admin-Bereich: je Seite ein Recht (Katalog: services/berechtigungKatalog.js, Übersicht: docs/admin-bereich.md) ----
   app.use('/admin/konten', requirePermission(db, config, 'konten_verwalten'), createKontenRouter({ db, csrfProtection }));
-  app.use('/admin/kreditoren', requirePermission(db, config, 'kreditoren_verwalten'), createKreditorenRouter({ db, csrfProtection }));
+  app.use('/admin/kreditoren', requirePermission(db, config, 'kreditoren_verwalten'), createKreditorenRouter({ db, config, mailer, csrfProtection }));
   // Frueherer Pfad (fachlich falsch 'Debitoren'): Lesezeichen und vor dem Deployment geladene
   // Formulare werden weitergeleitet; 308 erhaelt Methode und Body, die Pruefungen gelten am Ziel.
   app.use('/admin/debitoren', (req, res) => res.redirect(req.method === 'GET' || req.method === 'HEAD' ? 301 : 308, `/admin/kreditoren${req.url.replace(/^\/(?=\?|$)/, '')}`));
@@ -398,13 +403,13 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/kreditkarte', sessionLimiter, requireLogin(), createKreditkarteRouter({ db, config, csrfProtection }));
   app.use('/banner', sessionLimiter, requireLogin(), createBannerRouter({ db, csrfProtection }));
   app.use('/datenschutz', sessionLimiter, requireLogin(), createDatenschutzRouter({ db }));
-  app.use('/fehler-melden', sessionLimiter, requireLogin(), createFehlerMeldenRouter({ db, config, mailer, csrfProtection }));
+  app.use('/fehler-melden', sessionLimiter, requireLogin(), fehlerMeldenLimiter, createFehlerMeldenRouter({ db, config, mailer, csrfProtection }));
   app.use('/meine-benachrichtigungen', sessionLimiter, requireLogin(), createMeineBenachrichtigungenRouter({ db, config, mailer, csrfProtection }));
   app.use('/ferienmodus', sessionLimiter, requireLogin(), createFerienmodusRouter({ db, csrfProtection }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKkAbgleichRouter({ db, config, mailer, csrfProtection }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer, csrfProtection }));
-  app.use('/spesen', sessionLimiter, requireLogin(), createSpesenRouter({ db, config, mailer, csrfProtection }));
+  app.use('/spesen', sessionLimiter, requireLogin(), spesenLimiter, createSpesenRouter({ db, config, mailer, csrfProtection }));
   app.use('/spesen-freigabe1', sessionLimiter, requireLogin(), createSpesenFreigabe1Router({ db, config, mailer, csrfProtection }));
   app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer, csrfProtection }));
   app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config, csrfProtection }));
@@ -437,6 +442,10 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
       // angemeldet) und kein Angriff — deshalb kein Stack-Log. Als Zugriffsverweigerung wird es trotzdem
       // (gedrosselt, ohne das gesendete Token) erfasst.
       meldeZugriffVerweigert(req, { grund: 'csrf', status: 403 });
+      // Besteht keine Anmeldung mehr (Sitzung nach 8 Stunden abgelaufen), sagt die Seite das klar und bietet «Anmelden» an.
+      if (!req.session?.personId) {
+        return res.status(403).render('error', { titel: 'Deine Anmeldung ist abgelaufen', message: ANMELDUNG_ABGELAUFEN_MELDUNG, anmelden: true, hinweisArt: 'warning' });
+      }
       return res
         .status(403)
         .render('error', { message: 'Sicherheitsprüfung fehlgeschlagen (ungültiges oder abgelaufenes Formular). Bitte lade die Seite neu und versuche es erneut.' });

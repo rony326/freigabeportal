@@ -94,3 +94,106 @@ test('extractCustomFieldValue returns null when the property is missing, empty, 
   assert.equal(extractCustomFieldValue(null, 'iban_1'), null, 'no person at all');
   assert.equal(extractCustomFieldValue({ id: 9, iban_1: 'CH93' }, null), null, 'no field key given');
 });
+
+// ---- Gruppenmitglieder: Statusfilter, Blättern, Personenfeld (Befunde S1, B1, B5) ----
+
+// Stellt eine Gruppe mit `mitglieder` bereit und antwortet wie ChurchTools seitenweise (limit/page aus der Anfrage).
+// Gibt die Liste der gesehenen Anfragepfade zurück. `ohneLastPage`: meta.pagination ohne lastPage.
+function stelleGruppeBereit(client, gruppenId, mitglieder, { ohneLastPage = false, fehlerAufSeite = null } = {}) {
+  const anfragen = [];
+  client
+    .intercept({ path: (p) => p.startsWith(`/api/groups/${gruppenId}/members`), method: 'GET' })
+    .reply((opts) => {
+      anfragen.push(opts.path);
+      const q = new URL(opts.path, 'https://ct.example.org').searchParams;
+      const limit = Number(q.get('limit') ?? 10);
+      const seite = Number(q.get('page') ?? 1);
+      if (seite === fehlerAufSeite) return { statusCode: 500, data: {} };
+      const pagination = { total: mitglieder.length, limit, current: seite };
+      if (!ohneLastPage) pagination.lastPage = Math.max(1, Math.ceil(mitglieder.length / limit));
+      return { statusCode: 200, data: { data: mitglieder.slice((seite - 1) * limit, seite * limit), meta: { count: 0, pagination } } };
+    })
+    .persist();
+  return anfragen;
+}
+
+const aktiv = (id) => ({ personId: id, person: { domainIdentifier: String(id) }, groupMemberStatus: 'active' });
+
+test('S1: fetchGroupMemberIds sendet den Statusfilter active und limit=200', async () => {
+  const client = setupMockChurchTools(CONFIG.baseUrl);
+  const anfragen = stelleGruppeBereit(client, 42, [aktiv(1)]);
+  await fetchGroupMemberIds(CONFIG, 'token', 42);
+  const q = new URL(anfragen[0], 'https://ct.example.org').searchParams;
+  assert.deepEqual(q.getAll('group_member_statuses[]'), ['active']);
+  assert.equal(q.get('limit'), '200');
+});
+
+test('S1: Einträge mit Status requested, waiting oder to_delete zählen nicht als Mitglied', async () => {
+  const client = setupMockChurchTools(CONFIG.baseUrl);
+  stelleGruppeBereit(client, 42, [
+    aktiv(1),
+    { personId: 2, groupMemberStatus: 'requested' },
+    { personId: 3, groupMemberStatus: 'waiting' },
+    { personId: 4, groupMemberStatus: 'to_delete' },
+    { personId: 5 }, // ohne Status: im Zweifel kein Mitglied
+  ]);
+  assert.deepEqual(await fetchGroupMemberIds(CONFIG, 'token', 42), ['1']);
+});
+
+test('B1: 11 Mitglieder über zwei Seiten werden vollständig gelesen', async () => {
+  const client = setupMockChurchTools(CONFIG.baseUrl);
+  // Server mit kleinem Seitenlimit (Maximum serverseitig 10): die Antwort-Pagination bestimmt das Blättern.
+  const mitglieder = Array.from({ length: 11 }, (_, i) => aktiv(i + 1));
+  client
+    .intercept({ path: (p) => p.startsWith('/api/groups/42/members'), method: 'GET' })
+    .reply((opts) => {
+      const seite = Number(new URL(opts.path, 'https://ct.example.org').searchParams.get('page') ?? 1);
+      return { statusCode: 200, data: { data: mitglieder.slice((seite - 1) * 10, seite * 10), meta: { pagination: { total: 11, limit: 10, current: seite, lastPage: 2 } } } };
+    })
+    .persist();
+  const ids = await fetchGroupMemberIds(CONFIG, 'token', 42);
+  assert.equal(ids.length, 11);
+  assert.equal(ids[10], '11');
+});
+
+test('B1: 201 Mitglieder werden mit limit=200 auf zwei Seiten gelesen', async () => {
+  const client = setupMockChurchTools(CONFIG.baseUrl);
+  const anfragen = stelleGruppeBereit(client, 42, Array.from({ length: 201 }, (_, i) => aktiv(i + 1)));
+  const ids = await fetchGroupMemberIds(CONFIG, 'token', 42);
+  assert.equal(ids.length, 201);
+  assert.equal(new Set(ids).size, 201);
+  assert.equal(anfragen.length, 2);
+});
+
+test('B1: ohne lastPage hört das Blättern bei einer Seite mit weniger als limit Einträgen auf', async () => {
+  const client = setupMockChurchTools(CONFIG.baseUrl);
+  const anfragen = stelleGruppeBereit(client, 42, Array.from({ length: 201 }, (_, i) => aktiv(i + 1)), { ohneLastPage: true });
+  assert.equal((await fetchGroupMemberIds(CONFIG, 'token', 42)).length, 201);
+  assert.equal(anfragen.length, 2);
+});
+
+test('B1: ein Fehler auf einer späteren Seite wirft, statt eine unvollständige Liste zu liefern', async () => {
+  const client = setupMockChurchTools(CONFIG.baseUrl);
+  stelleGruppeBereit(client, 42, Array.from({ length: 250 }, (_, i) => aktiv(i + 1)), { fehlerAufSeite: 2 });
+  await assert.rejects(() => fetchGroupMemberIds(CONFIG, 'token', 42), (err) => err.status === 500);
+});
+
+test('B1: endloses Blättern wird durch eine Seitenobergrenze abgebrochen (Fehler, keine Teilliste)', async () => {
+  const client = setupMockChurchTools(CONFIG.baseUrl);
+  // Fehlerhafter Server: jede Seite ist voll und lastPage fehlt.
+  client
+    .intercept({ path: (p) => p.startsWith('/api/groups/42/members'), method: 'GET' })
+    .reply(200, () => ({ data: Array.from({ length: 200 }, (_, i) => aktiv(i + 1)), meta: { pagination: { current: 1 } } }))
+    .persist();
+  await assert.rejects(() => fetchGroupMemberIds(CONFIG, 'token', 42), /Seiten/);
+});
+
+test('B5: person.domainIdentifier wird gelesen, wenn personId fehlt; personId bleibt als Rückfall', async () => {
+  const client = setupMockChurchTools(CONFIG.baseUrl);
+  stelleGruppeBereit(client, 42, [
+    { person: { domainIdentifier: '11' }, groupMemberStatus: 'active' },
+    { personId: 12, groupMemberStatus: 'active' },
+    { personId: 13, person: { domainIdentifier: '13' }, groupMemberStatus: 'active' },
+  ]);
+  assert.deepEqual(await fetchGroupMemberIds(CONFIG, 'token', 42), ['11', '12', '13']);
+});

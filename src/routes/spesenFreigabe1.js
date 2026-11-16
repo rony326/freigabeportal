@@ -4,6 +4,7 @@
 import { personHasRole } from '../middleware/roles.js';
 import { Router } from 'express';
 import { feldFehlerAttr } from '../utils/feldFehler.js';
+import { leseText, MAX_LAENGE } from '../utils/eingabe.js';
 import {
   getJobById,
   eskalierenFreigabe1,
@@ -70,6 +71,7 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
   function renderForm(req, res, status, { job, konto }, values, errors, feldFehler = {}) {
     const spesenabrechnung = getSpesenabrechnungById(db, job.spesenabrechnung_id);
     res.status(status).render('spesen-freigabe1', {
+      maxLen: MAX_LAENGE,
       job,
       konto,
       eingereichtePerson: getPersonById(db, job.eingereicht_von),
@@ -97,9 +99,20 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
       const result = loadAuthorized(req, res);
       if (!result) return;
       const { job, konto } = result;
-      const { aktion, interessenskonflikt, begruendung } = req.body;
+      // Prüfung 2026-11-15 (S8, B3): Felder als einzelner, getrimmter Text lesen (Array/Objekt oder zu lang → 400 statt 500);
+      // eine Begründung nur aus Leerzeichen gilt als leer. Längen: utils/eingabe.js.
+      const aktionGelesen = leseText(req.body.aktion, { max: MAX_LAENGE.kennung, feld: 'Aktion' });
+      const konfliktGelesen = leseText(req.body.interessenskonflikt, { max: MAX_LAENGE.kennung, feld: 'Interessenskonflikt' });
+      const begruendungGelesen = leseText(req.body.begruendung, { max: MAX_LAENGE.text, feld: 'Begründung' });
+      const aktion = aktionGelesen.wert;
+      const interessenskonflikt = konfliktGelesen.wert;
+      const begruendung = begruendungGelesen.wert;
       const hatKonflikt = interessenskonflikt === 'ja';
-      const values = { interessenskonflikt: interessenskonflikt || '', begruendung: begruendung || '' };
+      const values = { interessenskonflikt, begruendung };
+      const eingabeFehler = [aktionGelesen, konfliktGelesen, begruendungGelesen].map((g) => g.fehler).filter(Boolean);
+      if (eingabeFehler.length > 0) {
+        return renderForm(req, res, 400, result, values, eingabeFehler, begruendungGelesen.fehler ? { sf1begruendung: begruendungGelesen.fehler } : {});
+      }
 
       if ((hatKonflikt || aktion === 'ablehnen') && !begruendung) {
         return renderForm(req, res, 400, result, values, ['Begründung ist bei Interessenskonflikt oder Ablehnung Pflicht.'], { sf1begruendung: 'Begründung ist bei Interessenskonflikt oder Ablehnung Pflicht.' });

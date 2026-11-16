@@ -10,7 +10,8 @@ import { personHasPermission } from '../middleware/permissions.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
 import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
-import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
+import { detectBelegMimetype, pruefeBelegBild, BelegBildFehler } from '../services/belegAnhaengen.js';
+import { PdfWorkerFehler, antworteSpaeterErneut, PDF_VORUEBERGEHEND_MELDUNG } from '../services/pdfArbeit.js';
 import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalationsText } from '../services/eskalationsZiel.js';
 import {
   getJobById,
@@ -58,7 +59,11 @@ import { kkHinweisFuerJob } from '../services/kkStempel.js';
 import { kommentarBereich } from './kommentare.js';
 import {
   POSITION_PATTERN,
-  mergeBelegFuerJob,
+  bereiteBelegAnhangVor,
+  belegAnhangNochAktuell,
+  uebernimmBelegAnhang,
+  verwirfBelegAnhang,
+  BelegAnhangFehler,
   pruefeIbanAbgleich,
   bereiteTeilDateienVor,
   erzeugeTeilJobs,
@@ -66,7 +71,10 @@ import {
   alleKindIds,
 } from '../services/aufsplitten.js';
 import { asyncCallback, asyncHandler } from '../middleware/asyncHandler.js';
+import { meldeIbanAenderung } from '../services/ibanAenderung.js';
+import { begrenzeUploadGroesse, zustaendigkeitVorUpload } from '../middleware/uploadLimit.js';
 import { neueFehler, feldFehlerAttr } from '../utils/feldFehler.js';
+import { leseText, MAX_LAENGE, eingabeGrenzen } from '../utils/eingabe.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -107,6 +115,7 @@ function buildQrInfo(db, job) {
 
 export function createKontierungRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
+  router.use(eingabeGrenzen);
 
   const LIEFERANT_NUR_ADMIN_HINWEIS = 'Neue Lieferanten legt die Administration an.';
   const darfLieferantenAnlegen = (person) => personHasPermission(db, config, person, 'kreditoren_verwalten');
@@ -169,25 +178,38 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   // POST /kontierung/lieferanten – legt einen neuen Lieferanten an (per fetch() aus der Kontierung; Recht `kreditoren_verwalten`, IBAN-Pflicht je Zahlungsart).
   // Muss vor den allgemeinen /:id-Routen unten registriert werden — sonst träfe POST /kontierung/lieferanten zuerst /:id (mit id="lieferanten", einem NaN-Number()) und endete mit 404/403, bevor es diesen Handler erreicht. Neue Lieferanten (mit Pflicht-IBAN) legt nur an,
   // wer Lieferanten verwalten darf; dieselbe Prüfung wie in POST /admin/kreditoren.
-  router.post('/lieferanten', csrfProtection, (req, res) => {
+  router.post('/lieferanten', csrfProtection, asyncHandler(async (req, res) => {
     const person = req.currentPerson;
     if (!darfLieferantenAnlegen(person)) {
       meldeZugriffVerweigert(req, { grund: 'fehlendes_recht', status: 403, recht: 'kreditoren_verwalten' });
       return res.status(403).json({ error: LIEFERANT_NUR_ADMIN_HINWEIS });
     }
-    const { name, kontoId, iban } = req.body;
-    const zahlungsart = req.body.zahlungsart;
+    // Prüfung 2026-11-15 (S8): alle Felder als einzelner Text lesen (Array → 400 statt 500), Name höchstens 200 Zeichen.
+    const felder = [
+      leseText(req.body.name, { max: MAX_LAENGE.einzeilig, feld: 'Name' }),
+      leseText(req.body.kontoId, { max: MAX_LAENGE.kennung, feld: 'Konto' }),
+      leseText(req.body.iban, { max: MAX_LAENGE.kennung, feld: 'IBAN' }),
+      leseText(req.body.zahlungsart, { max: MAX_LAENGE.kennung, feld: 'Zahlungsart' }),
+    ];
+    const eingabeFehler = felder.map((f) => f.fehler).filter(Boolean);
+    if (eingabeFehler.length > 0) return res.status(400).json({ error: eingabeFehler.join(' ') });
+    const [{ wert: name }, { wert: kontoId }, { wert: iban }, { wert: zahlungsart }] = felder;
     const { errors, normalizedIban } = pruefeNeuenKreditor(db, { name, zahlungsart, iban, kontoId });
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join(' ') });
     }
     const id = legeKreditorAn(db, { name, kontoId, zahlungsart, normalizedIban });
+    // Prüfung 2026-11-15 (S4): Eine neue Lieferanten-IBAN wird wie in POST /admin/kreditoren an Buchhaltung und Admin gemeldet.
+    if (normalizedIban) {
+      await meldeIbanAenderung(db, config, mailer, { kreditor: { name: name.trim() }, iban: normalizedIban, art: 'hinzugefuegt', person, neuerLieferant: true });
+    }
     res.status(201).json({ id, name: name.trim() });
-  });
+  }));
 
   // POST /kontierung/:id – Hauptaktion: `aktion` = kontieren | ablehnen | rapport (Zweige siehe unten). Reihenfolge: Upload (multer) → CSRF → Validierung → Prüf-Popup → Datei-Arbeit → Transaktion → Mails.
-  router.post('/:id', (req, res, next) => {
-    mitAuditKontext(uploadBeleg.single('beleg'))(req, res, asyncCallback(next, async (uploadErr) => {
+  // Die Zuständigkeit hängt nur von :id und der Sitzung ab und wird deshalb schon vor dem Upload geprüft (zustaendigkeitVorUpload); der Handler lädt den Vorgang nach dem Upload erneut.
+  router.post('/:id', zustaendigkeitVorUpload((req, res) => loadAuthorizedJob(req, res)), (req, res, next) => {
+    mitAuditKontext(begrenzeUploadGroesse(uploadBeleg.single('beleg')))(req, res, asyncCallback(next, async (uploadErr) => {
     // csrfProtection läuft, nachdem multer den multipart-Body (inklusive des Felds _csrf) geparst hat — jede frühere Ausführung hätte req.body noch leer und lehnte jede legitime Einreichung ab.
     csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
     if (csrfErr) return next(csrfErr);
@@ -199,8 +221,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       // Formulars werden hier bewusst nicht gelesen.
       if (req.body.aktion === 'rapport') {
         const empfaengerIds = [].concat(req.body.empfaengerIds ?? []).map(String);
-        const bemerkung = req.body.bemerkung || '';
-        const ergebnis = await markiereRapport(db, config, mailer, { job, person: req.currentPerson, empfaengerIds, bemerkung, ip: req.ip });
+        // Prüfung 2026-11-15 (S8): Bemerkung muss ein einzelner Text sein (kein Array) und höchstens 2000 Zeichen lang.
+        const bemerkungGelesen = leseText(req.body.bemerkung, { max: MAX_LAENGE.text, feld: 'Bemerkung' });
+        const bemerkung = bemerkungGelesen.wert;
+        const ergebnis = bemerkungGelesen.fehler
+          ? { ok: false, status: 400, fehler: bemerkungGelesen.fehler }
+          : await markiereRapport(db, config, mailer, { job, person: req.currentPerson, empfaengerIds, bemerkung, ip: req.ip });
         if (ergebnis.ok) return res.redirect('/pool');
         if (ergebnis.status !== 400) return res.status(ergebnis.status).render('error', { message: ergebnis.fehler });
         return res.status(400).render('kontierung', {
@@ -231,7 +257,23 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         if (err instanceof KreditorFeldKonflikt) return res.status(400).render('error', { message: err.message });
         throw err;
       }
-      const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, aktion, typ } = req.body;
+      // Prüfung 2026-11-15 (S8, B3): Textfelder als einzelner, getrimmter Text lesen (Array/Objekt und zu lange Eingaben
+      // ergeben einen Feldfehler statt Fehler 500; eine Begründung nur aus Leerzeichen gilt als leer, B3). Längen: utils/eingabe.js.
+      const eingabeFehler = neueFehler();
+      const text = (wert, feld, max, id) => {
+        const gelesen = leseText(wert, { max, feld });
+        if (gelesen.fehler) eingabeFehler.add(id, gelesen.fehler);
+        return gelesen.wert;
+      };
+      const kontoId = text(req.body.kontoId, 'Konto', MAX_LAENGE.kennung, 'kontoId');
+      const interessenskonflikt = text(req.body.interessenskonflikt, 'Interessenskonflikt', MAX_LAENGE.kennung, 'interessenskonflikt');
+      const begruendung = text(req.body.begruendung, 'Begründung', MAX_LAENGE.text, 'begruendung');
+      const absender = text(req.body.absender, 'Absender', MAX_LAENGE.einzeilig, 'absender');
+      const betrag = text(req.body.betrag, 'Betrag', MAX_LAENGE.betrag, 'betrag');
+      const zahlungsziel = text(req.body.zahlungsziel, 'Zahlungsziel', MAX_LAENGE.kennung, 'zahlungsziel');
+      const rechnungsnummer = text(req.body.rechnungsnummer, 'Rechnungsnummer', MAX_LAENGE.rechnungsnummer, 'rechnungsnummer');
+      const aktion = text(req.body.aktion, 'Aktion', MAX_LAENGE.kennung, null);
+      const typ = text(req.body.typ, 'Typ', MAX_LAENGE.kennung, null);
       const jobTyp = typ === 'gutschrift' ? 'gutschrift' : 'rechnung';
       const ibanEndung = normalizeIban(typeof req.body.ibanEndung === 'string' ? req.body.ibanEndung : '');
       const pruefBemerkung = (typeof req.body.pruefBemerkung === 'string' ? req.body.pruefBemerkung.trim() : '').slice(0, PRUEF_BEMERKUNG_MAX);
@@ -268,12 +310,42 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       if (uploadErr) {
         return renderFehler(uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Der Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.');
       }
+      if (eingabeFehler.liste.length > 0) return renderFehler(eingabeFehler);
       // Gilt unabhängig von aktion (kontieren oder ablehnen) — ein zusammen mit einer Ablehnung angehängter Beleg wird trotzdem zusammengeführt, da das ursprüngliche PDF (in dem der Beleg nun enthalten ist) anschliessend überarbeitet und erneut eingereicht wird.
       let belegMimetype = null;
       if (req.file) {
         belegMimetype = detectBelegMimetype(req.file.buffer);
         if (!belegMimetype || belegMimetype !== req.file.mimetype) {
           return renderFehler('Beleg muss eine PDF-, PNG- oder JPEG-Datei sein.');
+        }
+        const bildFehler = pruefeBelegBild(req.file.buffer, belegMimetype);
+        if (bildFehler) return renderFehler(bildFehler);
+      }
+
+      // B2, Etappe 4: Ein angehängter Beleg wird im PDF-Worker mit dem Vorgangs-PDF zusammengeführt, BEVOR etwas gespeichert wird
+      // (Ablauf: bereiteBelegAnhangVor in services/aufsplitten.js). Ergebnis: der vorbereitete Anhang, null ohne Beleg, oder
+      // false, wenn die Antwort schon gesendet ist – 503 bei vorübergehender Störung, 400/422 bei einem unlesbaren Beleg.
+      const BELEG_KONFLIKT_MELDUNG = 'Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.';
+      async function bereiteBelegVor() {
+        if (!req.file) return null;
+        try {
+          return await bereiteBelegAnhangVor(job, req.file, belegMimetype);
+        } catch (err) {
+          if (err instanceof PdfWorkerFehler) {
+            antworteSpaeterErneut(res, err, 'Kontierung');
+            renderFehler(PDF_VORUEBERGEHEND_MELDUNG, 503);
+            return false;
+          }
+          if (err instanceof BelegBildFehler) {
+            renderFehler(err.message);
+            return false;
+          }
+          if (err instanceof BelegAnhangFehler) {
+            console.warn(`Kontierung: Beleg für Vorgang ${job.id} nicht anhängbar (${err.cause?.message ?? err.cause})`);
+            renderFehler(err.message, 422);
+            return false;
+          }
+          throw err;
         }
       }
 
@@ -282,10 +354,16 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           return renderFehler('Bei einer Ablehnung ist eine Begründung Pflicht.', 400, 'begruendung');
         }
 
+        const anhang = await bereiteBelegVor();
+        if (anhang === false) return;
+
         db.exec('BEGIN');
         let abgelehnt;
         try {
-          abgelehnt = ablehnenJob(db, job.id, { abgelehntVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+          // Mit Beleg lag ein await (PDF-Worker) zwischen Zuständigkeitsprüfung und hier: hat inzwischen eine andere Anfrage den
+          // Vorgang oder sein PDF verändert, wird nichts gespeichert (409 wie beim Wettlauf auf ablehnenJob).
+          abgelehnt = (!anhang || belegAnhangNochAktuell(db, job.id, anhang))
+            && ablehnenJob(db, job.id, { abgelehntVon: req.currentPerson.churchtools_person_id, grund: begruendung });
           if (abgelehnt) {
             createFreigabe(db, {
               jobId: job.id,
@@ -298,29 +376,29 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
               eskaliertVon: null,
               vertretungFuer: !job.freigabe1_eskaliert_an_admin && istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, job.zugewiesen_an) ? job.zugewiesen_an : null,
             });
+            // beleg_seitenzahl mitzuführen ist hier genauso Pflicht wie beim Aufsplitten: auch ein
+            // Splitkind (aufgesplittet_von gesetzt) landet auf diesem Pfad, wenn seine Zeile abgelehnt
+            // und überarbeitet wird. Ohne die Fortschreibung wüsste der spätere Gruppen-Merge nichts
+            // von diesen Belegseiten und liesse sie kommentarlos aus dem Archivdokument weg.
+            // Bewusst nicht auf Splitkinder eingeschränkt -- bei einem gewöhnlichen Job liest diese
+            // Spalte schlicht niemand. Die Seitenzahl stammt aus demselben Worker-Auftrag, der den Beleg
+            // erfolgreich zusammengeführt hat (erst zusammenführen, dann zählen): eine aufgeblähte Zahl liesse
+            // später den Ausschnitt von haengeBelegSeitenAn in die Freigabe-2-Stempelseite des Kindes reichen.
+            if (anhang) addBelegSeiten(db, job.id, anhang.belegSeiten);
           }
           db.exec('COMMIT');
         } catch (err) {
           db.exec('ROLLBACK');
+          verwirfBelegAnhang(anhang);
           throw err;
         }
 
         if (!abgelehnt) {
-          return renderFehler('Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.', 409);
+          verwirfBelegAnhang(anhang);
+          return renderFehler(BELEG_KONFLIKT_MELDUNG, 409);
         }
-
-        // beleg_seitenzahl mitzuführen ist hier genauso Pflicht wie beim Aufsplitten: auch ein
-        // Splitkind (aufgesplittet_von gesetzt) landet auf diesem Pfad, wenn seine Zeile abgelehnt
-        // und überarbeitet wird. Ohne die Fortschreibung wüsste der spätere Gruppen-Merge nichts
-        // von diesen Belegseiten und liesse sie kommentarlos aus dem Archivdokument weg.
-        // Bewusst nicht auf Splitkinder eingeschränkt -- bei einem gewöhnlichen Job liest diese
-        // Spalte schlicht niemand.
-        if (req.file) {
-          // Erst zusammenführen, dann zählen: Wirft mergeBelegFuerJob (z. B. ein abgeschnittenes, aber gültig signiertes Bild, das erst in embedPng scheitert), darf beleg_seitenzahl nicht schon für Seiten erhöht worden sein, die nie tatsächlich geschrieben wurden — eine aufgeblähte Zahl lässt später den Ausschnitt von haengeBelegSeitenAn
-          // in die eigene Freigabe-2-Stempelseite des Kindes hineinreichen und beschädigt das Archivdokument still.
-          await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
-          addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
-        }
+        // Direkt nach dem COMMIT, ohne await dazwischen: das zusammengeführte PDF ersetzt das bisherige.
+        if (anhang) uebernimmBelegAnhang(anhang);
 
         if (job.freigabe1_eskaliert_an_admin) {
           const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
@@ -436,8 +514,18 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         });
       }
 
+      const anhang = await bereiteBelegVor();
+      if (anhang === false) return;
+
       db.exec('BEGIN');
       try {
+        // Siehe Ablehnungs-Pfad: nach dem await auf den PDF-Worker prüfen, ob Vorgang und PDF noch unverändert sind. Sonst
+        // ROLLBACK und 409 – zwei gleichzeitige Kontierungen dürfen nicht beide speichern und ihr PDF schreiben.
+        if (anhang && !belegAnhangNochAktuell(db, job.id, anhang)) {
+          db.exec('ROLLBACK');
+          verwirfBelegAnhang(anhang);
+          return renderFehler(BELEG_KONFLIKT_MELDUNG, 409);
+        }
         setKontierung(db, job.id, konto.id);
         updateKontierungMetadaten(db, job.id, {
           absender,
@@ -511,21 +599,19 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             eskaliertVon: null,
           });
         }
+        // Siehe Ablehnungs-Pfad oben: ein Splitkind erreicht auch die normale Kontierung -- etwa
+        // eine per hinweis_konto_id angelegte Zeile, die aus dem Pool geclaimt wird, oder eine aus
+        // der Interessenskonflikt-Eskalationsmail heraus geöffnete. Ein hier angehängter Beleg muss
+        // deshalb genauso in beleg_seitenzahl einfliessen, sonst fehlt er später im Gruppendokument.
+        if (anhang) addBelegSeiten(db, job.id, anhang.belegSeiten);
         db.exec('COMMIT');
       } catch (err) {
         db.exec('ROLLBACK');
+        verwirfBelegAnhang(anhang);
         throw err;
       }
-
-      // Siehe Ablehnungs-Pfad oben: ein Splitkind erreicht auch die normale Kontierung -- etwa
-      // eine per hinweis_konto_id angelegte Zeile, die aus dem Pool geclaimt wird, oder eine aus
-      // der Interessenskonflikt-Eskalationsmail heraus geöffnete. Ein hier angehängter Beleg muss
-      // deshalb genauso in beleg_seitenzahl einfliessen, sonst fehlt er später im Gruppendokument.
-      if (req.file) {
-        // Erst zusammenführen, dann zählen — siehe den identischen Kommentar beim Ablehnungs-Pfad oben.
-        await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
-        addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
-      }
+      // Direkt nach dem COMMIT, ohne await dazwischen: das zusammengeführte PDF ersetzt das bisherige.
+      if (anhang) uebernimmBelegAnhang(anhang);
 
       if (ibanManuellNoetig) {
         const passt = ibanEndungPasst(db, kreditor.id, ibanEndung);
@@ -777,7 +863,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     if (!job) return;
     if (sperreKkAbrechnung(job, res)) return;
 
-    const bemerkung = (req.body.bemerkung || '').trim();
+    const { wert: bemerkung, fehler: bemerkungFehler } = leseText(req.body.bemerkung, { max: MAX_LAENGE.text, feld: 'Bemerkung' });
+    if (bemerkungFehler) return res.status(400).render('error', { message: bemerkungFehler });
     if (!bemerkung) {
       return res.status(400).render('error', { message: 'Bitte eine Bemerkung angeben.' });
     }
@@ -833,7 +920,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
     if (!job.kreditkarte_id) return res.status(409).render('error', { message: 'Diese Abrechnung ist keiner Kreditkarte zugeordnet.' });
-    const bemerkung = (req.body.bemerkung || '').trim();
+    const { wert: bemerkung, fehler: bemerkungFehler } = leseText(req.body.bemerkung, { max: MAX_LAENGE.text, feld: 'Bemerkung' });
+    if (bemerkungFehler) return res.status(400).render('error', { message: bemerkungFehler });
     if (!bemerkung) return res.status(400).render('error', { message: 'Bitte eine Bemerkung angeben.' });
     db.exec('BEGIN');
     let ok = false;
@@ -913,8 +1001,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   });
 
   // POST /kontierung/:id/aufsplitten – prüft die Zeilen (Konto, Betrag, Typ, Position, Beleg, Lieferant), verlangt Summe = Gesamtbetrag, zeigt ggf. das Prüf-Popup, führt Dateiarbeit, Aufsplitten (services/aufsplitten.js) und Mails aus.
-  router.post('/:id/aufsplitten', (req, res, next) => {
-    mitAuditKontext(uploadBeleg.any())(req, res, asyncCallback(next, async (uploadErr) => {
+  router.post('/:id/aufsplitten', zustaendigkeitVorUpload((req, res) => loadAuthorizedJob(req, res)), (req, res, next) => {
+    mitAuditKontext(begrenzeUploadGroesse(uploadBeleg.any()))(req, res, asyncCallback(next, async (uploadErr) => {
     // csrfProtection läuft, nachdem multer den multipart-Body (inklusive des Felds _csrf) geparst hat — jede frühere Ausführung hätte req.body noch leer und lehnte jede legitime Einreichung ab.
     csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
     if (csrfErr) return next(csrfErr);
@@ -925,14 +1013,23 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const konten = ladeKontenFuerJob(req, job);
       const alleKonten = listKonten(db);
 
-      const gesamtbetrag = req.body.gesamtbetrag || '';
-      const kontoIds = [].concat(req.body.teilKontoId || []);
-      const betraege = [].concat(req.body.teilBetrag || []);
-      const konflikte = [].concat(req.body.teilInteressenskonflikt || []);
-      const positionen = [].concat(req.body.teilPosition || []);
-      const begruendung = req.body.begruendung || '';
-      const typ = normalisiereTyp(req.body.typ);
-      const kreditorIdEingabe = typeof req.body.kreditorId === 'string' ? req.body.kreditorId.trim() : '';
+      // Prüfung 2026-11-15 (S8, B3): Textfelder als einzelner, getrimmter Text lesen. Die Teilzeilen sind bewusst Listen
+      // (mehrfach benannte Felder); ihre einzelnen Einträge müssen aber wieder Text sein. Begründung nur aus Leerzeichen gilt als leer.
+      const eingabeFehler = [];
+      const text = (wert, feld, max) => {
+        const gelesen = leseText(wert, { max, feld });
+        if (gelesen.fehler) eingabeFehler.push(gelesen.fehler);
+        return gelesen.wert;
+      };
+      const liste = (wert, feld, max) => [].concat(wert ?? []).map((eintrag) => text(eintrag, feld, max));
+      const gesamtbetrag = text(req.body.gesamtbetrag, 'Gesamtbetrag', MAX_LAENGE.betrag);
+      const kontoIds = liste(req.body.teilKontoId, 'Konto', MAX_LAENGE.kennung);
+      const betraege = liste(req.body.teilBetrag, 'Betrag', MAX_LAENGE.betrag);
+      const konflikte = liste(req.body.teilInteressenskonflikt, 'Interessenskonflikt', MAX_LAENGE.kennung);
+      const positionen = liste(req.body.teilPosition, 'Position', MAX_LAENGE.einzeilig);
+      const begruendung = text(req.body.begruendung, 'Begründung', MAX_LAENGE.text);
+      const typ = normalisiereTyp(typeof req.body.typ === 'string' ? req.body.typ : '');
+      const kreditorIdEingabe = text(req.body.kreditorId, 'Lieferant', MAX_LAENGE.kennung);
       const ibanEndung = normalizeIban(typeof req.body.ibanEndung === 'string' ? req.body.ibanEndung : '');
       const pruefBemerkung = (typeof req.body.pruefBemerkung === 'string' ? req.body.pruefBemerkung.trim() : '').slice(0, PRUEF_BEMERKUNG_MAX);
       const teileEingabe = kontoIds.map((kontoId, i) => ({
@@ -942,7 +1039,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         position: (positionen[i] || '').trim() || null,
       }));
 
-      const errors = [];
+      const errors = [...new Set(eingabeFehler)];
       if (uploadErr) {
         errors.push(uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Ein Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.');
       }
@@ -961,6 +1058,11 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         const mimetype = detectBelegMimetype(file.buffer);
         if (!mimetype || mimetype !== file.mimetype) {
           errors.push('Beleg muss eine PDF-, PNG- oder JPEG-Datei sein.');
+          continue;
+        }
+        const bildFehler = pruefeBelegBild(file.buffer, mimetype);
+        if (bildFehler) {
+          errors.push(bildFehler);
           continue;
         }
         teilBelegByIndex.set(Number(match[1]), { file, mimetype });
@@ -1062,7 +1164,16 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       job.betrag = gesamtbetrag.replace(',', '.');
 
       // Datei-I/O (auch das asynchrone Zusammenführen des Belegs) passiert vor der Datenbanktransaktion unten — siehe bereiteTeilDateienVor in services/aufsplitten.js.
-      const vorbereiteteTeile = await bereiteTeilDateienVor(config, job, aufgeloesteTeile);
+      // B2, Etappe 4: Belege werden dabei im PDF-Worker angehängt. Bei einer Störung hat bereiteTeilDateienVor seine Kopien schon
+      // entfernt; das Formular kommt mit 503 zurück, nichts ist aufgesplittet.
+      let vorbereiteteTeile;
+      try {
+        vorbereiteteTeile = await bereiteTeilDateienVor(config, job, aufgeloesteTeile);
+      } catch (err) {
+        if (!(err instanceof PdfWorkerFehler)) throw err;
+        antworteSpaeterErneut(res, err, 'Aufsplitten');
+        return renderAufsplittenForm(req, res, 503, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, [PDF_VORUEBERGEHEND_MELDUNG], typ, { kreditorId: kreditorIdEingabe, ibanEndung, pruefBemerkung });
+      }
 
       let ergebnis;
       let kindIds = [];

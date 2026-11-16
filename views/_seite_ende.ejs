@@ -11,5 +11,6 @@
 <% } %>
 <%- include('_bestaetigen_dialog') %>
 <script src="/js/portal.js?v=<%= locals.assetVersion || 0 %>" defer></script>
+<% if (!eRahmenOhne && locals.currentPerson && locals.sitzungAblauf) { %><script src="/js/sitzungHinweis.js?v=<%= locals.assetVersion || 0 %>" defer></script><% } %>
 </body>
 </html>

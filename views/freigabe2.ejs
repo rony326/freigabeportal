@@ -12,6 +12,7 @@
               <div class="alert <%= kkHinweis.startsWith('Kreditkartenbeleg') ? 'alert-info' : 'alert-warning' %> py-2"><%= kkHinweis %></div>
             <% } %>
             <%- include('_auffaelligkeiten_bestaetigt', { kasten: locals.auffaelligkeitenBestaetigt }) %>
+            <%- include('_iban_alter_hinweis', { hinweis: locals.ibanAlterHinweis }) %>
             <div class="entscheidung">
               <div class="entscheidung-betrag"><%= job.betrag || '—' %><% if (job.typ === 'gutschrift') { %> <span class="badge text-bg-secondary fs-6 fw-normal align-middle">Gutschrift</span><% } %></div>
               <% if (job.quelle === 'spesen') { %>
@@ -86,7 +87,7 @@
               <%- include('_konflikt_frage', { praefix: 'f2', values }) %>
               <div class="mb-3">
                 <label class="form-label" for="f2begruendung">Begründung <span class="text-muted" data-begruendung-hinweis><%= values.interessenskonflikt === 'ja' ? '(Pflicht)' : '(bei Ablehnung Pflicht)' %></span></label>
-                <textarea class="form-control<%= ff.f2begruendung ? ' is-invalid' : '' %>" id="f2begruendung" name="begruendung" data-begruendung-pflicht-bei="f2konfliktJa"<%- ffAttr(ff, 'f2begruendung') %>><%= values.begruendung || '' %></textarea>
+                <textarea class="form-control<%= ff.f2begruendung ? ' is-invalid' : '' %>" id="f2begruendung" name="begruendung" maxlength="<%= maxLen.text %>" data-begruendung-pflicht-bei="f2konfliktJa"<%- ffAttr(ff, 'f2begruendung') %>><%= values.begruendung || '' %></textarea>
 <% if (ff.f2begruendung) { %><div class="invalid-feedback d-block" id="f2begruendung-fehler"><%= ff.f2begruendung %></div><% } %>
               </div>
               <button type="submit" name="aktion" value="freigeben" class="btn btn-primary me-2" data-konflikt-knopf="An andere Person weitergeben"><%= job.quelle === 'spesen' && !paymentReview ? 'Zahlungsdaten prüfen' : 'Freigeben' %></button>

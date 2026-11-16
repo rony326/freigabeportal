@@ -18,11 +18,11 @@ in [`docs/`](docs/README.md).
 
 ## Version
 
-Aktuelle Version: **1.2.3** (2026-11-15).
+Aktuelle Version: **1.3.0** (2026-11-16).
 Änderungen je Version: [`CHANGELOG.md`](CHANGELOG.md), ausführliche
-Release Notes in [`docs/releases/`](docs/releases/v1.2.3.md). Die
+Release Notes in [`docs/releases/`](docs/releases/v1.3.0.md). Die
 Fusszeile im Portal zeigt den laufenden Stand per `git describe` (Tag
-`v1.2.2` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
+`v1.3.0` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
 Version aus `package.json`.
 
 ## Setup (lokal)
@@ -201,7 +201,9 @@ und dürfen nicht `changeme` enthalten — die App verweigert sonst den Start
 | `CT_CUSTOM_FIELD_IBAN`, `CT_CUSTOM_FIELD_KONTOINHABER` | Eigenschaftsschlüssel der ChurchTools-Personenfelder mit IBAN und Kontoinhaber (für die Auszahlung von Spesen), z. B. `iban_1` — genau der Schlüssel am Personenobjekt, nicht der Anzeigename |
 | `BACKUP_KEYRING_FILE` | Pfad zum Schlüsselbund für die verschlüsselten Sicherungen (ausserhalb aller Datenverzeichnisse, Modus 0600), siehe [Verschlüsselte Backups](docs/backup-verschluesselung.md) |
 | `TSA_TRUST_ANCHORS_FILE`, `TSA_TRUST_ANCHORS_SHA256`, `TSA_CRL_FILE`, `TSA_CRL_AUTO_UPDATE` | Vertrauensanker und Sperrlisten für den Zeitstempeldienst, siehe oben und [TSA-Vertrauensanker](docs/tsa-vertrauensanker.md) |
+| `TSA_PASSWORT` (optional) | Passwort des Zeitstempeldienstes. Hat Vorrang vor dem unter Admin → Zeitstempel gespeicherten Passwort (das im Klartext in der Datenbank und damit in jeder Sicherung läge); ist die Variable gesetzt, zeigt das Admin-Formular einen Hinweis und der Datenbankwert wird nicht benutzt. Ohne die Variable gilt weiter der Datenbankwert |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | aus den bereits vorhandenen Produktions-SMTP-Zugangsdaten |
+| `PDF_WORKER`, `PDF_WORKER_ANZAHL`, `PDF_WORKER_SPEICHER_MB`, `PDF_WORKER_ZEITLIMIT_FAKTOR` (optional) | PDF-Verarbeitung in Worker-Threads: `an`/`aus` (Standard `an`), Anzahl 1–4 (Standard 2), Speichergrenze je Worker in MB (Standard 250), Faktor auf die Zeitlimits (Standard 1). Siehe [Betrieb & Nutzung](docs/betrieb-und-nutzung.md#pdf-verarbeitung-in-worker-threads) |
 
 ### Vor dem ersten Login — Superadmin-Bootstrap
 

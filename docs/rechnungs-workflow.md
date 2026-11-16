@@ -176,7 +176,10 @@ Zusätzlich, unabhängig vom Ausgang: ein optional mit hochgeladener
 **Beleg** (PDF/PNG/JPEG, z. B. bei Kreditkartenabrechnungen) wird per
 `mergeBelegInPdf` (`src/services/belegAnhaengen.js`) als zusätzliche
 Seite(n) in die bestehende Rechnungs-PDF eingefügt — als PDF durch
-Seiten-Kopie, als Bild durch eine neue, bildgrosse Seite. Beim Kontieren
+Seiten-Kopie, als Bild durch eine neue, bildgrosse Seite. Bilder dürfen
+höchstens 40 Megapixel haben: Breite und Höhe werden vor dem Einbetten aus dem
+Bildkopf gelesen (`pruefeBelegBild`), ein zu grosses oder nicht lesbares Bild wird
+mit verständlicher Meldung abgelehnt, ohne es zu dekodieren. Beim Kontieren
 läuft zuerst die **Betrugserkennung** (Prüfungen gegen die Lieferanten-Stammdaten,
 Prüf-Popup, bei Bestätigung genau eine Warn-Mail an Freigeber 1 + 2; ohne QR-Code
 die manuelle IBAN-Kontrolle mit den letzten 4 Zeichen; Lieferanten ohne

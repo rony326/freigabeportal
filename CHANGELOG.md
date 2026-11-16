@@ -3,6 +3,37 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.3.0] – 2026-11-16
+
+Sicherheits- und Stabilitäts-Release nach der Prüfung vom 15.11.2026 (Befunde S1–S9, U1–U5, B1–B5).
+Release Notes: [docs/releases/v1.3.0.md](docs/releases/v1.3.0.md). Neue optionale Umgebungsvariablen,
+automatische Datenbank-Migration, neue 503-Antworten für n8n.
+
+- PDF-Verarbeitung in Worker-Threads (B2): n8n-Eingang, Kreditkartenbelege, Spesen, Beleg anhängen,
+  Stempel bei Freigabe 2 und Rapport, Splitgruppen-Dokument. Bei Überlastung 503 mit `Retry-After: 60`
+  (Personen: Formular mit Hinweis, nichts gespeichert; n8n: `pdf_verarbeitung_ausgelastet`). Neuer Dienst
+  `pdf_verarbeitung` auf Statusseite und `/healthz`. Neue Variablen `PDF_WORKER`, `PDF_WORKER_ANZAHL`,
+  `PDF_WORKER_SPEICHER_MB`, `PDF_WORKER_ZEITLIMIT_FAKTOR`. Hauptprozess lädt mupdf nicht mehr (~25 MB weniger).
+- Gleichzeitigkeit: identische PDFs ergeben einen Vorgang, zwei Kontierungen mit Beleg ergeben einmal 409,
+  eine Splitgruppe wird genau einmal exportiert. Beleg wird vor dem Speichern angehängt (bisher 500 bei
+  gespeicherter Kontierung ohne Beleg).
+- ChurchTools-Gruppen (S1, B1, B5): nur aktive Mitglieder, vollständige Liste (bisher 10), ID aus
+  `domainIdentifier`, Abbruch statt halber Liste. Doku zum sofortigen Rollenentzug (S9).
+- Bildbelege höchstens 40 Megapixel (S2); PNG muss vollständig sein (abgeschnittenes PNG liess pdf-lib endlos
+  hängen). Uploads höchstens 60 MB je Anfrage, Zuständigkeit vor dem Upload (S3). Grenzen auf der Spesen-Seite (U5).
+- IBAN-Änderungen lösen sofort die Mail `iban-aenderung` aus; Warnung in Freigabe 2 bei IBAN jünger als
+  14 Tage (S4). Migration: `kreditor_ibans.erstellt_von`, Mailtyp im CHECK von `mail_log`.
+- Schreib-Limits je Person: 10 Spesenabrechnungen, 5 Fehlermeldungen pro Stunde (S5). Öffentlicher Begrenzer
+  zählt Angemeldete je Person statt je IP (Büro hinter einer IP).
+- TSA: Adresse nur `https://` und öffentlich (S6), `TSA_PASSWORT` hat Vorrang vor dem Datenbankwert (S7),
+  Sperrliste bricht beim Lesen bei 4 MB ab (B4).
+- Texteingaben mit Höchstlängen und 400 statt 500 bei mehrfach gesendeten Feldern (S8); Begründung nur aus
+  Leerzeichen gilt als leer (B3).
+- Rücksprung nach der Anmeldung auf die ursprüngliche Seite (U1), Hinweis vor Sitzungsablauf (U2), Rückfrage
+  vor heiklen Aktionen (U3), 429 und Download-Fehler als Fehlerseite statt JSON (U4).
+- Abhängigkeiten: mupdf 1.28.6, express-rate-limit 8.7.4, nodemailer 10.6.0, csrf-csrf 4.1.0,
+  read-excel-file 9.3.17. Monatlicher Termin für `npm audit` und pdf.js-Prüfung in der Betriebsdoku.
+
 ## [1.2.3] – 2026-11-15
 
 Bedienungs-Release für Gelegenheitsnutzer. Release Notes: [docs/releases/v1.2.3.md](docs/releases/v1.2.3.md).

@@ -110,3 +110,15 @@ test('createSessionRateLimiter buckets IPv6 addresses by /56 subnet when req.cur
   const ipv6_different_subnet = await request(app).get('/probe').set('X-Forwarded-For', '2001:db8:5678:9a00::1');
   assert.equal(ipv6_different_subnet.status, 200, 'a different IPv6 /56 subnet has an independent counter, unaffected by the first subnet');
 });
+
+// Ergänzung zur Prüfung 2026-11-15: Hinter einem Büro-Router teilen sich alle Angemeldeten eine IP. Der öffentliche
+// Begrenzer (u. a. signierter PDF-Download /downloads/:jobId für die Vorschau) zählt Angemeldete darum je Person.
+test('createPublicRateLimiter zählt Angemeldete je Person: zwei Personen hinter derselben IP sperren sich nicht gegenseitig', async () => {
+  const app = buildTestApp(createPublicRateLimiter({ limit: 1, windowMs: 60000 }));
+
+  assert.equal((await request(app).get('/probe').set('x-test-person-id', '11')).status, 200);
+  assert.equal((await request(app).get('/probe').set('x-test-person-id', '11')).status, 429, 'Person 11 hat ihr eigenes Kontingent ausgeschöpft');
+  assert.equal((await request(app).get('/probe').set('x-test-person-id', '22')).status, 200, 'Person 22 am selben Anschluss hat ein eigenes Kontingent');
+  assert.equal((await request(app).get('/probe')).status, 200, 'Unangemeldete zählen weiter je IP, getrennt von den Personen');
+  assert.equal((await request(app).get('/probe')).status, 429, 'Unangemeldete am selben Anschluss teilen sich das IP-Kontingent');
+});

@@ -16,7 +16,9 @@ import {
 import { markiereAlsRapport, bestaetigeKenntnisnahme, schliesseRapportAbWennVollstaendig } from '../../db/rapporteRepo.js';
 import { createFreigabe } from '../../db/freigabenRepo.js';
 import { createSpesenabrechnung } from '../../db/spesenabrechnungenRepo.js';
-import { renderFirstPageThumbnail } from '../thumbnail.js';
+// B2: Vorschaubilder über den PDF-Worker – ein statischer Import von thumbnail.js zöge mupdf in den Hauptprozess,
+// weil middleware/roles.js diese Datei (BEISPIELPERSONEN) bei jedem Start lädt.
+import { pdfArbeit } from '../pdfArbeit.js';
 
 // Die Beispielpersonen (id, Name, Rolle in der Demo, Gruppen der Test-Instanz); "Dora" ist die Admin-Rolle.
 export const BEISPIELPERSONEN = [
@@ -51,10 +53,10 @@ async function legeDateiAn(config, titel, lieferant, betrag) {
 }
 
 // Erzeugt und hinterlegt das Vorschaubild (ohne Vorschau geht es weiter, wenn das Rendern scheitert).
-function setzeThumbnail(db, id, pdfPfad, buf) {
+async function setzeThumbnail(db, id, pdfPfad, buf) {
   try {
     const pfad = pdfPfad.replace(/\.pdf$/, '.png');
-    writeFileSync(pfad, renderFirstPageThumbnail(buf));
+    writeFileSync(pfad, await pdfArbeit().ausfuehren('vorschaubild', [buf], { spur: 'hintergrund' }));
     setThumbnailPfad(db, id, pfad);
   } catch { /* ohne Vorschau weiter */ }
 }
@@ -66,7 +68,7 @@ async function neuerJob(db, config, titel, lieferant, betrag) {
     eingangAm: new Date().toISOString(), quelle: 'scanner', absender: null,
     dateiname: `${titel}.pdf`, pdfPfad, dateiHash: hash,
   });
-  setzeThumbnail(db, id, pdfPfad, buf);
+  await setzeThumbnail(db, id, pdfPfad, buf);
   return { id, pdfPfad, buf, hash };
 }
 
@@ -150,5 +152,5 @@ export async function spieleBeispieldatenEin(db, testConfig) {
     dateiname: 'Spesenbeleg.pdf', pdfPfad: sp.pdfPfad, thumbnailPfad: null,
     spesenabrechnungId: abrId, zugewiesenAn: 'test-1',
   });
-  setzeThumbnail(db, spId, sp.pdfPfad, sp.buf);
+  await setzeThumbnail(db, spId, sp.pdfPfad, sp.buf);
 }

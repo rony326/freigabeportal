@@ -86,6 +86,7 @@ erDiagram
         text iban UK
         text quelle "manuell | bestaetigt"
         text erstellt_am
+        text erstellt_von "Person, NULL = unbekannt (Altbestand)"
     }
     zuweisungsregeln {
         int id PK
@@ -343,7 +344,8 @@ eigenes Audit-Log für Belege, solange sie noch keine `jobs`-Zeile haben
 Ein Kreditor kann mehrere bekannte IBANs haben (`quelle`: manuell vom Admin
 erfasst; neue IBANs entstehen nur noch im Admin. `bestaetigt` ist ein
 Altwert aus der entfernten Funktion „IBAN merken“; solche Zeilen bleiben
-gültig). Basis für die Betrugserkennung, siehe
+gültig). `erstellt_am` und `erstellt_von` (Person, bei Altbestand NULL = unbekannt) liefern den
+Hinweis „neue IBAN“ in Freigabe 2. Basis für die Betrugserkennung, siehe
 [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md).
 
 `kreditoren.zahlungsart` (`ueberweisung` Default | `dauerauftrag` |

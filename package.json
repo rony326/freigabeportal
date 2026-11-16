@@ -1,6 +1,6 @@
 {
   "name": "freigabeportal",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -25,19 +25,19 @@
     "asn1js": "3.0.10",
     "compression": "^1.8.2",
     "cookie-parser": "^1.4.7",
-    "csrf-csrf": "^4.0.3",
+    "csrf-csrf": "^4.1.0",
     "ejs": "^3.1.10",
     "express": "^4.21.0",
-    "express-rate-limit": "^8.6.2",
+    "express-rate-limit": "^8.7.4",
     "express-session": "^1.18.0",
     "jsqr": "^1.4.0",
     "multer": "^2.2.0",
-    "mupdf": "^1.28.0",
-    "nodemailer": "^10.0.12",
+    "mupdf": "^1.28.6",
+    "nodemailer": "^10.6.0",
     "pdf-lib": "^1.17.1",
     "pdf-rfc3161": "^0.1.4",
     "pkijs": "3.4.0",
-    "read-excel-file": "9.3.12"
+    "read-excel-file": "9.3.17"
   },
   "devDependencies": {
     "bootstrap-icons": "1.13.2",

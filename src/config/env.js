@@ -46,6 +46,37 @@ export function loadStorageConfig(env = process.env) {
   };
 }
 
+// Ganzzahl aus der Umgebung in [min, max], sonst Standard (leer) bzw. Startabbruch (ungültig).
+function ganzzahl(env, name, standard, min, max) {
+  const roh = env[name];
+  if (roh === undefined || roh === '') return standard;
+  if (!/^\d+$/.test(roh) || Number(roh) < min || Number(roh) > max) {
+    throw new Error(`Umgebungsvariable ${name} muss eine ganze Zahl von ${min} bis ${max} sein.`);
+  }
+  return Number(roh);
+}
+
+// PDF-Verarbeitung in Worker-Threads (B2, services/pdfArbeit.js). PDF_WORKER=aus rechnet im Hauptthread
+// (bewusster Betriebs-/Testschalter, kein automatischer Rückfall).
+function loadPdfWorkerConfig(env) {
+  const modus = env.PDF_WORKER || 'an';
+  if (!['an', 'aus'].includes(modus)) throw new Error('Umgebungsvariable PDF_WORKER muss "an" oder "aus" sein.');
+  const faktorRoh = env.PDF_WORKER_ZEITLIMIT_FAKTOR;
+  let zeitlimitFaktor = 1;
+  if (faktorRoh !== undefined && faktorRoh !== '') {
+    zeitlimitFaktor = Number(faktorRoh);
+    if (!/^\d+(\.\d+)?$/.test(faktorRoh) || zeitlimitFaktor < 0.1 || zeitlimitFaktor > 10) {
+      throw new Error('Umgebungsvariable PDF_WORKER_ZEITLIMIT_FAKTOR muss eine Zahl von 0.1 bis 10 sein.');
+    }
+  }
+  return {
+    modus,
+    anzahl: ganzzahl(env, 'PDF_WORKER_ANZAHL', 2, 1, 4),
+    speicherGrenzeMb: ganzzahl(env, 'PDF_WORKER_SPEICHER_MB', 250, 64, 4096),
+    zeitlimitFaktor,
+  };
+}
+
 // Vollständige Laufzeitkonfiguration für den Server. Wirft bei fehlenden/ungültigen Werten.
 // Gegenseitige Abhängigkeiten, die hier geprüft werden:
 //   - TSA-Vertrauensanker-Datei und ihr SHA-256 müssen zusammen gesetzt sein
@@ -91,6 +122,7 @@ export function loadConfig(env = process.env) {
     tsaCrlAutoUpdate: env.TSA_CRL_AUTO_UPDATE === 'true',
     tsaTrustAnchorsFile: env.TSA_TRUST_ANCHORS_FILE || null,
     tsaTrustAnchorsSha256: env.TSA_TRUST_ANCHORS_SHA256 || null,
+    pdfWorker: loadPdfWorkerConfig(env),
     smtp: {
       host: env.SMTP_HOST,
       port: Number(env.SMTP_PORT) || 587,

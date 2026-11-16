@@ -47,7 +47,7 @@
               </form>
             <% } %>
             <% if (darfAufheben) { %>
-              <form method="post" action="/kontierung/<%= job.id %>/rapport-aufheben" class="d-inline">
+              <form method="post" action="/kontierung/<%= job.id %>/rapport-aufheben" class="d-inline" data-bestaetigen="Die Markierung wird aufgehoben. Der Beleg geht zurück in die Kontierung, und die Personen müssen ihn nicht mehr zur Kenntnis nehmen. Du kannst ihn später erneut markieren." data-bestaetigen-knopf="Markierung aufheben">
                 <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                 <button type="submit" class="btn btn-outline-secondary">Markierung aufheben</button>
               </form>

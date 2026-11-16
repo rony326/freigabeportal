@@ -20,7 +20,10 @@ sequenceDiagram
 
     n8n->>P: POST /api/n8n/jobs (X-API-Key, multipart: pdf, quelle, absender, dateiname)
     P->>P: Magic-Byte-Check (%PDF)
-    P->>P: Eingangsprüfung: öffnen (mupdf + pdf-lib),<br/>nicht verschlüsselt, ≥ 1 lesbare Seite
+    P->>P: Eingangsprüfung im PDF-Worker: öffnen (mupdf + pdf-lib),<br/>nicht verschlüsselt, ≥ 1 lesbare Seite
+    alt PDF-Verarbeitung ausgelastet / Zeitlimit / Absturz
+        P-->>n8n: 503 { error, code } + Retry-After — später erneut senden
+    end
     alt nicht verarbeitbar
         P-->>n8n: 422 { error, code } — kein Job, keine Datei
     end
@@ -28,10 +31,11 @@ sequenceDiagram
     alt Hash bereits bekannt (Retry/Duplikat)
         P-->>n8n: 200 { id, status, duplikat: true }
     else neue Datei
+        P->>P: Thumbnail + QR-Bill (+ Text) im PDF-Worker (best effort)
+        P->>P: Hash erneut prüfen (gleichzeitige Dublette → 200 duplikat)
         P->>P: PDF unter JOBS_DIR speichern
         P->>P: createJob() — Zuweisungsregel prüfen, ggf. auto-zuweisen
-        P->>P: Thumbnail rendern (best effort)
-        P->>P: QR-Bill scannen (best effort)
+        P->>P: Thumbnail und QR-Daten speichern
         opt Job wurde auto-zugewiesen
             P->>P: Zuweisungs-Mail an Freigeber 1
         end
@@ -69,6 +73,18 @@ Versuch mit denselben Bytes ergibt wieder `422`. Der n8n-Workflow soll `422`
 nicht automatisch wiederholen, sondern die Mail zur manuellen Bearbeitung
 weiterleiten (z. B. an die Buchhaltung, mit der Meldung aus `error`).
 Dieselbe Prüfung gilt für PDF-Belege bei der Spesen-Einreichung.
+
+**`503` bei ausgelasteter PDF-Verarbeitung (B2):** Eingangsprüfung, Vorschaubild
+und QR-Erkennung laufen in Worker-Threads mit Warteschlange und Zeitlimit
+([architektur.md](architektur.md#pdf-worker-srcservicespdfworkerpooljs-befund-b2)).
+Ist die Eingangsprüfung wegen Überlastung, Zeitlimit oder Absturz eines Workers
+nicht möglich, antwortet die Route mit **HTTP 503**, `Retry-After: 60` und
+`{"error": "…", "code": "pdf_verarbeitung_ausgelastet"}`. Es entsteht weder ein
+Job noch eine Datei. Das ist kein Prüfergebnis: **n8n soll die Einreichung
+nach der Wartezeit wiederholen** (wie beim Wartungsmodus, «Retry On Fail» mit
+Pause); erst nach mehreren erfolglosen Versuchen zur manuellen Bearbeitung
+weiterleiten. Vorschaubild und QR-Erkennung sind dagegen weiterhin best effort:
+scheitern sie, entsteht der Job trotzdem (ohne Vorschaubild bzw. QR-Daten).
 
 ## Wartungsmodus (503)
 
@@ -269,7 +285,7 @@ später auch von einem nativen Mail-Modul wiederverwendet werden kann.
 
 | Feld | Pflicht | Beschreibung |
 |---|---|---|
-| `pdf` | ja | der Beleg — trotz des Feldnamens PDF, PNG **oder** JPEG (Magic-Byte-Erkennung), max. 20 MB |
+| `pdf` | ja | der Beleg — trotz des Feldnamens PDF, PNG **oder** JPEG (Magic-Byte-Erkennung), max. 20 MB, Bilder höchstens 40 Megapixel (sonst 400 `datei_ungueltig`) |
 | `absender` | ja | `From:`-Header der eingehenden Mail (roh, mit oder ohne Display-Name) — bestimmt, welcher aktiven Person der Beleg zugeordnet wird |
 
 Ablauf: Absender wird über `normalizeAbsender` (siehe
@@ -290,7 +306,12 @@ das Kreditkarten-Modul deaktiviert ist, `422`
 `{fehler: 'absender_unbekannt'}` wenn keine aktive Person zum Absender
 passt, `422` `{fehler: 'absender_mehrdeutig'}` wenn sich **mehrere**
 aktive Personen diese Adresse teilen (z. B. eine Familienadresse) — es
-wird dann kein Beleg angelegt, da unklar ist, wem er gehört.
+wird dann kein Beleg angelegt, da unklar ist, wem er gehört. `503`
+`{fehler: 'pdf_verarbeitung_ausgelastet'}` mit `Retry-After: 60`, wenn die
+Belegdatei (PDF und Vorschaubild, im PDF-Worker) wegen Überlastung,
+Zeitlimit oder Absturz vorübergehend nicht erstellt werden konnte (B2) —
+es wurde nichts angelegt und keine Mail verschickt; **erneut versuchen**
+wie bei `POST /api/n8n/jobs`.
 
 Workflow-Skizze: IMAP-Trigger auf einem dedizierten "belege@"-Postfach →
 Anhänge aufsplitten → je Anhang ein `POST /api/n8n/kk-belege` →

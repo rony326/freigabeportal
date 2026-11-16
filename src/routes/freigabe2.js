@@ -13,7 +13,7 @@ import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalation
 import { createFreigabe, listFreigabenByJob, istKonfliktmelder } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
-import { stampAndFinalize } from '../services/pdfStamp.js';
+import { pdfArbeit, PdfWorkerFehler, antworteSpaeterErneut, PDF_VORUEBERGEHEND_MELDUNG_OHNE_DATEI } from '../services/pdfArbeit.js';
 import { setZeitstempelMitNachweis } from '../services/zeitstempel.js';
 import { speichereTsaNachweis } from '../services/tsaNachweis.js';
 import { fetchPersonById, extractCustomFieldValue } from '../services/churchtools.js';
@@ -24,6 +24,7 @@ import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { buildAuditLog, EREIGNIS_LABEL } from '../services/auditLog.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../services/splitGruppenExport.js';
 import { auffaelligkeitenKasten } from '../services/auffaelligkeitenAnzeige.js';
+import { ibanAlterHinweis } from '../services/ibanAlter.js';
 import { kkHinweisFuerJob } from '../services/kkStempel.js';
 import { writeFinalDocument } from '../services/finalDocument.js';
 import { tsaTrustOptions } from '../services/tsaTrust.js';
@@ -31,6 +32,7 @@ import { kommentarBereich } from './kommentare.js';
 import { listeKommentare } from '../services/kommentare.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { feldFehlerAttr } from '../utils/feldFehler.js';
+import { leseText, MAX_LAENGE } from '../utils/eingabe.js';
 
 // Stand der Kommentare eines Vorgangs als "<Anzahl>:<letzte id>". Die Seite schreibt ihn beim
 // Rendern ins Formular; der POST vergleicht ihn vor dem Stempeln (Kommentar während die Seite offen
@@ -127,6 +129,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       else if (!paymentReview && zahlungBestaetigungspflichtig(zahlung)) paymentReview = zahlungsReview(job, konto, zahlung, req.currentPerson.churchtools_person_id);
     }
     res.status(status).render('freigabe2', {
+      maxLen: MAX_LAENGE,
       zahlungsart,
       job,
       konto,
@@ -143,6 +146,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       auditLog: buildAuditLog(db, job.id),
       kkHinweis: kkHinweisFuerJob(db, job),
       auffaelligkeitenBestaetigt: auffaelligkeitenKasten(db, job.id),
+      ibanAlterHinweis: ibanAlterHinweis(db, job),
       kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/freigabe2/${job.id}`),
       kommentarStand: kommentarStandVon(db, job.id),
     });
@@ -161,8 +165,19 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const result = loadAuthorized(req, res);
       if (!result) return;
       const { job, konto } = result;
-      const { aktion, interessenskonflikt, begruendung } = req.body;
+      // Prüfung 2026-11-15 (S8, B3): Felder als einzelner, getrimmter Text lesen (Array/Objekt oder zu lang → 400 statt 500);
+      // eine Begründung nur aus Leerzeichen gilt als leer. Längen: utils/eingabe.js.
+      const aktionGelesen = leseText(req.body.aktion, { max: MAX_LAENGE.kennung, feld: 'Aktion' });
+      const konfliktGelesen = leseText(req.body.interessenskonflikt, { max: MAX_LAENGE.kennung, feld: 'Interessenskonflikt' });
+      const begruendungGelesen = leseText(req.body.begruendung, { max: MAX_LAENGE.text, feld: 'Begründung' });
+      const aktion = aktionGelesen.wert;
+      const interessenskonflikt = konfliktGelesen.wert;
+      const begruendung = begruendungGelesen.wert;
       const hatKonflikt = interessenskonflikt === 'ja';
+      const eingabeFehler = [aktionGelesen, konfliktGelesen, begruendungGelesen].map((g) => g.fehler).filter(Boolean);
+      if (eingabeFehler.length > 0) {
+        return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, eingabeFehler, null, begruendungGelesen.fehler ? { f2begruendung: begruendungGelesen.fehler } : {});
+      }
 
       if (hatKonflikt && !begruendung) {
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einem Interessenskonflikt ist eine Begründung Pflicht.'], null, { f2begruendung: 'Bei einem Interessenskonflikt ist eine Begründung Pflicht.' });
@@ -423,11 +438,19 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
         kommentare: stampKommentare.map((k) => ({ zeitpunkt: k.erstellt_am, verfasser: k.verfasser_name, text: k.text })),
       };
 
+      // B2, Etappe 3: Stempeln im PDF-Worker (Spur interaktiv), vor der Transaktion. Ist die PDF-Verarbeitung gestört
+      // (PdfWorkerFehler), kommt das Formular mit 503 zurück – gespeichert und geschrieben ist dann noch nichts.
+      // Ein echter Stempelfehler (unlesbares PDF) bleibt 400 mit der Meldung von stampAndFinalize.
       const pdfBuffer = readFileSync(job.pdf_pfad);
       let stamped;
       try {
-        stamped = await stampAndFinalize(pdfBuffer, stampData);
+        stamped = await pdfArbeit().ausfuehren('freigabeStempeln', [pdfBuffer, stampData], { spur: 'interaktiv' });
       } catch (err) {
+        if (err instanceof PdfWorkerFehler) {
+          antworteSpaeterErneut(res, err, 'Freigabe 2');
+          return renderForm(req, res, 503, result, { interessenskonflikt, begruendung }, [PDF_VORUEBERGEHEND_MELDUNG_OHNE_DATEI],
+            zahlungPflichtig ? zahlungsReview(job, konto, zahlung, req.currentPerson.churchtools_person_id) : null);
+        }
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, [err.message]);
       }
 
@@ -521,7 +544,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
 
       if (job.aufgesplittet_von) {
         try {
-          await pruefeUndFinalisiereSplitGruppe(db, job.aufgesplittet_von, config);
+          // Spur interaktiv: die Person wartet auf die Antwort (B2, Etappe 5).
+          await pruefeUndFinalisiereSplitGruppe(db, job.aufgesplittet_von, config, { spur: 'interaktiv' });
         } catch (err) {
           // Never let a Splitgruppen-Merge-Fehler die bereits abgeschlossene Freigabe 2 dieses
           // einzelnen Kindes scheitern lassen -- der Nachhol-Cron-Job holt einen fehlgeschlagenen

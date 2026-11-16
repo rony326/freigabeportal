@@ -72,7 +72,7 @@
             </div>
             <div class="col-6 col-md-3 col-xl-2">
               <label class="d-block mb-0"><span class="zeile-beschriftung">Position</span>
-              <input type="text" class="form-control" name="teilPosition" value="<%= teil.position || '' %>" placeholder="Position, z.B. Pos. 2"></label>
+              <input type="text" class="form-control" name="teilPosition" maxlength="<%= maxLen.einzeilig %>" value="<%= teil.position || '' %>" placeholder="Position, z.B. Pos. 2"></label>
             </div>
             <div class="col-6 col-xl-1 form-check teil-konflikt">
               <label class="form-check-label"><input type="checkbox" class="form-check-input konflikt-checkbox" <%= teil.interessenskonflikt ? 'checked' : '' %>> <span class="small">Konflikt</span></label>
@@ -91,7 +91,7 @@
       <button type="button" id="zeile-hinzufuegen" class="btn btn-outline-secondary btn-sm mb-3">+ Teilbetrag hinzufügen</button>
       <div class="mb-3">
         <label class="form-label" for="begruendung">Begründung <span class="text-muted">(bei mind. einem Interessenskonflikt Pflicht)</span></label>
-        <textarea class="form-control" id="begruendung" name="begruendung"><%= begruendung || '' %></textarea>
+        <textarea class="form-control" id="begruendung" name="begruendung" maxlength="<%= maxLen.text %>"><%= begruendung || '' %></textarea>
       </div>
       <div class="d-flex flex-wrap gap-2">
         <button type="submit" class="btn btn-primary">Aufsplitten</button>
@@ -147,7 +147,7 @@
         zeile.innerHTML =
           '<div class="col-12 col-md-6 col-xl-5"><label class="d-block mb-0"><span class="zeile-beschriftung">Konto</span><select class="form-select" name="teilKontoId">' + kontoOptionsHtml + '</select></label></div>' +
           '<div class="col-6 col-md-3 col-xl-3"><label class="d-block mb-0"><span class="zeile-beschriftung">Teilbetrag</span><input type="text" inputmode="decimal" class="form-control" name="teilBetrag" placeholder="Teilbetrag, z.B. 61.75"></label></div>' +
-          '<div class="col-6 col-md-3 col-xl-2"><label class="d-block mb-0"><span class="zeile-beschriftung">Position</span><input type="text" class="form-control" name="teilPosition" placeholder="Position, z.B. Pos. 2"></label></div>' +
+          '<div class="col-6 col-md-3 col-xl-2"><label class="d-block mb-0"><span class="zeile-beschriftung">Position</span><input type="text" class="form-control" name="teilPosition" maxlength="<%= maxLen.einzeilig %>" placeholder="Position, z.B. Pos. 2"></label></div>' +
           '<div class="col-6 col-xl-1 form-check teil-konflikt"><label class="form-check-label"><input type="checkbox" class="form-check-input konflikt-checkbox"> <span class="small">Konflikt</span></label><input type="hidden" name="teilInteressenskonflikt" value="false"></div>' +
           '<div class="col-6 col-xl-1 text-end text-xl-start"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>' +
           '<div class="col-12"><label class="form-label small">Beleg für diese Zeile <span class="text-muted">(optional, z.B. Einzelbeleg zu einer Kreditkartenabrechnung — PDF, PNG oder JPEG)</span></label><input type="file" class="form-control form-control-sm teil-beleg-input" accept="application/pdf,image/png,image/jpeg"></div>';

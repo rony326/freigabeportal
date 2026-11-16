@@ -12,7 +12,7 @@
 
       <div class="mb-3">
         <label class="form-label" for="titel">Titel <span class="text-muted">(optional, z.B. "Reise Zürich 12.–14.8.")</span></label>
-        <input type="text" class="form-control" id="titel" name="titel" value="<%= values.titel || '' %>">
+        <input type="text" class="form-control" id="titel" name="titel" maxlength="<%= maxLen.einzeilig %>" value="<%= values.titel || '' %>">
       </div>
 
       <% /* Spalten: Handy untereinander, ab md 6/3/3 + 6/4/2. Ab xl zwei Zeilen (4/2/2/4 + 6/auto): in
@@ -40,7 +40,7 @@
             </div>
             <div class="col-md-6 col-xl-4">
               <label class="form-label small">Verwendungszweck</label>
-              <input type="text" class="form-control" name="posBeschreibung" value="<%= pos.beschreibung || '' %>">
+              <input type="text" class="form-control" name="posBeschreibung" maxlength="<%= maxLen.text %>" value="<%= pos.beschreibung || '' %>">
             </div>
             <div class="col-md-4 col-xl-6">
               <label class="form-label small">Beleg</label>
@@ -61,6 +61,9 @@
       </template>
 
       <button type="button" id="zeile-hinzufuegen" class="btn btn-outline-secondary btn-sm mb-3">+ Position hinzufügen</button>
+      <% if (locals.belegGrenzen) { %>
+        <p class="form-text">Jede Datei darf höchstens <%= belegGrenzen.dateiMb %> MB gross sein, Bilder höchstens <%= belegGrenzen.megapixel %> Megapixel, alle Belege zusammen höchstens <%= belegGrenzen.gesamtMb %> MB. Ist ein Foto zu gross, verkleinere es oder lade ein PDF hoch.</p>
+      <% } %>
 
       <div>
         <button type="submit" class="btn btn-primary">Einreichen</button>
@@ -101,7 +104,7 @@
             '<div class="col-md-3 col-xl-2"><label class="form-label small">Auslage-Datum</label>' +
             '<input type="date" class="form-control" name="posAuslageDatum"></div>' +
             '<div class="col-md-6 col-xl-4"><label class="form-label small">Verwendungszweck</label>' +
-            '<input type="text" class="form-control" name="posBeschreibung"></div>' +
+            '<input type="text" class="form-control" name="posBeschreibung" maxlength="<%= maxLen.text %>"></div>' +
             '<div class="col-md-4 col-xl-6"><label class="form-label small">Beleg</label>' +
             '<input type="file" class="form-control position-beleg-input" accept="application/pdf,image/png,image/jpeg" required></div>' +
             '<div class="col-md-2 col-xl-auto align-self-xl-end d-flex align-items-end position-entfernen"><button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button></div>';

@@ -1,5 +1,7 @@
 // Kreditkartenbelege der Mitarbeitenden (`/kreditkarte`, docs/kreditkarten-belege.md): Beleg vorab hochladen (Karte, Betrag, Kaufdatum, Beschreibung, optional Konto), eigene Belege ansehen/bearbeiten/verwerfen
 // und Entwürfe aus dem Mail-Eingang ergänzen. Der Abgleich mit der Monatsabrechnung steht in routes/kkAbgleich.js. Zugang: angemeldet; bei deaktiviertem Modul 403. Rechte: services/kkRechte.js.
+// B2: PDF und Vorschaubild eines Uploads entstehen im PDF-Worker (speichereKkBelegDatei); ist er vorübergehend gestört,
+// kommt das Formular mit Status 503 und Hinweis zurück, ohne Beleg, Änderung oder Datei.
 
 import { Router } from 'express';
 import multer from 'multer';
@@ -13,11 +15,13 @@ import {
   createKkBeleg, getKkBelegById, updateKkBelegDaten, ersetzeKkBelegDatei, verwerfeKkBeleg,
   listKkBelegeFuerPerson, listOffeneKkBelegeFuerVerantwortlich, logKkBelegEreignis, aktiviereKkBelegEntwurf,
 } from '../db/kkBelegeRepo.js';
-import { detectBelegMimetype } from '../services/belegAnhaengen.js';
+import { detectBelegMimetype, pruefeBelegBild } from '../services/belegAnhaengen.js';
 import { darfAufKarteErfassen, listErfassbareKarten, darfBelegBearbeiten, darfBelegSehen } from '../services/kkRechte.js';
 import { POSITION_PATTERN } from '../services/aufsplitten.js';
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, KK_DATUM_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
+import { PdfWorkerFehler, antworteSpaeterErneut, PDF_VORUEBERGEHEND_MELDUNG } from '../services/pdfArbeit.js';
 import { asyncCallback } from '../middleware/asyncHandler.js';
+import { begrenzeUploadGroesse } from '../middleware/uploadLimit.js';
 
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 const uploadBeleg = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BELEG_SIZE, files: 1 } });
@@ -72,6 +76,8 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     if (!file) return pflicht ? { error: 'Bitte einen Beleg hochladen.' } : { mimetype: null };
     const mimetype = detectBelegMimetype(file.buffer);
     if (!mimetype || mimetype !== file.mimetype) return { error: 'Beleg muss eine PDF-, PNG- oder JPEG-Datei sein.' };
+    const bildFehler = pruefeBelegBild(file.buffer, mimetype);
+    if (bildFehler) return { error: bildFehler };
     return { mimetype };
   }
 
@@ -101,7 +107,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
 
   // POST /kreditkarte/belege – neuen Beleg erfassen (Upload, Prüfung, Datei als PDF + Thumbnail speichern, Ereignis 'kk_beleg_erfasst').
   router.post('/belege', (req, res, next) => {
-    mitAuditKontext(uploadBeleg.single('beleg'))(req, res, (uploadErr) => {
+    mitAuditKontext(begrenzeUploadGroesse(uploadBeleg.single('beleg')))(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {
@@ -115,7 +121,15 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
           if (datei.error) errors.push(datei.error);
           if (errors.length > 0) return renderSeite(req, res, 400, { values: req.body, errors });
 
-          const { pdfPfad, thumbnailPfad } = await speichereKkBelegDatei(config, req.file.buffer, datei.mimetype);
+          let pdfPfad;
+          let thumbnailPfad;
+          try {
+            ({ pdfPfad, thumbnailPfad } = await speichereKkBelegDatei(config, req.file.buffer, datei.mimetype));
+          } catch (err) {
+            if (!(err instanceof PdfWorkerFehler)) throw err;
+            antworteSpaeterErneut(res, err, 'Kreditkarten-Beleg erfassen');
+            return renderSeite(req, res, 503, { values: req.body, errors: [PDF_VORUEBERGEHEND_MELDUNG] });
+          }
           const id = createKkBeleg(db, {
             ...werte, hochgeladenVon: personId(req), quelle: 'web', pdfPfad, thumbnailPfad, status: 'offen',
           });
@@ -166,7 +180,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
 
   // POST /kreditkarte/belege/:id – Beleg ändern oder Entwurf ergänzen (macht ihn zu 'offen'); optional neue Datei.
   router.post('/belege/:id', (req, res, next) => {
-    mitAuditKontext(uploadBeleg.single('beleg'))(req, res, (uploadErr) => {
+    mitAuditKontext(begrenzeUploadGroesse(uploadBeleg.single('beleg')))(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {
@@ -185,10 +199,30 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
           if (datei.error) errors.push(datei.error);
           if (errors.length > 0) return renderBearbeiten(req, res, 400, beleg, req.body, errors);
 
-          const aktualisiert = updateKkBelegDaten(db, beleg.id, werte);
-          if (!aktualisiert) return res.status(409).render('error', { message: 'Der Beleg wurde inzwischen zugeordnet oder verworfen.' });
+          // B2: die neue Datei entsteht zuerst (PDF-Worker, kann scheitern) und erst danach werden die Daten geändert –
+          // sonst bliebe bei einer Störung eine halbe Änderung (neue Daten, alte Datei) zurück.
+          let neu = null;
           if (req.file) {
-            const neu = await speichereKkBelegDatei(config, req.file.buffer, datei.mimetype);
+            try {
+              neu = await speichereKkBelegDatei(config, req.file.buffer, datei.mimetype);
+            } catch (err) {
+              if (!(err instanceof PdfWorkerFehler)) throw err;
+              antworteSpaeterErneut(res, err, 'Kreditkarten-Beleg bearbeiten');
+              return renderBearbeiten(req, res, 503, beleg, req.body, [PDF_VORUEBERGEHEND_MELDUNG]);
+            }
+          }
+          let aktualisiert;
+          try {
+            aktualisiert = updateKkBelegDaten(db, beleg.id, werte);
+          } catch (err) {
+            loescheDateienStill(neu?.pdfPfad, neu?.thumbnailPfad);
+            throw err;
+          }
+          if (!aktualisiert) {
+            loescheDateienStill(neu?.pdfPfad, neu?.thumbnailPfad);
+            return res.status(409).render('error', { message: 'Der Beleg wurde inzwischen zugeordnet oder verworfen.' });
+          }
+          if (neu) {
             if (ersetzeKkBelegDatei(db, beleg.id, neu)) {
               loescheDateienStill(beleg.pdf_pfad, beleg.thumbnail_pfad);
             } else {

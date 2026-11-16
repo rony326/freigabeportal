@@ -114,7 +114,9 @@ CREATE TABLE IF NOT EXISTS kreditor_ibans (
   kreditor_id INTEGER NOT NULL REFERENCES kreditoren(id),
   iban TEXT NOT NULL UNIQUE,
   quelle TEXT NOT NULL CHECK (quelle IN ('manuell', 'bestaetigt')) DEFAULT 'manuell',
-  erstellt_am TEXT NOT NULL
+  erstellt_am TEXT NOT NULL,
+  -- Person (churchtools_person_id), die die IBAN erfasst hat; NULL bei Einträgen aus der Zeit vor dieser Spalte (Hinweis in Freigabe 2: services/ibanAlter.js).
+  erstellt_von TEXT
 );
 
 -- Zuweisungsregeln: Absender-Muster (E-Mail oder Domain) → Kreditor; beim Rechnungseingang wird danach Kreditor und Standardkonto vorgeschlagen.
@@ -274,7 +276,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
 -- Mail-Protokoll und Outbox: jede Benachrichtigung als Zeile mit Status eingereiht / geplant (Digest) / versendet / fehlgeschlagen (services/mailZustellung.js).
 CREATE TABLE IF NOT EXISTS mail_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation', 'auffaelligkeiten-warnung')),
+  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation', 'auffaelligkeiten-warnung', 'iban-aenderung')),
   job_id INTEGER REFERENCES jobs(id),
   empfaenger TEXT NOT NULL,
   betreff TEXT NOT NULL,

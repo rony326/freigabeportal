@@ -145,7 +145,7 @@ Personen), sowie eine einklappbare Liste zugeordneter/verworfener Belege.
 Bearbeiten/Verwerfen darf `hochgeladen_von`, `gekauft_von` oder die
 verantwortliche Person der Karte (`darfBelegBearbeiten`) — nur solange der
 Beleg `offen` oder `entwurf` ist. Beleg-Prüfung wie überall im Portal:
-PDF/PNG/JPEG, max. 20 MB, Magic-Byte-Check, Bild → eigene PDF-Seite,
+PDF/PNG/JPEG, max. 20 MB, Bilder höchstens 40 Megapixel, Magic-Byte-Check, Bild → eigene PDF-Seite,
 Thumbnail best effort.
 
 **Erfass-Recht** (`darfAufKarteErfassen`): Modus A (`erfassung_offen = 1`)

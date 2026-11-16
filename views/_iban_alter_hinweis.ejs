@@ -1,0 +1,12 @@
+<% /* Warnkasten in Freigabe 2: die IBAN wurde erst kürzlich beim Lieferanten hinterlegt (services/ibanAlter.js). Blockiert nichts. */ %>
+<% if (locals.hinweis) { %>
+  <div class="alert alert-warning py-2" id="ibanNeuHinweis" role="alert">
+    <strong>Neue IBAN beim Lieferanten.</strong>
+    <% if (hinweis.fuerRechnung) { %>
+      Die IBAN dieser Rechnung (<%= hinweis.iban %>) wurde erst am <%= hinweis.datum %> beim Lieferanten hinterlegt, von <%= hinweis.erfasstVon %>.
+    <% } else { %>
+      Beim Lieferanten wurde erst am <%= hinweis.datum %> eine IBAN hinterlegt (<%= hinweis.iban %>), von <%= hinweis.erfasstVon %>.
+    <% } %>
+    Bitte prüfe besonders genau, ob die IBAN wirklich zu diesem Lieferanten gehört, zum Beispiel mit einem Anruf unter einer bekannten Nummer. Du kannst trotzdem freigeben.
+  </div>
+<% } %>

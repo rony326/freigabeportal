@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createKonto } from '../../src/db/kontenRepo.js';
@@ -16,7 +16,8 @@ import { loadNavFlags } from '../../src/middleware/nav.js';
 import { auditContext } from '../../src/services/auditContext.js';
 import { createKreditkarteRouter } from '../../src/routes/kreditkarte.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
-import { PNG_1X1 } from '../helpers/imageFixture.js';
+import { PNG_1X1, buildPngHeaderOnly } from '../helpers/imageFixture.js';
+import { mitPdfStoerung } from '../helpers/pdfStoerung.js';
 
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'kk-test-'));
@@ -305,4 +306,84 @@ test('Kreditkarten-Beleg: Betrag positiv verlangt ein Konto für Rechnungen, Rü
   assert.equal((await upload(t.app, '3', { ...basis, betrag: '12.50', kontoId: String(nurRechnung) })).status, 302);
   assert.equal((await upload(t.app, '3', { ...basis, betrag: '-12.50', kontoId: String(nurGutschrift) })).status, 302);
   t.cleanup();
+});
+
+test('POST /kreditkarte/belege lehnt einen Bildbeleg über 40 Megapixel mit verständlicher Meldung ab (400, kein 500)', async () => {
+  const t = setup();
+  const res = await upload(t.app, '3', { kreditkarteId: String(t.offen), betrag: '12,50', kaufdatum: '2026-09-01', beschreibung: 'Zugticket' }, { buffer: buildPngHeaderOnly(14000, 14000), name: 'gross.png', type: 'image/png' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Das Bild ist zu gross/);
+  assert.equal(listKkBelegeFuerPerson(t.db, '3').length, 0);
+  t.cleanup();
+});
+
+// ---------------------------------------------------------------------------------------------
+// B2, Etappe 2: Belegdatei (PDF + Vorschaubild) entsteht im PDF-Worker.
+
+const KK_FELDER = (t) => ({ kreditkarteId: String(t.offen), betrag: '12.50', kaufdatum: '2026-09-01', beschreibung: 'Zugticket' });
+
+test('B2: Zeitlimit beim KK-Beleg-Upload → 503 mit Formular und Hinweis, kein Beleg, keine Datei', async () => {
+  const t = setup();
+  try {
+    const langsam = Buffer.concat([await buildPdfFixture(['Beleg']), Buffer.from('\n%LANGSAM_ERSTELLEN\n')]);
+    const res = await mitPdfStoerung('zeitlimit', () => upload(t.app, '3', KK_FELDER(t), { buffer: langsam, name: 'b.pdf', type: 'application/pdf' }));
+    assert.equal(res.status, 503);
+    assert.equal(res.headers['retry-after'], '60');
+    assert.match(res.text, /in einer Minute erneut/);
+    assert.match(res.text, /Zugticket/, 'die Eingaben bleiben im Formular');
+    assert.equal(t.db.prepare('SELECT COUNT(*) AS n FROM kk_belege').get().n, 0);
+    assert.deepEqual(readdirSync(t.dir), []);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('B2: überlastete PDF-Verarbeitung beim KK-Beleg-Upload → 503, kein Beleg, keine Datei', async () => {
+  const t = setup();
+  try {
+    const res = await mitPdfStoerung('ueberlastet', () => upload(t.app, '3', KK_FELDER(t), { buffer: PNG_1X1, name: 'foto.png', type: 'image/png' }));
+    assert.equal(res.status, 503);
+    assert.match(res.text, /in einer Minute erneut/);
+    assert.equal(t.db.prepare('SELECT COUNT(*) AS n FROM kk_belege').get().n, 0);
+    assert.deepEqual(readdirSync(t.dir), []);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('B2: Zeitlimit beim Ersetzen der Datei eines KK-Belegs → 503, Daten und alte Datei unverändert, keine neue Datei', async () => {
+  const t = setup();
+  try {
+    await upload(t.app, '3', KK_FELDER(t));
+    const [vorher] = listKkBelegeFuerPerson(t.db, '3');
+    const dateienVorher = readdirSync(t.dir).sort();
+    const langsam = Buffer.concat([await buildPdfFixture(['Neu']), Buffer.from('\n%LANGSAM_ERSTELLEN\n')]);
+    const res = await mitPdfStoerung('zeitlimit', () => request(t.app).post(`/kreditkarte/belege/${vorher.id}`).set('x-test-person-id', '3')
+      .field('kreditkarteId', String(t.offen)).field('betrag', '99.00').field('kaufdatum', '2026-09-02').field('beschreibung', 'Geändert').field('gekauftVon', '3')
+      .attach('beleg', langsam, { filename: 'neu.pdf', contentType: 'application/pdf' }));
+    assert.equal(res.status, 503);
+    assert.match(res.text, /in einer Minute erneut/);
+    const nachher = getKkBelegById(t.db, vorher.id);
+    assert.equal(nachher.betrag, vorher.betrag, 'keine halbe Änderung: Daten bleiben wie vorher');
+    assert.equal(nachher.beschreibung, vorher.beschreibung);
+    assert.equal(nachher.pdf_pfad, vorher.pdf_pfad);
+    assert.ok(existsSync(vorher.pdf_pfad));
+    assert.deepEqual(readdirSync(t.dir).sort(), dateienVorher);
+    assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM kk_beleg_ereignisse WHERE aktion = 'kk_beleg_geaendert'").get().n, 0);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('B2: KK-Beleg im Worker-Betrieb – PDF und Vorschaubild werden abgelegt', async () => {
+  const t = setup();
+  try {
+    const res = await upload(t.app, '3', KK_FELDER(t), { buffer: PNG_1X1, name: 'foto.png', type: 'image/png' });
+    assert.equal(res.status, 302);
+    const [beleg] = listKkBelegeFuerPerson(t.db, '3');
+    assert.ok(readFileSync(beleg.pdf_pfad).subarray(0, 4).equals(Buffer.from('%PDF')));
+    assert.ok(beleg.thumbnail_pfad && readFileSync(beleg.thumbnail_pfad).subarray(1, 4).equals(Buffer.from('PNG')));
+  } finally {
+    t.cleanup();
+  }
 });

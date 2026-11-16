@@ -20,6 +20,8 @@ import { normalizeIban, isValidIbanInternational, ibanKurz } from '../../service
 import { isValidAbsenderMuster, ABSENDER_MUSTER_FEHLER } from '../../utils/absenderMuster.js';
 import { pruefeNeuenKreditor, pruefeStandardKonto, legeKreditorAn } from '../../services/kreditorAnlegen.js';
 import { kreditorIdAusEingabe, KreditorFeldKonflikt } from '../../services/kreditorFelder.js';
+import { meldeIbanAenderung } from '../../services/ibanAenderung.js';
+import { asyncHandler } from '../../middleware/asyncHandler.js';
 
 const IBAN_PFLICHT_FEHLER = 'Bei Überweisung und Dauerauftrag ist mindestens eine IBAN Pflicht.';
 const IBAN_UNGUELTIG_FEHLER = 'IBAN ist ungültig (Prüfziffer oder Länge stimmt nicht).';
@@ -37,7 +39,8 @@ function kontenFuerBearbeiten(db, kreditor) {
   return konten;
 }
 
-export function createKreditorenRouter({ db, csrfProtection = (req, res, next) => next() }) {
+// `config` und `mailer` brauchen die Meldung bei IBAN-Änderungen (services/ibanAenderung.js); ohne `config` entfällt sie.
+export function createKreditorenRouter({ db, config = null, mailer = null, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   // Liest die Zahlungsart aus dem Formular.
@@ -106,7 +109,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
   });
 
   // POST /admin/kreditoren – legt einen Kreditor (mit erster IBAN) an.
-  router.post('/', csrfProtection, (req, res) => {
+  router.post('/', csrfProtection, asyncHandler(async (req, res) => {
     const { name, kontoId, iban } = req.body;
     const zahlungsart = zahlungsartAusEingabe(req.body);
     const betragSchwankt = req.body.betragSchwankt === 'on';
@@ -117,8 +120,11 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
     }
 
     legeKreditorAn(db, { name, kontoId, zahlungsart, betragSchwankt, normalizedIban });
+    if (normalizedIban) {
+      await meldeIbanAenderung(db, config, mailer, { kreditor: { name: name.trim() }, iban: normalizedIban, art: 'hinzugefuegt', person: req.currentPerson, neuerLieferant: true });
+    }
     res.redirect('/admin/kreditoren?gespeichert=1');
-  });
+  }));
 
   // Die /regeln*-Routen müssen vor den allgemeinen /:id*-Kreditor-Routen unten registriert werden — sonst träfe POST/GET /admin/kreditoren/regeln(...) zuerst das Muster `/:id` des Routers (mit id="regeln", einem NaN-Number()) und endete mit 404, bevor es diese Handler erreicht.
   // POST /admin/kreditoren/regeln – legt eine Zuweisungsregel an (Absender-Muster = E-Mail oder Domain, Ziel-Kreditor); doppelte Muster werden abgelehnt.
@@ -194,7 +200,7 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
 
   // Die /ibans*-Routen müssen vor den allgemeinen /:id*-Kreditor-Routen unten registriert werden — sonst träfe POST /admin/kreditoren/ibans(...) zuerst das Muster `/:id` des Routers (mit id="ibans", einem NaN-Number()) und endete mit 404, bevor es diese Handler erreicht.
   // POST /admin/kreditoren/ibans – fügt einem Kreditor eine IBAN hinzu (normalisiert, Prüfziffer/Länge, noch keinem anderen Kreditor zugeordnet).
-  router.post('/ibans', csrfProtection, (req, res) => {
+  router.post('/ibans', csrfProtection, asyncHandler(async (req, res) => {
     const { iban } = req.body;
     const kreditorId = kreditorIdAusEingabe(req.body);
     const normalizedIban = normalizeIban(iban);
@@ -212,12 +218,14 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
       return renderListe(req, res, 400, { ibanErrors: errors, ibanValues: { iban, kreditorId } });
     }
 
-    createKreditorIban(db, { kreditorId: Number(kreditorId), iban: normalizedIban, quelle: 'manuell' });
+    createKreditorIban(db, { kreditorId: Number(kreditorId), iban: normalizedIban, quelle: 'manuell', erstelltVon: req.currentPerson?.churchtools_person_id });
+    const kreditor = getKreditorById(db, Number(kreditorId));
+    if (kreditor) await meldeIbanAenderung(db, config, mailer, { kreditor, iban: normalizedIban, art: 'hinzugefuegt', person: req.currentPerson });
     res.redirect('/admin/kreditoren?gespeichert=1');
-  });
+  }));
 
   // POST /admin/kreditoren/ibans/:id/loeschen – löscht eine IBAN (die letzte nur, wenn keine IBAN-Pflicht besteht).
-  router.post('/ibans/:id/loeschen', csrfProtection, (req, res) => {
+  router.post('/ibans/:id/loeschen', csrfProtection, asyncHandler(async (req, res) => {
     const row = getKreditorIbanById(db, Number(req.params.id));
     if (row) {
       const kreditor = getKreditorById(db, row.kreditor_id);
@@ -225,9 +233,10 @@ export function createKreditorenRouter({ db, csrfProtection = (req, res, next) =
         return renderListe(req, res, 400, { ibanErrors: [LETZTE_IBAN_FEHLER] });
       }
       deleteKreditorIban(db, row.id);
+      if (kreditor) await meldeIbanAenderung(db, config, mailer, { kreditor, iban: row.iban, art: 'geloescht', person: req.currentPerson });
     }
     res.redirect('/admin/kreditoren');
-  });
+  }));
 
   // GET /admin/kreditoren/:id/bearbeiten – Bearbeitungsformular.
   router.get('/:id/bearbeiten', (req, res) => {

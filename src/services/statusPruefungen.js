@@ -1,4 +1,4 @@
-// Statusseite und /healthz (docs/statusseite-und-monitoring.md): elf Dienstprüfungen, die je 'ok' | 'warnung' | 'fehler' liefern; der
+// Statusseite und /healthz (docs/statusseite-und-monitoring.md): zwölf Dienstprüfungen, die je 'ok' | 'warnung' | 'fehler' liefern; der
 // Gesamtstatus ist der schlechteste. Alle Prüfungen sind rein lesend und fangen eigene Fehler ab. Grenzwerte: admin_config `status_*`.
 
 import fs from 'node:fs';
@@ -9,6 +9,7 @@ import { loadTsaCrls } from './tsaRevocation.js';
 import { listPaketeOhneZeitstempel } from './auditNachweisJobs.js';
 import { einrichtungsStand, einrichtungAbgeschlossenAm, datumAnzeige } from './ersteinrichtung.js';
 import { pruefeTechnik, ANWENDUNGSVERZEICHNIS } from './einrichtungTests.js';
+import { pdfArbeitZustand } from './pdfArbeit.js';
 
 const MIN = 60 * 1000;
 const H = 60 * MIN;
@@ -227,6 +228,24 @@ export function pruefeEinrichtung(db, config, ctx = {}) {
   return { status: 'ok', aktiv: false, grund: `Einrichtung abgeschlossen am ${datumAnzeige(am)}` };
 }
 
+// B2: PDF-Worker. Fehler nur, solange der Start 3× in Folge gescheitert ist (dann steht die PDF-Verarbeitung
+// still, es gibt keinen Rückfall auf den Hauptthread); Warnung bei langer Warteschlange. Die Zähler seit dem
+// Start (Neustarts, Zeitüberschreitungen, Abstürze) stehen nur im Grund.
+export function pruefePdfVerarbeitung(db, config, ctx = {}) {
+  const z = ctx.pdfZustand ?? pdfArbeitZustand();
+  if (z.modus === 'inline') return { status: 'ok', grund: 'im Hauptthread (PDF_WORKER=aus)' };
+  if (z.alarm) return { status: 'fehler', grund: `PDF-Worker nicht startbar seit ${z.alarm.seit}` };
+  const st = z.statistik ?? {};
+  const teile = [`${z.worker?.length ?? 0} Worker aktiv`];
+  if (st.neustarts) teile.push(`${st.neustarts} Neustart(s)`);
+  if (st.zeitueberschreitungen) teile.push(`${st.zeitueberschreitungen} Zeitüberschreitung(en)`);
+  if (st.abstuerze) teile.push(`${st.abstuerze} Absturz/Abstürze`);
+  if (st.ueberlastet) teile.push(`${st.ueberlastet}× überlastet`);
+  const wartend = (z.warteschlange?.interaktiv ?? 0) + (z.warteschlange?.hintergrund ?? 0);
+  if (wartend >= 50) return { status: 'warnung', grund: `${wartend} Aufträge warten; ${teile.join(', ')}` };
+  return { status: 'ok', grund: `${teile.join(', ')} seit dem Start` };
+}
+
 // Reihenfolge der Dienste auf der Statusseite (Schlüssel = Name im JSON von /healthz).
 const PRUEFUNGEN = [
   ['datenbank', pruefeDatenbank],
@@ -240,6 +259,7 @@ const PRUEFUNGEN = [
   ['jobs', pruefeJobs],
   ['sicherheitsalarme', pruefeSicherheitsalarme],
   ['einrichtung', pruefeEinrichtung],
+  ['pdf_verarbeitung', pruefePdfVerarbeitung],
 ];
 
 /**

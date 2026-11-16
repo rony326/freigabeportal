@@ -8,6 +8,7 @@ import { erfasseAnmeldung, sendeNeuesGeraetMail } from '../services/nutzung.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
 import { schreibeTestmodusAudit } from './admin/testmodus.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { sichereRueckkehr } from '../utils/rueckkehrZiel.js';
 
 // Meldung, wenn ChurchTools bei der Anmeldung nicht antwortet (503).
 export const CT_ZEITLIMIT_MELDUNG = 'ChurchTools antwortet gerade nicht. Bitte in ein paar Minuten erneut versuchen.';
@@ -31,7 +32,7 @@ export function createAuthRouter({ db, config, mailer = null, csrfProtection = (
   });
 
   // GET /auth/callback – prüft `state`, tauscht den Code gegen ein Token, legt/aktualisiert die Person (mit Gruppen) an, erfasst die Anmeldung (neues Gerät → Mail),
-  // erneuert die Session und leitet auf /pool.
+  // erneuert die Session und leitet auf das gemerkte Ziel (middleware/roles.js), sonst auf /pool.
   router.get('/callback', asyncHandler(async (req, res, next) => {
     try {
       const { code, state } = req.query;
@@ -86,15 +87,18 @@ export function createAuthRouter({ db, config, mailer = null, csrfProtection = (
       }
 
       // /pool ist jetzt das Dashboard jeder angemeldeten Person, nicht nur der Buchhaltung/des Portal-Admins (siehe die Einbindung von /pool in app.js) — jede Anmeldung
-      // landet direkt dort, ohne Startseite dazwischen.
+      // landet direkt dort, ohne Startseite dazwischen — ausser die Person wurde von einer geschützten Seite zur Anmeldung geschickt (Rücksprungziel, s. u.).
       //
       // Die Session wird bei der Anmeldung erneuert (nicht die Session vor der Anmeldung weiterverwendet), um Session-Fixation zu verhindern: Eine vor der
       // Authentifizierung ausgestellte Session-ID darf danach nie eine gültige, authentifizierte Session-ID werden. Aus der Session vor der Anmeldung wird ab hier nichts
-      // mehr gebraucht — oauthState wurde oben schon verbraucht.
+      // mehr gebraucht — oauthState wurde oben schon verbraucht. Einzige Ausnahme ist das Rücksprungziel (middleware/roles.js): Es wird VOR regenerate
+      // in eine lokale Variable gelesen, nochmals als sicherer eigener Seitenpfad geprüft (sonst /pool) und nur für die Weiterleitung benutzt;
+      // in die neue Session wird es nicht übernommen.
+      const ziel = sichereRueckkehr(req.session.rueckkehr) ?? '/pool';
       req.session.regenerate((err) => {
         if (err) return next(err);
         req.session.personId = String(profile.id);
-        res.redirect('/pool');
+        res.redirect(ziel);
       });
       return;
     } catch (err) {

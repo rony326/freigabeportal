@@ -29,6 +29,8 @@ export const DEFAULTS = {
   sync_max_deaktivierung_anzahl: '10',
   sync_fehler_empfaenger: 'gruppe:admin',
   iban_abweichung_empfaenger: 'gruppe:admin',
+  // Meldung "IBAN eines Lieferanten hinzugefügt/gelöscht" (services/ibanAenderung.js): Buchhaltung und Administration.
+  iban_aenderung_empfaenger: 'gruppe:buchhaltung\ngruppe:admin',
   audit_log_lokale_zeit: '0',
   // --- Zeitpläne der Hintergrund-Jobs (services/scheduler.js; Stunde/Minute bzw. Intervall in Minuten) ---
   cron_sync_personen_stunde: '2',
@@ -79,6 +81,8 @@ export const DEFAULTS = {
   mail_vorlage_sync_fehler_text: 'Der ChurchTools-Personen-Sync konnte nicht erfolgreich abgeschlossen werden (%zeitpunkt%): %fehlerDetails%\n\nBitte im Freigabeportal anmelden: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_auffaelligkeiten_warnung_betreff: 'Freigabeportal: Auffälligkeiten bei Rechnung %jobDateiname%',
   mail_vorlage_auffaelligkeiten_warnung_text: 'Hallo\n\n%bestaetigtVon% hat die Rechnung "%jobDateiname%" (Lieferant: %kreditorName%) trotz folgender Auffälligkeiten kontiert:\n\n%auffaelligkeiten%\n\nWie geprüft: %bemerkung%\n\nBitte schau sie dir vor der Freigabe genau an: %link%\n\nFreundliche Grüsse\n%portalName%',
+  mail_vorlage_iban_aenderung_betreff: 'Freigabeportal: IBAN von %kreditorName% %aktion%',
+  mail_vorlage_iban_aenderung_text: 'Hallo\n\nBei den Lieferanten wurde eine IBAN geändert:\n\nLieferant: %kreditorName%\nIBAN: %iban%\nÄnderung: IBAN %aktion%\nDurch: %geaendertVon%\nZeitpunkt: %zeitpunkt%\n\nBitte prüfe, ob diese Änderung erwartet war. Wenn nicht, melde dich bitte sofort bei der Administration: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_rechnungsnummer_warnung_betreff: 'Freigabeportal: Doppelte Rechnungsnummer festgestellt',
   mail_vorlage_rechnungsnummer_warnung_text: 'Bei der Kontierung von "%jobDateiname%" (Lieferant: %kreditorName%) wurde die Rechnungsnummer "%rechnungsnummer%" bereits bei einem anderen Job erfasst (%dupJobIds%).\n\nBitte prüfen: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_digest_betreff: 'Freigabeportal: Deine %zusammenfassung% Zusammenfassung (%anzahl% Ereignisse)',
@@ -175,8 +179,18 @@ export function getDefaultConfigValue(key) {
   return Object.prototype.hasOwnProperty.call(DEFAULTS, key) ? DEFAULTS[key] : null;
 }
 
-/** @returns {string|null} gespeicherter Wert oder null, wenn der Schlüssel nicht existiert */
+// Das TSA-Passwort gehört nicht in die Datenbank (Klartext, landet in Sicherungen): die Umgebungsvariable
+// TSA_PASSWORT hat Vorrang. Der Datenbankwert bleibt als Rückfall, solange sie nicht gesetzt ist (nichts wird gelöscht).
+const TSA_PASSWORT_KEY = 'zeitstempel_tsa_passwort';
+
+// @returns {boolean} true, wenn TSA_PASSWORT gesetzt (und nicht leer) ist und damit den Datenbankwert übersteuert
+export function tsaPasswortAusUmgebung() {
+  return Boolean(process.env.TSA_PASSWORT);
+}
+
+/** @returns {string|null} gespeicherter Wert oder null, wenn der Schlüssel nicht existiert (TSA-Passwort: siehe oben) */
 export function getConfigValue(db, key) {
+  if (key === TSA_PASSWORT_KEY && tsaPasswortAusUmgebung()) return process.env.TSA_PASSWORT;
   const row = db.prepare('SELECT value FROM admin_config WHERE key = ?').get(key);
   return row ? row.value : null;
 }
@@ -188,6 +202,7 @@ export function getConfigValues(db, keys) {
   if (keys.length === 0) return werte;
   const rows = db.prepare(`SELECT key, value FROM admin_config WHERE key IN (${keys.map(() => '?').join(', ')})`).all(...keys);
   for (const row of rows) werte[row.key] = row.value;
+  if (keys.includes(TSA_PASSWORT_KEY) && tsaPasswortAusUmgebung()) werte[TSA_PASSWORT_KEY] = process.env.TSA_PASSWORT;
   return werte;
 }
 

@@ -1,6 +1,8 @@
 // Spesen einreichen (`/spesen/neu`, `POST /spesen`, docs/spesen-einreichung.md): eine Person reicht eine Abrechnung mit mehreren Positionen (Konto, Betrag, Datum, Zweck, Beleg) ein. Jede Position
 // wird ein eigener Vorgang (quelle 'spesen') beim Freigeber 1 des Kontos. Reicht die Person selbst als Freigeber 1 ein, geht die Position als Interessenskonflikt an die Stellvertretung. Zugang: angemeldet;
 // bei deaktiviertem Spesenmodul 403.
+// B2: Eingangsprüfung, PDF-Erzeugung und Vorschaubild laufen im PDF-Worker (Spur interaktiv); ist er vorübergehend
+// gestört, kommt das Formular mit Status 503 und Hinweis zurück, ohne dass etwas gespeichert bleibt.
 
 import { Router } from 'express';
 import multer from 'multer';
@@ -13,11 +15,14 @@ import { createSpesenabrechnung } from '../db/spesenabrechnungenRepo.js';
 import { createSpesenPosition, getJobById } from '../db/jobsRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
-import { detectBelegMimetype, buildBelegPdf } from '../services/belegAnhaengen.js';
-import { pruefeEingangsPdf, PdfEingangFehler } from '../services/pdfEingang.js';
-import { renderFirstPageThumbnail } from '../services/thumbnail.js';
+import { detectBelegMimetype, pruefeBelegBild, MAX_BILD_MEGAPIXEL } from '../services/belegAnhaengen.js';
+import { PdfEingangFehler } from '../services/pdfFehler.js';
+import { pdfArbeit, PdfWorkerFehler, antworteSpaeterErneut, PDF_VORUEBERGEHEND_MELDUNG } from '../services/pdfArbeit.js';
+import { loescheDateienStill } from '../services/kkBelegDatei.js';
 import { sendNotification } from '../services/notify.js';
 import { asyncCallback } from '../middleware/asyncHandler.js';
+import { leseText, MAX_LAENGE, eingabeGrenzen } from '../utils/eingabe.js';
+import { begrenzeUploadGroesse, MAX_UPLOAD_GESAMT_BYTES } from '../middleware/uploadLimit.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const AUSLAGE_DATUM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -34,6 +39,14 @@ function mitPdfEndung(originalname) {
 
 export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
+
+  router.use(eingabeGrenzen);
+
+  // Grössengrenzen für den Hinweis im Formular (aus denselben Konstanten wie die Prüfungen), auch bei Neudarstellung nach Fehlern.
+  router.use((req, res, next) => {
+    res.locals.belegGrenzen = { dateiMb: MAX_BELEG_SIZE / (1024 * 1024), megapixel: MAX_BILD_MEGAPIXEL, gesamtMb: MAX_UPLOAD_GESAMT_BYTES / (1024 * 1024) };
+    next();
+  });
 
   router.use((req, res, next) => {
     if (getConfigValue(db, 'modul_spesen_aktiv') === '0') {
@@ -54,17 +67,27 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
   // POST /spesen – prüft alle Positionen (Konto, Betrag, Datum nicht in der Zukunft, Zweck, Beleg PDF/PNG/JPEG), legt Abrechnung und Positionen in einer Transaktion an und benachrichtigt die Zuständigen.
   router.post('/', (req, res, next) => {
     // multer muss vor csrfProtection laufen: Die CSRF-Prüfung liest req.body._csrf, das erst existiert, wenn multer den multipart-Body geparst hat — gleiche Reihenfolge wie bei den eigenen multipart-POST-Routen in kontierung.js.
-    mitAuditKontext(uploadBelege.any())(req, res, (uploadErr) => {
+    mitAuditKontext(begrenzeUploadGroesse(uploadBelege.any()))(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {
           const aktiveKonten = listKonten(db);
           const alleKonten = filterKontenFuerTyp(aktiveKonten, 'rechnung');
-          const titel = (req.body.titel || '').trim() || null;
-          const kontoIds = [].concat(req.body.posKontoId || []);
-          const betraege = [].concat(req.body.posBetrag || []);
-          const auslageDaten = [].concat(req.body.posAuslageDatum || []);
-          const beschreibungen = [].concat(req.body.posBeschreibung || []);
+          // Prüfung 2026-11-15 (S8): Textfelder als einzelner, getrimmter Text lesen. Die Positionsfelder sind bewusst Listen
+          // (mehrfach benannte Felder, eine Position je Eintrag); jeder einzelne Eintrag muss wieder Text sein. Längen: utils/eingabe.js.
+          const eingabeFehler = [];
+          const text = (wert, feld, max) => {
+            const gelesen = leseText(wert, { max, feld });
+            if (gelesen.fehler) eingabeFehler.push(gelesen.fehler);
+            return gelesen.wert;
+          };
+          const liste = (wert, feld, max) => [].concat(wert ?? []).map((eintrag) => text(eintrag, feld, max));
+          const titelText = text(req.body.titel, 'Titel', MAX_LAENGE.einzeilig);
+          const titel = titelText || null;
+          const kontoIds = liste(req.body.posKontoId, 'Konto', MAX_LAENGE.kennung);
+          const betraege = liste(req.body.posBetrag, 'Betrag', MAX_LAENGE.betrag);
+          const auslageDaten = liste(req.body.posAuslageDatum, 'Auslage-Datum', MAX_LAENGE.kennung);
+          const beschreibungen = liste(req.body.posBeschreibung, 'Verwendungszweck', MAX_LAENGE.text);
 
           // Das Beleg-Eingabefeld jeder Zeile wird von der Seite selbst unmittelbar vor dem Absenden in einen positionsbezogenen Feldnamen (posBeleg_<i>) umbenannt — derselbe Kniff, den kontierung-aufsplitten.ejs für seine eigene optionale Datei je Zeile nutzt;
           // hier nötig, weil ein einfacher gemeinsamer Feldname sich still verschöbe, sobald das <input type="file"> irgendeiner Zeile gar nichts absendet.
@@ -78,7 +101,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
             kontoId,
             betrag: betraege[i] || '',
             auslageDatum: auslageDaten[i] || '',
-            beschreibung: (beschreibungen[i] || '').trim(),
+            beschreibung: beschreibungen[i] || '',
             beleg: belegByIndex.get(i) || null,
           }));
 
@@ -86,12 +109,12 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
           if (uploadErr) {
             return res.status(400).render('spesen-neu', {
               alleKonten,
-              values: { titel: req.body.titel || '', positionen },
+              values: { titel: titelText, positionen },
               errors: [uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Ein Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.'],
             });
           }
 
-          const errors = [];
+          const errors = [...new Set(eingabeFehler)];
           const heute = new Date().toISOString().slice(0, 10);
           const aufgeloestePositionen = [];
 
@@ -130,42 +153,63 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
               errors.push(`Position ${i + 1}: Beleg muss eine PDF-, PNG- oder JPEG-Datei sein.`);
               return;
             }
+            const bildFehler = pruefeBelegBild(pos.beleg.buffer, mimetype);
+            if (bildFehler) {
+              errors.push(`Position ${i + 1}: ${bildFehler}`);
+              return;
+            }
             aufgeloestePositionen.push({ ...pos, konto, betrag: pos.betrag.replace(',', '.'), mimetype, nummer: i + 1 });
           });
 
+          // Formular erneut mit Status 503 und Hinweis, wenn die PDF-Verarbeitung vorübergehend nicht verfügbar ist.
+          const spaeterErneut = (err) => antworteSpaeterErneut(res, err, 'Spesen-Einreichung')
+            .render('spesen-neu', { alleKonten, values: { titel: titelText, positionen }, errors: [PDF_VORUEBERGEHEND_MELDUNG] });
+
           // Ein PDF-Beleg wird unverändert zum Jobdokument (buildBelegPdf) -- er muss also genauso
-          // verarbeitbar sein wie ein eingehendes Rechnungs-PDF (services/pdfEingang.js).
+          // verarbeitbar sein wie ein eingehendes Rechnungs-PDF (services/pdfEingang.js, im PDF-Worker).
           for (const pos of aufgeloestePositionen) {
             if (pos.mimetype !== 'application/pdf') continue;
             try {
-              await pruefeEingangsPdf(pos.beleg.buffer);
+              await pdfArbeit().ausfuehren('eingangPruefen', [pos.beleg.buffer], { spur: 'interaktiv' });
             } catch (err) {
+              if (err instanceof PdfWorkerFehler) return spaeterErneut(err);
               if (!(err instanceof PdfEingangFehler)) throw err;
               errors.push(`Position ${pos.nummer}: ${err.message}`);
             }
           }
 
           if (errors.length > 0) {
-            return res.status(400).render('spesen-neu', { alleKonten, values: { titel: req.body.titel || '', positionen }, errors });
+            return res.status(400).render('spesen-neu', { alleKonten, values: { titel: titelText, positionen }, errors });
           }
 
           // Datei-I/O passiert vor der Datenbanktransaktion (wie im Aufsplitten-Handler von kontierung.js): synchrone Transaktionen im Stil von better-sqlite3 können ein await nicht offen halten.
+          // PDF und Vorschaubild je Position entstehen im PDF-Worker (belegDateiErstellen). Scheitert eine spätere Position,
+          // werden die Dateien der früheren wieder entfernt – es bleibt keine verwaiste Datei zurück.
           mkdirSync(config.jobsDir, { recursive: true });
           const vorbereitetePositionen = [];
-          for (const pos of aufgeloestePositionen) {
-            const pdfBuffer = await buildBelegPdf(pos.beleg.buffer, pos.mimetype);
-            const pdfPfad = join(config.jobsDir, `job-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
-            writeFileSync(pdfPfad, pdfBuffer);
-            let thumbnailPfad = null;
-            try {
-              const thumbnailPng = renderFirstPageThumbnail(pdfBuffer);
-              thumbnailPfad = pdfPfad.replace(/\.pdf$/, '.png');
-              writeFileSync(thumbnailPfad, thumbnailPng);
-            } catch (err) {
-              console.error(`Thumbnail-Rendering fehlgeschlagen für Spesen-Position (${pos.beleg.originalname}):`, err.message);
-              thumbnailPfad = null;
+          const angelegteDateien = [];
+          try {
+            for (const pos of aufgeloestePositionen) {
+              const { pdf, vorschaubild, vorschaubildFehler } = await pdfArbeit().ausfuehren('belegDateiErstellen', [pos.beleg.buffer, pos.mimetype], { spur: 'interaktiv' });
+              const pdfPfad = join(config.jobsDir, `job-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+              writeFileSync(pdfPfad, pdf);
+              angelegteDateien.push(pdfPfad);
+              let thumbnailPfad = null;
+              try {
+                if (!vorschaubild) throw new Error(vorschaubildFehler ?? 'kein Vorschaubild');
+                thumbnailPfad = pdfPfad.replace(/\.pdf$/, '.png');
+                writeFileSync(thumbnailPfad, vorschaubild);
+                angelegteDateien.push(thumbnailPfad);
+              } catch (err) {
+                console.error(`Thumbnail-Rendering fehlgeschlagen für Spesen-Position (${pos.beleg.originalname}):`, err.message);
+                thumbnailPfad = null;
+              }
+              vorbereitetePositionen.push({ ...pos, pdfPfad, thumbnailPfad });
             }
-            vorbereitetePositionen.push({ ...pos, pdfPfad, thumbnailPfad });
+          } catch (err) {
+            loescheDateienStill(...angelegteDateien);
+            if (err instanceof PdfWorkerFehler) return spaeterErneut(err);
+            throw err;
           }
 
           const eingangAm = new Date().toISOString();

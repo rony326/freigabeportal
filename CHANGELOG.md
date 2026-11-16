@@ -5,6 +5,9 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 
 ## Unveröffentlicht
 
+- Öffentlicher Begrenzer (100 Anfragen je 15 Min., u. a. PDF-Vorschau über `/downloads/:jobId`, Login,
+  Prüfseiten): Angemeldete zählen jetzt je Person statt je IP. Bisher teilten sich alle Angemeldeten hinter
+  derselben Büro-IP ein Kontingent und konnten sich gegenseitig sperren. Unangemeldete zählen weiter je IP.
 - Abhängigkeiten aktualisiert (ohne Hauptversionssprung): mupdf 1.28.0 → 1.28.6, express-rate-limit
   8.6.2 → 8.7.4, nodemailer 10.2.1 → 10.6.0, csrf-csrf 4.0.3 → 4.1.0, read-excel-file 9.3.12 → 9.3.17.
 - Doku: `docs/betrieb-und-nutzung.md` hält einen monatlichen Termin fest (`npm audit` und Prüfung der

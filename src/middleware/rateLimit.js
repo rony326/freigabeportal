@@ -45,11 +45,14 @@ const COMMON_OPTIONS = {
   handler: jsonRateLimitHandler,
 };
 
-// Öffentliche Seiten/Login: 100 Anfragen je 15 Min. und IP.
+// Öffentliche Seiten/Login: 100 Anfragen je 15 Min., ohne Anmeldung je IP, Angemeldete je Person.
+// Prüfung 2026-11-15: Der signierte PDF-Download /downloads/:jobId (Vorschau) hängt an diesem Begrenzer; im Büro teilen sich alle
+// Angemeldeten eine IP und hätten sich gegenseitig gesperrt. Unangemeldete (Login, Prüfseiten) zählen weiter je IP.
 export function createPublicRateLimiter(overrides = {}) {
   return rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 100,
+    keyGenerator: (req) => (req.currentPerson ? `person:${req.currentPerson.churchtools_person_id}` : ipKeyGenerator(req.ip)),
     ...COMMON_OPTIONS,
     ...overrides,
   });

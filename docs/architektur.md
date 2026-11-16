@@ -199,7 +199,8 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
 - **API-Key/Cron-Secret**: gleiche zeitkonstante Vergleichslogik für
   `X-API-Key` (`/api/n8n/jobs`, `/api/n8n/backup/latest`) und `X-Cron-Secret`
   (`/internal/cron`).
-- **Rate-Limiting**, dreistufig: `public` (100/15 Min, IP-basiert),
+- **Rate-Limiting**, dreistufig: `public` (100/15 Min, ohne Anmeldung IP-basiert,
+  Angemeldete je Person, damit sich ein Büro hinter einer IP nicht gegenseitig sperrt),
   `session` (300/15 Min, personen- oder IP-basiert) und `machine`
   (60/1 Min, IP-basiert, für API-Key-/Cron-Aufrufer). Bei 429 zeigt ein Browser
   (`Accept: text/html`) die normale Fehlerseite mit Wartezeit («in etwa N

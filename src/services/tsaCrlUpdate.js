@@ -24,14 +24,30 @@ export const WARNFRIST_MS = 7 * 24 * 3600 * 1000;
 const MAX_CRL_BYTES = 4 * 1024 * 1024;
 const TSA_TIMING = { timeout: 15000, retry: 2, retryDelay: 1000 };
 
-// Lädt eine Sperrliste per HTTP (Zeitlimit, Grössenlimit 4 MB).
-async function holeUrlPerHttp(url) {
+// Lädt eine Sperrliste per HTTP (Zeitlimit, Grössenlimit 4 MB). Die Grenze gilt beim Lesen: Content-Length ist nur die
+// frühe Abkürzung, der Strom wird mitgezählt und bei Überschreitung abgebrochen (Verbindung geschlossen), statt erst
+// nach dem vollständigen Laden zu prüfen.
+export async function holeUrlPerHttp(url) {
   const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
-  if (!response.ok) throw new Error(`Sperrliste ${url}: HTTP ${response.status}`);
-  if (Number(response.headers.get('content-length')) > MAX_CRL_BYTES) throw new Error(`Sperrliste ${url} ist zu gross.`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length > MAX_CRL_BYTES) throw new Error(`Sperrliste ${url} ist zu gross.`);
-  return bytes;
+  const zuGross = () => new Error(`Sperrliste ${url} ist zu gross.`);
+  try {
+    if (!response.ok) throw new Error(`Sperrliste ${url}: HTTP ${response.status}`);
+    if (Number(response.headers.get('content-length')) > MAX_CRL_BYTES) throw zuGross();
+    const teile = [];
+    let summe = 0;
+    if (response.body) {
+      for await (const teil of response.body) {
+        summe += teil.length;
+        if (summe > MAX_CRL_BYTES) throw zuGross();
+        teile.push(teil);
+      }
+    }
+    return Buffer.concat(teile);
+  } catch (err) {
+    // Rest der Antwort verwerfen und Verbindung schliessen.
+    await response.body?.cancel().catch(() => {});
+    throw err;
+  }
 }
 
 // Wandelt eine PEM-Sperrliste in DER um (DER bleibt unverändert).

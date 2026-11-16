@@ -1,15 +1,16 @@
 // Admin → Zeitstempel (`/admin/zeitstempel`, Recht `zeitstempel_verwalten`, docs/zeitstempel-und-pruefbescheinigung.md und docs/audit-externe-nachweise.md): TSA-Adresse und Zugang (RFC3161), Warnschwelle sowie die Einstellungen des Audit-Nachweises (Modul, Revisions-Empfänger, Rhythmus, Prüfnummer-Versand).
 
 import { Router } from 'express';
-import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
+import { getConfigValue, setConfigValue, tsaPasswortAusUmgebung } from '../../db/adminConfigRepo.js';
 import { adminAdressen } from '../../services/empfaenger.js';
 import {
   parseEmpfaengerListe, sendeAuditPruefnummer,
   meldeAuditNachweisAenderung, listPaketeOhneZeitstempel, runAuditExportJob,
 } from '../../services/auditNachweisJobs.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
+import { pruefeTsaUrl, pruefeGespeicherteTsaUrl } from '../../services/tsaUrlPruefung.js';
 
-const URL_PATTERN = /^https?:\/\//;
+const URL_PATTERN = /^https:\/\//i;
 const RHYTHMEN = { monatlich: 'monatlich', quartalsweise: 'quartalsweise', jaehrlich: 'jährlich' };
 
 // Formularfeld -> [Config-Key, Standardwert, Min, Max, Label]
@@ -49,7 +50,7 @@ export function exportHinweis(ergebnis, tsaKonfiguriert) {
 }
 
 export function createZeitstempelAdminRouter({
-  db, config = null, mailer = null, csrfProtection = (req, res, next) => next(), runAuditExport = runAuditExportJob,
+  db, config = null, mailer = null, csrfProtection = (req, res, next) => next(), runAuditExport = runAuditExportJob, aufloesen,
 }) {
   const router = Router();
 
@@ -74,13 +75,18 @@ export function createZeitstempelAdminRouter({
     };
   }
 
-  // Rendert die Seite.
-  function renderSeite(res, status, state, { errors = [], gespeichert = false, versand = null, exportErgebnis = null } = {}) {
+  // Rendert die Seite. Eine schon gespeicherte, nach den Regeln von S6 unzulässige TSA-Adresse (z. B. http://) wird nicht
+  // gesperrt, aber hier deutlich gewarnt.
+  async function renderSeite(res, status, state, { errors = [], gespeichert = false, versand = null, exportErgebnis = null } = {}) {
     const { adressen } = parseEmpfaengerListe(state.auditRevisionEmpfaenger);
+    const gespeicherte = await pruefeGespeicherteTsaUrl(db, aufloesen ? { aufloesen } : {});
     res.status(status).render('admin/zeitstempel-form', {
       ...state,
+      tsaUrlWarnung: gespeicherte && !gespeicherte.ok ? gespeicherte : null,
       errors,
       gespeichert,
+      // S7: TSA_PASSWORT gesetzt = der gespeicherte Datenbankwert wird nicht benutzt (nur ein Hinweis, nie das Passwort).
+      tsaPasswortUmgebung: tsaPasswortAusUmgebung(),
       rhythmen: RHYTHMEN,
       versandHinweis: VERSAND_HINWEISE[versand] ?? null,
       exportHinweis: exportErgebnis,
@@ -92,9 +98,9 @@ export function createZeitstempelAdminRouter({
   }
 
   // GET /admin/zeitstempel – die Seite.
-  router.get('/', (req, res) => {
-    renderSeite(res, 200, currentState(), { gespeichert: req.query.gespeichert === '1', versand: req.query.versand });
-  });
+  router.get('/', asyncHandler(async (req, res) => {
+    await renderSeite(res, 200, currentState(), { gespeichert: req.query.gespeichert === '1', versand: req.query.versand });
+  }));
 
   // POST /admin/zeitstempel – prüft und speichert TSA-Adresse/Zugang, Warnschwelle und Audit-Nachweis-Einstellungen (Änderungen und Empfängerwechsel werden gemeldet).
   router.post('/', csrfProtection, asyncHandler(async (req, res) => {
@@ -103,8 +109,17 @@ export function createZeitstempelAdminRouter({
     const trimmedUser = (tsaUser || '').trim();
     const trimmedWarnung = (warnungAbStunden || '').trim();
     const errors = [];
-    if (trimmedUrl && !URL_PATTERN.test(trimmedUrl)) {
-      errors.push('TSA-URL muss leer sein (Funktion deaktiviert) oder mit http:// oder https:// beginnen.');
+    // Neue Adressen: nur https und kein privates/Loopback-/Link-Local-Ziel (S6). Eine unverändert abgesendete, schon
+    // gespeicherte Adresse wird hier nicht erneut geprüft, damit andere Einstellungen speicherbar bleiben und die Adresse
+    // nicht still ausfällt; die Seite warnt stattdessen.
+    const adresseGeaendert = trimmedUrl !== String(getConfigValue(db, 'zeitstempel_tsa_url') ?? '').trim();
+    if (trimmedUrl && adresseGeaendert) {
+      if (!URL_PATTERN.test(trimmedUrl)) {
+        errors.push('TSA-URL muss leer sein (Funktion deaktiviert) oder mit https:// beginnen.');
+      } else {
+        const pruefung = await pruefeTsaUrl(trimmedUrl, aufloesen ? { aufloesen } : {});
+        if (!pruefung.ok) errors.push(`TSA-URL nicht zulässig: ${pruefung.grund}`);
+      }
     }
     // Zugangsdaten (neu eingegeben oder schon gespeichert, ohne Entfernen) nie unverschlüsselt senden.
     const passwortBleibt = req.body.tsaPasswortEntfernen !== '1'
@@ -138,7 +153,7 @@ export function createZeitstempelAdminRouter({
     }
 
     if (errors.length > 0) {
-      return renderSeite(res, 400, { tsaUrl: trimmedUrl, tsaUser: trimmedUser, warnungAbStunden: trimmedWarnung, ...audit }, { errors });
+      return await renderSeite(res, 400, { tsaUrl: trimmedUrl, tsaUser: trimmedUser, warnungAbStunden: trimmedWarnung, ...audit }, { errors });
     }
 
     setConfigValue(db, 'zeitstempel_tsa_url', trimmedUrl);
@@ -198,7 +213,7 @@ export function createZeitstempelAdminRouter({
     }
     if (ergebnis.status === 'fehler') console.error('Audit-Export: manueller Lauf mit Fehler', ergebnis.error);
     const tsaKonfiguriert = Boolean(getConfigValue(db, 'zeitstempel_tsa_url'));
-    renderSeite(res, 200, currentState(), { exportErgebnis: exportHinweis(ergebnis, tsaKonfiguriert) });
+    await renderSeite(res, 200, currentState(), { exportErgebnis: exportHinweis(ergebnis, tsaKonfiguriert) });
   }));
 
   return router;

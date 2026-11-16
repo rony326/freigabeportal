@@ -35,7 +35,7 @@
               <td>
                 <a href="/admin/konten/<%= konto.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
                 <% if (konto.aktiv) { %>
-                  <form method="post" action="/admin/konten/<%= konto.id %>/deaktivieren" class="d-inline">
+                  <form method="post" action="/admin/konten/<%= konto.id %>/deaktivieren" class="d-inline" data-bestaetigen="Dieses Konto wird deaktiviert. Es lässt sich dann nicht mehr neu auswählen. Bestehende Vorgänge bleiben unverändert. Du kannst das Konto jederzeit wieder aktivieren." data-bestaetigen-knopf="Deaktivieren">
                     <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                     <button type="submit" class="btn btn-outline-danger btn-sm">Deaktivieren</button>
                   </form>

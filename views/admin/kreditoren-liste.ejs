@@ -64,7 +64,7 @@
               <td><%= regel.kreditor ? regel.kreditor.name : '—' %></td>
               <td>
                 <a href="/admin/kreditoren/regeln/<%= regel.id %>/bearbeiten" class="btn btn-outline-secondary btn-sm">Bearbeiten</a>
-                <form method="post" action="/admin/kreditoren/regeln/<%= regel.id %>/loeschen" class="d-inline">
+                <form method="post" action="/admin/kreditoren/regeln/<%= regel.id %>/loeschen" class="d-inline" data-bestaetigen="Diese Zuweisungsregel wird gelöscht. Neue Rechnungen von diesem Absender werden dann nicht mehr automatisch dem Lieferanten zugeordnet. Bereits zugeordnete Rechnungen bleiben unverändert. Die Regel kann bei Bedarf neu angelegt werden." data-bestaetigen-knopf="Regel löschen" data-bestaetigen-gefahr>
                   <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                   <button type="submit" class="btn btn-outline-danger btn-sm">Löschen</button>
                 </form>
@@ -117,7 +117,7 @@
               <td><%= row.kreditor ? row.kreditor.name : '—' %></td>
               <td><span class="badge <%= row.quelle === 'bestaetigt' ? 'text-bg-info' : 'text-bg-secondary' %>"><%= row.quelle === 'bestaetigt' ? 'bestätigt' : 'manuell' %></span></td>
               <td>
-                <form method="post" action="/admin/kreditoren/ibans/<%= row.id %>/loeschen" class="d-inline">
+                <form method="post" action="/admin/kreditoren/ibans/<%= row.id %>/loeschen" class="d-inline" data-bestaetigen="Diese IBAN wird beim Lieferanten gelöscht. Rechnungen mit dieser IBAN gelten danach als Abweichung. Die Buchhaltung und die Administration werden per Mail informiert. Du kannst die IBAN später wieder hinzufügen." data-bestaetigen-knopf="IBAN löschen" data-bestaetigen-gefahr>
                   <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                   <button type="submit" class="btn btn-outline-danger btn-sm">Löschen</button>
                 </form>

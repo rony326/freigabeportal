@@ -221,6 +221,9 @@ Default `gruppe:admin`) und Rapporte (`rapport_reminder_stunden` 72,
 `rapport_eskalation_stunden` 168, `rapport_eskalation_empfaenger`, leer =
 Admin-Gruppe) liegen als eigene Ereignisse auf derselben Seite. Siehe
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#admin-seite-benachrichtigungen).
+Das Ereignis „IBAN eines Lieferanten geändert“ (Mail-Typ `iban-aenderung`, Empfänger
+`iban_aenderung_empfaenger`, Standard Buchhaltung und Administration, immer sofort) meldet jedes Hinzufügen und
+Löschen einer Lieferanten-IBAN, siehe [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md).
 Der Mail-Typ `iban-warnung` wurde durch `auffaelligkeiten-warnung` ersetzt;
 alte `mail_vorlage_iban_warnung_*`-Schlüssel bleiben in bestehenden
 Datenbanken ungenutzt liegen.

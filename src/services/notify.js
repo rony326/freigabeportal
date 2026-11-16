@@ -26,12 +26,14 @@ export const FREIGABE2_AN_ADMIN_GRUND =
 // bisherige sofort wissen, dass sie nichts mehr tun muss. Erinnerungen und Eskalationen (reminder,
 // eskalation, freigabe2-*, kk-beleg-erinnerung) sind zeitkritisch und dürfen nie eine Woche
 // warten; sicherheitsalarm, duplikat-warnung und rechnungsnummer-warnung sind Warnungen.
+// iban-aenderung: Meldung, wenn eine Lieferanten-IBAN hinzugefügt oder gelöscht wurde (Vier-Augen-Kontrolle) -- nie gebündelt.
 // rapport-reminder/-eskalation wie freigabe2-*; rapport-zuweisung folgt der Bündelung wie zuweisung.
 export const IMMER_SOFORT_TYPEN = new Set([
   'sync-fehler', 'auffaelligkeiten-warnung', 'kk-beleg-eingegangen', 'admin-umzuweisung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail',
   'reminder', 'eskalation', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-beleg-erinnerung',
   'rapport-reminder', 'rapport-eskalation',
   'sicherheitsalarm', 'duplikat-warnung', 'rechnungsnummer-warnung',
+  'iban-aenderung',
 ]);
 
 // Der Baustein auf unterer Ebene "einreihen und jetzt versuchen" für eine bereits gerenderte Mail. Das erneute Versenden unter

@@ -1259,6 +1259,41 @@ function migrateRapportChecks(db) {
   });
 }
 
+// Lieferanten-IBANs merken sich, wer sie erfasst hat (Hinweis in Freigabe 2, Meldung bei Änderung). Bestehende Zeilen
+// bleiben NULL = Erfasser unbekannt; ihr Alter ergibt sich weiter aus `erstellt_am`.
+function migrateKreditorIbansErstelltVon(db) {
+  const spalten = new Set(db.prepare('PRAGMA table_info(kreditor_ibans)').all().map((col) => col.name));
+  if (!spalten.has('erstellt_von')) db.exec('ALTER TABLE kreditor_ibans ADD COLUMN erstellt_von TEXT');
+}
+
+// Mailtyp iban-aenderung (IBAN eines Lieferanten hinzugefügt oder gelöscht). Läuft nach migrateBetrugserkennungChecks und
+// vor migrateSecuritySchema (das die Audit-Trigger neu anlegt).
+function migrateIbanAenderungMailTyp(db) {
+  erweitereCheckPerRebuild(db, {
+    tabelle: 'mail_log',
+    marker: 'iban-aenderung',
+    createSql: `CREATE TABLE mail_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation', 'auffaelligkeiten-warnung', 'iban-aenderung')),
+      job_id INTEGER REFERENCES jobs(id),
+      empfaenger TEXT NOT NULL,
+      betreff TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('eingereiht', 'versendet', 'fehlgeschlagen', 'geplant')),
+      fehler_details TEXT,
+      versucht_am TEXT NOT NULL,
+      eingereiht_am TEXT,
+      versuche INTEGER NOT NULL DEFAULT 0,
+      naechster_versuch_am TEXT,
+      sperre_token TEXT,
+      sperre_bis TEXT,
+      versendet_am TEXT
+    )`,
+    spalten: ['id', 'typ', 'job_id', 'empfaenger', 'betreff', 'text', 'status', 'fehler_details', 'versucht_am', 'eingereiht_am', 'versuche', 'naechster_versuch_am', 'sperre_token', 'sperre_bis', 'versendet_am'],
+  });
+  db.exec('CREATE INDEX IF NOT EXISTS mail_log_zustellung_idx ON mail_log(status, naechster_versuch_am)');
+}
+
 // Persönliche Benachrichtigungen: der globale Schalter mail_batching_aktiv wird zum Standard
 // mail_standard_benachrichtigung (einmalig: nur wenn der neue Schlüssel fehlt), und die Digest-
 // Vorlage wird auf den neuen Standard gehoben, sofern sie noch exakt dem alten entspricht.
@@ -1335,6 +1370,8 @@ export function openDatabase(dbPath) {
   migrateRapporteSchema(db);
   migrateRapportChecks(db);
   migrateBetrugserkennungChecks(db);
+  migrateKreditorIbansErstelltVon(db);
+  migrateIbanAenderungMailTyp(db);
   migrateBenachrichtigungEinstellung(db);
   migrateBetriebSchema(db);
   // Muss NACH migrateKreditkartenChecks laufen: die CHECK-Rebuilds (freigaben, mail_log, cron_log)

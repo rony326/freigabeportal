@@ -466,6 +466,7 @@ gelöschte Personen werden beim Versand still übersprungen.
 | `ablehnung` | Rechnung bei Kontierung oder Freigabe 2 abgelehnt |
 | `sync-fehler` | ChurchTools-Sync fehlgeschlagen oder abgebrochen — **immer sofort**, unabhängig von der persönlichen Wahl |
 | `auffaelligkeiten-warnung` | Kontierung trotz Auffälligkeiten im Prüf-Popup bestätigt (ersetzt `iban-warnung`; die alten `mail_vorlage_iban_warnung_*`-Schlüssel bleiben in bestehenden Datenbanken ungenutzt liegen); an Freigeber 1 + 2, die kontierende Person und `iban_abweichung_empfaenger` — **immer sofort**, unabhängig von der persönlichen Wahl |
+| `iban-aenderung` | Bei einem Lieferanten wurde eine IBAN hinzugefügt oder gelöscht (Admin → Kreditoren, auch beim Anlegen eines Lieferanten mit IBAN); an `iban_aenderung_empfaenger` (Standard: Buchhaltung und Administration, einstellbar). **Immer sofort**; die ändernde Person wird nicht ausgenommen und bekommt die Mail, wenn sie Empfänger ist. Variablen: Lieferant, IBAN (gekürzt), Art der Änderung, wer, wann, Link |
 | `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Kreditor erfasst |
 | `duplikat-warnung` | Möglicher Doppelscan: gleicher Kreditor, Betrag und Zahlungsziel, Eingang binnen 14 Tagen |
 | `kk-abrechnung-zugewiesen` | Kreditkartenabrechnung (manuell oder automatisch erkannt) einer Karte zugeordnet — geht an die verantwortliche Person |
@@ -487,8 +488,8 @@ sofort zugestellten Typen**, die nie warten. Das sind genau die Typen in
 `sync-fehler`, `auffaelligkeiten-warnung`, `kk-beleg-eingegangen`, `admin-umzuweisung`,
 `audit-pruefnummer`, `neues-geraet`, `fehlermeldung`, `testmail`, `reminder`,
 `eskalation`, `freigabe2-reminder`, `freigabe2-eskalation`,
-`rapport-reminder`, `rapport-eskalation`, `kk-beleg-erinnerung`, `sicherheitsalarm`, `duplikat-warnung` und
-`rechnungsnummer-warnung`. Erinnerungen und Eskalationen sind zeitkritisch
+`rapport-reminder`, `rapport-eskalation`, `kk-beleg-erinnerung`, `sicherheitsalarm`, `duplikat-warnung`,
+`rechnungsnummer-warnung` und `iban-aenderung`. Erinnerungen und Eskalationen sind zeitkritisch
 und dürfen nie eine Woche warten; die Warnungen sind sicherheits- oder
 betriebsrelevant. Alle übrigen Typen (u. a. `zuweisung`, `rapport-zuweisung`, `ablehnung`,
 `kommentar`, `kk-abrechnung-zugewiesen`) folgen der Wahl.

@@ -8,6 +8,12 @@
         <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
       </div>
     <% } %>
+    <% if (tsaUrlWarnung) { %>
+      <div class="alert alert-danger" id="tsaUrlWarnung" role="alert">
+        <strong>Die gespeicherte TSA-Adresse erfüllt die Sicherheitsregeln nicht mehr.</strong>
+        <%= tsaUrlWarnung.grund %> Die Adresse wird weiterhin benutzt, damit keine Zeitstempel ausfallen. Bitte ersetze sie unten durch eine https://-Adresse eines öffentlichen Zeitstempeldienstes. Neu gespeichert werden nur noch solche Adressen.
+      </div>
+    <% } %>
     <% if (locals.testmodus) { %>
       <div class="alert alert-warning">Im Testmodus ist der Zeitstempeldienst deaktiviert; diese Einstellungen lassen sich hier nicht ändern.</div>
     <% } %>
@@ -17,7 +23,7 @@
       <div class="mb-3">
         <label class="form-label" for="tsaUrl">TSA-URL</label>
         <input type="text" class="form-control" id="tsaUrl" name="tsaUrl" value="<%= tsaUrl %>" placeholder="https://freetsa.org/tsr">
-        <div class="form-text">Leer lassen, um die Zeitstempel-Funktion zu deaktivieren.</div>
+        <div class="form-text">Nur https:// und nur öffentlich erreichbare Server (keine internen oder lokalen Adressen). Leer lassen, um die Zeitstempel-Funktion zu deaktivieren.</div>
       </div>
       <div class="mb-3">
         <label class="form-label" for="tsaUser">Benutzername (optional)</label>
@@ -25,6 +31,9 @@
       </div>
       <div class="mb-3">
         <label class="form-label" for="tsaPasswort">Passwort (optional)</label>
+        <% if (tsaPasswortUmgebung) { %>
+          <div class="alert alert-info" id="tsaPasswortUmgebung">Das Passwort kommt aus der Umgebungsvariable <code>TSA_PASSWORT</code> des Servers. Ein hier gespeichertes Passwort wird deshalb nicht benutzt. Wenn du die Variable entfernst, gilt wieder das hier gespeicherte.</div>
+        <% } %>
         <input type="password" class="form-control" id="tsaPasswort" name="tsaPasswort" autocomplete="off">
         <div class="form-text">Aus Sicherheitsgründen wird ein bereits gespeichertes Passwort hier nie angezeigt. Leer lassen, um das gespeicherte Passwort zu behalten.</div>
         <div class="form-check mt-2">

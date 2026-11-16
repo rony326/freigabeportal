@@ -201,6 +201,7 @@ und dürfen nicht `changeme` enthalten — die App verweigert sonst den Start
 | `CT_CUSTOM_FIELD_IBAN`, `CT_CUSTOM_FIELD_KONTOINHABER` | Eigenschaftsschlüssel der ChurchTools-Personenfelder mit IBAN und Kontoinhaber (für die Auszahlung von Spesen), z. B. `iban_1` — genau der Schlüssel am Personenobjekt, nicht der Anzeigename |
 | `BACKUP_KEYRING_FILE` | Pfad zum Schlüsselbund für die verschlüsselten Sicherungen (ausserhalb aller Datenverzeichnisse, Modus 0600), siehe [Verschlüsselte Backups](docs/backup-verschluesselung.md) |
 | `TSA_TRUST_ANCHORS_FILE`, `TSA_TRUST_ANCHORS_SHA256`, `TSA_CRL_FILE`, `TSA_CRL_AUTO_UPDATE` | Vertrauensanker und Sperrlisten für den Zeitstempeldienst, siehe oben und [TSA-Vertrauensanker](docs/tsa-vertrauensanker.md) |
+| `TSA_PASSWORT` (optional) | Passwort des Zeitstempeldienstes. Hat Vorrang vor dem unter Admin → Zeitstempel gespeicherten Passwort (das im Klartext in der Datenbank und damit in jeder Sicherung läge); ist die Variable gesetzt, zeigt das Admin-Formular einen Hinweis und der Datenbankwert wird nicht benutzt. Ohne die Variable gilt weiter der Datenbankwert |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | aus den bereits vorhandenen Produktions-SMTP-Zugangsdaten |
 
 ### Vor dem ersten Login — Superadmin-Bootstrap

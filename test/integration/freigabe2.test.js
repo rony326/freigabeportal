@@ -2029,3 +2029,37 @@ test('GET /freigabe2/:id zeigt bei zwei Bestätigungen (Überarbeitung) nur die 
   assert.doesNotMatch(res.text, /IBAN nicht hinterlegt/);
   db.close();
 });
+
+// --- S4: Hinweis auf eine junge IBAN (< 14 Tage) ---
+async function seedJobMitIban(db, { alterTage, qrIban = 'CH9300762011623852957' }) {
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null, zahlungsart: 'ueberweisung' });
+  const ibanId = createKreditorIban(db, { kreditorId, iban: 'CH9300762011623852957', erstelltVon: '1' });
+  db.prepare('UPDATE kreditor_ibans SET erstellt_am = ? WHERE id = ?').run(new Date(Date.now() - alterTage * 24 * 3600 * 1000).toISOString(), ibanId);
+  db.prepare('UPDATE jobs SET kreditor_id = ? WHERE id = ?').run(kreditorId, id);
+  setQrDaten(db, id, { qrIban, qrReferenz: null, qrBetrag: null, qrWaehrung: null, qrCreditorName: 'Muster AG' });
+  return id;
+}
+
+test('S4: GET /freigabe2/:id zeigt bei einer IBAN, die jünger als 14 Tage ist, einen Warnkasten mit Datum und Erfasser', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const id = await seedJobMitIban(db, { alterTage: 2 });
+  const res = await request(buildTestApp(db)).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /id="ibanNeuHinweis"/);
+  assert.match(res.text, /Neue IBAN beim Lieferanten/);
+  assert.match(res.text, /CH93 … 2957/);
+  assert.match(res.text, /Person1 Muster/);
+  db.close();
+});
+
+test('S4: GET /freigabe2/:id zeigt bei einer älteren IBAN (15 Tage) keinen Warnkasten', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const id = await seedJobMitIban(db, { alterTage: 15 });
+  const res = await request(buildTestApp(db)).get(`/freigabe2/${id}`).set('x-test-person-id', '3');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /id="ibanNeuHinweis"/);
+  db.close();
+});

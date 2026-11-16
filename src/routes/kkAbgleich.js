@@ -24,6 +24,7 @@ import { extrahierePdfText } from '../services/pdfText.js';
 import { analysiereText, LEERE_ANALYSE, berechneVorschlaege } from '../services/kkTextAnalyse.js';
 import { kommentarBereich } from './kommentare.js';
 import { asyncCallback } from '../middleware/asyncHandler.js';
+import { begrenzeUploadGroesse, zustaendigkeitVorUpload } from '../middleware/uploadLimit.js';
 
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 const MAX_ZEILEN = 100;
@@ -130,8 +131,8 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
   class AbgleichKonflikt extends Error {}
 
   // POST /kontierung/:id/kk-abgleich – prüft alle Positionen (Konto, signierter Betrag, Art, Beleg/Datei/Begründung), verlangt Summe = Total, führt in einer Transaktion Aufsplitten und Beleg-Zuordnung aus und benachrichtigt die Freigeber 1.
-  router.post('/:id/kk-abgleich', (req, res, next) => {
-    mitAuditKontext(upload.any())(req, res, (uploadErr) => {
+  router.post('/:id/kk-abgleich', zustaendigkeitVorUpload((req, res) => ladeAbrechnung(req, res)), (req, res, next) => {
+    mitAuditKontext(begrenzeUploadGroesse(upload.any()))(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         const angelegteDateien = [];

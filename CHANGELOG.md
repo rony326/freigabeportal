@@ -9,6 +9,10 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   Höhe aus dem Bildkopf, ohne Dekodieren); zu grosse oder nicht lesbare Bilder werden mit
   verständlicher Meldung abgelehnt statt den Prozess zu blockieren (Befund S2). Gilt für Spesen,
   Kontierung, Aufsplitten, Kreditkarten-Belege, KK-Abgleich und den n8n-Belegeingang.
+- Upload-Anfragen sind auf 60 MB gesamt begrenzt (bisher bis zu 500 MB je Anfrage im
+  Arbeitsspeicher); bei Überschreitung wird sofort mit Fehler 413 und einer verständlichen
+  Seite abgebrochen. Auf `/kontierung/:id` (Kontieren, Aufsplitten, KK-Abgleich) wird die
+  Zuständigkeit schon vor dem Upload geprüft (Befund S3).
 
 ## [1.2.3] – 2026-11-15
 

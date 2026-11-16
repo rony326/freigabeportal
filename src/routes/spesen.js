@@ -18,6 +18,7 @@ import { pruefeEingangsPdf, PdfEingangFehler } from '../services/pdfEingang.js';
 import { renderFirstPageThumbnail } from '../services/thumbnail.js';
 import { sendNotification } from '../services/notify.js';
 import { asyncCallback } from '../middleware/asyncHandler.js';
+import { begrenzeUploadGroesse } from '../middleware/uploadLimit.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const AUSLAGE_DATUM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -54,7 +55,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
   // POST /spesen – prüft alle Positionen (Konto, Betrag, Datum nicht in der Zukunft, Zweck, Beleg PDF/PNG/JPEG), legt Abrechnung und Positionen in einer Transaktion an und benachrichtigt die Zuständigen.
   router.post('/', (req, res, next) => {
     // multer muss vor csrfProtection laufen: Die CSRF-Prüfung liest req.body._csrf, das erst existiert, wenn multer den multipart-Body geparst hat — gleiche Reihenfolge wie bei den eigenen multipart-POST-Routen in kontierung.js.
-    mitAuditKontext(uploadBelege.any())(req, res, (uploadErr) => {
+    mitAuditKontext(begrenzeUploadGroesse(uploadBelege.any()))(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {

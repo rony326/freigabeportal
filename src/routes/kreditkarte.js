@@ -18,6 +18,7 @@ import { darfAufKarteErfassen, listErfassbareKarten, darfBelegBearbeiten, darfBe
 import { POSITION_PATTERN } from '../services/aufsplitten.js';
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, KK_DATUM_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
 import { asyncCallback } from '../middleware/asyncHandler.js';
+import { begrenzeUploadGroesse } from '../middleware/uploadLimit.js';
 
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 const uploadBeleg = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BELEG_SIZE, files: 1 } });
@@ -103,7 +104,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
 
   // POST /kreditkarte/belege – neuen Beleg erfassen (Upload, Prüfung, Datei als PDF + Thumbnail speichern, Ereignis 'kk_beleg_erfasst').
   router.post('/belege', (req, res, next) => {
-    mitAuditKontext(uploadBeleg.single('beleg'))(req, res, (uploadErr) => {
+    mitAuditKontext(begrenzeUploadGroesse(uploadBeleg.single('beleg')))(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {
@@ -168,7 +169,7 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
 
   // POST /kreditkarte/belege/:id – Beleg ändern oder Entwurf ergänzen (macht ihn zu 'offen'); optional neue Datei.
   router.post('/belege/:id', (req, res, next) => {
-    mitAuditKontext(uploadBeleg.single('beleg'))(req, res, (uploadErr) => {
+    mitAuditKontext(begrenzeUploadGroesse(uploadBeleg.single('beleg')))(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         try {

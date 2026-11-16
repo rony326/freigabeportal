@@ -66,6 +66,7 @@ import {
   alleKindIds,
 } from '../services/aufsplitten.js';
 import { asyncCallback, asyncHandler } from '../middleware/asyncHandler.js';
+import { begrenzeUploadGroesse, zustaendigkeitVorUpload } from '../middleware/uploadLimit.js';
 import { neueFehler, feldFehlerAttr } from '../utils/feldFehler.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
@@ -186,8 +187,9 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   });
 
   // POST /kontierung/:id – Hauptaktion: `aktion` = kontieren | ablehnen | rapport (Zweige siehe unten). Reihenfolge: Upload (multer) → CSRF → Validierung → Prüf-Popup → Datei-Arbeit → Transaktion → Mails.
-  router.post('/:id', (req, res, next) => {
-    mitAuditKontext(uploadBeleg.single('beleg'))(req, res, asyncCallback(next, async (uploadErr) => {
+  // Die Zuständigkeit hängt nur von :id und der Sitzung ab und wird deshalb schon vor dem Upload geprüft (zustaendigkeitVorUpload); der Handler lädt den Vorgang nach dem Upload erneut.
+  router.post('/:id', zustaendigkeitVorUpload((req, res) => loadAuthorizedJob(req, res)), (req, res, next) => {
+    mitAuditKontext(begrenzeUploadGroesse(uploadBeleg.single('beleg')))(req, res, asyncCallback(next, async (uploadErr) => {
     // csrfProtection läuft, nachdem multer den multipart-Body (inklusive des Felds _csrf) geparst hat — jede frühere Ausführung hätte req.body noch leer und lehnte jede legitime Einreichung ab.
     csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
     if (csrfErr) return next(csrfErr);
@@ -915,8 +917,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
   });
 
   // POST /kontierung/:id/aufsplitten – prüft die Zeilen (Konto, Betrag, Typ, Position, Beleg, Lieferant), verlangt Summe = Gesamtbetrag, zeigt ggf. das Prüf-Popup, führt Dateiarbeit, Aufsplitten (services/aufsplitten.js) und Mails aus.
-  router.post('/:id/aufsplitten', (req, res, next) => {
-    mitAuditKontext(uploadBeleg.any())(req, res, asyncCallback(next, async (uploadErr) => {
+  router.post('/:id/aufsplitten', zustaendigkeitVorUpload((req, res) => loadAuthorizedJob(req, res)), (req, res, next) => {
+    mitAuditKontext(begrenzeUploadGroesse(uploadBeleg.any()))(req, res, asyncCallback(next, async (uploadErr) => {
     // csrfProtection läuft, nachdem multer den multipart-Body (inklusive des Felds _csrf) geparst hat — jede frühere Ausführung hätte req.body noch leer und lehnte jede legitime Einreichung ab.
     csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
     if (csrfErr) return next(csrfErr);

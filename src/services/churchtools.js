@@ -112,13 +112,46 @@ export async function fetchGroup(config, loginToken, groupId, { signal = ctSigna
   return { id: String(data.data.id), name: data.data.name };
 }
 
-// IDs aller Mitglieder einer Gruppe (als Text).
+// Seitengrösse (Maximum der ChurchTools-Schnittstelle; Standard wäre nur 10) und Obergrenze der Seiten pro Gruppe.
+// Die Obergrenze verhindert endloses Blättern bei einer fehlerhaften Antwort (50 x 200 = 10 000 Mitglieder).
+const MITGLIEDER_SEITENGROESSE = 200;
+const MITGLIEDER_MAX_SEITEN = 50;
+
+// Personen-ID eines Mitgliedseintrags: `personId` ist in ChurchTools als veraltet markiert, neu gilt
+// `person.domainIdentifier`. Beide werden gelesen (neues Feld zuerst); null, wenn keines vorhanden ist.
+function mitgliedPersonId(eintrag) {
+  const id = eintrag?.person?.domainIdentifier ?? eintrag?.personId;
+  return id == null || id === '' ? null : String(id);
+}
+
+// IDs aller aktiven Mitglieder einer Gruppe (als Text). Ohne Statusfilter lieferte ChurchTools auch Anfragen
+// (requested), Wartelisten (waiting) und zu löschende (to_delete) Mitgliedschaften — für diese darf es keine Rolle geben;
+// deshalb wird der Filter mitgesendet UND im Code nochmals auf groupMemberStatus === 'active' geprüft.
+// Es wird seitenweise gelesen, bis alle Seiten da sind. Schlägt eine Seite fehl (Fehler, Zeitlimit) oder wird die
+// Seitenobergrenze erreicht, wirft die Funktion: eine unvollständige Liste würde beim Sync Rollen entziehen.
 export async function fetchGroupMemberIds(config, loginToken, groupId, { signal = ctSignal(config) } = {}) {
   sperreImTestmodus(config);
-  const url = new URL(`/api/groups/${groupId}/members`, config.baseUrl);
-  const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` }, signal });
-  const data = await parseOrThrow(response, 'Gruppenabfrage');
-  return data.data.map((member) => String(member.personId));
+  const ids = [];
+  for (let seite = 1; seite <= MITGLIEDER_MAX_SEITEN; seite++) {
+    const url = new URL(`/api/groups/${groupId}/members`, config.baseUrl);
+    url.searchParams.append('group_member_statuses[]', 'active');
+    url.searchParams.set('limit', String(MITGLIEDER_SEITENGROESSE));
+    url.searchParams.set('page', String(seite));
+    const response = await fetch(url, { headers: { Authorization: `Login ${loginToken}` }, signal });
+    const data = await parseOrThrow(response, 'Gruppenabfrage');
+    const eintraege = data.data;
+    if (!Array.isArray(eintraege)) throw new Error('ChurchTools Gruppenabfrage fehlgeschlagen: unerwartete Antwort');
+    for (const eintrag of eintraege) {
+      if (eintrag.groupMemberStatus !== 'active') continue;
+      const id = mitgliedPersonId(eintrag);
+      if (id) ids.push(id);
+    }
+    const lastPage = Number(data.meta?.pagination?.lastPage);
+    // Mit lastPage: bis dahin lesen. Ohne: bei einer nicht vollen Seite ist das Ende erreicht.
+    const fertig = Number.isFinite(lastPage) && lastPage >= 1 ? seite >= lastPage : eintraege.length < MITGLIEDER_SEITENGROESSE;
+    if (fertig) return ids;
+  }
+  throw new Error(`ChurchTools Gruppenabfrage fehlgeschlagen: mehr als ${MITGLIEDER_MAX_SEITEN} Seiten`);
 }
 
 // Welche der Kandidaten-Gruppen enthalten die Person? (Beim Login: Rollen der Person bestimmen.) @returns {Promise<string[]>}

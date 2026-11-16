@@ -3,6 +3,18 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## Unveröffentlicht
+
+- ChurchTools-Gruppenmitglieder (S1, B1, B5): Es zählen nur noch aktive Mitgliedschaften
+  (`group_member_statuses[]=active`, zusätzlich im Code geprüft); Anfragen, Wartelisten und
+  zur Löschung vorgemerkte Einträge erhalten keine Rolle mehr. Die Mitgliederliste wird mit
+  `limit=200` seitenweise vollständig gelesen (bisher nur die ersten 10). Die Personen-ID wird aus
+  `person.domainIdentifier` gelesen, ersatzweise aus `personId`. Ein Fehler auf einer Seite
+  bricht ab, statt eine unvollständige Liste zu liefern. Bisher wegen der 10er-Grenze fehlende
+  Rolleninhaber erhalten ihre Rolle beim nächsten Sync zurück.
+- Doku (S9): `docs/auth-und-rechte.md` erklärt, dass ein Rollenentzug erst mit dem nächtlichen Sync
+  oder der nächsten Anmeldung wirkt und wie der Sync von Hand gestartet wird.
+
 ## [1.2.3] – 2026-11-15
 
 Bedienungs-Release für Gelegenheitsnutzer. Release Notes: [docs/releases/v1.2.3.md](docs/releases/v1.2.3.md).

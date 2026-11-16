@@ -7,7 +7,7 @@
 - **Views**: server-seitig gerenderte EJS-Templates (kein Client-Framework, kein SPA-Bundling).
 - **Datenbank**: SQLite über das eingebaute `node:sqlite` — eine einzelne Datei (`DB_PATH`), kein separater DB-Server.
 - **Dateiablage**: Rechnungs-PDFs/Thumbnails unter `JOBS_DIR`, Branding-Logo unter `BRANDING_DIR` — beides normales Dateisystem, keine Objectstorage-Anbindung.
-- **PDF-Verarbeitung**: `mupdf` (Rendering/QR-Scan-Rasterung, im n8n-Eingang in Worker-Threads, siehe [PDF-Worker](#pdf-worker-srcservicespdfworkerpooljs-befund-b2)), `pdf-lib` (Stempel-Seite anhängen, Beleg mergen), `pdf-rfc3161` (RFC3161-Zeitstempel).
+- **PDF-Verarbeitung**: `mupdf` (Rendering/QR-Scan-Rasterung, im n8n-Eingang, bei Spesen und Kreditkarten-Belegen in Worker-Threads, siehe [PDF-Worker](#pdf-worker-srcservicespdfworkerpooljs-befund-b2)), `pdf-lib` (Stempel-Seite anhängen, Beleg mergen), `pdf-rfc3161` (RFC3161-Zeitstempel).
 - **QR-Code**: `jsqr` (Dekodierung), eigener Parser für das Swiss-QR-Bill-Zeilenformat.
 - **Mail**: `nodemailer` gegen ein beliebiges SMTP-Konto.
 - **Hosting**: Infomaniak Node.js-Webhosting; der Node-Prozess läuft dauerhaft und übernimmt Scheduling selbst (siehe unten) — kein externer Task-Scheduler nötig.
@@ -155,8 +155,9 @@ Deshalb laufen diese Aufgaben in Worker-Threads:
 - **Aufgabenliste** `src/workers/pdfAufgaben.js`: Name → bestehende reine
   Funktion (`eingangPruefen` = `pruefeEingangsPdf`, `vorschaubild`,
   `qrErkennen`, `textExtrahieren`) plus `eingangAnalysieren` (Vorschaubild, QR
-  und optional Text in einem Auftrag). Einzige Quelle für Worker- und
-  Inline-Betrieb.
+  und optional Text in einem Auftrag) und `belegDateiErstellen` (Beleg als PDF
+  via `buildBelegPdf` plus Vorschaubild; Etappe 2). Einzige Quelle für Worker-
+  und Inline-Betrieb.
 - **Worker** `src/workers/pdfWorker.js`: lädt die Aufgaben (inkl. mupdf,
   ~120 ms, ~+55 MB RSS je Worker), bearbeitet einen Auftrag nach dem anderen und
   meldet nach jedem Auftrag `process.memoryUsage().external` mit.
@@ -166,7 +167,7 @@ Deshalb laufen diese Aufgaben in Worker-Threads:
     Kreditkartenbelege per Mail) belegen höchstens einen Worker gleichzeitig.
   - Warteschlange höchstens 100 → `PdfWorkerUeberlastet`.
   - Zeitlimit je Auftrag (Eingangsprüfung, Vorschaubild, Text je 10 s, QR 15 s,
-    kombiniert 20 s; mal `PDF_WORKER_ZEITLIMIT_FAKTOR`): der Worker wird mit
+    kombiniert 20 s, Belegdatei 30 s; mal `PDF_WORKER_ZEITLIMIT_FAKTOR`): der Worker wird mit
     `terminate()` beendet (bricht auch laufende WASM-Arbeit nach wenigen ms ab),
     der Auftrag scheitert mit `PdfWorkerZeitueberschreitung`.
   - Der WASM-Speicher von mupdf wächst und schrumpft nie, und `resourceLimits`
@@ -186,8 +187,12 @@ Deshalb laufen diese Aufgaben in Worker-Threads:
     gemeinsamen Speicherpool von Node, und Aufrufer brauchen ihn danach noch.
 - **Fassade** `src/services/pdfArbeit.js`: `await pdfArbeit().ausfuehren(aufgabe,
   [buffer], { spur })`. Fehler kommen wie beim direkten Aufruf an
-  (`PdfEingangFehler` mit `code` wird wieder aufgebaut), dazu die Pool-Fehler
-  (Basisklasse `PdfWorkerFehler`). Mit `PDF_WORKER=aus` laufen dieselben
+  (`PdfEingangFehler` mit `code` und `BelegBildFehler` werden aus
+  `services/pdfFehler.js` wieder aufgebaut, alle anderen als `Error` mit Name,
+  `code` und Meldung), dazu die Pool-Fehler (Basisklasse `PdfWorkerFehler`).
+  Für Formulare: `antworteSpaeterErneut(res, err, wo)` setzt 503 und
+  `Retry-After: 60`, die Seite zeigt `PDF_VORUEBERGEHEND_MELDUNG` («… in einer
+  Minute erneut …»). Mit `PDF_WORKER=aus` laufen dieselben
   Aufgaben im Hauptthread (dynamischer `import()` beim ersten Auftrag) – ein
   bewusster Betriebs-/Testschalter.
 
@@ -200,10 +205,40 @@ Dublettenprüfung und `createJob` jetzt ein `await` liegt und
 unmittelbar vor Dateischreiben und Jobanlage im selben synchronen Abschnitt
 erneut.
 
-**Noch im Hauptthread (Etappe 2)**: Spesen-Eingang (`routes/spesen.js`),
-Beleg-Dateien der Kreditkarte (`kkBelegDatei.js`), Kreditkarten-Abgleich
-(`routes/kkAbgleich.js`), Stempel/Beleg anhängen/Splitgruppen (pdf-lib),
-Testmodus-Beispieldaten.
+**Etappe 2** (umgestellt, Spur `interaktiv`, eine Person wartet):
+
+| Aufrufer | Aufgabe(n) im Worker | Bei `PdfWorkerFehler` |
+|---|---|---|
+| `POST /spesen` (`routes/spesen.js`) | `eingangPruefen` (PDF-Belege), `belegDateiErstellen` je Position | Formular mit 503 und Hinweis; bereits geschriebene Dateien früherer Positionen werden entfernt, kein Job, keine Abrechnung |
+| `POST /kreditkarte/belege`, `POST /kreditkarte/belege/:id` (`routes/kreditkarte.js` über `speichereKkBelegDatei`) | `belegDateiErstellen` | Formular mit 503; beim Bearbeiten entsteht die neue Datei **vor** der Datenänderung, damit keine halbe Änderung bleibt |
+| `POST /kontierung/:id/kk-abgleich` (nachgereichte Belege über `speichereKkBelegDatei`) | `belegDateiErstellen` | Formular mit 503, nichts aufgesplittet, angelegte Dateien entfernt |
+| Abgleichsseite (`ladeAnalyse` in `routes/kkAbgleich.js`) | `textExtrahieren` | Seite ohne Vorschläge (200); die leere Analyse wird **nicht** gespeichert, der nächste Aufruf versucht es erneut |
+| `POST /api/n8n/kk-belege` (`kkBelegEingang.js`, Spur `hintergrund`) | `belegDateiErstellen` (zusätzlich zu QR/Text aus Etappe 1) | 503 `{fehler: 'pdf_verarbeitung_ausgelastet'}` mit `Retry-After`, kein Entwurf |
+
+Echte Prüffehler bleiben unverändert: `PdfEingangFehler` → Formularfehler 400
+mit derselben Meldung; Bild über 40 Megapixel → 400 aus `pruefeBelegBild`.
+Bewusst im Hauptthread geblieben: `pruefeBelegBild` (liest nur den Bildkopf),
+`detectBelegMimetype` und `countBelegSeiten` im KK-Abgleich (pdf-lib, nur
+PDF-Belege; dieselben Bytes parst danach ohnehin `bereiteTeilDateienVor` in
+`services/aufsplitten.js` mit pdf-lib im Hauptthread – eine Verlagerung allein der
+Prüfung würde die Blockade nicht verkürzen, das gehört zu Etappe 3–5).
+`buildBelegPdf` dagegen läuft im Worker: ein PNG bis 40 Megapixel zu dekodieren
+und einzubetten (pdf-lib `embedPng`) blockierte den Hauptthread ~6 s.
+
+**Hauptprozess und mupdf**: Spesen (`routes/spesen.js`) und
+`services/kkBelegDatei.js` importieren mupdf nicht mehr, auch nicht transitiv
+(Test `test/integration/pdfWorkerMupdfImport.test.js`). Der Hauptprozess lädt
+mupdf beim Start aber weiterhin über **einen** Restpfad:
+`middleware/roles.js` (und `routes/admin/testmodus.js`) →
+`services/testmodus/beispieldaten.js` (für `BEISPIELPERSONEN`) →
+`services/thumbnail.js` → `mupdf`. Fast jede Route hängt über
+`middleware/roles.js` daran. Ohne diesen Pfad sinkt der RSS im Leerlauf um
+rund 25 MB (gemessen ~155 → ~131 MB).
+
+**Noch im Hauptthread (Etappe 3–5)**: Testmodus-Beispieldaten (Vorschaubild,
+Restpfad oben), Stempel (`pdfStamp.js`), Beleg anhängen in der Kontierung und
+beim Aufsplitten (`belegAnhaengen.js`/`aufsplitten.js`, pdf-lib),
+Splitgruppen-Export, Freigabe 2.
 
 ## Router-Übersicht
 

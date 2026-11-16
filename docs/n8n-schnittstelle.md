@@ -306,7 +306,12 @@ das Kreditkarten-Modul deaktiviert ist, `422`
 `{fehler: 'absender_unbekannt'}` wenn keine aktive Person zum Absender
 passt, `422` `{fehler: 'absender_mehrdeutig'}` wenn sich **mehrere**
 aktive Personen diese Adresse teilen (z. B. eine Familienadresse) — es
-wird dann kein Beleg angelegt, da unklar ist, wem er gehört.
+wird dann kein Beleg angelegt, da unklar ist, wem er gehört. `503`
+`{fehler: 'pdf_verarbeitung_ausgelastet'}` mit `Retry-After: 60`, wenn die
+Belegdatei (PDF und Vorschaubild, im PDF-Worker) wegen Überlastung,
+Zeitlimit oder Absturz vorübergehend nicht erstellt werden konnte (B2) —
+es wurde nichts angelegt und keine Mail verschickt; **erneut versuchen**
+wie bei `POST /api/n8n/jobs`.
 
 Workflow-Skizze: IMAP-Trigger auf einem dedizierten "belege@"-Postfach →
 Anhänge aufsplitten → je Anhang ein `POST /api/n8n/kk-belege` →

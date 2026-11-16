@@ -15,6 +15,17 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   möglich war – der Workflow soll dann wiederholen. Gleichzeitig eingereichte identische PDFs ergeben weiterhin
   genau einen Job. Statusseite und `/healthz` haben den neuen Dienst «PDF-Verarbeitung» (`pdf_verarbeitung`).
   Spesen, Kreditkarten-Abgleich, Stempel und Splitgruppen folgen in Etappe 2.
+- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 2): Spesen-Einreichung (Prüfung der PDF-Belege, PDF aus
+  Bildbelegen, Vorschaubild), Kreditkarten-Belege (Upload, Datei ersetzen, nachgereichte Belege im Abgleich,
+  Belege per Mail) und die Textanalyse der Kreditkartenabrechnung rechnen jetzt ebenfalls im Worker. Ein grosses
+  Bild (bis 40 Megapixel) hielt das Portal bisher ~6 s an. Ist die PDF-Verarbeitung vorübergehend ausgelastet,
+  sehen Personen ihr Formular mit Status 503 und dem Hinweis, es in einer Minute erneut zu versuchen; es bleibt
+  weder ein halber Datensatz noch eine Datei zurück (Kreditkarten-Beleg bearbeiten: neue Datei wird vor der
+  Datenänderung erstellt). Echte Prüffehler (beschädigtes/verschlüsseltes PDF, zu grosses Bild) melden sich wie
+  bisher. Die Abgleichsseite erscheint bei einer Störung ohne Vorschläge und versucht es beim nächsten Aufruf
+  erneut. **n8n:** `POST /api/n8n/kk-belege` antwortet in diesem Fall mit **503**, `Retry-After: 60` und
+  `{fehler: 'pdf_verarbeitung_ausgelastet'}` – wiederholen. Offen für spätere Etappen: Testmodus-Beispieldaten
+  (über sie lädt der Hauptprozess mupdf noch beim Start), Stempel, Beleg anhängen, Splitgruppen, Freigabe 2.
 - Abhängigkeiten aktualisiert (ohne Hauptversionssprung): mupdf 1.28.0 → 1.28.6, express-rate-limit
   8.6.2 → 8.7.4, nodemailer 10.2.1 → 10.6.0, csrf-csrf 4.0.3 → 4.1.0, read-excel-file 9.3.12 → 9.3.17.
 - Doku: `docs/betrieb-und-nutzung.md` hält einen monatlichen Termin fest (`npm audit` und Prüfung der

@@ -152,21 +152,24 @@ Solange der Modus aktiv ist:
 
 Seit Befund B2 rechnen Eingangsprüfung, Vorschaubild, QR-Erkennung und Textauszug des n8n-Rechnungseingangs
 (und QR/Text der Kreditkartenbelege per Mail) in eigenen Worker-Threads, damit lange PDF-Arbeit das Portal
-nicht anhält. Technik: [architektur.md](architektur.md#pdf-worker-srcservicespdfworkerpooljs-befund-b2).
+nicht anhält. Seit Etappe 2 auch die Spesen-Belege (Prüfung, PDF, Vorschaubild), die Belegdateien der
+Kreditkarten-Belege (Upload, Bearbeiten, nachgereicht im Abgleich, per Mail) und die Textanalyse der
+Kreditkartenabrechnung. Technik: [architektur.md](architektur.md#pdf-worker-srcservicespdfworkerpooljs-befund-b2).
 
 | Variable | Standard | Bedeutung |
 |---|---|---|
 | `PDF_WORKER` | `an` | `an`: Worker-Threads. `aus`: alles im Hauptthread wie vor B2 – nur als bewusster Schalter für Fehlersuche oder Tests, kein Rückfall bei Störungen. |
 | `PDF_WORKER_ANZAHL` | `2` | Anzahl Worker (1–4). Jeder aktive Worker braucht ~55 MB RSS plus den WASM-Speicher seiner Aufträge. |
 | `PDF_WORKER_SPEICHER_MB` | `250` | Grenze für den WASM-/external-Speicher je Worker (64–4096). Darüber wird der Worker nach dem Auftrag ersetzt. Der Standard ist auf das Shared Hosting mit ca. 1,3 GB ausgelegt. |
-| `PDF_WORKER_ZEITLIMIT_FAKTOR` | `1` | Faktor (0.1–10) auf die Zeitlimits je Auftrag: Eingangsprüfung, Vorschaubild, Text je 10 s, QR 15 s, kombinierte Analyse 20 s. |
+| `PDF_WORKER_ZEITLIMIT_FAKTOR` | `1` | Faktor (0.1–10) auf die Zeitlimits je Auftrag: Eingangsprüfung, Vorschaubild, Text je 10 s, QR 15 s, kombinierte Analyse 20 s, Belegdatei (Spesen/Kreditkarte) 30 s. |
 
 Ungültige Werte verhindern den Start mit einer klaren Meldung. Leerlauf-Worker enden nach 5 Minuten und starten
 beim nächsten Auftrag neu (~120 ms).
 
 **Was nach dem Einspielen beobachten:**
 
-- **RSS** des Prozesses: im Leerlauf wie bisher; unter Last bis zu `PDF_WORKER_ANZAHL` × (55 MB + WASM-Speicher,
+- **RSS** des Prozesses: im Leerlauf wie bisher (~155 MB gemessen; der Hauptprozess lädt mupdf noch über die
+  Testmodus-Beispieldaten, siehe architektur.md); unter Last bis zu `PDF_WORKER_ANZAHL` × (55 MB + WASM-Speicher,
   höchstens ~`PDF_WORKER_SPEICHER_MB`). Bei Speicherdruck `PDF_WORKER_ANZAHL=1` oder eine tiefere Speichergrenze setzen.
 - **Event-Loop-Lag / Antwortzeiten** während n8n Rechnungen einliefert: sollten nicht mehr sprunghaft steigen.
 - **Log:** je Auftrag eine Zeile `PDF-Worker <nr>: <aufgabe> (<spur>) fertig in … ms, Wartezeit … ms, Speicher … MB`;
@@ -176,7 +179,12 @@ beim nächsten Auftrag neu (~120 ms).
   50 wartenden Aufträgen; im Grund Neustarts, Zeitüberschreitungen und Abstürze seit dem Start.
 - **503-Rate bei n8n:** `POST /api/n8n/jobs` antwortet mit **503** und `Retry-After: 60`
   (`code: pdf_verarbeitung_ausgelastet`), wenn die Eingangsprüfung wegen Überlastung, Zeitlimit oder Absturz nicht
-  möglich war. n8n wiederholt; häufen sich 503, Log und Statusseite prüfen.
+  möglich war. n8n wiederholt; häufen sich 503, Log und Statusseite prüfen. Dasselbe gilt für
+  `POST /api/n8n/kk-belege` (`fehler: pdf_verarbeitung_ausgelastet`).
+- **Personen in Formularen** (Spesen einreichen, Kreditkarten-Beleg erfassen/bearbeiten, Kreditkarten-Abgleich)
+  sehen bei einer solchen Störung ihr Formular wieder mit dem Hinweis «Die PDF-Verarbeitung ist gerade
+  ausgelastet. Es wurde nichts gespeichert. Bitte versuche es in einer Minute erneut …» (Status 503); es bleibt
+  weder ein Datensatz noch eine Datei zurück. Im Log steht dazu `…: PDF-Verarbeitung vorübergehend nicht verfügbar`.
 
 ## Monatliche Abhängigkeitsprüfung
 

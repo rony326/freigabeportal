@@ -3,7 +3,10 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
-## Unveröffentlicht
+## [1.4.0] – 2026-11-16
+
+Versandquittung für Bexio und Durchlauf-Test. Release Notes: [docs/releases/v1.4.0.md](docs/releases/v1.4.0.md).
+Automatische Datenbank-Migration (neue Tabelle `bexio_versand`), keine neuen Umgebungsvariablen für das Portal.
 
 - Durchlauf-Test (`npm run durchlauf`, [docs/durchlauf-test.md](docs/durchlauf-test.md)): automatischer
   End-to-End-Durchlauf gegen eine Testinstanz mit Playwright. Person A und B melden sich einmal an

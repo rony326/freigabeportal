@@ -105,13 +105,16 @@ test('GET /admin/personen shows a role badge per person and rights checkboxes, d
   // Note: the assertion is scoped to <tbody> (not the whole page) because the shared
   // _brand_styles.ejs partial legitimately contains the substring "disabled" in unrelated
   // Bootstrap CSS custom-property names (e.g. --bs-btn-disabled-bg) on every page.
+  // Rechte aus einer Gruppe sind auch für den Superadmin grau; frei vergebbare Rechte bleiben bedienbar.
   const superadminTbody = asSuperadmin.text.slice(asSuperadmin.text.indexOf('<tbody>'), asSuperadmin.text.indexOf('</tbody>'));
-  assert.doesNotMatch(superadminTbody, /disabled/, 'superadmin must be able to edit the checkboxes');
+  assert.match(superadminTbody, /<form[^>]*berechtigungen/, 'superadmin gets an editable form');
+  const freiesRecht = superadminTbody.match(/<input[^>]*id="berechtigung-55-sync_verwalten"[^>]*>/)[0];
+  assert.doesNotMatch(freiesRecht, /disabled/, 'superadmin must be able to edit rights no group grants');
 
   const asManager = await request(app).get('/admin/personen').set('x-test-person-id', '55');
   assert.equal(asManager.status, 200);
   const managerTbody = asManager.text.slice(asManager.text.indexOf('<tbody>'), asManager.text.indexOf('</tbody>'));
-  assert.match(managerTbody, /disabled/, 'manager must see read-only checkboxes');
+  assert.match(managerTbody.match(/<input[^>]*id="berechtigung-55-sync_verwalten"[^>]*>/)[0], /disabled/, 'manager must see read-only checkboxes');
   db.close();
 });
 
@@ -191,40 +194,108 @@ test('GET /admin/personen shows the Ferienmodus period and Stellvertreter name f
   db.close();
 });
 
-const herkunftZeile = (html, recht) => (html.match(new RegExp(`<li[^>]*data-herkunft="${recht}"[^>]*>[\\s\\S]*?</li>`)) || [''])[0];
+const checkbox = (html, personId, recht) => (html.match(new RegExp(`<input[^>]*id="berechtigung-${personId}-${recht}"[^>]*>`)) || [''])[0];
+const rechtZelle = (html, personId, recht) => (html.match(new RegExp(`<div[^>]*data-recht="${personId}-${recht}"[^>]*>[\\s\\S]*?</div>`)) || [''])[0];
 
-test('Personenliste zeigt pro Recht die Herkunft: direkt und über Gruppe', async () => {
+test('Personenliste: die Herkunftsliste entfällt', async () => {
   const db = openDatabase(':memory:');
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
   upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
-  db.prepare("INSERT INTO person_berechtigungen (person_id, berechtigung) VALUES ('55', 'workflow_eingreifen')").run();
   const res = await request(buildTestApp(db)).get('/admin/personen').set('x-test-person-id', '99');
   assert.equal(res.status, 200);
-  assert.match(herkunftZeile(res.text, 'workflow_eingreifen'), /direkt/);
-  assert.match(herkunftZeile(res.text, 'konten_verwalten'), /über Gruppe Manager/);
-  assert.doesNotMatch(herkunftZeile(res.text, 'konten_verwalten'), /direkt/);
+  assert.doesNotMatch(res.text, /personen-herkunft/);
+  assert.doesNotMatch(res.text, /data-herkunft=/);
   db.close();
 });
 
-test('Person in Superadmin und Buchhaltung: Herkunft nennt beide Gruppen', async () => {
+test('Recht aus einer Gruppe: Checkbox angehakt, grau (disabled) und mit «über Gruppe Manager»', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  const res = await request(buildTestApp(db)).get('/admin/personen').set('x-test-person-id', '99');
+  const box = checkbox(res.text, '55', 'konten_verwalten');
+  assert.match(box, /\bchecked\b/);
+  assert.match(box, /\bdisabled\b/);
+  assert.match(box, /title="über Gruppe Manager"/);
+  const zelle = rechtZelle(res.text, '55', 'konten_verwalten');
+  assert.match(zelle, /über Gruppe Manager/);
+  assert.doesNotMatch(zelle, /auch direkt/);
+  assert.doesNotMatch(zelle, /type="hidden"/, 'ohne direktes Recht kein verstecktes Feld');
+  db.close();
+});
+
+test('Recht aus mehreren Gruppen: Hinweis nennt alle Gruppen mit Komma', async () => {
   const db = openDatabase(':memory:');
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20', '10'], loggedInNow: true });
   db.prepare("INSERT INTO gruppen_berechtigungen (gruppe, berechtigung) VALUES ('buchhaltung', 'kreditoren_verwalten')").run();
   const res = await request(buildTestApp(db)).get('/admin/personen').set('x-test-person-id', '99');
-  const zeile = herkunftZeile(res.text, 'kreditoren_verwalten');
-  assert.match(zeile, /Superadmin/);
-  assert.match(zeile, /Buchhaltung/);
+  assert.match(rechtZelle(res.text, '99', 'kreditoren_verwalten'), /über Gruppe Superadmin, Buchhaltung/);
   db.close();
 });
 
-test('Einzelrecht-Checkbox eines Rechts, das eine Gruppe liefert, trägt den Hinweis und bleibt bedienbar', async () => {
+test('Reines Direktrecht bleibt bedienbar und angehakt', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  upsertPerson(db, { id: '1', vorname: 'Ziel', nachname: 'Person', email: 'z@example.org', gruppen: [], loggedInNow: false });
+  db.prepare("INSERT INTO person_berechtigungen (person_id, berechtigung) VALUES ('1', 'mails_einsehen')").run();
+  const res = await request(buildTestApp(db)).get('/admin/personen').set('x-test-person-id', '99');
+  const box = checkbox(res.text, '1', 'mails_einsehen');
+  assert.match(box, /\bchecked\b/);
+  assert.doesNotMatch(box, /disabled/);
+  assert.doesNotMatch(rechtZelle(res.text, '1', 'mails_einsehen'), /über Gruppe/);
+  const leer = checkbox(res.text, '1', 'konten_verwalten');
+  assert.doesNotMatch(leer, /checked|disabled/);
+  db.close();
+});
+
+test('Direktes Recht plus Gruppenrecht: verstecktes Feld hält das direkte Recht beim Speichern fest', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  db.prepare("INSERT INTO person_berechtigungen (person_id, berechtigung) VALUES ('55', 'konten_verwalten')").run();
+  db.prepare("INSERT INTO person_berechtigungen (person_id, berechtigung) VALUES ('55', 'workflow_eingreifen')").run();
+  const app = buildTestApp(db);
+  const res = await request(app).get('/admin/personen').set('x-test-person-id', '99');
+  const zelle = rechtZelle(res.text, '55', 'konten_verwalten');
+  assert.match(checkbox(res.text, '55', 'konten_verwalten'), /\bdisabled\b/);
+  assert.match(zelle, /<input type="hidden" name="berechtigungen" value="konten_verwalten">/);
+  assert.match(zelle, /auch direkt/);
+
+  // Formular so absenden, wie der Browser es täte: aktive, angehakte Checkboxen + versteckte Felder, ohne disabled-Felder.
+  const formular = res.text.match(/<form[^>]*action="\/admin\/personen\/55\/berechtigungen"[\s\S]*?<\/form>/)[0];
+  const werte = [];
+  for (const feld of formular.match(/<input[^>]*>/g)) {
+    if (!/name="berechtigungen"/.test(feld) || /\bdisabled\b/.test(feld)) continue;
+    if (/type="checkbox"/.test(feld) && !/\bchecked\b/.test(feld)) continue;
+    werte.push(feld.match(/value="([^"]+)"/)[1]);
+  }
+  assert.deepEqual(werte.sort(), ['konten_verwalten', 'workflow_eingreifen']);
+  const post = await request(app).post('/admin/personen/55/berechtigungen').set('x-test-person-id', '99').type('form').send({ berechtigungen: werte });
+  assert.equal(post.status, 302);
+  assert.deepEqual(listBerechtigungenForPerson(db, '55').sort(), ['konten_verwalten', 'workflow_eingreifen']);
+  db.close();
+});
+
+test('Festes Recht ohne Checkbox erscheint als Textzeile mit Herkunft', async () => {
   const db = openDatabase(':memory:');
   upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
   upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
   const res = await request(buildTestApp(db)).get('/admin/personen').set('x-test-person-id', '99');
-  const box = res.text.match(/<input[^>]*id="berechtigung-55-konten_verwalten"[^>]*>/)[0];
-  assert.doesNotMatch(box, /disabled/);
-  assert.match(res.text, /for="berechtigung-55-konten_verwalten">[^<]*<\/label>\s*<span[^>]*>auch über Gruppe Manager/);
+  assert.match(res.text, /data-festes-recht="99-gruppenrechte_verwalten"[^>]*>\s*Gruppenrechte verwalten – über Gruppe Superadmin/);
+  assert.doesNotMatch(res.text, /data-festes-recht="55-/);
+  assert.doesNotMatch(res.text, /id="berechtigung-99-gruppenrechte_verwalten"/);
+  db.close();
+});
+
+test('Nur-Lese-Ansicht (Manager): Gruppenrecht mit Hinweis, festes Recht als Textzeile, kein Formular', async () => {
+  const db = openDatabase(':memory:');
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: true });
+  upsertPerson(db, { id: '55', vorname: 'Mana', nachname: 'Ger', email: 'manager@example.org', gruppen: ['30'], loggedInNow: true });
+  const res = await request(buildTestApp(db)).get('/admin/personen').set('x-test-person-id', '55');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /action="\/admin\/personen\/\d+\/berechtigungen"/);
+  assert.match(rechtZelle(res.text, '55', 'konten_verwalten'), /über Gruppe Manager/);
+  assert.match(res.text, /Gruppenrechte verwalten – über Gruppe Superadmin/);
   db.close();
 });
 

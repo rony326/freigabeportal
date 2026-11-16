@@ -157,10 +157,14 @@ Die Rechte für den Admin-Bereich kommen aus **zwei additiven Quellen**
 
 Das effektive Recht einer Person ist die **Vereinigung** aus den Rechten aller ihrer Gruppen und ihren
 Einzelrechten. Es gibt kein Verbotsrecht: Ein Recht entfällt erst, wenn keine Quelle es mehr liefert. Wer
-z. B. in `superadmin` und `buchhaltung` ist, bekommt die Summe beider Gruppen. Unter **Personen** steht pro
-Recht die Herkunft («direkt», «über Gruppe Manager», auch mehrere); `ermittleRechteMitHerkunft` liefert
-sie. Bei Einzelrechten, die schon eine Gruppe liefert, steht der Hinweis «auch über Gruppe X»; die Checkbox
-bleibt bedienbar (der Einzelrechte-Eintrag bleibt bestehen, wenn die Gruppe das Recht später verliert).
+z. B. in `superadmin` und `buchhaltung` ist, bekommt die Summe beider Gruppen. Unter **Personen** zeigt
+die Checkbox jedes Rechts die Herkunft (`ermittleRechteMitHerkunft` liefert sie): Liefert eine Gruppe das
+Recht, ist die Checkbox angehakt und grau (nicht bedienbar), daneben steht «über Gruppe X» (mehrere Gruppen
+mit Komma). Hat die Person das Recht zusätzlich direkt, steht «(auch direkt)», und das Formular sendet das
+Recht als verstecktes Feld mit – so bleibt der Einzelrechte-Eintrag beim Speichern erhalten und wirkt
+weiter, wenn die Person die Gruppe später verliert. Reine Einzelrechte bleiben bedienbar. Feste Rechte
+ohne Checkbox (`gruppenrechte_verwalten`) erscheinen als Textzeile, z. B. «Gruppenrechte verwalten – über
+Gruppe Superadmin».
 
 ### Rechtekatalog
 

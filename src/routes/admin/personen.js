@@ -1,4 +1,4 @@
-// Admin → Personen (`/admin/personen`, Recht `personen_einsehen`, docs/auth-und-rechte.md): Liste der Personen mit Rolle (aus ChurchTools-Gruppen), Status, effektiven Rechten samt Herkunft; Einzelrechte vergibt nur, wer `gruppenrechte_verwalten` hat.
+// Admin → Personen (`/admin/personen`, Recht `personen_einsehen`, docs/auth-und-rechte.md): Liste der Personen mit Rolle (aus ChurchTools-Gruppen), Status, effektiven Rechten samt Herkunft (Gruppenrechte als graue, angehakte Checkbox mit «über Gruppe X», feste Rechte als Textzeile); Einzelrechte vergibt nur, wer `gruppenrechte_verwalten` hat.
 
 import { Router } from 'express';
 import { listAllPersons, getPersonById } from '../../db/personenRepo.js';
@@ -21,6 +21,8 @@ function rechteMitHerkunft(db, config, person) {
       return {
         recht,
         label: BERECHTIGUNG_LABELS[recht],
+        // Feste Rechte haben keine Checkbox und erscheinen in der Liste als Textzeile.
+        fest: FESTE_RECHTE.includes(recht),
         gruppen: gruppen.map((g) => GRUPPEN_LABEL[g]),
         quellen: [...gruppen.map((g) => `über Gruppe ${GRUPPEN_LABEL[g]}`), ...(direkt ? ['direkt'] : [])],
       };

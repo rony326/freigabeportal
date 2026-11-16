@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## Unveröffentlicht
+
+- Personen: Die Liste «Herkunft der Rechte» entfällt. Liefert eine Gruppe ein Recht, ist dessen Checkbox
+  angehakt und grau, daneben «über Gruppe X»; ein zusätzlich direkt vergebenes Recht bleibt beim Speichern
+  erhalten («(auch direkt)»). Feste Rechte wie «Gruppenrechte verwalten» stehen als Textzeile darunter.
+
 ## [1.4.0] – 2026-11-16
 
 Versandquittung für Bexio und Durchlauf-Test. Release Notes: [docs/releases/v1.4.0.md](docs/releases/v1.4.0.md).

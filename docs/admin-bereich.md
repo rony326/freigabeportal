@@ -320,7 +320,8 @@ gilt sofort. Jede Änderung steht im Audit-Log (ein Eintrag pro Recht und Gruppe
 ## Personen (`/admin/personen`)
 
 Liste aller aus ChurchTools synchronisierten Personen mit
-abgeleiteter Rolle und den effektiven Rechten samt Herkunft («direkt», «über Gruppe X») (Superadmin/Manager/Benutzer). Aktive Personen ohne
+abgeleiteter Rolle (Superadmin/Manager/Benutzer) und den effektiven Rechten: Rechte aus einer Gruppe als
+angehakte, graue Checkbox mit «über Gruppe X», feste Rechte als Textzeile. Aktive Personen ohne
 Verwaltungsgruppe werden neutral als „Portalzugang über ChurchTools-Login“
 gekennzeichnet (kein Fehlerzustand); bei deaktivierten Personen steht der
 Grund (in ChurchTools gelöscht bzw. archiviert) samt Datum — siehe

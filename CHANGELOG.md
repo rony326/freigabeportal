@@ -3,125 +3,36 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
-## Unveröffentlicht
+## [1.3.0] – 2026-11-16
 
-- Öffentlicher Begrenzer (100 Anfragen je 15 Min., u. a. PDF-Vorschau über `/downloads/:jobId`, Login,
-  Prüfseiten): Angemeldete zählen jetzt je Person statt je IP. Bisher teilten sich alle Angemeldeten hinter
-  derselben Büro-IP ein Kontingent und konnten sich gegenseitig sperren. Unangemeldete zählen weiter je IP.
-- Bildbelege: Ein PNG wird nur noch angenommen, wenn es vollständig ist (Chunk-Struktur IHDR … IDAT … IEND,
-  alle Prüfsummen). Ein abgeschnittenes PNG liess pdf-lib beim Einbetten endlos hängen – im PDF-Worker bis zum
-  Zeitlimit von 30 s und bei jedem neuen Versuch wieder, ohne Worker hätte es das ganze Portal angehalten.
-  Betroffen waren Kontierung, Ablehnung, Aufsplitten, KK-Abgleich, Spesen und Kreditkartenbelege. Jetzt kommt
-  sofort 400 «Das Bild konnte nicht gelesen werden».
-- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 1): Eingangsprüfung, Vorschaubild, QR-Erkennung und
-  Textauszug des n8n-Rechnungseingangs (`POST /api/n8n/jobs`) sowie QR/Text der Kreditkartenbelege per Mail
-  blockieren das Portal nicht mehr (bisher bis zu 19 s Stillstand je PDF). Pool mit 2 Workern, Zeitlimit,
-  Speichergrenze und Alarm, wenn die Worker nicht starten (kein Rückfall auf den Hauptthread). Neue optionale
-  Umgebungsvariablen `PDF_WORKER`, `PDF_WORKER_ANZAHL`, `PDF_WORKER_SPEICHER_MB`, `PDF_WORKER_ZEITLIMIT_FAKTOR`.
-  **n8n:** `POST /api/n8n/jobs` antwortet neu mit **503** und `Retry-After: 60`
-  (`code: pdf_verarbeitung_ausgelastet`), wenn die Eingangsprüfung wegen Überlastung oder Zeitlimit nicht
-  möglich war – der Workflow soll dann wiederholen. Gleichzeitig eingereichte identische PDFs ergeben weiterhin
-  genau einen Job. Statusseite und `/healthz` haben den neuen Dienst «PDF-Verarbeitung» (`pdf_verarbeitung`).
-  Spesen, Kreditkarten-Abgleich, Stempel und Splitgruppen folgen in Etappe 2.
-- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 2): Spesen-Einreichung (Prüfung der PDF-Belege, PDF aus
-  Bildbelegen, Vorschaubild), Kreditkarten-Belege (Upload, Datei ersetzen, nachgereichte Belege im Abgleich,
-  Belege per Mail) und die Textanalyse der Kreditkartenabrechnung rechnen jetzt ebenfalls im Worker. Ein grosses
-  Bild (bis 40 Megapixel) hielt das Portal bisher ~6 s an. Ist die PDF-Verarbeitung vorübergehend ausgelastet,
-  sehen Personen ihr Formular mit Status 503 und dem Hinweis, es in einer Minute erneut zu versuchen; es bleibt
-  weder ein halber Datensatz noch eine Datei zurück (Kreditkarten-Beleg bearbeiten: neue Datei wird vor der
-  Datenänderung erstellt). Echte Prüffehler (beschädigtes/verschlüsseltes PDF, zu grosses Bild) melden sich wie
-  bisher. Die Abgleichsseite erscheint bei einer Störung ohne Vorschläge und versucht es beim nächsten Aufruf
-  erneut. **n8n:** `POST /api/n8n/kk-belege` antwortet in diesem Fall mit **503**, `Retry-After: 60` und
-  `{fehler: 'pdf_verarbeitung_ausgelastet'}` – wiederholen. Auch die Testmodus-Beispieldaten
-  rechnen ihre Vorschaubilder im Worker; der Hauptprozess lädt mupdf damit gar nicht mehr (rund 25 MB weniger
-  Speicher im Leerlauf). Offen für spätere Etappen: Stempel, Beleg anhängen, Splitgruppen, Freigabe 2.
-- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 4): «Beleg anhängen» bei Kontierung, Ablehnung,
-  Aufsplitten und Kreditkarten-Abgleich rechnet im Worker (ein grosses Bild hielt das Portal bisher
-  sekundenlang an). Der Beleg wird jetzt **vor** dem Speichern angehängt: Ist die PDF-Verarbeitung
-  ausgelastet, kommt das Formular mit 503 und dem Hinweis zurück, und es ist nichts gespeichert. Ein Beleg,
-  der sich erst beim Anhängen als beschädigt erweist, ergab bisher Fehler 500 bei bereits gespeicherter
-  Kontierung ohne Beleg und ohne Mails; jetzt erscheint das Formular mit einem Hinweis (422) und nichts ist
-  gespeichert. Zwei gleichzeitige Kontierungen mit Beleg auf denselben Vorgang: genau eine wird gespeichert,
-  die andere erhält 409. Offen: Stempel (Etappe 3) und Splitgruppen-Export (Etappe 5).
-- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 3): Die Stempelseite bei Freigabe 2 und der Vermerk beim
-  Abschluss eines Rapports werden im Worker erzeugt (bei grossen PDFs hielt das Portal bisher bis zu einigen hundert
-  Millisekunden am Stück an). Ist die PDF-Verarbeitung bei Freigabe 2 ausgelastet, kommt das Formular mit 503 und dem
-  Hinweis zurück, es in einer Minute erneut zu versuchen; gespeichert ist nichts. Ein unlesbares PDF meldet sich wie
-  bisher (400). Beim Rapport bleibt die Kenntnisnahme gespeichert und der Abschluss wird wie bei jedem Stempelfehler
-  vom stündlichen Job nachgeholt. Neues Zeitlimit für Stempel: 30 s (mal `PDF_WORKER_ZEITLIMIT_FAKTOR`).
-- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 5): Das gemeinsame Archivdokument einer Splitgruppe
-  (Zusammenführen der Belegseiten und Gruppenstempel) entsteht im Worker; Prüfungen und Speichern bleiben, wie sie
-  waren. Bei einer Störung gilt die Freigabe 2 des letzten Teils trotzdem, die Gruppe bleibt ausstehend (keine Datei)
-  und wird alle 15 Minuten nachgeholt. Schliessen mehrere Teile oder Freigabe 2 und der Nachhol-Job gleichzeitig ab,
-  entsteht genau ein Gruppendokument. Zeitlimit 60 s. Damit läuft keine nennenswerte PDF-Arbeit mehr im Hauptprozess
-  ausser dem RFC3161-Zeitstempel.
-- Abhängigkeiten aktualisiert (ohne Hauptversionssprung): mupdf 1.28.0 → 1.28.6, express-rate-limit
-  8.6.2 → 8.7.4, nodemailer 10.2.1 → 10.6.0, csrf-csrf 4.0.3 → 4.1.0, read-excel-file 9.3.12 → 9.3.17.
-- Doku: `docs/betrieb-und-nutzung.md` hält einen monatlichen Termin fest (`npm audit` und Prüfung der
-  mitgelieferten pdf.js-Kopie, aktuell 6.2.108, auf neue Meldungen).
+Sicherheits- und Stabilitäts-Release nach der Prüfung vom 15.11.2026 (Befunde S1–S9, U1–U5, B1–B5).
+Release Notes: [docs/releases/v1.3.0.md](docs/releases/v1.3.0.md). Neue optionale Umgebungsvariablen,
+automatische Datenbank-Migration, neue 503-Antworten für n8n.
 
-- Texteingaben (Befund S8): Absender, Rechnungsnummer, Begründungen, Verwendungszweck, Titel, Positionen,
-  Bemerkungen, Lieferantenname und Fehlerbeschreibung haben jetzt Höchstlängen (einzeilig 200,
-  Rechnungsnummer 100, Texte 2000 Zeichen), festgelegt an einer Stelle (`src/utils/eingabe.js`), geprüft auf
-  dem Server und als `maxlength` in den Formularen. Mehrfach gesendete oder verschachtelte Felder enden
-  nicht mehr in Fehler 500, sondern in einer verständlichen Fehlermeldung (400, bei Feldern am Feld).
-  Mehrere Positionen (Spesen, Aufsplitten) bleiben möglich.
-- Pflichtbegründungen (Befund B3): Eine Begründung nur aus Leerzeichen gilt als leer (Ablehnung und
-  Interessenskonflikt in Kontierung, Aufsplitten, Freigabe 2 und Spesen-Freigabe 1); gespeichert wird der
-  getrimmte Text.
-- Schreib-Limits je Person (Befund S5): Spesen einreichen höchstens 10 Abrechnungen, Problem melden
-  höchstens 5 Meldungen je Stunde und angemeldeter Person (bisher nur der allgemeine Limiter mit
-  300 Anfragen je 15 Minuten). Bei Überschreitung Fehlerseite 429 mit Wartezeit bzw. JSON.
-  Formularfehler (Status 400) zählen nicht mit.
-- ChurchTools-Gruppenmitglieder (S1, B1, B5): Es zählen nur noch aktive Mitgliedschaften
-  (`group_member_statuses[]=active`, zusätzlich im Code geprüft); Anfragen, Wartelisten und
-  zur Löschung vorgemerkte Einträge erhalten keine Rolle mehr. Die Mitgliederliste wird mit
-  `limit=200` seitenweise vollständig gelesen (bisher nur die ersten 10). Die Personen-ID wird aus
-  `person.domainIdentifier` gelesen, ersatzweise aus `personId`. Ein Fehler auf einer Seite
-  bricht ab, statt eine unvollständige Liste zu liefern. Bisher wegen der 10er-Grenze fehlende
-  Rolleninhaber erhalten ihre Rolle beim nächsten Sync zurück.
-- Doku (S9): `docs/auth-und-rechte.md` erklärt, dass ein Rollenentzug erst mit dem nächtlichen Sync
-  oder der nächsten Anmeldung wirkt und wie der Sync von Hand gestartet wird.
-- Bild-Belege (JPG/PNG) werden vor dem Einbetten auf höchstens 40 Megapixel geprüft (Breite und
-  Höhe aus dem Bildkopf, ohne Dekodieren); zu grosse oder nicht lesbare Bilder werden mit
-  verständlicher Meldung abgelehnt statt den Prozess zu blockieren (Befund S2). Gilt für Spesen,
-  Kontierung, Aufsplitten, Kreditkarten-Belege, KK-Abgleich und den n8n-Belegeingang.
-- Upload-Anfragen sind auf 60 MB gesamt begrenzt (bisher bis zu 500 MB je Anfrage im
-  Arbeitsspeicher); bei Überschreitung wird sofort mit Fehler 413 und einer verständlichen
-  Seite abgebrochen. Auf `/kontierung/:id` (Kontieren, Aufsplitten, KK-Abgleich) wird die
-  Zuständigkeit schon vor dem Upload geprüft (Befund S3).
-- Spesen-Seite nennt die Grössengrenzen für Belege (Datei, Megapixel, gesamt) (Befund U5).
-
-Korrekturen aus der Prüfung 2026-11-15 (Anmeldung, Sitzung, Fehlerseiten). Keine Datenbank-Migration,
-keine neuen Umgebungsvariablen.
-
-- Rücksprung nach der Anmeldung: Wer ohne Sitzung einen Link auf eine geschützte Seite öffnet, wird
-  angemeldet und landet danach dort (statt immer in `/pool`). Nur eigene Seitenpfade, nie bei POST,
-  Downloads oder Maschinenrouten. Die 401-Seite hat eine freundliche Überschrift und den Knopf «Anmelden».
-- Sitzungsablauf: Auf Formularseiten erscheint 10 Minuten vor dem Ablauf ein Hinweis «Deine Anmeldung
-  läuft um HH:MM ab»; 401- und CSRF-Fehlerseite sagen klar, dass die Anmeldung abgelaufen ist.
-  Die 8 Stunden bleiben unverändert, ohne Keep-alive.
-- Fehler 429 (zu viele Anfragen) und die Fehler von `/downloads/:id/oeffnen` erscheinen im Browser als
-  normale Fehlerseite (429 mit «in etwa N Minuten»); fetch- und Maschinenaufrufe bekommen weiter JSON.
-
-Korrekturrunde nach der Prüfung vom 2026-11-15 (Admin-Bereich).
-
-- S7: Umgebungsvariable `TSA_PASSWORT` hat Vorrang vor dem in der Datenbank gespeicherten TSA-Passwort;
-  der Datenbankwert bleibt Rückfall. Das Formular unter Admin → Zeitstempel weist darauf hin (ohne das Passwort anzuzeigen).
-  README und `.env.example` ergänzt.
-- B4: Der Download einer TSA-Sperrliste zählt die Bytes beim Lesen mit und bricht bei mehr als 4 MB ab
-  (Verbindung wird geschlossen), statt die Grenze erst nach dem vollständigen Laden zu prüfen.
-- S6: Die TSA-Adresse muss `https://` sein und auf einen öffentlich erreichbaren Server zeigen (keine privaten,
-  Loopback- oder Link-Local-Ziele; Hostnamen werden aufgelöst, jede Adresse geprüft). Eine bereits gespeicherte,
-  nun unzulässige Adresse (z. B. `http://`) wird weiter benutzt, aber beim Start im Log und auf der Seite Admin →
-  Zeitstempel gewarnt. Prüfung nur beim Speichern, nicht bei jeder Verwendung (DNS-Rebinding, Ausfallrisiko).
-- S4: Wer eine Lieferanten-IBAN hinzufügt oder löscht (oder einen Lieferanten mit IBAN anlegt), löst immer sofort die
-  Mail `iban-aenderung` an Buchhaltung und Administration aus (Empfänger und Text unter Admin → Benachrichtigungen
-  einstellbar). In Freigabe 2 erscheint ein Warnkasten, wenn die IBAN der Rechnung jünger als 14 Tage ist.
-  Datenbank: neue Spalte `kreditor_ibans.erstellt_von` (Altbestand NULL = unbekannt) und neuer Mailtyp
-  `iban-aenderung` im CHECK von `mail_log` (automatische Migration beim Start).
-- U3: Rückfrage vor heiklen Aktionen: IBAN löschen, Zuweisungsregel löschen, Datei endgültig löschen (Quarantäne),
-  Konto deaktivieren, Kreditkartenbeleg verwerfen, Rapport-Markierung aufheben (Rapport-Seite und Vorgang im Admin).
+- PDF-Verarbeitung in Worker-Threads (B2): n8n-Eingang, Kreditkartenbelege, Spesen, Beleg anhängen,
+  Stempel bei Freigabe 2 und Rapport, Splitgruppen-Dokument. Bei Überlastung 503 mit `Retry-After: 60`
+  (Personen: Formular mit Hinweis, nichts gespeichert; n8n: `pdf_verarbeitung_ausgelastet`). Neuer Dienst
+  `pdf_verarbeitung` auf Statusseite und `/healthz`. Neue Variablen `PDF_WORKER`, `PDF_WORKER_ANZAHL`,
+  `PDF_WORKER_SPEICHER_MB`, `PDF_WORKER_ZEITLIMIT_FAKTOR`. Hauptprozess lädt mupdf nicht mehr (~25 MB weniger).
+- Gleichzeitigkeit: identische PDFs ergeben einen Vorgang, zwei Kontierungen mit Beleg ergeben einmal 409,
+  eine Splitgruppe wird genau einmal exportiert. Beleg wird vor dem Speichern angehängt (bisher 500 bei
+  gespeicherter Kontierung ohne Beleg).
+- ChurchTools-Gruppen (S1, B1, B5): nur aktive Mitglieder, vollständige Liste (bisher 10), ID aus
+  `domainIdentifier`, Abbruch statt halber Liste. Doku zum sofortigen Rollenentzug (S9).
+- Bildbelege höchstens 40 Megapixel (S2); PNG muss vollständig sein (abgeschnittenes PNG liess pdf-lib endlos
+  hängen). Uploads höchstens 60 MB je Anfrage, Zuständigkeit vor dem Upload (S3). Grenzen auf der Spesen-Seite (U5).
+- IBAN-Änderungen lösen sofort die Mail `iban-aenderung` aus; Warnung in Freigabe 2 bei IBAN jünger als
+  14 Tage (S4). Migration: `kreditor_ibans.erstellt_von`, Mailtyp im CHECK von `mail_log`.
+- Schreib-Limits je Person: 10 Spesenabrechnungen, 5 Fehlermeldungen pro Stunde (S5). Öffentlicher Begrenzer
+  zählt Angemeldete je Person statt je IP (Büro hinter einer IP).
+- TSA: Adresse nur `https://` und öffentlich (S6), `TSA_PASSWORT` hat Vorrang vor dem Datenbankwert (S7),
+  Sperrliste bricht beim Lesen bei 4 MB ab (B4).
+- Texteingaben mit Höchstlängen und 400 statt 500 bei mehrfach gesendeten Feldern (S8); Begründung nur aus
+  Leerzeichen gilt als leer (B3).
+- Rücksprung nach der Anmeldung auf die ursprüngliche Seite (U1), Hinweis vor Sitzungsablauf (U2), Rückfrage
+  vor heiklen Aktionen (U3), 429 und Download-Fehler als Fehlerseite statt JSON (U4).
+- Abhängigkeiten: mupdf 1.28.6, express-rate-limit 8.7.4, nodemailer 10.6.0, csrf-csrf 4.1.0,
+  read-excel-file 9.3.17. Monatlicher Termin für `npm audit` und pdf.js-Prüfung in der Betriebsdoku.
 
 ## [1.2.3] – 2026-11-15
 

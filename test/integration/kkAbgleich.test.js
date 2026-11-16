@@ -575,6 +575,28 @@ test('B2: Zeitlimit beim nachgereichten Beleg → 503 mit Formular und Hinweis, 
   }
 });
 
+// B2, Etappe 4: Auch das Anhängen eines vorhandenen Kartenbelegs an die Teildatei (bereiteTeilDateienVor) läuft im Worker.
+test('B2 Etappe 4: überlasteter Worker beim Anhängen eines Kartenbelegs → 503, nichts aufgesplittet, Beleg bleibt offen, keine Datei', async () => {
+  const t = await setup();
+  try {
+    const b = await t.beleg('30.00', 'Papier', t.eigen);
+    const dateienVorher = readdirSync(t.dir).sort();
+    const res = await mitPdfStoerung('ueberlastet', () => post(t, '1', {
+      gesamtbetrag: '30.00',
+      zeilen: [{ art: 'beleg', belegId: b, kontoId: t.eigen, betrag: '30.00', beschreibung: 'Papier' }],
+    }));
+    assert.equal(res.status, 503);
+    assert.equal(res.headers['retry-after'], '60');
+    assert.match(res.text, /in einer Minute erneut/);
+    assert.equal(getJobById(t.db, t.jobId).status, 'zugewiesen');
+    assert.equal(listSplitKinder(t.db, t.jobId).length, 0);
+    assert.equal(getKkBelegById(t.db, b).status, 'offen');
+    assert.deepEqual(readdirSync(t.dir).sort(), dateienVorher);
+  } finally {
+    t.cleanup();
+  }
+});
+
 test('B2: überlastete Textanalyse → Abgleichsseite ohne Vorschläge, Analyse wird nicht als leer gespeichert', async () => {
   const t = await setup();
   try {

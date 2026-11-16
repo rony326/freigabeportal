@@ -72,6 +72,12 @@ test('B2 Etappe 2: KK-Belege, KK-Abgleich und die n8n-Eingänge laden mupdf nich
   }
 });
 
+test('B2 Etappe 4: Kontierung und Aufsplitten (Beleg anhängen) laden mupdf überhaupt nicht', { skip: OHNE_HOOKS, timeout: 60_000 }, () => {
+  for (const ziel of ['routes/kontierung.js', 'services/aufsplitten.js', 'services/belegAnhaengen.js']) {
+    assert.deepEqual(mupdfPfade(ladeKanten([ziel])).direkt, [], `${ziel} lädt mupdf`);
+  }
+});
+
 // Alle statischen Importe von src/index.js (ohne index.js selbst, das den Server starten würde).
 test('B2: der Hauptprozess lädt mupdf nicht (auch nicht über die Testmodus-Beispieldaten)', { skip: OHNE_HOOKS, timeout: 60_000 }, () => {
   const index = readFileSync(new URL('index.js', SRC), 'utf8');

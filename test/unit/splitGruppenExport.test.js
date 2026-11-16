@@ -82,7 +82,7 @@ async function seedGruppe(db, dir, { anzahlKinder = 2, mitBeleg = false, gestemp
   for (let i = 0; i < anzahlKinder; i++) {
     const kindPdfPfad = join(dir, `kind-${i}.pdf`);
     const hatBeleg = mitBeleg && i === 0;
-    // Genau die Seitenreihenfolge, die mergeBelegFuerJob beim Aufsplitten erzeugt:
+    // Genau die Seitenreihenfolge, die das Beleg-Anhängen beim Aufsplitten erzeugt:
     // [Rechnungsseiten][Belegseiten] -- Stempelseiten kommen erst später obendrauf.
     const seiten = hatBeleg ? ['Rechnung Seite 1', 'Beleg Seite 1'] : ['Rechnung Seite 1'];
     writeFileSync(kindPdfPfad, await buildPdfFixture(seiten));

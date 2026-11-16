@@ -28,12 +28,15 @@ test('istOeffentlicheIp: IPv6 – Loopback, unspecified, ULA, Link-Local, gemapp
   }
 });
 
-test('pruefeTsaUrl: nur https', async () => {
-  for (const url of ['http://tsa.example.org/tsr', 'ftp://tsa.example.org', 'tsa.example.org/tsr', 'file:///etc/passwd', 'javascript:alert(1)']) {
+test('pruefeTsaUrl: http und https sind erlaubt, andere Schemata nicht', async () => {
+  for (const url of ['ftp://tsa.example.org', 'tsa.example.org/tsr', 'file:///etc/passwd', 'javascript:alert(1)']) {
     const r = await pruefeTsaUrl(url, { aufloesen: dns(OEFFENTLICH) });
     assert.equal(r.ok, false, url);
   }
   assert.deepEqual(await pruefeTsaUrl('https://tsa.example.org/tsr', { aufloesen: dns(OEFFENTLICH) }), { ok: true });
+  // Die offizielle DigiCert-Adresse ist http://; die Antwort ist signiert und wird gegen die Vertrauensbasis geprüft.
+  assert.deepEqual(await pruefeTsaUrl('http://timestamp.digicert.com', { aufloesen: dns(OEFFENTLICH) }), { ok: true });
+  assert.equal((await pruefeTsaUrl('http://127.0.0.1/tsr', { aufloesen: dns(OEFFENTLICH) })).ok, false, 'auch bei http keine internen Ziele');
 });
 
 test('pruefeTsaUrl: IP-Literale (auch dezimal/hex/oktal/IPv6/gemappt) auf private Ziele werden abgelehnt, ohne DNS', async () => {
@@ -68,10 +71,12 @@ test('pruefeGespeicherteTsaUrl: leer = nichts zu prüfen, sonst Ergebnis mit URL
   const db = openDatabase(':memory:');
   seedDefaults(db);
   assert.equal(await pruefeGespeicherteTsaUrl(db, { aufloesen: dns(OEFFENTLICH) }), null);
-  setConfigValue(db, 'zeitstempel_tsa_url', 'http://tsa.example.org/tsr');
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://10.0.0.5/tsr');
   const r = await pruefeGespeicherteTsaUrl(db, { aufloesen: dns(OEFFENTLICH) });
   assert.equal(r.ok, false);
-  assert.equal(r.url, 'http://tsa.example.org/tsr');
+  assert.equal(r.url, 'https://10.0.0.5/tsr');
+  setConfigValue(db, 'zeitstempel_tsa_url', 'http://tsa.example.org/tsr');
+  assert.equal((await pruefeGespeicherteTsaUrl(db, { aufloesen: dns(OEFFENTLICH) })).ok, true, 'http ohne Zugangsdaten ist zulässig');
   setConfigValue(db, 'zeitstempel_tsa_url', 'https://tsa.example.org/tsr');
   assert.equal((await pruefeGespeicherteTsaUrl(db, { aufloesen: dns(OEFFENTLICH) })).ok, true);
   db.close();

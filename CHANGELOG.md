@@ -3,6 +3,15 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.1] – 2026-11-16
+
+Korrektur. Release Notes: [docs/releases/v1.4.1.md](docs/releases/v1.4.1.md). Keine Migration, keine neuen Umgebungsvariablen.
+
+- TSA-Adresse: `http://` ist wieder erlaubt, wenn keine Zugangsdaten hinterlegt sind (z. B. die offizielle
+  DigiCert-Adresse `http://timestamp.digicert.com`). Die Prüfung aus 1.3.0 (S6) verlangte pauschal `https://`
+  und machte damit die bestehende Regel «http nur ohne Zugangsdaten» unwirksam. Der Schutz vor internen,
+  privaten und lokalen Zielen bleibt unverändert; mit Benutzername oder Passwort bleibt `https://` Pflicht.
+
 ## [1.4.0] – 2026-11-16
 
 Versandquittung für Bexio und Durchlauf-Test. Release Notes: [docs/releases/v1.4.0.md](docs/releases/v1.4.0.md).

@@ -11,6 +11,14 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   als A, gibt als B frei und wartet auf die Abholung durch n8n (optional Archivquittung über den nur lesenden
   Abruf `archivierung-ausstehend`). Bericht je Beleg und Schritt, Fehlerbilder, Handprüf-Liste für Paperless/Bexio.
   Konfiguration in `.env.durchlauf` (Vorlage `.env.durchlauf.example`), ohne Standard-Zieladresse. Keine Änderung am Portal.
+- Versandquittung für Bexio: n8n meldet nach dem Mailversand an das Bexio-Eingangspostfach die Antwort des
+  Mailservers an `POST /api/n8n/jobs/:id/bexio-versand-bestaetigen` (Export-ID, Empfänger, Message-ID,
+  SMTP-Antwort, Versandzeitpunkt). Nur 2xx ohne abgelehnten Bexio-Empfänger wird quittiert (sonst 422);
+  gleiche Message-ID ist idempotent. Nachzügler über `GET /api/n8n/jobs/bexio-versand-ausstehend`. Die
+  Belegseite («Jetzt prüfen») zeigt «An Bexio gesendet: …» bzw. «noch nicht gemeldet». Die SMTP-Antwort belegt
+  nur die Annahme durch den eigenen Mailserver, nicht die Zustellung bei Bexio. Automatische Migration: neue
+  append-only Tabelle `bexio_versand` (mit Audit). n8n: neuer HTTP-Request-Knoten nach «Send Email»
+  ([Anleitung](docs/n8n-schnittstelle.md#versand-an-bexio-bestätigen)).
 
 ## [1.3.0] – 2026-11-16
 

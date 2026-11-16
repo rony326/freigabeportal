@@ -526,6 +526,7 @@ und gehören zur vollständigen Datenbanksicherung.
 | `audit_zugriff_drosselung` | Drosselungszustand zur begrenzten Protokollierung wiederholter Zugriffsverweigerungen. |
 | `export_nachweise` | Unveränderliches Exportmanifest mit Export-ID, eindeutigem Jobbezug und SHA-256 der finalen Datei. |
 | `archiv_quittungen` | Unveränderliche Quittung je Export-ID mit eindeutiger Archiv-Dokument-ID, Task-ID und Datei-Hash. |
+| `bexio_versand` | Versandquittung für Bexio, von n8n nach dem Mailversand gemeldet: `id`, `job_id` (Einzelbeleg bzw. Splitgruppen-Elternjob), `export_id` → `export_nachweise.id` (desselben Vorgangs), `empfaenger` (Adressen, kommagetrennt), `message_id` (eindeutig), `smtp_antwort` (einzeilig), `gesendet_am` (UTC), `gemeldet_am`. Mehrere Zeilen je Vorgang möglich (erneuter Versand); UPDATE/DELETE gesperrt; mit Audit-Triggern. Siehe [n8n-schnittstelle.md](n8n-schnittstelle.md#versand-an-bexio-bestätigen). |
 | `datei_quarantaene` | Dateiname, Hash, Grösse und Verschiebezeit; genau eine begründete Entscheidung von `quarantaene` zu `wiederhergestellt` oder `geloescht`, keine Zeilenlöschung. |
 | `sicherheitsalarme` | Persistenter Versand-/Wiederholungsstand je Alarmtyp und Schlüssel; eine versendete Warnung klärt keine Löschabsicht. |
 | `tsa_evidenz_objekte` | Per SHA-256 deduplizierte DER-Objekte für Zertifikate, Sperrlisten und Zeitstempel-Token; UPDATE/DELETE gesperrt. |

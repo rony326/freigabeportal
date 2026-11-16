@@ -10,6 +10,8 @@ import { canViewJobPdf } from '../services/jobAuthorization.js';
 import { verifyZeitstempel } from '../services/zeitstempel.js';
 import { jobDocument } from '../services/jobDocument.js';
 import { kommentarBereich } from './kommentare.js';
+import { bexioVersandFuerAnzeige } from '../services/bexioVersand.js';
+import { zeitpunktAnzeige } from '../services/auditLog.js';
 import { asyncCallback, asyncHandler } from '../middleware/asyncHandler.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -31,6 +33,9 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
       // Kommentarbereich auch für abgeschlossene Vorgänge (dann nur lesend) und Mail-Links mit
       // #kommentare für Beteiligte ohne Arbeitsseite (z. B. die Spesen-Einreicherin).
       const kommentare = kommentarBereich(db, config, req.currentPerson, job, `/zeitstempel-pruefen?jobId=${job.id}`);
+      // Versandquittung(en) für Bexio (services/bexioVersand.js); null = keine Bexio-Zeile (Rapport, nicht abgeschlossen).
+      const versand = bexioVersandFuerAnzeige(db, job);
+      const bexioVersand = versand && versand.map((v) => ({ zeitpunkt: zeitpunktAnzeige(v.gesendet_am), empfaenger: v.empfaenger, messageId: v.message_id }));
       if (!job.pdf_pfad || !existsSync(job.pdf_pfad)) {
         // n8n löscht das lokale PDF, sobald ein Vorgang abgeholt ist — aber zeitstempel_datei_hash bleibt in der DB in jedem Fall erhalten, die Prüfung ist also weiterhin über das einfache
         // Upload-Formular möglich (Hash-Vergleich mit diesem gespeicherten Wert). Ein blosses 404 war hier eine Sackgasse für alle, deren Vorgang schon abgeholt war; die vorbelegte jobId erspart das Suchen.
@@ -42,10 +47,11 @@ export function createZeitstempelPruefenRouter({ db, config, csrfProtection = (r
           hinweis:
             'Die Originaldatei liegt im Portal nicht mehr vor (bereits abgeholt/archiviert). Lade die archivierte Kopie hoch, um sie zu prüfen — die Job-ID ist bereits eingetragen.',
           kommentarBereich: kommentare,
+          bexioVersand,
         });
       }
       const ergebnis = await verifyZeitstempel(readFileSync(job.pdf_pfad), job.zeitstempel_datei_hash);
-      res.render('zeitstempel-pruefen', { ergebnis, errors: [], jobId, job, kommentarBereich: kommentare });
+      res.render('zeitstempel-pruefen', { ergebnis, errors: [], jobId, job, kommentarBereich: kommentare, bexioVersand });
     } catch (err) {
       next(err);
     }

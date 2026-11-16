@@ -1,6 +1,7 @@
 // Maschinenroute `/api/n8n/jobs` (Header `X-API-Key`, Vertrag und Beispiele: docs/n8n-schnittstelle.md und docs/n8n-paperless-archivierung.md): Rechnungseingang aus dem Mail-Workflow und Abholung zum Export nach Bexio/Paperless.
 // Eingang: `POST /` (PDF + quelle/absender/dateiname) → Prüfung, Duplikaterkennung per Datei-Hash, Thumbnail/QR-Erkennung/Text (Prüfung und Analyse im PDF-Worker, B2), Job, Kreditkartenerkennung, Zuweisung per Regel + Mail.
 // Export: `GET /abholbereit` → `GET /:id/exportnachweis` → `GET /:id/exportdatei/:exportId` → `POST /:id/archivierung-bestaetigen` (Archivquittung); `POST /:id/abholung-bestaetigen` ist die ältere reine Transport-Bestätigung.
+// Bexio: nach dem Mailversand an das Bexio-Eingangspostfach `POST /:id/bexio-versand-bestaetigen` (Versandquittung, services/bexioVersand.js); Nachzügler über `GET /bexio-versand-ausstehend`.
 // Rapporte laufen nie über diese Route (siehe router.param), sondern über /api/n8n/rapporte.
 
 import { Router, json } from 'express';
@@ -17,6 +18,7 @@ import { analysiereText } from '../../services/kkTextAnalyse.js';
 import { erkenneKarte, hatErkennbareKarten } from '../../services/kkErkennung.js';
 import { markiereAlsKkAbrechnung } from '../../services/kkMarkierung.js';
 import { createExportEvidence, readExportDocument, confirmArchiveReceipt, ArchiveError } from '../../services/archiveReceipt.js';
+import { bestaetigeBexioVersand, listBexioVersandAusstehend, BexioVersandFehler } from '../../services/bexioVersand.js';
 import { machineAuditContext, mitAuditKontext } from '../../services/auditContext.js';
 import { exportNachweis } from '../../services/exportSnapshot.js';
 import { PdfEingangFehler } from '../../services/pdfFehler.js';
@@ -334,6 +336,16 @@ export function createN8nJobsRouter({ db, config, mailer, pdfArbeit = null }) {
     res.set('Cache-Control', 'no-store').json(rows.map((row) => ({ ...row, export_nachweis_url: `/api/n8n/jobs/${row.id}/exportnachweis` })));
   });
 
+  // GET /api/n8n/jobs/bexio-versand-ausstehend?nach_id= – exportierte Belege (mit Exportnachweis) ohne Versandquittung (Cursor, höchstens 100).
+  router.get('/bexio-versand-ausstehend', (req, res) => {
+    const after = req.query.nach_id ?? '0';
+    if (typeof after !== 'string' || !/^\d+$/.test(after) || !Number.isSafeInteger(Number(after))) {
+      return res.status(400).json({ error: 'Ungueltiger Cursor nach_id.' });
+    }
+    const rows = listBexioVersandAusstehend(db, Number(after));
+    res.set('Cache-Control', 'no-store').json(rows.map((row) => ({ ...row, export_nachweis_url: `/api/n8n/jobs/${row.id}/exportnachweis` })));
+  });
+
   // GET /api/n8n/jobs/:id/exportnachweis – unveränderliches Exportmanifest (idempotent; 409 bei Mangel, z. B. Zeitstempel fehlt oder Nachprüfung nötig).
   router.get('/:id/exportnachweis', (req, res, next) => {
     try {
@@ -351,6 +363,18 @@ export function createN8nJobsRouter({ db, config, mailer, pdfArbeit = null }) {
       res.json({ id: Number(req.params.id), status: 'archiv_bestaetigt', quittung });
     } catch (err) {
       if (err instanceof ArchiveError) return res.status(err.status).json({ error: err.message });
+      next(err);
+    }
+  });
+
+  // POST /api/n8n/jobs/:id/bexio-versand-bestaetigen – Versandquittung nach dem Mailversand an Bexio. 201 neu, 200 mit
+  // `duplikat: true` bei gleicher message_id; 400 Eingabe, 404 unbekannt/Rapport, 409 nicht exportiert/fremde export_id, 422 Versand nicht erfolgreich.
+  router.post('/:id/bexio-versand-bestaetigen', json({ limit: '8kb' }), (req, res, next) => {
+    try {
+      const { neu, versand } = bestaetigeBexioVersand(db, Number(req.params.id), req.body);
+      res.status(neu ? 201 : 200).json({ id: Number(req.params.id), status: 'bexio_versand_bestaetigt', ...(neu ? {} : { duplikat: true }), versand });
+    } catch (err) {
+      if (err instanceof BexioVersandFehler) return res.status(err.status).json({ error: err.message });
       next(err);
     }
   });

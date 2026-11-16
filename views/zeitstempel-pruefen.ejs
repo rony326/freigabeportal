@@ -8,6 +8,19 @@
       </div>
     <% } %>
 
+    <% if (locals.bexioVersand) { %>
+      <% /* Versandquittung von n8n (services/bexioVersand.js); belegt die Annahme durch den eigenen Mailserver, nicht die Zustellung bei Bexio. */ %>
+      <div id="bexio-versand" class="mb-3">
+        <% if (bexioVersand.length === 0) { %>
+          <p class="text-body-secondary mb-0">Versand an Bexio: noch nicht gemeldet</p>
+        <% } else { %>
+          <% bexioVersand.forEach((v) => { %>
+            <p class="mb-0">An Bexio gesendet: <%= v.zeitpunkt %>, an <%= v.empfaenger %>, Message-ID <span class="text-break"><%= v.messageId %></span></p>
+          <% }) %>
+        <% } %>
+      </div>
+    <% } %>
+
     <% if (!ergebnis) { %>
       <% if (typeof hinweis !== 'undefined' && hinweis) { %>
         <div class="alert alert-info col-12 col-lg-6"><%= hinweis %></div>

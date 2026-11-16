@@ -490,3 +490,55 @@ test('GET /zeitstempel-pruefen/zertifikat?jobId= shows the branding logo and Org
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
+
+// Versandquittung für Bexio: die Belegseite zeigt, ob und wann n8n den Versand gemeldet hat.
+test('GET /zeitstempel-pruefen?jobId= zeigt «Versand an Bexio: noch nicht gemeldet» bzw. die gemeldete Versandquittung', async () => {
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  seedPerson(db, '3');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/nonexistent/gone.pdf' });
+  setKontierung(db, id, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeholt', zugewiesen_an = '1' WHERE id = ?").run(id);
+  const app = buildTestApp(db);
+
+  const vorher = await request(app).get(`/zeitstempel-pruefen?jobId=${id}`).set('x-test-person-id', '1');
+  assert.equal(vorher.status, 200);
+  assert.match(vorher.text, /Versand an Bexio: noch nicht gemeldet/);
+
+  db.prepare("INSERT INTO export_nachweise (id, job_id, sha256, manifest, erstellt_am) VALUES ('e1', ?, 's', '{}', 't')").run(id);
+  db.prepare(`INSERT INTO bexio_versand (job_id, export_id, empfaenger, message_id, smtp_antwort, gesendet_am, gemeldet_am)
+    VALUES (?, 'e1', 'eingang@bexio.example.org', '<m1@mail.example.org>', '250 2.0.0 Ok', '2026-11-16T09:15:00.000Z', '2026-11-16T09:15:05.000Z')`).run(id);
+  const nachher = await request(app).get(`/zeitstempel-pruefen?jobId=${id}`).set('x-test-person-id', '1');
+  assert.equal(nachher.status, 200);
+  assert.match(nachher.text, /An Bexio gesendet: 16\.11\.2026 10:15, an eingang@bexio\.example\.org, Message-ID (?:<[^>]+>)?&lt;m1@mail\.example\.org&gt;/);
+  assert.doesNotMatch(nachher.text, /noch nicht gemeldet/);
+  db.close();
+});
+
+test('GET /zeitstempel-pruefen?jobId= zeigt bei einem Teilbeleg der Splitgruppe den Versand des Elternjobs, bei Rapporten keine Bexio-Zeile', async () => {
+  const db = openDatabase(':memory:');
+  seedPerson(db, '1');
+  seedPerson(db, '3');
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '1', freigeber2Id: '3', stellvertreter2Id: '3' });
+  const parent = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'p.pdf', pdfPfad: '/nonexistent/p.pdf' });
+  const child = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'c.pdf', pdfPfad: '/nonexistent/c.pdf' });
+  setKontierung(db, child, kontoId);
+  db.prepare("UPDATE jobs SET status = 'aufgesplittet' WHERE id = ?").run(parent);
+  db.prepare("UPDATE jobs SET status = 'abgeholt', zugewiesen_an = '1', aufgesplittet_von = ? WHERE id = ?").run(parent, child);
+  db.prepare("INSERT INTO export_nachweise (id, job_id, sha256, manifest, erstellt_am) VALUES ('g1', ?, 's', '{}', 't')").run(parent);
+  db.prepare(`INSERT INTO bexio_versand (job_id, export_id, empfaenger, message_id, smtp_antwort, gesendet_am, gemeldet_am)
+    VALUES (?, 'g1', 'eingang@bexio.example.org', '<gruppe@mail.example.org>', '250 Ok', '2026-11-16T09:15:00.000Z', 't')`).run(parent);
+  const rapport = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'r.pdf', pdfPfad: '/nonexistent/r.pdf' });
+  setKontierung(db, rapport, kontoId);
+  db.prepare("UPDATE jobs SET status = 'abgeholt', typ = 'rapport', zugewiesen_an = '1' WHERE id = ?").run(rapport);
+  const app = buildTestApp(db);
+
+  const teil = await request(app).get(`/zeitstempel-pruefen?jobId=${child}`).set('x-test-person-id', '1');
+  assert.equal(teil.status, 200);
+  assert.match(teil.text, /An Bexio gesendet: .*gruppe@mail\.example\.org/);
+  const r = await request(app).get(`/zeitstempel-pruefen?jobId=${rapport}`).set('x-test-person-id', '1');
+  assert.equal(r.status, 200);
+  assert.doesNotMatch(r.text, /Bexio/);
+  db.close();
+});

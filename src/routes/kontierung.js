@@ -326,7 +326,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       // (Ablauf: bereiteBelegAnhangVor in services/aufsplitten.js). Ergebnis: der vorbereitete Anhang, null ohne Beleg, oder
       // false, wenn die Antwort schon gesendet ist – 503 bei vorübergehender Störung, 400/422 bei einem unlesbaren Beleg.
       const BELEG_KONFLIKT_MELDUNG = 'Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.';
-      const bereiteBelegVor = async () => {
+      async function bereiteBelegVor() {
         if (!req.file) return null;
         try {
           return await bereiteBelegAnhangVor(job, req.file, belegMimetype);
@@ -347,7 +347,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           }
           throw err;
         }
-      };
+      }
 
       if (aktion === 'ablehnen') {
         if (!begruendung) {

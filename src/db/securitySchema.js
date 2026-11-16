@@ -101,8 +101,22 @@ export function migrateSecuritySchema(db) {
     task_id TEXT NOT NULL,
     sha256 TEXT NOT NULL,
     bestaetigt_am TEXT NOT NULL
-  );`);
-  for (const table of ['export_nachweise', 'archiv_quittungen']) {
+  );
+  -- Versandquittung für Bexio (services/bexioVersand.js): je gemeldetem Mailversand eine Zeile, ein
+  -- erneuter Versand (neue Message-ID) ist eine weitere Zeile. Gehört wie archiv_quittungen zu genau
+  -- einem Exportnachweis desselben Vorgangs.
+  CREATE TABLE IF NOT EXISTS bexio_versand (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL REFERENCES jobs(id),
+    export_id TEXT NOT NULL REFERENCES export_nachweise(id),
+    empfaenger TEXT NOT NULL,
+    message_id TEXT NOT NULL UNIQUE,
+    smtp_antwort TEXT NOT NULL,
+    gesendet_am TEXT NOT NULL,
+    gemeldet_am TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS bexio_versand_job_idx ON bexio_versand(job_id);`);
+  for (const table of ['export_nachweise', 'archiv_quittungen', 'bexio_versand']) {
     for (const action of ['UPDATE', 'DELETE']) {
       db.exec(`CREATE TRIGGER IF NOT EXISTS ${table}_no_${action} BEFORE ${action} ON ${table}
         BEGIN SELECT RAISE(ABORT, '${table} ist unveraenderlich'); END;`);
@@ -125,7 +139,7 @@ export function migrateSecuritySchema(db) {
     person_berechtigungen: 'person_id', konten: 'id', kreditoren: 'id',
     kreditor_ibans: 'id', zuweisungsregeln: 'id', admin_config: 'key',
     personen: 'churchtools_person_id', jobs: 'id', freigaben: 'id',
-    export_nachweise: 'id', archiv_quittungen: 'export_id',
+    export_nachweise: 'id', archiv_quittungen: 'export_id', bexio_versand: 'id',
     kreditkarten: 'id', kreditkarte_erfasser: 'kreditkarte_id', kk_belege: 'id',
     altfall_entscheidungen: 'id', banner: 'id', betrieb_fehlermeldungen: 'id',
     kommentare: 'id', kenntnisnahmen: 'id', konto_budgets: 'konto_id', kontierung_auffaelligkeiten: 'id',

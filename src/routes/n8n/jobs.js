@@ -1,5 +1,5 @@
 // Maschinenroute `/api/n8n/jobs` (Header `X-API-Key`, Vertrag und Beispiele: docs/n8n-schnittstelle.md und docs/n8n-paperless-archivierung.md): Rechnungseingang aus dem Mail-Workflow und Abholung zum Export nach Bexio/Paperless.
-// Eingang: `POST /` (PDF + quelle/absender/dateiname) → Prüfung, Duplikaterkennung per Datei-Hash, Job, Thumbnail, QR-Erkennung, Kreditkartenerkennung, Zuweisung per Regel + Mail.
+// Eingang: `POST /` (PDF + quelle/absender/dateiname) → Prüfung, Duplikaterkennung per Datei-Hash, Thumbnail/QR-Erkennung/Text (Prüfung und Analyse im PDF-Worker, B2), Job, Kreditkartenerkennung, Zuweisung per Regel + Mail.
 // Export: `GET /abholbereit` → `GET /:id/exportnachweis` → `GET /:id/exportdatei/:exportId` → `POST /:id/archivierung-bestaetigen` (Archivquittung); `POST /:id/abholung-bestaetigen` ist die ältere reine Transport-Bestätigung.
 // Rapporte laufen nie über diese Route (siehe router.param), sondern über /api/n8n/rapporte.
 
@@ -9,25 +9,25 @@ import { writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import crypto from 'node:crypto';
 import { createJob, getJobById, findJobByDateiHash, listAbholbereitJobs, listAbholbereitGruppen, confirmAbholung, confirmGruppenAbholung, istGruppenElternjob, listSplitKinder, setThumbnailPfad, setQrDaten, setKkTextAnalyse } from '../../db/jobsRepo.js';
-import { renderFirstPageThumbnail } from '../../services/thumbnail.js';
-import { scanQrBill } from '../../services/qrBillScan.js';
 import { buildSignedDownloadUrl } from '../../services/downloadUrl.js';
 import { getPersonById } from '../../db/personenRepo.js';
 import { sendNotificationMitVertretung } from '../../services/notify.js';
 import { getConfigValue } from '../../db/adminConfigRepo.js';
-import { extrahierePdfText } from '../../services/pdfText.js';
 import { analysiereText } from '../../services/kkTextAnalyse.js';
 import { erkenneKarte, hatErkennbareKarten } from '../../services/kkErkennung.js';
 import { markiereAlsKkAbrechnung } from '../../services/kkMarkierung.js';
 import { createExportEvidence, readExportDocument, confirmArchiveReceipt, ArchiveError } from '../../services/archiveReceipt.js';
 import { machineAuditContext, mitAuditKontext } from '../../services/auditContext.js';
 import { exportNachweis } from '../../services/exportSnapshot.js';
-import { pruefeEingangsPdf, PdfEingangFehler } from '../../services/pdfEingang.js';
+import { PdfEingangFehler } from '../../services/pdfFehler.js';
+import { pdfArbeit as standardPdfArbeit, PdfWorkerFehler } from '../../services/pdfArbeit.js';
 import { asyncCallback } from '../../middleware/asyncHandler.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
 const ABHOLEN_TTL_SECONDS = 15 * 60;
+// Sekunden bis zum erneuten Versuch, wenn die PDF-Verarbeitung vorübergehend nicht verfügbar ist (503).
+const RETRY_AFTER_SEKUNDEN = 60;
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_PDF_SIZE } });
 
@@ -48,8 +48,18 @@ function isPdf(buffer) {
   return buffer.length >= 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
 }
 
-export function createN8nJobsRouter({ db, config, mailer }) {
+// B2: Eingangsprüfung im PDF-Worker vorübergehend nicht möglich (Überlastung, Zeitlimit, Absturz, Worker
+// nicht startbar) → 503 mit Retry-After; n8n wiederholt die Einreichung (docs/n8n-schnittstelle.md).
+function antworteVoruebergehendNichtVerfuegbar(res, err, dateiname) {
+  console.warn(`PDF-Eingang vorübergehend nicht prüfbar (${err.name}): ${JSON.stringify(String(dateiname || '(ohne Dateiname)').slice(0, 200))}`);
+  res.set('Retry-After', String(RETRY_AFTER_SEKUNDEN));
+  return res.status(503).json({ error: 'Die PDF-Verarbeitung ist vorübergehend ausgelastet. Bitte später erneut einreichen.', code: 'pdf_verarbeitung_ausgelastet' });
+}
+
+// `pdfArbeit` nur für Tests: eigene Fassade (services/pdfArbeit.js) statt der gemeinsamen des Prozesses.
+export function createN8nJobsRouter({ db, config, mailer, pdfArbeit = null }) {
   const router = Router();
+  const arbeit = () => pdfArbeit ?? standardPdfArbeit();
   router.use(machineAuditContext('service:n8n', 'n8n'));
   router.param('id', (req, res, next, value) => {
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) <= 0) {
@@ -61,7 +71,7 @@ export function createN8nJobsRouter({ db, config, mailer }) {
     next();
   });
 
-  // POST /api/n8n/jobs – nimmt eine Rechnung entgegen. Antworten: 201 `{id, status}`; 200 mit `duplikat: true` bei identischen Bytes (idempotent); 400 Eingabefehler; 422 PDF unbrauchbar (beschädigt/verschlüsselt/keine Seiten, `code`).
+  // POST /api/n8n/jobs – nimmt eine Rechnung entgegen. Antworten: 201 `{id, status}`; 200 mit `duplikat: true` bei identischen Bytes (idempotent); 400 Eingabefehler; 422 PDF unbrauchbar (beschädigt/verschlüsselt/keine Seiten, `code`); 503 mit Retry-After, wenn die PDF-Verarbeitung vorübergehend ausgelastet ist (B2).
   router.post('/', (req, res, next) => {
     mitAuditKontext(upload.single('pdf'))(req, res, asyncCallback(next, async (uploadErr) => {
       try {
@@ -81,9 +91,12 @@ export function createN8nJobsRouter({ db, config, mailer }) {
         // 422 = dauerhaft abgelehnt, ein erneuter Versuch mit denselben Bytes ist sinnlos; der
         // n8n-Ablauf leitet solche Eingänge zur manuellen Bearbeitung weiter. Es entsteht weder
         // ein Job noch eine Datei.
+        // B2: die Prüfung läuft im PDF-Worker (services/pdfArbeit.js). Ist er überlastet, zu langsam
+        // (Zeitlimit) oder abgestürzt, ist das kein Prüfergebnis: 503 mit Retry-After, n8n wiederholt.
         try {
-          await pruefeEingangsPdf(req.file.buffer);
+          await arbeit().ausfuehren('eingangPruefen', [req.file.buffer], { spur: 'hintergrund' });
         } catch (err) {
+          if (err instanceof PdfWorkerFehler) return antworteVoruebergehendNichtVerfuegbar(res, err, req.body?.dateiname);
           if (!(err instanceof PdfEingangFehler)) throw err;
           // Dateiname stammt aus dem Request: als JSON-String loggen, damit Zeilenumbrüche keine Logzeilen fälschen.
           console.warn(`PDF-Eingang abgelehnt (${err.code}): ${JSON.stringify(String(req.body?.dateiname || '(ohne Dateiname)').slice(0, 200))}`);
@@ -92,11 +105,15 @@ export function createN8nJobsRouter({ db, config, mailer }) {
 
         // Fängt dieselben PDF-Bytes ab, die zweimal eingereicht werden (ein Wiederholungsversuch von n8n oder ein mehrfach feuernder IMAP-Trigger für dieselbe Nachricht) — die byte-identische Datei hat immer denselben Hash, zwei wirklich verschiedene Rechnungen nie. Gibt den bestehenden Job zurück, statt ein Duplikat anzulegen, sodass eine
         // wiederholte Einreichung idempotent ist und kein Fehler, den n8n besonders behandeln müsste.
+        // Diese frühe Prüfung spart nur die Analyse; massgeblich ist die zweite unmittelbar vor createJob.
         const dateiHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
-        const vorhandenerJob = findJobByDateiHash(db, dateiHash);
-        if (vorhandenerJob) {
-          return res.status(200).json({ id: vorhandenerJob.id, status: vorhandenerJob.status, duplikat: true });
-        }
+        const duplikatAntwort = () => {
+          const vorhandenerJob = findJobByDateiHash(db, dateiHash);
+          if (!vorhandenerJob) return false;
+          res.status(200).json({ id: vorhandenerJob.id, status: vorhandenerJob.status, duplikat: true });
+          return true;
+        };
+        if (duplikatAntwort()) return;
 
         const { quelle, absender, dateiname } = req.body;
         if (!VALID_QUELLEN.has(quelle)) {
@@ -118,6 +135,23 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           eingangAm = new Date().toISOString();
         }
 
+        // Vorschaubild, QR-Erkennung und (nur wenn die Kreditkartenerkennung greifen kann) Text in einem
+        // Worker-Auftrag. Scheitert ein Teil oder der ganze Auftrag (Zeitlimit, Absturz, Überlastung), wird
+        // der Job trotzdem angelegt – wie bisher ohne Vorschaubild bzw. QR-Daten, mit Eintrag im Log.
+        const kkPruefen = getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' && hatErkennbareKarten(db);
+        let analyse;
+        try {
+          analyse = await arbeit().ausfuehren('eingangAnalysieren', [req.file.buffer, { text: kkPruefen }], { spur: 'hintergrund' });
+        } catch (err) {
+          const meldung = `PDF-Analyse fehlgeschlagen (${err.name}): ${err.message}`;
+          analyse = { vorschaubild: null, vorschaubildFehler: meldung, qr: null, qrFehler: meldung, text: null, textFehler: kkPruefen ? meldung : null };
+        }
+
+        // B2: Ab hier bis createJob kein await. Während der Analyse oben kann dieselbe Datei ein zweites
+        // Mal angekommen und schon angelegt worden sein (idx_jobs_datei_hash ist nicht eindeutig) – daher
+        // die Dublettenprüfung hier erneut, im selben synchronen Abschnitt wie Datei und Jobanlage.
+        if (duplikatAntwort()) return;
+
         mkdirSync(config.jobsDir, { recursive: true });
         const pdfPfad = join(config.jobsDir, `job-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
         writeFileSync(pdfPfad, req.file.buffer);
@@ -131,15 +165,16 @@ export function createN8nJobsRouter({ db, config, mailer }) {
           throw err;
         }
         try {
-          const thumbnailPng = renderFirstPageThumbnail(req.file.buffer);
+          if (!analyse.vorschaubild) throw new Error(analyse.vorschaubildFehler ?? 'kein Vorschaubild');
           const thumbnailPfad = pdfPfad.replace(/\.pdf$/, '.png');
-          writeFileSync(thumbnailPfad, thumbnailPng);
+          writeFileSync(thumbnailPfad, analyse.vorschaubild);
           setThumbnailPfad(db, id, thumbnailPfad);
         } catch (err) {
           console.error(`Thumbnail-Rendering fehlgeschlagen für Job ${id}:`, err.message);
         }
+        if (analyse.qrFehler) console.error(`QR-Code-Erkennung fehlgeschlagen für Job ${id}:`, analyse.qrFehler);
         try {
-          const qrDaten = scanQrBill(req.file.buffer);
+          const qrDaten = analyse.qr;
           if (qrDaten) {
             setQrDaten(db, id, {
               qrIban: qrDaten.iban,
@@ -154,9 +189,10 @@ export function createN8nJobsRouter({ db, config, mailer }) {
         }
 
         let kkMarkiert = false;
-        if (getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' && hatErkennbareKarten(db)) {
+        if (kkPruefen) {
           try {
-            const text = extrahierePdfText(req.file.buffer);
+            if (analyse.textFehler) throw new Error(analyse.textFehler);
+            const text = analyse.text ?? '';
             const erkennung = erkenneKarte(db, { absender, text });
             if (erkennung) {
               setKkTextAnalyse(db, id, analysiereText(text));

@@ -6,9 +6,8 @@ import { createKkBeleg, logKkBelegEreignis } from '../db/kkBelegeRepo.js';
 import { detectBelegMimetype, pruefeBelegBild } from './belegAnhaengen.js';
 import { listErfassbareKarten } from './kkRechte.js';
 import { speichereKkBelegDatei } from './kkBelegDatei.js';
-import { extrahierePdfText } from './pdfText.js';
 import { analysiereText } from './kkTextAnalyse.js';
-import { scanQrBill } from './qrBillScan.js';
+import { pdfArbeit } from './pdfArbeit.js';
 import { sendNotification } from './notify.js';
 
 // Gemeinsamer Einstieg für Belege, die per Mail eintreffen -- heute über n8n
@@ -34,16 +33,19 @@ export async function nimmKkBelegEntgegen(db, config, mailer, { absender, buffer
 
   let betrag = null;
   let kaufdatum = null;
+  // QR und Text im PDF-Worker (B2, Spur hintergrund). Zeitlimit/Überlastung wie jeder andere Fehler:
+  // nur kein Vorschlag, der Beleg wird trotzdem angelegt. Die Dateierzeugung (speichereKkBelegDatei)
+  // rechnet noch im Hauptthread (Etappe 2).
   if (mimetype === 'application/pdf') {
     try {
-      const qr = scanQrBill(buffer);
+      const qr = await pdfArbeit().ausfuehren('qrErkennen', [buffer], { spur: 'hintergrund' });
       if (qr?.betrag) betrag = Number(qr.betrag).toFixed(2);
     } catch (err) {
       console.error('QR-Erkennung für Mail-Beleg fehlgeschlagen:', err.message);
     }
     try {
       // analysiereText begrenzt Text- und Zeilenlänge -- Mail-Anhänge sind nicht vertrauenswürdig.
-      const analyse = analysiereText(extrahierePdfText(buffer));
+      const analyse = analysiereText(await pdfArbeit().ausfuehren('textExtrahieren', [buffer], { spur: 'hintergrund' }));
       betrag = betrag ?? analyse.total;
       const heute = new Date().toISOString().slice(0, 10);
       kaufdatum = analyse.daten.map((d) => d.datum).find((d) => d <= heute) ?? null;

@@ -122,7 +122,7 @@ test('Modus an: eine normale Person ohne beide Rechte ist gesperrt, auch wenn si
 test('Modus an: Bestätigungsaufrufe von n8n (Abholung/Archivierung) bleiben offen, damit nichts doppelt gebucht wird', async (t) => {
   const { db, app } = setup(t);
   setzeWartungsmodus(db, true);
-  for (const pfad of ['/api/n8n/jobs/1/abholung-bestaetigen', '/api/n8n/jobs/1/archivierung-bestaetigen', '/api/n8n/rapporte/1/archivierung-bestaetigen']) {
+  for (const pfad of ['/api/n8n/jobs/1/abholung-bestaetigen', '/api/n8n/jobs/1/archivierung-bestaetigen', '/api/n8n/rapporte/1/archivierung-bestaetigen', '/api/n8n/jobs/1/bexio-versand-bestaetigen']) {
     const res = await request(app).post(pfad).set('X-API-Key', 'n8n-key');
     assert.notEqual(res.status, 503, pfad);
   }

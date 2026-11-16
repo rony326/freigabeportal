@@ -92,7 +92,7 @@ Ist das Portal im [Wartungsmodus](betrieb-und-nutzung.md#wartungsmodus-für-upda
 `/api/n8n/jobs`, `/api/n8n/kk-belege` und `/api/n8n/rapporte`-Routen mit **HTTP 503**, dem Header
 `Retry-After: 300` und `{"error":"wartungsmodus"}`. Es wird nichts gespeichert. **Der n8n-Workflow muss bei 503
 (und Netzwerkfehlern) erneut versuchen**, z. B. über «Retry On Fail» mit mehreren Minuten Pause; die Mail bleibt
-solange im Postfach bzw. der Beleg im Workflow. Auch der PDF-Abruf über die signierten Links (`/downloads/:jobId?expires=…&signature=…`) antwortet mit 503 und JSON; auch dort erneut versuchen. `/api/n8n/backup/*` bleibt im Wartungsmodus erreichbar. Ebenso bleiben die **Bestätigungen** (`POST /api/n8n/jobs/:id/abholung-bestaetigen`, `…/archivierung-bestaetigen` und die Rapporte-Variante) offen: sie schreiben nur das Ergebnis eines schon gelaufenen Exports, ein 503 würde zur Doppelbuchung führen. Empfehlung: den n8n-Export-Workflow vor dem Einschalten pausieren.
+solange im Postfach bzw. der Beleg im Workflow. Auch der PDF-Abruf über die signierten Links (`/downloads/:jobId?expires=…&signature=…`) antwortet mit 503 und JSON; auch dort erneut versuchen. `/api/n8n/backup/*` bleibt im Wartungsmodus erreichbar. Ebenso bleiben die **Bestätigungen** (`POST /api/n8n/jobs/:id/abholung-bestaetigen`, `…/archivierung-bestaetigen` und die Rapporte-Variante sowie `…/bexio-versand-bestaetigen`) offen: sie schreiben nur das Ergebnis eines schon gelaufenen Exports, ein 503 würde zur Doppelbuchung führen. Empfehlung: den n8n-Export-Workflow vor dem Einschalten pausieren.
 
 ## Abholung fertiger Rechnungen
 
@@ -212,12 +212,138 @@ ausgeliefert, unabhängig von ihrem eigenen Status.
 - [Archivvertrag und n8n-Umstellung](n8n-paperless-archivierung.md) beschreibt
   die neuen Endpunkte, Wiederholungen und den Nachweis aus Paperless.
 
+## Versand an Bexio bestätigen
+
+n8n schickt den fertigen Beleg per Mail an das Bexio-Eingangspostfach. Damit
+das Portal davon weiss, meldet n8n nach dem erfolgreichen Mailversand die
+Antwort des Mailservers zurück (Versandquittung). Das Portal speichert sie
+unveränderlich in `bexio_versand` (siehe [datenmodell.md](datenmodell.md)),
+protokolliert sie im Audit-Log (Objekt `bexio_versand`, Akteur `service:n8n`)
+und zeigt sie auf der Belegseite (`/zeitstempel-pruefen?jobId=`, Knopf
+«Jetzt prüfen» unter den abgeschlossenen Rechnungen): «An Bexio gesendet:
+‹Zeitpunkt›, an ‹Empfänger›, Message-ID ‹…›» bzw. «Versand an Bexio: noch
+nicht gemeldet». Ein Teilbeleg zeigt den Versand seiner Splitgruppe. Eine
+Bexio-API gibt es dabei nicht; die Rückmeldung kommt ausschliesslich von n8n.
+
+> **Grenze:** Die SMTP-Antwort belegt nur, dass der **eigene Mailserver** die
+> Mail angenommen hat (z. B. `250 2.0.0 Ok: queued as …`), **nicht** die
+> Zustellung bei Bexio oder die Verbuchung dort.
+
+```mermaid
+sequenceDiagram
+    participant n8n
+    participant M as Mailserver (SMTP)
+    participant P as Freigabeportal
+
+    n8n->>P: GET /api/n8n/jobs/:id/exportnachweis
+    P-->>n8n: Manifest mit export_id und download_pfad
+    n8n->>P: GET {download_pfad}
+    P-->>n8n: Hashgeprüfte PDF
+    n8n->>M: Send Email an das Bexio-Eingangspostfach (PDF im Anhang)
+    M-->>n8n: messageId, response "250 …", accepted, rejected
+    n8n->>P: POST /api/n8n/jobs/:id/bexio-versand-bestaetigen
+    alt 2xx und kein Bexio-Empfänger abgelehnt
+        P->>P: Quittung speichern (append-only) + Audit-Ereignis
+        P-->>n8n: 201 { id, status: bexio_versand_bestaetigt, versand }
+    else gleiche message_id schon gemeldet
+        P-->>n8n: 200 { …, duplikat: true, versand } (bestehender Eintrag)
+    else SMTP-Antwort nicht 2xx / Empfänger abgelehnt
+        P-->>n8n: 422 { error } — nichts gespeichert
+    end
+```
+
+**Vertrag** (`POST /api/n8n/jobs/:id/bexio-versand-bestaetigen`, Header
+`X-API-Key`, `Content-Type: application/json`, höchstens 8 KB). `:id` ist die
+ID aus `/abholbereit` bzw. dem Manifest, bei einer Splitgruppe also der
+**Elternjob**.
+
+| Feld | Pflicht | Beschreibung |
+|---|---|---|
+| `export_id` | ja | `export_id` aus `GET /api/n8n/jobs/:id/exportnachweis` — welche Datei verschickt wurde. Muss zum Exportnachweis **dieses** Vorgangs gehören |
+| `empfaenger` | ja | Mailadresse des Bexio-Eingangspostfachs (Text) oder Liste von höchstens 10 Adressen; nur die nackte Adresse ohne Anzeigename, je höchstens 254 Zeichen |
+| `message_id` | ja | Message-ID der verschickten Mail (z. B. `<…@mail.example.org>`), einzeilig, höchstens 255 Zeichen |
+| `smtp_antwort` | ja | Antwortzeile des Mailservers, z. B. `250 2.0.0 Ok: queued as 4ABC12`, höchstens 500 Zeichen. Zeilenumbrüche und Steuerzeichen werden zu Leerzeichen |
+| `gesendet_am` | ja | ISO-Zeitpunkt mit Zeitzone, z. B. `2026-11-16T10:15:00+01:00`; gespeichert als UTC |
+| `akzeptiert` | nein | Liste der vom Mailserver angenommenen Adressen. Wenn mitgeschickt, muss jede Adresse aus `empfaenger` darin stehen |
+| `abgelehnt` | nein | Liste der abgelehnten Adressen. Steht eine Adresse aus `empfaenger` darin → 422 |
+
+Alle Felder müssen Text bzw. Listen von Text sein; ein Objekt oder eine
+Liste an Stelle eines Textes ergibt 400. Gross-/Kleinschreibung der Adressen
+spielt beim Abgleich keine Rolle.
+
+| Antwort | Bedeutung |
+|---|---|
+| `201` | Quittung gespeichert: `{id, status: "bexio_versand_bestaetigt", versand: {id, job_id, export_id, empfaenger, message_id, smtp_antwort, gesendet_am, gemeldet_am}}` |
+| `200` | dieselbe `message_id` war für diesen Vorgang schon gemeldet: bestehender Eintrag mit `duplikat: true` (Wiederholung ist gefahrlos) |
+| `400` | Pflichtfeld fehlt, falscher Typ, zu lang, keine gültige Adresse, Zeilenumbruch in `message_id`, `gesendet_am` ohne Uhrzeit/Zeitzone, ungültige ID |
+| `401` | `X-API-Key` fehlt oder falsch |
+| `404` | Vorgang unbekannt — oder ein **Rapport**: Rapporte gehen nie an Bexio und existieren für `/api/n8n/jobs/*` nicht (siehe unten) |
+| `409` | Vorgang nicht exportiert (noch kein Exportnachweis, z. B. Teilbeleg einer Splitgruppe), `export_id` gehört zu einem anderen Vorgang, oder die `message_id` ist schon einem anderen Vorgang zugeordnet |
+| `413` | Body grösser als 8 KB |
+| `422` | Versand nicht erfolgreich: `smtp_antwort` beginnt nicht mit `2xx`, ein Bexio-Empfänger steht in `abgelehnt` oder fehlt in `akzeptiert`. Es wird **nichts** gespeichert; der Beleg bleibt in `bexio-versand-ausstehend` |
+
+Ein späterer **zweiter Versand** desselben Belegs (z. B. erneut geschickt,
+neue `message_id`) wird als weiterer Eintrag gespeichert; die Belegseite
+zeigt dann beide Zeilen. Ein Fehlversand wird bewusst nicht als eigener
+Eintrag gespeichert: die Tabelle hält nur bestätigte Versände, damit
+«gesendet» auf der Belegseite und in `bexio-versand-ausstehend` eindeutig
+bleibt. Fehlversände stehen im n8n-Ausführungsprotokoll. Wie die übrigen
+Bestätigungen bleibt die Route auch im [Wartungsmodus](#wartungsmodus-503)
+erreichbar.
+
+**Nachzügler:** `GET /api/n8n/jobs/bexio-versand-ausstehend?nach_id=` liefert
+exportierte Rechnungen (Exportnachweis vorhanden) ohne Versandquittung, nach
+ID aufsteigend, höchstens 100 je Abruf: `[{id, status, export_id,
+export_nachweis_url}]`. Für die nächste Seite die letzte `id` als `nach_id`
+übergeben. Rapporte und Teilbelege einer Splitgruppe erscheinen nicht. Ein
+Beleg, den n8n gerade verarbeitet, kann hier kurz auftauchen; vor einem
+erneuten Versand deshalb im n8n-Ausführungsprotokoll prüfen, ob die Mail
+nicht schon unterwegs ist.
+
+### Anleitung für den n8n-Workflow
+
+1. Im bestehenden Bexio-Zweig direkt **nach dem «Send Email»-Knoten** einen
+   **HTTP-Request-Knoten** einfügen: Methode `POST`, URL
+   `https://portal.example.org/api/n8n/jobs/{{ $('Exportnachweis').item.json.job_id }}/bexio-versand-bestaetigen`
+   (Job-ID aus dem Knoten referenzieren, der das Manifest geholt hat — hier
+   «Exportnachweis» genannt; nach dem Mail-Knoten enthält `$json` nur noch
+   dessen Ausgabe), Header `X-API-Key`
+   (Credential wie bei den übrigen Portal-Aufrufen), Body als JSON.
+2. Die Ausgabe des Send-Email-Knotens enthält u. a. `messageId`, `response`
+   (die SMTP-Antwortzeile), `accepted` und `rejected` (Listen von Adressen).
+   **Die genauen Feldnamen im n8n-Ausführungsprotokoll prüfen** — sie hängen
+   von n8n-Version und Knoteneinstellungen ab. Zuordnung:
+
+   ```json
+   {
+     "export_id": "{{ $('Exportnachweis').item.json.export_id }}",
+     "empfaenger": "eingang@bexio.example.org",
+     "message_id": "{{ $json.messageId }}",
+     "smtp_antwort": "{{ $json.response }}",
+     "gesendet_am": "{{ $now.toISO() }}",
+     "akzeptiert": {{ JSON.stringify($json.accepted) }},
+     "abgelehnt": {{ JSON.stringify($json.rejected) }}
+   }
+   ```
+
+   `empfaenger` ist die im Send-Email-Knoten eingetragene Bexio-Adresse (hier
+   ein Platzhalter), nicht ein Wert aus `accepted` — sonst würde eine
+   Ablehnung nicht auffallen.
+3. Am HTTP-Request-Knoten «Retry On Fail» einschalten (Netzwerkfehler, 503):
+   die Wiederholung mit gleicher `message_id` ist idempotent. **Nicht** die
+   Mail erneut senden, nur weil die Quittung fehlschlug.
+4. Bei `422` die Mail als nicht zugestellt behandeln (Fehlerzweig, z. B.
+   Nachricht an die Buchhaltung); bei `409` die `export_id` bzw. Job-ID im
+   Workflow prüfen.
+5. Optional einen zeitgesteuerten Zweig, der `bexio-versand-ausstehend`
+   abfragt und Nachzügler meldet oder (nach Prüfung) erneut schickt.
+
 ## Rapporte (nur zur Kenntnis)
 
 Rapporte (`jobs.typ = 'rapport'`, siehe [rechnungs-workflow.md](rechnungs-workflow.md#9-rapporte-status-kenntnisnahme))
 laufen **nicht** über `/api/n8n/jobs/*`: dort liefern alle Endpunkte für einen
-Rapport 404, und `abholbereit`/`archivierung-ausstehend` enthalten keine
-Rapporte. Sie haben einen eigenen Pfad mit demselben Header `X-API-Key`
+Rapport 404, und `abholbereit`/`archivierung-ausstehend`/`bexio-versand-ausstehend`
+enthalten keine Rapporte (auch keine Versandquittung für Bexio). Sie haben einen eigenen Pfad mit demselben Header `X-API-Key`
 (`N8N_API_KEY`):
 
 | Endpunkt | Zweck |

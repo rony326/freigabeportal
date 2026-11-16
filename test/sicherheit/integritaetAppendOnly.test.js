@@ -5,6 +5,7 @@ import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { createJob } from '../../src/db/jobsRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
+import { migrateSecuritySchema } from '../../src/db/securitySchema.js';
 
 // Task 3 / Integrität: die unveränderlichen Nachweis-Tabellen müssen UPDATE und DELETE auf
 // Datenbankebene wirklich blockieren (nicht nur protokollieren), und die einmal gesetzten
@@ -46,6 +47,21 @@ test('export_nachweise und archiv_quittungen sind append-only', () => {
   blockiert(db, "DELETE FROM export_nachweise WHERE id = 'e1'");
   blockiert(db, "UPDATE archiv_quittungen SET sha256 = 'x' WHERE export_id = 'e1'");
   blockiert(db, "DELETE FROM archiv_quittungen WHERE export_id = 'e1'");
+  db.close();
+});
+
+test('bexio_versand (Versandquittung) ist append-only, die Migration läuft idempotent', () => {
+  const db = frischeDb();
+  const jid = createJob(db, { eingangAm: new Date().toISOString(), quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf', dateiHash: 'h1' });
+  db.prepare("INSERT INTO export_nachweise (id, job_id, sha256, manifest, erstellt_am) VALUES ('e1', ?, 's', '{}', 't')").run(jid);
+  db.prepare(`INSERT INTO bexio_versand (job_id, export_id, empfaenger, message_id, smtp_antwort, gesendet_am, gemeldet_am)
+    VALUES (?, 'e1', 'eingang@example.org', '<m1@example.org>', '250 ok', 't', 't')`).run(jid);
+  blockiert(db, "UPDATE bexio_versand SET smtp_antwort = 'x' WHERE job_id = ?", jid);
+  blockiert(db, 'DELETE FROM bexio_versand WHERE job_id = ?', jid);
+  // Zweiter Lauf der Migration (wie bei jedem Start) lässt Tabelle, Zeile und Schutz unverändert.
+  migrateSecuritySchema(db);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM bexio_versand').get().n, 1);
+  blockiert(db, 'DELETE FROM bexio_versand WHERE job_id = ?', jid);
   db.close();
 });
 

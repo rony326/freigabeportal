@@ -18,8 +18,8 @@ const MASCHINEN = [/^\/api\/n8n(\/|$)/i, /^\/internal\/cron(\/|$)/i];
 const DOWNLOADS = /^\/downloads(\/|$)/i;
 // Bestätigungen von n8n (nach Abholung/Archivierung) schreiben nur das Ergebnis eines schon
 // gelaufenen Exports. Bekämen sie 503, bliebe der Vorgang "abholbereit" und n8n würde ihn nochmals
-// verbuchen (Doppelbuchung in Bexio).
-const BESTAETIGUNGEN = /^\/api\/n8n\/(jobs|rapporte)\/\d+\/(abholung-bestaetigen|archivierung-bestaetigen)\/?$/i;
+// verbuchen (Doppelbuchung in Bexio). Ebenso die Versandquittung für Bexio: die Mail ist dann schon verschickt.
+const BESTAETIGUNGEN = /^\/api\/n8n\/(jobs|rapporte)\/\d+\/(abholung-bestaetigen|archivierung-bestaetigen)\/?$|^\/api\/n8n\/jobs\/\d+\/bexio-versand-bestaetigen\/?$/i;
 const RETRY_AFTER_SEKUNDEN = '300';
 
 // Middleware-Fabrik; muss NACH `loadCurrentPerson` laufen, weil Berechtigte durchgelassen werden.

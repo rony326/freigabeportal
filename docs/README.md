@@ -40,6 +40,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 | [audit-paket-haertung-2026-09-29.md](audit-paket-haertung-2026-09-29.md) | Zugriffsverweigerungen, Datei-Quarantäne, Sicherheitsalarme, TSA-Evidenz |
 | [betrieb-und-nutzung.md](betrieb-und-nutzung.md) | Nutzungsdaten, Fehlererfassung und „Problem melden“, Neues-Gerät-Mail, Banner, Datenschutzhinweis, Aufbewahrungsfristen, Recht `betrieb_einsehen` |
 | [testmodus.md](testmodus.md) | Testmodus (Spielwiese) für Superadmin und Manager: Beispieldaten, Abschottung, Test-Postfach, Zurücksetzen |
+| [durchlauf-test.md](durchlauf-test.md) | Automatischer End-to-End-Durchlauf gegen eine Testinstanz (Mail → n8n → Kontierung → Freigabe 2 → Abholung): anmelden, konfigurieren, starten, Bericht lesen |
 | [testdrehbuch/](testdrehbuch/README.md) | Quellen für Testdrehbuch, Go-Live-Checkliste und Testbelege; wie man sie neu baut und pflegt |
 | [statusseite-und-monitoring.md](statusseite-und-monitoring.md) | Statusseite `/admin/betrieb/status`, Dienste und Grenzwerte, `/healthz` mit Überwachungsschlüssel, Uptime-Kuma-Anleitung |
 | [audit-externe-nachweise.md](audit-externe-nachweise.md) | Bedrohungsmodell und lokale Grundlage für externe Audit-Nachweise |
@@ -49,6 +50,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 
 | Version | Datum | Release Notes |
 |---|---|---|
+| 1.4.0 | 2026-11-16 | [releases/v1.4.0.md](releases/v1.4.0.md) |
 | 1.3.0 | 2026-11-16 | [releases/v1.3.0.md](releases/v1.3.0.md) |
 | 1.2.3 | 2026-11-15 | [releases/v1.2.3.md](releases/v1.2.3.md) |
 | 1.2.2 | 2026-11-11 | [releases/v1.2.2.md](releases/v1.2.2.md) |

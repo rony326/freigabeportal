@@ -7,7 +7,7 @@ import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { getJobById } from '../../src/db/jobsRepo.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
-import { PNG_1X1 } from '../helpers/imageFixture.js';
+import { PNG_1X1, buildPngHeaderOnly } from '../helpers/imageFixture.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createSpesenRouter } from '../../src/routes/spesen.js';
@@ -384,6 +384,29 @@ test('POST /spesen mit einem reinen Gutschrift-Konto wird abgelehnt, kein Job an
     .attach('posBeleg_0', pdf, { filename: 'a.pdf', contentType: 'application/pdf' });
   assert.equal(res.status, 400);
   assert.match(res.text, /kann nicht für Rechnungen verwendet werden/);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE quelle = 'spesen'").get().n, 0);
+  db.close();
+});
+
+test('POST /spesen lehnt einen Bildbeleg über 40 Megapixel mit verständlicher Meldung ab (400, kein 500), nichts wird angelegt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedGrundlagen(db);
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post('/spesen')
+    .set('x-test-person-id', '5')
+    .field('_csrf', 'valid-token')
+    .field('posKontoId', String(kontoId))
+    .field('posBetrag', '61.75')
+    .field('posAuslageDatum', '2026-08-20')
+    .field('posBeschreibung', 'Bahnticket')
+    .attach('posBeleg_0', buildPngHeaderOnly(14000, 14000), { filename: 'gross.png', contentType: 'image/png' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Position 1: Das Bild ist zu gross/);
+  assert.match(res.text, /40 Megapixel/);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE quelle = 'spesen'").get().n, 0);
   db.close();
 });

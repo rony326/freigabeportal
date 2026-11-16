@@ -13,7 +13,7 @@ import { createSpesenabrechnung } from '../db/spesenabrechnungenRepo.js';
 import { createSpesenPosition, getJobById } from '../db/jobsRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
-import { detectBelegMimetype, buildBelegPdf } from '../services/belegAnhaengen.js';
+import { detectBelegMimetype, buildBelegPdf, pruefeBelegBild } from '../services/belegAnhaengen.js';
 import { pruefeEingangsPdf, PdfEingangFehler } from '../services/pdfEingang.js';
 import { renderFirstPageThumbnail } from '../services/thumbnail.js';
 import { sendNotification } from '../services/notify.js';
@@ -128,6 +128,11 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
             const mimetype = detectBelegMimetype(pos.beleg.buffer);
             if (!mimetype || mimetype !== pos.beleg.mimetype) {
               errors.push(`Position ${i + 1}: Beleg muss eine PDF-, PNG- oder JPEG-Datei sein.`);
+              return;
+            }
+            const bildFehler = pruefeBelegBild(pos.beleg.buffer, mimetype);
+            if (bildFehler) {
+              errors.push(`Position ${i + 1}: ${bildFehler}`);
               return;
             }
             aufgeloestePositionen.push({ ...pos, konto, betrag: pos.betrag.replace(',', '.'), mimetype, nummer: i + 1 });

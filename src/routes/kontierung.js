@@ -10,7 +10,7 @@ import { personHasPermission } from '../middleware/permissions.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
 import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
-import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
+import { detectBelegMimetype, countBelegSeiten, pruefeBelegBild } from '../services/belegAnhaengen.js';
 import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalationsText } from '../services/eskalationsZiel.js';
 import {
   getJobById,
@@ -275,6 +275,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         if (!belegMimetype || belegMimetype !== req.file.mimetype) {
           return renderFehler('Beleg muss eine PDF-, PNG- oder JPEG-Datei sein.');
         }
+        const bildFehler = pruefeBelegBild(req.file.buffer, belegMimetype);
+        if (bildFehler) return renderFehler(bildFehler);
       }
 
       if (aktion === 'ablehnen') {
@@ -961,6 +963,11 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         const mimetype = detectBelegMimetype(file.buffer);
         if (!mimetype || mimetype !== file.mimetype) {
           errors.push('Beleg muss eine PDF-, PNG- oder JPEG-Datei sein.');
+          continue;
+        }
+        const bildFehler = pruefeBelegBild(file.buffer, mimetype);
+        if (bildFehler) {
+          errors.push(bildFehler);
           continue;
         }
         teilBelegByIndex.set(Number(match[1]), { file, mimetype });

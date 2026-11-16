@@ -13,7 +13,7 @@ import { getKkBelegById } from '../../../src/db/kkBelegeRepo.js';
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nKkBelegeRouter } from '../../../src/routes/n8n/kkBelege.js';
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
-import { PNG_1X1 } from '../../helpers/imageFixture.js';
+import { PNG_1X1, buildPngHeaderOnly } from '../../helpers/imageFixture.js';
 
 function setup({ modul = '1' } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'kk-mail-'));
@@ -104,5 +104,14 @@ test('audit events of an n8n kk-beleg intake are attributed to the n8n service, 
   const event = t.db.prepare("SELECT person_id, person_name FROM audit_ereignisse WHERE objekt = 'kk_belege' AND aktion = 'INSERT' AND objekt_id = ?").get(String(res.body.id));
   assert.equal(event.person_id, 'service:n8n');
   assert.equal(event.person_name, 'n8n');
+  t.cleanup();
+});
+
+test('an image receipt over 40 megapixels by mail → 400 datei_ungueltig, nothing created, not decoded', async () => {
+  const t = setup();
+  const res = await request(t.app).post('/api/n8n/kk-belege').set('X-API-Key', 'n8n-key').field('absender', 'anna.kauf@example.org').attach('pdf', buildPngHeaderOnly(14000, 14000), { filename: 'gross.png', contentType: 'image/png' });
+  assert.equal(res.status, 400);
+  assert.equal(res.body.fehler, 'datei_ungueltig');
+  assert.equal(t.db.prepare('SELECT COUNT(*) AS n FROM kk_belege').get().n, 0);
   t.cleanup();
 });

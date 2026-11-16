@@ -13,7 +13,7 @@ import {
   createKkBeleg, getKkBelegById, updateKkBelegDaten, ersetzeKkBelegDatei, verwerfeKkBeleg,
   listKkBelegeFuerPerson, listOffeneKkBelegeFuerVerantwortlich, logKkBelegEreignis, aktiviereKkBelegEntwurf,
 } from '../db/kkBelegeRepo.js';
-import { detectBelegMimetype } from '../services/belegAnhaengen.js';
+import { detectBelegMimetype, pruefeBelegBild } from '../services/belegAnhaengen.js';
 import { darfAufKarteErfassen, listErfassbareKarten, darfBelegBearbeiten, darfBelegSehen } from '../services/kkRechte.js';
 import { POSITION_PATTERN } from '../services/aufsplitten.js';
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, KK_DATUM_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
@@ -72,6 +72,8 @@ export function createKreditkarteRouter({ db, config, csrfProtection = (req, res
     if (!file) return pflicht ? { error: 'Bitte einen Beleg hochladen.' } : { mimetype: null };
     const mimetype = detectBelegMimetype(file.buffer);
     if (!mimetype || mimetype !== file.mimetype) return { error: 'Beleg muss eine PDF-, PNG- oder JPEG-Datei sein.' };
+    const bildFehler = pruefeBelegBild(file.buffer, mimetype);
+    if (bildFehler) return { error: bildFehler };
     return { mimetype };
   }
 

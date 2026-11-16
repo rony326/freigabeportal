@@ -16,7 +16,7 @@ import { loadNavFlags } from '../../src/middleware/nav.js';
 import { auditContext } from '../../src/services/auditContext.js';
 import { createKreditkarteRouter } from '../../src/routes/kreditkarte.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
-import { PNG_1X1 } from '../helpers/imageFixture.js';
+import { PNG_1X1, buildPngHeaderOnly } from '../helpers/imageFixture.js';
 
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'kk-test-'));
@@ -304,5 +304,14 @@ test('Kreditkarten-Beleg: Betrag positiv verlangt ein Konto für Rechnungen, Rü
 
   assert.equal((await upload(t.app, '3', { ...basis, betrag: '12.50', kontoId: String(nurRechnung) })).status, 302);
   assert.equal((await upload(t.app, '3', { ...basis, betrag: '-12.50', kontoId: String(nurGutschrift) })).status, 302);
+  t.cleanup();
+});
+
+test('POST /kreditkarte/belege lehnt einen Bildbeleg über 40 Megapixel mit verständlicher Meldung ab (400, kein 500)', async () => {
+  const t = setup();
+  const res = await upload(t.app, '3', { kreditkarteId: String(t.offen), betrag: '12,50', kaufdatum: '2026-09-01', beschreibung: 'Zugticket' }, { buffer: buildPngHeaderOnly(14000, 14000), name: 'gross.png', type: 'image/png' });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Das Bild ist zu gross/);
+  assert.equal(listKkBelegeFuerPerson(t.db, '3').length, 0);
   t.cleanup();
 });

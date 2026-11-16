@@ -3,6 +3,13 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## Unveröffentlicht
+
+- Bild-Belege (JPG/PNG) werden vor dem Einbetten auf höchstens 40 Megapixel geprüft (Breite und
+  Höhe aus dem Bildkopf, ohne Dekodieren); zu grosse oder nicht lesbare Bilder werden mit
+  verständlicher Meldung abgelehnt statt den Prozess zu blockieren (Befund S2). Gilt für Spesen,
+  Kontierung, Aufsplitten, Kreditkarten-Belege, KK-Abgleich und den n8n-Belegeingang.
+
 ## [1.2.3] – 2026-11-15
 
 Bedienungs-Release für Gelegenheitsnutzer. Release Notes: [docs/releases/v1.2.3.md](docs/releases/v1.2.3.md).

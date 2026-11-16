@@ -41,7 +41,8 @@ Formular mit mindestens einer, dynamisch hinzufügbaren Positionszeile
 (gleiches Zeilen-Klonen/Entfernen-Muster wie die bestehende
 Aufsplitten-Seite). Pro Zeile: Konto (jedes aktive, keine
 Rollen-Einschränkung), Betrag, Auslage-Datum (nicht in der Zukunft),
-Verwendungszweck, Beleg (PDF/PNG/JPEG, Pflicht, max. 20 MB, Magic-Byte-
+Verwendungszweck, Beleg (PDF/PNG/JPEG, Pflicht, max. 20 MB, Bilder höchstens
+40 Megapixel, Magic-Byte-
 geprüft — ein Bild-Upload wird wie beim
 [Beleg-Anhängen bei Kontierung](rechnungs-workflow.md#2-kontierung-status-zugewiesen)
 serverseitig in eine echte PDF-Seite umgewandelt; ein PDF-Beleg wird wie

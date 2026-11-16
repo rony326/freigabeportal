@@ -14,7 +14,6 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   Rolleninhaber erhalten ihre Rolle beim nächsten Sync zurück.
 - Doku (S9): `docs/auth-und-rechte.md` erklärt, dass ein Rollenentzug erst mit dem nächtlichen Sync
   oder der nächsten Anmeldung wirkt und wie der Sync von Hand gestartet wird.
-
 - Bild-Belege (JPG/PNG) werden vor dem Einbetten auf höchstens 40 Megapixel geprüft (Breite und
   Höhe aus dem Bildkopf, ohne Dekodieren); zu grosse oder nicht lesbare Bilder werden mit
   verständlicher Meldung abgelehnt statt den Prozess zu blockieren (Befund S2). Gilt für Spesen,

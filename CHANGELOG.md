@@ -35,6 +35,12 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   Kontierung ohne Beleg und ohne Mails; jetzt erscheint das Formular mit einem Hinweis (422) und nichts ist
   gespeichert. Zwei gleichzeitige Kontierungen mit Beleg auf denselben Vorgang: genau eine wird gespeichert,
   die andere erhält 409. Offen: Stempel (Etappe 3) und Splitgruppen-Export (Etappe 5).
+- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 3): Die Stempelseite bei Freigabe 2 und der Vermerk beim
+  Abschluss eines Rapports werden im Worker erzeugt (bei grossen PDFs hielt das Portal bisher bis zu einigen hundert
+  Millisekunden am Stück an). Ist die PDF-Verarbeitung bei Freigabe 2 ausgelastet, kommt das Formular mit 503 und dem
+  Hinweis zurück, es in einer Minute erneut zu versuchen; gespeichert ist nichts. Ein unlesbares PDF meldet sich wie
+  bisher (400). Beim Rapport bleibt die Kenntnisnahme gespeichert und der Abschluss wird wie bei jedem Stempelfehler
+  vom stündlichen Job nachgeholt. Neues Zeitlimit für Stempel: 30 s (mal `PDF_WORKER_ZEITLIMIT_FAKTOR`).
 - Abhängigkeiten aktualisiert (ohne Hauptversionssprung): mupdf 1.28.0 → 1.28.6, express-rate-limit
   8.6.2 → 8.7.4, nodemailer 10.2.1 → 10.6.0, csrf-csrf 4.0.3 → 4.1.0, read-excel-file 9.3.12 → 9.3.17.
 - Doku: `docs/betrieb-und-nutzung.md` hält einen monatlichen Termin fest (`npm audit` und Prüfung der

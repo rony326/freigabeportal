@@ -46,6 +46,9 @@ export const STANDARD_ZEITLIMITS_MS = {
   belegDateiErstellen: 30_000,
   // Dasselbe Bild in ein bestehendes Vorgangs-PDF einbetten (B2, Etappe 4).
   belegAnhaengen: 30_000,
+  // Stempelseite an ein Vorgangs-PDF hängen (B2, Etappe 3): pdf-lib lädt und speichert das ganze Dokument.
+  freigabeStempeln: 30_000,
+  kenntnisnahmeStempeln: 30_000,
 };
 const ZEITLIMIT_UNBEKANNT_MS = 10_000;
 const START_ZEITLIMIT_MS = 30_000;

@@ -87,3 +87,15 @@ test('B2: der Hauptprozess lädt mupdf nicht (auch nicht über die Testmodus-Bei
   nurBekannterRestpfad('src/index.js', pfade);
   assert.deepEqual(pfade.direkt, Object.keys(RESTPFAD), 'Hauptprozess lädt mupdf');
 });
+
+// Ob ein Modul (relativ zu src/) überhaupt geladen wird.
+const laedt = (kanten, modul) => kanten.some((k) => relativ(k.nach) === modul);
+
+test('B2 Etappe 3: Freigabe 2 und Rapporte laden mupdf nicht; Rapporte stempeln nicht mehr im Hauptthread', { skip: OHNE_HOOKS, timeout: 60_000 }, () => {
+  for (const ziel of ['routes/freigabe2.js', 'services/rapporte.js', 'routes/rapporte.js']) {
+    assert.deepEqual(mupdfPfade(ladeKanten([ziel])).direkt, [], `${ziel} lädt mupdf`);
+  }
+  for (const ziel of ['services/rapporte.js', 'routes/rapporte.js']) {
+    assert.equal(laedt(ladeKanten([ziel]), 'services/pdfStamp.js'), false, `${ziel} lädt pdfStamp.js`);
+  }
+});

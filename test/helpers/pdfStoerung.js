@@ -1,6 +1,7 @@
 // Nur für Tests (B2): stellt die gemeinsame PDF-Fassade (services/pdfArbeit.js) für die Dauer von `fn` auf eine
 // Störung um und danach wieder auf den Normalbetrieb.
-// - 'zeitlimit': Worker mit dem Testmodul pdfTestAufgabenBeleg.js; Belege mit LANGSAM_* überschreiten ein Zeitlimit von 300 ms.
+// - 'zeitlimit': Worker mit dem Testmodul pdfTestAufgabenBeleg.js; Belege bzw. zu stempelnde PDFs mit LANGSAM_* überschreiten
+//   ein Zeitlimit von 300 ms.
 // - 'ueberlastet': Warteschlange 0 – jeder Auftrag scheitert sofort mit PdfWorkerUeberlastet.
 // - 'verzoegert': keine Störung, aber Worker mit dem Testmodul; Belege mit VERZOEGERT_ANHAENGEN brauchen 400 ms
 //   (zwei gleichzeitige Anfragen warten so sicher beide auf den Worker, B2 Etappe 4).
@@ -13,7 +14,7 @@ export async function mitPdfStoerung(art, fn) {
     konfigurierePdfArbeit({
       modus: 'an',
       aufgabenModul: new URL('./pdfTestAufgabenBeleg.js', import.meta.url).href,
-      zeitlimits: { eingangPruefen: 300, belegDateiErstellen: 300, belegAnhaengen: 300 },
+      zeitlimits: { eingangPruefen: 300, belegDateiErstellen: 300, belegAnhaengen: 300, freigabeStempeln: 300, kenntnisnahmeStempeln: 300 },
       logger: STILL,
     });
   } else if (art === 'verzoegert') {

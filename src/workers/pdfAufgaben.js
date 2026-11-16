@@ -10,6 +10,7 @@ import { renderFirstPageThumbnail } from '../services/thumbnail.js';
 import { scanQrBill } from '../services/qrBillScan.js';
 import { extrahierePdfText } from '../services/pdfText.js';
 import { buildBelegPdf, belegInPdfAnhaengen } from '../services/belegAnhaengen.js';
+import { stampAndFinalize, stampKenntnisnahme } from '../services/pdfStamp.js';
 
 // Fehlermeldung ohne Stack (geht als Text an den Aufrufer, der sie wie bisher protokolliert).
 function meldung(err) {
@@ -61,4 +62,9 @@ export const AUFGABEN = {
   // Beleg an das PDF eines Vorgangs hängen und seine Seiten zählen (Kontierung, Ablehnung, Aufsplitten, KK-Abgleich;
   // B2, Etappe 4). Ein Fehler (BelegBildFehler, unlesbares PDF/Bild) scheitert wie beim direkten Aufruf.
   belegAnhaengen: belegInPdfAnhaengen,
+  // Stempelseite anhängen (pdf-lib: Laden, Schriften, Speichern; bei grossen PDFs teuer; B2, Etappe 3). Freigabe 2
+  // (stampAndFinalize) und Abschluss eines Rapports (stampKenntnisnahme). Die Stempeldaten sind reine Daten (Texte,
+  // ISO-Zeitpunkte, Zahlen, Booleans). Ein Stempelfehler (unlesbares PDF) kommt mit derselben Meldung beim Aufrufer an.
+  freigabeStempeln: stampAndFinalize,
+  kenntnisnahmeStempeln: stampKenntnisnahme,
 };

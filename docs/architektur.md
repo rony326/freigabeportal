@@ -158,8 +158,9 @@ Deshalb laufen diese Aufgaben in Worker-Threads:
   und optional Text in einem Auftrag), `belegDateiErstellen` (Beleg als PDF
   via `buildBelegPdf` plus Vorschaubild; Etappe 2) und `belegAnhaengen`
   (`belegInPdfAnhaengen`: Beleg an ein Vorgangs-PDF hängen und seine Seiten
-  zählen, `{ pdf, belegSeiten }`; Etappe 4). Einzige Quelle für Worker-
-  und Inline-Betrieb.
+  zählen, `{ pdf, belegSeiten }`; Etappe 4), `freigabeStempeln`
+  (`stampAndFinalize`) und `kenntnisnahmeStempeln` (`stampKenntnisnahme`;
+  Etappe 3). Einzige Quelle für Worker- und Inline-Betrieb.
 - **Worker** `src/workers/pdfWorker.js`: lädt die Aufgaben (inkl. mupdf,
   ~120 ms, ~+55 MB RSS je Worker), bearbeitet einen Auftrag nach dem anderen und
   meldet nach jedem Auftrag `process.memoryUsage().external` mit.
@@ -169,7 +170,7 @@ Deshalb laufen diese Aufgaben in Worker-Threads:
     Kreditkartenbelege per Mail) belegen höchstens einen Worker gleichzeitig.
   - Warteschlange höchstens 100 → `PdfWorkerUeberlastet`.
   - Zeitlimit je Auftrag (Eingangsprüfung, Vorschaubild, Text je 10 s, QR 15 s,
-    kombiniert 20 s, Belegdatei und Beleg anhängen je 30 s; mal `PDF_WORKER_ZEITLIMIT_FAKTOR`): der Worker wird mit
+    kombiniert 20 s, Belegdatei, Beleg anhängen und Stempel je 30 s; mal `PDF_WORKER_ZEITLIMIT_FAKTOR`): der Worker wird mit
     `terminate()` beendet (bricht auch laufende WASM-Arbeit nach wenigen ms ab),
     der Auftrag scheitert mit `PdfWorkerZeitueberschreitung`.
   - Der WASM-Speicher von mupdf wächst und schrumpft nie, und `resourceLimits`
@@ -271,8 +272,22 @@ raus. Jetzt: Formular mit 422 (`BelegAnhangFehler`) bzw. 400 (`BelegBildFehler`)
 nichts gespeichert. Gemessen (Test `pdfWorkerBelegEventLoop.test.js`, PNG 3000 × 3000):
 inline ~1,4 s Blockade, im Worker < 5 ms.
 
-**Noch im Hauptthread (Etappe 3 und 5)**: Stempel (`pdfStamp.js`, Freigabe 2),
-Splitgruppen-Export (`splitGruppenExport.js`).
+**Etappe 3** (umgestellt): Stempelseiten (`pdfStamp.js`, pdf-lib: das ganze
+Dokument laden, Schriften einbetten, speichern). Die Stempeldaten sind reine Daten
+(Texte, ISO-Zeitpunkte, Zahlen, Booleans) und gehen unverändert über die
+Worker-Grenze; die Meldung eines Stempelfehlers bleibt erhalten.
+
+| Aufrufer | Aufgabe | Spur | Bei `PdfWorkerFehler` |
+|---|---|---|---|
+| `POST /freigabe2/:id` (`routes/freigabe2.js`) | `freigabeStempeln` | `interaktiv` | Formular mit 503, `Retry-After` und Hinweis; Status, Freigaben, PDF und Snapshot unverändert, keine Datei geschrieben (gestempelt wird vor TSA, Datei und Transaktion). Ein echter Stempelfehler bleibt 400 mit der Meldung des Stempels |
+| Abschluss eines Rapports (`finalisiereRapport` in `services/rapporte.js`) nach der letzten Kenntnisnahme (`POST /rapporte/:id/bestaetigen`) oder dem Entfernen des letzten offenen Empfängers (Admin) | `kenntnisnahmeStempeln` | `interaktiv` | wie bei jedem Stempelfehler: die Bestätigung bzw. Entfernung ist schon für sich gespeichert, der Abschluss scheitert ohne Datei und ohne Datenänderung (Rapport bleibt `kenntnisnahme` mit 0 offen), Antwort normal (Redirect, keine 500), Log `Abschluss fehlgeschlagen, wird nachgeholt` |
+| Nachhol-Cron `rapport-erinnerungen` (`schliesseRapporteNach`) | `kenntnisnahmeStempeln` | `hintergrund` | Rapport als fehlgeschlagen gezählt und protokolliert, der nächste Lauf (stündlich) versucht es erneut |
+
+Gemessen (PDF 17 MB, 1500 Textseiten, `stampAndFinalize`): inline ~0,84 s
+Laufzeit mit bis zu ~290 ms am Stück blockierter Event-Loop (pdf-lib gibt beim
+Parsen zwischendurch ab), im Worker höchstens ~2 ms.
+
+**Noch im Hauptthread (Etappe 5)**: Splitgruppen-Export (`splitGruppenExport.js`).
 
 ## Router-Übersicht
 

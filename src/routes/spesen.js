@@ -18,6 +18,7 @@ import { pruefeEingangsPdf, PdfEingangFehler } from '../services/pdfEingang.js';
 import { renderFirstPageThumbnail } from '../services/thumbnail.js';
 import { sendNotification } from '../services/notify.js';
 import { asyncCallback } from '../middleware/asyncHandler.js';
+import { leseText, MAX_LAENGE, eingabeGrenzen } from '../utils/eingabe.js';
 import { begrenzeUploadGroesse, MAX_UPLOAD_GESAMT_BYTES } from '../middleware/uploadLimit.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
@@ -35,6 +36,8 @@ function mitPdfEndung(originalname) {
 
 export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
+
+  router.use(eingabeGrenzen);
 
   // Grössengrenzen für den Hinweis im Formular (aus denselben Konstanten wie die Prüfungen), auch bei Neudarstellung nach Fehlern.
   router.use((req, res, next) => {
@@ -67,11 +70,21 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
         try {
           const aktiveKonten = listKonten(db);
           const alleKonten = filterKontenFuerTyp(aktiveKonten, 'rechnung');
-          const titel = (req.body.titel || '').trim() || null;
-          const kontoIds = [].concat(req.body.posKontoId || []);
-          const betraege = [].concat(req.body.posBetrag || []);
-          const auslageDaten = [].concat(req.body.posAuslageDatum || []);
-          const beschreibungen = [].concat(req.body.posBeschreibung || []);
+          // Prüfung 2026-11-15 (S8): Textfelder als einzelner, getrimmter Text lesen. Die Positionsfelder sind bewusst Listen
+          // (mehrfach benannte Felder, eine Position je Eintrag); jeder einzelne Eintrag muss wieder Text sein. Längen: utils/eingabe.js.
+          const eingabeFehler = [];
+          const text = (wert, feld, max) => {
+            const gelesen = leseText(wert, { max, feld });
+            if (gelesen.fehler) eingabeFehler.push(gelesen.fehler);
+            return gelesen.wert;
+          };
+          const liste = (wert, feld, max) => [].concat(wert ?? []).map((eintrag) => text(eintrag, feld, max));
+          const titelText = text(req.body.titel, 'Titel', MAX_LAENGE.einzeilig);
+          const titel = titelText || null;
+          const kontoIds = liste(req.body.posKontoId, 'Konto', MAX_LAENGE.kennung);
+          const betraege = liste(req.body.posBetrag, 'Betrag', MAX_LAENGE.betrag);
+          const auslageDaten = liste(req.body.posAuslageDatum, 'Auslage-Datum', MAX_LAENGE.kennung);
+          const beschreibungen = liste(req.body.posBeschreibung, 'Verwendungszweck', MAX_LAENGE.text);
 
           // Das Beleg-Eingabefeld jeder Zeile wird von der Seite selbst unmittelbar vor dem Absenden in einen positionsbezogenen Feldnamen (posBeleg_<i>) umbenannt — derselbe Kniff, den kontierung-aufsplitten.ejs für seine eigene optionale Datei je Zeile nutzt;
           // hier nötig, weil ein einfacher gemeinsamer Feldname sich still verschöbe, sobald das <input type="file"> irgendeiner Zeile gar nichts absendet.
@@ -85,7 +98,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
             kontoId,
             betrag: betraege[i] || '',
             auslageDatum: auslageDaten[i] || '',
-            beschreibung: (beschreibungen[i] || '').trim(),
+            beschreibung: beschreibungen[i] || '',
             beleg: belegByIndex.get(i) || null,
           }));
 
@@ -93,12 +106,12 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
           if (uploadErr) {
             return res.status(400).render('spesen-neu', {
               alleKonten,
-              values: { titel: req.body.titel || '', positionen },
+              values: { titel: titelText, positionen },
               errors: [uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Ein Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.'],
             });
           }
 
-          const errors = [];
+          const errors = [...new Set(eingabeFehler)];
           const heute = new Date().toISOString().slice(0, 10);
           const aufgeloestePositionen = [];
 
@@ -158,7 +171,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
           }
 
           if (errors.length > 0) {
-            return res.status(400).render('spesen-neu', { alleKonten, values: { titel: req.body.titel || '', positionen }, errors });
+            return res.status(400).render('spesen-neu', { alleKonten, values: { titel: titelText, positionen }, errors });
           }
 
           // Datei-I/O passiert vor der Datenbanktransaktion (wie im Aufsplitten-Handler von kontierung.js): synchrone Transaktionen im Stil von better-sqlite3 können ein await nicht offen halten.

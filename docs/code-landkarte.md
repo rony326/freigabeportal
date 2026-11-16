@@ -17,7 +17,7 @@ anfassen. Fachlicher Hintergrund steht in den übrigen Dokumenten
 | `src/services/` | Fachlogik ohne HTTP: Workflow-Helfer, Mail, PDF, Zeitstempel, Backup, Audit, Hintergrund-Jobs. `services/testmodus/` baut die Spielwiese |
 | `src/db/` | Datenbank: `schema.sql` (frische DB), Migrationen (`index.js`, `*Schema.js`) und je Tabelle ein `*Repo.js` mit den SQL-Zugriffen |
 | `src/cli/` | Betreiberwerkzeuge (Backup-Wiederherstellung, Audit-Export, TSA-Sperrlisten) |
-| `src/utils/` | Kleine Hilfen ohne Abhängigkeiten |
+| `src/utils/` | Kleine Hilfen ohne Abhängigkeiten, u. a. `eingabe.js` (Höchstlängen aller Textfelder an einer Stelle und `leseText()` zum Lesen eines Formularfelds als einzelnen, getrimmten Text; die Views lesen dieselben Werte als `maxLen` für `maxlength`) |
 | `views/` | EJS-Seiten; Gerüst in `_seite_anfang.ejs`, `_seitenleiste.ejs`, `_seite_ende.ejs` |
 | `public/` | Statische Dateien (CSS, JS, Bootstrap, Symbole) |
 | `scripts/` | Hilfsskripte (`baueSymbole.js`, Prüfskript `pruefung/`) |

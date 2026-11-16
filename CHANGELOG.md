@@ -5,6 +5,15 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 
 ## Unveröffentlicht
 
+- Texteingaben (Befund S8): Absender, Rechnungsnummer, Begründungen, Verwendungszweck, Titel, Positionen,
+  Bemerkungen, Lieferantenname und Fehlerbeschreibung haben jetzt Höchstlängen (einzeilig 200,
+  Rechnungsnummer 100, Texte 2000 Zeichen), festgelegt an einer Stelle (`src/utils/eingabe.js`), geprüft auf
+  dem Server und als `maxlength` in den Formularen. Mehrfach gesendete oder verschachtelte Felder enden
+  nicht mehr in Fehler 500, sondern in einer verständlichen Fehlermeldung (400, bei Feldern am Feld).
+  Mehrere Positionen (Spesen, Aufsplitten) bleiben möglich.
+- Pflichtbegründungen (Befund B3): Eine Begründung nur aus Leerzeichen gilt als leer (Ablehnung und
+  Interessenskonflikt in Kontierung, Aufsplitten, Freigabe 2 und Spesen-Freigabe 1); gespeichert wird der
+  getrimmte Text.
 - Schreib-Limits je Person (Befund S5): Spesen einreichen höchstens 10 Abrechnungen, Problem melden
   höchstens 5 Meldungen je Stunde und angemeldeter Person (bisher nur der allgemeine Limiter mit
   300 Anfragen je 15 Minuten). Bei Überschreitung Fehlerseite 429 mit Wartezeit bzw. JSON.

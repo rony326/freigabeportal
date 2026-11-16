@@ -183,3 +183,19 @@ Admin (`/admin`) zeigt
 eine Warnung, sobald abgeschlossene Jobs länger als diese Schwelle ohne
 gesetzten Zeitstempel warten (nur relevant, solange eine TSA-URL
 konfiguriert ist).
+
+**Regeln für die TSA-Adresse:** Neu gespeichert wird nur eine `https://`-Adresse, die auf
+einen öffentlich erreichbaren Server zeigt. Abgelehnt werden private, Loopback- und
+Link-Local-Ziele (IPv4 `0/8`, `10/8`, `100.64/10`, `127/8`, `169.254/16`, `172.16/12`,
+`192.168/16`, Multicast/reserviert; IPv6 `::`, `::1`, `fc00::/7`, `fe80::/10`, `ff00::/8`,
+gemappte und eingebettete IPv4), auch in dezimaler, hexadezimaler oder oktaler Schreibweise.
+Ein Servername wird aufgelöst, jede aufgelöste Adresse muss öffentlich sein.
+Die Prüfung läuft beim Speichern, nicht bei jedem Zeitstempel (DNS-Rebinding würde sie dort
+ohnehin umgehen, und ein stiller Ausfall der Zeitstempel wäre für die Revisionssicherheit
+schlimmer als das Restrisiko). Eine **bereits gespeicherte** Adresse, die nach den neuen
+Regeln unzulässig ist (z. B. `http://`), wird weiter benutzt, solange sie nicht neu
+gespeichert wird; sie wird beim Start im Log (`WARNUNG: Die gespeicherte TSA-Adresse …`)
+und oben auf der Seite Admin → Zeitstempel deutlich gemeldet. Andere Einstellungen bleiben
+speicherbar, solange die Adresse unverändert bleibt. Die Adressen der Sperrlisten (CRL) stammen
+aus den Zertifikaten der gegen die lokalen Anker geprüften TSA-Kette; dort sind `http://`-Verteilpunkte
+üblich und werden nicht eingeschränkt.

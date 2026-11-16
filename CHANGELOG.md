@@ -12,6 +12,10 @@ Korrekturrunde nach der Prüfung vom 2026-11-15 (Admin-Bereich).
   README und `.env.example` ergänzt.
 - B4: Der Download einer TSA-Sperrliste zählt die Bytes beim Lesen mit und bricht bei mehr als 4 MB ab
   (Verbindung wird geschlossen), statt die Grenze erst nach dem vollständigen Laden zu prüfen.
+- S6: Die TSA-Adresse muss `https://` sein und auf einen öffentlich erreichbaren Server zeigen (keine privaten,
+  Loopback- oder Link-Local-Ziele; Hostnamen werden aufgelöst, jede Adresse geprüft). Eine bereits gespeicherte,
+  nun unzulässige Adresse (z. B. `http://`) wird weiter benutzt, aber beim Start im Log und auf der Seite Admin →
+  Zeitstempel gewarnt. Prüfung nur beim Speichern, nicht bei jeder Verwendung (DNS-Rebinding, Ausfallrisiko).
 - U3: Rückfrage vor heiklen Aktionen: IBAN löschen, Zuweisungsregel löschen, Datei endgültig löschen (Quarantäne),
   Konto deaktivieren, Kreditkartenbeleg verwerfen, Rapport-Markierung aufheben (Rapport-Seite und Vorgang im Admin).
 

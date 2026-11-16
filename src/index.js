@@ -15,6 +15,7 @@ import { createMailerOrFallback } from './services/mailer.js';
 import { startScheduler } from './services/scheduler.js';
 import { acquireStorageLock, resolveStorageConfig } from './services/storageState.js';
 import { installeProzessWaechter } from './services/prozessWaechter.js';
+import { pruefeGespeicherteTsaUrl } from './services/tsaUrlPruefung.js';
 
 // A4-02: Sicherheitsnetz für unbehandelte Ausnahmen/Promise-Ablehnungen — ganz früh registriert,
 // damit es auch Fehler beim Start noch erfasst (loggt, dann sauberer Exit → Plattform-Neustart).
@@ -34,6 +35,10 @@ try {
   const config = resolveStorageConfig(baseConfig);
   db = openDatabase(config.dbPath);
   seedDefaults(db);
+  // S6: gespeicherte TSA-Adresse prüfen (nur Warnung im Log; sie wird weiter benutzt, die Admin-Seite Zeitstempel warnt ebenfalls).
+  pruefeGespeicherteTsaUrl(db).then((r) => {
+    if (r && !r.ok) console.warn(`WARNUNG: Die gespeicherte TSA-Adresse erfüllt die Sicherheitsregeln nicht (${r.grund}). Sie wird weiter benutzt; bitte unter Admin → Zeitstempel durch eine https://-Adresse eines öffentlichen Dienstes ersetzen.`);
+  }).catch((err) => console.error('TSA-Adresse konnte nicht geprüft werden:', err.message));
   const app = createApp({ db, config });
   startScheduler({ db, config, mailer: createMailerOrFallback(config.smtp) });
   const server = app.listen(config.port, () => {

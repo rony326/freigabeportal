@@ -1,6 +1,7 @@
 // Eingangsprüfung für PDFs (Rechnungseingang, Spesen): beschädigt, verschlüsselt, keine Seiten – Begründung direkt unterhalb.
 import * as mupdf from 'mupdf';
 import { PDFDocument } from 'pdf-lib';
+import { PdfEingangFehler, PDF_EINGANG_MELDUNGEN } from './pdfFehler.js';
 
 // Eingangsprüfung für PDF-Dokumente, die zu einem regulären Job werden (Rechnungseingang über
 // POST /api/n8n/jobs, Spesen-Beleg als Jobdokument). Die Signatur "%PDF" allein sagt nichts über
@@ -14,19 +15,8 @@ import { PDFDocument } from 'pdf-lib';
 //
 // Ein fehlender QR-Code ist kein Fehler -- das prüft diese Funktion bewusst nicht.
 
-export class PdfEingangFehler extends Error {
-  constructor(code, message) {
-    super(message);
-    this.name = 'PdfEingangFehler';
-    this.code = code;
-  }
-}
-
-export const PDF_EINGANG_MELDUNGEN = {
-  pdf_beschaedigt: 'Die PDF-Datei ist beschädigt oder kein verarbeitbares PDF-Dokument.',
-  pdf_verschluesselt: 'Die PDF-Datei ist verschlüsselt bzw. passwortgeschützt. Verschlüsselte PDF-Dateien werden nicht unterstützt; bitte eine ungeschützte Fassung einreichen.',
-  pdf_keine_seiten: 'Die PDF-Datei enthält keine lesbare Seite.',
-};
+// Fehlerklasse und Meldungen liegen ohne mupdf in pdfFehler.js (der Hauptthread baut sie aus Worker-Antworten auf).
+export { PdfEingangFehler, PDF_EINGANG_MELDUNGEN };
 
 // Erzeugt den Fehler zum Code mit der deutschen Meldung.
 function fehler(code) {

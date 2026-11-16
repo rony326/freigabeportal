@@ -134,3 +134,17 @@ test('TSA_CRL_AUTO_UPDATE is opt-in and needs the CRL file and trust anchors', (
   assert.throws(() => loadConfig({ ...FULL_ENV, TSA_CRL_AUTO_UPDATE: 'true' }), /TSA_CRL_AUTO_UPDATE/);
   assert.throws(() => loadConfig({ ...FULL_ENV, TSA_CRL_FILE: '/crls.pem', TSA_CRL_AUTO_UPDATE: 'true' }), /TSA_CRL_AUTO_UPDATE/);
 });
+
+test('B2: PDF-Worker-Einstellungen mit Standardwerten und strenger Prüfung', () => {
+  assert.deepEqual(loadConfig(FULL_ENV).pdfWorker, { modus: 'an', anzahl: 2, speicherGrenzeMb: 250, zeitlimitFaktor: 1 });
+  assert.deepEqual(
+    loadConfig({ ...FULL_ENV, PDF_WORKER: 'aus', PDF_WORKER_ANZAHL: '4', PDF_WORKER_SPEICHER_MB: '400', PDF_WORKER_ZEITLIMIT_FAKTOR: '1.5' }).pdfWorker,
+    { modus: 'aus', anzahl: 4, speicherGrenzeMb: 400, zeitlimitFaktor: 1.5 },
+  );
+  assert.throws(() => loadConfig({ ...FULL_ENV, PDF_WORKER: 'false' }), /PDF_WORKER/);
+  assert.throws(() => loadConfig({ ...FULL_ENV, PDF_WORKER_ANZAHL: '5' }), /PDF_WORKER_ANZAHL/);
+  assert.throws(() => loadConfig({ ...FULL_ENV, PDF_WORKER_ANZAHL: '0' }), /PDF_WORKER_ANZAHL/);
+  assert.throws(() => loadConfig({ ...FULL_ENV, PDF_WORKER_SPEICHER_MB: '10' }), /PDF_WORKER_SPEICHER_MB/);
+  assert.throws(() => loadConfig({ ...FULL_ENV, PDF_WORKER_ZEITLIMIT_FAKTOR: '0' }), /PDF_WORKER_ZEITLIMIT_FAKTOR/);
+  assert.throws(() => loadConfig({ ...FULL_ENV, PDF_WORKER_ZEITLIMIT_FAKTOR: 'x' }), /PDF_WORKER_ZEITLIMIT_FAKTOR/);
+});

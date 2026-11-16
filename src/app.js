@@ -36,7 +36,7 @@ import { createN8nJobsRouter } from './routes/n8n/jobs.js';
 import { createN8nBackupRouter } from './routes/n8n/backup.js';
 import { createN8nKkBelegeRouter } from './routes/n8n/kkBelege.js';
 import { createN8nRapporteRouter } from './routes/n8n/rapporte.js';
-import { loadCurrentPerson, loadBeispielperson, requireRole, requireLogin } from './middleware/roles.js';
+import { loadCurrentPerson, loadBeispielperson, requireRole, requireLogin, ANMELDUNG_ABGELAUFEN_MELDUNG } from './middleware/roles.js';
 import { requireAdminAreaAccess, requirePermission } from './middleware/permissions.js';
 import { loadNavFlags } from './middleware/nav.js';
 import { loadBranding } from './middleware/branding.js';
@@ -147,7 +147,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   // Versions-Parameter für /js/portal.js und /css/portal.css (aus dem Dateistand beim Start): neue
   // Stände werden sofort geladen, und eine im Browser gespeicherte alte Umleitung der nackten URL
   // greift nicht mehr (Rückmeldung 2026-10-27: ERR_TOO_MANY_REDIRECTS auf portal.js).
-  app.locals.assetVersion = ['js/portal.js', 'js/belegUmschalter.js', 'css/portal.css', 'vendor/bootstrap-icons/symbole.svg', 'vendor/bootstrap/bootstrap.min.css', 'vendor/bootstrap/bootstrap.bundle.min.js']
+  app.locals.assetVersion = ['js/portal.js', 'js/belegUmschalter.js', 'js/sitzungHinweis.js', 'css/portal.css', 'vendor/bootstrap-icons/symbole.svg', 'vendor/bootstrap/bootstrap.min.css', 'vendor/bootstrap/bootstrap.bundle.min.js']
     .map((datei) => Math.trunc(statSync(join(__dirname, '..', 'public', datei)).mtimeMs).toString(36))
     .join('');
   app.use((req, res, next) => {
@@ -437,6 +437,10 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
       // angemeldet) und kein Angriff — deshalb kein Stack-Log. Als Zugriffsverweigerung wird es trotzdem
       // (gedrosselt, ohne das gesendete Token) erfasst.
       meldeZugriffVerweigert(req, { grund: 'csrf', status: 403 });
+      // Besteht keine Anmeldung mehr (Sitzung nach 8 Stunden abgelaufen), sagt die Seite das klar und bietet «Anmelden» an.
+      if (!req.session?.personId) {
+        return res.status(403).render('error', { titel: 'Deine Anmeldung ist abgelaufen', message: ANMELDUNG_ABGELAUFEN_MELDUNG, anmelden: true, hinweisArt: 'warning' });
+      }
       return res
         .status(403)
         .render('error', { message: 'Sicherheitsprüfung fehlgeschlagen (ungültiges oder abgelaufenes Formular). Bitte lade die Seite neu und versuche es erneut.' });

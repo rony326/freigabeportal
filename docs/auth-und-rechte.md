@@ -34,7 +34,7 @@ sequenceDiagram
         CT-->>P: Mitglieder-Liste
     end
     P->>P: upsertPerson(gruppen = Treffer), session.regenerate()
-    P-->>B: 302 → /pool
+    P-->>B: 302 → gemerktes Ziel, sonst /pool
 ```
 
 Wichtige Details:
@@ -72,6 +72,33 @@ Wichtige Details:
   `/admin/sync`). Bricht die Massenänderungs-Sperre den Lauf ab
   (siehe [personen-sync.md](personen-sync.md)), wird nichts entzogen; dann ist
   die Meldung im Verlauf zu prüfen.
+
+- **Rücksprung nach der Anmeldung**: Ruft jemand ohne Sitzung eine geschützte
+  Seite auf (GET mit `Accept: text/html`, z. B. einen Link aus einer Mail),
+  merkt sich das Portal den Pfad samt Query in der Sitzung
+  (`session.rueckkehr`) und leitet zu `/auth/login`; `/auth/callback` führt
+  danach dorthin zurück. Gemerkt werden nur eigene Seitenpfade
+  (`src/utils/rueckkehrZiel.js`: ein führender `/`, höchstens 300 Zeichen, keine
+  `//`, Backslashes, Steuer- oder Leerzeichen, kein `#`); nicht gemerkt werden
+  `/auth`, `/api`, `/internal`, `/healthz`, `/downloads`, `/branding`,
+  `/audit-pruefen` sowie Dateiausgaben (Backup-Download, CSV-Export,
+  Kreditkarten-Belegdatei). Das Ziel wird vor `regenerate` in eine lokale
+  Variable gelesen, nach dem Login nochmals geprüft und nur für die
+  Weiterleitung benutzt (nicht in die neue Sitzung übernommen). POST wird nie
+  umgeleitet: dort und bei Download-Zielen erscheint die 401-Seite
+  «Bitte melde dich an» mit dem Knopf «Anmelden». fetch- und Maschinenrouten
+  (`/api/*`, `/downloads/*`, oder `Accept: application/json` ohne HTML)
+  bekommen weiter 401 als JSON. Eine Sitzung mit deaktivierter Person wird nie
+  umgeleitet (sonst Schleife). Die Abmelde-Bestätigungsseite `/auth/abgemeldet`
+  bleibt öffentlich und leitet nicht weiter, die Abmeldung hinterlässt kein Ziel;
+  die SSO-Schleife nach «Abmelden» bleibt damit unterbrochen.
+- **Ablauf-Hinweis**: Der Ablaufzeitpunkt (8 Stunden nach dem Login, durch
+  Aktivität nicht verlängert, kein Keep-alive) steht als `data-ablauf` in
+  `#sitzung-hinweis` (`views/_seite_anfang.ejs`). `public/js/sitzungHinweis.js`
+  zeigt auf Seiten mit Formular 10 Minuten vor Ablauf «Deine Anmeldung läuft um
+  HH:MM ab …» (`role="status"`, `aria-live="polite"`) und danach einen
+  Abgelaufen-Hinweis. Nach Ablauf sagen 401- und CSRF-Fehlerseite klar, dass die
+  Anmeldung abgelaufen ist.
 - **Kein Gruppenzwang beim Login**: der Login gelingt unabhängig davon, ob
   die Person in einer der drei Gruppen ist — Freigeber/Stellvertreter
   können rein kontobasierte Rollen ohne jede Gruppenmitgliedschaft sein.

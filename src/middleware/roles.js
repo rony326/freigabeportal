@@ -7,13 +7,41 @@ import { GRUPPEN } from '../services/berechtigungKatalog.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
 import { BEISPIELPERSONEN } from '../services/testmodus/beispieldaten.js';
+import { sichereRueckkehr, erwartetHtml, erwartetJson } from '../utils/rueckkehrZiel.js';
+
+// Text der 401-Seite und der JSON-Antwort. Eine abgelaufene Sitzung (8 Stunden ab Login, app.js) ist von aussen nicht
+// von "nie angemeldet" zu unterscheiden; die Meldung sagt deshalb beides und was mit Eingaben geschieht.
+export const NICHT_ANGEMELDET_TITEL = 'Bitte melde dich an';
+export const NICHT_ANGEMELDET_MELDUNG = 'Du bist nicht angemeldet, oder deine Anmeldung ist abgelaufen (sie gilt aus Sicherheitsgründen 8 Stunden). Eingaben in einem Formular, das du gerade abgeschickt hast, wurden nicht gespeichert: Nach dem Anmelden musst du sie noch einmal erfassen.';
+// Wie oben, für die CSRF-Fehlerseite (app.js), wenn dabei keine Anmeldung mehr besteht.
+export const ANMELDUNG_ABGELAUFEN_MELDUNG = 'Deine Anmeldung ist abgelaufen. Deshalb ist die Sicherheitsprüfung fehlgeschlagen und deine Eingaben wurden nicht gespeichert. Bitte melde dich neu an und gib sie noch einmal ein.';
 
 // Protokolliert (fail-safe) und verweigert. Die Entscheidung ist bereits gefallen, bevor hier
 // irgendetwas protokolliert wird; ein Protokollfehler aendert weder Status noch Antwort.
-// 401-Antwort (Fehlerseite) + Zugriffs-Audit `nicht_angemeldet`.
+// 401-Antwort + Zugriffs-Audit `nicht_angemeldet`. Drei Fälle:
+// - fetch-/Maschinenaufruf (erwartetJson): 401 mit JSON, wie bisher ohne Umleitung.
+// - Browser-Seitenaufruf (GET mit Accept text/html) ohne jede Sitzung: das Ziel wird in der Sitzung gemerkt und zur Anmeldung
+//   umgeleitet; /auth/callback führt nach dem Login dorthin zurück. Nur sichere eigene Seitenpfade (utils/rueckkehrZiel.js).
+//   Eine Sitzung MIT Person (z. B. deaktiviert) wird nie umgeleitet, sonst entstünde eine Schleife Login -> Seite -> Login.
+// - alles andere (POST, Datei-/Download-Ziele): 401-Seite mit Knopf «Anmelden», ohne Umleitung und ohne Merken.
 export function verweigereNichtAngemeldet(req, res) {
   meldeZugriffVerweigert(req, { grund: 'nicht_angemeldet', status: 401 });
-  return res.status(401).render('error', { message: 'Bitte melde dich an, um fortzufahren.' });
+  if (erwartetJson(req)) return res.status(401).json({ error: 'Bitte melde dich an, um fortzufahren.' });
+  if (req.method === 'GET' && erwartetHtml(req) && req.session && !req.session.personId) {
+    const ziel = sichereRueckkehr(req.originalUrl);
+    if (ziel) {
+      req.session.rueckkehr = ziel;
+      return res.redirect(302, '/auth/login');
+    }
+  }
+  return res.status(401).render('error', { titel: NICHT_ANGEMELDET_TITEL, message: NICHT_ANGEMELDET_MELDUNG, anmelden: true, hinweisArt: 'warning' });
+}
+
+// Ablaufzeitpunkt der Sitzung für die Views (Hinweis kurz vor Ablauf, public/js/sitzungHinweis.js). Das Cookie läuft
+// absolut 8 Stunden nach der Anmeldung ab und wird durch Aktivität nicht verlängert (app.js: kein `rolling`).
+function setzeSitzungAblauf(req, res) {
+  const ablauf = req.session?.cookie?.expires;
+  res.locals.sitzungAblauf = ablauf ? new Date(ablauf).toISOString() : null;
 }
 
 // 403-Antwort + Zugriffs-Audit mit Grund (`fehlende_rolle`, `fehlendes_recht`, `kein_adminbereich`) und ggf. dem fehlenden Recht.
@@ -31,6 +59,7 @@ export function loadCurrentPerson(db) {
       return next();
     }
     req.currentPerson = getPersonById(db, req.session.personId);
+    setzeSitzungAblauf(req, res);
     // Als Template-Variable bereitgestellt (analog zu res.locals.branding in middleware/branding.js), damit Views einen
     // Abmelde-Link rendern können, ohne dass jeder Route-Handler die Person einzeln durchreichen muss.
     res.locals.currentPerson = req.currentPerson;
@@ -48,6 +77,7 @@ export function loadBeispielperson(db) {
     req.currentPerson = person;
     res.locals.currentPerson = person;
     res.locals.testmodus = { person, beispielpersonen };
+    setzeSitzungAblauf(req, res);
     // Die Band-Formulare gehen an die echte App: Token von dort (setzt die Weiche), sonst leer.
     res.locals.testmodusEchterCsrfToken = req.testmodusEchterCsrfToken || '';
     if (!person) return res.status(403).render('error', { message: 'Im Testmodus kannst du nur als Beispielperson handeln.' });

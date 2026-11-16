@@ -7,6 +7,7 @@ import { getJobById } from '../db/jobsRepo.js';
 import { buildSignedDownloadUrl, verifySignedDownload, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { requireLogin } from '../middleware/roles.js';
 import { canViewJobPdf } from '../services/jobAuthorization.js';
+import { erwartetHtml } from '../utils/rueckkehrZiel.js';
 
 const GENERIC_DENIAL = { error: 'Link ungültig oder abgelaufen.' };
 
@@ -37,14 +38,16 @@ export function createDownloadsRouter({ db, config, sessionLimiter = NOOP_LIMITE
   // GET /downloads/:jobId/oeffnen – "PDF öffnen" auf Handy/Tablet (views/_beleg_umschalter.ejs, Pool-Thumbnails): ein stabiler Link im Markup statt einer signierten Adresse, die
   // abläuft, solange die Seite offen ist. Gleiche erneute Prüfung wie refresh-url, danach eine Weiterleitung auf eine frisch signierte Adresse — funktioniert ohne JS und öffnet in einem
   // neuen Tab (target=_blank), ohne Popup-Blocker auszulösen.
+  // Fehler dieser Route: im Browser (Accept text/html, ein Klick auf «PDF öffnen») die normale Fehlerseite, sonst JSON wie bei den übrigen Download-Routen.
   router.get('/:jobId/oeffnen', sessionLimiter, requireLogin(), (req, res) => {
+    const fehler = (status, meldung) => (erwartetHtml(req) ? res.status(status).render('error', { message: meldung }) : res.status(status).json({ error: meldung }));
     const jobId = Number(req.params.jobId);
     const job = getJobById(db, jobId);
     if (!job) {
-      return res.status(404).json({ error: 'Job nicht gefunden.' });
+      return fehler(404, 'Job nicht gefunden.');
     }
     if (!canViewJobPdf(db, config, req.currentPerson, job)) {
-      return res.status(403).json({ error: 'Kein Zugriff auf diesen Job.' });
+      return fehler(403, 'Kein Zugriff auf diesen Job.');
     }
     res.setHeader('Cache-Control', 'no-store');
     res.redirect(302, buildSignedDownloadUrl(config, jobId, PDF_PREVIEW_TTL_SECONDS));

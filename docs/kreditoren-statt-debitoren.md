@@ -97,7 +97,8 @@ Format und ihre Hashes.
    neu geladen werden).
 3. Anwendung starten. Im Log darf kein Fehler "Kreditoren-Migration" erscheinen. Im Audit-Log
    pruefen: je ein Ereignis `schema_migration/umbenannt` und ggf. `recht_umbenannt`.
-4. Stichprobe: Admin -> Kreditoren zeigt alle bisherigen Eintraege, Regeln und IBANs; eine
+4. Stichprobe: Admin -> Kreditoren zeigt alle bisherigen Eintraege (Regeln und IBANs je Kreditor
+   ueber «Oeffnen» auf der Kreditor-Seite); eine
    bekannte Rechnung zeigt denselben Lieferanten; Personen mit bisherigem Recht sehen die Seite.
 5. Angepasste Mail-Vorlagen optional auf `%kreditorName%` umstellen (nicht zwingend).
 6. Rueckweg: Alter Code laeuft nicht auf der migrierten Datenbank (er wuerde leere

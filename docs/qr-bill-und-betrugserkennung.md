@@ -238,9 +238,10 @@ Muster (Warn-Mail + Audit-Log-Eintrag, blockiert nicht). Details:
 **Admin → Stammdaten → Kreditoren** (Recht `kreditoren_verwalten`) verwaltet pro
 Lieferant Zahlungsart, die Checkbox „Beträge schwanken stark“ und beliebig viele
 IBANs (`kreditor_ibans`, eindeutig über die gesamte Tabelle: eine IBAN gehört
-höchstens einem Lieferanten). Die Liste zeigt Zahlungsart, gekürzte IBANs und
-„vollständig“ bzw. „IBAN fehlt“ sowie einen roten Hinweis mit der Anzahl
-unvollständiger Lieferanten. Speichern mit Überweisung/Dauerauftrag ohne IBAN
+höchstens einem Lieferanten). Die Liste zeigt Zahlungsart, Anzahl IBANs und Regeln,
+„IBAN fehlt“ sowie einen Hinweis mit der Anzahl unvollständiger Lieferanten. Die
+IBANs selbst (gekürzt, mit Quelle) pflegst du auf der Seite des Lieferanten
+(«Öffnen», `/admin/kreditoren/:id/bearbeiten`, Karte «IBANs»). Speichern mit Überweisung/Dauerauftrag ohne IBAN
 wird abgelehnt; die letzte IBAN eines solchen Lieferanten lässt sich nicht
 löschen. Neue IBANs nur aus unabhängiger Quelle (Vertrag, Telefonat) erfassen,
 nicht von einer Rechnung.
@@ -251,7 +252,7 @@ allein eine IBAN hinzufügen oder löschen. Deshalb geht dabei **immer sofort** 
 Benachrichtigungen → „IBAN eines Lieferanten geändert“, Text als Vorlage anpassbar). Sie nennt Lieferant,
 gekürzte IBAN, hinzugefügt/gelöscht, wer und wann. Die ändernde Person wird nicht ausgenommen: ist sie
 Empfänger, bekommt auch sie die Mail. Ausgelöst wird sie von: IBAN hinzufügen, IBAN löschen und
-Lieferant anlegen mit IBAN (jeweils unter Admin → Kreditoren). **Keine** Mail gibt es bewusst bei: abgelehnten
+Lieferant anlegen mit IBAN (jeweils unter Admin → Kreditoren; der Link in der Mail führt auf die Seite des Lieferanten). **Keine** Mail gibt es bewusst bei: abgelehnten
 Änderungen (Validierungsfehler, letzte IBAN), Umbenennen/Deaktivieren/Aktivieren eines Lieferanten (die IBANs
 bleiben unverändert), Zahlungsart/Konto ändern, der Testdaten-Erzeugung im Testmodus und Wiederherstellung
 einer Sicherung. Einen Import oder eine automatische Übernahme von IBANs (z. B. aus der QR-Rechnung) gibt es

@@ -16,7 +16,7 @@ import { formatZeitpunkt } from './auditLog.js';
  * rückgängig machen (die Mail liegt in der Ausgangsablage und wird bei Fehlern wiederholt, siehe mailZustellung.js).
  * @param {object} config App-Konfiguration (Gruppen-IDs, publicBaseUrl); ohne sie ist keine Empfängerermittlung möglich
  * @param {object|null} mailer ohne Mailer wird nur eingereiht (der Job mail-zustellung sendet später)
- * @param {{kreditor: {name: string}, iban: string, art: 'hinzugefuegt'|'geloescht', person: object, neuerLieferant?: boolean}} aenderung
+ * @param {{kreditor: {id?: number, name: string}, iban: string, art: 'hinzugefuegt'|'geloescht', person: object, neuerLieferant?: boolean}} aenderung
  */
 export async function meldeIbanAenderung(db, config, mailer, { kreditor, iban, art, person, neuerLieferant = false }) {
   try {
@@ -35,7 +35,8 @@ export async function meldeIbanAenderung(db, config, mailer, { kreditor, iban, a
       aktion,
       geaendertVon: `${person?.vorname ?? ''} ${person?.nachname ?? ''}`.trim() || 'unbekannt',
       zeitpunkt: formatZeitpunkt(new Date().toISOString(), true),
-      link: `${basis}/admin/kreditoren`,
+      // Mit bekannter ID direkt auf die Kreditor-Seite (IBANs dort), sonst auf die Liste.
+      link: kreditor.id ? `${basis}/admin/kreditoren/${kreditor.id}/bearbeiten` : `${basis}/admin/kreditoren`,
     };
     for (const to of empfaenger) {
       if (mailer) await sendNotification(db, mailer, { to, typ: 'iban-aenderung', jobId: null, variablen });

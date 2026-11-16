@@ -1,0 +1,25 @@
+<%# Zahlungsart, (nur beim Anlegen) erste IBAN und «Beträge schwanken» eines Kreditors. %>
+          <div class="mb-3">
+            <span class="form-label d-block">Zahlungsart</span>
+            <% ZAHLUNGSARTEN.forEach((art) => { %>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="zahlungsart" id="zahlungsart-<%= art %>" value="<%= art %>" <%= (values.zahlungsart || 'ueberweisung') === art ? 'checked' : '' %>>
+                <label class="form-check-label" for="zahlungsart-<%= art %>"><%= ZAHLUNGSART_LABEL[art] %></label>
+              </div>
+            <% }) %>
+            <div class="form-text">Überweisung und Dauerauftrag: mindestens eine IBAN ist Pflicht.</div>
+          </div>
+          <% if (mitIban) { %>
+          <div class="mb-3">
+            <label class="form-label" for="iban">IBAN</label>
+            <input type="text" class="form-control" id="iban" name="iban" value="<%= values.iban || '' %>" placeholder="z.B. CH93 0076 2011 6238 5295 7" autocomplete="off" spellcheck="false">
+            <div class="form-text">Neue IBANs bitte nur aus einer unabhängigen Quelle übernehmen (Vertrag, Telefonat), nicht von einer Rechnung. Ausländische IBANs sind erlaubt.</div>
+          </div>
+          <% } %>
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="betragSchwankt" id="betragSchwankt" <%= values.betragSchwankt ? 'checked' : '' %>>
+              <label class="form-check-label" for="betragSchwankt">Beträge schwanken stark: keine Warnung bei ungewöhnlich hohem Betrag</label>
+            </div>
+            <div class="form-text">z. B. bei Handwerkern oder Projekt-Lieferanten. Alle IBAN- und Duplikat-Prüfungen bleiben aktiv.</div>
+          </div>

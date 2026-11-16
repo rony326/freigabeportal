@@ -100,6 +100,16 @@ test('neuer Lieferant mit Erst-IBAN über Admin → Kreditoren meldet ebenfalls'
   db.close();
 });
 
+test('neuer Lieferant mit Erst-IBAN und Absender: Meldung kommt, Link führt auf die Kreditor-Seite', async () => {
+  const { db, mails, app } = aufsetzen();
+  const res = await request(app).post('/admin/kreditoren').set('x-test-person-id', '99').type('form').send({ name: 'Regel GmbH', zahlungsart: 'ueberweisung', iban: IBAN, absenderMuster: 'regel-gmbh.ch' });
+  assert.equal(res.status, 302);
+  const id = db.prepare("SELECT id FROM kreditoren WHERE name = 'Regel GmbH'").get().id;
+  assert.equal(mails.length, 3);
+  assert.ok(mails[0].text.includes(`https://portal.example.org/admin/kreditoren/${id}/bearbeiten`), mails[0].text);
+  db.close();
+});
+
 test('IBAN-Eintrag merkt sich, wer ihn erfasst hat (erstellt_von)', async () => {
   const { db, app } = aufsetzen();
   const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null, zahlungsart: 'lastschrift' });

@@ -1,0 +1,14 @@
+<%# Name und Standard-Konto eines Kreditors (Neu-Formular und Kreditor-Seite). %>
+          <div class="mb-3">
+            <label class="form-label" for="name">Name</label>
+            <input type="text" class="form-control" id="name" name="name" value="<%= values.name || '' %>" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="kontoId">Standard-Konto (optional)</label>
+            <select class="form-select" id="kontoId" name="kontoId">
+              <option value="">— keins —</option>
+              <% konten.forEach((k) => { %>
+                <option value="<%= k.id %>" <%= String(values.kontoId) === String(k.id) ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+              <% }) %>
+            </select>
+          </div>

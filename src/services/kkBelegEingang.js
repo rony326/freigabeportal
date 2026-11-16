@@ -3,7 +3,7 @@ import { findActivePersonByEmail, countActivePersonsByEmail } from '../db/person
 import { normalizeAbsender } from '../db/jobsRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { createKkBeleg, logKkBelegEreignis } from '../db/kkBelegeRepo.js';
-import { detectBelegMimetype } from './belegAnhaengen.js';
+import { detectBelegMimetype, pruefeBelegBild } from './belegAnhaengen.js';
 import { listErfassbareKarten } from './kkRechte.js';
 import { speichereKkBelegDatei } from './kkBelegDatei.js';
 import { extrahierePdfText } from './pdfText.js';
@@ -29,6 +29,8 @@ export async function nimmKkBelegEntgegen(db, config, mailer, { absender, buffer
   }
   const mimetype = buffer ? detectBelegMimetype(buffer) : null;
   if (!mimetype) return { status: 400, body: { fehler: 'datei_ungueltig' } };
+  // Bild über 40 Megapixel oder mit unlesbarem Kopf: gar nicht erst dekodieren (siehe pruefeBelegBild).
+  if (pruefeBelegBild(buffer, mimetype)) return { status: 400, body: { fehler: 'datei_ungueltig' } };
 
   let betrag = null;
   let kaufdatum = null;

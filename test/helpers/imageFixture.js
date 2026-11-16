@@ -43,3 +43,17 @@ export const JPEG_1X1 = Buffer.from(
   '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=',
   'base64'
 );
+
+// Nur Signatur + IHDR mit gewünschten Massen (kein dekodierbares Bild): zum Prüfen der Pixelgrenze,
+// ohne ein echtes Riesenbild erzeugen oder dekodieren zu müssen.
+export function buildPngHeaderOnly(width, height) {
+  const kopf = Buffer.alloc(33);
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(kopf, 0);
+  kopf.writeUInt32BE(13, 8);
+  kopf.write('IHDR', 12, 'ascii');
+  kopf.writeUInt32BE(width, 16);
+  kopf.writeUInt32BE(height, 20);
+  kopf[24] = 8;
+  kopf[25] = 2;
+  return kopf;
+}

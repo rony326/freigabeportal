@@ -17,6 +17,7 @@ import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createKkAbgleichRouter } from '../../src/routes/kkAbgleich.js';
 import { createKontierungRouter } from '../../src/routes/kontierung.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
+import { buildPngHeaderOnly } from '../helpers/imageFixture.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../src/services/splitGruppenExport.js';
 import { abschliessenFreigabe2 } from '../../src/db/jobsRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
@@ -526,5 +527,18 @@ test('POST kk-abgleich: eine Position auf einem Konto, das nicht zu Rechnung/Gut
   const r2 = await post(t, '1', { gesamtbetrag: '-5.00', zeilen: [{ art: 'gebuehr', kontoId: t.eigen, betrag: '-5.00', beschreibung: 'Rückvergütung' }] });
   assert.equal(r2.status, 400);
   assert.match(r2.text, /kann nicht für Gutschriften verwendet werden/);
+  t.cleanup();
+});
+
+test('POST kk-abgleich lehnt eine nachgereichte Bilddatei über 40 Megapixel verständlich ab (400, kein 500)', async () => {
+  const t = await setup();
+  const res = await post(t, '1', {
+    gesamtbetrag: '5.00',
+    zeilen: [{ art: 'nachreichen', kontoId: t.eigen, betrag: '5.00', beschreibung: 'Parkhaus' }],
+    dateien: { zeileDatei_0: { buffer: buildPngHeaderOnly(14000, 14000), name: 'gross.png', type: 'image/png' } },
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Das Bild ist zu gross/);
+  assert.equal(getJobById(t.db, t.jobId).status, 'zugewiesen');
   t.cleanup();
 });

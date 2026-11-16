@@ -6,6 +6,10 @@ import { PDFDocument, PageSizes } from 'pdf-lib';
 const A4_HOCH = PageSizes.A4; // [595.28, 841.89] pt
 const A4_QUER = [A4_HOCH[1], A4_HOCH[0]];
 
+// Obergrenze für Bildbelege in Megapixeln. Die Dateigrösse sagt nichts über den Speicherbedarf beim Dekodieren: ein hoch
+// komprimiertes PNG von 186 KB mit 14000 x 14000 Pixeln belegt rund 840 MB und blockiert den Prozess ca. 20 Sekunden.
+export const MAX_BILD_MEGAPIXEL = 40;
+
 // Fügt `doc` eine A4-Seite hinzu (Hoch- oder Querformat passend zum Seitenverhältnis der Quelle) und zeichnet `drawable`
 // eingepasst und zentriert darauf. Ohne das würde ein Beleg in seiner eigenen Grösse eingebettet — pdf-lib behandelt bei einem
 // Foto die rohen Pixelmasse 1:1 als PDF-Punkte, ein 3024x4032-Handyfoto würde also eine Seite von ca. 107x142 cm.
@@ -47,6 +51,57 @@ export function detectBelegMimetype(buffer) {
   return null;
 }
 
+// Liest Breite und Höhe aus dem Bildkopf, ohne das Bild zu dekodieren. PNG: IHDR-Chunk direkt nach der Signatur. JPEG: erster
+// SOF-Marker (SOF0–SOF15 ausser DHT 0xC4, JPG 0xC8, DAC 0xCC); die Segmente davor werden über ihre Längenangabe übersprungen.
+// @returns {{breite: number, hoehe: number}|null} null, wenn der Kopf abgeschnitten oder kaputt ist
+function leseBildMasse(buffer, mimetype) {
+  if (mimetype === 'image/png') {
+    if (buffer.length < 24 || buffer.toString('ascii', 12, 16) !== 'IHDR') return null;
+    return { breite: buffer.readUInt32BE(16), hoehe: buffer.readUInt32BE(20) };
+  }
+  let pos = 2; // hinter SOI
+  while (pos + 4 <= buffer.length) {
+    if (buffer[pos] !== 0xff) return null;
+    const marker = buffer[pos + 1];
+    if (marker === 0xff) { pos += 1; continue; } // Füllbytes
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { pos += 2; continue; } // ohne Länge
+    if (marker === 0xd9 || marker === 0xda) return null; // Ende bzw. Bilddaten vor einem SOF: kein Kopf gefunden
+    const laenge = buffer.readUInt16BE(pos + 2);
+    if (laenge < 2) return null;
+    const istSof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (istSof) {
+      if (laenge < 8 || pos + 9 > buffer.length) return null;
+      return { hoehe: buffer.readUInt16BE(pos + 5), breite: buffer.readUInt16BE(pos + 7) };
+    }
+    pos += 2 + laenge;
+  }
+  return null;
+}
+
+// Prüft einen Bildbeleg vor dem Einbetten anhand des Bildkopfs (siehe MAX_BILD_MEGAPIXEL). Ein Bild, dessen Masse sich nicht
+// bestimmen lassen, wird ebenfalls abgelehnt: es ginge sonst ungeprüft an embedPng/embedJpg. PDFs sind nicht betroffen.
+// @returns {string|null} verständliche Fehlermeldung für die Person, oder null wenn der Beleg in Ordnung ist
+export function pruefeBelegBild(buffer, mimetype) {
+  if (mimetype !== 'image/png' && mimetype !== 'image/jpeg') return null;
+  const masse = leseBildMasse(buffer, mimetype);
+  if (!masse || masse.breite < 1 || masse.hoehe < 1) {
+    return 'Das Bild konnte nicht gelesen werden. Bitte lade eine andere Datei hoch oder fotografiere den Beleg neu.';
+  }
+  if (masse.breite * masse.hoehe > MAX_BILD_MEGAPIXEL * 1_000_000) {
+    return `Das Bild ist zu gross (${masse.breite} × ${masse.hoehe} Pixel). Erlaubt sind höchstens ${MAX_BILD_MEGAPIXEL} Megapixel. Bitte verkleinere das Bild oder lade stattdessen ein PDF hoch.`;
+  }
+  return null;
+}
+
+// Wie pruefeBelegBild, wirft aber — zur Absicherung der Stellen, die Bilder tatsächlich einbetten.
+function stelleBildGroesseSicher(buffer, mimetype) {
+  const fehler = pruefeBelegBild(buffer, mimetype);
+  if (fehler) throw new BelegBildFehler(fehler);
+}
+
+// Ein Bildbeleg, der nicht eingebettet werden darf (zu gross oder nicht lesbar); die Meldung ist für die Person bestimmt.
+export class BelegBildFehler extends Error {}
+
 // embedJpg/embedPng von pdf-lib lesen `bytes.buffer` direkt (das zugrunde liegende ArrayBuffer), ohne byteOffset/byteLength zu
 // beachten. Ein kleiner Node-Buffer (z. B. ein winziges hochgeladenes Belegbild) stammt oft aus Nodes gemeinsamem Buffer-Pool,
 // dessen `.buffer` weit mehr als nur die eigenen Bytes des Buffers abdeckt — direkt durchgereicht ergibt das Müll ("SOI not found
@@ -70,6 +125,7 @@ export async function countBelegSeiten(belegBuffer, belegMimetype) {
 
 // Hängt den Beleg (PDF-Seiten oder Bild) hinter die vorhandenen Seiten des PDFs. @returns {Promise<Buffer>} das neue PDF
 export async function mergeBelegInPdf(pdfBuffer, belegBuffer, belegMimetype) {
+  stelleBildGroesseSicher(belegBuffer, belegMimetype);
   const doc = await PDFDocument.load(toOwnedUint8Array(pdfBuffer));
   const belegBytes = toOwnedUint8Array(belegBuffer);
 
@@ -98,6 +154,7 @@ export async function buildBelegPdf(belegBuffer, belegMimetype) {
   if (belegMimetype === 'application/pdf') {
     return Buffer.from(belegBytes);
   }
+  stelleBildGroesseSicher(belegBuffer, belegMimetype);
   const doc = await PDFDocument.create();
   const image = belegMimetype === 'image/png' ? await doc.embedPng(belegBytes) : await doc.embedJpg(belegBytes);
   fuegeBelegSeiteAlsA4Hinzu(doc, image, image.width, image.height, (page, img, opts) => page.drawImage(img, opts));

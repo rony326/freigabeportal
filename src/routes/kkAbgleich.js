@@ -16,7 +16,7 @@ import { buildAuditLog } from '../services/auditLog.js';
 import { ladeKontierbarenJob, ladeKontenFuerJob } from '../services/kontierungZugriff.js';
 import { markJobAufgesplittet, setJobBetrag, setKkAbrechnungKopfdaten, setKkTextAnalyse } from '../db/jobsRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
-import { detectBelegMimetype, countBelegSeiten } from '../services/belegAnhaengen.js';
+import { detectBelegMimetype, countBelegSeiten, pruefeBelegBild } from '../services/belegAnhaengen.js';
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { bereiteTeilDateienVor, erzeugeTeilJobs, benachrichtigeNachAufsplitten, pruefeIbanNachKkAbgleich, alleKindIds, POSITION_PATTERN } from '../services/aufsplitten.js';
 import { speichereKkBelegDatei, loescheDateienStill, KK_BETRAG_PATTERN, normalisiereBetrag } from '../services/kkBelegDatei.js';
@@ -24,6 +24,7 @@ import { extrahierePdfText } from '../services/pdfText.js';
 import { analysiereText, LEERE_ANALYSE, berechneVorschlaege } from '../services/kkTextAnalyse.js';
 import { kommentarBereich } from './kommentare.js';
 import { asyncCallback } from '../middleware/asyncHandler.js';
+import { begrenzeUploadGroesse, zustaendigkeitVorUpload } from '../middleware/uploadLimit.js';
 
 const MAX_BELEG_SIZE = 20 * 1024 * 1024;
 const MAX_ZEILEN = 100;
@@ -130,8 +131,8 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
   class AbgleichKonflikt extends Error {}
 
   // POST /kontierung/:id/kk-abgleich – prüft alle Positionen (Konto, signierter Betrag, Art, Beleg/Datei/Begründung), verlangt Summe = Total, führt in einer Transaktion Aufsplitten und Beleg-Zuordnung aus und benachrichtigt die Freigeber 1.
-  router.post('/:id/kk-abgleich', (req, res, next) => {
-    mitAuditKontext(upload.any())(req, res, (uploadErr) => {
+  router.post('/:id/kk-abgleich', zustaendigkeitVorUpload((req, res) => ladeAbrechnung(req, res)), (req, res, next) => {
+    mitAuditKontext(begrenzeUploadGroesse(upload.any()))(req, res, (uploadErr) => {
       csrfProtection(req, res, asyncCallback(next, async (csrfErr) => {
         if (csrfErr) return next(csrfErr);
         const angelegteDateien = [];
@@ -170,6 +171,11 @@ export function createKkAbgleichRouter({ db, config, mailer, csrfProtection = (r
             const mimetype = detectBelegMimetype(file.buffer);
             if (!mimetype || mimetype !== file.mimetype) {
               errors.push('Jede nachgereichte Datei muss eine PDF-, PNG- oder JPEG-Datei sein.');
+              continue;
+            }
+            const bildFehler = pruefeBelegBild(file.buffer, mimetype);
+            if (bildFehler) {
+              errors.push(bildFehler);
               continue;
             }
             dateiByIndex.set(Number(m[1]), { buffer: file.buffer, mimetype });

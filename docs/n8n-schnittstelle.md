@@ -269,7 +269,7 @@ später auch von einem nativen Mail-Modul wiederverwendet werden kann.
 
 | Feld | Pflicht | Beschreibung |
 |---|---|---|
-| `pdf` | ja | der Beleg — trotz des Feldnamens PDF, PNG **oder** JPEG (Magic-Byte-Erkennung), max. 20 MB |
+| `pdf` | ja | der Beleg — trotz des Feldnamens PDF, PNG **oder** JPEG (Magic-Byte-Erkennung), max. 20 MB, Bilder höchstens 40 Megapixel (sonst 400 `datei_ungueltig`) |
 | `absender` | ja | `From:`-Header der eingehenden Mail (roh, mit oder ohne Display-Name) — bestimmt, welcher aktiven Person der Beleg zugeordnet wird |
 
 Ablauf: Absender wird über `normalizeAbsender` (siehe

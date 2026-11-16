@@ -205,6 +205,16 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
 - **Magic-Byte-Prüfung** statt Vertrauen auf den deklarierten
   Content-Type bei jedem Datei-Upload (Rechnungs-PDF, Beleg-Anhang,
   Branding-Logo).
+- **Upload-Grenzen** (`src/middleware/uploadLimit.js`): multipart-Uploads
+  werden im Arbeitsspeicher gepuffert und deshalb je Anfrage auf 60 MB
+  gesamt begrenzt (je Datei weiterhin 20 MB, Bilder höchstens 40
+  Megapixel). Ein zu grosser Upload wird schon nach dem Header
+  (Content-Length) oder beim Überschreiten der gelesenen Bytes mit 413 und
+  einer Fehlerseite abgebrochen. Auf `/kontierung/:id`,
+  `/kontierung/:id/aufsplitten` und `/kontierung/:id/kk-abgleich` wird die
+  Zuständigkeit vor dem Upload geprüft (Unzuständige bekommen 403, ohne dass
+  die Datei angenommen wird); die CSRF-Prüfung bleibt nach multer, weil das
+  Token im multipart-Body steht.
 
 ## Oberfläche: Layout und Responsive
 

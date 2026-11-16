@@ -14,7 +14,7 @@ import { buildPdfFixture } from '../helpers/pdfFixture.js';
 // Ein echtes PDF als Dokument eines regulär eingegangenen Jobs: eine "%PDF"-Attrappe würde der
 // Rechnungseingang (services/pdfEingang.js) inzwischen abweisen.
 const ECHTES_PDF = await buildPdfFixture(['Testrechnung']);
-import { PNG_1X1 } from '../helpers/imageFixture.js';
+import { PNG_1X1, buildPngHeaderOnly } from '../helpers/imageFixture.js';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson, setFerienmodus } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById, deactivateKonto } from '../../src/db/kontenRepo.js';
@@ -4303,5 +4303,56 @@ test('GET /kontierung/:id: die Typ-Auswahl liegt ausserhalb der kontierung-block
   const typ = res.text.indexOf('name="typ" id="typRechnung"');
   const ersterBlock = res.text.indexOf('class="kontierung-block"');
   assert.ok(typ < ersterBlock, 'Typ-Radio steht vor dem ersten kontierung-block');
+  db.close();
+});
+
+test('POST /kontierung/:id lehnt einen Bildbeleg über 40 Megapixel verständlich ab (400, kein 500), PDF bleibt unverändert', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'beleg-test-'));
+  const kontoId = seedKontoAndPersonen(db);
+  const pdfPfad = join(jobsDir, 'original.pdf');
+  const originalBytes = await buildPdfFixture(['Kreditkartenabrechnung']);
+  writeFileSync(pdfPfad, originalBytes);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'lieferant', absender: null, dateiname: 'a.pdf', pdfPfad });
+  claimJob(db, id, '1');
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .field('kontoId', String(kontoId))
+    .field('interessenskonflikt', 'nein')
+    .field('begruendung', '')
+    .attach('beleg', buildPngHeaderOnly(14000, 14000), { filename: 'gross.png', contentType: 'image/png' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Das Bild ist zu gross/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  assert.deepEqual(readFileSync(pdfPfad), originalBytes);
+  rmSync(jobsDir, { recursive: true, force: true });
+  db.close();
+});
+
+test('POST /kontierung/:id/aufsplitten lehnt einen Bildbeleg über 40 Megapixel verständlich ab (400, kein 500), Elternvorgang bleibt zugewiesen', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .field('kreditorId', String(splitLieferant(db)))
+    .field('gesamtbetrag', '200.00')
+    .field('teilKontoId', String(kontoId)).field('teilBetrag', '120.00')
+    .field('teilKontoId', String(kontoId)).field('teilBetrag', '80.00')
+    .attach('teilBeleg_0', buildPngHeaderOnly(14000, 14000), { filename: 'gross.png', contentType: 'image/png' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Das Bild ist zu gross/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  rmSync(jobsDir, { recursive: true, force: true });
   db.close();
 });

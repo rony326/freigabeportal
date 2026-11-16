@@ -7,7 +7,7 @@ import { upsertPerson } from '../../src/db/personenRepo.js';
 import { createKonto, deactivateKonto } from '../../src/db/kontenRepo.js';
 import { getJobById } from '../../src/db/jobsRepo.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
-import { PNG_1X1 } from '../helpers/imageFixture.js';
+import { PNG_1X1, buildPngHeaderOnly } from '../helpers/imageFixture.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createSpesenRouter } from '../../src/routes/spesen.js';
@@ -385,5 +385,41 @@ test('POST /spesen mit einem reinen Gutschrift-Konto wird abgelehnt, kein Job an
   assert.equal(res.status, 400);
   assert.match(res.text, /kann nicht für Rechnungen verwendet werden/);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE quelle = 'spesen'").get().n, 0);
+  db.close();
+});
+
+test('POST /spesen lehnt einen Bildbeleg über 40 Megapixel mit verständlicher Meldung ab (400, kein 500), nichts wird angelegt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const kontoId = seedGrundlagen(db);
+  const app = buildTestApp(db, createStubMailer());
+
+  const res = await request(app)
+    .post('/spesen')
+    .set('x-test-person-id', '5')
+    .field('_csrf', 'valid-token')
+    .field('posKontoId', String(kontoId))
+    .field('posBetrag', '61.75')
+    .field('posAuslageDatum', '2026-08-20')
+    .field('posBeschreibung', 'Bahnticket')
+    .attach('posBeleg_0', buildPngHeaderOnly(14000, 14000), { filename: 'gross.png', contentType: 'image/png' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Position 1: Das Bild ist zu gross/);
+  assert.match(res.text, /40 Megapixel/);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE quelle = 'spesen'").get().n, 0);
+  db.close();
+});
+
+test('GET /spesen/neu nennt die Grössengrenzen für Belege (je Datei, Megapixel, gesamt)', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedGrundlagen(db);
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get('/spesen/neu').set('x-test-person-id', '5');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Jede Datei darf höchstens 20 MB gross sein/);
+  assert.match(res.text, /Bilder höchstens 40 Megapixel/);
+  assert.match(res.text, /alle Belege zusammen höchstens 60 MB/);
   db.close();
 });

@@ -3,6 +3,14 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## Unveröffentlicht
+
+Korrekturrunde nach der Prüfung vom 2026-11-15 (Admin-Bereich).
+
+- S7: Umgebungsvariable `TSA_PASSWORT` hat Vorrang vor dem in der Datenbank gespeicherten TSA-Passwort;
+  der Datenbankwert bleibt Rückfall. Das Formular unter Admin → Zeitstempel weist darauf hin (ohne das Passwort anzuzeigen).
+  README und `.env.example` ergänzt.
+
 ## [1.2.3] – 2026-11-15
 
 Bedienungs-Release für Gelegenheitsnutzer. Release Notes: [docs/releases/v1.2.3.md](docs/releases/v1.2.3.md).

@@ -1,7 +1,7 @@
 // Admin → Zeitstempel (`/admin/zeitstempel`, Recht `zeitstempel_verwalten`, docs/zeitstempel-und-pruefbescheinigung.md und docs/audit-externe-nachweise.md): TSA-Adresse und Zugang (RFC3161), Warnschwelle sowie die Einstellungen des Audit-Nachweises (Modul, Revisions-Empfänger, Rhythmus, Prüfnummer-Versand).
 
 import { Router } from 'express';
-import { getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
+import { getConfigValue, setConfigValue, tsaPasswortAusUmgebung } from '../../db/adminConfigRepo.js';
 import { adminAdressen } from '../../services/empfaenger.js';
 import {
   parseEmpfaengerListe, sendeAuditPruefnummer,
@@ -81,6 +81,8 @@ export function createZeitstempelAdminRouter({
       ...state,
       errors,
       gespeichert,
+      // S7: TSA_PASSWORT gesetzt = der gespeicherte Datenbankwert wird nicht benutzt (nur ein Hinweis, nie das Passwort).
+      tsaPasswortUmgebung: tsaPasswortAusUmgebung(),
       rhythmen: RHYTHMEN,
       versandHinweis: VERSAND_HINWEISE[versand] ?? null,
       exportHinweis: exportErgebnis,

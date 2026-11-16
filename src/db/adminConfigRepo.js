@@ -175,8 +175,18 @@ export function getDefaultConfigValue(key) {
   return Object.prototype.hasOwnProperty.call(DEFAULTS, key) ? DEFAULTS[key] : null;
 }
 
-/** @returns {string|null} gespeicherter Wert oder null, wenn der Schlüssel nicht existiert */
+// Das TSA-Passwort gehört nicht in die Datenbank (Klartext, landet in Sicherungen): die Umgebungsvariable
+// TSA_PASSWORT hat Vorrang. Der Datenbankwert bleibt als Rückfall, solange sie nicht gesetzt ist (nichts wird gelöscht).
+const TSA_PASSWORT_KEY = 'zeitstempel_tsa_passwort';
+
+// @returns {boolean} true, wenn TSA_PASSWORT gesetzt (und nicht leer) ist und damit den Datenbankwert übersteuert
+export function tsaPasswortAusUmgebung() {
+  return Boolean(process.env.TSA_PASSWORT);
+}
+
+/** @returns {string|null} gespeicherter Wert oder null, wenn der Schlüssel nicht existiert (TSA-Passwort: siehe oben) */
 export function getConfigValue(db, key) {
+  if (key === TSA_PASSWORT_KEY && tsaPasswortAusUmgebung()) return process.env.TSA_PASSWORT;
   const row = db.prepare('SELECT value FROM admin_config WHERE key = ?').get(key);
   return row ? row.value : null;
 }
@@ -188,6 +198,7 @@ export function getConfigValues(db, keys) {
   if (keys.length === 0) return werte;
   const rows = db.prepare(`SELECT key, value FROM admin_config WHERE key IN (${keys.map(() => '?').join(', ')})`).all(...keys);
   for (const row of rows) werte[row.key] = row.value;
+  if (keys.includes(TSA_PASSWORT_KEY) && tsaPasswortAusUmgebung()) werte[TSA_PASSWORT_KEY] = process.env.TSA_PASSWORT;
   return werte;
 }
 

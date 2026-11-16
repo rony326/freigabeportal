@@ -3,6 +3,20 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## Unveröffentlicht
+
+Korrekturen aus der Prüfung 2026-11-15 (Anmeldung, Sitzung, Fehlerseiten). Keine Datenbank-Migration,
+keine neuen Umgebungsvariablen.
+
+- Rücksprung nach der Anmeldung: Wer ohne Sitzung einen Link auf eine geschützte Seite öffnet, wird
+  angemeldet und landet danach dort (statt immer in `/pool`). Nur eigene Seitenpfade, nie bei POST,
+  Downloads oder Maschinenrouten. Die 401-Seite hat eine freundliche Überschrift und den Knopf «Anmelden».
+- Sitzungsablauf: Auf Formularseiten erscheint 10 Minuten vor dem Ablauf ein Hinweis «Deine Anmeldung
+  läuft um HH:MM ab»; 401- und CSRF-Fehlerseite sagen klar, dass die Anmeldung abgelaufen ist.
+  Die 8 Stunden bleiben unverändert, ohne Keep-alive.
+- Fehler 429 (zu viele Anfragen) und die Fehler von `/downloads/:id/oeffnen` erscheinen im Browser als
+  normale Fehlerseite (429 mit «in etwa N Minuten»); fetch- und Maschinenaufrufe bekommen weiter JSON.
+
 ## [1.2.3] – 2026-11-15
 
 Bedienungs-Release für Gelegenheitsnutzer. Release Notes: [docs/releases/v1.2.3.md](docs/releases/v1.2.3.md).

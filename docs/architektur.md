@@ -201,7 +201,10 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
   (`/internal/cron`).
 - **Rate-Limiting**, dreistufig: `public` (100/15 Min, IP-basiert),
   `session` (300/15 Min, personen- oder IP-basiert) und `machine`
-  (60/1 Min, IP-basiert, für API-Key-/Cron-Aufrufer).
+  (60/1 Min, IP-basiert, für API-Key-/Cron-Aufrufer). Bei 429 zeigt ein Browser
+  (`Accept: text/html`) die normale Fehlerseite mit Wartezeit («in etwa N
+  Minuten»), fetch-/Maschinenaufrufe bekommen JSON; `Retry-After` bleibt. Der
+  Handler ist als `createRateLimitHandler()` wiederverwendbar.
 - **Magic-Byte-Prüfung** statt Vertrauen auf den deklarierten
   Content-Type bei jedem Datei-Upload (Rechnungs-PDF, Beleg-Anhang,
   Branding-Logo).

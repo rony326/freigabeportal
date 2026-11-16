@@ -1,4 +1,6 @@
-// Prüfung der Adresse des Zeitstempeldienstes (TSA): nur https, keine privaten, Loopback- oder Link-Local-Ziele.
+// Prüfung der Adresse des Zeitstempeldienstes (TSA): http oder https, keine privaten, Loopback- oder Link-Local-Ziele.
+// http ist zulässig, weil die Zeitstempel-Antwort signiert ist und gegen die Vertrauensbasis geprüft wird (z. B. die offizielle
+// DigiCert-Adresse http://timestamp.digicert.com); mit Zugangsdaten verlangt das Admin-Formular https (routes/admin/zeitstempel.js).
 // Schutz davor, dass das Portal auf Antrag eines Admin-Formulars interne Dienste anspricht (SSRF, z. B. Cloud-Metadaten
 // unter 169.254.169.254). Geprüft wird beim Speichern (Admin → Zeitstempel) und für die schon gespeicherte Adresse beim Start
 // und beim Öffnen der Seite (nur Warnung, siehe docs/zeitstempel-und-pruefbescheinigung.md).
@@ -99,7 +101,7 @@ async function aufloesenStandard(hostname) {
 }
 
 /**
- * Prüft eine TSA-Adresse: https, kein privates/Loopback-/Link-Local-Ziel. Hostnamen werden aufgelöst, jede Adresse zählt.
+ * Prüft eine TSA-Adresse: http oder https, kein privates/Loopback-/Link-Local-Ziel. Hostnamen werden aufgelöst, jede Adresse zählt.
  * @param {string} url
  * @param {{aufloesen?: (hostname: string) => Promise<string[]>}} [opt] `aufloesen` ersetzt die DNS-Auflösung (Tests)
  * @returns {Promise<{ok: true}|{ok: false, grund: string}>}
@@ -111,7 +113,7 @@ export async function pruefeTsaUrl(url, { aufloesen = aufloesenStandard } = {}) 
   } catch {
     return { ok: false, grund: 'Die Adresse ist keine gültige Internetadresse.' };
   }
-  if (ziel.protocol !== 'https:') return { ok: false, grund: 'Die Adresse muss mit https:// beginnen.' };
+  if (ziel.protocol !== 'https:' && ziel.protocol !== 'http:') return { ok: false, grund: 'Die Adresse muss mit https:// oder http:// beginnen.' };
   // Die URL-Normalisierung wandelt dezimale/hexadezimale/oktale IPv4-Schreibweisen in Punktschreibweise um; IPv6 steht in eckigen Klammern.
   const host = ziel.hostname.replace(/^\[|\]$/g, '');
   if (!host) return { ok: false, grund: 'Die Adresse enthält keinen Servernamen.' };

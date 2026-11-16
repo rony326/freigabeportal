@@ -358,11 +358,11 @@ test('alter Formular-Post ohne Audit-Felder lässt die Audit-Einstellungen unver
   assert.equal(mails.length, 0);
 });
 
-test('http:// TSA-URL wird abgelehnt (mit und ohne Zugangsdaten), https:// mit Zugangsdaten ist möglich', async () => {
+test('http:// TSA-URL ist ohne Zugangsdaten erlaubt (z. B. DigiCert), mit Zugangsdaten nur https://', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedAdmin(db);
-  const app = buildTestApp(db);
+  const app = buildTestApp(db, [], { aufloesen: async () => ['93.184.216.34'] });
   const post = (body) => request(app).post('/admin/zeitstempel').set('x-test-person-id', '99').type('form').send({ warnungAbStunden: '24', ...body });
 
   let res = await post({ tsaUrl: 'http://tsa.example.org/tsr', tsaUser: 'u', tsaPasswort: 'geheim' });
@@ -370,10 +370,9 @@ test('http:// TSA-URL wird abgelehnt (mit und ohne Zugangsdaten), https:// mit Z
   assert.match(res.text, /https:\/\/-Adresse/);
   assert.equal(getConfigValue(db, 'zeitstempel_tsa_url'), '');
 
-  res = await post({ tsaUrl: 'http://tsa.example.org/tsr' });
-  assert.equal(res.status, 400);
-  assert.match(res.text, /https:\/\//);
-  assert.equal(getConfigValue(db, 'zeitstempel_tsa_url'), '');
+  res = await post({ tsaUrl: 'http://timestamp.digicert.com' });
+  assert.equal(res.status, 302);
+  assert.equal(getConfigValue(db, 'zeitstempel_tsa_url'), 'http://timestamp.digicert.com');
 
   res = await post({ tsaUrl: 'https://tsa.example.org/tsr', tsaUser: 'u', tsaPasswort: 'geheim' });
   assert.equal(res.status, 302);
@@ -400,21 +399,21 @@ test('S6: bereits gespeicherte, nach neuer Regel unzulässige Adresse: Seite war
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedAdmin(db);
-  setConfigValue(db, 'zeitstempel_tsa_url', 'http://tsa.example.org/tsr');
+  setConfigValue(db, 'zeitstempel_tsa_url', 'https://10.0.0.5/tsr');
   const app = buildTestApp(db);
   const get = await request(app).get('/admin/zeitstempel').set('x-test-person-id', '99');
   assert.equal(get.status, 200);
   assert.match(get.text, /id="tsaUrlWarnung"/);
   assert.match(get.text, /weiterhin benutzt/);
   // Warnschwelle ändern, Adresse unverändert absenden: wird gespeichert, Adresse bleibt (nicht stillschweigend gelöscht).
-  const res = await request(app).post('/admin/zeitstempel').set('x-test-person-id', '99').type('form').send({ tsaUrl: 'http://tsa.example.org/tsr', warnungAbStunden: '5' });
+  const res = await request(app).post('/admin/zeitstempel').set('x-test-person-id', '99').type('form').send({ tsaUrl: 'https://10.0.0.5/tsr', warnungAbStunden: '5' });
   assert.equal(res.status, 302);
-  assert.equal(getConfigValue(db, 'zeitstempel_tsa_url'), 'http://tsa.example.org/tsr');
+  assert.equal(getConfigValue(db, 'zeitstempel_tsa_url'), 'https://10.0.0.5/tsr');
   assert.equal(getConfigValue(db, 'zeitstempel_warnung_ab_stunden'), '5');
   // Neu gespeichert wird nur noch eine zulässige Adresse.
-  const neu = await request(app).post('/admin/zeitstempel').set('x-test-person-id', '99').type('form').send({ tsaUrl: 'http://tsa2.example.org/tsr', warnungAbStunden: '5' });
+  const neu = await request(app).post('/admin/zeitstempel').set('x-test-person-id', '99').type('form').send({ tsaUrl: 'https://10.0.0.6/tsr', warnungAbStunden: '5' });
   assert.equal(neu.status, 400);
-  assert.equal(getConfigValue(db, 'zeitstempel_tsa_url'), 'http://tsa.example.org/tsr');
+  assert.equal(getConfigValue(db, 'zeitstempel_tsa_url'), 'https://10.0.0.5/tsr');
   db.close();
 });
 

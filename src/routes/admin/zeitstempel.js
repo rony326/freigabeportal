@@ -10,7 +10,7 @@ import {
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 import { pruefeTsaUrl, pruefeGespeicherteTsaUrl } from '../../services/tsaUrlPruefung.js';
 
-const URL_PATTERN = /^https:\/\//i;
+const URL_PATTERN = /^https?:\/\//i;
 const RHYTHMEN = { monatlich: 'monatlich', quartalsweise: 'quartalsweise', jaehrlich: 'jährlich' };
 
 // Formularfeld -> [Config-Key, Standardwert, Min, Max, Label]
@@ -109,13 +109,13 @@ export function createZeitstempelAdminRouter({
     const trimmedUser = (tsaUser || '').trim();
     const trimmedWarnung = (warnungAbStunden || '').trim();
     const errors = [];
-    // Neue Adressen: nur https und kein privates/Loopback-/Link-Local-Ziel (S6). Eine unverändert abgesendete, schon
+    // Neue Adressen: http(s) und kein privates/Loopback-/Link-Local-Ziel (S6); http nur ohne Zugangsdaten (siehe unten). Eine unverändert abgesendete, schon
     // gespeicherte Adresse wird hier nicht erneut geprüft, damit andere Einstellungen speicherbar bleiben und die Adresse
     // nicht still ausfällt; die Seite warnt stattdessen.
     const adresseGeaendert = trimmedUrl !== String(getConfigValue(db, 'zeitstempel_tsa_url') ?? '').trim();
     if (trimmedUrl && adresseGeaendert) {
       if (!URL_PATTERN.test(trimmedUrl)) {
-        errors.push('TSA-URL muss leer sein (Funktion deaktiviert) oder mit https:// beginnen.');
+        errors.push('TSA-URL muss leer sein (Funktion deaktiviert) oder mit https:// bzw. http:// beginnen.');
       } else {
         const pruefung = await pruefeTsaUrl(trimmedUrl, aufloesen ? { aufloesen } : {});
         if (!pruefung.ok) errors.push(`TSA-URL nicht zulässig: ${pruefung.grund}`);

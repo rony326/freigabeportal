@@ -184,8 +184,11 @@ eine Warnung, sobald abgeschlossene Jobs länger als diese Schwelle ohne
 gesetzten Zeitstempel warten (nur relevant, solange eine TSA-URL
 konfiguriert ist).
 
-**Regeln für die TSA-Adresse:** Neu gespeichert wird nur eine `https://`-Adresse, die auf
-einen öffentlich erreichbaren Server zeigt. Abgelehnt werden private, Loopback- und
+**Regeln für die TSA-Adresse:** Neu gespeichert wird nur eine `https://`- oder `http://`-Adresse,
+die auf einen öffentlich erreichbaren Server zeigt; mit Benutzername oder Passwort nur `https://`,
+damit die Zugangsdaten nicht unverschlüsselt übertragen werden. `http://` ist ohne Zugangsdaten
+unbedenklich, weil die Zeitstempel-Antwort signiert ist und gegen die Vertrauensbasis geprüft wird
+(die offizielle DigiCert-Adresse lautet `http://timestamp.digicert.com`). Abgelehnt werden private, Loopback- und
 Link-Local-Ziele (IPv4 `0/8`, `10/8`, `100.64/10`, `127/8`, `169.254/16`, `172.16/12`,
 `192.168/16`, Multicast/reserviert; IPv6 `::`, `::1`, `fc00::/7`, `fe80::/10`, `ff00::/8`,
 gemappte und eingebettete IPv4), auch in dezimaler, hexadezimaler oder oktaler Schreibweise.

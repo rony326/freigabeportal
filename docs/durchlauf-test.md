@@ -7,7 +7,7 @@ Der Durchlauf spielt den ganzen Rechnungsweg einmal durch, ohne dass sich jemand
 klicken muss:
 
 ```
-Mail (von Hand) → n8n → Portal-Eingang → Kontierung (Person A) → Freigabe 2 (Person B) → Abholung durch n8n → (Archivquittung)
+Mail (von Hand) → n8n → Portal-Eingang → Kontierung (Person A) → Freigabe 2 (Person B) → Abholung durch n8n → (Archivquittung) → (Versand an Bexio)
 ```
 
 Das Werkzeug liegt in `scripts/durchlauf/` und gehört nicht zu `npm test`. Die reine Logik
@@ -43,7 +43,7 @@ In `.env.durchlauf` (git-ignoriert) mindestens eintragen:
 | `DURCHLAUF_ZIEL_URL` | Adresse der Testinstanz, z. B. `https://test-portal.example.org`. **Pflicht, kein Standardwert.** Nur `https://` (http nur für `localhost`). |
 | `DURCHLAUF_KONTO` | Kontonummer des Testkontos. Pflicht. |
 | `DURCHLAUF_ANZAHL` | Anzahl Belege, die du schickst (Standard 1). |
-| `DURCHLAUF_ENDE` | `abgeholt` (Standard) oder `archiv_bestaetigt`, siehe «Was am Ende geprüft wird». |
+| `DURCHLAUF_ENDE` | `abgeholt` (Standard), `archiv_bestaetigt` oder `bexio_gemeldet`, siehe «Was am Ende geprüft wird». |
 | `DURCHLAUF_N8N_API_KEY` | n8n-Schlüssel **der Testinstanz**, nur für den lesenden Abruf der offenen Archivquittungen. Pflicht bei `archiv_bestaetigt`. |
 | `DURCHLAUF_LIEFERANT`, `DURCHLAUF_BETRAG`, `DURCHLAUF_IBAN_ENDUNG` | nur für Belege ohne QR-Code (die Testbelege R4…: Testlieferant AG, IBAN-Endung `3456`). |
 
@@ -112,8 +112,9 @@ weiteren Lauf die Belege neu erzeugen; die Dateien bekommen dabei neue Bytes.
    (`DURCHLAUF_AUFFAELLIGKEITEN=abbrechen` meldet es stattdessen als Fehler).
 3. **Freigabe 2 als B**: prüft, dass der Beleg bei B unter «Meine Freigaben» steht, bestätigt die Zahlungsdaten (und
    allfällige Zahlungshinweise), «Nein» bei der Befangenheit, Freigeben.
-4. **Export** (ohne `--nur-portal`): fragt als B «Abgeschlossene Rechnungen» ab, bis n8n die Belege abgeholt hat (und je
-   nach Einstellung die Archivquittung vorliegt). Zeitlimit `DURCHLAUF_ZEITLIMIT_EXPORT_MIN`.
+4. **Export** (ohne `--nur-portal`): fragt als B «Abgeschlossene Rechnungen» und die Belegseite ab, bis n8n die Belege
+   abgeholt hat (und je nach Einstellung die Archiv- oder die Bexio-Versandquittung vorliegt). Zeitlimit
+   `DURCHLAUF_ZEITLIMIT_EXPORT_MIN`.
 
 Belege werden nacheinander bearbeitet; ein Fehler bei einem Beleg hält die anderen nicht auf.
 
@@ -127,10 +128,12 @@ Am Ende steht eine Tabelle je Beleg und Schritt mit Status, Dauer und Ursache:
 | ✗ | fehlgeschlagen oder Zeitlimit (Ursache in der letzten Spalte) |
 | · | wegen eines früheren Fehlers nicht ausgeführt |
 | – | übersprungen (`--nur-portal`) |
-| ? | Archiv nicht gemeldet: in Paperless von Hand prüfen (nur bei `DURCHLAUF_ENDE=abgeholt`) |
+| ? | Archiv bzw. Bexio-Versand nicht gemeldet, aber nicht verlangt: in Paperless bzw. bei Bexio von Hand prüfen |
 
 Darunter folgt die **Handprüfung**: je freigegebenem Beleg Portal-ID, Dateiname, Betrag, Lieferant und
-Rechnungsnummer, damit du das Dokument in Paperless und die Mail an Bexio findest.
+Rechnungsnummer, damit du das Dokument in Paperless und die Mail an Bexio findest. Hat n8n den Versand an Bexio
+gemeldet, steht dort zusätzlich Zeitpunkt, Empfänger und Message-ID der Mail (damit findest du sie im Postausgang
+und bei Bexio).
 
 Bei einem Fehler in Kontierung oder Freigabe 2 liegen ein Bildschirmfoto und das HTML der Seite in
 `.durchlauf/fehler/` (Dateinamen stehen in der Ursache). Exit-Code: `0` nur, wenn alle Schritte ✓ (oder – bzw. ?) sind;
@@ -157,7 +160,20 @@ Paperless-Upload (und dem Hash-Vergleich mit dem Paperless-Original) den Aufruf 
 (siehe [n8n-schnittstelle.md](n8n-schnittstelle.md), «Abholung fertiger Rechnungen», und
 [n8n-paperless-archivierung.md](n8n-paperless-archivierung.md)) und setzt dann `DURCHLAUF_ENDE=archiv_bestaetigt`.
 
-**Bexio:** Den Versand an Bexio kennt das Portal nicht. Er bleibt eine Handprüfung (Liste am Ende des Laufs).
+**Bexio:** n8n meldet nach dem Mailversand an das Bexio-Eingangspostfach `POST /api/n8n/jobs/:id/bexio-versand-bestaetigen`
+(siehe [n8n-schnittstelle.md](n8n-schnittstelle.md), «Versand an Bexio bestätigen»). Die Quittung zeigt das Portal auf der
+Belegseite `/zeitstempel-pruefen?jobId=<id>` («An Bexio gesendet: ‹Zeitpunkt›, an ‹Empfänger›, Message-ID ‹…›» bzw.
+«Versand an Bexio: noch nicht gemeldet»). Der Durchlauf liest diese Zeile über die Oberfläche: als B (Freigeber 2 darf die
+Seite öffnen), bei «Kein Zugriff» als A (zugewiesene Person). Den API-Abruf `bexio-versand-ausstehend` braucht er dafür nicht.
+
+- **`DURCHLAUF_ENDE=bexio_gemeldet`**: gewartet wird, bis der Beleg abgeholt ist **und** die Versandquittung vorliegt.
+  Fehlt sie nach dem Zeitlimit, ist die Stufe ✗. Die Archiv-Spalte verhält sich wie bei `abgeholt`.
+- Bei `abgeholt` und `archiv_bestaetigt` ist die Spalte «An Bexio gemeldet» nur zur Info: ✓ mit Zeitpunkt, Empfänger
+  und Message-ID, wenn die Quittung schon da ist, sonst «? nicht gemeldet – bei Bexio von Hand prüfen». Sie ändert den
+  Exit-Code nicht.
+
+Die Quittung belegt nur, dass der eigene Mailserver die Mail angenommen hat, nicht die Zustellung oder Verbuchung bei
+Bexio. Die Ankunft bei Bexio bleibt eine Handprüfung (Liste am Ende des Laufs).
 
 Bleibt der Status `abgeschlossen`, meldet der Durchlauf nach dem Zeitlimit ✗ mit dem Hinweis, dass n8n weder
 `abholung-bestaetigen` noch `archivierung-bestaetigen` gemeldet hat. Mögliche Gründe: Workflow inaktiv, der Workflow
@@ -168,7 +184,7 @@ Abholung von aussen nicht feststellbar: dann `--nur-portal` verwenden und Paperl
 ## Grenzen
 
 - Die Mail schickt der Betreiber von Hand; das Werkzeug liest kein Postfach.
-- Paperless und Bexio werden nicht direkt abgefragt (siehe oben).
+- Paperless und Bexio werden nicht direkt abgefragt; das Werkzeug sieht nur, was n8n dem Portal meldet (siehe oben).
 - Nur der Standardweg einer Rechnung: keine Gutschriften, kein Aufsplitten, keine Spesen, keine Kreditkarten-Belege,
   keine Ablehnung, keine Befangenheit. Diese Fälle stehen im Testdrehbuch.
 - Neue Belege erkennt das Werkzeug über die Aufgabenseite von A. Kommen gleichzeitig andere Belege an (andere Tester),

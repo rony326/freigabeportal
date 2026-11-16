@@ -9,7 +9,9 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   End-to-End-Durchlauf gegen eine Testinstanz mit Playwright. Person A und B melden sich einmal an
   (`npm run durchlauf:anmelden -- a|b`, Sitzung 8 h); nach der von Hand geschickten Testmail kontiert das Werkzeug
   als A, gibt als B frei und wartet auf die Abholung durch n8n (optional Archivquittung über den nur lesenden
-  Abruf `archivierung-ausstehend`). Bericht je Beleg und Schritt, Fehlerbilder, Handprüf-Liste für Paperless/Bexio.
+  Abruf `archivierung-ausstehend`). Stufe «An Bexio gemeldet»: liest die Versandquittung auf der Belegseite
+  `/zeitstempel-pruefen?jobId=` (als B, sonst A); `DURCHLAUF_ENDE=bexio_gemeldet` wartet darauf, sonst nur zur Info.
+  Bericht je Beleg und Schritt, Fehlerbilder, Handprüf-Liste für Paperless/Bexio (mit Message-ID, falls gemeldet).
   Konfiguration in `.env.durchlauf` (Vorlage `.env.durchlauf.example`), ohne Standard-Zieladresse. Keine Änderung am Portal.
 - Versandquittung für Bexio: n8n meldet nach dem Mailversand an das Bexio-Eingangspostfach die Antwort des
   Mailservers an `POST /api/n8n/jobs/:id/bexio-versand-bestaetigen` (Export-ID, Empfänger, Message-ID,

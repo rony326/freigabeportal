@@ -16,10 +16,11 @@ import { belegeAufDashboard, neueBelege, stand, versionAusFusszeile, exportStufe
 import { neuerBeleg, setzeSchritt, formatBericht, formatHandpruefung, exitCode, formatDauer } from './bericht.js';
 import { BELEG_ORDNER, belegVorschlaege } from './testbelege.js';
 import {
-  starteBrowser, personKontext, pruefeAnmeldung, holeHtml, kontiere, gibFrei, abgeschlosseneStatus, archivAusstehend,
+  starteBrowser, personKontext, pruefeAnmeldung, holeHtml, kontiere, gibFrei, abgeschlosseneStatus, archivAusstehend, bexioVersand,
   SchrittFehler, SitzungAbgelaufen, kurz,
 } from './browser.js';
 
+const ENDE_TEXT = { abgeholt: 'Abholung durch n8n', archiv_bestaetigt: 'Archivquittung von n8n', bexio_gemeldet: 'Abholung und Bexio-Versandquittung von n8n' };
 const warte = (ms) => new Promise((r) => setTimeout(r, ms));
 const zeit = (d) => d.toLocaleString('de-CH', { timeZone: 'Europe/Zurich' });
 
@@ -117,7 +118,7 @@ async function ablauf({ args, konfig, ordner, sitzungen, browser }) {
   console.log(`  Person B:    ${anB.name} (Freigabe 2, Sitzung bis ${sitzungen.b.gueltigBis ? zeit(sitzungen.b.gueltigBis) : '?'})`);
   console.log(`  Testkonto:   ${konfig.konto}`);
   console.log(`  Belege:      ${konfig.anzahl}`);
-  console.log(`  Ende:        ${args.nurPortal ? 'nach Freigabe 2 (--nur-portal)' : konfig.ende === 'abgeholt' ? 'Abholung durch n8n' : 'Archivquittung von n8n'}`);
+  console.log(`  Ende:        ${args.nurPortal ? 'nach Freigabe 2 (--nur-portal)' : ENDE_TEXT[konfig.ende]}`);
   console.log('  Achtung: Der Lauf kontiert und gibt echte Belege auf dieser Instanz frei. Nur gegen eine Testinstanz verwenden.');
   if (!args.ja) {
     const antwort = await frage('\nIst das die Testinstanz und soll der Durchlauf starten? Mit «ja» bestätigen: ');
@@ -190,9 +191,10 @@ async function ablauf({ args, konfig, ordner, sitzungen, browser }) {
     for (const b of freigegeben) {
       setzeSchritt(b, 'abgeholt', 'uebersprungen');
       setzeSchritt(b, 'archiv', 'uebersprungen');
+      setzeSchritt(b, 'bexio', 'uebersprungen');
     }
   } else if (freigegeben.length > 0) {
-    await warteAufExport({ kB, ziel, konfig, belege: freigegeben });
+    await warteAufExport({ kA, kB, ziel, konfig, belege: freigegeben });
   }
 
   console.log(`\nErgebnis (${zeit(new Date())}):\n`);
@@ -205,18 +207,22 @@ async function ablauf({ args, konfig, ordner, sitzungen, browser }) {
   return code;
 }
 
-// Wartet als Person B, bis n8n die Belege abgeholt (und je nach Einstellung archiviert) hat.
-async function warteAufExport({ kB, ziel, konfig, belege }) {
+// Wartet als Person B, bis n8n die Belege abgeholt hat und, je nach DURCHLAUF_ENDE, zusätzlich die Archiv- oder die
+// Bexio-Versandquittung vorliegt. Die jeweils nicht verlangte Quittung wird nur angezeigt (✓ oder «? nicht gemeldet»).
+async function warteAufExport({ kA, kB, ziel, konfig, belege }) {
   const start = Date.now();
   const mitArchiv = Boolean(konfig.n8nApiKey);
-  const brauchtArchiv = konfig.ende === 'archiv_bestaetigt';
-  console.log(`\nWarte höchstens ${formatDauer(konfig.zeitlimitExportMs)} auf n8n (${brauchtArchiv ? 'Archivquittung' : 'Abholung'}) …`);
+  const ende = konfig.ende;
+  console.log(`\nWarte höchstens ${formatDauer(konfig.zeitlimitExportMs)} auf n8n (${ENDE_TEXT[ende]}) …`);
+  // Belegseite: zuerst als B (Freigeber 2), sonst als A (zugewiesene Person).
+  const belegseite = [{ kontext: kB, person: 'b' }, { kontext: kA, person: 'a' }];
   const offen = new Set(belege.map((b) => b.id));
   let letzterStatus = new Map();
   let letzterFehler = null;
-  while (offen.size > 0 && Date.now() - start < konfig.zeitlimitExportMs) {
+  const bexioSichtbar = new Map();
+  for (;;) {
     try {
-      letzterStatus = await abgeschlosseneStatus(kB, ziel, [...offen], 'b');
+      letzterStatus = await abgeschlosseneStatus(kB, ziel, belege.map((b) => b.id), 'b');
       const ausstehend = mitArchiv ? await archivAusstehend(ziel, konfig.n8nApiKey) : null;
       letzterFehler = null;
       for (const b of belege) {
@@ -226,18 +232,31 @@ async function warteAufExport({ kB, ziel, konfig, belege }) {
           setzeSchritt(b, 'abgeholt', 'ok', { dauerMs: Date.now() - start });
           console.log(`  #${b.id} abgeholt nach ${formatDauer(Date.now() - start)}`);
         }
-        if (stufe.archivBestaetigt) {
+        if (stufe.archivBestaetigt && b.schritte.archiv.status !== 'ok') {
           setzeSchritt(b, 'archiv', 'ok', { dauerMs: Date.now() - start });
           console.log(`  #${b.id} Archiv bestätigt nach ${formatDauer(Date.now() - start)}`);
         }
-        const fertig = brauchtArchiv ? stufe.archivBestaetigt === true : stufe.abgeholt;
+        if (b.schritte.bexio.status !== 'ok') {
+          const versand = await bexioVersand(belegseite, ziel, b.id);
+          bexioSichtbar.set(b.id, versand !== null);
+          if (versand && versand.length > 0) {
+            b.bexioVersand = versand;
+            const v = versand.at(-1);
+            setzeSchritt(b, 'bexio', 'ok', { dauerMs: Date.now() - start, ursache: `${v.zeitpunkt}, an ${v.empfaenger}, Message-ID ${v.messageId}` });
+            console.log(`  #${b.id} Versand an Bexio gemeldet nach ${formatDauer(Date.now() - start)}`);
+          }
+        }
+        const fertig = ende === 'archiv_bestaetigt' ? stufe.archivBestaetigt === true
+          : ende === 'bexio_gemeldet' ? stufe.abgeholt && b.schritte.bexio.status === 'ok'
+            : stufe.abgeholt;
         if (fertig) offen.delete(b.id);
       }
     } catch (err) {
       if (err instanceof SitzungAbgelaufen) throw err;
       letzterFehler = kurz(err);
     }
-    if (offen.size > 0) await warte(konfig.abfrageMs);
+    if (offen.size === 0 || Date.now() - start >= konfig.zeitlimitExportMs) break;
+    await warte(konfig.abfrageMs);
   }
 
   for (const b of belege) {
@@ -248,11 +267,21 @@ async function warteAufExport({ kB, ziel, konfig, belege }) {
         ursache: letzterFehler ?? `Status blieb «${status}»: n8n hat weder abholung-bestaetigen noch archivierung-bestaetigen gemeldet (Workflow aktiv? Zeitstempel ausstehend?)`,
       });
     }
-    if (b.schritte.archiv.status === 'ok') continue;
-    if (brauchtArchiv) {
-      setzeSchritt(b, 'archiv', 'fehler', { dauerMs: Date.now() - start, ursache: letzterFehler ?? 'keine Archivquittung (n8n ruft archivierung-bestaetigen nicht auf?)' });
-    } else {
-      setzeSchritt(b, 'archiv', 'nicht_gemeldet');
+    if (b.schritte.archiv.status !== 'ok') {
+      if (ende === 'archiv_bestaetigt') {
+        setzeSchritt(b, 'archiv', 'fehler', { dauerMs: Date.now() - start, ursache: letzterFehler ?? 'keine Archivquittung (n8n ruft archivierung-bestaetigen nicht auf?)' });
+      } else {
+        setzeSchritt(b, 'archiv', 'nicht_gemeldet');
+      }
+    }
+    if (b.schritte.bexio.status !== 'ok') {
+      if (ende === 'bexio_gemeldet') {
+        const ursache = letzterFehler
+          ?? (bexioSichtbar.get(b.id) === false ? 'Belegseite für A und B nicht sichtbar oder ohne Bexio-Angabe' : 'keine Versandquittung (n8n ruft bexio-versand-bestaetigen nicht auf?)');
+        setzeSchritt(b, 'bexio', 'fehler', { dauerMs: Date.now() - start, ursache });
+      } else {
+        setzeSchritt(b, 'bexio', 'nicht_gemeldet');
+      }
     }
   }
 }

@@ -13,7 +13,7 @@ import {
 } from '../../scripts/durchlauf/sicherheit.js';
 import {
   angemeldetAls, versionAusFusszeile, belegeAufDashboard, stand, neueBelege, fehlerMeldungen, auffaelligkeitenTitel,
-  abgeschlossenStatus, seitenAnzahl, exportStufe, entschluesseln,
+  abgeschlossenStatus, seitenAnzahl, exportStufe, entschluesseln, bexioVersandAusSeite,
 } from '../../scripts/durchlauf/seiten.js';
 import { kontierungsWerte, kontonummerAusOption } from '../../scripts/durchlauf/formular.js';
 import {
@@ -69,6 +69,13 @@ test('Konfiguration: ungültige Werte werden gemeldet', () => {
   }
   assert.equal(leseKonfiguration({ ...MINIMAL }).fehler.length, 0);
   assert.match(leseKonfiguration({ DURCHLAUF_ZIEL_URL: 'https://test-portal.example.org' }).fehler.join(' '), /DURCHLAUF_KONTO fehlt/);
+});
+
+test('Konfiguration: DURCHLAUF_ENDE=bexio_gemeldet ohne API-Schlüssel (Quittung steht auf der Belegseite)', () => {
+  const { konfig, fehler } = leseKonfiguration({ ...MINIMAL, DURCHLAUF_ENDE: 'bexio_gemeldet' });
+  assert.deepEqual(fehler, []);
+  assert.equal(konfig.ende, 'bexio_gemeldet');
+  assert.match(leseKonfiguration({ ...MINIMAL, DURCHLAUF_ENDE: 'bexio' }).fehler.join(' '), /bexio_gemeldet/);
 });
 
 test('Konfiguration: archiv_bestaetigt braucht den API-Schlüssel, ausser mit --nur-portal', () => {
@@ -259,17 +266,28 @@ test('Bericht: Tabelle, Handprüfung und Exit-Code', () => {
   setzeSchritt(b, 'freigabe2', 'ok', { dauerMs: 900 });
   setzeSchritt(b, 'abgeholt', 'ok', { dauerMs: 125_000 });
   setzeSchritt(b, 'archiv', 'nicht_gemeldet');
+  setzeSchritt(b, 'bexio', 'nicht_gemeldet');
   const ergebnis = { belege: [b], allgemein: [] };
   const text = formatBericht(ergebnis);
   assert.match(text, /#42\s+Eingang im Portal\s+✓\s+1 min 01 s/);
   assert.match(text, /Archiv bestätigt\s+\?\s+nicht gemeldet – in Paperless von Hand prüfen/);
-  assert.equal(exitCode(ergebnis), 0, 'nicht gemeldetes Archiv ist kein Fehler');
+  assert.match(text, /An Bexio gemeldet\s+\?\s+nicht gemeldet – bei Bexio von Hand prüfen/);
+  assert.equal(exitCode(ergebnis), 0, 'nicht gemeldetes Archiv bzw. nicht gemeldeter Bexio-Versand ist kein Fehler');
+  assert.doesNotMatch(formatHandpruefung([b]), /Message-ID/);
   assert.match(formatHandpruefung([b]), /#42 · R1\.pdf · CHF 487\.35 · Testlieferant AG · Rechnungsnummer DT-1-42/);
 
   setzeSchritt(b, 'archiv', 'fehler', { ursache: 'keine Archivquittung' });
   assert.equal(exitCode(ergebnis), 1);
   setzeSchritt(b, 'archiv', 'uebersprungen');
   assert.equal(exitCode(ergebnis), 0);
+  setzeSchritt(b, 'bexio', 'fehler', { ursache: 'keine Versandquittung' });
+  assert.equal(exitCode(ergebnis), 1, 'bei DURCHLAUF_ENDE=bexio_gemeldet ist die fehlende Quittung ein Fehler');
+  setzeSchritt(b, 'bexio', 'ok', { ursache: '16.11.2026 10:15, an bexio@example.invalid, Message-ID <m1@x>' });
+  b.bexioVersand = [{ zeitpunkt: '16.11.2026 10:15', empfaenger: 'bexio@example.invalid', messageId: '<m1@x>' }];
+  assert.equal(exitCode(ergebnis), 0);
+  const liste = formatHandpruefung([b]);
+  assert.match(liste, /Bexio-Versand gemeldet: 16\.11\.2026 10:15, an bexio@example\.invalid, Message-ID <m1@x>/);
+  assert.match(liste, /Mail mit dieser Message-ID bei Bexio angekommen/);
   assert.match(formatBericht(ergebnis), /übersprungen \(--nur-portal\)/);
 
   const offen = neuerBeleg(43);
@@ -309,4 +327,31 @@ test('Vorlage .env.durchlauf.example: nur Platzhalter-Adresse, kein Schlüssel',
   assert.equal(new URL(werte.DURCHLAUF_ZIEL_URL).hostname.endsWith('.example.org'), true);
   assert.equal(werte.DURCHLAUF_N8N_API_KEY, '');
   assert.deepEqual(leseKonfiguration(werte).fehler, []);
+});
+
+// Der Bexio-Block der echten View views/zeitstempel-pruefen.ejs (ohne Seitenrahmen gerendert).
+function bexioBlockVorlage() {
+  const view = readFileSync(`${VIEWS}zeitstempel-pruefen.ejs`, 'utf8');
+  const start = view.indexOf('<% if (locals.bexioVersand) { %>');
+  const ende = view.indexOf('<% if (!ergebnis) { %>');
+  assert.ok(start >= 0 && ende > start, 'Bexio-Block in zeitstempel-pruefen.ejs gefunden');
+  return view.slice(start, ende);
+}
+
+test('Seiten: Bexio-Versandquittung auf der Belegseite (echte View, beide Varianten)', () => {
+  const vorlage = bexioBlockVorlage();
+  const gemeldet = ejs.render(vorlage, { bexioVersand: [
+    { zeitpunkt: '16.11.2026 10:15', empfaenger: 'bexio@example.invalid', messageId: '<abc&1@mail.example.org>' },
+    { zeitpunkt: '16.11.2026 11:00', empfaenger: 'bexio@example.invalid, kopie@example.invalid', messageId: '<def@mail.example.org>' },
+  ] });
+  assert.deepEqual(bexioVersandAusSeite(gemeldet), [
+    { zeitpunkt: '16.11.2026 10:15', empfaenger: 'bexio@example.invalid', messageId: '<abc&1@mail.example.org>' },
+    { zeitpunkt: '16.11.2026 11:00', empfaenger: 'bexio@example.invalid, kopie@example.invalid', messageId: '<def@mail.example.org>' },
+  ]);
+  const offen = ejs.render(vorlage, { bexioVersand: [] });
+  assert.match(offen, /noch nicht gemeldet/);
+  assert.deepEqual(bexioVersandAusSeite(offen), []);
+  // Ohne Bexio-Block (Rapport, nicht abgeschlossen) bzw. auf einer anderen Seite: null.
+  assert.equal(bexioVersandAusSeite(ejs.render(vorlage, { bexioVersand: null })), null);
+  assert.equal(bexioVersandAusSeite('<p>Kein Zugriff auf diesen Job.</p>'), null);
 });

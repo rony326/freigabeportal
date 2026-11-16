@@ -6,7 +6,7 @@
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
-import { angemeldetAls, fehlerMeldungen, auffaelligkeitenTitel, abgeschlossenStatus, seitenAnzahl } from './seiten.js';
+import { angemeldetAls, fehlerMeldungen, auffaelligkeitenTitel, abgeschlossenStatus, seitenAnzahl, bexioVersandAusSeite } from './seiten.js';
 import { kontierungsWerte } from './formular.js';
 import { dateiTeil } from './bericht.js';
 
@@ -233,6 +233,19 @@ export async function abgeschlosseneStatus(kontext, zielUrl, ids, person = 'b') 
     if (status.size === gesucht.size) break;
   }
   return status;
+}
+
+// Versandquittung(en) für Bexio von der Belegseite /zeitstempel-pruefen?jobId= (Sichtrecht wie beim PDF:
+// Freigeber 2 und zugewiesene Person). Zuerst als `kontexte[0]`, bei 403 als nächste Person.
+// @returns {null|object[]} null = für keine der Personen sichtbar oder kein Bexio-Block
+export async function bexioVersand(kontexte, zielUrl, id) {
+  for (const { kontext, person } of kontexte) {
+    const { status, html } = await holeHtml(kontext, new URL(`/zeitstempel-pruefen?jobId=${id}`, zielUrl).href, { person });
+    if (status === 403) continue;
+    if (status !== 200) throw new Error(`Belegseite #${id}: HTTP ${status}`);
+    return bexioVersandAusSeite(html);
+  }
+  return null;
 }
 
 // IDs ohne Archivquittung aus GET /api/n8n/jobs/archivierung-ausstehend (nur lesend, setzt nichts).

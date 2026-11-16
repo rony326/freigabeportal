@@ -4,7 +4,7 @@
 
 import { parseEnv } from 'node:util';
 
-export const ENDE_WERTE = ['abgeholt', 'archiv_bestaetigt'];
+export const ENDE_WERTE = ['abgeholt', 'archiv_bestaetigt', 'bexio_gemeldet'];
 export const AUFFAELLIGKEITEN_WERTE = ['bestaetigen', 'abbrechen'];
 export const STANDARD_KONFIGDATEI = '.env.durchlauf';
 export const STANDARD_ORDNER = '.durchlauf';
@@ -70,7 +70,7 @@ export function leseKonfiguration(werte = {}, { nurPortal = false } = {}) {
   if (!konto) fehler.push('DURCHLAUF_KONTO fehlt (Kontonummer des Testkontos, z. B. 9999).');
 
   const ende = text(werte, 'DURCHLAUF_ENDE') ?? 'abgeholt';
-  if (!ENDE_WERTE.includes(ende)) fehler.push(`DURCHLAUF_ENDE muss «abgeholt» oder «archiv_bestaetigt» sein (ist: ${ende}).`);
+  if (!ENDE_WERTE.includes(ende)) fehler.push(`DURCHLAUF_ENDE muss «abgeholt», «archiv_bestaetigt» oder «bexio_gemeldet» sein (ist: ${ende}).`);
 
   const apiKey = text(werte, 'DURCHLAUF_N8N_API_KEY');
   if (ende === 'archiv_bestaetigt' && !apiKey && !nurPortal) {

@@ -119,3 +119,16 @@ export function exportStufe(id, status, ausstehend = null) {
   const archivBestaetigt = ausstehend === null ? null : abgeholt && !ausstehend.has(id);
   return { abgeholt, archivBestaetigt };
 }
+
+// Versandquittung(en) für Bexio auf der Belegseite /zeitstempel-pruefen?jobId= (views/zeitstempel-pruefen.ejs, Block #bexio-versand).
+// @returns {null|{zeitpunkt:string, empfaenger:string, messageId:string}[]}
+//   null = kein Bexio-Block (Rapport, nicht abgeschlossen, keine Seite); [] = «noch nicht gemeldet»; sonst je Quittung ein Eintrag.
+export function bexioVersandAusSeite(html) {
+  const block = /<div id="bexio-versand"[^>]*>([\s\S]*?)<\/div>/.exec(String(html ?? ''));
+  if (!block) return null;
+  const eintraege = [];
+  for (const m of block[1].matchAll(/<p class="mb-0">An Bexio gesendet: ([\s\S]*?), an ([\s\S]*?), Message-ID <span[^>]*>([\s\S]*?)<\/span><\/p>/g)) {
+    eintraege.push({ zeitpunkt: ohneTags(m[1]), empfaenger: ohneTags(m[2]), messageId: ohneTags(m[3]) });
+  }
+  return eintraege;
+}

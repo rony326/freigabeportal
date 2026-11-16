@@ -8,6 +8,7 @@ export const SCHRITTE = [
   ['freigabe2', 'Freigabe 2 (Person B)'],
   ['abgeholt', 'Von n8n abgeholt'],
   ['archiv', 'Archiv bestätigt'],
+  ['bexio', 'An Bexio gemeldet'],
 ];
 
 // Status eines Schritts:
@@ -15,17 +16,18 @@ export const SCHRITTE = [
 //   fehler         fehlgeschlagen oder Zeitlimit
 //   offen          wegen eines früheren Fehlers nicht ausgeführt
 //   uebersprungen  bewusst ausgelassen (--nur-portal)
-//   nicht_gemeldet n8n meldet die Archivierung nicht (DURCHLAUF_ENDE=abgeholt): Handprüfung in Paperless
+//   nicht_gemeldet n8n hat (noch) keine Archiv- bzw. Bexio-Quittung gemeldet, die Stufe ist aber nicht verlangt
+//                  (je nach DURCHLAUF_ENDE): Handprüfung in Paperless bzw. bei Bexio
 export const ZEICHEN = { ok: '✓', fehler: '✗', offen: '·', uebersprungen: '–', nicht_gemeldet: '?' };
 const OK_FUER_EXIT = new Set(['ok', 'uebersprungen', 'nicht_gemeldet']);
 
-const TEXT_NICHT_GEMELDET = 'nicht gemeldet – in Paperless von Hand prüfen';
+const TEXT_NICHT_GEMELDET = { archiv: 'nicht gemeldet – in Paperless von Hand prüfen', bexio: 'nicht gemeldet – bei Bexio von Hand prüfen' };
 
 // Neuer Beleg im Ergebnis, alle Schritte offen.
 export function neuerBeleg(id) {
   const schritte = {};
   for (const [schluessel] of SCHRITTE) schritte[schluessel] = { status: 'offen', dauerMs: null, ursache: null };
-  return { id, dateiname: null, betrag: null, lieferant: null, rechnungsnummer: null, hinweise: [], schritte };
+  return { id, dateiname: null, betrag: null, lieferant: null, rechnungsnummer: null, bexioVersand: [], hinweise: [], schritte };
 }
 
 // Setzt einen Schritt. `ursache` bei Fehlern (kurz, ohne Geheimnisse), bei ok optional als Hinweis.
@@ -56,7 +58,7 @@ export function formatBericht({ belege = [], allgemein = [] } = {}) {
   for (const beleg of belege) {
     for (const [schluessel, titel] of SCHRITTE) {
       const s = beleg.schritte[schluessel];
-      const ursache = s.status === 'nicht_gemeldet' ? (s.ursache ?? TEXT_NICHT_GEMELDET)
+      const ursache = s.status === 'nicht_gemeldet' ? (s.ursache ?? TEXT_NICHT_GEMELDET[schluessel] ?? 'nicht gemeldet')
         : s.status === 'uebersprungen' ? (s.ursache ?? 'übersprungen (--nur-portal)')
           : (s.ursache ?? '');
       zeilen.push([`#${beleg.id}`, titel, ZEICHEN[s.status] ?? s.status, formatDauer(s.dauerMs), ursache]);
@@ -69,15 +71,18 @@ export function formatBericht({ belege = [], allgemein = [] } = {}) {
   return [formatZeile(zeilen[0]), trenner, ...zeilen.slice(1).map(formatZeile)].join('\n');
 }
 
-// Liste für die Handprüfung in Paperless und im Bexio-Postfach.
+// Liste für die Handprüfung in Paperless und im Bexio-Postfach (mit Message-ID, falls n8n den Versand gemeldet hat).
 export function formatHandpruefung(belege = []) {
   const fertig = belege.filter((b) => b.schritte.freigabe2.status === 'ok');
   if (fertig.length === 0) return 'Handprüfung: keine freigegebenen Belege.';
-  const zeilen = ['Handprüfung (Paperless und Versand an Bexio kennt das Portal nicht):'];
+  const zeilen = ['Handprüfung (Ablage in Paperless und Ankunft bei Bexio sieht das Portal nicht):'];
   for (const b of fertig) {
     zeilen.push(`  Portal-ID #${b.id} · ${b.dateiname ?? '(Dateiname unbekannt)'} · CHF ${b.betrag ?? '?'} · ${b.lieferant ?? '(Lieferant unbekannt)'} · Rechnungsnummer ${b.rechnungsnummer ?? '?'}`);
     zeilen.push('    [ ] Dokument in Paperless vorhanden (Suche nach Rechnungsnummer oder Dateiname)');
-    zeilen.push('    [ ] Mail an Bexio angekommen und Beleg dort erfasst');
+    for (const v of b.bexioVersand ?? []) zeilen.push(`    Bexio-Versand gemeldet: ${v.zeitpunkt}, an ${v.empfaenger}, Message-ID ${v.messageId}`);
+    zeilen.push((b.bexioVersand ?? []).length
+      ? '    [ ] Mail mit dieser Message-ID bei Bexio angekommen und Beleg dort erfasst'
+      : '    [ ] Mail an Bexio angekommen und Beleg dort erfasst');
   }
   return zeilen.join('\n');
 }

@@ -212,6 +212,19 @@ festgeschriebene Manifeste der Version 1 bleiben unverändert abrufbar.
 `qr_iban` allein ist kein Zahlungsauftrag, weil Gutschriften und Belege
 mit Entscheidung "Nur archivieren" diese Felder weiterhin tragen können.
 
+### Versandquittung für Bexio
+
+Nach dem Mailversand an das Bexio-Eingangspostfach meldet n8n die
+SMTP-Antwort an `POST /api/n8n/jobs/:id/bexio-versand-bestaetigen`
+([Vertrag](n8n-schnittstelle.md#versand-an-bexio-bestätigen)). Die Quittung
+ist an die `export_id` des Exportnachweises gebunden, damit feststeht,
+**welche** Datei verschickt wurde; eine `export_id` eines anderen Vorgangs
+oder ein Vorgang ohne Exportnachweis ergibt 409. Gespeichert wird nur ein
+erfolgreicher Versand (2xx, kein Bexio-Empfänger abgelehnt), unveränderlich in
+`bexio_versand`. Die Quittung belegt die Annahme durch den eigenen
+Mailserver, **nicht** die Zustellung oder Verbuchung in Bexio; sie ersetzt
+weder den Zahlungsnachweis (`zahlung.freigegeben`) noch die Archivquittung.
+
 ## Rollout
 
 1. **Vor dem Deployment** den Bestand prüfen, der nach dem Update gesperrt

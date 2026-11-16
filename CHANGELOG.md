@@ -3,6 +3,17 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## Unveröffentlicht
+
+- Versandquittung für Bexio: n8n meldet nach dem Mailversand an das Bexio-Eingangspostfach die Antwort des
+  Mailservers an `POST /api/n8n/jobs/:id/bexio-versand-bestaetigen` (Export-ID, Empfänger, Message-ID,
+  SMTP-Antwort, Versandzeitpunkt). Nur 2xx ohne abgelehnten Bexio-Empfänger wird quittiert (sonst 422);
+  gleiche Message-ID ist idempotent. Nachzügler über `GET /api/n8n/jobs/bexio-versand-ausstehend`. Die
+  Belegseite («Jetzt prüfen») zeigt «An Bexio gesendet: …» bzw. «noch nicht gemeldet». Die SMTP-Antwort belegt
+  nur die Annahme durch den eigenen Mailserver, nicht die Zustellung bei Bexio. Automatische Migration: neue
+  append-only Tabelle `bexio_versand` (mit Audit). n8n: neuer HTTP-Request-Knoten nach «Send Email»
+  ([Anleitung](docs/n8n-schnittstelle.md#versand-an-bexio-bestätigen)).
+
 ## [1.3.0] – 2026-11-16
 
 Sicherheits- und Stabilitäts-Release nach der Prüfung vom 15.11.2026 (Befunde S1–S9, U1–U5, B1–B5).

@@ -140,7 +140,7 @@ Solange der Modus aktiv ist:
 - **PDF-Downloads:** `/downloads/*` (signierte Links, z. B. von n8n) antwortet für alle ohne Recht mit **503 und
   JSON** (`{"error":"wartungsmodus"}`, `Retry-After: 300`) statt der HTML-Wartungsseite; Berechtigte sehen die
   PDF-Vorschau weiter. Die Pfadprüfungen des Modus sind unabhängig von Gross-/Kleinschreibung.
-- **Offen bleiben:** `/api/n8n/backup/*` (Backup-Abholung), die n8n-Bestätigungen (`…/abholung-bestaetigen`, `…/archivierung-bestaetigen`), `/healthz` und `/auth/*`. Wer `wartungsmodus_schalten` **oder** `gruppenrechte_verwalten` (Superadmin) hat, bleibt nie ausgesperrt; wer nur `backup_verwalten` hat, erreicht `/admin/backup`. Die Sperre greift vor der Nutzungserfassung und dem Zugriffs-Audit: normale Anfragen hinterlassen im Modus keine Nutzungsdaten. Die Testinstanz (Spielwiese) ist vom Modus nicht betroffen.
+- **Offen bleiben:** `/api/n8n/backup/*` (Backup-Abholung), die n8n-Bestätigungen (`…/abholung-bestaetigen`, `…/archivierung-bestaetigen`, `…/bexio-versand-bestaetigen`), `/healthz` und `/auth/*`. Wer `wartungsmodus_schalten` **oder** `gruppenrechte_verwalten` (Superadmin) hat, bleibt nie ausgesperrt; wer nur `backup_verwalten` hat, erreicht `/admin/backup`. Die Sperre greift vor der Nutzungserfassung und dem Zugriffs-Audit: normale Anfragen hinterlassen im Modus keine Nutzungsdaten. Die Testinstanz (Spielwiese) ist vom Modus nicht betroffen.
 - **Hinweis zum Backup:** Ein im Modus gezogenes Backup enthält den Zustand «Wartungsmodus aktiv» — nach einem Restore startet das Portal ebenfalls im Wartungsmodus und muss ausgeschaltet werden.
 - **Geplante Jobs** pausieren (Läufe werden übersprungen, nicht nachgeholt); die **Datenbank-Sicherung läuft
   weiter**, sie liest nur.

@@ -154,14 +154,15 @@ Seit Befund B2 rechnen Eingangsprüfung, Vorschaubild, QR-Erkennung und Textausz
 (und QR/Text der Kreditkartenbelege per Mail) in eigenen Worker-Threads, damit lange PDF-Arbeit das Portal
 nicht anhält. Seit Etappe 2 auch die Spesen-Belege (Prüfung, PDF, Vorschaubild), die Belegdateien der
 Kreditkarten-Belege (Upload, Bearbeiten, nachgereicht im Abgleich, per Mail) und die Textanalyse der
-Kreditkartenabrechnung. Technik: [architektur.md](architektur.md#pdf-worker-srcservicespdfworkerpooljs-befund-b2).
+Kreditkartenabrechnung. Seit Etappe 4 auch «Beleg anhängen» bei Kontierung, Ablehnung, Aufsplitten und
+Kreditkarten-Abgleich; bei einer Störung sehen Personen ihr Formular mit 503, gespeichert ist nichts. Technik: [architektur.md](architektur.md#pdf-worker-srcservicespdfworkerpooljs-befund-b2).
 
 | Variable | Standard | Bedeutung |
 |---|---|---|
 | `PDF_WORKER` | `an` | `an`: Worker-Threads. `aus`: alles im Hauptthread wie vor B2 – nur als bewusster Schalter für Fehlersuche oder Tests, kein Rückfall bei Störungen. |
 | `PDF_WORKER_ANZAHL` | `2` | Anzahl Worker (1–4). Jeder aktive Worker braucht ~55 MB RSS plus den WASM-Speicher seiner Aufträge. |
 | `PDF_WORKER_SPEICHER_MB` | `250` | Grenze für den WASM-/external-Speicher je Worker (64–4096). Darüber wird der Worker nach dem Auftrag ersetzt. Der Standard ist auf das Shared Hosting mit ca. 1,3 GB ausgelegt. |
-| `PDF_WORKER_ZEITLIMIT_FAKTOR` | `1` | Faktor (0.1–10) auf die Zeitlimits je Auftrag: Eingangsprüfung, Vorschaubild, Text je 10 s, QR 15 s, kombinierte Analyse 20 s, Belegdatei (Spesen/Kreditkarte) 30 s. |
+| `PDF_WORKER_ZEITLIMIT_FAKTOR` | `1` | Faktor (0.1–10) auf die Zeitlimits je Auftrag: Eingangsprüfung, Vorschaubild, Text je 10 s, QR 15 s, kombinierte Analyse 20 s, Belegdatei (Spesen/Kreditkarte) und Beleg anhängen je 30 s. |
 
 Ungültige Werte verhindern den Start mit einer klaren Meldung. Leerlauf-Worker enden nach 5 Minuten und starten
 beim nächsten Auftrag neu (~120 ms).

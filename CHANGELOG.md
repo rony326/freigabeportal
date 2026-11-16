@@ -27,6 +27,14 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   `{fehler: 'pdf_verarbeitung_ausgelastet'}` – wiederholen. Auch die Testmodus-Beispieldaten
   rechnen ihre Vorschaubilder im Worker; der Hauptprozess lädt mupdf damit gar nicht mehr (rund 25 MB weniger
   Speicher im Leerlauf). Offen für spätere Etappen: Stempel, Beleg anhängen, Splitgruppen, Freigabe 2.
+- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 4): «Beleg anhängen» bei Kontierung, Ablehnung,
+  Aufsplitten und Kreditkarten-Abgleich rechnet im Worker (ein grosses Bild hielt das Portal bisher
+  sekundenlang an). Der Beleg wird jetzt **vor** dem Speichern angehängt: Ist die PDF-Verarbeitung
+  ausgelastet, kommt das Formular mit 503 und dem Hinweis zurück, und es ist nichts gespeichert. Ein Beleg,
+  der sich erst beim Anhängen als beschädigt erweist, ergab bisher Fehler 500 bei bereits gespeicherter
+  Kontierung ohne Beleg und ohne Mails; jetzt erscheint das Formular mit einem Hinweis (422) und nichts ist
+  gespeichert. Zwei gleichzeitige Kontierungen mit Beleg auf denselben Vorgang: genau eine wird gespeichert,
+  die andere erhält 409. Offen: Stempel (Etappe 3) und Splitgruppen-Export (Etappe 5).
 - Abhängigkeiten aktualisiert (ohne Hauptversionssprung): mupdf 1.28.0 → 1.28.6, express-rate-limit
   8.6.2 → 8.7.4, nodemailer 10.2.1 → 10.6.0, csrf-csrf 4.0.3 → 4.1.0, read-excel-file 9.3.12 → 9.3.17.
 - Doku: `docs/betrieb-und-nutzung.md` hält einen monatlichen Termin fest (`npm audit` und Prüfung der

@@ -7,7 +7,7 @@
 - **Views**: server-seitig gerenderte EJS-Templates (kein Client-Framework, kein SPA-Bundling).
 - **Datenbank**: SQLite über das eingebaute `node:sqlite` — eine einzelne Datei (`DB_PATH`), kein separater DB-Server.
 - **Dateiablage**: Rechnungs-PDFs/Thumbnails unter `JOBS_DIR`, Branding-Logo unter `BRANDING_DIR` — beides normales Dateisystem, keine Objectstorage-Anbindung.
-- **PDF-Verarbeitung**: `mupdf` (Rendering/QR-Scan-Rasterung, im n8n-Eingang, bei Spesen und Kreditkarten-Belegen in Worker-Threads, siehe [PDF-Worker](#pdf-worker-srcservicespdfworkerpooljs-befund-b2)), `pdf-lib` (Stempel-Seite anhängen, Beleg mergen), `pdf-rfc3161` (RFC3161-Zeitstempel).
+- **PDF-Verarbeitung**: `mupdf` (Rendering/QR-Scan-Rasterung, im n8n-Eingang, bei Spesen und Kreditkarten-Belegen in Worker-Threads; Beleg anhängen mit pdf-lib ebenfalls im Worker, siehe [PDF-Worker](#pdf-worker-srcservicespdfworkerpooljs-befund-b2)), `pdf-lib` (Stempel-Seite anhängen, Beleg mergen), `pdf-rfc3161` (RFC3161-Zeitstempel).
 - **QR-Code**: `jsqr` (Dekodierung), eigener Parser für das Swiss-QR-Bill-Zeilenformat.
 - **Mail**: `nodemailer` gegen ein beliebiges SMTP-Konto.
 - **Hosting**: Infomaniak Node.js-Webhosting; der Node-Prozess läuft dauerhaft und übernimmt Scheduling selbst (siehe unten) — kein externer Task-Scheduler nötig.
@@ -155,8 +155,10 @@ Deshalb laufen diese Aufgaben in Worker-Threads:
 - **Aufgabenliste** `src/workers/pdfAufgaben.js`: Name → bestehende reine
   Funktion (`eingangPruefen` = `pruefeEingangsPdf`, `vorschaubild`,
   `qrErkennen`, `textExtrahieren`) plus `eingangAnalysieren` (Vorschaubild, QR
-  und optional Text in einem Auftrag) und `belegDateiErstellen` (Beleg als PDF
-  via `buildBelegPdf` plus Vorschaubild; Etappe 2). Einzige Quelle für Worker-
+  und optional Text in einem Auftrag), `belegDateiErstellen` (Beleg als PDF
+  via `buildBelegPdf` plus Vorschaubild; Etappe 2) und `belegAnhaengen`
+  (`belegInPdfAnhaengen`: Beleg an ein Vorgangs-PDF hängen und seine Seiten
+  zählen, `{ pdf, belegSeiten }`; Etappe 4). Einzige Quelle für Worker-
   und Inline-Betrieb.
 - **Worker** `src/workers/pdfWorker.js`: lädt die Aufgaben (inkl. mupdf,
   ~120 ms, ~+55 MB RSS je Worker), bearbeitet einen Auftrag nach dem anderen und
@@ -167,7 +169,7 @@ Deshalb laufen diese Aufgaben in Worker-Threads:
     Kreditkartenbelege per Mail) belegen höchstens einen Worker gleichzeitig.
   - Warteschlange höchstens 100 → `PdfWorkerUeberlastet`.
   - Zeitlimit je Auftrag (Eingangsprüfung, Vorschaubild, Text je 10 s, QR 15 s,
-    kombiniert 20 s, Belegdatei 30 s; mal `PDF_WORKER_ZEITLIMIT_FAKTOR`): der Worker wird mit
+    kombiniert 20 s, Belegdatei und Beleg anhängen je 30 s; mal `PDF_WORKER_ZEITLIMIT_FAKTOR`): der Worker wird mit
     `terminate()` beendet (bricht auch laufende WASM-Arbeit nach wenigen ms ab),
     der Auftrag scheitert mit `PdfWorkerZeitueberschreitung`.
   - Der WASM-Speicher von mupdf wächst und schrumpft nie, und `resourceLimits`
@@ -218,10 +220,9 @@ erneut.
 Echte Prüffehler bleiben unverändert: `PdfEingangFehler` → Formularfehler 400
 mit derselben Meldung; Bild über 40 Megapixel → 400 aus `pruefeBelegBild`.
 Bewusst im Hauptthread geblieben: `pruefeBelegBild` (liest nur den Bildkopf),
-`detectBelegMimetype` und `countBelegSeiten` im KK-Abgleich (pdf-lib, nur
-PDF-Belege; dieselben Bytes parst danach ohnehin `bereiteTeilDateienVor` in
-`services/aufsplitten.js` mit pdf-lib im Hauptthread – eine Verlagerung allein der
-Prüfung würde die Blockade nicht verkürzen, das gehört zu Etappe 3–5).
+`detectBelegMimetype` und die Lesbarkeitsprüfung `countBelegSeiten` im KK-Abgleich
+(pdf-lib, nur PDF-Belege – ein Bild zählt ohne Dekodieren als eine Seite; das
+eigentliche Zusammenführen läuft seit Etappe 4 im Worker).
 `buildBelegPdf` dagegen läuft im Worker: ein PNG bis 40 Megapixel zu dekodieren
 und einzubetten (pdf-lib `embedPng`) blockierte den Hauptthread ~6 s.
 
@@ -232,9 +233,46 @@ Testmodus-Beispieldaten (`services/testmodus/beispieldaten.js`, über
 `middleware/roles.js` bei jedem Start geladen) rechnen ihre Vorschaubilder über
 den PDF-Worker. Das spart im Leerlauf rund 25 MB RSS (gemessen ~155 → ~131 MB).
 
-**Noch im Hauptthread (Etappe 3–5)**: Stempel (`pdfStamp.js`), Beleg anhängen in der Kontierung und
-beim Aufsplitten (`belegAnhaengen.js`/`aufsplitten.js`, pdf-lib),
-Splitgruppen-Export, Freigabe 2.
+**Etappe 4** (umgestellt, Spur `interaktiv`): «Beleg anhängen» – Aufgabe
+`belegAnhaengen`, die in einem Auftrag zusammenführt und danach die Belegseiten
+zählt (scheitert das Zusammenführen, gibt es keine Seitenzahl).
+
+| Aufrufer | Aufgabe(n) im Worker | Bei `PdfWorkerFehler` |
+|---|---|---|
+| `POST /kontierung/:id` (Kontieren und `aktion=ablehnen`, `routes/kontierung.js`) | `belegAnhaengen` | Formular mit 503 und Hinweis; Vorgang, Verlauf, `beleg_seitenzahl` und PDF unverändert, keine Mail |
+| `POST /kontierung/:id/aufsplitten` (`bereiteTeilDateienVor` in `services/aufsplitten.js`) | `belegAnhaengen` je Zeile mit Beleg | Formular mit 503; angelegte Teildateien entfernt, nichts aufgesplittet |
+| `POST /kontierung/:id/kk-abgleich` (Kartenbelege und nachgereichte Belege über `bereiteTeilDateienVor`) | `belegAnhaengen` | wie Etappe 2: Formular mit 503, nichts aufgesplittet, Dateien entfernt |
+
+Kontierung und Ablehnung haben früher **erst** die Transaktion festgeschrieben und
+**danach** den Beleg zusammengeführt. Mit einem `await` auf den Worker an dieser
+Stelle könnte eine Störung eine gespeicherte Kontierung ohne Beleg hinterlassen.
+Deshalb jetzt (`services/aufsplitten.js`):
+
+1. `bereiteBelegAnhangVor` **vor** der Transaktion: Vorgangs-PDF lesen, im Worker
+   zusammenführen, Ergebnis in eine temporäre Datei `<pdf>.beleg-….tmp` daneben.
+   Scheitert das, ist nichts gespeichert.
+2. `belegAnhangNochAktuell` **in** der Transaktion: Das `await` hebt den bisher
+   durchgehend synchronen Ablauf von der Zuständigkeitsprüfung bis zum COMMIT auf,
+   auf den sich `setKontierung`/`abschliessenFreigabe1` (ohne Status-Bedingung im
+   `WHERE`) verlassen. Haben sich Status, Zuständigkeit, Konto, Eskalation,
+   `beleg_seitenzahl` oder die PDF-Bytes seit dem Lesen geändert (z. B. eine
+   gleichzeitige zweite Kontierung oder Ablehnung mit Beleg), folgt ROLLBACK und
+   409. `addBelegSeiten` läuft in derselben Transaktion.
+3. `uebernimmBelegAnhang` unmittelbar nach dem COMMIT, ohne `await` dazwischen:
+   `renameSync` der temporären Datei auf das PDF (atomar im selben Verzeichnis).
+   In allen anderen Fällen entfernt `verwirfBelegAnhang` die temporäre Datei
+   (verwaiste `.tmp` nach einem Absturz fallen unter die Mindestalter-Regel der
+   Verwaiste-Dateien-Prüfung).
+
+Ein Beleg, der sich erst beim Zusammenführen als unlesbar erweist (kennungsgültiges,
+aber kaputtes PDF; abgeschnittenes Bild), führte früher **nach** dem COMMIT zu
+Fehler 500 – die Kontierung war gespeichert, der Beleg fehlte, Mails gingen keine
+raus. Jetzt: Formular mit 422 (`BelegAnhangFehler`) bzw. 400 (`BelegBildFehler`),
+nichts gespeichert. Gemessen (Test `pdfWorkerBelegEventLoop.test.js`, PNG 3000 × 3000):
+inline ~1,4 s Blockade, im Worker < 5 ms.
+
+**Noch im Hauptthread (Etappe 3 und 5)**: Stempel (`pdfStamp.js`, Freigabe 2),
+Splitgruppen-Export (`splitGruppenExport.js`).
 
 ## Router-Übersicht
 

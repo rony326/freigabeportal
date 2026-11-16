@@ -3,8 +3,15 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
-## Unveröffentlicht
+## [1.4.1] – 2026-11-16
 
+Korrektur und einfachere Verwaltung von Personenrechten und Kreditoren. Release Notes:
+[docs/releases/v1.4.1.md](docs/releases/v1.4.1.md). Keine Migration, keine neuen Umgebungsvariablen.
+
+- TSA-Adresse: `http://` ist wieder erlaubt, wenn keine Zugangsdaten hinterlegt sind (z. B. die offizielle
+  DigiCert-Adresse `http://timestamp.digicert.com`). Die Prüfung aus 1.3.0 (S6) verlangte pauschal `https://`
+  und machte damit die bestehende Regel «http nur ohne Zugangsdaten» unwirksam. Der Schutz vor internen,
+  privaten und lokalen Zielen bleibt unverändert; mit Benutzername oder Passwort bleibt `https://` Pflicht.
 - Personen: Die Liste «Herkunft der Rechte» entfällt. Liefert eine Gruppe ein Recht, ist dessen Checkbox
   angehakt und grau, daneben «über Gruppe X»; ein zusätzlich direkt vergebenes Recht bleibt beim Speichern
   erhalten («(auch direkt)»). Feste Rechte wie «Gruppenrechte verwalten» stehen als Textzeile darunter.
@@ -14,15 +21,6 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   ein optionales Feld «Absender», das gleich die erste Zuweisungsregel anlegt (alles oder nichts). Die
   Kreditor-ID aus den Formularen prüft der Server jetzt ausdrücklich (unbekannt → 400 statt Serverfehler,
   deaktiviert → abgewiesen). Der Link in der Mail «IBAN geändert» führt auf die Seite des Lieferanten.
-
-## [1.4.1] – 2026-11-16
-
-Korrektur. Release Notes: [docs/releases/v1.4.1.md](docs/releases/v1.4.1.md). Keine Migration, keine neuen Umgebungsvariablen.
-
-- TSA-Adresse: `http://` ist wieder erlaubt, wenn keine Zugangsdaten hinterlegt sind (z. B. die offizielle
-  DigiCert-Adresse `http://timestamp.digicert.com`). Die Prüfung aus 1.3.0 (S6) verlangte pauschal `https://`
-  und machte damit die bestehende Regel «http nur ohne Zugangsdaten» unwirksam. Der Schutz vor internen,
-  privaten und lokalen Zielen bleibt unverändert; mit Benutzername oder Passwort bleibt `https://` Pflicht.
 
 ## [1.4.0] – 2026-11-16
 

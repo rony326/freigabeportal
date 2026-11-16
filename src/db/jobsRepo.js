@@ -296,6 +296,8 @@ export function setQrDaten(db, id, { qrIban, qrReferenz, qrBetrag, qrWaehrung, q
 // setKontierung, eskalierenFreigabe1, abschliessenFreigabe1 und eskalierenFreigabe2 brauchen keinen WHERE-Status-Schutz:
 // Jede Route, die sie aufruft, ist ein vollständig synchroner Handler ohne `await` zwischen Berechtigungs-/Statusprüfung
 // und COMMIT, und die synchrone Ausführung von node:sqlite schliesst ein Verschränken mit einer anderen Anfrage aus.
+// Ausnahme seit B2, Etappe 4: Kontierung mit Beleg wartet vor der Transaktion auf den PDF-Worker; dort prüft
+// belegAnhangNochAktuell (services/aufsplitten.js) in der Transaktion, dass der Vorgang unverändert ist (sonst 409).
 // abschliessenFreigabe2 ist geschützt, weil seine Route vor dem Abschluss auf stampAndFinalize wartet. ablehnenJob ist
 // ebenfalls geschützt, obwohl sein Routenpfad kein solches await hat — es folgt der Semantik von abschliessenFreigabe2
 // ("Endübergang mit ehrlichem Boolean-Ergebnis"), statt Erfolg vorauszusetzen, und die Einheitlichkeit kostet nichts.
@@ -988,7 +990,7 @@ export function createSpesenPosition(
 // Addiert auf beleg_seitenzahl, statt es zu überschreiben — mergeBelegInPdf HÄNGT die Seiten eines Belegs immer hinter das
 // an, was schon im PDF steht (fügt nie ein). Hat ein Vorgang also schon N erfasste Belegseiten (z. B. vom eigenen Upload beim
 // Aufsplitten) und bekommt später einen weiteren Beleg zugemergt (Kontierung/Überarbeitung nach Ablehnung), wächst die
-// Summe genau um die Seitenzahl des neuen Belegs. Diese Invariante hält nur, weil jeder Aufruf von mergeBelegFuerJob strikt
+// Summe genau um die Seitenzahl des neuen Belegs. Diese Invariante hält nur, weil jedes Beleg-Anhängen (bereiteBelegAnhangVor) strikt
 // vor dem eigenen Freigabe-2-Stempeln des Vorgangs passiert (dem einmaligen, immer letzten Anhängen) — keine Route mergt
 // einen Beleg in einen bereits 'abgeschlossenen' Vorgang.
 export function addBelegSeiten(db, jobId, zusatzSeitenzahl) {

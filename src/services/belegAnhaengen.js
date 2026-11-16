@@ -147,6 +147,18 @@ export async function mergeBelegInPdf(pdfBuffer, belegBuffer, belegMimetype) {
   return Buffer.from(await doc.save());
 }
 
+/**
+ * Beleg anhängen in einem Durchgang (B2, Etappe 4; Aufgabe `belegAnhaengen` im PDF-Worker, siehe workers/pdfAufgaben.js):
+ * zusammenführen wie mergeBelegInPdf und die Seitenzahl des Belegs wie countBelegSeiten. Erst zusammenführen, dann zählen:
+ * scheitert das Zusammenführen (z. B. ein abgeschnittenes Bild, das erst in embedPng scheitert), gibt es auch keine Seitenzahl.
+ * @returns {Promise<{pdf: Buffer, belegSeiten: number}>}
+ */
+export async function belegInPdfAnhaengen(pdfBuffer, belegBuffer, belegMimetype) {
+  const pdf = await mergeBelegInPdf(pdfBuffer, belegBuffer, belegMimetype);
+  const belegSeiten = await countBelegSeiten(belegBuffer, belegMimetype);
+  return { pdf, belegSeiten };
+}
+
 // Anders als bei mergeBelegInPdf gibt es hier kein vorhandenes Vorgangs-PDF, in das gemergt würde — der Beleg einer Spesenposition
 // *ist* das ganze Dokument des Vorgangs. Ein PDF-Beleg wird unverändert zurückgegeben (seine Seiten bleiben unberührt — nur ein in
 // ein bestehendes Vorgangs-PDF gemergter Beleg läuft durch die A4-Normalisierung); ein Bildbeleg wird als einzige Seite eines neuen

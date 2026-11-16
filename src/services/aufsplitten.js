@@ -3,10 +3,11 @@
 // Datei und eigener Freigabekette. Ablauf in der Route: 1) `bereiteTeilDateienVor` (Dateien, VOR der Transaktion),
 // 2) in der Transaktion `markJobAufgesplittet` + `erzeugeTeilJobs`, 3) nach dem Commit `benachrichtigeNachAufsplitten`.
 
-import { mkdirSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, copyFileSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import { mergeBelegInPdf, countBelegSeiten } from './belegAnhaengen.js';
 import { loescheDateienStill } from './kkBelegDatei.js';
+import { pdfArbeit, PdfWorkerFehler } from './pdfArbeit.js';
+import { BelegBildFehler } from './pdfFehler.js';
 import {
   getJobById, createSplitJob, abschliessenFreigabe1, eskalierenFreigabe1, eskalierenFreigabe1AnAdmin, getEffectiveFreigeber2Id,
 } from '../db/jobsRepo.js';
@@ -47,12 +48,90 @@ export function neuerDateipfad(jobsDir, quelldatei) {
   return zielPfad;
 }
 
-// Fügt einen hochgeladenen Beleg (multer-Datei) direkt in das PDF unter pdfPfad ein — wird erst genutzt, nachdem der Aufrufer
-// bestätigt hat, dass die umgebende Kontierung/das Aufsplitten tatsächlich gespeichert wurde; eine Datei, die sich dann doch
-// als unpassend herausstellt (z. B. ein 409-Wettlauf), verändert so nie das PDF auf der Platte.
-export async function mergeBelegFuerJob(pdfPfad, { buffer }, mimetype) {
-  const merged = await mergeBelegInPdf(readFileSync(pdfPfad), buffer, mimetype);
-  writeFileSync(pdfPfad, merged);
+// Beleg an das PDF eines bestehenden Vorgangs hängen (Kontierung und Ablehnung in kontierung.js; B2, Etappe 4). Das Zusammenführen
+// läuft im PDF-Worker und damit über ein await. Damit nie eine Kontierung ohne ihren Beleg gespeichert wird (früher: COMMIT, danach
+// erst das Zusammenführen – scheiterte es, blieb die Kontierung ohne Beleg und ohne Mails gespeichert), gilt diese Reihenfolge:
+// 1) bereiteBelegAnhangVor – VOR der Transaktion: Vorgangs-PDF lesen, im Worker zusammenführen und die Belegseiten zählen,
+//    Ergebnis in eine temporäre Datei neben dem PDF schreiben. Scheitert das (PdfWorkerFehler, unlesbarer Beleg), ist nichts gespeichert.
+// 2) belegAnhangNochAktuell – IN der Transaktion: Während des Wartens auf den Worker kann eine andere Anfrage den Vorgang bearbeitet
+//    oder sein PDF verändert haben (das await hebt den bisher durchgehend synchronen Ablauf von der Zuständigkeitsprüfung bis zum
+//    COMMIT auf, auf den sich setKontierung/abschliessenFreigabe1 in jobsRepo.js verlassen). Dann ROLLBACK und 409.
+// 3) uebernimmBelegAnhang – unmittelbar nach dem COMMIT und ohne await dazwischen: die temporäre Datei ersetzt das PDF per
+//    renameSync (atomar im selben Verzeichnis). Die Belegseiten (addBelegSeiten) schreibt der Aufrufer schon in der Transaktion.
+// verwirfBelegAnhang entfernt die temporäre Datei in allen anderen Fällen (Fehler, 409).
+
+// Felder des Vorgangs, die sich zwischen Lesen des PDFs und COMMIT nicht ändern dürfen (Zustand, Zuständigkeit, PDF, Belegseiten).
+const ANHANG_STAND_FELDER = [
+  'status', 'zugewiesen_an', 'konto_id', 'pdf_pfad', 'beleg_seitenzahl', 'kreditkarte_id',
+  'freigabe1_eskaliert_von', 'freigabe1_eskaliert_an_admin',
+];
+
+// Der Beleg liess sich nicht anhängen (beschädigtes oder unlesbares PDF/Bild, das erst beim Zusammenführen scheitert). Kein
+// vorübergehender Fehler: die Route antwortet mit dem Formular und 422, gespeichert ist nichts. `cause` trägt den Originalfehler.
+export class BelegAnhangFehler extends Error {
+  constructor(cause) {
+    super('Der Beleg konnte nicht angehängt werden: Die Datei ist beschädigt oder lässt sich nicht lesen. Es wurde nichts gespeichert. Bitte wähle eine andere Datei.', { cause });
+    this.name = 'BelegAnhangFehler';
+  }
+}
+
+/**
+ * Schritt 1 (siehe oben): führt den Beleg im PDF-Worker (Spur interaktiv) mit dem PDF des Vorgangs zusammen.
+ * Wirft PdfWorkerFehler (vorübergehend), BelegBildFehler (Bild zu gross/unlesbar) oder BelegAnhangFehler (jeder andere Fehler
+ * des Zusammenführens); in allen Fällen ist keine Datei angelegt.
+ * @param {object} job der Vorgang, so wie ihn die Route geladen hat (ohne await seit dem Laden)
+ * @param {{buffer: Buffer}} beleg hochgeladene Datei (multer)
+ * @param {'application/pdf'|'image/png'|'image/jpeg'} mimetype
+ * @returns {Promise<{pdfPfad: string, tempPfad: string, original: Buffer, belegSeiten: number, stand: object}>}
+ */
+export async function bereiteBelegAnhangVor(job, { buffer }, mimetype) {
+  const original = readFileSync(job.pdf_pfad);
+  const stand = Object.fromEntries(ANHANG_STAND_FELDER.map((feld) => [feld, job[feld] ?? null]));
+  let ergebnis;
+  try {
+    ergebnis = await pdfArbeit().ausfuehren('belegAnhaengen', [original, buffer, mimetype], { spur: 'interaktiv' });
+  } catch (err) {
+    if (err instanceof PdfWorkerFehler || err instanceof BelegBildFehler) throw err;
+    throw new BelegAnhangFehler(err);
+  }
+  const { pdf, belegSeiten } = ergebnis;
+  const tempPfad = `${job.pdf_pfad}.beleg-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`;
+  writeFileSync(tempPfad, pdf);
+  return { pdfPfad: job.pdf_pfad, tempPfad, original, belegSeiten, stand };
+}
+
+/**
+ * Schritt 2: true, wenn Vorgang und PDF noch genau so sind wie beim Lesen in bereiteBelegAnhangVor. Synchron, innerhalb der
+ * Transaktion aufrufen – bis zum COMMIT und zur Übernahme kann sich dann nichts mehr dazwischenschieben.
+ */
+export function belegAnhangNochAktuell(db, jobId, anhang) {
+  const aktuell = getJobById(db, jobId);
+  if (!aktuell) return false;
+  if (ANHANG_STAND_FELDER.some((feld) => (aktuell[feld] ?? null) !== anhang.stand[feld])) return false;
+  try {
+    return readFileSync(anhang.pdfPfad).equals(anhang.original);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Schritt 3: ersetzt das PDF durch das zusammengeführte (synchron, direkt nach dem COMMIT). Ein Fehler hier (nur bei einem
+ * Dateisystemproblem denkbar: die temporäre Datei liegt im selben Verzeichnis) wird laut protokolliert, weil die Kontierung dann
+ * schon gespeichert ist; die temporäre Datei bleibt für eine Wiederherstellung von Hand liegen.
+ */
+export function uebernimmBelegAnhang(anhang) {
+  try {
+    renameSync(anhang.tempPfad, anhang.pdfPfad);
+  } catch (err) {
+    console.error(`Beleg anhängen: ${anhang.tempPfad} konnte nach dem Speichern nicht nach ${anhang.pdfPfad} übernommen werden (${err.message}).`);
+    throw err;
+  }
+}
+
+/** Entfernt die temporäre Datei eines nicht übernommenen Anhangs (null erlaubt). */
+export function verwirfBelegAnhang(anhang) {
+  if (anhang) loescheDateienStill(anhang.tempPfad);
 }
 
 // Vergleicht die per QR gelesene IBAN mit den hinterlegten IBANs des Kreditors. @returns {{status: 'kein_abgleich'|'match'|'mismatch'}}
@@ -83,15 +162,20 @@ export async function bereiteTeilDateienVor(config, job, teile) {
       angelegt.push(pdfPfad);
       const thumbnailPfad = job.thumbnail_pfad ? neuerDateipfad(config.jobsDir, job.thumbnail_pfad) : null;
       angelegt.push(thumbnailPfad);
-      // Die Seitenzahl des Belegs wird hier — und nur hier — festgehalten: mergeBelegFuerJob
+      // Die Seitenzahl des Belegs wird hier — und nur hier — festgehalten: das Zusammenführen
       // hängt die Belegseiten direkt hinter die Rechnungsseiten, aber die spätere
       // Einzel-Freigabe-2 dieses Kindes hängt noch eigene Stempelseiten dahinter. Ohne diesen
       // Wert könnte der Gruppen-Merge die Belegseiten nachher nicht mehr von den Stempelseiten
       // unterscheiden (siehe haengeBelegSeitenAn in splitGruppenExport.js).
       let belegSeitenzahl = null;
+      // B2, Etappe 4: Zusammenführen und Zählen im PDF-Worker (ein Auftrag). Scheitert er (PdfWorkerFehler oder unlesbarer
+      // Beleg), entfernt der catch-Block unten alle Kopien; der Aufrufer antwortet bei PdfWorkerFehler mit 503.
       if (teil.beleg) {
-        belegSeitenzahl = await countBelegSeiten(teil.beleg.buffer, teil.beleg.mimetype);
-        await mergeBelegFuerJob(pdfPfad, teil.beleg, teil.beleg.mimetype);
+        const { pdf, belegSeiten } = await pdfArbeit().ausfuehren(
+          'belegAnhaengen', [readFileSync(pdfPfad), teil.beleg.buffer, teil.beleg.mimetype], { spur: 'interaktiv' },
+        );
+        writeFileSync(pdfPfad, pdf);
+        belegSeitenzahl = belegSeiten;
       }
       vorbereitet.push({ ...teil, pdfPfad, thumbnailPfad, belegSeitenzahl });
     }

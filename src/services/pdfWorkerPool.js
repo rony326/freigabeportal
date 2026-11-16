@@ -44,6 +44,8 @@ export const STANDARD_ZEITLIMITS_MS = {
   eingangAnalysieren: 20_000,
   // Bildbeleg bis 40 Megapixel: Dekodieren und Einbetten allein ~6 s auf dem Entwicklungsrechner.
   belegDateiErstellen: 30_000,
+  // Dasselbe Bild in ein bestehendes Vorgangs-PDF einbetten (B2, Etappe 4).
+  belegAnhaengen: 30_000,
 };
 const ZEITLIMIT_UNBEKANNT_MS = 10_000;
 const START_ZEITLIMIT_MS = 30_000;

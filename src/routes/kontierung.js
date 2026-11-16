@@ -10,7 +10,8 @@ import { personHasPermission } from '../middleware/permissions.js';
 import { meldeZugriffVerweigert } from '../services/zugriffsAudit.js';
 import multer from 'multer';
 import { mitAuditKontext } from '../services/auditContext.js';
-import { detectBelegMimetype, countBelegSeiten, pruefeBelegBild } from '../services/belegAnhaengen.js';
+import { detectBelegMimetype, pruefeBelegBild, BelegBildFehler } from '../services/belegAnhaengen.js';
+import { PdfWorkerFehler, antworteSpaeterErneut, PDF_VORUEBERGEHEND_MELDUNG } from '../services/pdfArbeit.js';
 import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalationsText } from '../services/eskalationsZiel.js';
 import {
   getJobById,
@@ -58,7 +59,11 @@ import { kkHinweisFuerJob } from '../services/kkStempel.js';
 import { kommentarBereich } from './kommentare.js';
 import {
   POSITION_PATTERN,
-  mergeBelegFuerJob,
+  bereiteBelegAnhangVor,
+  belegAnhangNochAktuell,
+  uebernimmBelegAnhang,
+  verwirfBelegAnhang,
+  BelegAnhangFehler,
   pruefeIbanAbgleich,
   bereiteTeilDateienVor,
   erzeugeTeilJobs,
@@ -317,15 +322,48 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         if (bildFehler) return renderFehler(bildFehler);
       }
 
+      // B2, Etappe 4: Ein angehängter Beleg wird im PDF-Worker mit dem Vorgangs-PDF zusammengeführt, BEVOR etwas gespeichert wird
+      // (Ablauf: bereiteBelegAnhangVor in services/aufsplitten.js). Ergebnis: der vorbereitete Anhang, null ohne Beleg, oder
+      // false, wenn die Antwort schon gesendet ist – 503 bei vorübergehender Störung, 400/422 bei einem unlesbaren Beleg.
+      const BELEG_KONFLIKT_MELDUNG = 'Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.';
+      const bereiteBelegVor = async () => {
+        if (!req.file) return null;
+        try {
+          return await bereiteBelegAnhangVor(job, req.file, belegMimetype);
+        } catch (err) {
+          if (err instanceof PdfWorkerFehler) {
+            antworteSpaeterErneut(res, err, 'Kontierung');
+            renderFehler(PDF_VORUEBERGEHEND_MELDUNG, 503);
+            return false;
+          }
+          if (err instanceof BelegBildFehler) {
+            renderFehler(err.message);
+            return false;
+          }
+          if (err instanceof BelegAnhangFehler) {
+            console.warn(`Kontierung: Beleg für Vorgang ${job.id} nicht anhängbar (${err.cause?.message ?? err.cause})`);
+            renderFehler(err.message, 422);
+            return false;
+          }
+          throw err;
+        }
+      };
+
       if (aktion === 'ablehnen') {
         if (!begruendung) {
           return renderFehler('Bei einer Ablehnung ist eine Begründung Pflicht.', 400, 'begruendung');
         }
 
+        const anhang = await bereiteBelegVor();
+        if (anhang === false) return;
+
         db.exec('BEGIN');
         let abgelehnt;
         try {
-          abgelehnt = ablehnenJob(db, job.id, { abgelehntVon: req.currentPerson.churchtools_person_id, grund: begruendung });
+          // Mit Beleg lag ein await (PDF-Worker) zwischen Zuständigkeitsprüfung und hier: hat inzwischen eine andere Anfrage den
+          // Vorgang oder sein PDF verändert, wird nichts gespeichert (409 wie beim Wettlauf auf ablehnenJob).
+          abgelehnt = (!anhang || belegAnhangNochAktuell(db, job.id, anhang))
+            && ablehnenJob(db, job.id, { abgelehntVon: req.currentPerson.churchtools_person_id, grund: begruendung });
           if (abgelehnt) {
             createFreigabe(db, {
               jobId: job.id,
@@ -338,29 +376,29 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
               eskaliertVon: null,
               vertretungFuer: !job.freigabe1_eskaliert_an_admin && istAktiveVertretungFuer(db, req.currentPerson.churchtools_person_id, job.zugewiesen_an) ? job.zugewiesen_an : null,
             });
+            // beleg_seitenzahl mitzuführen ist hier genauso Pflicht wie beim Aufsplitten: auch ein
+            // Splitkind (aufgesplittet_von gesetzt) landet auf diesem Pfad, wenn seine Zeile abgelehnt
+            // und überarbeitet wird. Ohne die Fortschreibung wüsste der spätere Gruppen-Merge nichts
+            // von diesen Belegseiten und liesse sie kommentarlos aus dem Archivdokument weg.
+            // Bewusst nicht auf Splitkinder eingeschränkt -- bei einem gewöhnlichen Job liest diese
+            // Spalte schlicht niemand. Die Seitenzahl stammt aus demselben Worker-Auftrag, der den Beleg
+            // erfolgreich zusammengeführt hat (erst zusammenführen, dann zählen): eine aufgeblähte Zahl liesse
+            // später den Ausschnitt von haengeBelegSeitenAn in die Freigabe-2-Stempelseite des Kindes reichen.
+            if (anhang) addBelegSeiten(db, job.id, anhang.belegSeiten);
           }
           db.exec('COMMIT');
         } catch (err) {
           db.exec('ROLLBACK');
+          verwirfBelegAnhang(anhang);
           throw err;
         }
 
         if (!abgelehnt) {
-          return renderFehler('Diese Rechnung wurde inzwischen bereits von einem anderen Vorgang bearbeitet.', 409);
+          verwirfBelegAnhang(anhang);
+          return renderFehler(BELEG_KONFLIKT_MELDUNG, 409);
         }
-
-        // beleg_seitenzahl mitzuführen ist hier genauso Pflicht wie beim Aufsplitten: auch ein
-        // Splitkind (aufgesplittet_von gesetzt) landet auf diesem Pfad, wenn seine Zeile abgelehnt
-        // und überarbeitet wird. Ohne die Fortschreibung wüsste der spätere Gruppen-Merge nichts
-        // von diesen Belegseiten und liesse sie kommentarlos aus dem Archivdokument weg.
-        // Bewusst nicht auf Splitkinder eingeschränkt -- bei einem gewöhnlichen Job liest diese
-        // Spalte schlicht niemand.
-        if (req.file) {
-          // Erst zusammenführen, dann zählen: Wirft mergeBelegFuerJob (z. B. ein abgeschnittenes, aber gültig signiertes Bild, das erst in embedPng scheitert), darf beleg_seitenzahl nicht schon für Seiten erhöht worden sein, die nie tatsächlich geschrieben wurden — eine aufgeblähte Zahl lässt später den Ausschnitt von haengeBelegSeitenAn
-          // in die eigene Freigabe-2-Stempelseite des Kindes hineinreichen und beschädigt das Archivdokument still.
-          await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
-          addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
-        }
+        // Direkt nach dem COMMIT, ohne await dazwischen: das zusammengeführte PDF ersetzt das bisherige.
+        if (anhang) uebernimmBelegAnhang(anhang);
 
         if (job.freigabe1_eskaliert_an_admin) {
           const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
@@ -476,8 +514,18 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         });
       }
 
+      const anhang = await bereiteBelegVor();
+      if (anhang === false) return;
+
       db.exec('BEGIN');
       try {
+        // Siehe Ablehnungs-Pfad: nach dem await auf den PDF-Worker prüfen, ob Vorgang und PDF noch unverändert sind. Sonst
+        // ROLLBACK und 409 – zwei gleichzeitige Kontierungen dürfen nicht beide speichern und ihr PDF schreiben.
+        if (anhang && !belegAnhangNochAktuell(db, job.id, anhang)) {
+          db.exec('ROLLBACK');
+          verwirfBelegAnhang(anhang);
+          return renderFehler(BELEG_KONFLIKT_MELDUNG, 409);
+        }
         setKontierung(db, job.id, konto.id);
         updateKontierungMetadaten(db, job.id, {
           absender,
@@ -551,21 +599,19 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             eskaliertVon: null,
           });
         }
+        // Siehe Ablehnungs-Pfad oben: ein Splitkind erreicht auch die normale Kontierung -- etwa
+        // eine per hinweis_konto_id angelegte Zeile, die aus dem Pool geclaimt wird, oder eine aus
+        // der Interessenskonflikt-Eskalationsmail heraus geöffnete. Ein hier angehängter Beleg muss
+        // deshalb genauso in beleg_seitenzahl einfliessen, sonst fehlt er später im Gruppendokument.
+        if (anhang) addBelegSeiten(db, job.id, anhang.belegSeiten);
         db.exec('COMMIT');
       } catch (err) {
         db.exec('ROLLBACK');
+        verwirfBelegAnhang(anhang);
         throw err;
       }
-
-      // Siehe Ablehnungs-Pfad oben: ein Splitkind erreicht auch die normale Kontierung -- etwa
-      // eine per hinweis_konto_id angelegte Zeile, die aus dem Pool geclaimt wird, oder eine aus
-      // der Interessenskonflikt-Eskalationsmail heraus geöffnete. Ein hier angehängter Beleg muss
-      // deshalb genauso in beleg_seitenzahl einfliessen, sonst fehlt er später im Gruppendokument.
-      if (req.file) {
-        // Erst zusammenführen, dann zählen — siehe den identischen Kommentar beim Ablehnungs-Pfad oben.
-        await mergeBelegFuerJob(job.pdf_pfad, req.file, belegMimetype);
-        addBelegSeiten(db, job.id, await countBelegSeiten(req.file.buffer, belegMimetype));
-      }
+      // Direkt nach dem COMMIT, ohne await dazwischen: das zusammengeführte PDF ersetzt das bisherige.
+      if (anhang) uebernimmBelegAnhang(anhang);
 
       if (ibanManuellNoetig) {
         const passt = ibanEndungPasst(db, kreditor.id, ibanEndung);
@@ -1118,7 +1164,16 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       job.betrag = gesamtbetrag.replace(',', '.');
 
       // Datei-I/O (auch das asynchrone Zusammenführen des Belegs) passiert vor der Datenbanktransaktion unten — siehe bereiteTeilDateienVor in services/aufsplitten.js.
-      const vorbereiteteTeile = await bereiteTeilDateienVor(config, job, aufgeloesteTeile);
+      // B2, Etappe 4: Belege werden dabei im PDF-Worker angehängt. Bei einer Störung hat bereiteTeilDateienVor seine Kopien schon
+      // entfernt; das Formular kommt mit 503 zurück, nichts ist aufgesplittet.
+      let vorbereiteteTeile;
+      try {
+        vorbereiteteTeile = await bereiteTeilDateienVor(config, job, aufgeloesteTeile);
+      } catch (err) {
+        if (!(err instanceof PdfWorkerFehler)) throw err;
+        antworteSpaeterErneut(res, err, 'Aufsplitten');
+        return renderAufsplittenForm(req, res, 503, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, [PDF_VORUEBERGEHEND_MELDUNG], typ, { kreditorId: kreditorIdEingabe, ibanEndung, pruefBemerkung });
+      }
 
       let ergebnis;
       let kindIds = [];

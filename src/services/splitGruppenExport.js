@@ -17,7 +17,7 @@ import { tsaTrustOptions } from './tsaTrust.js';
 import { bereiteGruppenSnapshotVor, getAltfallEntscheidung } from './exportSnapshot.js';
 import { listeKommentare } from './kommentare.js';
 
-// mergeBelegFuerJob (beim Aufsplitten, kontierung.js) fügt Belegseiten immer direkt hinter die Rechnungsseiten ein, vor jedem späteren
+// Das Beleg-Anhängen (Aufgabe belegAnhaengen, beim Aufsplitten und in der Kontierung) fügt Belegseiten immer direkt hinter die Rechnungsseiten ein, vor jedem späteren
 // Stempeln — mit der damals festgehaltenen Belegseitenzahl (kind.beleg_seitenzahl) liegen die Belegseiten also immer genau bei
 // [basisSeitenzahl, basisSeitenzahl + belegSeitenzahl), egal wie viele Stempel-/Verlaufsseiten ein späterer Abschluss von Freigabe 2
 // dahinter anhängt.

@@ -9,7 +9,7 @@ import { pruefeEingangsPdf } from '../services/pdfEingang.js';
 import { renderFirstPageThumbnail } from '../services/thumbnail.js';
 import { scanQrBill } from '../services/qrBillScan.js';
 import { extrahierePdfText } from '../services/pdfText.js';
-import { buildBelegPdf } from '../services/belegAnhaengen.js';
+import { buildBelegPdf, belegInPdfAnhaengen } from '../services/belegAnhaengen.js';
 
 // Fehlermeldung ohne Stack (geht als Text an den Aufrufer, der sie wie bisher protokolliert).
 function meldung(err) {
@@ -58,4 +58,7 @@ export const AUFGABEN = {
   textExtrahieren: extrahierePdfText,
   eingangAnalysieren,
   belegDateiErstellen,
+  // Beleg an das PDF eines Vorgangs hängen und seine Seiten zählen (Kontierung, Ablehnung, Aufsplitten, KK-Abgleich;
+  // B2, Etappe 4). Ein Fehler (BelegBildFehler, unlesbares PDF/Bild) scheitert wie beim direkten Aufruf.
+  belegAnhaengen: belegInPdfAnhaengen,
 };

@@ -60,6 +60,18 @@ Wichtige Details:
   `httpOnly` und `sameSite=lax`. Wer in ChurchTools aus einer Rollen-Gruppe
   entfernt wird, verliert die Rolle spätestens nach dem nächsten Sync oder
   Login, die Sitzung selbst endet nach 8 Stunden.
+- **Rollenentzug wirkt nicht sofort**: Das Portal fragt ChurchTools nicht bei
+  jeder Anfrage. Wird jemand in ChurchTools aus einer Rollen-Gruppe entfernt,
+  merkt das Portal es erst beim nächtlichen Sync oder bei der nächsten
+  Anmeldung der Person. Soll die Sperre **sofort** gelten (z. B. bei
+  Austritt im Streit), muss ein Admin mit dem Recht
+  `geplante_jobs_verwalten` den Sync von Hand starten: Admin → Geplante Jobs
+  (`/admin/geplante-jobs`), Abschnitt „ChurchTools-Personen-Sync — Verlauf“,
+  Knopf „Jetzt ausführen“ (`POST /admin/geplante-jobs/sync-personen/jetzt-ausfuehren`).
+  Das Ergebnis steht danach im Verlauf (dieselbe Anzeige wie unter
+  `/admin/sync`). Bricht die Massenänderungs-Sperre den Lauf ab
+  (siehe [personen-sync.md](personen-sync.md)), wird nichts entzogen; dann ist
+  die Meldung im Verlauf zu prüfen.
 - **Kein Gruppenzwang beim Login**: der Login gelingt unabhängig davon, ob
   die Person in einer der drei Gruppen ist — Freigeber/Stellvertreter
   können rein kontobasierte Rollen ohne jede Gruppenmitgliedschaft sein.

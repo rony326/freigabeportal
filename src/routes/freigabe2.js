@@ -13,7 +13,7 @@ import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalation
 import { createFreigabe, listFreigabenByJob, istKonfliktmelder } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
-import { pdfArbeit, PdfWorkerFehler, antworteSpaeterErneut, PDF_VORUEBERGEHEND_MELDUNG } from '../services/pdfArbeit.js';
+import { pdfArbeit, PdfWorkerFehler, antworteSpaeterErneut, PDF_VORUEBERGEHEND_MELDUNG_OHNE_DATEI } from '../services/pdfArbeit.js';
 import { setZeitstempelMitNachweis } from '../services/zeitstempel.js';
 import { speichereTsaNachweis } from '../services/tsaNachweis.js';
 import { fetchPersonById, extractCustomFieldValue } from '../services/churchtools.js';
@@ -448,7 +448,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       } catch (err) {
         if (err instanceof PdfWorkerFehler) {
           antworteSpaeterErneut(res, err, 'Freigabe 2');
-          return renderForm(req, res, 503, result, { interessenskonflikt, begruendung }, [PDF_VORUEBERGEHEND_MELDUNG],
+          return renderForm(req, res, 503, result, { interessenskonflikt, begruendung }, [PDF_VORUEBERGEHEND_MELDUNG_OHNE_DATEI],
             zahlungPflichtig ? zahlungsReview(job, konto, zahlung, req.currentPerson.churchtools_person_id) : null);
         }
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, [err.message]);

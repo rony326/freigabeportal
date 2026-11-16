@@ -84,6 +84,8 @@ function pruefe503(res) {
   assert.match(res.text, /in einer Minute erneut/);
   assert.match(res.text, /Es wurde nichts gespeichert/);
   assert.match(res.text, /Passt so/, 'die Begründung bleibt im Formular');
+  // Bei Freigabe 2 gibt es keine Datei hochzuladen – der Hinweis darf nicht dazu auffordern.
+  assert.doesNotMatch(res.text, /Datei\(en\) noch einmal/);
 }
 
 test('B2 Etappe 3: Freigabe 2 – überlasteter Worker → 503 mit Formular, Vorgang, Freigaben und PDF unverändert, keine Datei übrig', async (t) => {

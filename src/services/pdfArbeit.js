@@ -26,6 +26,8 @@ export const PDF_WIEDERHOLEN_NACH_SEKUNDEN = 60;
 // Meldung für Personen in den Formularen (Spesen, Kreditkarten-Belege, KK-Abgleich), wenn ein PdfWorkerFehler auftritt.
 // Gespeichert wurde in diesem Fall nichts; Dateien muss man im Browser erneut auswählen.
 export const PDF_VORUEBERGEHEND_MELDUNG = 'Die PDF-Verarbeitung ist gerade ausgelastet. Es wurde nichts gespeichert. Bitte versuche es in einer Minute erneut und wähle dabei die Datei(en) noch einmal aus.';
+// Dieselbe Meldung für Formulare ohne Datei-Upload (z. B. Freigabe 2): dort gibt es nichts neu auszuwählen.
+export const PDF_VORUEBERGEHEND_MELDUNG_OHNE_DATEI = 'Die PDF-Verarbeitung ist gerade ausgelastet. Es wurde nichts gespeichert. Bitte versuche es in einer Minute erneut.';
 
 /**
  * Setzt Status 503 und Retry-After für eine Antwort nach einem PdfWorkerFehler und protokolliert kurz den Grund

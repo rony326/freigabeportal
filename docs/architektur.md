@@ -413,7 +413,9 @@ Export, eine Datei).
 - **Upload-Grenzen** (`src/middleware/uploadLimit.js`): multipart-Uploads
   werden im Arbeitsspeicher gepuffert und deshalb je Anfrage auf 60 MB
   gesamt begrenzt (je Datei weiterhin 20 MB, Bilder höchstens 40
-  Megapixel). Ein zu grosser Upload wird schon nach dem Header
+  Megapixel; ein PNG muss zudem vollständig sein – IHDR, IDAT, IEND, alle
+  Prüfsummen –, weil pdf-lib an manchen abgeschnittenen PNGs endlos hängt,
+  sonst 400 «Das Bild konnte nicht gelesen werden»). Ein zu grosser Upload wird schon nach dem Header
   (Content-Length) oder beim Überschreiten der gelesenen Bytes mit 413 und
   einer Fehlerseite abgebrochen. Auf `/kontierung/:id`,
   `/kontierung/:id/aufsplitten` und `/kontierung/:id/kk-abgleich` wird die

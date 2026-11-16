@@ -242,19 +242,21 @@ test('B2 Etappe 4: unlesbarer PDF-Beleg bei der Kontierung → 422 mit Hinweis, 
   }
 });
 
-// Abgeschnittenes PNG: Kopf und Masse gültig (pruefeBelegBild lässt es durch), die Bilddaten fehlen und scheitern erst in embedPng.
-// (Bewusst nur Signatur + IHDR: an manchen anderen Schnittstellen hängt pdf-lib in embedPng endlos – das fängt nur das
-// Zeitlimit des Workers ab, siehe Bericht zu Etappe 4.)
-test('B2 Etappe 4: abgeschnittenes Bild bei der Ablehnung → 422 mit Hinweis, Vorgang bleibt zugewiesen', async () => {
+// Abgeschnittenes PNG: Seit der Strukturprüfung in pruefeBelegBild (Befund 2026-11-16) wird es vor dem PDF-Worker mit 400
+// abgelehnt. Vorher hing pdf-lib bei manchen Schnittstellen (z. B. 45 Bytes) in embedPng endlos, bis das Zeitlimit des Workers griff.
+test('B2 Etappe 4: abgeschnittenes Bild bei der Ablehnung → 400 «konnte nicht gelesen werden», Vorgang bleibt zugewiesen', async () => {
   const t = await setup();
   try {
     const voll = buildSolidPng(40, 40);
-    const abgeschnitten = voll.subarray(0, 33);
-    const vorher = stand(t);
-    const res = await ablehnen(t, abgeschnitten, { name: 'beleg.png', type: 'image/png' });
-    assert.equal(res.status, 422);
-    assert.match(res.text, /Der Beleg konnte nicht angehängt werden/);
-    assert.deepEqual(stand(t), vorher);
+    for (const laenge of [33, 45, 60]) {
+      const vorher = stand(t);
+      const beginn = Date.now();
+      const res = await ablehnen(t, voll.subarray(0, laenge), { name: 'beleg.png', type: 'image/png' });
+      assert.equal(res.status, 400, `abgeschnitten auf ${laenge} Bytes`);
+      assert.match(res.text, /Das Bild konnte nicht gelesen werden/);
+      assert.ok(Date.now() - beginn < 5000, 'sofort abgelehnt, nicht erst nach dem Zeitlimit des Workers');
+      assert.deepEqual(stand(t), vorher);
+    }
   } finally {
     t.cleanup();
   }

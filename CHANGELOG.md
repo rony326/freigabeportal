@@ -5,6 +5,11 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 
 ## Unveröffentlicht
 
+- Bildbelege: Ein PNG wird nur noch angenommen, wenn es vollständig ist (Chunk-Struktur IHDR … IDAT … IEND,
+  alle Prüfsummen). Ein abgeschnittenes PNG liess pdf-lib beim Einbetten endlos hängen – im PDF-Worker bis zum
+  Zeitlimit von 30 s und bei jedem neuen Versuch wieder, ohne Worker hätte es das ganze Portal angehalten.
+  Betroffen waren Kontierung, Ablehnung, Aufsplitten, KK-Abgleich, Spesen und Kreditkartenbelege. Jetzt kommt
+  sofort 400 «Das Bild konnte nicht gelesen werden».
 - PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 1): Eingangsprüfung, Vorschaubild, QR-Erkennung und
   Textauszug des n8n-Rechnungseingangs (`POST /api/n8n/jobs`) sowie QR/Text der Kreditkartenbelege per Mail
   blockieren das Portal nicht mehr (bisher bis zu 19 s Stillstand je PDF). Pool mit 2 Workern, Zeitlimit,

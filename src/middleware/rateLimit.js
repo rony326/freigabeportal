@@ -75,3 +75,48 @@ export function createMachineRateLimiter(overrides = {}) {
     ...overrides,
   });
 }
+
+// Gemeinsamer Schlüssel der Schreib-Limits: die angemeldete Person (nie die IP, sonst teilten sich Personen hinter
+// einem Büro-Router ein Kontingent). Die Limiter sitzen in app.js hinter requireLogin; die IP ist nur Rückfall,
+// falls ein Limiter einmal ohne Sitzung eingehängt wird. Fremde ohne Anmeldung erreichen sie nie und verbrauchen so kein Kontingent.
+const personKey = (req) => (req.currentPerson ? `person:${req.currentPerson.churchtools_person_id}` : ipKeyGenerator(req.ip));
+
+export const SPESEN_LIMIT_PRO_STUNDE = 10;
+export const FEHLERMELDUNG_LIMIT_PRO_STUNDE = 5;
+
+// Schreibende Routen mit Eigenlimit: Fehlschläge (Status >= 400, z. B. Formularfehler) zählen nicht mit,
+// damit wer sich bei der Eingabe vertut, nicht ausgesperrt wird. Nur der Aufrufer entscheidet über die Methode (siehe nurPost).
+function schreibLimiter({ limit, meldung, overrides }) {
+  return rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit,
+    keyGenerator: personKey,
+    skipFailedRequests: true,
+    ...COMMON_OPTIONS,
+    handler: createRateLimitHandler({ meldung, json: { error: meldung } }),
+    ...overrides,
+  });
+}
+
+// Spesen einreichen: 10 Abrechnungen je Stunde und Person.
+export function createSpesenRateLimiter(overrides = {}) {
+  return schreibLimiter({
+    limit: SPESEN_LIMIT_PRO_STUNDE,
+    meldung: `Du hast in der letzten Stunde bereits ${SPESEN_LIMIT_PRO_STUNDE} Spesenabrechnungen eingereicht.`,
+    overrides,
+  });
+}
+
+// Fehler melden: 5 Meldungen je Stunde und Person.
+export function createFehlerMeldenRateLimiter(overrides = {}) {
+  return schreibLimiter({
+    limit: FEHLERMELDUNG_LIMIT_PRO_STUNDE,
+    meldung: `Du hast in der letzten Stunde bereits ${FEHLERMELDUNG_LIMIT_PRO_STUNDE} Fehlermeldungen gesendet.`,
+    overrides,
+  });
+}
+
+// Wendet den Limiter nur auf POST an (Seitenaufrufe per GET laufen nur durch den allgemeinen Limiter).
+export function nurPost(limiter) {
+  return (req, res, next) => (req.method === 'POST' ? limiter(req, res, next) : next());
+}

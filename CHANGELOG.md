@@ -5,6 +5,10 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 
 ## Unveröffentlicht
 
+- Schreib-Limits je Person (Befund S5): Spesen einreichen höchstens 10 Abrechnungen, Problem melden
+  höchstens 5 Meldungen je Stunde und angemeldeter Person (bisher nur der allgemeine Limiter mit
+  300 Anfragen je 15 Minuten). Bei Überschreitung Fehlerseite 429 mit Wartezeit bzw. JSON.
+  Formularfehler (Status 400) zählen nicht mit.
 - ChurchTools-Gruppenmitglieder (S1, B1, B5): Es zählen nur noch aktive Mitgliedschaften
   (`group_member_statuses[]=active`, zusätzlich im Code geprüft); Anfragen, Wartelisten und
   zur Löschung vorgemerkte Einträge erhalten keine Rolle mehr. Die Mitgliederliste wird mit

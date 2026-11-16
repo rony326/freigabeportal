@@ -100,7 +100,7 @@ import { testmodusWeiche } from './middleware/testmodusWeiche.js';
 import { createTestmodusRouter } from './routes/admin/testmodus.js';
 import { createTestmodusInstanzRouter } from './routes/testmodusInstanz.js';
 import { zeitpunktAnzeige } from './services/auditLog.js';
-import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter } from './middleware/rateLimit.js';
+import { createPublicRateLimiter, createSessionRateLimiter, createMachineRateLimiter, createSpesenRateLimiter, createFehlerMeldenRateLimiter, nurPost } from './middleware/rateLimit.js';
 import { getVersionInfo } from './utils/version.js';
 import { auditContext, auditRequestContext } from './services/auditContext.js';
 import { zugriffsAuditMiddleware, meldeZugriffVerweigert } from './services/zugriffsAudit.js';
@@ -300,6 +300,11 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   const publicLimiter = limiter?.publicLimiter ?? createPublicRateLimiter();
   const sessionLimiter = limiter?.sessionLimiter ?? createSessionRateLimiter();
   const machineLimiter = limiter?.machineLimiter ?? createMachineRateLimiter();
+  // Eigenlimits je Person für die schreibenden POST-Routen (Spesen 10/h, Fehlermeldung 5/h). Sie sitzen hinter
+  // requireLogin (Person bekannt, Fremde zählen nicht) und vor multer/CSRF: Bei multipart liest CSRF erst nach multer den
+  // Body, ein Limit dahinter würde die Uploads bereits annehmen. Fehlschläge (>= 400) zählen nicht mit.
+  const spesenLimiter = nurPost(limiter?.spesenLimiter ?? createSpesenRateLimiter());
+  const fehlerMeldenLimiter = nurPost(limiter?.fehlerMeldenLimiter ?? createFehlerMeldenRateLimiter());
 
   // Ohne Limiter, wie die statischen Dateien: das Logo hängt an jeder Seite (bis zu zwei Bilder je
   // Aufruf). Am öffentlichen Limiter teilte es sich dessen IP-Zähler mit /, /auth und /audit-pruefen
@@ -398,13 +403,13 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   app.use('/kreditkarte', sessionLimiter, requireLogin(), createKreditkarteRouter({ db, config, csrfProtection }));
   app.use('/banner', sessionLimiter, requireLogin(), createBannerRouter({ db, csrfProtection }));
   app.use('/datenschutz', sessionLimiter, requireLogin(), createDatenschutzRouter({ db }));
-  app.use('/fehler-melden', sessionLimiter, requireLogin(), createFehlerMeldenRouter({ db, config, mailer, csrfProtection }));
+  app.use('/fehler-melden', sessionLimiter, requireLogin(), fehlerMeldenLimiter, createFehlerMeldenRouter({ db, config, mailer, csrfProtection }));
   app.use('/meine-benachrichtigungen', sessionLimiter, requireLogin(), createMeineBenachrichtigungenRouter({ db, config, mailer, csrfProtection }));
   app.use('/ferienmodus', sessionLimiter, requireLogin(), createFerienmodusRouter({ db, csrfProtection }));
   app.use('/downloads', createDownloadsRouter({ db, config, sessionLimiter, publicLimiter }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKkAbgleichRouter({ db, config, mailer, csrfProtection }));
   app.use('/kontierung', sessionLimiter, requireLogin(), createKontierungRouter({ db, config, mailer, csrfProtection }));
-  app.use('/spesen', sessionLimiter, requireLogin(), createSpesenRouter({ db, config, mailer, csrfProtection }));
+  app.use('/spesen', sessionLimiter, requireLogin(), spesenLimiter, createSpesenRouter({ db, config, mailer, csrfProtection }));
   app.use('/spesen-freigabe1', sessionLimiter, requireLogin(), createSpesenFreigabe1Router({ db, config, mailer, csrfProtection }));
   app.use('/freigabe2', sessionLimiter, requireLogin(), createFreigabe2Router({ db, config, mailer, csrfProtection }));
   app.use('/abgelehnt', sessionLimiter, requireLogin(), createAblehnungRouter({ db, config, csrfProtection }));

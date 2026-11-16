@@ -3,6 +3,15 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## Unveröffentlicht
+
+- Durchlauf-Test (`npm run durchlauf`, [docs/durchlauf-test.md](docs/durchlauf-test.md)): automatischer
+  End-to-End-Durchlauf gegen eine Testinstanz mit Playwright. Person A und B melden sich einmal an
+  (`npm run durchlauf:anmelden -- a|b`, Sitzung 8 h); nach der von Hand geschickten Testmail kontiert das Werkzeug
+  als A, gibt als B frei und wartet auf die Abholung durch n8n (optional Archivquittung über den nur lesenden
+  Abruf `archivierung-ausstehend`). Bericht je Beleg und Schritt, Fehlerbilder, Handprüf-Liste für Paperless/Bexio.
+  Konfiguration in `.env.durchlauf` (Vorlage `.env.durchlauf.example`), ohne Standard-Zieladresse. Keine Änderung am Portal.
+
 ## [1.3.0] – 2026-11-16
 
 Sicherheits- und Stabilitäts-Release nach der Prüfung vom 15.11.2026 (Befunde S1–S9, U1–U5, B1–B5).

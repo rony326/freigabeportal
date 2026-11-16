@@ -6,3 +6,7 @@ data/
 .superpowers/
 test-results/
 docs/anleitung/
+
+# Durchlauf-Test (docs/durchlauf-test.md): Konfiguration und gespeicherte Sitzungen
+.env.durchlauf
+.durchlauf/

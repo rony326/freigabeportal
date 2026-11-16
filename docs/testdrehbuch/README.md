@@ -11,6 +11,9 @@ Quellen für drei Dokumente zum Abnahmetest. Erzeugte Dateien (PDF, HTML, Testbe
 | `belege/gen.mjs` | Erzeugt alle Testbelege nach `belege/out/` (Rechnungen mit QR, Rapporte, Kreditkarte, Spesen, Sonderfälle, Budget-Dateien). |
 | `belege/pruefe.mjs`, `pruefe-budget.mjs` | Prüfen die erzeugten Belege mit den Funktionen des Portals (PDF-Eingang, QR, IBAN, Kreditkarten-Abgleich, Budget-Import). |
 
+Den Standardweg einer Rechnung (Mail → n8n → Kontierung → Freigabe 2 → Abholung) spielt der automatische
+[Durchlauf-Test](../durchlauf-test.md) gegen eine Testinstanz durch (`npm run durchlauf`); er nutzt die Belege R1 bzw. R4 aus `belege/out/1_Rechnungen/`.
+
 ## Neu bauen
 
 Voraussetzung: `npm install` im Repo-Hauptordner (liefert Playwright, mupdf, pdf-lib, adm-zip).

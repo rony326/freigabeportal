@@ -50,6 +50,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 
 | Version | Datum | Release Notes |
 |---|---|---|
+| 1.4.1 | 2026-11-16 | [releases/v1.4.1.md](releases/v1.4.1.md) |
 | 1.4.0 | 2026-11-16 | [releases/v1.4.0.md](releases/v1.4.0.md) |
 | 1.3.0 | 2026-11-16 | [releases/v1.3.0.md](releases/v1.3.0.md) |
 | 1.2.3 | 2026-11-15 | [releases/v1.2.3.md](releases/v1.2.3.md) |

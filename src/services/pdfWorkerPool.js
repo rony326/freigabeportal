@@ -49,6 +49,8 @@ export const STANDARD_ZEITLIMITS_MS = {
   // Stempelseite an ein Vorgangs-PDF hängen (B2, Etappe 3): pdf-lib lädt und speichert das ganze Dokument.
   freigabeStempeln: 30_000,
   kenntnisnahmeStempeln: 30_000,
+  // Splitgruppen-Dokument (B2, Etappe 5): Basis-PDF und alle Teil-PDFs laden, zusammenführen, stempeln, speichern.
+  gruppenDokumentErstellen: 60_000,
 };
 const ZEITLIMIT_UNBEKANNT_MS = 10_000;
 const START_ZEITLIMIT_MS = 30_000;

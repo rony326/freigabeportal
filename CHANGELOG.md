@@ -41,6 +41,12 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   Hinweis zurück, es in einer Minute erneut zu versuchen; gespeichert ist nichts. Ein unlesbares PDF meldet sich wie
   bisher (400). Beim Rapport bleibt die Kenntnisnahme gespeichert und der Abschluss wird wie bei jedem Stempelfehler
   vom stündlichen Job nachgeholt. Neues Zeitlimit für Stempel: 30 s (mal `PDF_WORKER_ZEITLIMIT_FAKTOR`).
+- PDF-Verarbeitung in Worker-Threads (Befund B2, Etappe 5): Das gemeinsame Archivdokument einer Splitgruppe
+  (Zusammenführen der Belegseiten und Gruppenstempel) entsteht im Worker; Prüfungen und Speichern bleiben, wie sie
+  waren. Bei einer Störung gilt die Freigabe 2 des letzten Teils trotzdem, die Gruppe bleibt ausstehend (keine Datei)
+  und wird alle 15 Minuten nachgeholt. Schliessen mehrere Teile oder Freigabe 2 und der Nachhol-Job gleichzeitig ab,
+  entsteht genau ein Gruppendokument. Zeitlimit 60 s. Damit läuft keine nennenswerte PDF-Arbeit mehr im Hauptprozess
+  ausser dem RFC3161-Zeitstempel.
 - Abhängigkeiten aktualisiert (ohne Hauptversionssprung): mupdf 1.28.0 → 1.28.6, express-rate-limit
   8.6.2 → 8.7.4, nodemailer 10.2.1 → 10.6.0, csrf-csrf 4.0.3 → 4.1.0, read-excel-file 9.3.12 → 9.3.17.
 - Doku: `docs/betrieb-und-nutzung.md` hält einen monatlichen Termin fest (`npm audit` und Prüfung der

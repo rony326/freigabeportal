@@ -544,7 +544,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
 
       if (job.aufgesplittet_von) {
         try {
-          await pruefeUndFinalisiereSplitGruppe(db, job.aufgesplittet_von, config);
+          // Spur interaktiv: die Person wartet auf die Antwort (B2, Etappe 5).
+          await pruefeUndFinalisiereSplitGruppe(db, job.aufgesplittet_von, config, { spur: 'interaktiv' });
         } catch (err) {
           // Never let a Splitgruppen-Merge-Fehler die bereits abgeschlossene Freigabe 2 dieses
           // einzelnen Kindes scheitern lassen -- der Nachhol-Cron-Job holt einen fehlgeschlagenen

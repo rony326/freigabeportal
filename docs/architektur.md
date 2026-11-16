@@ -7,7 +7,7 @@
 - **Views**: server-seitig gerenderte EJS-Templates (kein Client-Framework, kein SPA-Bundling).
 - **Datenbank**: SQLite über das eingebaute `node:sqlite` — eine einzelne Datei (`DB_PATH`), kein separater DB-Server.
 - **Dateiablage**: Rechnungs-PDFs/Thumbnails unter `JOBS_DIR`, Branding-Logo unter `BRANDING_DIR` — beides normales Dateisystem, keine Objectstorage-Anbindung.
-- **PDF-Verarbeitung**: `mupdf` (Rendering/QR-Scan-Rasterung, im n8n-Eingang, bei Spesen und Kreditkarten-Belegen in Worker-Threads; Beleg anhängen mit pdf-lib ebenfalls im Worker, siehe [PDF-Worker](#pdf-worker-srcservicespdfworkerpooljs-befund-b2)), `pdf-lib` (Stempel-Seite anhängen, Beleg mergen), `pdf-rfc3161` (RFC3161-Zeitstempel).
+- **PDF-Verarbeitung**: `mupdf` (Rendering/QR-Scan-Rasterung, im n8n-Eingang, bei Spesen und Kreditkarten-Belegen in Worker-Threads; Beleg anhängen, Stempel und Splitgruppen-Dokument mit pdf-lib ebenfalls im Worker, siehe [PDF-Worker](#pdf-worker-srcservicespdfworkerpooljs-befund-b2)), `pdf-lib` (Stempel-Seite anhängen, Beleg mergen), `pdf-rfc3161` (RFC3161-Zeitstempel, im Hauptthread).
 - **QR-Code**: `jsqr` (Dekodierung), eigener Parser für das Swiss-QR-Bill-Zeilenformat.
 - **Mail**: `nodemailer` gegen ein beliebiges SMTP-Konto.
 - **Hosting**: Infomaniak Node.js-Webhosting; der Node-Prozess läuft dauerhaft und übernimmt Scheduling selbst (siehe unten) — kein externer Task-Scheduler nötig.
@@ -160,7 +160,9 @@ Deshalb laufen diese Aufgaben in Worker-Threads:
   (`belegInPdfAnhaengen`: Beleg an ein Vorgangs-PDF hängen und seine Seiten
   zählen, `{ pdf, belegSeiten }`; Etappe 4), `freigabeStempeln`
   (`stampAndFinalize`) und `kenntnisnahmeStempeln` (`stampKenntnisnahme`;
-  Etappe 3). Einzige Quelle für Worker- und Inline-Betrieb.
+  Etappe 3) sowie `gruppenDokumentErstellen` (`services/splitGruppenPdf.js`:
+  Basis-PDF + Belegseiten der Teile + Gruppenstempel; Etappe 5). Einzige Quelle
+  für Worker- und Inline-Betrieb.
 - **Worker** `src/workers/pdfWorker.js`: lädt die Aufgaben (inkl. mupdf,
   ~120 ms, ~+55 MB RSS je Worker), bearbeitet einen Auftrag nach dem anderen und
   meldet nach jedem Auftrag `process.memoryUsage().external` mit.
@@ -170,7 +172,7 @@ Deshalb laufen diese Aufgaben in Worker-Threads:
     Kreditkartenbelege per Mail) belegen höchstens einen Worker gleichzeitig.
   - Warteschlange höchstens 100 → `PdfWorkerUeberlastet`.
   - Zeitlimit je Auftrag (Eingangsprüfung, Vorschaubild, Text je 10 s, QR 15 s,
-    kombiniert 20 s, Belegdatei, Beleg anhängen und Stempel je 30 s; mal `PDF_WORKER_ZEITLIMIT_FAKTOR`): der Worker wird mit
+    kombiniert 20 s, Belegdatei, Beleg anhängen und Stempel je 30 s, Splitgruppen-Dokument 60 s; mal `PDF_WORKER_ZEITLIMIT_FAKTOR`): der Worker wird mit
     `terminate()` beendet (bricht auch laufende WASM-Arbeit nach wenigen ms ab),
     der Auftrag scheitert mit `PdfWorkerZeitueberschreitung`.
   - Der WASM-Speicher von mupdf wächst und schrumpft nie, und `resourceLimits`
@@ -287,7 +289,50 @@ Gemessen (PDF 17 MB, 1500 Textseiten, `stampAndFinalize`): inline ~0,84 s
 Laufzeit mit bis zu ~290 ms am Stück blockierter Event-Loop (pdf-lib gibt beim
 Parsen zwischendurch ab), im Worker höchstens ~2 ms.
 
-**Noch im Hauptthread (Etappe 5)**: Splitgruppen-Export (`splitGruppenExport.js`).
+**Etappe 5** (umgestellt): Splitgruppen-Export (`pruefeUndFinalisiereSplitGruppe` in
+`services/splitGruppenExport.js`). Die reine PDF-Arbeit – Basis-PDF laden,
+Belegseiten der Teile übernehmen (`haengeBelegSeitenAn`), Gruppenstempel
+(`stampGruppenDokument`), speichern – ist nach `services/splitGruppenPdf.js`
+gezogen und läuft als `gruppenDokumentErstellen` im Worker. Lesen der Dateien,
+Hash-Prüfung der Teile, Gruppen-Snapshot, TSA und Festschreiben bleiben im
+Hauptthread.
+
+| Aufrufer | Spur | Bei `PdfWorkerFehler` |
+|---|---|---|
+| `POST /freigabe2/:id` nach dem COMMIT des letzten Teils | `interaktiv` (die Person wartet auf die Weiterleitung) | `status: 'fehler'`, geloggt; Freigabe 2 des Teils bleibt erfolgreich (302), die Gruppe bleibt ausstehend |
+| `POST /admin/altfaelle/:id` (Entscheidung), `POST /admin/abgelehnt/:id/loeschen` (blockierende Zeile gelöscht) | `interaktiv` | wie oben: Admin-Aktion gespeichert, Gruppe bleibt ausstehend |
+| Cron `split-gruppen-nachholen` (alle 15 min) | `hintergrund` | als fehlgeschlagen gezählt, nächster Lauf versucht es erneut |
+
+Wie bei jedem anderen Fehler entsteht keine Datei (der Worker liefert nur Bytes,
+geschrieben wird erst danach) und `gruppe_pdf_pfad` bleibt leer.
+
+**Gleichzeitigkeit**: Zwischen dem Lesen (frühe Prüfung `gruppe_pdf_pfad`,
+Vollständigkeit, Snapshot) und dem Festschreiben liegt ein `await` auf den Worker
+(und ggf. die TSA). Schon vorher lagen dort `await`s (pdf-lib gibt beim Laden und
+Speichern ab, TSA), durch den Worker laufen zwei Aufrufe jetzt aber wirklich
+gleichzeitig – etwa Freigabe 2 zweier Teile fast zur selben Zeit oder Freigabe 2
+und Nachhol-Cron. Abgesichert ist das in der Transaktion (`BEGIN IMMEDIATE`):
+`gruppe_pdf_pfad` wird erneut gelesen (gesetzt → ROLLBACK, eigene Datei löschen,
+`'uebersprungen'`), Gruppenstand, TSA-Einstellung, Kommentare und die Bytes
+aller Quelldateien müssen unverändert sein, und `markGruppeExportiert` schreibt
+nur bei `gruppe_pdf_pfad IS NULL`. Zwei Teile können auch nicht beide «noch
+unvollständig» sehen: jede Freigabe 2 prüft die Gruppe synchron direkt nach
+ihrem COMMIT. Tests: `test/integration/splitGruppeWorker.test.js`
+(`Promise.all` über zwei Freigaben bzw. zwei Aufrufe plus Cron → genau ein
+Export, eine Datei).
+
+**Was jetzt noch an PDF-Arbeit im Hauptthread läuft** (bewusst):
+
+- RFC3161-Zeitstempel (`services/zeitstempel.js`, `pdf-rfc3161`): Signaturplatz
+  im PDF vorbereiten, Hash, TSA-Abfrage, Einbetten – bei Freigabe 2, Rapport,
+  Splitgruppe und `zeitstempel-nachholen`; Prüfung auf `/zeitstempel-pruefen`.
+  Netzwerkgebunden, laut Auftrag unverändert.
+- `countBelegSeiten` im KK-Abgleich (pdf-lib, Lesbarkeitsprüfung nachgereichter
+  PDF-Belege), `pruefeBelegBild` und `detectBelegMimetype` (nur Dateikopf).
+- Testmodus-Beispieldaten erzeugen kleine Beispiel-PDFs mit pdf-lib
+  (`PDFDocument.create`); ihre Vorschaubilder rechnet der Worker.
+- `pdfStamp.js` und `splitGruppenPdf.js` werden vom Hauptprozess nicht mehr
+  geladen (Importtest).
 
 ## Router-Übersicht
 

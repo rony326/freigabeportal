@@ -63,7 +63,7 @@ export function createAltfaelleRouter({ db, config, csrfProtection = (req, res, 
       }
       if (altfall.gruppe && !altfall.job.gruppe_pdf_pfad) {
         try {
-          await pruefeUndFinalisiereSplitGruppe(db, altfall.job.id, config);
+          await pruefeUndFinalisiereSplitGruppe(db, altfall.job.id, config, { spur: 'interaktiv' });
         } catch (err) {
           // Der Cron-Job split-gruppen-nachholen wiederholt einen fehlgeschlagenen Merge.
           console.error(`Splitgruppen-Finalisierung nach Altfall-Entscheidung für ${altfall.job.id} fehlgeschlagen:`, err.message);

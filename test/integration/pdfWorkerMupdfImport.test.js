@@ -99,3 +99,15 @@ test('B2 Etappe 3: Freigabe 2 und Rapporte laden mupdf nicht; Rapporte stempeln 
     assert.equal(laedt(ladeKanten([ziel]), 'services/pdfStamp.js'), false, `${ziel} lädt pdfStamp.js`);
   }
 });
+
+test('B2 Etappe 5: Splitgruppen-Export und seine Aufrufer laden weder mupdf noch die Stempel; der Hauptprozess stempelt nicht', { skip: OHNE_HOOKS, timeout: 60_000 }, () => {
+  const ziele = ['services/splitGruppenExport.js', 'routes/freigabe2.js', 'routes/admin/altfaelle.js', 'routes/admin/abgelehnt.js', 'services/cronJobs.js'];
+  for (const ziel of ziele) {
+    const kanten = ladeKanten([ziel]);
+    assert.deepEqual(mupdfPfade(kanten).direkt, [], `${ziel} lädt mupdf`);
+    for (const modul of ['services/pdfStamp.js', 'services/splitGruppenPdf.js']) assert.equal(laedt(kanten, modul), false, `${ziel} lädt ${modul}`);
+  }
+  const index = readFileSync(new URL('index.js', SRC), 'utf8');
+  const alle = ladeKanten([...index.matchAll(/^import\s[^;]*?from\s+'(\.\/[^']+)'/gm)].map((m) => m[1].slice(2)));
+  for (const modul of ['services/pdfStamp.js', 'services/splitGruppenPdf.js']) assert.equal(laedt(alle, modul), false, `Hauptprozess lädt ${modul}`);
+});

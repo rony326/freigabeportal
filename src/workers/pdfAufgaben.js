@@ -11,6 +11,7 @@ import { scanQrBill } from '../services/qrBillScan.js';
 import { extrahierePdfText } from '../services/pdfText.js';
 import { buildBelegPdf, belegInPdfAnhaengen } from '../services/belegAnhaengen.js';
 import { stampAndFinalize, stampKenntnisnahme } from '../services/pdfStamp.js';
+import { erstelleGruppenDokument } from '../services/splitGruppenPdf.js';
 
 // Fehlermeldung ohne Stack (geht als Text an den Aufrufer, der sie wie bisher protokolliert).
 function meldung(err) {
@@ -67,4 +68,7 @@ export const AUFGABEN = {
   // ISO-Zeitpunkte, Zahlen, Booleans). Ein Stempelfehler (unlesbares PDF) kommt mit derselben Meldung beim Aufrufer an.
   freigabeStempeln: stampAndFinalize,
   kenntnisnahmeStempeln: stampKenntnisnahme,
+  // Splitgruppen-Export (B2, Etappe 5): Basis-PDF + Belegseiten der Teile zusammenführen und den Gruppenstempel anhängen.
+  // Ein Fehler (unlesbares PDF, unpassende Belegseitenzahl) scheitert wie beim direkten Aufruf.
+  gruppenDokumentErstellen: erstelleGruppenDokument,
 };

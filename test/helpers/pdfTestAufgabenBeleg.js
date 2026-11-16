@@ -1,11 +1,13 @@
-// Nur für Tests (B2, Etappen 2, 3 und 4): Aufgabenmodul ohne mupdf für die Beleg-Aufrufer (Spesen, Kreditkarten-Belege,
-// KK-Abgleich, Beleg anhängen in Kontierung/Aufsplitten) und die Stempel (Freigabe 2, Rapport). Normale Bytes laufen sofort
-// durch; enthält ein Beleg bzw. das zu stempelnde PDF die Marke LANGSAM_PRUEFEN, LANGSAM_ERSTELLEN, LANGSAM_ANHAENGEN bzw.
-// LANGSAM_STEMPELN, blockiert die jeweilige Aufgabe, bis das (im Test klein gesetzte) Zeitlimit greift. Mit der Marke
-// VERZOEGERT_ANHAENGEN braucht belegAnhaengen 400 ms (Gleichzeitigkeitstests).
-// belegAnhaengen und die Stempel rechnen echt (pdf-lib, ohne mupdf), damit Seitenzahlen und Inhalte geprüft werden können.
+// Nur für Tests (B2, Etappen 2 bis 5): Aufgabenmodul ohne mupdf für die Beleg-Aufrufer (Spesen, Kreditkarten-Belege,
+// KK-Abgleich, Beleg anhängen in Kontierung/Aufsplitten), die Stempel (Freigabe 2, Rapport) und das Splitgruppen-Dokument.
+// Normale Bytes laufen sofort durch; enthält ein Beleg bzw. das zu stempelnde PDF bzw. das Basis-PDF der Gruppe die Marke
+// LANGSAM_PRUEFEN, LANGSAM_ERSTELLEN, LANGSAM_ANHAENGEN, LANGSAM_STEMPELN bzw. LANGSAM_GRUPPE, blockiert die jeweilige
+// Aufgabe, bis das (im Test klein gesetzte) Zeitlimit greift. Mit der Marke VERZOEGERT_ANHAENGEN bzw. VERZOEGERT_GRUPPE
+// braucht belegAnhaengen bzw. gruppenDokumentErstellen 400 ms (Gleichzeitigkeitstests).
+// belegAnhaengen, die Stempel und das Gruppendokument rechnen echt (pdf-lib, ohne mupdf), damit Inhalte geprüft werden können.
 import { belegInPdfAnhaengen } from '../../src/services/belegAnhaengen.js';
 import { stampAndFinalize, stampKenntnisnahme } from '../../src/services/pdfStamp.js';
+import { erstelleGruppenDokument } from '../../src/services/splitGruppenPdf.js';
 
 const blockiere = (ms) => { const ende = Date.now() + ms; while (Date.now() < ende) { /* rechnen */ } };
 const hat = (buf, marke) => Buffer.isBuffer(buf) && buf.includes(marke);
@@ -31,6 +33,11 @@ export const AUFGABEN = {
   kenntnisnahmeStempeln: (pdf, daten) => {
     if (hat(pdf, 'LANGSAM_STEMPELN')) blockiere(60_000);
     return stampKenntnisnahme(pdf, daten);
+  },
+  gruppenDokumentErstellen: (basis, teile, daten) => {
+    if (hat(basis, 'LANGSAM_GRUPPE')) blockiere(60_000);
+    if (hat(basis, 'VERZOEGERT_GRUPPE')) blockiere(400);
+    return erstelleGruppenDokument(basis, teile, daten);
   },
   textExtrahieren: () => '',
   qrErkennen: () => null,

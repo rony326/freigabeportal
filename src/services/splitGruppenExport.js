@@ -3,39 +3,18 @@
 
 import { readFileSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { PDFDocument } from 'pdf-lib';
 import { getJobById, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
-import { stampGruppenDokument } from './pdfStamp.js';
+import { pdfArbeit } from './pdfArbeit.js';
 import { setZeitstempelMitNachweis } from './zeitstempel.js';
 import { speichereTsaNachweis } from './tsaNachweis.js';
 import { writeFinalDocument } from './finalDocument.js';
 import { tsaTrustOptions } from './tsaTrust.js';
 import { bereiteGruppenSnapshotVor, getAltfallEntscheidung } from './exportSnapshot.js';
 import { listeKommentare } from './kommentare.js';
-
-// Das Beleg-Anhängen (Aufgabe belegAnhaengen, beim Aufsplitten und in der Kontierung) fügt Belegseiten immer direkt hinter die Rechnungsseiten ein, vor jedem späteren
-// Stempeln — mit der damals festgehaltenen Belegseitenzahl (kind.beleg_seitenzahl) liegen die Belegseiten also immer genau bei
-// [basisSeitenzahl, basisSeitenzahl + belegSeitenzahl), egal wie viele Stempel-/Verlaufsseiten ein späterer Abschluss von Freigabe 2
-// dahinter anhängt.
-//
-// Den Bereich stattdessen aus der aktuellen Seitenzahl des Kind-PDFs abzuleiten (wie es eine frühere Version tat), ist falsch: Bis ein
-// Gruppen-Merge läuft, hat freigabe2.js jedes Kind schon einzeln gestempelt, die Seitenzahl-Differenz würde also die eigene, überflüssige
-// Stempelseite jedes Kindes in das gemeinsame Archivdokument ziehen — genau das, was diese Funktion vermeiden soll.
-// Kopiert die Belegseiten des Kindes ans Gruppendokument (siehe oben). Wirft, wenn die gespeicherte Belegseitenzahl nicht passt.
-async function haengeBelegSeitenAn(gruppenDoc, kindBytes, basisSeitenzahl, belegSeitenzahl) {
-  if (!belegSeitenzahl) return;
-  const kindDoc = await PDFDocument.load(kindBytes);
-  if (!Number.isInteger(belegSeitenzahl) || belegSeitenzahl < 0 || basisSeitenzahl + belegSeitenzahl > kindDoc.getPageCount()) {
-    throw new Error('Die gespeicherte Belegseitenzahl passt nicht zum Teilbeleg.');
-  }
-  const belegIndices = kindDoc.getPageIndices().slice(basisSeitenzahl, basisSeitenzahl + belegSeitenzahl);
-  const copiedPages = await gruppenDoc.copyPages(kindDoc, belegIndices);
-  copiedPages.forEach((page) => gruppenDoc.addPage(page));
-}
 
 // Kommentare (Task Kommentare an Rechnungen) für die Stempelseite; unveränderlich, darum live gelesen.
 function kommentareFuerStempel(db, jobId) {
@@ -72,8 +51,16 @@ function groupState(db, parentJobId) {
 // freigabe2.js, das bei TSA-Ausfall ohne Zeitstempel weitermacht): Der ganze Zweck dieses zusammengeführten Dokuments ist die Papierlos-
 // Archivkopie für Paperless-ngx; sie ohne den Zeitstempel auszuliefern, für den sie gebaut wurde, würde diesen Zweck verfehlen. Wird
 // später vom Cron-Job split-gruppen-nachholen (cronJobs.js) wiederholt, gerade weil gruppe_pdf_pfad bei einem Fehler ungesetzt bleibt.
+//
+// B2, Etappe 5: Zusammenführen und Gruppenstempel laufen im PDF-Worker (Aufgabe gruppenDokumentErstellen,
+// services/splitGruppenPdf.js); gelesen, geprüft und festgeschrieben wird hier im Hauptthread. Eine Störung des Workers
+// (PdfWorkerFehler) endet wie jeder andere Fehler mit status 'fehler', ohne Datei und ohne Datenänderung; der Nachhol-Cron
+// versucht es erneut. Durch den Worker laufen gleichzeitige Aufrufe für dieselbe Gruppe (Freigabe 2 zweier Teile, Nachhol-
+// Cron, Admin) echt nebeneinander: dass genau einer exportiert, sichert die Transaktion unten (gruppe_pdf_pfad erneut
+// prüfen → 'uebersprungen', Gruppenstand/Dateien vergleichen, markGruppeExportiert nur bei gruppe_pdf_pfad IS NULL).
+// `spur`: 'hintergrund' (Nachhol-Cron), 'interaktiv', wenn eine Person auf die Antwort wartet (Freigabe 2, Admin).
 // @returns {Promise<{status: 'exportiert'|'uebersprungen'|'blockiert'|'unvollstaendig'|'nachpruefung'|'fehler', ...}>}
-export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = {}) {
+export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = {}, { spur = 'hintergrund' } = {}) {
   let parent = getJobById(db, parentJobId);
   if (!parent || parent.status !== 'aufgesplittet' || parent.gruppe_pdf_pfad) return { status: 'uebersprungen' };
 
@@ -104,13 +91,10 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
       }
       return bytes;
     });
-    const basisDoc = await PDFDocument.load(basisBuffer);
-    const basisSeitenzahl = basisDoc.getPageCount();
-    const gruppenDoc = await PDFDocument.load(basisBuffer);
-
     const kommentarStand = kommentarStandGruppe(db, [parent.id, ...kinder.map((kind) => kind.id)]);
     const positionen = [];
     const verlauf = [];
+    const teile = [];
     // Stempelseite und Export entstehen aus demselben eingefrorenen Gruppen-Snapshot: Konto, Betrag,
     // Typ, Freigaben und Verlauf je Position stammen aus dem Freigabe-Snapshot des Teilbelegs.
     const positionsIds = gruppenSnapshot.positionen.map((position) => position.job_id);
@@ -135,12 +119,15 @@ export async function pruefeUndFinalisiereSplitGruppe(db, parentJobId, config = 
       for (const eintrag of position.verlauf) {
         verlauf.push({ ...eintrag, rolleLabel: `${praefix} — ${eintrag.rolleLabel}` });
       }
-      await haengeBelegSeitenAn(gruppenDoc, kindBuffers[index], basisSeitenzahl, kinder[index].beleg_seitenzahl);
+      // Belegseiten des Teils in der Reihenfolge der Positionen (siehe haengeBelegSeitenAn in splitGruppenPdf.js).
+      teile.push({ pdf: kindBuffers[index], belegSeitenzahl: kinder[index].beleg_seitenzahl });
     }
     verlauf.sort((a, b) => (a.zeitpunkt < b.zeitpunkt ? -1 : a.zeitpunkt > b.zeitpunkt ? 1 : 0));
 
-    const gruppenPdfMitBelegen = Buffer.from(await gruppenDoc.save());
-    let gestempelt = await stampGruppenDokument(gruppenPdfMitBelegen, { jobId: parent.id, positionen, verlauf, kommentare: kommentareFuerStempel(db, parent.id), ...(config.testmodus ? { testmodus: true } : {}) });
+    let gestempelt = await pdfArbeit().ausfuehren('gruppenDokumentErstellen', [
+      basisBuffer, teile,
+      { jobId: parent.id, positionen, verlauf, kommentare: kommentareFuerStempel(db, parent.id), ...(config.testmodus ? { testmodus: true } : {}) },
+    ], { spur });
 
     let zeitstempelGesetztAm = null;
     let zeitstempelDateiHash = null;

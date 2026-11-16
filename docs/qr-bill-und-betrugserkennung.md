@@ -245,6 +245,24 @@ wird abgelehnt; die letzte IBAN eines solchen Lieferanten lässt sich nicht
 löschen. Neue IBANs nur aus unabhängiger Quelle (Vertrag, Telefonat) erfassen,
 nicht von einer Rechnung.
 
+**Meldung bei jeder IBAN-Änderung (Vier-Augen-Kontrolle).** Wer `kreditoren_verwalten` hat, kann
+allein eine IBAN hinzufügen oder löschen. Deshalb geht dabei **immer sofort** (nie gebündelt) die Mail
+`iban-aenderung` an `iban_aenderung_empfaenger` (Standard: Buchhaltung und Administration; Admin →
+Benachrichtigungen → „IBAN eines Lieferanten geändert“, Text als Vorlage anpassbar). Sie nennt Lieferant,
+gekürzte IBAN, hinzugefügt/gelöscht, wer und wann. Die ändernde Person wird nicht ausgenommen: ist sie
+Empfänger, bekommt auch sie die Mail. Ausgelöst wird sie von: IBAN hinzufügen, IBAN löschen und
+Lieferant anlegen mit IBAN (jeweils unter Admin → Kreditoren). **Keine** Mail gibt es bewusst bei: abgelehnten
+Änderungen (Validierungsfehler, letzte IBAN), Umbenennen/Deaktivieren/Aktivieren eines Lieferanten (die IBANs
+bleiben unverändert), Zahlungsart/Konto ändern, der Testdaten-Erzeugung im Testmodus und Wiederherstellung
+einer Sicherung. Einen Import oder eine automatische Übernahme von IBANs (z. B. aus der QR-Rechnung) gibt es
+nicht; Lieferanten lassen sich nicht löschen oder zusammenführen. Die Schnellanlage eines Lieferanten in der
+Kontierung sendet noch keine Mail, wird aber durch den Hinweis unten abgedeckt.
+
+**Hinweis „Neue IBAN“ in Freigabe 2.** Ist die IBAN der Rechnung (QR-IBAN; ohne QR-IBAN: eine IBAN des
+Lieferanten) jünger als 14 Tage (`kreditor_ibans.erstellt_am`; genau 14 Tage alt zählt nicht mehr als neu),
+erscheint in Freigabe 2 ein gelber Warnkasten mit Datum und Erfasser (`erstellt_von`, bei Altbestand
+„unbekannt“). Er blockiert nichts. Quelle: `src/services/ibanAlter.js`.
+
 - **Neue IBANs entstehen nur im Admin** (`quelle = 'manuell'`). Die frühere
   Checkbox „IBAN merken“ auf der Kontierungsseite gibt es nicht mehr; bestehende
   Zeilen mit `quelle = 'bestaetigt'` bleiben gültig.

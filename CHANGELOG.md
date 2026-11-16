@@ -16,6 +16,11 @@ Korrekturrunde nach der Prüfung vom 2026-11-15 (Admin-Bereich).
   Loopback- oder Link-Local-Ziele; Hostnamen werden aufgelöst, jede Adresse geprüft). Eine bereits gespeicherte,
   nun unzulässige Adresse (z. B. `http://`) wird weiter benutzt, aber beim Start im Log und auf der Seite Admin →
   Zeitstempel gewarnt. Prüfung nur beim Speichern, nicht bei jeder Verwendung (DNS-Rebinding, Ausfallrisiko).
+- S4: Wer eine Lieferanten-IBAN hinzufügt oder löscht (oder einen Lieferanten mit IBAN anlegt), löst immer sofort die
+  Mail `iban-aenderung` an Buchhaltung und Administration aus (Empfänger und Text unter Admin → Benachrichtigungen
+  einstellbar). In Freigabe 2 erscheint ein Warnkasten, wenn die IBAN der Rechnung jünger als 14 Tage ist.
+  Datenbank: neue Spalte `kreditor_ibans.erstellt_von` (Altbestand NULL = unbekannt) und neuer Mailtyp
+  `iban-aenderung` im CHECK von `mail_log` (automatische Migration beim Start).
 - U3: Rückfrage vor heiklen Aktionen: IBAN löschen, Zuweisungsregel löschen, Datei endgültig löschen (Quarantäne),
   Konto deaktivieren, Kreditkartenbeleg verwerfen, Rapport-Markierung aufheben (Rapport-Seite und Vorgang im Admin).
 

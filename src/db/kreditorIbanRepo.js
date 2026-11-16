@@ -1,11 +1,14 @@
 // IBANs je Kreditor (Tabelle `kreditor_ibans`; quelle: 'manuell' | 'qr' …). Grundlage des IBAN-Abgleichs der
 // Betrugserkennung (services/betrugspruefung.js, docs/qr-bill-und-betrugserkennung.md). IBANs sind normalisiert (ibanUtils.js).
 
+import { currentAuditActor } from '../services/auditContext.js';
+
+// `erstelltVon`: erfassende Person; ohne Angabe die handelnde Person aus dem Audit-Kontext (bei Systemläufen 'system').
 // @returns {number} id
-export function createKreditorIban(db, { kreditorId, iban, quelle = 'manuell' }) {
+export function createKreditorIban(db, { kreditorId, iban, quelle = 'manuell', erstelltVon = currentAuditActor().id }) {
   const result = db
-    .prepare('INSERT INTO kreditor_ibans (kreditor_id, iban, quelle, erstellt_am) VALUES (?, ?, ?, ?)')
-    .run(kreditorId, iban, quelle, new Date().toISOString());
+    .prepare('INSERT INTO kreditor_ibans (kreditor_id, iban, quelle, erstellt_am, erstellt_von) VALUES (?, ?, ?, ?, ?)')
+    .run(kreditorId, iban, quelle, new Date().toISOString(), erstelltVon ?? null);
   return Number(result.lastInsertRowid);
 }
 

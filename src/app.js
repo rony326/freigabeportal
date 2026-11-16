@@ -344,7 +344,7 @@ export function createApp({ db, config, mailer: injectedMailer = null, tsaVersuc
   });
   // ---- Admin-Bereich: je Seite ein Recht (Katalog: services/berechtigungKatalog.js, Übersicht: docs/admin-bereich.md) ----
   app.use('/admin/konten', requirePermission(db, config, 'konten_verwalten'), createKontenRouter({ db, csrfProtection }));
-  app.use('/admin/kreditoren', requirePermission(db, config, 'kreditoren_verwalten'), createKreditorenRouter({ db, csrfProtection }));
+  app.use('/admin/kreditoren', requirePermission(db, config, 'kreditoren_verwalten'), createKreditorenRouter({ db, config, mailer, csrfProtection }));
   // Frueherer Pfad (fachlich falsch 'Debitoren'): Lesezeichen und vor dem Deployment geladene
   // Formulare werden weitergeleitet; 308 erhaelt Methode und Body, die Pruefungen gelten am Ziel.
   app.use('/admin/debitoren', (req, res) => res.redirect(req.method === 'GET' || req.method === 'HEAD' ? 301 : 308, `/admin/kreditoren${req.url.replace(/^\/(?=\?|$)/, '')}`));

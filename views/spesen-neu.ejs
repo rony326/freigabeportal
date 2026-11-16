@@ -61,6 +61,9 @@
       </template>
 
       <button type="button" id="zeile-hinzufuegen" class="btn btn-outline-secondary btn-sm mb-3">+ Position hinzufügen</button>
+      <% if (locals.belegGrenzen) { %>
+        <p class="form-text">Jede Datei darf höchstens <%= belegGrenzen.dateiMb %> MB gross sein, Bilder höchstens <%= belegGrenzen.megapixel %> Megapixel, alle Belege zusammen höchstens <%= belegGrenzen.gesamtMb %> MB. Ist ein Foto zu gross, verkleinere es oder lade ein PDF hoch.</p>
+      <% } %>
 
       <div>
         <button type="submit" class="btn btn-primary">Einreichen</button>

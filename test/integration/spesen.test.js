@@ -410,3 +410,16 @@ test('POST /spesen lehnt einen Bildbeleg über 40 Megapixel mit verständlicher 
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE quelle = 'spesen'").get().n, 0);
   db.close();
 });
+
+test('GET /spesen/neu nennt die Grössengrenzen für Belege (je Datei, Megapixel, gesamt)', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedGrundlagen(db);
+  const app = buildTestApp(db, createStubMailer());
+  const res = await request(app).get('/spesen/neu').set('x-test-person-id', '5');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Jede Datei darf höchstens 20 MB gross sein/);
+  assert.match(res.text, /Bilder höchstens 40 Megapixel/);
+  assert.match(res.text, /alle Belege zusammen höchstens 60 MB/);
+  db.close();
+});

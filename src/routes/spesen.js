@@ -13,12 +13,12 @@ import { createSpesenabrechnung } from '../db/spesenabrechnungenRepo.js';
 import { createSpesenPosition, getJobById } from '../db/jobsRepo.js';
 import { createFreigabe } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
-import { detectBelegMimetype, buildBelegPdf, pruefeBelegBild } from '../services/belegAnhaengen.js';
+import { detectBelegMimetype, buildBelegPdf, pruefeBelegBild, MAX_BILD_MEGAPIXEL } from '../services/belegAnhaengen.js';
 import { pruefeEingangsPdf, PdfEingangFehler } from '../services/pdfEingang.js';
 import { renderFirstPageThumbnail } from '../services/thumbnail.js';
 import { sendNotification } from '../services/notify.js';
 import { asyncCallback } from '../middleware/asyncHandler.js';
-import { begrenzeUploadGroesse } from '../middleware/uploadLimit.js';
+import { begrenzeUploadGroesse, MAX_UPLOAD_GESAMT_BYTES } from '../middleware/uploadLimit.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const AUSLAGE_DATUM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -35,6 +35,12 @@ function mitPdfEndung(originalname) {
 
 export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
+
+  // Grössengrenzen für den Hinweis im Formular (aus denselben Konstanten wie die Prüfungen), auch bei Neudarstellung nach Fehlern.
+  router.use((req, res, next) => {
+    res.locals.belegGrenzen = { dateiMb: MAX_BELEG_SIZE / (1024 * 1024), megapixel: MAX_BILD_MEGAPIXEL, gesamtMb: MAX_UPLOAD_GESAMT_BYTES / (1024 * 1024) };
+    next();
+  });
 
   router.use((req, res, next) => {
     if (getConfigValue(db, 'modul_spesen_aktiv') === '0') {

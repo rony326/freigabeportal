@@ -13,6 +13,7 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   Arbeitsspeicher); bei Überschreitung wird sofort mit Fehler 413 und einer verständlichen
   Seite abgebrochen. Auf `/kontierung/:id` (Kontieren, Aufsplitten, KK-Abgleich) wird die
   Zuständigkeit schon vor dem Upload geprüft (Befund S3).
+- Spesen-Seite nennt die Grössengrenzen für Belege (Datei, Megapixel, gesamt) (Befund U5).
 
 ## [1.2.3] – 2026-11-15
 

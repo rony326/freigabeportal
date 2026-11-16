@@ -69,6 +69,7 @@ import { asyncCallback, asyncHandler } from '../middleware/asyncHandler.js';
 import { meldeIbanAenderung } from '../services/ibanAenderung.js';
 import { begrenzeUploadGroesse, zustaendigkeitVorUpload } from '../middleware/uploadLimit.js';
 import { neueFehler, feldFehlerAttr } from '../utils/feldFehler.js';
+import { leseText, MAX_LAENGE, eingabeGrenzen } from '../utils/eingabe.js';
 
 const BETRAG_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const ZAHLUNGSZIEL_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -109,6 +110,7 @@ function buildQrInfo(db, job) {
 
 export function createKontierungRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
+  router.use(eingabeGrenzen);
 
   const LIEFERANT_NUR_ADMIN_HINWEIS = 'Neue Lieferanten legt die Administration an.';
   const darfLieferantenAnlegen = (person) => personHasPermission(db, config, person, 'kreditoren_verwalten');
@@ -177,8 +179,16 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       meldeZugriffVerweigert(req, { grund: 'fehlendes_recht', status: 403, recht: 'kreditoren_verwalten' });
       return res.status(403).json({ error: LIEFERANT_NUR_ADMIN_HINWEIS });
     }
-    const { name, kontoId, iban } = req.body;
-    const zahlungsart = req.body.zahlungsart;
+    // Prüfung 2026-11-15 (S8): alle Felder als einzelner Text lesen (Array → 400 statt 500), Name höchstens 200 Zeichen.
+    const felder = [
+      leseText(req.body.name, { max: MAX_LAENGE.einzeilig, feld: 'Name' }),
+      leseText(req.body.kontoId, { max: MAX_LAENGE.kennung, feld: 'Konto' }),
+      leseText(req.body.iban, { max: MAX_LAENGE.kennung, feld: 'IBAN' }),
+      leseText(req.body.zahlungsart, { max: MAX_LAENGE.kennung, feld: 'Zahlungsart' }),
+    ];
+    const eingabeFehler = felder.map((f) => f.fehler).filter(Boolean);
+    if (eingabeFehler.length > 0) return res.status(400).json({ error: eingabeFehler.join(' ') });
+    const [{ wert: name }, { wert: kontoId }, { wert: iban }, { wert: zahlungsart }] = felder;
     const { errors, normalizedIban } = pruefeNeuenKreditor(db, { name, zahlungsart, iban, kontoId });
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join(' ') });
@@ -206,8 +216,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       // Formulars werden hier bewusst nicht gelesen.
       if (req.body.aktion === 'rapport') {
         const empfaengerIds = [].concat(req.body.empfaengerIds ?? []).map(String);
-        const bemerkung = req.body.bemerkung || '';
-        const ergebnis = await markiereRapport(db, config, mailer, { job, person: req.currentPerson, empfaengerIds, bemerkung, ip: req.ip });
+        // Prüfung 2026-11-15 (S8): Bemerkung muss ein einzelner Text sein (kein Array) und höchstens 2000 Zeichen lang.
+        const bemerkungGelesen = leseText(req.body.bemerkung, { max: MAX_LAENGE.text, feld: 'Bemerkung' });
+        const bemerkung = bemerkungGelesen.wert;
+        const ergebnis = bemerkungGelesen.fehler
+          ? { ok: false, status: 400, fehler: bemerkungGelesen.fehler }
+          : await markiereRapport(db, config, mailer, { job, person: req.currentPerson, empfaengerIds, bemerkung, ip: req.ip });
         if (ergebnis.ok) return res.redirect('/pool');
         if (ergebnis.status !== 400) return res.status(ergebnis.status).render('error', { message: ergebnis.fehler });
         return res.status(400).render('kontierung', {
@@ -238,7 +252,23 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         if (err instanceof KreditorFeldKonflikt) return res.status(400).render('error', { message: err.message });
         throw err;
       }
-      const { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, aktion, typ } = req.body;
+      // Prüfung 2026-11-15 (S8, B3): Textfelder als einzelner, getrimmter Text lesen (Array/Objekt und zu lange Eingaben
+      // ergeben einen Feldfehler statt Fehler 500; eine Begründung nur aus Leerzeichen gilt als leer, B3). Längen: utils/eingabe.js.
+      const eingabeFehler = neueFehler();
+      const text = (wert, feld, max, id) => {
+        const gelesen = leseText(wert, { max, feld });
+        if (gelesen.fehler) eingabeFehler.add(id, gelesen.fehler);
+        return gelesen.wert;
+      };
+      const kontoId = text(req.body.kontoId, 'Konto', MAX_LAENGE.kennung, 'kontoId');
+      const interessenskonflikt = text(req.body.interessenskonflikt, 'Interessenskonflikt', MAX_LAENGE.kennung, 'interessenskonflikt');
+      const begruendung = text(req.body.begruendung, 'Begründung', MAX_LAENGE.text, 'begruendung');
+      const absender = text(req.body.absender, 'Absender', MAX_LAENGE.einzeilig, 'absender');
+      const betrag = text(req.body.betrag, 'Betrag', MAX_LAENGE.betrag, 'betrag');
+      const zahlungsziel = text(req.body.zahlungsziel, 'Zahlungsziel', MAX_LAENGE.kennung, 'zahlungsziel');
+      const rechnungsnummer = text(req.body.rechnungsnummer, 'Rechnungsnummer', MAX_LAENGE.rechnungsnummer, 'rechnungsnummer');
+      const aktion = text(req.body.aktion, 'Aktion', MAX_LAENGE.kennung, null);
+      const typ = text(req.body.typ, 'Typ', MAX_LAENGE.kennung, null);
       const jobTyp = typ === 'gutschrift' ? 'gutschrift' : 'rechnung';
       const ibanEndung = normalizeIban(typeof req.body.ibanEndung === 'string' ? req.body.ibanEndung : '');
       const pruefBemerkung = (typeof req.body.pruefBemerkung === 'string' ? req.body.pruefBemerkung.trim() : '').slice(0, PRUEF_BEMERKUNG_MAX);
@@ -275,6 +305,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       if (uploadErr) {
         return renderFehler(uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Der Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.');
       }
+      if (eingabeFehler.liste.length > 0) return renderFehler(eingabeFehler);
       // Gilt unabhängig von aktion (kontieren oder ablehnen) — ein zusammen mit einer Ablehnung angehängter Beleg wird trotzdem zusammengeführt, da das ursprüngliche PDF (in dem der Beleg nun enthalten ist) anschliessend überarbeitet und erneut eingereicht wird.
       let belegMimetype = null;
       if (req.file) {
@@ -786,7 +817,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     if (!job) return;
     if (sperreKkAbrechnung(job, res)) return;
 
-    const bemerkung = (req.body.bemerkung || '').trim();
+    const { wert: bemerkung, fehler: bemerkungFehler } = leseText(req.body.bemerkung, { max: MAX_LAENGE.text, feld: 'Bemerkung' });
+    if (bemerkungFehler) return res.status(400).render('error', { message: bemerkungFehler });
     if (!bemerkung) {
       return res.status(400).render('error', { message: 'Bitte eine Bemerkung angeben.' });
     }
@@ -842,7 +874,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
     if (!job.kreditkarte_id) return res.status(409).render('error', { message: 'Diese Abrechnung ist keiner Kreditkarte zugeordnet.' });
-    const bemerkung = (req.body.bemerkung || '').trim();
+    const { wert: bemerkung, fehler: bemerkungFehler } = leseText(req.body.bemerkung, { max: MAX_LAENGE.text, feld: 'Bemerkung' });
+    if (bemerkungFehler) return res.status(400).render('error', { message: bemerkungFehler });
     if (!bemerkung) return res.status(400).render('error', { message: 'Bitte eine Bemerkung angeben.' });
     db.exec('BEGIN');
     let ok = false;
@@ -934,14 +967,23 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const konten = ladeKontenFuerJob(req, job);
       const alleKonten = listKonten(db);
 
-      const gesamtbetrag = req.body.gesamtbetrag || '';
-      const kontoIds = [].concat(req.body.teilKontoId || []);
-      const betraege = [].concat(req.body.teilBetrag || []);
-      const konflikte = [].concat(req.body.teilInteressenskonflikt || []);
-      const positionen = [].concat(req.body.teilPosition || []);
-      const begruendung = req.body.begruendung || '';
-      const typ = normalisiereTyp(req.body.typ);
-      const kreditorIdEingabe = typeof req.body.kreditorId === 'string' ? req.body.kreditorId.trim() : '';
+      // Prüfung 2026-11-15 (S8, B3): Textfelder als einzelner, getrimmter Text lesen. Die Teilzeilen sind bewusst Listen
+      // (mehrfach benannte Felder); ihre einzelnen Einträge müssen aber wieder Text sein. Begründung nur aus Leerzeichen gilt als leer.
+      const eingabeFehler = [];
+      const text = (wert, feld, max) => {
+        const gelesen = leseText(wert, { max, feld });
+        if (gelesen.fehler) eingabeFehler.push(gelesen.fehler);
+        return gelesen.wert;
+      };
+      const liste = (wert, feld, max) => [].concat(wert ?? []).map((eintrag) => text(eintrag, feld, max));
+      const gesamtbetrag = text(req.body.gesamtbetrag, 'Gesamtbetrag', MAX_LAENGE.betrag);
+      const kontoIds = liste(req.body.teilKontoId, 'Konto', MAX_LAENGE.kennung);
+      const betraege = liste(req.body.teilBetrag, 'Betrag', MAX_LAENGE.betrag);
+      const konflikte = liste(req.body.teilInteressenskonflikt, 'Interessenskonflikt', MAX_LAENGE.kennung);
+      const positionen = liste(req.body.teilPosition, 'Position', MAX_LAENGE.einzeilig);
+      const begruendung = text(req.body.begruendung, 'Begründung', MAX_LAENGE.text);
+      const typ = normalisiereTyp(typeof req.body.typ === 'string' ? req.body.typ : '');
+      const kreditorIdEingabe = text(req.body.kreditorId, 'Lieferant', MAX_LAENGE.kennung);
       const ibanEndung = normalizeIban(typeof req.body.ibanEndung === 'string' ? req.body.ibanEndung : '');
       const pruefBemerkung = (typeof req.body.pruefBemerkung === 'string' ? req.body.pruefBemerkung.trim() : '').slice(0, PRUEF_BEMERKUNG_MAX);
       const teileEingabe = kontoIds.map((kontoId, i) => ({
@@ -951,7 +993,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         position: (positionen[i] || '').trim() || null,
       }));
 
-      const errors = [];
+      const errors = [...new Set(eingabeFehler)];
       if (uploadErr) {
         errors.push(uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Ein Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.');
       }

@@ -71,7 +71,7 @@
               <div class="row g-2 mb-3">
                 <div class="col-12 col-sm-6">
                   <label class="form-label" for="absender">Absender</label>
-                  <input type="text" class="form-control<%= ff.absender ? ' is-invalid' : '' %>" id="absender" name="absender" value="<%= values.absender || '' %>" required<%- ffAttr(ff, 'absender') %>>
+                  <input type="text" class="form-control<%= ff.absender ? ' is-invalid' : '' %>" id="absender" name="absender" value="<%= values.absender || '' %>" maxlength="<%= maxLen.einzeilig %>" required<%- ffAttr(ff, 'absender') %>>
 <% if (ff.absender) { %><div class="invalid-feedback d-block" id="absender-fehler"><%= ff.absender %></div><% } %>
                 </div>
                 <div class="col-12 col-sm-6">
@@ -112,7 +112,7 @@
               <div class="kontierung-block">
               <div class="mb-3">
                 <label class="form-label" for="rechnungsnummer" id="rechnungsnummer-label">Rechnungsnummer</label>
-                <input type="text" class="form-control<%= ff.rechnungsnummer ? ' is-invalid' : '' %>" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" required<%- ffAttr(ff, 'rechnungsnummer') %>>
+                <input type="text" class="form-control<%= ff.rechnungsnummer ? ' is-invalid' : '' %>" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" maxlength="<%= maxLen.rechnungsnummer %>" required<%- ffAttr(ff, 'rechnungsnummer') %>>
 <% if (ff.rechnungsnummer) { %><div class="invalid-feedback d-block" id="rechnungsnummer-fehler"><%= ff.rechnungsnummer %></div><% } %>
               </div>
 
@@ -133,7 +133,7 @@
 
               <div class="mb-3">
                 <label class="form-label" for="begruendung">Begründung <span class="text-muted" data-begruendung-hinweis><%= values.interessenskonflikt === 'ja' ? '(Pflicht)' : '(bei Ablehnung Pflicht)' %></span></label>
-                <textarea class="form-control<%= ff.begruendung ? ' is-invalid' : '' %>" id="begruendung" name="begruendung" data-begruendung-pflicht-bei="konfliktJa"<%- ffAttr(ff, 'begruendung') %>><%= values.begruendung || '' %></textarea>
+                <textarea class="form-control<%= ff.begruendung ? ' is-invalid' : '' %>" id="begruendung" name="begruendung" maxlength="<%= maxLen.text %>" data-begruendung-pflicht-bei="konfliktJa"<%- ffAttr(ff, 'begruendung') %>><%= values.begruendung || '' %></textarea>
 <% if (ff.begruendung) { %><div class="invalid-feedback d-block" id="begruendung-fehler"><%= ff.begruendung %></div><% } %>
               </div>
 
@@ -156,7 +156,7 @@
                   </div>
                   <div class="mb-3">
                     <label class="form-label" for="rapportBemerkung">Bemerkung <span class="text-muted">(optional, höchstens 2000 Zeichen)</span></label>
-                    <textarea class="form-control" id="rapportBemerkung" name="bemerkung" maxlength="2000" disabled><%= values.rapportBemerkung || '' %></textarea>
+                    <textarea class="form-control" id="rapportBemerkung" name="bemerkung" maxlength="<%= maxLen.text %>" disabled><%= values.rapportBemerkung || '' %></textarea>
                   </div>
                 </div>
               <% } %>
@@ -243,7 +243,7 @@
           <div class="modal-body">
             <div class="mb-3">
               <label class="form-label" for="bemerkung-ruecksendung">Bemerkung <span class="text-muted">(Pflicht)</span></label>
-              <textarea class="form-control" id="bemerkung-ruecksendung" name="bemerkung" form="an-gruppe-zurueck-form" required></textarea>
+              <textarea class="form-control" id="bemerkung-ruecksendung" name="bemerkung" maxlength="<%= maxLen.text %>" form="an-gruppe-zurueck-form" required></textarea>
               <div class="form-text">Die Rechnung geht zurück an das Team, das Pool-Belege zuweisen kann, mit deiner Bemerkung.</div>
             </div>
           </div>

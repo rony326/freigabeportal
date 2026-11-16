@@ -161,7 +161,8 @@ Einmal im Monat (Termin fest im Kalender der Betriebsverantwortlichen):
 
 ## Bekannte Grenzen
 
-- Für Problemmeldungen gibt es **kein eigenes Rate-Limit**, nur den allgemeinen
-  Session-Limiter.
+- Problemmeldungen sind auf 5 je Stunde und Person begrenzt, Spesenabrechnungen auf 10 je
+  Stunde und Person (Zähler im Speicher, ein Neustart setzt sie zurück; abgelehnte Eingaben
+  zählen nicht mit). Dazu kommt der allgemeine Session-Limiter.
 - Die Übersicht berechnet Median und p90 im Speicher aus den Zeilen; bei der heutigen
   Datenmenge unkritisch, bei sehr viel Verkehr müsste es in SQL verlagert werden.

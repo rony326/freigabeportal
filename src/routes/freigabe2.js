@@ -32,6 +32,7 @@ import { kommentarBereich } from './kommentare.js';
 import { listeKommentare } from '../services/kommentare.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { feldFehlerAttr } from '../utils/feldFehler.js';
+import { leseText, MAX_LAENGE } from '../utils/eingabe.js';
 
 // Stand der Kommentare eines Vorgangs als "<Anzahl>:<letzte id>". Die Seite schreibt ihn beim
 // Rendern ins Formular; der POST vergleicht ihn vor dem Stempeln (Kommentar während die Seite offen
@@ -128,6 +129,7 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       else if (!paymentReview && zahlungBestaetigungspflichtig(zahlung)) paymentReview = zahlungsReview(job, konto, zahlung, req.currentPerson.churchtools_person_id);
     }
     res.status(status).render('freigabe2', {
+      maxLen: MAX_LAENGE,
       zahlungsart,
       job,
       konto,
@@ -163,8 +165,19 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       const result = loadAuthorized(req, res);
       if (!result) return;
       const { job, konto } = result;
-      const { aktion, interessenskonflikt, begruendung } = req.body;
+      // Prüfung 2026-11-15 (S8, B3): Felder als einzelner, getrimmter Text lesen (Array/Objekt oder zu lang → 400 statt 500);
+      // eine Begründung nur aus Leerzeichen gilt als leer. Längen: utils/eingabe.js.
+      const aktionGelesen = leseText(req.body.aktion, { max: MAX_LAENGE.kennung, feld: 'Aktion' });
+      const konfliktGelesen = leseText(req.body.interessenskonflikt, { max: MAX_LAENGE.kennung, feld: 'Interessenskonflikt' });
+      const begruendungGelesen = leseText(req.body.begruendung, { max: MAX_LAENGE.text, feld: 'Begründung' });
+      const aktion = aktionGelesen.wert;
+      const interessenskonflikt = konfliktGelesen.wert;
+      const begruendung = begruendungGelesen.wert;
       const hatKonflikt = interessenskonflikt === 'ja';
+      const eingabeFehler = [aktionGelesen, konfliktGelesen, begruendungGelesen].map((g) => g.fehler).filter(Boolean);
+      if (eingabeFehler.length > 0) {
+        return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, eingabeFehler, null, begruendungGelesen.fehler ? { f2begruendung: begruendungGelesen.fehler } : {});
+      }
 
       if (hatKonflikt && !begruendung) {
         return renderForm(req, res, 400, result, { interessenskonflikt, begruendung }, ['Bei einem Interessenskonflikt ist eine Begründung Pflicht.'], null, { f2begruendung: 'Bei einem Interessenskonflikt ist eine Begründung Pflicht.' });

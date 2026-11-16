@@ -6,8 +6,9 @@ import { personHasPermission } from '../middleware/permissions.js';
 import { sendNotification } from '../services/notify.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { portalPfad } from '../services/nutzung.js';
+import { leseText, MAX_LAENGE } from '../utils/eingabe.js';
 
-const MAX_BESCHREIBUNG = 2000;
+const MAX_BESCHREIBUNG = MAX_LAENGE.text;
 // Wie in admin/betrieb.js: UUID-Präfix oder volle UUID.
 const FEHLER_ID_MUSTER = /^[0-9a-f][0-9a-f-]{7,63}$/i;
 
@@ -36,15 +37,17 @@ export function createFehlerMeldenRouter({ db, config, mailer, csrfProtection = 
   router.post('/', csrfProtection, (req, res) => {
     const person = req.currentPerson;
     const personId = person.churchtools_person_id;
-    const fehlerId = typeof req.body.fehlerId === 'string' ? req.body.fehlerId.trim() : '';
-    const beschreibung = typeof req.body.beschreibung === 'string' ? req.body.beschreibung.trim() : '';
+    // Prüfung 2026-11-15 (S8): Felder müssen einzelner Text sein (Array → 400 statt stilles Verwerfen/500), Beschreibung höchstens 2000 Zeichen.
+    const fehlerIdGelesen = leseText(req.body.fehlerId, { max: MAX_LAENGE.kennung, feld: 'Fehler-ID' });
+    const beschreibungGelesen = leseText(req.body.beschreibung, { max: MAX_BESCHREIBUNG, feld: 'Die Beschreibung' });
+    const fehlerId = fehlerIdGelesen.wert;
+    const beschreibung = beschreibungGelesen.wert;
     // Seite kommt aus einem versteckten Feld: Referer wird nie gesendet (Referrer-Policy: no-referrer).
     const seite = portalPfad(req.body.seite);
 
-    if (beschreibung.length > MAX_BESCHREIBUNG) {
-      return res.status(400).render('fehler-melden', {
-        gesendet: false, fehlerId, beschreibung, seite: seite || '', fehlerText: `Die Beschreibung darf höchstens ${MAX_BESCHREIBUNG} Zeichen lang sein.`,
-      });
+    const eingabeFehler = beschreibungGelesen.fehler || fehlerIdGelesen.fehler;
+    if (eingabeFehler) {
+      return res.status(400).render('fehler-melden', { gesendet: false, fehlerId, beschreibung, seite: seite || '', fehlerText: eingabeFehler });
     }
 
     const requestId = findeFehlerRequestId(db, fehlerId, personId);

@@ -205,6 +205,11 @@ Weiche selbst (500/404). Siehe [testmodus.md](testmodus.md).
   (`Accept: text/html`) die normale Fehlerseite mit Wartezeit («in etwa N
   Minuten»), fetch-/Maschinenaufrufe bekommen JSON; `Retry-After` bleibt. Der
   Handler ist als `createRateLimitHandler()` wiederverwendbar.
+  Zusätzlich gelten **Eigenlimits je Person und Stunde** auf den schreibenden
+  POST-Routen: `POST /spesen` 10 Abrechnungen, `POST /fehler-melden` 5 Meldungen
+  (Schlüssel = angemeldete Person, IP nur ohne Sitzung). Sie sitzen in `app.js`
+  hinter `requireLogin` (Fremde verbrauchen kein Kontingent) und vor multer/CSRF;
+  abgelehnte Eingaben (Status 400 und höher) zählen nicht mit. GET bleibt frei.
 - **Magic-Byte-Prüfung** statt Vertrauen auf den deklarierten
   Content-Type bei jedem Datei-Upload (Rechnungs-PDF, Beleg-Anhang,
   Branding-Logo).

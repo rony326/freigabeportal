@@ -9,6 +9,20 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
   8.6.2 → 8.7.4, nodemailer 10.2.1 → 10.6.0, csrf-csrf 4.0.3 → 4.1.0, read-excel-file 9.3.12 → 9.3.17.
 - Doku: `docs/betrieb-und-nutzung.md` hält einen monatlichen Termin fest (`npm audit` und Prüfung der
   mitgelieferten pdf.js-Kopie, aktuell 6.2.108, auf neue Meldungen).
+
+- Texteingaben (Befund S8): Absender, Rechnungsnummer, Begründungen, Verwendungszweck, Titel, Positionen,
+  Bemerkungen, Lieferantenname und Fehlerbeschreibung haben jetzt Höchstlängen (einzeilig 200,
+  Rechnungsnummer 100, Texte 2000 Zeichen), festgelegt an einer Stelle (`src/utils/eingabe.js`), geprüft auf
+  dem Server und als `maxlength` in den Formularen. Mehrfach gesendete oder verschachtelte Felder enden
+  nicht mehr in Fehler 500, sondern in einer verständlichen Fehlermeldung (400, bei Feldern am Feld).
+  Mehrere Positionen (Spesen, Aufsplitten) bleiben möglich.
+- Pflichtbegründungen (Befund B3): Eine Begründung nur aus Leerzeichen gilt als leer (Ablehnung und
+  Interessenskonflikt in Kontierung, Aufsplitten, Freigabe 2 und Spesen-Freigabe 1); gespeichert wird der
+  getrimmte Text.
+- Schreib-Limits je Person (Befund S5): Spesen einreichen höchstens 10 Abrechnungen, Problem melden
+  höchstens 5 Meldungen je Stunde und angemeldeter Person (bisher nur der allgemeine Limiter mit
+  300 Anfragen je 15 Minuten). Bei Überschreitung Fehlerseite 429 mit Wartezeit bzw. JSON.
+  Formularfehler (Status 400) zählen nicht mit.
 - ChurchTools-Gruppenmitglieder (S1, B1, B5): Es zählen nur noch aktive Mitgliedschaften
   (`group_member_statuses[]=active`, zusätzlich im Code geprüft); Anfragen, Wartelisten und
   zur Löschung vorgemerkte Einträge erhalten keine Rolle mehr. Die Mitgliederliste wird mit

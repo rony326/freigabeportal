@@ -144,3 +144,28 @@ test('Zusätzlich konfigurierte Empfänger werden berücksichtigt', async () => 
   assert.deepEqual(mails.map((m) => m.to).sort(), ['admin@example.org', 'revision@example.org']);
   db.close();
 });
+
+test('IBAN hinzufügen wartet nicht auf SMTP: hängender Mailserver blockiert die Antwort nicht, Mails bleiben eingereiht', async () => {
+  const { db } = aufsetzen();
+  let freigeben;
+  const haengt = new Promise((resolve) => { freigeben = resolve; });
+  const mailer = { async sendMail() { await haengt; } };
+  const app = express();
+  app.set('view engine', 'ejs');
+  app.set('views', new URL('../../../views', import.meta.url).pathname);
+  app.use((req, res, next) => { res.locals.branding = { primaryColor: '#000', secondaryColor: '#fff', hasLogo: false, themeAttr: null }; next(); });
+  app.use(express.urlencoded({ extended: false }));
+  app.use((req, res, next) => { req.session = { personId: req.headers['x-test-person-id'] }; next(); });
+  const config = { publicBaseUrl: 'https://portal.example.org', churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
+  app.use(loadCurrentPerson(db));
+  app.use(loadNavFlags(db, config));
+  app.use('/admin/kreditoren', requirePermission(db, config, 'kreditoren_verwalten'), createKreditorenRouter({ db, config, mailer }));
+  const kreditorId = createKreditor(db, { name: 'Muster AG', kontoId: null, zahlungsart: 'lastschrift' });
+  const res = await request(app).post('/admin/kreditoren/ibans').set('x-test-person-id', '99').type('form').send({ iban: IBAN, kreditorId: String(kreditorId) });
+  assert.equal(res.status, 302);
+  const zeilen = listMailLog(db).filter((m) => m.typ === 'iban-aenderung');
+  assert.equal(zeilen.length, 3);
+  assert.ok(zeilen.every((m) => m.status === 'eingereiht'), 'eingereiht, nicht versendet');
+  freigeben();
+  db.close();
+});

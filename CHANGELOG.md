@@ -3,6 +3,16 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.2] – 2026-11-17
+
+Das Anlegen und Löschen einer IBAN wartet nicht mehr auf den Mailversand. Release Notes:
+[docs/releases/v1.4.2.md](docs/releases/v1.4.2.md). Keine Migration, keine neuen Umgebungsvariablen.
+
+- Meldung «IBAN geändert»: Die Mails werden zuerst in der Ausgangsablage eingereiht; der SMTP-Versand läuft danach
+  im Hintergrund. Bisher wartete die Anfrage nacheinander auf jede Zustellung, bei langsamem oder hängendem
+  Mailserver dauerte das Anlegen einer IBAN (oder eines Lieferanten mit IBAN) entsprechend lange. Scheitert der
+  Versand, bleibt die Mail «eingereiht» und der Job `mail-zustellung` wiederholt sie.
+
 ## [1.4.1] – 2026-11-16
 
 Korrektur und einfachere Verwaltung von Personenrechten und Kreditoren. Release Notes:

@@ -6,13 +6,14 @@
 // unter `iban_aenderung_empfaenger` eingestellte Liste (Standard: Buchhaltung und Administration). Die ändernde Person wird
 // NICHT herausgefiltert: ist sie Empfänger, bekommt auch sie die Mail, sie kann die Meldung also nicht unterdrücken.
 import { getConfigValue, getDefaultConfigValue } from '../db/adminConfigRepo.js';
-import { sendNotification, reiheBenachrichtigungEin, resolveEmpfaenger } from './notify.js';
+import { reiheBenachrichtigungEin, resolveEmpfaenger } from './notify.js';
+import { stelleMailZu } from './mailZustellung.js';
 import { kreditorNameVariablen } from './kreditorFelder.js';
 import { ibanKurz } from './ibanUtils.js';
 import { formatZeitpunkt } from './auditLog.js';
 
 /**
- * Verschickt die Meldung an alle Empfänger (jede Adresse einmal). Wirft nie: Mailprobleme dürfen die Änderung nicht
+ * Reiht die Meldung für alle Empfänger ein (jede Adresse einmal) und stösst die Zustellung im Hintergrund an (kein Warten auf SMTP). Wirft nie: Mailprobleme dürfen die Änderung nicht
  * rückgängig machen (die Mail liegt in der Ausgangsablage und wird bei Fehlern wiederholt, siehe mailZustellung.js).
  * @param {object} config App-Konfiguration (Gruppen-IDs, publicBaseUrl); ohne sie ist keine Empfängerermittlung möglich
  * @param {object|null} mailer ohne Mailer wird nur eingereiht (der Job mail-zustellung sendet später)
@@ -38,9 +39,17 @@ export async function meldeIbanAenderung(db, config, mailer, { kreditor, iban, a
       // Mit bekannter ID direkt auf die Kreditor-Seite (IBANs dort), sonst auf die Liste.
       link: kreditor.id ? `${basis}/admin/kreditoren/${kreditor.id}/bearbeiten` : `${basis}/admin/kreditoren`,
     };
-    for (const to of empfaenger) {
-      if (mailer) await sendNotification(db, mailer, { to, typ: 'iban-aenderung', jobId: null, variablen });
-      else reiheBenachrichtigungEin(db, { to, typ: 'iban-aenderung', jobId: null, variablen });
+    // Nur einreihen (schnell, lokale DB). Der SMTP-Versand läuft danach im Hintergrund und blockiert die Anfrage nicht:
+    // scheitert oder dauert er, bleibt die Zeile 'eingereiht' und der Job mail-zustellung wiederholt sie.
+    const eingereiht = empfaenger.map((to) => reiheBenachrichtigungEin(db, { to, typ: 'iban-aenderung', jobId: null, variablen }));
+    if (mailer) {
+      void (async () => {
+        for (const eintrag of eingereiht) {
+          if (eintrag.status !== 'eingereiht') continue;
+          try { await stelleMailZu(db, mailer, eintrag.id); }
+          catch (err) { console.error('IBAN-Änderung: Sofortzustellung fehlgeschlagen, mail-zustellung wiederholt', err); }
+        }
+      })();
     }
   } catch (err) {
     console.error('IBAN-Änderung: Meldung konnte nicht verschickt werden', err);

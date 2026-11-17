@@ -114,6 +114,30 @@ export async function sendNotification(db, mailer, { to, typ, jobId, variablen =
   }
 }
 
+// Wie sendNotification für mehrere Mails, wartet aber nicht auf SMTP: alle Mails werden zuerst eingereiht (lokale DB, schnell),
+// die Zustellung läuft danach nacheinander im Hintergrund. Scheitert oder dauert sie, bleibt die Zeile 'eingereiht' und der Job
+// mail-zustellung wiederholt sie. Wirft nie. Ohne Mailer wird nur eingereiht. @returns {Array<{id, status}>} die eingereihten Zeilen
+export function sendeNotificationsImHintergrund(db, mailer, mails) {
+  const eingereiht = [];
+  for (const mail of mails) {
+    try {
+      eingereiht.push(reiheBenachrichtigungEin(db, mail));
+    } catch (err) {
+      console.error(`Benachrichtigung ${mail.typ} konnte nicht eingereiht werden`, err);
+    }
+  }
+  if (mailer) {
+    void (async () => {
+      for (const eintrag of eingereiht) {
+        if (eintrag.status !== 'eingereiht') continue;
+        try { await stelleMailZu(db, mailer, eintrag.id); }
+        catch (err) { console.error('Sofortzustellung fehlgeschlagen, mail-zustellung wiederholt', err); }
+      }
+    })();
+  }
+  return eingereiht;
+}
+
 const PERSON_TOKEN_PREFIX = 'person:';
 
 // Löst eine Empfängerliste aus der Konfiguration (Zeilen: `gruppe:buchhaltung`, `gruppe:admin`, `person:<id>` oder Adresse) zu

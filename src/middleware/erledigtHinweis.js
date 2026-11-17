@@ -33,7 +33,7 @@ export function erledigtHinweis() {
           let aktion = typeof body.aktion === 'string' ? body.aktion : null;
           // Freigabe 2 und Spesen-Freigabe 1 senden beim Freigeben keine `aktion` mit; die Kontierung immer.
           if (!aktion && !req.path.startsWith('/kontierung')) aktion = 'freigeben';
-          if (body.interessenskonflikt) aktion = 'konflikt';
+          if (body.interessenskonflikt === 'ja' || body.interessenskonflikt === 'on') aktion = 'konflikt'; // Radio «ja»/«nein»: «nein» ist kein Konflikt
           if (aktion && Object.hasOwn(TEXTE, aktion)) {
             res.cookie(COOKIE, aktion, { path: '/', maxAge: 60 * 1000, sameSite: 'lax', httpOnly: true });
           }

@@ -6,8 +6,7 @@
 // unter `iban_aenderung_empfaenger` eingestellte Liste (Standard: Buchhaltung und Administration). Die ändernde Person wird
 // NICHT herausgefiltert: ist sie Empfänger, bekommt auch sie die Mail, sie kann die Meldung also nicht unterdrücken.
 import { getConfigValue, getDefaultConfigValue } from '../db/adminConfigRepo.js';
-import { reiheBenachrichtigungEin, resolveEmpfaenger } from './notify.js';
-import { stelleMailZu } from './mailZustellung.js';
+import { sendeNotificationsImHintergrund, resolveEmpfaenger } from './notify.js';
 import { kreditorNameVariablen } from './kreditorFelder.js';
 import { ibanKurz } from './ibanUtils.js';
 import { formatZeitpunkt } from './auditLog.js';
@@ -39,18 +38,8 @@ export async function meldeIbanAenderung(db, config, mailer, { kreditor, iban, a
       // Mit bekannter ID direkt auf die Kreditor-Seite (IBANs dort), sonst auf die Liste.
       link: kreditor.id ? `${basis}/admin/kreditoren/${kreditor.id}/bearbeiten` : `${basis}/admin/kreditoren`,
     };
-    // Nur einreihen (schnell, lokale DB). Der SMTP-Versand läuft danach im Hintergrund und blockiert die Anfrage nicht:
-    // scheitert oder dauert er, bleibt die Zeile 'eingereiht' und der Job mail-zustellung wiederholt sie.
-    const eingereiht = empfaenger.map((to) => reiheBenachrichtigungEin(db, { to, typ: 'iban-aenderung', jobId: null, variablen }));
-    if (mailer) {
-      void (async () => {
-        for (const eintrag of eingereiht) {
-          if (eintrag.status !== 'eingereiht') continue;
-          try { await stelleMailZu(db, mailer, eintrag.id); }
-          catch (err) { console.error('IBAN-Änderung: Sofortzustellung fehlgeschlagen, mail-zustellung wiederholt', err); }
-        }
-      })();
-    }
+    // Nur einreihen; der SMTP-Versand läuft im Hintergrund und blockiert die Anfrage nicht (Wiederholung: Job mail-zustellung).
+    sendeNotificationsImHintergrund(db, mailer, empfaenger.map((to) => ({ to, typ: 'iban-aenderung', jobId: null, variablen })));
   } catch (err) {
     console.error('IBAN-Änderung: Meldung konnte nicht verschickt werden', err);
   }

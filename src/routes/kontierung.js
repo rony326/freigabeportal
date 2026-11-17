@@ -49,7 +49,7 @@ import { createFreigabe } from '../db/freigabenRepo.js';
 import { istRapportModulAktiv, listRapportEmpfaengerKandidaten, markiereRapport, hebeRapportAuf } from '../services/rapporte.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
-import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from '../services/notify.js';
+import { sendNotification, sendeNotificationsImHintergrund, sendNotificationMitVertretung, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from '../services/notify.js';
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -667,22 +667,21 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
             const person = getPersonById(db, personId);
             if (person) empfaenger.add(person.email);
           }
-          for (const email of empfaenger) {
-            await sendNotification(db, mailer, {
-              to: email,
-              typ: 'duplikat-warnung',
-              jobId: job.id,
-              variablen: {
-                jobDateiname: job.dateiname,
-                ...kreditorNameVariablen(kreditor.name),
-                betrag: betragText,
-                zahlungsziel: values.zahlungsziel,
-                tage: DOPPELRECHNUNG_FENSTER_TAGE,
-                dupJobIds,
-                link: `${config.publicBaseUrl}/kontierung/${job.id}`,
-              },
-            });
-          }
+          // Nur einreihen; der SMTP-Versand läuft im Hintergrund, die Anfrage wartet nicht auf den Mailserver.
+          sendeNotificationsImHintergrund(db, mailer, [...empfaenger].map((email) => ({
+            to: email,
+            typ: 'duplikat-warnung',
+            jobId: job.id,
+            variablen: {
+              jobDateiname: job.dateiname,
+              ...kreditorNameVariablen(kreditor.name),
+              betrag: betragText,
+              zahlungsziel: values.zahlungsziel,
+              tage: DOPPELRECHNUNG_FENSTER_TAGE,
+              dupJobIds,
+              link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+            },
+          })));
         }
         if (duplikate.length > 0) {
           createFreigabe(db, {
@@ -700,20 +699,18 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           const freigeber2 = getPersonById(db, konto.freigeber2_id);
           if (freigeber1) zusatzEmpfaenger.add(freigeber1.email);
           if (freigeber2) zusatzEmpfaenger.add(freigeber2.email);
-          for (const email of zusatzEmpfaenger) {
-            await sendNotification(db, mailer, {
-              to: email,
-              typ: 'rechnungsnummer-warnung',
-              jobId: job.id,
-              variablen: {
-                jobDateiname: job.dateiname,
-                ...kreditorNameVariablen(kreditor.name),
-                rechnungsnummer,
-                dupJobIds: duplikate.map((d) => `#${d.id}`).join(', '),
-                link: `${config.publicBaseUrl}/kontierung/${job.id}`,
-              },
-            });
-          }
+          sendeNotificationsImHintergrund(db, mailer, [...zusatzEmpfaenger].map((email) => ({
+            to: email,
+            typ: 'rechnungsnummer-warnung',
+            jobId: job.id,
+            variablen: {
+              jobDateiname: job.dateiname,
+              ...kreditorNameVariablen(kreditor.name),
+              rechnungsnummer,
+              dupJobIds: duplikate.map((d) => `#${d.id}`).join(', '),
+              link: `${config.publicBaseUrl}/kontierung/${job.id}`,
+            },
+          })));
         }
       }
 

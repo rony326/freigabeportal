@@ -16,6 +16,10 @@ test('Erledigt-Cookie: nur nach Beleg-Aktion mit Ziel /pool, mit passendem Text'
   assert.deepEqual(lauf('POST', '/freigabe2/5', {}, '/pool'), [['erledigt', 'freigeben']]);
   assert.deepEqual(lauf('POST', '/kontierung/5', { aktion: 'kontieren' }, '/pool'), [['erledigt', 'kontieren']]);
   assert.deepEqual(lauf('POST', '/freigabe2/5', { interessenskonflikt: 'on' }, '/pool'), [['erledigt', 'konflikt']]);
+  // Radio-Frage «Befangen?»: nur «ja» ist ein Konflikt, «nein» (Standard) darf nicht die Befangen-Meldung auslösen.
+  assert.deepEqual(lauf('POST', '/freigabe2/5', { interessenskonflikt: 'ja' }, '/pool'), [['erledigt', 'konflikt']]);
+  assert.deepEqual(lauf('POST', '/freigabe2/5', { interessenskonflikt: 'nein' }, '/pool'), [['erledigt', 'freigeben']]);
+  assert.deepEqual(lauf('POST', '/kontierung/5', { aktion: 'kontieren', interessenskonflikt: 'nein' }, '/pool'), [['erledigt', 'kontieren']]);
   // Kontierung ohne aktion (z. B. Pool-Rücklegung): kein Hinweis, damit nichts Falsches steht.
   assert.deepEqual(lauf('POST', '/kontierung/5', {}, '/pool'), []);
   assert.deepEqual(lauf('POST', '/freigabe2/5', {}, '/anderswo'), []);

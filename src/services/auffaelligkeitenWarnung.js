@@ -3,7 +3,7 @@
 // Person und die unter iban_abweichung_empfaenger konfigurierten Adressen — jede Adresse einmal.
 import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
-import { sendNotification, resolveEmpfaenger } from './notify.js';
+import { sendeNotificationsImHintergrund, resolveEmpfaenger } from './notify.js';
 import { kreditorNameVariablen } from './kreditorFelder.js';
 
 // Befunde als Aufzählung ("- Titel: Text") für die Mail.
@@ -16,7 +16,7 @@ export function bestaetigungsKommentar(befunde, bemerkung) {
   return befunde.map((b) => b.titel).join('; ') + (bemerkung ? ` — Wie geprüft: ${bemerkung}` : '');
 }
 
-// Verschickt die Warn-Mail an alle Empfänger (jede Adresse einmal, siehe Kopfkommentar).
+// Reiht die Warn-Mail für alle Empfänger ein und stösst die Zustellung im Hintergrund an (jede Adresse einmal, siehe Kopfkommentar).
 export async function sendeAuffaelligkeitenWarnung(db, mailer, config, { job, kreditor, befunde, bemerkung, person, freigeberIds, link }) {
   const empfaenger = new Set();
   for (const personId of freigeberIds) {
@@ -34,7 +34,6 @@ export async function sendeAuffaelligkeitenWarnung(db, mailer, config, { job, kr
     bemerkung: bemerkung || '–',
     link,
   };
-  for (const to of empfaenger) {
-    await sendNotification(db, mailer, { to, typ: 'auffaelligkeiten-warnung', jobId: job.id, variablen });
-  }
+  // Nur einreihen; der SMTP-Versand läuft im Hintergrund, damit die Bestätigung im Pop-up nicht auf den Mailserver wartet.
+  sendeNotificationsImHintergrund(db, mailer, [...empfaenger].map((to) => ({ to, typ: 'auffaelligkeiten-warnung', jobId: job.id, variablen })));
 }

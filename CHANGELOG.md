@@ -3,6 +3,17 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.3] – 2026-11-17
+
+Warnmails bei der Kontierung blockieren die Anfrage nicht mehr, und die Meldung nach dem Speichern stimmt wieder.
+Release Notes: [docs/releases/v1.4.3.md](docs/releases/v1.4.3.md). Keine Migration, keine neuen Umgebungsvariablen.
+
+- Warnmails «Auffälligkeiten» (IBAN-Abgleich, Betragsprüfung), «Duplikat» und «Rechnungsnummer»: Die Mails werden
+  zuerst eingereiht, der SMTP-Versand läuft im Hintergrund (gemeinsame Funktion `sendeNotificationsImHintergrund`).
+  Scheitert der Versand, wiederholt ihn der Job `mail-zustellung`. Betrifft Kontierung, Aufsplitten und QR-IBAN-Abgleich.
+- Hinweis nach dem Speichern: «Weitergegeben. Weil du befangen bist …» erschien bei jedem Speichern, weil die
+  Radio-Frage «Befangen?» auch mit «nein» einen Wert sendet. Jetzt gilt nur «ja» als Konflikt.
+
 ## [1.4.2] – 2026-11-17
 
 Das Anlegen und Löschen einer IBAN wartet nicht mehr auf den Mailversand. Release Notes:

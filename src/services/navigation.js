@@ -33,7 +33,7 @@ const PORTAL = [
   ] },
   { titel: 'Spesen', punkte: [
     { label: 'Spesen einreichen', href: '/spesen/neu', symbol: 'plus-circle', flag: 'spesenModulAktiv' },
-    { label: 'Meine Spesen', href: '/meine-spesen', symbol: 'wallet2', flag: null },
+    { label: 'Meine Spesen', href: '/meine-spesen', symbol: 'wallet2', flag: 'spesenModulAktiv' },
   ] },
   { titel: 'Belege', punkte: [
     { label: 'Abgeschlossene Rechnungen', href: '/meine-abgeschlossenen', symbol: 'check2-circle', flag: null },

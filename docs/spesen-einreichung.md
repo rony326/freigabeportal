@@ -122,7 +122,7 @@ Historie ebenfalls immer erreichbar.
 
 ## Navigation
 
-- **Seitenleiste** (Portal → Gruppe Spesen, `src/services/navigation.js`): "Spesen einreichen" → `/spesen/neu`, sichtbar
+- **Seitenleiste** (Portal → Gruppe Spesen, `src/services/navigation.js`): "Spesen einreichen" → `/spesen/neu` und "Meine Spesen" → `/meine-spesen`; bei deaktiviertem Spesenmodul (Admin → Module) entfällt die ganze Gruppe. Sichtbar
   für jede eingeloggte Person (kein Rollen-/Rechte-Filter, gleiches Niveau
   wie `/kontierung`).
 - **`/pool`-Dashboard**: Sektion "Meine offenen Spesen-Freigaben"

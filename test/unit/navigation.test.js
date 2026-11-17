@@ -46,7 +46,7 @@ test('bereichFuerPfad', () => {
   assert.equal(bereichFuerPfad('/pool'), 'portal');
 });
 
-test('Portal: Spesen einreichen fehlt bei inaktivem Modul, Kreditkartenbelege nur mit Flag', () => {
+test('Portal: bei inaktivem Spesenmodul fehlt die ganze Gruppe Spesen, Kreditkartenbelege nur mit Flag', () => {
   const voll = portal();
   assert.deepEqual(voll.map((g) => g.titel), ['Arbeit', 'Spesen', 'Belege', 'Persönlich']);
   assert.deepEqual(voll.map((g) => g.punkte.map((p) => p.label)), [
@@ -60,7 +60,8 @@ test('Portal: Spesen einreichen fehlt bei inaktivem Modul, Kreditkartenbelege nu
   const knapp = portal({ spesenModulAktiv: false, zeigeKreditkarteNav: false });
   assert.equal(finde(knapp, 'Spesen einreichen'), undefined);
   assert.equal(finde(knapp, 'Kreditkartenbelege'), undefined);
-  assert.ok(finde(knapp, 'Meine Spesen'));
+  assert.equal(finde(knapp, 'Meine Spesen'), undefined);
+  assert.ok(!knapp.some((g) => g.titel === 'Spesen'), 'leere Gruppe Spesen entfällt');
 });
 
 test('Portal: aktiver Punkt folgt dem Pfad', () => {

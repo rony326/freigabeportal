@@ -10,6 +10,7 @@ import { listFreigabenByJob } from '../db/freigabenRepo.js';
 import { getAktivenVertreter } from './vertretung.js';
 import { LAUFENDE_STATUS, ermittleZustaendigkeit } from './vorgangZustaendigkeit.js';
 import { belegName } from './belegName.js';
+import { vorabAngaben } from './vorabAngaben.js';
 import { aktuelleKenntnisnahmen } from './rapporte.js';
 
 // Anzeigename je laufendem Status.
@@ -125,6 +126,8 @@ export function beschreibeVorgang(db, job, { jetzt = Date.now(), namen = namensA
     : zust.art === 'pool' ? (job.pool_rueckgesendet_bemerkung ? 'Pool – Rückläufer' : 'Pool')
       : zust.art === 'admin' ? 'Admin-Gruppe'
         : anzeigeName(zustaendigPerson);
+  // Lieferant/Betrag auch vor der Kontierung (QR-Code, Upload von n8n); ungeprüfte Werte markiert die Ansicht rot.
+  const vorab = vorabAngaben(db, job);
   return {
     id: job.id,
     dateiname: belegName(job),
@@ -135,7 +138,9 @@ export function beschreibeVorgang(db, job, { jetzt = Date.now(), namen = namensA
     status: job.status,
     statusLabel: STATUS_LABEL[job.status] || job.status,
     betrag: job.betrag,
+    betragAngabe: vorab.betrag,
     gegenueber: art === 'spesen' ? anzeigeName(namen(job.eingereicht_von)) : job.lieferant || job.absender || '—',
+    gegenueberAngabe: art !== 'spesen' && vorab.lieferant.wert ? vorab.lieferant : { wert: art === 'spesen' ? anzeigeName(namen(job.eingereicht_von)) : job.absender || '—', ungeprueft: false },
     kontoLabel: konto ? `${konto.kontonummer} ${konto.bezeichnung}` : '—',
     zustaendig: { art: zust.art, personId: zust.personId, name: zustaendigName, vertretungName: vertreterId ? anzeigeName(namen(vertreterId)) : null },
     fortschritt: rapport ? `${rapport.bestaetigt} von ${rapport.gesamt}` : null,

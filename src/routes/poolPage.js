@@ -29,11 +29,13 @@ import { personName } from '../services/auditLog.js';
 import { kommentarInfoFuer } from '../services/kommentare.js';
 import { listOffeneRapporteForPerson } from '../db/rapporteRepo.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { vorabAngaben } from '../services/vorabAngaben.js';
 
 export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
-  // Ergänzt Vorgänge um Vorschau-Adresse (signiert), Kontonummer, Hinweis-Konto und Namen der zurücksendenden Person.
+  // Ergänzt Vorgänge um Vorschau-Adresse (signiert), Kontonummer, Hinweis-Konto, Namen der zurücksendenden Person und die
+  // schon vor der Kontierung bekannten Angaben (Lieferant, Betrag, Rechnungsnummer; services/vorabAngaben.js).
   function enrich(jobs) {
     return jobs.map((job) => ({
       ...job,
@@ -42,6 +44,7 @@ export function createPoolPageRouter({ db, config, mailer, csrfProtection = (req
       // Nur sinnvoll, solange der Vorgang noch unzugewiesen im Pool liegt — sobald er tatsächlich kontiert ist, übernimmt das echte Konto (oben), und dieser Best-Effort-Hinweis ist hinfällig.
       hinweisKonto: job.hinweis_konto_id ? (getKontoById(db, job.hinweis_konto_id) ?? null) : null,
       rueckgesendetVonName: job.pool_rueckgesendet_von ? personName(db, job.pool_rueckgesendet_von) : null,
+      vorab: vorabAngaben(db, job),
     }));
   }
 

@@ -102,13 +102,30 @@ gesucht (siehe [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md
 und ein Thumbnail gerendert. Der QR-Code wird nicht nur auf der ersten und
 letzten Seite gesucht, weil n8n das Mailprotokoll als letzte Seite anhängt.
 
-**Vorbefüllung (optional):** n8n kann `rechnungsnummer` und `zahlungsziel`
-mitschicken, z. B. von einem KI-Modell aus dem PDF gelesen. Gültige Werte
-stehen direkt in `jobs.rechnungsnummer`/`jobs.zahlungsziel` und erscheinen in
-der Kontierung vorausgefüllt; ungültige werden still verworfen
+**Vorbefüllung (optional):** n8n kann `rechnungsnummer`, `zahlungsziel` und
+`betrag` mitschicken, z. B. von einem KI-Modell aus dem PDF gelesen. Gültige
+Werte stehen in `jobs.rechnungsnummer`/`jobs.zahlungsziel` bzw. – nur als
+Vorschlag, getrennt vom kontierten Betrag – in `jobs.betrag_vorschlag` und
+erscheinen in der Kontierung vorausgefüllt; ungültige werden still verworfen
 (`src/services/eingangVorbefuellung.js`, Regeln in
 [n8n-schnittstelle.md](n8n-schnittstelle.md)). Verbindlich werden die Werte
 erst mit dem Speichern der Kontierung, das sie wie eine Eingabe von Hand prüft.
+
+**Anzeige vor der Kontierung:** Pool, eigene Aufgaben (Tabelle und Kacheln)
+und Admin → Laufende Vorgänge zeigen Lieferant, Rechnungsnummer und Betrag
+schon vor der Kontierung (`src/services/vorabAngaben.js`):
+
+| Feld | Herkunft, in dieser Reihenfolge |
+|---|---|
+| Lieferant | Zuweisungsregel bzw. Kontierung → Lieferant, bei dem die QR-IBAN hinterlegt ist |
+| Betrag | Kontierung → QR-Code → `betrag` aus dem n8n-Upload |
+| Rechnungsnummer | Kontierung bzw. vorher `rechnungsnummer` aus dem n8n-Upload |
+
+Automatisch erkannte, noch nicht kontierte Werte (alles ausser dem
+Regel-Lieferanten) erscheinen **rot und gepunktet unterstrichen** mit dem
+Hinweis «Automatisch erkannt – bei der Kontierung prüfen» (auch für
+Screenreader). Nach der Kontierung gelten die kontierten Werte ohne
+Markierung.
 
 ## 1a. Pool-Weiterleitung an Personen
 

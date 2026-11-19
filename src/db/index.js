@@ -87,6 +87,9 @@ const JOBS_TABLE_MIGRATIONS = [
   { column: 'rapport_markiert_am', ddl: 'ALTER TABLE jobs ADD COLUMN rapport_markiert_am TEXT' },
   { column: 'rapport_bemerkung', ddl: 'ALTER TABLE jobs ADD COLUMN rapport_bemerkung TEXT' },
   { column: 'rapport_eskaliert_am', ddl: 'ALTER TABLE jobs ADD COLUMN rapport_eskaliert_am TEXT' },
+  // Vorbefüllung beim Eingang (services/eingangVorbefuellung.js): Betrag nur als Vorschlag, getrennt von `betrag`,
+  // damit Dubletten- und Betragsprüfungen nie mit einem ungeprüften Wert rechnen.
+  { column: 'betrag_vorschlag', ddl: 'ALTER TABLE jobs ADD COLUMN betrag_vorschlag TEXT' },
 ];
 
 // Nachträgliche Spalten der Tabelle `personen`.

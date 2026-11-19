@@ -18,7 +18,7 @@ sequenceDiagram
     participant n8n
     participant P as Freigabeportal
 
-    n8n->>P: POST /api/n8n/jobs (X-API-Key, multipart: pdf, quelle, absender, dateiname, opt. rechnungsnummer, zahlungsziel)
+    n8n->>P: POST /api/n8n/jobs (X-API-Key, multipart: pdf, quelle, absender, dateiname, opt. rechnungsnummer, zahlungsziel, betrag)
     P->>P: Magic-Byte-Check (%PDF)
     P->>P: Eingangsprüfung im PDF-Worker: öffnen (mupdf + pdf-lib),<br/>nicht verschlüsselt, ≥ 1 lesbare Seite
     alt PDF-Verarbeitung ausgelastet / Zeitlimit / Absturz
@@ -54,8 +54,10 @@ sequenceDiagram
 | `eingang_am` | nein | ISO-Datum; Default: jetzt |
 | `rechnungsnummer` | nein | Vorschlag für die Kontierung (z. B. von einem KI-Modell aus dem PDF gelesen), höchstens 100 Zeichen, eine Zeile |
 | `zahlungsziel` | nein | Vorschlag für die Kontierung im Format `JJJJ-MM-TT` (z. B. `2026-12-31`), muss ein existierendes Datum sein |
+| `betrag` | nein | Vorschlag für die Kontierung, positiv, höchstens zwei Nachkommastellen, Punkt oder Komma (`1234.50`, `1234,5`); ohne Tausendertrennzeichen und Währung. Wird als `betrag_vorschlag` gespeichert, nicht als kontierter Betrag. Hat die Rechnung einen QR-Code, gilt dessen Betrag |
 
-`rechnungsnummer` und `zahlungsziel` füllen nur das Kontierungsformular vor;
+`rechnungsnummer`, `zahlungsziel` und `betrag` füllen nur das Kontierungsformular vor
+und erscheinen in Pool und Aufgabenlisten rot markiert als «automatisch erkannt»;
 die kontierende Person sieht und korrigiert sie dort. Ein ungültiger Wert
 (falsches Format, unmögliches Datum, zu lang, Zeilenumbruch, mehrfach
 gesendet) wird **still verworfen** und führt nie zu `400` – der Upload

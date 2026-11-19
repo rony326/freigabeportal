@@ -11,16 +11,17 @@
         <% } else { %>
           <div class="thumbnail-placeholder kachel-vorschau-leer text-muted small">Keine Vorschau</div>
         <% } %>
-        <div class="fw-semibold text-break"><%= job.lieferant || job.absender || '—' %> <%- include('_kommentar_marke', { jobId: job.id }) %></div>
+        <div class="fw-semibold text-break"><% if ((job.vorab?.lieferant ?? { wert: job.lieferant }).wert) { %><%- include('_vorab_wert', { angabe: (job.vorab?.lieferant ?? { wert: job.lieferant }) }) %><% } else { %><%= job.absender || '—' %><% } %> <%- include('_kommentar_marke', { jobId: job.id }) %></div>
         <dl class="kachel-angaben small mb-0">
           <dt>Beleg</dt><dd class="text-break"><%- include('_beleg_nr', { jobId: job.id }) %> <%- include('_beleg_name', { job }) %></dd>
-          <% if (job.lieferant && job.absender) { %>
+          <% if ((job.vorab?.lieferant ?? { wert: job.lieferant }).wert && job.absender) { %>
             <dt>Absender</dt><dd class="text-break"><%= job.absender %></dd>
           <% } %>
           <dt>Quelle</dt><dd><%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %></dd>
           <dt>Eingang</dt><dd><%- include('_zeitpunkt', { wert: job.eingang_am }) %></dd>
           <dt>Konto</dt><dd><%= job.kontonummer || (job.hinweisKonto ? `Hinweis: ${job.hinweisKonto.kontonummer} — ${job.hinweisKonto.bezeichnung}` : '—') %></dd>
-          <dt>Betrag</dt><dd class="betrag"><%= job.betrag || '—' %></dd>
+          <dt>Rechnungsnr.</dt><dd class="text-break"><%- include('_vorab_wert', { angabe: (job.vorab?.rechnungsnummer ?? { wert: job.rechnungsnummer }) }) %></dd>
+          <dt>Betrag</dt><dd class="betrag"><%- include('_vorab_wert', { angabe: (job.vorab?.betrag ?? { wert: job.betrag }) }) %></dd>
         </dl>
         <div class="mt-auto d-flex flex-wrap gap-1 align-items-start">
           <%- include('_job_aktionen', { job, kachelAnsicht: true }) %>

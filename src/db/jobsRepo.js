@@ -164,8 +164,9 @@ export function findMoeglicheDoppelrechnungen(db, { job, kreditorId, betrag, zah
  * Freigeber 1 des Kontos; sonst landet er als 'unzugewiesen' im Pool.
  * @returns {number} id des neuen Vorgangs
  */
-// rechnungsnummer/zahlungsziel: optionale, bereits geprüfte Vorbefüllung aus dem Eingang (services/eingangVorbefuellung.js).
-export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad, dateiHash, pdfDateiname, rechnungsnummer, zahlungsziel }) {
+// rechnungsnummer/zahlungsziel/betragVorschlag: optionale, bereits geprüfte Vorbefüllung aus dem Eingang
+// (services/eingangVorbefuellung.js). Der Betrag landet bewusst in betrag_vorschlag, nicht in betrag (= kontiert).
+export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad, dateiHash, pdfDateiname, rechnungsnummer, zahlungsziel, betragVorschlag }) {
   const regel = findMatchingZuweisungsregel(db, absender);
   let kontoId = null;
   let zugewiesenAn = null;
@@ -193,10 +194,10 @@ export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad,
 
   const result = db
     .prepare(
-      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an, kreditor_id, lieferant, datei_hash, pdf_dateiname, rechnungsnummer, zahlungsziel)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an, kreditor_id, lieferant, datei_hash, pdf_dateiname, rechnungsnummer, zahlungsziel, betrag_vorschlag)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn, kreditorId, lieferant, dateiHash ?? null, pdfDateiname || null, rechnungsnummer || null, zahlungsziel || null);
+    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn, kreditorId, lieferant, dateiHash ?? null, pdfDateiname || null, rechnungsnummer || null, zahlungsziel || null, betragVorschlag || null);
 
   return Number(result.lastInsertRowid);
 }

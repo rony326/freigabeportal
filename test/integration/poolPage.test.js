@@ -17,7 +17,9 @@ import {
   eskalierenFreigabe2AnAdmin,
   createSpesenPosition,
   getJobById,
+  setQrDaten,
 } from '../../src/db/jobsRepo.js';
+import { kreditorMitIban } from '../helpers/kreditor.js';
 import { setBerechtigungenForPerson } from '../../src/db/personBerechtigungenRepo.js';
 import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
@@ -779,5 +781,39 @@ test('GET /pool: Aufgabenzähler im Menü stimmt mit zaehleOffeneAufgaben übere
   const res = await request(buildTestApp(db)).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
   assert.match(res.text, new RegExp(`portal-zaehler">${erwartet}<`));
+  db.close();
+});
+
+test('GET /pool zeigt Rechnungsnummer, Lieferant (QR-IBAN) und Betrag schon vor der Kontierung, ungeprüfte Werte markiert', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedBuchhaltungPerson(db);
+  kreditorMitIban(db, { name: 'IBAN Treffer AG', iban: 'CH4431999123000889012' });
+  const id = createJob(db, { eingangAm: '2026-11-19T08:00:00.000Z', quelle: 'lieferant', absender: 'x@example.ch', dateiname: 'r.pdf', pdfPfad: '/tmp/r.pdf', rechnungsnummer: 'RE-2026-0042', betragVorschlag: '99.90' });
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrBetrag: '120.00' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  const zeile = res.text.slice(res.text.indexOf(`id="pool-row-${id}"`), res.text.indexOf('</tr>', res.text.indexOf(`id="pool-row-${id}"`)));
+  assert.match(zeile, /class="[^"]*wert-erkannt[^"]*"[^>]*>IBAN Treffer AG/);
+  assert.match(zeile, /class="[^"]*wert-erkannt[^"]*"[^>]*>RE-2026-0042/);
+  assert.match(zeile, /class="[^"]*wert-erkannt[^"]*"[^>]*>120\.00/);
+  assert.doesNotMatch(zeile, /99\.90/, 'QR-Betrag hat Vorrang vor dem Upload-Betrag');
+  assert.match(res.text, /<th>Rechnungsnr\.<\/th>/);
+  db.close();
+});
+
+test('GET /pool zeigt den Lieferanten aus der Zuweisungsregel ohne Ungeprüft-Markierung', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedBuchhaltungPerson(db);
+  const id = createJob(db, { eingangAm: '2026-11-19T08:00:00.000Z', quelle: 'lieferant', absender: 'x@example.ch', dateiname: 'r.pdf', pdfPfad: '/tmp/r.pdf' });
+  db.prepare("UPDATE jobs SET lieferant = 'Regel AG' WHERE id = ?").run(id);
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  const zeile = res.text.slice(res.text.indexOf(`id="pool-row-${id}"`), res.text.indexOf('</tr>', res.text.indexOf(`id="pool-row-${id}"`)));
+  assert.match(zeile, /<td>Regel AG<\/td>/);
   db.close();
 });

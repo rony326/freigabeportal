@@ -161,7 +161,9 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         interessenskonflikt: '',
         begruendung: '',
         absender: job.absender || '',
-        betrag: job.betrag || (qrInfo ? qrInfo.betrag || '' : ''),
+        // Vorrang: kontierter Betrag → QR-Code → Betrag aus dem n8n-Upload (betrag_vorschlag); gleiche Reihenfolge wie die Listen
+        // (services/vorabAngaben.js).
+        betrag: job.betrag || (qrInfo && qrInfo.betrag) || job.betrag_vorschlag || '',
         // Zahlungsziel/Rechnungsnummer: bei einem neuen Vorgang ggf. schon von n8n vorbefüllt (services/eingangVorbefuellung.js),
         // sonst aus einer früheren Kontierung. Erst das Speichern unten prüft sie verbindlich.
         zahlungsziel: job.zahlungsziel || '',

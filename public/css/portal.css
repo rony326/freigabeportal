@@ -1055,3 +1055,10 @@ html[data-schrift="sehr-gross"] { font-size: 125%; }
 .konflikt-wahl:has(input:focus-visible) { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
 .konflikt-folge { margin-top: .75rem; }
 .konflikt-folge[hidden] { display: none; }
+
+/* Automatisch erkannte, noch nicht kontierte Werte (views/_vorab_wert.ejs): rot, damit sie bei der Kontierung geprüft werden. */
+.wert-erkannt {
+  color: var(--bs-danger-text-emphasis);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}

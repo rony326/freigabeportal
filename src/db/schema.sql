@@ -212,7 +212,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   rapport_markiert_von TEXT,
   rapport_markiert_am TEXT,
   rapport_bemerkung TEXT,
-  rapport_eskaliert_am TEXT
+  rapport_eskaliert_am TEXT,
+  -- Betrag, den n8n beim Eingang mitgeschickt hat (z. B. KI-gelesen); nur Anzeige/Vorbefüllung, nie der kontierte Betrag.
+  betrag_vorschlag TEXT
 );
 
 -- Manipulationsschutz: sobald ein Zeitstempel-Hash/-Zeitpunkt für einen Job gesetzt ist, darf er

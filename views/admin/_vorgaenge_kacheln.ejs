@@ -4,9 +4,9 @@
   <% vorgaenge.forEach((v) => { %>
     <div class="col">
       <div class="kachel d-flex flex-column gap-2<%= v.haengt ? ' kachel-haengt' : (v.ueberfaellig ? ' kachel-ueberfaellig' : '') %>" id="vorgang-kachel-<%= v.id %>">
-        <div class="fw-semibold text-break"><a href="/admin/vorgaenge/<%= v.id %>"><%= v.gegenueber %></a> <%- include('../_kommentar_marke', { jobId: v.id }) %></div>
+        <div class="fw-semibold text-break"><a href="/admin/vorgaenge/<%= v.id %>"><%- include('../_vorab_wert', { angabe: v.gegenueberAngabe }) %></a> <%- include('../_kommentar_marke', { jobId: v.id }) %></div>
         <div class="small text-body-secondary text-break"><%- include('../_beleg_nr', { jobId: v.id }) %> <%= v.dateiname %></div>
-        <div class="kachel-betrag"><%= v.betrag || '—' %></div>
+        <div class="kachel-betrag"><%- include('../_vorab_wert', { angabe: v.betragAngabe }) %></div>
         <div>
           <%= v.statusLabel %><% if (v.fortschritt) { %> (<%= v.fortschritt %>)<% } %>
           <% v.kennzeichen.forEach((k) => { %><span class="badge text-bg-secondary ms-1"><%= k %></span><% }) %>

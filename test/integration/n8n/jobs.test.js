@@ -159,12 +159,16 @@ test('POST /api/n8n/jobs speichert optionale Rechnungsnummer und Zahlungsziel (z
     .field('dateiname', 'rechnung.pdf')
     .field('rechnungsnummer', ' RE-2026-0042 ')
     .field('zahlungsziel', '2026-12-31')
+    .field('betrag', '1234,50')
     .attach('pdf', PDF_BYTES, { filename: 'rechnung.pdf', contentType: 'application/pdf' });
 
   assert.equal(res.status, 201);
   const job = getJobById(db, res.body.id);
   assert.equal(job.rechnungsnummer, 'RE-2026-0042');
   assert.equal(job.zahlungsziel, '2026-12-31');
+  // Nur als Vorschlag gespeichert: der kontierte Betrag bleibt leer bis zur Kontierung.
+  assert.equal(job.betrag_vorschlag, '1234.50');
+  assert.equal(job.betrag, null);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
@@ -182,12 +186,14 @@ test('POST /api/n8n/jobs verwirft ungültige Rechnungsnummer/Zahlungsziel still 
     .field('dateiname', 'rechnung.pdf')
     .field('rechnungsnummer', 'X'.repeat(500))
     .field('zahlungsziel', '31.12.2026')
+    .field('betrag', "1'234.50")
     .attach('pdf', PDF_BYTES, { filename: 'rechnung.pdf', contentType: 'application/pdf' });
 
   assert.equal(res.status, 201);
   const job = getJobById(db, res.body.id);
   assert.equal(job.rechnungsnummer, null);
   assert.equal(job.zahlungsziel, null);
+  assert.equal(job.betrag_vorschlag, null);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });

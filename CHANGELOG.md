@@ -3,6 +3,18 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.6] – 2026-11-19
+
+Pool, Aufgaben und Admin-Vorgänge zeigen Lieferant, Rechnungsnummer und Betrag schon vor der Kontierung; automatisch
+erkannte Werte sind rot markiert. Release Notes: [docs/releases/v1.4.6.md](docs/releases/v1.4.6.md). Eine neue
+Spalte (`jobs.betrag_vorschlag`, wird beim Start automatisch angelegt), keine neuen Umgebungsvariablen; bestehende
+n8n-Workflows laufen unverändert.
+
+- Listen: neue Spalte «Rechnungsnr.»; Lieferant ohne Zuweisungsregel aus der QR-IBAN; Betrag aus QR-Code, sonst aus
+  dem Upload. Ungeprüfte Werte rot und gepunktet unterstrichen (`src/services/vorabAngaben.js`, `views/_vorab_wert.ejs`).
+- `POST /api/n8n/jobs`: neues optionales Feld `betrag` (nur Vorschlag, `jobs.betrag_vorschlag`); ungültig → still
+  verworfen. Die Kontierung füllt den Betrag in der Reihenfolge QR-Code → Upload vor.
+
 ## [1.4.5] – 2026-11-19
 
 Der Rechnungseingang nimmt optional Rechnungsnummer und Zahlungsziel entgegen (z. B. von einem KI-Modell gelesen).

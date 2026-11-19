@@ -145,6 +145,7 @@ erDiagram
         text rapport_markiert_am
         text rapport_bemerkung
         text rapport_eskaliert_am "Rapport: Eskalation gesendet"
+        text betrag_vorschlag "Betrag aus dem n8n-Upload (nur Vorschlag)"
     }
     kreditkarten {
         int id PK
@@ -425,6 +426,14 @@ einmalige Eskalation gesendet wurde; Aufheben der Markierung setzt alle vier
 Spalten zurück. Konto, Kreditor, Lieferant, Betrag, Zahlungsziel und
 Rechnungsnummer bleiben bei einem Rapport `NULL`. Siehe
 [rechnungs-workflow.md](rechnungs-workflow.md#9-rapporte-status-kenntnisnahme).
+
+**Vorbefüllung beim Eingang:** `rechnungsnummer` und `zahlungsziel` können
+schon beim n8n-Eingang gesetzt sein (vor der Kontierung, die sie
+überschreibt). Ein mitgeschickter Betrag steht dagegen nur in
+`betrag_vorschlag` – `betrag` bleibt bis zur Kontierung `NULL`, damit
+Dubletten- und Betragsprüfungen nie mit einem ungeprüften Wert rechnen.
+`betrag_vorschlag` wird nicht exportiert. Siehe
+[n8n-schnittstelle.md](n8n-schnittstelle.md).
 
 ### `kenntnisnahmen`
 Eine Zeile je zugeteilter Person und Rapport (`job_id`, `person_id`,

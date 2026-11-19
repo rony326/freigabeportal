@@ -3,6 +3,8 @@
       <h1 class="seitenkopf-titel">Rechnung aufsplitten: <%- include('_beleg_name', { job }) %> <%- include('_beleg_nr', { jobId: job.id }) %></h1>
     </div>
     <%- include('_ki_banner', { hinweise: locals.kiHinweise }) %>
+    <%# Wird von public/js/kontierung-pflicht.js gefüllt, wenn vor dem Absenden Pflichtfelder fehlen oder KI-Haken offen sind. %>
+    <div class="alert alert-warning ki-banner py-2" role="alert" tabindex="-1" data-pflicht-banner hidden></div>
     <div class="row g-3 beleg-umschalter" data-beleg-umschalter data-refresh-url="/downloads/<%= job.id %>/refresh-url">
       <%# Aufsplitten hatte nie ein eingebettetes PDF: ab 992 px bleibt es so, darunter kommt der Beleg per Umschalter dazu. %>
       <%- include('_beleg_umschalter', { jobId: job.id, pdfUrl: `/downloads/${job.id}/oeffnen`, thumbnailUrl: job.thumbnail_pfad ? `/downloads/${job.id}/thumbnail` : null, refreshUrl: `/downloads/${job.id}/refresh-url`, einbetten: false, spalte: 'col-12 d-lg-none' }) %>
@@ -15,7 +17,7 @@
     <p>Jede Zeile wird zu einer eigenständigen Rechnung mit eigenem Konto und Teilbetrag. Zahlungsziel, Absender und Rechnungsnummer werden übernommen, der Lieferant unten gilt für alle Teile. Für Konten, bei denen du Freigeber oder Stellvertretung bist, gilt Freigabe 1 automatisch als durch dich erteilt — ausser du kreuzt "Konflikt" an, dann geht der Teil direkt an deine Stellvertretung. Für andere Konten landet der Teil unzugewiesen im Pool mit einem Hinweis für die zuständige Person. Das Kästchen "Konflikt" ist nur relevant, wenn du bei diesem Konto selbst Freigeber oder Stellvertretung bist.</p>
 
     <% if (locals.auffaelligkeiten) { %><%- include('_auffaelligkeiten_modal', { auffaelligkeiten, values, formId: 'aufsplitten-form' }) %><% } %>
-    <form id="aufsplitten-form" method="post" action="/kontierung/<%= job.id %>/aufsplitten" enctype="multipart/form-data" class="col-12">
+    <form id="aufsplitten-form" method="post" action="/kontierung/<%= job.id %>/aufsplitten" enctype="multipart/form-data" class="col-12" data-pflicht-pruefung>
       <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <div class="mb-3">
         <span class="form-label d-block">Typ</span>
@@ -122,7 +124,7 @@
         <textarea class="form-control" id="begruendung" name="begruendung" maxlength="<%= maxLen.text %>"><%= begruendung || '' %></textarea>
       </div>
       <div class="d-flex flex-wrap gap-2">
-        <button type="submit" class="btn btn-primary">Aufsplitten</button>
+        <button type="submit" class="btn btn-primary" data-pflicht-pruefen>Aufsplitten</button>
         <a href="/kontierung/<%= job.id %>" id="abbrechen-link" class="btn btn-outline-secondary">Abbrechen</a>
       </div>
     </form>
@@ -133,6 +135,7 @@
   <script src="/js/kontierung-iban.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <script src="/js/kontierung-konto-filter.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <script src="/js/kontierung-ki.js?v=<%= locals.assetVersion || 0 %>" defer></script>
+  <script src="/js/kontierung-pflicht.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <script nonce="<%= locals.cspNonce %>">
     (function () {
       // Reached both standalone (direct navigation) and embedded in an <iframe> inside a Bootstrap

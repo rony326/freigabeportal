@@ -3,6 +3,17 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.10] – 2026-11-19
+
+Unvollständige Kontierung zeigt jetzt einen Hinweis statt nur hochzuscrollen. Release Notes:
+[docs/releases/v1.4.10.md](docs/releases/v1.4.10.md). Keine Migration, keine neuen Umgebungsvariablen, keine Änderung an
+n8n-Schnittstellen.
+
+- Behoben: Fehlten Pflichtfelder (v. a. Konto oder Lieferant, Auswahllisten mit Suchfeld), hielt der Browser das
+  Formular ohne sichtbare Warnung an; die Seite scrollte nur hoch. Jetzt prüft `public/js/kontierung-pflicht.js` vor
+  dem Absenden und zeigt fehlende Pflichtfelder und offene KI-Haken im Banner unter «Quelle», mit Links zu den
+  Feldern. Gilt für Kontieren und Aufsplitten; Ablehnen und Rapport prüfen keine KI-Haken.
+
 ## [1.4.9] – 2026-11-19
 
 Ruhigere Hinweise für offene KI-Bestätigungen. Release Notes: [docs/releases/v1.4.9.md](docs/releases/v1.4.9.md). Keine

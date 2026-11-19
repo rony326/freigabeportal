@@ -11,6 +11,8 @@
         <%- include('_auffaelligkeiten_bestaetigt', { kasten: locals.auffaelligkeitenBestaetigt }) %>
         <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></p>
         <%- include('_ki_banner', { hinweise: locals.kiHinweise }) %>
+        <%# Wird von public/js/kontierung-pflicht.js gefüllt, wenn vor dem Absenden Pflichtfelder fehlen oder KI-Haken offen sind. %>
+        <div class="alert alert-warning ki-banner py-2" role="alert" tabindex="-1" data-pflicht-banner hidden></div>
       </div>
       <div class="w-100"></div>
       <%- include('_beleg_umschalter', { jobId: job.id, pdfUrl: `/downloads/${job.id}/oeffnen`, thumbnailUrl: job.thumbnail_pfad ? `/downloads/${job.id}/thumbnail` : null, refreshUrl: `/downloads/${job.id}/refresh-url`, previewUrl, frameId: 'kontierung-preview-frame', spalte: 'col-lg-7' }) %>
@@ -36,7 +38,7 @@
             <%- include('_fehler_liste', { errors, feldFehler: locals.feldFehler || {} }) %>
             <% if (locals.auffaelligkeiten) { %><%- include('_auffaelligkeiten_modal', { auffaelligkeiten, values, formId: 'kontierung-form', submitName: 'aktion', submitValue: 'kontieren' }) %><% } %>
 
-            <form id="kontierung-form" method="post" action="/kontierung/<%= job.id %>" enctype="multipart/form-data">
+            <form id="kontierung-form" method="post" action="/kontierung/<%= job.id %>" enctype="multipart/form-data" data-pflicht-pruefung>
               <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
               <div class="mb-3">
                 <span class="form-label d-block" id="typ-beschriftung">Art des Belegs</span>
@@ -185,7 +187,7 @@
             </form>
 
             <div class="d-flex flex-wrap gap-2 align-items-center">
-              <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary" data-konflikt-knopf="An andere Person weitergeben">Kontieren</button>
+              <button type="submit" form="kontierung-form" name="aktion" value="kontieren" class="btn btn-primary" data-pflicht-pruefen data-konflikt-knopf="An andere Person weitergeben">Kontieren</button>
               <button type="submit" form="kontierung-form" name="aktion" value="ablehnen" id="ablehnen-btn" class="btn btn-outline-danger" data-konflikt-verstecken>Ablehnen</button>
               <% if (typeof rapportModulAktiv !== 'undefined' && rapportModulAktiv) { %>
                 <button type="submit" form="kontierung-form" name="aktion" value="rapport" id="rapport-btn" class="btn btn-primary d-none" disabled>Zur Kenntnis weitergeben</button>
@@ -321,6 +323,7 @@
   <script src="/js/kontierung-iban.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <script src="/js/kontierung-konto-filter.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <script src="/js/kontierung-ki.js?v=<%= locals.assetVersion || 0 %>" defer></script>
+  <script src="/js/kontierung-pflicht.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <% if (locals.auffaelligkeiten) { %><script src="/js/auffaelligkeiten.js?v=<%= locals.assetVersion || 0 %>" defer></script><% } %>
   <script nonce="<%= locals.cspNonce %>">
     // Eingebettetes PDF, "Vorschau neu laden" und Beleg/Formular-Umschalter: public/js/belegUmschalter.js.

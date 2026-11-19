@@ -147,8 +147,13 @@ normale Checkbox, die Serverprüfung gilt immer; ein reines Schreibweise-Komma
 beim Betrag zählt nicht als Änderung). Offene Bestätigungen stehen nach dem Absenden als ruhiges, gelbes Banner
 unter «Quelle», oberhalb der geteilten Ansicht (`views/_ki_banner.ejs`, nicht
 fett, jeder Eintrag springt zum Feld) – nicht in der roten Liste «Bitte
-korrigieren». Der Hakenstatus bleibt beim erneuten Anzeigen nach einem Fehler
-und im Prüf-Popup erhalten. Nach der Kontierung
+korrigieren». Schon vor dem Absenden prüft der Browser
+(`public/js/kontierung-pflicht.js`): Fehlen Pflichtfelder oder sind KI-Haken
+offen, erscheint dasselbe Banner sofort mit Links zu den Feldern, statt der
+flüchtigen Sprechblase des Browsers (die bei den Auswahllisten mit Suchfeld,
+Konto und Lieferant, gar nicht erschien – die Seite scrollte nur hoch).
+Ablehnen und Rapport prüfen keine KI-Haken. Der Hakenstatus bleibt beim
+erneuten Anzeigen nach einem Fehler und im Prüf-Popup erhalten. Nach der Kontierung
 (Überarbeitung nach Ablehnung) ist nichts mehr zu bestätigen.
 **Aufsplitten:** Da die Teile Rechnungsnummer und Zahlungsziel übernehmen,
 zeigt das Aufsplitten-Formular diese beiden Felder bei KI-Werten mit demselben

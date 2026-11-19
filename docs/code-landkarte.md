@@ -107,7 +107,7 @@ Lesen und prüfen nur in `src/config/env.js`, Eintrag in `.env.example` und in d
 | Wer darf diesen Vorgang bearbeiten? | `services/kontierungZugriff.js`, `routes/freigabe2.js` (`loadAuthorized`), `services/jobAuthorization.js` |
 | Status-Übergänge eines Vorgangs | `db/jobsRepo.js` (Kopfkommentar listet den Lebenslauf) |
 | Was ist bei einer Rechnung auffällig? | `services/betrugspruefung.js`, `services/paymentApproval.js` |
-| Was wird beim Rechnungseingang ausgelesen/vorbefüllt? | `routes/n8n/jobs.js`, `services/qrBillScan.js` (QR-Code, Seitenreihenfolge), `services/eingangVorbefuellung.js` (Rechnungsnummer/Zahlungsziel/Betrag von n8n), `services/vorabAngaben.js` (Anzeige in Listen vor der Kontierung), `services/kiBestaetigung.js` (Bestätigungspflicht für KI-Werte) |
+| Was wird beim Rechnungseingang ausgelesen/vorbefüllt? | `routes/n8n/jobs.js`, `services/qrBillScan.js` (QR-Code, Seitenreihenfolge), `services/eingangVorbefuellung.js` (Rechnungsnummer/Zahlungsziel/Betrag von n8n), `services/vorabAngaben.js` (Anzeige in Listen vor der Kontierung), `services/kiBestaetigung.js` (Bestätigungspflicht für KI-Werte), `public/js/kontierung-pflicht.js` (Pflichtfelder/KI-Haken vor dem Absenden) |
 | Was darf nach n8n/Paperless exportiert werden? | `services/exportSnapshot.js`, `services/archiveReceipt.js` |
 | Zeitstempel (RFC 3161) | `services/zeitstempel.js`, `tsaTrust.js`, `tsaRevocation.js`, `tsaNachweis.js` |
 | Mails: Vorlage, Einreihen, Zustellung | `services/notify.js`, `mailTemplates.js`, `mailZustellung.js`, `benachrichtigung.js` |

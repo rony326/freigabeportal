@@ -4493,3 +4493,16 @@ test('Aufsplitten: offene KI-Bestätigungen als ruhiges Banner oberhalb der Ansi
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
+
+test('Kontierungsformular: Platz für die Pflichtfeld-Prüfung im Browser unter «Quelle», Skript eingebunden', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = seedMitKiWerten(db);
+  const res = await request(buildTestApp(db, createStubMailer())).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  const quelle = res.text.indexOf('Quelle:');
+  const banner = res.text.indexOf('data-pflicht-banner');
+  assert.ok(quelle > 0 && banner > quelle && banner < res.text.indexOf('id="beleg-umschalter-formular"'));
+  assert.match(res.text, /<form id="kontierung-form"[^>]*data-pflicht-pruefung/);
+  assert.match(res.text, /value="kontieren"[^>]*data-pflicht-pruefen|data-pflicht-pruefen[^>]*value="kontieren"/);
+  assert.match(res.text, /kontierung-pflicht\.js/);
+  db.close();
+});

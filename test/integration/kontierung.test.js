@@ -4458,3 +4458,38 @@ test('Aufsplitten: KI-Werte müssen bestätigt werden, bevor die Teile sie über
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
+
+test('Kontierung: offene KI-Bestätigungen stehen als ruhiges Banner unter «Quelle», nicht in der roten Fehlerliste', async () => {
+  const db = openDatabase(':memory:');
+  const { kontoId, kreditorId, id } = seedMitKiWerten(db);
+  const res = await request(buildTestApp(db, createStubMailer())).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form')
+    .send(kontierungFormular({ aktion: 'kontieren', kontoId: String(kontoId), kreditorId: String(kreditorId), typ: 'rechnung', rechnungsnummer: 'KI-77', zahlungsziel: '2026-12-31', betrag: '50.00', bestaetigt_betrag: '1' }));
+  assert.equal(res.status, 400);
+  const quelle = res.text.indexOf('Quelle:');
+  const banner = res.text.indexOf('data-ki-banner');
+  const splitview = res.text.indexOf('id="beleg-umschalter-formular"');
+  assert.ok(quelle > 0 && banner > quelle && banner < splitview, 'Banner zwischen «Quelle» und der geteilten Ansicht');
+  const bannerHtml = res.text.slice(banner, res.text.indexOf('</div>', banner));
+  assert.match(bannerHtml, /<a href="#rechnungsnummer"[^>]*>Rechnungsnummer wurde automatisch erkannt/);
+  assert.match(bannerHtml, /<a href="#zahlungsziel"/);
+  assert.doesNotMatch(bannerHtml, /<strong>|alert-link|alert-danger/);
+  // Nicht zusätzlich in der roten Liste «Bitte korrigieren».
+  assert.doesNotMatch(res.text, /Bitte korrigieren:/);
+  db.close();
+});
+
+test('Aufsplitten: offene KI-Bestätigungen als ruhiges Banner oberhalb der Ansicht, nicht in der roten Fehlerliste', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedSplitMitKiWerten(db, jobsDir);
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+  const res = await request(app).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form')
+    .send({ kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'rechnung', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'], rechnungsnummer: 'KI-88', zahlungsziel: '2026-12-31', bestaetigt_betrag: '1' });
+  assert.equal(res.status, 400);
+  const banner = res.text.indexOf('data-ki-banner');
+  assert.ok(banner > 0 && banner < res.text.indexOf('class="row g-3 beleg-umschalter"'));
+  assert.doesNotMatch(res.text, /alert-danger[\s\S]{0,200}automatisch erkannt/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});

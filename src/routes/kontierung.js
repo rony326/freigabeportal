@@ -43,7 +43,7 @@ import { brauchtManuelleIbanPruefung, ibanEndungPasst, ermittleBefunde, befundeH
 import { speichereBestaetigung } from '../db/auffaelligkeitenRepo.js';
 import { sendeAuffaelligkeitenWarnung, bestaetigungsKommentar } from '../services/auffaelligkeitenWarnung.js';
 import { normalizeIban } from '../services/ibanUtils.js';
-import { kiFelder, fehlendeBestaetigungen, bestaetigungsMeldung, hakenAusBody } from '../services/kiBestaetigung.js';
+import { kiFelder, fehlendeBestaetigungen, bestaetigungsMeldung, hakenAusBody, trenneKiHinweise } from '../services/kiBestaetigung.js';
 import { pruefeNeuenKreditor, legeKreditorAn } from '../services/kreditorAnlegen.js';
 import { kreditorIdAusEingabe, kreditorNameVariablen, KreditorFeldKonflikt } from '../services/kreditorFelder.js';
 import { getKreditkarteById, listKreditkarten } from '../db/kreditkartenRepo.js';
@@ -289,8 +289,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const pruefBemerkung = (typeof req.body.pruefBemerkung === 'string' ? req.body.pruefBemerkung.trim() : '').slice(0, PRUEF_BEMERKUNG_MAX);
       const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, kreditorId, typ: jobTyp, ibanEndung, pruefBemerkung, bestaetigt: hakenAusBody(req.body) };
 
-      const renderSeite = (status, { fehler = neueFehler(), auffaelligkeiten = null } = {}) =>
-        res.status(status).render('kontierung', {
+      const renderSeite = (status, { fehler = neueFehler(), auffaelligkeiten = null } = {}) => {
+        // Offene KI-Bestätigungen als eigenes Banner unter «Quelle», nicht in der roten Fehlerliste (views/_ki_banner.ejs).
+        const { hinweise: kiHinweise, uebrige } = trenneKiHinweise(fehler.liste);
+        return res.status(status).render('kontierung', {
           job,
           kiFelder: kiFelder(job),
           konten,
@@ -303,13 +305,15 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           qrInfo,
           kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
           ...rapportAnsicht(job),
-          errors: fehler.liste,
+          errors: uebrige,
+          kiHinweise,
           feldFehler: fehler.proFeld,
           feldFehlerAttr,
           auditLog: buildAuditLog(db, job.id),
           auffaelligkeiten,
           auffaelligkeitenBestaetigt: auffaelligkeitenKasten(db, job.id),
         });
+      };
 
       // `messages`: Text oder neueFehler()-Sammler; `feld` ordnet einen einzelnen Text einem Feld zu.
       const renderFehler = (messages, status = 400, feld = null) => {
@@ -980,8 +984,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     // KI-Werte aus dem n8n-Upload (services/kiBestaetigung.js): Rechnungsnummer und Zahlungsziel gehen an alle Teile, deshalb
     // stehen sie hier zur Bestätigung im Formular; ohne KI-Werte erscheinen sie nicht (Teile übernehmen den Stand des Belegs).
     const angaben = extra.rechnungsangaben || { rechnungsnummer: job.rechnungsnummer || '', zahlungsziel: job.zahlungsziel || '', bestaetigt: {} };
+    // Offene KI-Bestätigungen als eigenes Banner oberhalb der Ansicht, nicht in der roten Fehlerliste (views/_ki_banner.ejs).
+    const { hinweise: kiHinweise, uebrige } = trenneKiHinweise(errors);
     res.status(status).render('kontierung-aufsplitten', {
-      job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ, kreditoren,
+      job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors: uebrige, kiHinweise, typ, kreditoren,
       kiFelder: kiFelder(job),
       rechnungsangaben: angaben,
       // Ohne QR-Code steht der IBAN-Kasten immer im Formular; sichtbar und Pflicht nur, wenn der

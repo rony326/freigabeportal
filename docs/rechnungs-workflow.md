@@ -144,8 +144,11 @@ dem Haken bestätigen oder korrigieren»), so lassen sich KI-Werte nicht
 durchklicken. Wer den Wert selbst ändert, hat ihn geprüft: der Haken setzt
 sich dann automatisch (`public/js/kontierung-ki.js`; ohne JS ist der Haken eine
 normale Checkbox, die Serverprüfung gilt immer; ein reines Schreibweise-Komma
-beim Betrag zählt nicht als Änderung). Der Hakenstatus bleibt beim erneuten
-Anzeigen nach einem Fehler und im Prüf-Popup erhalten. Nach der Kontierung
+beim Betrag zählt nicht als Änderung). Offene Bestätigungen stehen nach dem Absenden als ruhiges, gelbes Banner
+unter «Quelle», oberhalb der geteilten Ansicht (`views/_ki_banner.ejs`, nicht
+fett, jeder Eintrag springt zum Feld) – nicht in der roten Liste «Bitte
+korrigieren». Der Hakenstatus bleibt beim erneuten Anzeigen nach einem Fehler
+und im Prüf-Popup erhalten. Nach der Kontierung
 (Überarbeitung nach Ablehnung) ist nichts mehr zu bestätigen.
 **Aufsplitten:** Da die Teile Rechnungsnummer und Zahlungsziel übernehmen,
 zeigt das Aufsplitten-Formular diese beiden Felder bei KI-Werten mit demselben

@@ -10,6 +10,7 @@
         <% } %>
         <%- include('_auffaelligkeiten_bestaetigt', { kasten: locals.auffaelligkeitenBestaetigt }) %>
         <p class="text-muted">Quelle: <%= job.quelle === 'scanner' ? 'Scanner' : 'Lieferant' %></p>
+        <%- include('_ki_banner', { hinweise: locals.kiHinweise }) %>
       </div>
       <div class="w-100"></div>
       <%- include('_beleg_umschalter', { jobId: job.id, pdfUrl: `/downloads/${job.id}/oeffnen`, thumbnailUrl: job.thumbnail_pfad ? `/downloads/${job.id}/thumbnail` : null, refreshUrl: `/downloads/${job.id}/refresh-url`, previewUrl, frameId: 'kontierung-preview-frame', spalte: 'col-lg-7' }) %>
@@ -121,7 +122,7 @@
                 <input type="text" class="form-control<%= ff.rechnungsnummer ? ' is-invalid' : '' %><%= kiKlasse('rechnungsnummer') %>" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" maxlength="<%= maxLen.rechnungsnummer %>" required<%- ffAttr(ff, 'rechnungsnummer') %><%- kiAttr('rechnungsnummer') %>>
 <% if (ki.rechnungsnummer) { %><%- include('_ki_bestaetigen', { feld: 'rechnungsnummer', bestaetigt: Boolean(haken.rechnungsnummer) }) %><% } %>
                 </div>
-<% if (ki.rechnungsnummer) { %><div class="form-text ki-hinweis" id="rechnungsnummer-ki-hinweis" data-ki-hinweis="rechnungsnummer"<%= haken.rechnungsnummer ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
+<% if (ki.rechnungsnummer && !ff.rechnungsnummer) { %><div class="form-text ki-hinweis" id="rechnungsnummer-ki-hinweis" data-ki-hinweis="rechnungsnummer"<%= haken.rechnungsnummer ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
 <% if (ff.rechnungsnummer) { %><div class="invalid-feedback d-block" id="rechnungsnummer-fehler"><%= ff.rechnungsnummer %></div><% } %>
               </div>
 
@@ -132,7 +133,7 @@
                   <input type="text" inputmode="decimal" class="form-control<%= ff.betrag ? ' is-invalid' : '' %><%= kiKlasse('betrag') %>" id="betrag" name="betrag" value="<%= values.betrag || '' %>" placeholder="z.B. 123.45" required<%- ffAttr(ff, 'betrag') %><%- kiAttr('betrag') %>>
 <% if (ki.betrag) { %><%- include('_ki_bestaetigen', { feld: 'betrag', bestaetigt: Boolean(haken.betrag) }) %><% } %>
                 </div>
-<% if (ki.betrag) { %><div class="form-text ki-hinweis" id="betrag-ki-hinweis" data-ki-hinweis="betrag"<%= haken.betrag ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
+<% if (ki.betrag && !ff.betrag) { %><div class="form-text ki-hinweis" id="betrag-ki-hinweis" data-ki-hinweis="betrag"<%= haken.betrag ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
 <% if (ff.betrag) { %><div class="invalid-feedback d-block" id="betrag-fehler"><%= ff.betrag %></div><% } %>
                 </div>
                 <div class="col-12 col-sm-6">
@@ -141,7 +142,7 @@
                   <input type="date" class="form-control<%= ff.zahlungsziel ? ' is-invalid' : '' %><%= kiKlasse('zahlungsziel') %>" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>" <%= values.typ === 'gutschrift' ? '' : 'required' %><%- ffAttr(ff, 'zahlungsziel') %><%- kiAttr('zahlungsziel') %>>
 <% if (ki.zahlungsziel) { %><%- include('_ki_bestaetigen', { feld: 'zahlungsziel', bestaetigt: Boolean(haken.zahlungsziel) }) %><% } %>
                   </div>
-<% if (ki.zahlungsziel) { %><div class="form-text ki-hinweis" id="zahlungsziel-ki-hinweis" data-ki-hinweis="zahlungsziel"<%= haken.zahlungsziel ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
+<% if (ki.zahlungsziel && !ff.zahlungsziel) { %><div class="form-text ki-hinweis" id="zahlungsziel-ki-hinweis" data-ki-hinweis="zahlungsziel"<%= haken.zahlungsziel ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
 <% if (ff.zahlungsziel) { %><div class="invalid-feedback d-block" id="zahlungsziel-fehler"><%= ff.zahlungsziel %></div><% } %>
                 </div>
               </div>

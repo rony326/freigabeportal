@@ -1071,3 +1071,8 @@ html[data-schrift="sehr-gross"] { font-size: 125%; }
 .ki-hinweis {
   color: var(--bs-danger-text-emphasis);
 }
+/* Banner offener KI-Bestätigungen (views/_ki_banner.ejs): bewusst ruhig, Links ohne Fettschrift. */
+.ki-banner-link {
+  color: inherit;
+  font-weight: normal;
+}

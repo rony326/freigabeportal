@@ -62,3 +62,21 @@ export function bestaetigungsMeldung(feld) {
 export function hakenAusBody(body) {
   return Object.fromEntries(FELDER.map((feld) => [feld, istBestaetigt(body, feld)]));
 }
+
+/**
+ * Trennt die Meldungen offener KI-Bestätigungen von den übrigen Fehlern: Kontierung und Aufsplitten zeigen sie als ruhiges
+ * Banner unter «Quelle» (views/_ki_banner.ejs), nicht in der roten Liste «Bitte korrigieren». Sie blockieren das Speichern
+ * trotzdem (die Route lehnt mit 400 ab).
+ * @param {string[]} texte alle Fehlermeldungen
+ * @returns {{hinweise: {feld: string, text: string}[], uebrige: string[]}}
+ */
+export function trenneKiHinweise(texte) {
+  const proText = new Map(FELDER.map((feld) => [bestaetigungsMeldung(feld), feld]));
+  const hinweise = [];
+  const uebrige = [];
+  for (const text of texte) {
+    if (proText.has(text)) hinweise.push({ feld: proText.get(text), text });
+    else uebrige.push(text);
+  }
+  return { hinweise, uebrige };
+}

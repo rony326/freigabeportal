@@ -3,6 +3,15 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.9] – 2026-11-19
+
+Ruhigere Hinweise für offene KI-Bestätigungen. Release Notes: [docs/releases/v1.4.9.md](docs/releases/v1.4.9.md). Keine
+Migration, keine neuen Umgebungsvariablen, keine Änderung an n8n-Schnittstellen.
+
+- Kontierung und Aufsplitten: Nicht bestätigte KI-Werte erscheinen nach dem Absenden als gelbes Banner unter «Quelle»,
+  oberhalb der geteilten Ansicht, ohne Fettschrift (`views/_ki_banner.ejs`), statt in der roten Liste «Bitte
+  korrigieren». Speichern bleibt blockiert. Unter dem Feld steht die Meldung nur noch einmal.
+
 ## [1.4.8] – 2026-11-19
 
 Wartungs-Release zu 1.4.7. Release Notes: [docs/releases/v1.4.8.md](docs/releases/v1.4.8.md). Keine Migration, keine

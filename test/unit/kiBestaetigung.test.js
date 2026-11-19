@@ -31,3 +31,10 @@ test('fehlendeBestaetigungen: Felder ohne KI-Wert werden nie verlangt; Haken mus
   assert.deepEqual(fehlendeBestaetigungen({ rechnungsnummer: null, zahlungsziel: null, betrag: null }, { rechnungsnummer: 'X' }, {}), []);
   assert.deepEqual(fehlendeBestaetigungen({ rechnungsnummer: 'RE-1' }, { rechnungsnummer: 'RE-1' }, { bestaetigt_rechnungsnummer: ['1', '1'] }), ['rechnungsnummer']);
 });
+
+test('trenneKiHinweise: KI-Meldungen ins Banner, alles andere bleibt in der Fehlerliste', async () => {
+  const { trenneKiHinweise, bestaetigungsMeldung } = await import('../../src/services/kiBestaetigung.js');
+  const { hinweise, uebrige } = trenneKiHinweise(['Bitte ein Konto wählen.', bestaetigungsMeldung('zahlungsziel'), bestaetigungsMeldung('rechnungsnummer')]);
+  assert.deepEqual(hinweise.map((h) => h.feld), ['zahlungsziel', 'rechnungsnummer']);
+  assert.deepEqual(uebrige, ['Bitte ein Konto wählen.']);
+});

@@ -1,0 +1,10 @@
+<% /* Offene KI-Bestätigungen (services/kiBestaetigung.js, trenneKiHinweise) als ruhiges Banner unter «Quelle», oberhalb der
+     geteilten Ansicht: gelb statt rot, ohne fette Schrift. Jeder Eintrag springt zum Feld mit dem Haken. Parameter: hinweise. */ %>
+<% if ((locals.hinweise || []).length > 0) { %>
+  <div class="alert alert-warning ki-banner py-2" role="alert" data-ki-banner>
+    <p class="mb-1">Diese Werte wurden automatisch erkannt. Bitte prüfe sie und bestätige sie mit dem Haken am Feldrand oder korrigiere sie:</p>
+    <ul class="mb-0">
+      <% hinweise.forEach((h) => { %><li><a href="#<%= h.feld %>" class="ki-banner-link"><%= h.text %></a></li><% }) %>
+    </ul>
+  </div>
+<% } %>

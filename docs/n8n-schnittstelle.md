@@ -57,8 +57,11 @@ sequenceDiagram
 | `betrag` | nein | Vorschlag für die Kontierung, positiv, höchstens zwei Nachkommastellen, Punkt oder Komma (`1234.50`, `1234,5`); ohne Tausendertrennzeichen und Währung. Wird als `betrag_vorschlag` gespeichert, nicht als kontierter Betrag. Hat die Rechnung einen QR-Code, gilt dessen Betrag |
 
 `rechnungsnummer`, `zahlungsziel` und `betrag` füllen nur das Kontierungsformular vor
-und erscheinen in Pool und Aufgabenlisten rot markiert als «automatisch erkannt»;
-die kontierende Person sieht und überschreibt sie dort bei Bedarf (gespeichert wird der Formularwert; danach nur noch über Ablehnung → Überarbeitung änderbar). Ein ungültiger Wert
+und erscheinen in Pool und Aufgabenlisten rot markiert als «automatisch erkannt»
+(ein QR-Betrag hat Vorrang und gilt als verlässlich). Die kontierende Person muss
+sie im Formular mit einem Haken bestätigen oder korrigieren, sonst wird das
+Speichern abgelehnt (gespeichert wird der Formularwert; danach nur noch über
+Ablehnung → Überarbeitung änderbar; siehe [rechnungs-workflow.md](rechnungs-workflow.md)). Ein ungültiger Wert
 (falsches Format, unmögliches Datum, zu lang, Zeilenumbruch, mehrfach
 gesendet) wird **still verworfen** und führt nie zu `400` – der Upload
 scheitert also nicht an einem schlecht gelesenen Wert. Ein gültiger und ein

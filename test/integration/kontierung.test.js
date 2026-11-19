@@ -18,7 +18,7 @@ import { PNG_1X1, buildPngHeaderOnly } from '../helpers/imageFixture.js';
 import { openDatabase } from '../../src/db/index.js';
 import { upsertPerson, setFerienmodus } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById, deactivateKonto } from '../../src/db/kontenRepo.js';
-import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob, listSplitKinder, updateKontierungMetadaten, createSplitJob, createSpesenPosition } from '../../src/db/jobsRepo.js';
+import { createJob, claimJob, getJobById, setKontierung, eskalierenFreigabe1, eskalierenFreigabe2, ablehnenJob, wiederOeffnenJob, listSplitKinder, updateKontierungMetadaten, setQrDaten, createSplitJob, createSpesenPosition } from '../../src/db/jobsRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import { listFreigabenByJob, createFreigabe } from '../../src/db/freigabenRepo.js';
 import { buildAuditLog } from '../../src/services/auditLog.js';
@@ -4373,4 +4373,88 @@ test('POST /kontierung/lieferanten: Lieferant mit IBAN löst die Meldung «IBAN 
   const meldungen = listMailLog(db).filter((m) => m.typ === 'iban-aenderung');
   assert.ok(meldungen.some((m) => m.empfaenger === 'sa@example.org'), 'Admin wird informiert');
   db.close();
+});
+
+// --- KI-Werte aus dem n8n-Upload müssen in der Kontierung bestätigt werden ---
+
+function seedMitKiWerten(db) {
+  const { kontoId, kreditorId, id } = seedKontierbaren(db, 'beides');
+  db.prepare("UPDATE jobs SET rechnungsnummer = 'KI-77', zahlungsziel = '2026-12-31', betrag_vorschlag = '50.00' WHERE id = ?").run(id);
+  return { kontoId, kreditorId, id };
+}
+
+test('Kontierung: unbestätigte KI-Werte werden abgelehnt, Job bleibt unverändert', async () => {
+  const db = openDatabase(':memory:');
+  const { kontoId, kreditorId, id } = seedMitKiWerten(db);
+  const res = await request(buildTestApp(db, createStubMailer())).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form')
+    .send(kontierungFormular({ aktion: 'kontieren', kontoId: String(kontoId), kreditorId: String(kreditorId), typ: 'rechnung', rechnungsnummer: 'KI-77', zahlungsziel: '2026-12-31', betrag: '50.00', bestaetigt_betrag: '1' }));
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Rechnungsnummer wurde automatisch erkannt/);
+  assert.match(res.text, /Zahlungsziel wurde automatisch erkannt/);
+  assert.doesNotMatch(res.text, /Betrag wurde automatisch erkannt/);
+  // Der gesetzte Haken bleibt beim erneuten Anzeigen erhalten.
+  assert.match(res.text, /id="bestaetigt-betrag"[^>]*checked/);
+  assert.equal(getJobById(db, id).status, 'zugewiesen');
+  db.close();
+});
+
+test('Kontierung: bestätigte oder selbst geänderte KI-Werte werden gespeichert', async () => {
+  const db = openDatabase(':memory:');
+  const { kontoId, kreditorId, id } = seedMitKiWerten(db);
+  const res = await request(buildTestApp(db, createStubMailer())).post(`/kontierung/${id}`).set('x-test-person-id', '1').type('form')
+    .send(kontierungFormular({ aktion: 'kontieren', kontoId: String(kontoId), kreditorId: String(kreditorId), typ: 'rechnung', rechnungsnummer: 'KI-77-korrigiert', zahlungsziel: '2026-12-31', betrag: '50.00', bestaetigt_zahlungsziel: '1', bestaetigt_betrag: '1' }));
+  assert.equal(res.status, 302);
+  const job = getJobById(db, id);
+  assert.equal(job.rechnungsnummer, 'KI-77-korrigiert');
+  assert.equal(job.betrag, '50.00');
+  db.close();
+});
+
+test('Kontierungsformular: KI-Felder rot mit Bestätigungs-Haken, normale Felder ohne', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = seedMitKiWerten(db);
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrBetrag: '50.00' });
+  const res = await request(buildTestApp(db, createStubMailer())).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /class="[^"]*feld-erkannt[^"]*" id="rechnungsnummer"/);
+  assert.match(res.text, /id="bestaetigt-rechnungsnummer"/);
+  assert.match(res.text, /id="bestaetigt-zahlungsziel"/);
+  // Betrag kommt aus dem QR-Code: verlässlich, kein Haken nötig.
+  assert.doesNotMatch(res.text, /id="bestaetigt-betrag"/);
+  db.close();
+});
+
+function seedSplitMitKiWerten(db, jobsDir) {
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
+  // Noch nicht kontiert, Werte nur aus dem n8n-Upload.
+  db.prepare("UPDATE jobs SET betrag = NULL, rechnungsnummer = 'KI-88', zahlungsziel = '2026-12-31', betrag_vorschlag = '100.00' WHERE id = ?").run(id);
+  return { id, kontoId };
+}
+
+test('Aufsplitten: KI-Werte müssen bestätigt werden, bevor die Teile sie übernehmen', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedSplitMitKiWerten(db, jobsDir);
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+  const basis = { kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'rechnung', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'], rechnungsnummer: 'KI-88', zahlungsziel: '2026-12-31' };
+  const senden = (extra) => request(app).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form').send({ ...basis, ...extra });
+
+  const formular = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.match(formular.text, /id="bestaetigt-rechnungsnummer"/);
+  assert.match(formular.text, /id="bestaetigt-zahlungsziel"/);
+  assert.match(formular.text, /id="bestaetigt-betrag"/);
+
+  const abgelehnt = await senden({});
+  assert.equal(abgelehnt.status, 400);
+  assert.match(abgelehnt.text, /Rechnungsnummer wurde automatisch erkannt/);
+  assert.equal(listSplitKinder(db, id).length, 0);
+
+  const ok = await senden({ rechnungsnummer: 'KI-88-korr', bestaetigt_zahlungsziel: '1', bestaetigt_betrag: '1' });
+  assert.equal(ok.status, 302);
+  const kinder = listSplitKinder(db, id);
+  assert.equal(kinder.length, 2);
+  assert.ok(kinder.every((k) => k.rechnungsnummer === 'KI-88-korr' && k.zahlungsziel === '2026-12-31'));
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
 });

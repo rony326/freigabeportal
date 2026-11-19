@@ -322,6 +322,11 @@ export function setJobBetrag(db, jobId, betrag) {
 // Beim Aufsplitten gewählter Lieferant: am Elternjob gespeichert, bevor die Kinder ihn über
 // createSplitJob übernehmen.
 // (Kreditor und Lieferantenname gemeinsam setzen.)
+// Rechnungsnummer und Zahlungsziel setzen (Aufsplitten: bestätigte/korrigierte KI-Werte vor dem Kopieren auf die Teile).
+export function setJobRechnungsangaben(db, jobId, { rechnungsnummer, zahlungsziel }) {
+  db.prepare('UPDATE jobs SET rechnungsnummer = ?, zahlungsziel = ? WHERE id = ?').run(rechnungsnummer || null, zahlungsziel || null, jobId);
+}
+
 export function setJobKreditor(db, jobId, { kreditorId, lieferant }) {
   db.prepare('UPDATE jobs SET kreditor_id = ?, lieferant = ? WHERE id = ?').run(kreditorId, lieferant, jobId);
 }

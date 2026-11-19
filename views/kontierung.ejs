@@ -110,21 +110,38 @@
               <% } %>
 
               <div class="kontierung-block">
+              <% const ki = locals.kiFelder || {}; const haken = values.bestaetigt || {};
+   // KI-Feld (services/kiBestaetigung.js): rot markiert (feld-erkannt), bis bestätigt; data-ki-wert = ursprünglicher Wert für
+   // kontierung-ki.js. aria-describedby nur ohne Feldfehler, sonst stünde es doppelt (ffAttr setzt es dann auf die Fehlermeldung).
+   const kiKlasse = (feld) => ki[feld] && !haken[feld] ? ' feld-erkannt' : '';
+   const kiAttr = (feld) => ki[feld] ? ` data-ki-feld="${feld}" data-ki-wert="${String(ki[feld]).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"${ff[feld] ? '' : ` aria-describedby="${feld}-ki-hinweis"`}` : ''; %>
               <div class="mb-3">
                 <label class="form-label" for="rechnungsnummer" id="rechnungsnummer-label">Rechnungsnummer</label>
-                <input type="text" class="form-control<%= ff.rechnungsnummer ? ' is-invalid' : '' %>" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" maxlength="<%= maxLen.rechnungsnummer %>" required<%- ffAttr(ff, 'rechnungsnummer') %>>
+                <div class="<%= ki.rechnungsnummer ? 'input-group' : '' %>">
+                <input type="text" class="form-control<%= ff.rechnungsnummer ? ' is-invalid' : '' %><%= kiKlasse('rechnungsnummer') %>" id="rechnungsnummer" name="rechnungsnummer" value="<%= values.rechnungsnummer || '' %>" maxlength="<%= maxLen.rechnungsnummer %>" required<%- ffAttr(ff, 'rechnungsnummer') %><%- kiAttr('rechnungsnummer') %>>
+<% if (ki.rechnungsnummer) { %><%- include('_ki_bestaetigen', { feld: 'rechnungsnummer', bestaetigt: Boolean(haken.rechnungsnummer) }) %><% } %>
+                </div>
+<% if (ki.rechnungsnummer) { %><div class="form-text ki-hinweis" id="rechnungsnummer-ki-hinweis" data-ki-hinweis="rechnungsnummer"<%= haken.rechnungsnummer ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
 <% if (ff.rechnungsnummer) { %><div class="invalid-feedback d-block" id="rechnungsnummer-fehler"><%= ff.rechnungsnummer %></div><% } %>
               </div>
 
               <div class="row g-2 mb-3">
                 <div class="col-12 col-sm-6">
                   <label class="form-label" for="betrag">Betrag</label>
-                  <input type="text" inputmode="decimal" class="form-control<%= ff.betrag ? ' is-invalid' : '' %>" id="betrag" name="betrag" value="<%= values.betrag || '' %>" placeholder="z.B. 123.45" required<%- ffAttr(ff, 'betrag') %>>
+                  <div class="<%= ki.betrag ? 'input-group' : '' %>">
+                  <input type="text" inputmode="decimal" class="form-control<%= ff.betrag ? ' is-invalid' : '' %><%= kiKlasse('betrag') %>" id="betrag" name="betrag" value="<%= values.betrag || '' %>" placeholder="z.B. 123.45" required<%- ffAttr(ff, 'betrag') %><%- kiAttr('betrag') %>>
+<% if (ki.betrag) { %><%- include('_ki_bestaetigen', { feld: 'betrag', bestaetigt: Boolean(haken.betrag) }) %><% } %>
+                </div>
+<% if (ki.betrag) { %><div class="form-text ki-hinweis" id="betrag-ki-hinweis" data-ki-hinweis="betrag"<%= haken.betrag ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
 <% if (ff.betrag) { %><div class="invalid-feedback d-block" id="betrag-fehler"><%= ff.betrag %></div><% } %>
                 </div>
                 <div class="col-12 col-sm-6">
                   <label class="form-label" for="zahlungsziel">Zahlungsziel</label>
-                  <input type="date" class="form-control<%= ff.zahlungsziel ? ' is-invalid' : '' %>" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>" <%= values.typ === 'gutschrift' ? '' : 'required' %><%- ffAttr(ff, 'zahlungsziel') %>>
+                  <div class="<%= ki.zahlungsziel ? 'input-group' : '' %>">
+                  <input type="date" class="form-control<%= ff.zahlungsziel ? ' is-invalid' : '' %><%= kiKlasse('zahlungsziel') %>" id="zahlungsziel" name="zahlungsziel" value="<%= values.zahlungsziel || '' %>" <%= values.typ === 'gutschrift' ? '' : 'required' %><%- ffAttr(ff, 'zahlungsziel') %><%- kiAttr('zahlungsziel') %>>
+<% if (ki.zahlungsziel) { %><%- include('_ki_bestaetigen', { feld: 'zahlungsziel', bestaetigt: Boolean(haken.zahlungsziel) }) %><% } %>
+                  </div>
+<% if (ki.zahlungsziel) { %><div class="form-text ki-hinweis" id="zahlungsziel-ki-hinweis" data-ki-hinweis="zahlungsziel"<%= haken.zahlungsziel ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
 <% if (ff.zahlungsziel) { %><div class="invalid-feedback d-block" id="zahlungsziel-fehler"><%= ff.zahlungsziel %></div><% } %>
                 </div>
               </div>
@@ -302,6 +319,7 @@
     <% } %>
   <script src="/js/kontierung-iban.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <script src="/js/kontierung-konto-filter.js?v=<%= locals.assetVersion || 0 %>" defer></script>
+  <script src="/js/kontierung-ki.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <% if (locals.auffaelligkeiten) { %><script src="/js/auffaelligkeiten.js?v=<%= locals.assetVersion || 0 %>" defer></script><% } %>
   <script nonce="<%= locals.cspNonce %>">
     // Eingebettetes PDF, "Vorschau neu laden" und Beleg/Formular-Umschalter: public/js/belegUmschalter.js.
@@ -394,6 +412,14 @@
           var kreditorId = kreditorFeld ? kreditorFeld.value : '';
           var params = [];
           if (betrag) params.push('betrag=' + encodeURIComponent(betrag));
+          // KI-Werte: Rechnungsnummer, Zahlungsziel und gesetzte Haken mitgeben, damit das Aufsplitten den Stand übernimmt.
+          ['rechnungsnummer', 'zahlungsziel'].forEach(function (name) {
+            var feld = document.getElementById(name);
+            if (feld && feld.value.trim()) params.push(name + '=' + encodeURIComponent(feld.value.trim()));
+          });
+          document.querySelectorAll('[data-ki-haken]').forEach(function (haken) {
+            if (haken.checked) params.push('bestaetigt_' + haken.getAttribute('data-ki-haken') + '=1');
+          });
           if (kreditorId) params.push('kreditorId=' + encodeURIComponent(kreditorId));
           if (typFeld) params.push('typ=' + encodeURIComponent(typFeld.value));
           frame.src = params.length ? frameUrl + '?' + params.join('&') : frameUrl;

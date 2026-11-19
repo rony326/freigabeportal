@@ -29,9 +29,36 @@
         <div class="form-text">Gilt für alle Teile gemeinsam. Die Konto-Auswahl zeigt nur Konten, die zum Typ passen.</div>
         <div class="form-text text-warning" id="konto-typ-hinweis" role="status" aria-live="polite" hidden>Ein gewähltes Konto passt nicht zum Typ – bitte neu wählen.</div>
       </div>
+      <% const ki = locals.kiFelder || {}; const angaben = locals.rechnungsangaben || { bestaetigt: {} }; const haken = angaben.bestaetigt || {};
+         // KI-Werte (services/kiBestaetigung.js): rot, bis bestätigt; data-ki-* für kontierung-ki.js, wie in kontierung.ejs.
+         const kiKlasse = (feld) => ki[feld] && !haken[feld] ? ' feld-erkannt' : '';
+         const kiAttr = (feld) => ki[feld] ? ` data-ki-feld="${feld}" data-ki-wert="${String(ki[feld]).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}" aria-describedby="${feld}-ki-hinweis"` : ''; %>
+      <% if (ki.rechnungsnummer || ki.zahlungsziel) { %>
+        <%# Gehen an alle Teile: nur bei KI-Werten hier zur Bestätigung, sonst übernehmen die Teile den Stand des Belegs. %>
+        <div class="mb-3 col-12 col-sm-6 col-md-4">
+          <label class="form-label" for="rechnungsnummer">Rechnungsnummer</label>
+          <div class="input-group">
+            <input type="text" class="form-control<%= kiKlasse('rechnungsnummer') %>" id="rechnungsnummer" name="rechnungsnummer" value="<%= angaben.rechnungsnummer %>" maxlength="<%= maxLen.rechnungsnummer %>"<%- kiAttr('rechnungsnummer') %>>
+            <% if (ki.rechnungsnummer) { %><%- include('_ki_bestaetigen', { feld: 'rechnungsnummer', bestaetigt: Boolean(haken.rechnungsnummer) }) %><% } %>
+          </div>
+          <% if (ki.rechnungsnummer) { %><div class="form-text ki-hinweis" id="rechnungsnummer-ki-hinweis" data-ki-hinweis="rechnungsnummer"<%= haken.rechnungsnummer ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
+        </div>
+        <div class="mb-3 col-12 col-sm-6 col-md-4">
+          <label class="form-label" for="zahlungsziel">Zahlungsziel</label>
+          <div class="input-group">
+            <input type="date" class="form-control<%= kiKlasse('zahlungsziel') %>" id="zahlungsziel" name="zahlungsziel" value="<%= angaben.zahlungsziel %>"<%- kiAttr('zahlungsziel') %>>
+            <% if (ki.zahlungsziel) { %><%- include('_ki_bestaetigen', { feld: 'zahlungsziel', bestaetigt: Boolean(haken.zahlungsziel) }) %><% } %>
+          </div>
+          <% if (ki.zahlungsziel) { %><div class="form-text ki-hinweis" id="zahlungsziel-ki-hinweis" data-ki-hinweis="zahlungsziel"<%= haken.zahlungsziel ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
+        </div>
+      <% } %>
       <div class="mb-3 col-12 col-sm-6 col-md-4">
         <label class="form-label" for="gesamtbetrag">Gesamtbetrag</label>
-        <input type="text" inputmode="decimal" class="form-control" id="gesamtbetrag" name="gesamtbetrag" value="<%= gesamtbetrag %>" placeholder="z.B. 200.00" required>
+        <div class="<%= ki.betrag ? 'input-group' : '' %>">
+          <input type="text" inputmode="decimal" class="form-control<%= kiKlasse('betrag') %>" id="gesamtbetrag" name="gesamtbetrag" value="<%= gesamtbetrag %>" placeholder="z.B. 200.00" required<%- kiAttr('betrag') %>>
+          <% if (ki.betrag) { %><%- include('_ki_bestaetigen', { feld: 'betrag', bestaetigt: Boolean(haken.betrag) }) %><% } %>
+        </div>
+        <% if (ki.betrag) { %><div class="form-text ki-hinweis" id="betrag-ki-hinweis" data-ki-hinweis="betrag"<%= haken.betrag ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
         <div class="form-text">Die Teilbeträge unten müssen exakt diese Summe ergeben.</div>
       </div>
       <div class="mb-3 col-12 col-sm-8 col-md-6">
@@ -104,6 +131,7 @@
   <%# IBAN-Kasten (nur ohne QR-Code vorhanden): sichtbar und Pflicht je nach gewähltem Lieferanten und Typ. %>
   <script src="/js/kontierung-iban.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <script src="/js/kontierung-konto-filter.js?v=<%= locals.assetVersion || 0 %>" defer></script>
+  <script src="/js/kontierung-ki.js?v=<%= locals.assetVersion || 0 %>" defer></script>
   <script nonce="<%= locals.cspNonce %>">
     (function () {
       // Reached both standalone (direct navigation) and embedded in an <iframe> inside a Bootstrap

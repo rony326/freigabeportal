@@ -5,11 +5,18 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 
 ## [1.4.7] – 2026-11-19
 
-Die Aufgabentabellen haben keine eigene Spalte «Absender» mehr. Release Notes: [docs/releases/v1.4.7.md](docs/releases/v1.4.7.md).
-Keine Migration, keine neuen Umgebungsvariablen.
+Schlankere Aufgabentabellen, und KI-Werte aus dem Upload müssen in Kontierung und Aufsplitten ausdrücklich bestätigt
+werden; QR-Daten gelten als verlässlich. Release Notes: [docs/releases/v1.4.7.md](docs/releases/v1.4.7.md). Keine
+Migration, keine neuen Umgebungsvariablen, keine Änderung an n8n-Schnittstellen.
 
 - Pool und eigene Aufgaben (Tabelle): Spalte «Absender» entfällt. Ohne bekannten Lieferanten steht der Absender klein
   und grau in der Lieferanten-Zelle, wie bereits in den Kacheln.
+- Kontierung: Rechnungsnummer, Zahlungsziel und Betrag aus dem n8n-Upload sind rot umrandet und haben einen grünen
+  Haken am Feldrand. Unverändert ohne Haken lehnt der Server das Speichern ab; ein selbst geänderter Wert gilt als
+  bestätigt (`src/services/kiBestaetigung.js`, `views/_ki_bestaetigen.ejs`, `public/js/kontierung-ki.js`).
+- Aufsplitten: bei KI-Werten Rechnungsnummer und Zahlungsziel zur Bestätigung im Formular (gehen an alle Teile),
+  dazu der Gesamtbetrag.
+- Listen: QR-Betrag und Lieferant zur QR-IBAN nicht mehr rot; rot bleiben nur KI-Werte.
 
 ## [1.4.6] – 2026-11-19
 

@@ -30,12 +30,12 @@ test('Lieferant aus der Zuweisungsregel (jobs.lieferant) gilt als geprüft', () 
   db.close();
 });
 
-test('ohne Regel: Lieferant zur QR-IBAN wird als ungeprüft gezeigt', () => {
+test('ohne Regel: Lieferant zur QR-IBAN gilt als verlässlich (nicht ungeprüft)', () => {
   const db = openDatabase(':memory:');
   kreditorMitIban(db, { name: 'IBAN Treffer AG', iban: QR_IBAN });
   const id = neuerJob(db);
   setQrDaten(db, id, { qrIban: QR_IBAN, qrBetrag: '120.00' });
-  assert.deepEqual(vorabAngaben(db, getJobById(db, id)).lieferant, { wert: 'IBAN Treffer AG', ungeprueft: true });
+  assert.deepEqual(vorabAngaben(db, getJobById(db, id)).lieferant, { wert: 'IBAN Treffer AG', ungeprueft: false });
   db.close();
 });
 
@@ -49,12 +49,12 @@ test('Regel-Lieferant hat Vorrang vor dem QR-IBAN-Treffer', () => {
   db.close();
 });
 
-test('Betrag: QR-Betrag vor Upload-Vorschlag, beide ungeprüft', () => {
+test('Betrag: QR-Betrag (verlässlich) vor Upload-Vorschlag (ungeprüft)', () => {
   const db = openDatabase(':memory:');
   const id = neuerJob(db, { betragVorschlag: '99.90' });
   assert.deepEqual(vorabAngaben(db, getJobById(db, id)).betrag, { wert: '99.90', ungeprueft: true });
   setQrDaten(db, id, { qrIban: QR_IBAN, qrBetrag: '120.00' });
-  assert.deepEqual(vorabAngaben(db, getJobById(db, id)).betrag, { wert: '120.00', ungeprueft: true });
+  assert.deepEqual(vorabAngaben(db, getJobById(db, id)).betrag, { wert: '120.00', ungeprueft: false });
   db.close();
 });
 

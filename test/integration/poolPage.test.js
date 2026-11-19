@@ -785,22 +785,29 @@ test('GET /pool: Aufgabenzähler im Menü stimmt mit zaehleOffeneAufgaben übere
   db.close();
 });
 
-test('GET /pool zeigt Rechnungsnummer, Lieferant (QR-IBAN) und Betrag schon vor der Kontierung, ungeprüfte Werte markiert', async () => {
+test('GET /pool zeigt Rechnungsnummer, Lieferant (QR-IBAN) und Betrag schon vor der Kontierung; nur KI-Werte rot', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   seedBuchhaltungPerson(db);
   kreditorMitIban(db, { name: 'IBAN Treffer AG', iban: 'CH4431999123000889012' });
-  const id = createJob(db, { eingangAm: '2026-11-19T08:00:00.000Z', quelle: 'lieferant', absender: 'x@example.ch', dateiname: 'r.pdf', pdfPfad: '/tmp/r.pdf', rechnungsnummer: 'RE-2026-0042', betragVorschlag: '99.90' });
-  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrBetrag: '120.00' });
+  const mitQr = createJob(db, { eingangAm: '2026-11-19T08:00:00.000Z', quelle: 'lieferant', absender: 'x@example.ch', dateiname: 'r.pdf', pdfPfad: '/tmp/r.pdf', rechnungsnummer: 'RE-2026-0042', betragVorschlag: '99.90' });
+  setQrDaten(db, mitQr, { qrIban: 'CH4431999123000889012', qrBetrag: '120.00' });
+  const ohneQr = createJob(db, { eingangAm: '2026-11-19T09:00:00.000Z', quelle: 'lieferant', absender: 'y@example.ch', dateiname: 's.pdf', pdfPfad: '/tmp/s.pdf', betragVorschlag: '55.00' });
   const app = buildTestApp(db);
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  const zeile = res.text.slice(res.text.indexOf(`id="pool-row-${id}"`), res.text.indexOf('</tr>', res.text.indexOf(`id="pool-row-${id}"`)));
-  assert.match(zeile, /class="[^"]*wert-erkannt[^"]*"[^>]*>IBAN Treffer AG/);
-  assert.match(zeile, /class="[^"]*wert-erkannt[^"]*"[^>]*>RE-2026-0042/);
-  assert.match(zeile, /class="[^"]*wert-erkannt[^"]*"[^>]*>120\.00/);
-  assert.doesNotMatch(zeile, /99\.90/, 'QR-Betrag hat Vorrang vor dem Upload-Betrag');
+  const zeile = (id) => {
+    const start = res.text.indexOf(`id="pool-row-${id}"`);
+    return res.text.slice(start, res.text.indexOf('</tr>', start));
+  };
+  // QR-Daten sind verlässlich: Lieferant zur QR-IBAN und QR-Betrag ohne Markierung.
+  assert.match(zeile(mitQr), /<td>IBAN Treffer AG<\/td>/);
+  assert.match(zeile(mitQr), /betrag">120\.00<\/td>/);
+  assert.doesNotMatch(zeile(mitQr), /99\.90/, 'QR-Betrag hat Vorrang vor dem Upload-Betrag');
+  // KI-Werte aus dem Upload: rot markiert.
+  assert.match(zeile(mitQr), /class="wert-erkannt"[^>]*>RE-2026-0042/);
+  assert.match(zeile(ohneQr), /class="wert-erkannt"[^>]*>55\.00/);
   assert.match(res.text, /<th>Rechnungsnr\.<\/th>/);
   db.close();
 });

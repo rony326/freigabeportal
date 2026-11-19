@@ -27,6 +27,7 @@ import {
   markJobAufgesplittet,
   setJobBetrag,
   setJobKreditor,
+  setJobRechnungsangaben,
   setJobTyp,
   addBelegSeiten,
   findJobsByKreditorUndRechnungsnummer,
@@ -42,6 +43,7 @@ import { brauchtManuelleIbanPruefung, ibanEndungPasst, ermittleBefunde, befundeH
 import { speichereBestaetigung } from '../db/auffaelligkeitenRepo.js';
 import { sendeAuffaelligkeitenWarnung, bestaetigungsKommentar } from '../services/auffaelligkeitenWarnung.js';
 import { normalizeIban } from '../services/ibanUtils.js';
+import { kiFelder, fehlendeBestaetigungen, bestaetigungsMeldung, hakenAusBody } from '../services/kiBestaetigung.js';
 import { pruefeNeuenKreditor, legeKreditorAn } from '../services/kreditorAnlegen.js';
 import { kreditorIdAusEingabe, kreditorNameVariablen, KreditorFeldKonflikt } from '../services/kreditorFelder.js';
 import { getKreditkarteById, listKreditkarten } from '../db/kreditkartenRepo.js';
@@ -146,6 +148,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     const qrInfo = buildQrInfo(db, job);
     res.render('kontierung', {
       job,
+      kiFelder: kiFelder(job),
       konten,
       alleKonten: listKonten(db),
       kreditoren: listKreditorenWaehlbar(db),
@@ -283,11 +286,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const jobTyp = typ === 'gutschrift' ? 'gutschrift' : 'rechnung';
       const ibanEndung = normalizeIban(typeof req.body.ibanEndung === 'string' ? req.body.ibanEndung : '');
       const pruefBemerkung = (typeof req.body.pruefBemerkung === 'string' ? req.body.pruefBemerkung.trim() : '').slice(0, PRUEF_BEMERKUNG_MAX);
-      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, kreditorId, typ: jobTyp, ibanEndung, pruefBemerkung };
+      const values = { kontoId, interessenskonflikt, begruendung, absender, betrag, zahlungsziel, rechnungsnummer, kreditorId, typ: jobTyp, ibanEndung, pruefBemerkung, bestaetigt: hakenAusBody(req.body) };
 
       const renderSeite = (status, { fehler = neueFehler(), auffaelligkeiten = null } = {}) =>
         res.status(status).render('kontierung', {
           job,
+          kiFelder: kiFelder(job),
           konten,
           alleKonten: listKonten(db),
           kreditoren,
@@ -455,6 +459,10 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       }
       if (!rechnungsnummer) {
         errors.add('rechnungsnummer', 'Bitte eine Rechnungsnummer angeben.');
+      }
+      // KI-Werte aus dem n8n-Upload dürfen nicht unbesehen durchgehen: unverändert nur mit Haken (services/kiBestaetigung.js).
+      for (const feld of fehlendeBestaetigungen(kiFelder(job), { rechnungsnummer, zahlungsziel, betrag }, req.body)) {
+        errors.add(feld, bestaetigungsMeldung(feld));
       }
       const hatKonflikt = interessenskonflikt === 'ja';
       if (hatKonflikt && !begruendung) {
@@ -968,8 +976,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     const kreditoren = listKreditorenWaehlbar(db);
     const kreditorId = extra.kreditorId || '';
     const gewaehlterKreditor = kreditoren.find((k) => String(k.id) === kreditorId) || null;
+    // KI-Werte aus dem n8n-Upload (services/kiBestaetigung.js): Rechnungsnummer und Zahlungsziel gehen an alle Teile, deshalb
+    // stehen sie hier zur Bestätigung im Formular; ohne KI-Werte erscheinen sie nicht (Teile übernehmen den Stand des Belegs).
+    const angaben = extra.rechnungsangaben || { rechnungsnummer: job.rechnungsnummer || '', zahlungsziel: job.zahlungsziel || '', bestaetigt: {} };
     res.status(status).render('kontierung-aufsplitten', {
       job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ, kreditoren,
+      kiFelder: kiFelder(job),
+      rechnungsangaben: angaben,
       // Ohne QR-Code steht der IBAN-Kasten immer im Formular; sichtbar und Pflicht nur, wenn der
       // gewählte Lieferant eine IBAN braucht und Typ Rechnung gewählt ist (kontierung-iban.js).
       ibanKasten: !job.qr_iban,
@@ -999,10 +1012,17 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     // Und der im Kontierungsformular gewählte Lieferant (?kreditorId=...), sonst der am Beleg.
     // renderAufsplittenForm wählt ihn nur vor, wenn er wählbar ist.
     const queryKreditorId = typeof req.query.kreditorId === 'string' && /^\d+$/.test(req.query.kreditorId) ? req.query.kreditorId : null;
-    renderAufsplittenForm(req, res, 200, job, konten, listKonten(db), queryBetrag || job.betrag || '', [
+    // Rechnungsnummer/Zahlungsziel und Haken aus dem noch nicht gespeicherten Kontierungsformular, sonst Stand des Belegs.
+    const queryText = (name, max) => (typeof req.query[name] === 'string' && req.query[name].length <= max ? req.query[name] : null);
+    const rechnungsangaben = {
+      rechnungsnummer: queryText('rechnungsnummer', MAX_LAENGE.rechnungsnummer) ?? (job.rechnungsnummer || ''),
+      zahlungsziel: queryText('zahlungsziel', MAX_LAENGE.kennung) ?? (job.zahlungsziel || ''),
+      bestaetigt: hakenAusBody(req.query),
+    };
+    renderAufsplittenForm(req, res, 200, job, konten, listKonten(db), queryBetrag || job.betrag || job.qr_betrag || job.betrag_vorschlag || '', [
       { kontoId: '', betrag: '', interessenskonflikt: false },
       { kontoId: '', betrag: '', interessenskonflikt: false },
-    ], '', [], typ, { kreditorId: queryKreditorId || (job.kreditor_id ? String(job.kreditor_id) : '') });
+    ], '', [], typ, { rechnungsangaben, kreditorId: queryKreditorId || (job.kreditor_id ? String(job.kreditor_id) : '') });
   });
 
   // POST /kontierung/:id/aufsplitten – prüft die Zeilen (Konto, Betrag, Typ, Position, Beleg, Lieferant), verlangt Summe = Gesamtbetrag, zeigt ggf. das Prüf-Popup, führt Dateiarbeit, Aufsplitten (services/aufsplitten.js) und Mails aus.
@@ -1037,6 +1057,12 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const kreditorIdEingabe = text(req.body.kreditorId, 'Lieferant', MAX_LAENGE.kennung);
       const ibanEndung = normalizeIban(typeof req.body.ibanEndung === 'string' ? req.body.ibanEndung : '');
       const pruefBemerkung = (typeof req.body.pruefBemerkung === 'string' ? req.body.pruefBemerkung.trim() : '').slice(0, PRUEF_BEMERKUNG_MAX);
+      // Nur bei KI-Werten stehen Rechnungsnummer/Zahlungsziel im Formular; sonst bleibt der Stand des Belegs unberührt.
+      const ki = kiFelder(job);
+      const mitRechnungsangaben = Boolean(ki.rechnungsnummer || ki.zahlungsziel);
+      const rechnungsangaben = mitRechnungsangaben
+        ? { rechnungsnummer: text(req.body.rechnungsnummer, 'Rechnungsnummer', MAX_LAENGE.rechnungsnummer), zahlungsziel: text(req.body.zahlungsziel, 'Zahlungsziel', MAX_LAENGE.kennung), bestaetigt: hakenAusBody(req.body) }
+        : { rechnungsnummer: job.rechnungsnummer || '', zahlungsziel: job.zahlungsziel || '', bestaetigt: hakenAusBody(req.body) };
       const teileEingabe = kontoIds.map((kontoId, i) => ({
         kontoId,
         betrag: betraege[i] || '',
@@ -1053,6 +1079,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       }
       if (teileEingabe.filter((t) => t.kontoId || t.betrag).length < 2) {
         errors.push('Mindestens zwei Teilbeträge sind nötig, um aufzusplitten.');
+      }
+      if (mitRechnungsangaben && rechnungsangaben.zahlungsziel && !ZAHLUNGSZIEL_PATTERN.test(rechnungsangaben.zahlungsziel)) {
+        errors.push('Zahlungsziel ist kein gültiges Datum.');
+      }
+      // KI-Werte nicht unbesehen an die Teile weitergeben: unverändert nur mit Haken (wie in der Kontierung).
+      for (const feld of fehlendeBestaetigungen(ki, { ...rechnungsangaben, betrag: gesamtbetrag }, req.body)) {
+        errors.push(bestaetigungsMeldung(feld));
       }
 
       // Der Browser benennt das Dateifeld jeder Zeile beim Absenden in teilBeleg_<i> um, passend zur aktuellen Position dieser Zeile — siehe kontierung-aufsplitten.ejs. Unten gegen aufgeloesteTeile über originalIndex abgeglichen, nicht über die Array-Position, da dort leere Zeilen herausgefiltert werden.
@@ -1139,7 +1172,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       }
 
       if (errors.length > 0) {
-        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors, typ, { kreditorId: kreditorIdEingabe, lieferantFehler, ibanEndung, pruefBemerkung });
+        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors, typ, { rechnungsangaben, kreditorId: kreditorIdEingabe, lieferantFehler, ibanEndung, pruefBemerkung });
       }
 
       // Prüf-Popup wie bei der Kontierung (Spec B6), aber einmal für die ganze Rechnung: gegen den
@@ -1158,6 +1191,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           label: `Einen Beleg für Zeile ${index + 1} hast du noch nicht gespeichert. Bitte wähle ihn hier nochmals aus, bevor du speicherst.`,
         }));
         return renderAufsplittenForm(req, res, 200, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, [], typ, {
+          rechnungsangaben,
           kreditorId: kreditorIdEingabe,
           ibanEndung,
           pruefBemerkung,
@@ -1177,7 +1211,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       } catch (err) {
         if (!(err instanceof PdfWorkerFehler)) throw err;
         antworteSpaeterErneut(res, err, 'Aufsplitten');
-        return renderAufsplittenForm(req, res, 503, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, [PDF_VORUEBERGEHEND_MELDUNG], typ, { kreditorId: kreditorIdEingabe, ibanEndung, pruefBemerkung });
+        return renderAufsplittenForm(req, res, 503, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, [PDF_VORUEBERGEHEND_MELDUNG], typ, { rechnungsangaben, kreditorId: kreditorIdEingabe, ibanEndung, pruefBemerkung });
       }
 
       let ergebnis;
@@ -1186,6 +1220,13 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       try {
         setJobBetrag(db, job.id, job.betrag);
         setJobTyp(db, job.id, typ);
+        // Vor erzeugeTeilJobs: createSplitJob übernimmt rechnungsnummer/zahlungsziel vom Elternjob-Objekt – hier die
+        // bestätigten bzw. korrigierten Werte aus dem Formular (nur bei KI-Werten, sonst bleibt der Stand des Belegs).
+        if (mitRechnungsangaben) {
+          setJobRechnungsangaben(db, job.id, rechnungsangaben);
+          job.rechnungsnummer = rechnungsangaben.rechnungsnummer || null;
+          job.zahlungsziel = rechnungsangaben.zahlungsziel || null;
+        }
         // Vor erzeugeTeilJobs: createSplitJob übernimmt kreditor_id und lieferant vom Elternjob-Objekt.
         setJobKreditor(db, job.id, { kreditorId: jobKreditor.id, lieferant: jobKreditor.name });
         job.kreditor_id = jobKreditor.id;

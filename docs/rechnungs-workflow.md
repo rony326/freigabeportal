@@ -126,11 +126,32 @@ Lieferant bekannt, steht der Absender klein und grau in der Lieferanten-Zelle
 (wie in den Kacheln). Kontierungsformular und Detailansicht zeigen ihn
 weiterhin, er ist die Grundlage der Zuweisungsregeln.
 
-Automatisch erkannte, noch nicht kontierte Werte (alles ausser dem
-Regel-Lieferanten) erscheinen **rot und gepunktet unterstrichen** mit dem
-Hinweis «Automatisch erkannt – bei der Kontierung prüfen» (auch für
-Screenreader). Nach der Kontierung gelten die kontierten Werte ohne
-Markierung.
+Rot markiert sind nur **KI-Werte**: was n8n beim Eingang mitgeschickt hat
+(Rechnungsnummer, Betrag ohne QR-Code), solange nicht kontiert. Sie erscheinen
+**rot und gepunktet unterstrichen** mit dem Hinweis «Automatisch erkannt – bei
+der Kontierung prüfen» (auch für Screenreader). Als verlässlich und daher
+unmarkiert gelten kontierte Werte, der Lieferant aus einer Zuweisungsregel,
+der QR-Betrag und der Lieferant zur QR-IBAN (die IBAN ist maschinenlesbar,
+die Zuordnung hat ein Admin hinterlegt; der eigentliche IBAN-Abgleich läuft
+erst beim Speichern der Kontierung).
+
+**KI-Werte bestätigen** (`src/services/kiBestaetigung.js`): In der Kontierung
+sind Rechnungsnummer, Zahlungsziel und Betrag aus dem Upload rot umrandet und
+haben am rechten Feldrand einen **grünen Haken** (`views/_ki_bestaetigen.ejs`).
+Ein unverändert übernommener KI-Wert ohne Haken wird beim Speichern
+**serverseitig abgelehnt** («… wurde automatisch erkannt: bitte prüfen und mit
+dem Haken bestätigen oder korrigieren»), so lassen sich KI-Werte nicht
+durchklicken. Wer den Wert selbst ändert, hat ihn geprüft: der Haken setzt
+sich dann automatisch (`public/js/kontierung-ki.js`; ohne JS ist der Haken eine
+normale Checkbox, die Serverprüfung gilt immer; ein reines Schreibweise-Komma
+beim Betrag zählt nicht als Änderung). Der Hakenstatus bleibt beim erneuten
+Anzeigen nach einem Fehler und im Prüf-Popup erhalten. Nach der Kontierung
+(Überarbeitung nach Ablehnung) ist nichts mehr zu bestätigen.
+**Aufsplitten:** Da die Teile Rechnungsnummer und Zahlungsziel übernehmen,
+zeigt das Aufsplitten-Formular diese beiden Felder bei KI-Werten mit demselben
+Haken (vorbelegt aus dem Kontierungsformular samt gesetzter Haken), dazu den
+Gesamtbetrag; die bestätigten oder korrigierten Werte gehen an den
+Elternvorgang und alle Teile.
 
 **Korrigieren:** Die erkannten Werte sind nur vorausgefüllt. Im
 Kontierungsformular lassen sich Rechnungsnummer, Zahlungsziel, Betrag und

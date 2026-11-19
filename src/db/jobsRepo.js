@@ -160,7 +160,8 @@ export function findMoeglicheDoppelrechnungen(db, { job, kreditorId, betrag, zah
  * Freigeber 1 des Kontos; sonst landet er als 'unzugewiesen' im Pool.
  * @returns {number} id des neuen Vorgangs
  */
-export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad, dateiHash, pdfDateiname }) {
+// rechnungsnummer/zahlungsziel: optionale, bereits geprüfte Vorbefüllung aus dem Eingang (services/eingangVorbefuellung.js).
+export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad, dateiHash, pdfDateiname, rechnungsnummer, zahlungsziel }) {
   const regel = findMatchingZuweisungsregel(db, absender);
   let kontoId = null;
   let zugewiesenAn = null;
@@ -188,10 +189,10 @@ export function createJob(db, { eingangAm, quelle, absender, dateiname, pdfPfad,
 
   const result = db
     .prepare(
-      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an, kreditor_id, lieferant, datei_hash, pdf_dateiname)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO jobs (eingang_am, quelle, absender, dateiname, pdf_pfad, status, konto_id, zugewiesen_an, kreditor_id, lieferant, datei_hash, pdf_dateiname, rechnungsnummer, zahlungsziel)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn, kreditorId, lieferant, dateiHash ?? null, pdfDateiname || null);
+    .run(eingangAm, quelle, absender ?? null, dateiname, pdfPfad, status, kontoId, zugewiesenAn, kreditorId, lieferant, dateiHash ?? null, pdfDateiname || null, rechnungsnummer || null, zahlungsziel || null);
 
   return Number(result.lastInsertRowid);
 }

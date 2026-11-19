@@ -18,11 +18,11 @@ in [`docs/`](docs/README.md).
 
 ## Version
 
-Aktuelle Version: **1.4.4** (2026-11-19).
+Aktuelle Version: **1.4.5** (2026-11-19).
 Änderungen je Version: [`CHANGELOG.md`](CHANGELOG.md), ausführliche
-Release Notes in [`docs/releases/`](docs/releases/v1.4.4.md). Die
+Release Notes in [`docs/releases/`](docs/releases/v1.4.5.md). Die
 Fusszeile im Portal zeigt den laufenden Stand per `git describe` (Tag
-`v1.4.4` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
+`v1.4.5` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
 Version aus `package.json`.
 
 ## Setup (lokal)

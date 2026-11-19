@@ -24,6 +24,7 @@ import { exportNachweis } from '../../services/exportSnapshot.js';
 import { PdfEingangFehler } from '../../services/pdfFehler.js';
 import { pdfArbeit as standardPdfArbeit, PdfWorkerFehler } from '../../services/pdfArbeit.js';
 import { asyncCallback } from '../../middleware/asyncHandler.js';
+import { leseEingangVorbefuellung } from '../../services/eingangVorbefuellung.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
@@ -125,6 +126,9 @@ export function createN8nJobsRouter({ db, config, mailer, pdfArbeit = null }) {
           return res.status(400).json({ error: 'dateiname ist ein Pflichtfeld.' });
         }
 
+        // Optionale Vorbefüllung (z. B. KI-gelesen): ungültige Werte werden still verworfen, nie 400.
+        const vorbefuellung = leseEingangVorbefuellung(req.body);
+
         let eingangAm;
         if (req.body.eingang_am) {
           const parsed = new Date(req.body.eingang_am);
@@ -160,7 +164,7 @@ export function createN8nJobsRouter({ db, config, mailer, pdfArbeit = null }) {
 
         let id;
         try {
-          id = createJob(db, { eingangAm, quelle, absender: absender || null, dateiname, pdfPfad, dateiHash, pdfDateiname: pdfTeilName(req.file) });
+          id = createJob(db, { eingangAm, quelle, absender: absender || null, dateiname, pdfPfad, dateiHash, pdfDateiname: pdfTeilName(req.file), ...vorbefuellung });
         } catch (err) {
           // Ohne Jobzeile keine verwaiste Datei zurücklassen.
           try { unlinkSync(pdfPfad); } catch { /* bereits entfernt */ }

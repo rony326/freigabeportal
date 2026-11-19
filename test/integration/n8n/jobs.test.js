@@ -146,6 +146,52 @@ test('POST /api/n8n/jobs with different PDF bytes (even with identical metadata)
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
+test('POST /api/n8n/jobs speichert optionale Rechnungsnummer und Zahlungsziel (z. B. von einem KI-Auslesen)', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'lieferant')
+    .field('dateiname', 'rechnung.pdf')
+    .field('rechnungsnummer', ' RE-2026-0042 ')
+    .field('zahlungsziel', '2026-12-31')
+    .attach('pdf', PDF_BYTES, { filename: 'rechnung.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 201);
+  const job = getJobById(db, res.body.id);
+  assert.equal(job.rechnungsnummer, 'RE-2026-0042');
+  assert.equal(job.zahlungsziel, '2026-12-31');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /api/n8n/jobs verwirft ungültige Rechnungsnummer/Zahlungsziel still und legt den Job trotzdem an', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'jobs-test-'));
+  const app = buildTestApp(db, testConfig(jobsDir), createStubMailer());
+
+  const res = await request(app)
+    .post('/api/n8n/jobs')
+    .set('X-API-Key', 'n8n-key')
+    .field('quelle', 'lieferant')
+    .field('dateiname', 'rechnung.pdf')
+    .field('rechnungsnummer', 'X'.repeat(500))
+    .field('zahlungsziel', '31.12.2026')
+    .attach('pdf', PDF_BYTES, { filename: 'rechnung.pdf', contentType: 'application/pdf' });
+
+  assert.equal(res.status, 201);
+  const job = getJobById(db, res.body.id);
+  assert.equal(job.rechnungsnummer, null);
+  assert.equal(job.zahlungsziel, null);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
 test('POST /api/n8n/jobs stores a valid eingang_am, normalized to ISO', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');

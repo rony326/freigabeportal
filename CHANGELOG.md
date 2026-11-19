@@ -3,6 +3,16 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.5] – 2026-11-19
+
+Der Rechnungseingang nimmt optional Rechnungsnummer und Zahlungsziel entgegen (z. B. von einem KI-Modell gelesen).
+Release Notes: [docs/releases/v1.4.5.md](docs/releases/v1.4.5.md). Keine Migration, keine neuen Umgebungsvariablen;
+bestehende n8n-Workflows laufen unverändert.
+
+- `POST /api/n8n/jobs`: neue optionale Felder `rechnungsnummer` (höchstens 100 Zeichen, eine Zeile) und
+  `zahlungsziel` (`JJJJ-MM-TT`, existierendes Datum). Sie füllen das Kontierungsformular vor. Ungültige Werte werden
+  still verworfen, nie `400` (`src/services/eingangVorbefuellung.js`).
+
 ## [1.4.4] – 2026-11-19
 
 QR-Rechnungen werden wieder erkannt, wenn n8n das Mailprotokoll als letzte Seite anhängt. Release Notes:

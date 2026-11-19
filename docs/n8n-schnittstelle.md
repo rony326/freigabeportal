@@ -18,7 +18,7 @@ sequenceDiagram
     participant n8n
     participant P as Freigabeportal
 
-    n8n->>P: POST /api/n8n/jobs (X-API-Key, multipart: pdf, quelle, absender, dateiname)
+    n8n->>P: POST /api/n8n/jobs (X-API-Key, multipart: pdf, quelle, absender, dateiname, opt. rechnungsnummer, zahlungsziel)
     P->>P: Magic-Byte-Check (%PDF)
     P->>P: Eingangsprüfung im PDF-Worker: öffnen (mupdf + pdf-lib),<br/>nicht verschlüsselt, ≥ 1 lesbare Seite
     alt PDF-Verarbeitung ausgelastet / Zeitlimit / Absturz
@@ -52,6 +52,17 @@ sequenceDiagram
 | `dateiname` | ja | Anzeigename; geht unverändert an n8n zurück. In der Oberfläche nur, wenn der PDF-Teil keinen `.pdf`-Namen hat und `dateiname` kein Bildname ist (z. B. `image002.png` aus einer Mail-Signatur) — sonst `Eingang <Datum>`. Jede Anzeige trägt die Belegnummer `#<id>` (`src/services/belegName.js`) |
 | `absender` | nein | `From:`-Header der eingehenden Mail (roh, mit oder ohne Display-Name) — Basis für die automatische Zuweisungsregel |
 | `eingang_am` | nein | ISO-Datum; Default: jetzt |
+| `rechnungsnummer` | nein | Vorschlag für die Kontierung (z. B. von einem KI-Modell aus dem PDF gelesen), höchstens 100 Zeichen, eine Zeile |
+| `zahlungsziel` | nein | Vorschlag für die Kontierung im Format `JJJJ-MM-TT` (z. B. `2026-12-31`), muss ein existierendes Datum sein |
+
+`rechnungsnummer` und `zahlungsziel` füllen nur das Kontierungsformular vor;
+die kontierende Person sieht und korrigiert sie dort. Ein ungültiger Wert
+(falsches Format, unmögliches Datum, zu lang, Zeilenumbruch, mehrfach
+gesendet) wird **still verworfen** und führt nie zu `400` – der Upload
+scheitert also nicht an einem schlecht gelesenen Wert. Ein gültiger und ein
+ungültiger Wert: nur der gültige wird übernommen. Prüfung in
+`src/services/eingangVorbefuellung.js`. Bestehende n8n-Workflows ohne diese
+Felder funktionieren unverändert.
 
 Antworten: `201` mit `{id, status}` bei neuer Rechnung, `200` mit
 `{id, status, duplikat: true}` bei bytegleichem Wiederholungs-Upload

@@ -1,4 +1,4 @@
-<% /* Ein Wert aus services/vorabAngaben.js ({wert, ungeprueft}). Ungeprüfte Werte (automatisch erkannt, noch nicht
-     kontiert) sind rot markiert; Titel und versteckter Zusatz sagen dasselbe auch ohne Farbe (Screenreader, Farbsehschwäche).
+<% /* Ein Wert aus services/vorabAngaben.js ({wert, ungeprueft}). Ungeprüfte Werte (KI-Werte aus dem n8n-Upload, noch
+     nicht kontiert; QR-Daten gelten als verlässlich) sind rot markiert; Titel und versteckter Zusatz sagen dasselbe auch ohne Farbe (Screenreader, Farbsehschwäche).
      Ausgabe ohne Leerraum drumherum, damit das Partial wie ein einfacher Wert in Zellen und Überschriften passt. */ -%>
 <% if (!angabe || !angabe.wert) { %>—<% } else if (angabe.ungeprueft) { %><span class="wert-erkannt" title="Automatisch erkannt – bei der Kontierung prüfen"><%= angabe.wert %></span><span class="visually-hidden"> (automatisch erkannt, ungeprüft)</span><% } else { %><%= angabe.wert %><% } %>

@@ -429,10 +429,14 @@ Rechnungsnummer bleiben bei einem Rapport `NULL`. Siehe
 
 **Vorbefüllung beim Eingang:** `rechnungsnummer` und `zahlungsziel` können
 schon beim n8n-Eingang gesetzt sein (vor der Kontierung, die sie
-überschreibt). Ein mitgeschickter Betrag steht dagegen nur in
+überschreibt; solange nicht kontiert, verlangt sie für diese KI-Werte einen
+Bestätigungs-Haken, `src/services/kiBestaetigung.js`). Ein mitgeschickter
+Betrag steht dagegen nur in
 `betrag_vorschlag` – `betrag` bleibt bis zur Kontierung `NULL`, damit
 Dubletten- und Betragsprüfungen nie mit einem ungeprüften Wert rechnen.
-`betrag_vorschlag` wird nicht exportiert. Siehe
+Ob ein Vorgang kontiert ist, erkennen Anzeige und Bestätigungspflicht an
+`betrag IS NOT NULL`. `betrag_vorschlag` wird nicht exportiert und nach der
+Kontierung nicht mehr angezeigt. Siehe
 [n8n-schnittstelle.md](n8n-schnittstelle.md).
 
 ### `kenntnisnahmen`

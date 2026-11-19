@@ -168,7 +168,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         // (services/vorabAngaben.js).
         betrag: job.betrag || (qrInfo && qrInfo.betrag) || job.betrag_vorschlag || '',
         // Zahlungsziel/Rechnungsnummer: bei einem neuen Vorgang ggf. schon von n8n vorbefüllt (services/eingangVorbefuellung.js),
-        // sonst aus einer früheren Kontierung. Erst das Speichern unten prüft sie verbindlich.
+        // sonst aus einer früheren Kontierung. KI-Werte (services/kiBestaetigung.js) brauchen beim Speichern einen Haken oder eine Änderung.
         zahlungsziel: job.zahlungsziel || '',
         rechnungsnummer: job.rechnungsnummer || '',
         kreditorId: job.kreditor_id ? String(job.kreditor_id) : (qrInfo && qrInfo.vorschlagKreditor ? String(qrInfo.vorschlagKreditor.id) : ''),
@@ -279,7 +279,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const betrag = text(req.body.betrag, 'Betrag', MAX_LAENGE.betrag, 'betrag');
       const zahlungsziel = text(req.body.zahlungsziel, 'Zahlungsziel', MAX_LAENGE.kennung, 'zahlungsziel');
       // Massgeblich ist der Formularwert: Er ersetzt beim Speichern eine von n8n vorbefüllte Rechnungsnummer (ebenso Betrag,
-      // Zahlungsziel, Lieferant). Duplikat-Check und Betrugserkennung unten prüfen diesen Wert, nicht den Upload.
+      // Zahlungsziel, Lieferant). Duplikat-Check und Betrugserkennung unten prüfen diesen Wert, nicht den Upload. Ist er
+      // unverändert der KI-Wert, muss der Haken gesetzt sein (fehlendeBestaetigungen weiter unten).
       const rechnungsnummer = text(req.body.rechnungsnummer, 'Rechnungsnummer', MAX_LAENGE.rechnungsnummer, 'rechnungsnummer');
       const aktion = text(req.body.aktion, 'Aktion', MAX_LAENGE.kennung, null);
       const typ = text(req.body.typ, 'Typ', MAX_LAENGE.kennung, null);

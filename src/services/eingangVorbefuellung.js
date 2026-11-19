@@ -1,6 +1,7 @@
 // Optionale Vorbefüllung beim Rechnungseingang (POST /api/n8n/jobs): Rechnungsnummer, Zahlungsziel und Betrag, die n8n z. B. von
-// einem KI-Modell aus dem PDF lesen lässt. Die Werte sind nur ein Vorschlag für die Kontierung (die Person sieht sie im
-// Formular und korrigiert sie bei Bedarf). Deshalb wird ein ungültiger Wert still verworfen (null) statt den Upload mit
+// einem KI-Modell aus dem PDF lesen lässt. Die Werte sind nur ein Vorschlag für die Kontierung: Pool und Listen zeigen sie
+// rot (services/vorabAngaben.js), und die kontierende Person muss sie per Haken bestätigen oder korrigieren
+// (services/kiBestaetigung.js). Ein ungültiger Wert wird still verworfen (null) statt den Upload mit
 // 400 abzulehnen – eine Rechnung darf nie an einem schlecht gelesenen Wert scheitern.
 
 import { MAX_LAENGE } from '../utils/eingabe.js';

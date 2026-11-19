@@ -67,7 +67,12 @@ IBAN-Mismatch-Meldungen führen würden.
 ## Die Prüfungen
 
 Auf der Kontierungsseite werden die gescannten QR-Daten als Formular-Vorschlag
-angezeigt (Betrag, ggf. vorgeschlagener Lieferant anhand der IBAN). Die
+angezeigt (Betrag, ggf. vorgeschlagener Lieferant anhand der IBAN). QR-Daten
+gelten als verlässlich (maschinenlesbar): Sie sind in Pool und Listen nicht
+rot markiert und brauchen in der Kontierung keinen Bestätigungs-Haken – anders
+als die KI-Werte, die n8n beim Upload mitschickt (siehe
+[rechnungs-workflow.md](rechnungs-workflow.md#1-rechnungseingang-und-automatische-zuweisung)).
+Ein QR-Betrag hat Vorrang vor einem Upload-Betrag. Die
 Prüfungen laufen erst beim **Speichern** (Aktion „Kontieren“), serverseitig in
 `ermittleBefunde` (`src/services/betrugspruefung.js`), nicht bei Ablehnen,
 Rapport oder „Zurück in den Pool“. Rote Befunde stehen vor gelben.

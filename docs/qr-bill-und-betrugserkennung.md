@@ -44,14 +44,19 @@ unvollständig.
 flowchart TD
     A["PDF-Upload via n8n<br/>(POST /api/n8n/jobs)"] --> B["scanQrBill(pdfBuffer)<br/>src/services/qrBillScan.js"]
     B --> C["Seite 1 als Bild rendern<br/>(mupdf, bis zu 1200px breit,<br/>gedeckelt auf 8 Megapixel)"]
-    C --> D{"QR-Code<br/>gefunden? (jsQR)"}
-    D -- nein --> E{"mehrseitiges PDF?"}
-    E -- ja --> F["letzte Seite versuchen"]
+    C --> D{"QR-Code gefunden (jsQR)<br/>und gültige SPC-Nutzlast?<br/>parseQrBillPayload()"}
+    D -- nein --> E{"weitere Seite?<br/>(höchstens 8 Seiten)"}
+    E -- ja --> F["nächste Seite: letzte,<br/>dann von hinten nach vorne"]
     F --> D
     E -- nein --> G["kein QR-Code<br/>— keine Vorbefüllung"]
-    D -- ja --> H["parseQrBillPayload()<br/>Swiss-QR-Bill-Zeilenformat (SPC)"]
-    H --> I["IBAN, Betrag, Währung,<br/>Referenz, Zahlungsempfänger-Name<br/>am Job gespeichert (qr_*-Spalten)"]
+    D -- ja --> I["IBAN, Betrag, Währung,<br/>Referenz, Zahlungsempfänger-Name<br/>am Job gespeichert (qr_*-Spalten)"]
 ```
+
+Gesucht wird nicht nur auf der ersten und letzten Seite: n8n hängt dem
+Rechnungs-PDF eine Seite mit dem Mailprotokoll an, der Zahlteil steht dann
+auf der vorletzten Seite (ebenso bei beidseitigen Scans mit leerer
+Rückseite). Ein QR-Code ohne gültige SPC-Nutzlast (z. B. ein Link) beendet
+die Suche nicht.
 
 Der Parser erwartet exakt das SIX/SPC-Zeilenformat (Header `"SPC"`,
 mindestens 31 Zeilen); IBAN wird normalisiert (Leerzeichen entfernt,

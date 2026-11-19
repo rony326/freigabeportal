@@ -58,8 +58,25 @@ function decodePageAsQrText(doc, pageIndex) {
   }
 }
 
+// Höchstzahl Seiten, die je PDF gerastert werden (je Seite einige hundert ms). Hält ein langes PDF innerhalb des Worker-Zeitlimits
+// für eingangAnalysieren; der Zahlteil steht praktisch immer auf der ersten oder einer der letzten Seiten.
+const MAX_SCAN_SEITEN = 8;
+
 /**
- * Sucht den QR-Code auf der ersten (und bei mehreren Seiten der letzten) Seite.
+ * Reihenfolge der zu prüfenden Seiten: erste, letzte, dann von hinten nach vorne. Nicht nur erste/letzte Seite, denn n8n hängt
+ * dem Rechnungs-PDF eine Seite mit dem Mailprotokoll an – der Zahlteil steht dann auf der vorletzten Seite (ebenso bei
+ * beidseitig gescannten Rechnungen mit leerer Rückseite am Schluss).
+ * @param {number} pageCount
+ * @returns {number[]} Seitenindizes, höchstens MAX_SCAN_SEITEN
+ */
+export function scanReihenfolge(pageCount) {
+  const seiten = [0];
+  for (let i = pageCount - 1; i > 0 && seiten.length < MAX_SCAN_SEITEN; i--) seiten.push(i);
+  return seiten;
+}
+
+/**
+ * Sucht den QR-Code auf der ersten Seite, dann auf den Seiten von hinten nach vorne (siehe scanReihenfolge).
  * @param {Buffer} pdfBuffer
  * @returns {object|null} geparste Zahlungsdaten (siehe parseQrBillPayload) oder null, wenn keiner gefunden wurde
  * @throws {Error} wenn sich das PDF nicht öffnen lässt
@@ -72,13 +89,13 @@ export function scanQrBill(pdfBuffer) {
     throw new Error(`PDF konnte für die QR-Code-Erkennung nicht geöffnet werden: ${err.message}`);
   }
   try {
-    const pageCount = doc.countPages();
-    let qrText = decodePageAsQrText(doc, 0);
-    if (!qrText && pageCount > 1) {
-      qrText = decodePageAsQrText(doc, pageCount - 1);
+    for (const seite of scanReihenfolge(doc.countPages())) {
+      const qrText = decodePageAsQrText(doc, seite);
+      // Ein anderer QR-Code (z. B. Link auf einer Werbeseite) ist kein Zahlteil – dann weitersuchen.
+      const daten = qrText ? parseQrBillPayload(qrText) : null;
+      if (daten) return daten;
     }
-    if (!qrText) return null;
-    return parseQrBillPayload(qrText);
+    return null;
   } finally {
     doc.destroy();
   }

@@ -3,6 +3,16 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.4] – 2026-11-19
+
+QR-Rechnungen werden wieder erkannt, wenn n8n das Mailprotokoll als letzte Seite anhängt. Release Notes:
+[docs/releases/v1.4.4.md](docs/releases/v1.4.4.md). Keine Migration, keine neuen Umgebungsvariablen.
+
+- QR-Erkennung beim Rechnungseingang: Gesucht wurde nur auf der ersten und letzten Seite. Steht dort das angehängte
+  Mailprotokoll, blieb der Zahlteil auf der vorletzten Seite unerkannt. Jetzt: erste Seite, letzte Seite, dann von
+  hinten nach vorne, höchstens 8 Seiten. Ein QR-Code ohne gültige Zahlteil-Daten beendet die Suche nicht mehr.
+- Menü: Ist das Spesenmodul deaktiviert, entfällt auch «Meine Spesen» und damit die leere Gruppe «Spesen».
+
 ## [1.4.3] – 2026-11-17
 
 Warnmails bei der Kontierung blockieren die Anfrage nicht mehr, und die Meldung nach dem Speichern stimmt wieder.

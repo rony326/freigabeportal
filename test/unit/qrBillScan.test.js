@@ -55,6 +55,24 @@ test('scanQrBill falls back to the last page when the QR-Code is not on page 1',
   assert.equal(result.iban, 'CH4431999123000889012');
 });
 
+test('scanQrBill finds the QR-Code on the second-to-last page when a mail protocol page is appended (n8n)', async () => {
+  // Realer Fall: n8n hängt dem gescannten Rechnungs-PDF eine Seite mit dem Mailprotokoll an. Der Zahlteil liegt dann
+  // weder auf der ersten noch auf der letzten Seite.
+  const qrBillPdf = await buildQrBillPdfFixture(QR_BILL_DATA);
+  const protokollPdf = await buildPdfFixture(['Mailprotokoll: Von lieferant@example.ch, Betreff Rechnung']);
+
+  const combined = await PdfLibDocument.create();
+  combined.addPage([595, 842]); // Rechnungsseite 1 ohne QR-Code
+  const qrDoc = await PdfLibDocument.load(qrBillPdf);
+  (await combined.copyPages(qrDoc, qrDoc.getPageIndices())).forEach((page) => combined.addPage(page));
+  const protokollDoc = await PdfLibDocument.load(protokollPdf);
+  (await combined.copyPages(protokollDoc, protokollDoc.getPageIndices())).forEach((page) => combined.addPage(page));
+
+  const result = scanQrBill(Buffer.from(await combined.save()));
+  assert.ok(result, 'expected the QR-Code before the appended mail protocol page to be found');
+  assert.equal(result.iban, 'CH4431999123000889012');
+});
+
 test('scanQrBill returns null for a PDF without any QR-Code', async () => {
   const pdf = await buildPdfFixture(['Ganz normale Rechnung ohne QR-Code']);
   assert.equal(scanQrBill(pdf), null);

@@ -49,6 +49,7 @@ nachvollziehen wollen, ohne den Code zu lesen.
 ## Releases
 
 | Version | Datum | Release Notes |
+| 1.4.4 | 2026-11-19 | [releases/v1.4.4.md](releases/v1.4.4.md) |
 | 1.4.3 | 2026-11-17 | [releases/v1.4.3.md](releases/v1.4.3.md) |
 | 1.4.2 | 2026-11-17 | [releases/v1.4.2.md](releases/v1.4.2.md) |
 |---|---|---|

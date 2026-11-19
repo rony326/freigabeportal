@@ -127,6 +127,15 @@ Hinweis «Automatisch erkannt – bei der Kontierung prüfen» (auch für
 Screenreader). Nach der Kontierung gelten die kontierten Werte ohne
 Markierung.
 
+**Korrigieren:** Die erkannten Werte sind nur vorausgefüllt. Im
+Kontierungsformular lassen sich Rechnungsnummer, Zahlungsziel, Betrag und
+Lieferant frei ändern; beim Speichern gilt, was im Formular steht, und
+überschreibt den erkannten Wert. Auch der Rechnungsnummer-Duplikat-Check und
+die Betrugserkennung prüfen den Formularwert, nicht den Upload. Nach der
+Kontierung ist die Rechnungsnummer nicht mehr direkt änderbar (Freigabe 2
+zeigt sie nur an): Ist sie falsch, lehnt Freigabe 2 ab, und die Rechnung
+kommt zur Überarbeitung zurück in die Kontierung (Abschnitt 4).
+
 ## 1a. Pool-Weiterleitung an Personen
 
 Ein additives Einzelrecht `pool_zuweisen` (siehe
@@ -252,6 +261,10 @@ SYNC-8-Eskalation jede `superadmin`-Person. Ein
 harter Zusatz-Check verhindert, dass dieselbe Person, die Freigabe 1
 erteilt hat, auch Freigabe 2 erteilen kann (Vier-Augen-Prinzip, siehe
 [auth-und-rechte.md](auth-und-rechte.md)).
+
+Freigabe 2 zeigt die kontierten Angaben (Rechnungsnummer, Zahlungsziel,
+Betrag, Konto) nur an und kann sie nicht ändern. Eine falsche Angabe wird per
+Ablehnung zur Überarbeitung an die Kontierung zurückgegeben.
 
 **Interessenskonflikt-Sperre, hart erzwungen**: Ein erklärter Konflikt gehört
 zur Rechnung. Wer für diesen Job einen `freigaben`-Eintrag

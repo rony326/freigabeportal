@@ -30,6 +30,8 @@
                 <dt>Verwendungszweck</dt><dd><%= job.beschreibung %></dd>
                 <dt>Auslage-Datum</dt><dd><%= job.auslage_datum %></dd>
               <% } else { %>
+                <% /* Nur Anzeige: kontierte Angaben sind in Freigabe 2 nicht änderbar; eine falsche Angabe geht per Ablehnung
+                     zur Überarbeitung zurück an die Kontierung (docs/rechnungs-workflow.md, Abschnitt 3). */ %>
                 <% if (job.rechnungsnummer) { %><dt>Rechnungsnummer</dt><dd><%= job.rechnungsnummer %></dd><% } %>
                 <% if (job.zahlungsziel) { %><dt>Zahlungsziel</dt><dd><%= job.zahlungsziel %></dd><% } %>
               <% } %>

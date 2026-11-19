@@ -275,6 +275,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       const absender = text(req.body.absender, 'Absender', MAX_LAENGE.einzeilig, 'absender');
       const betrag = text(req.body.betrag, 'Betrag', MAX_LAENGE.betrag, 'betrag');
       const zahlungsziel = text(req.body.zahlungsziel, 'Zahlungsziel', MAX_LAENGE.kennung, 'zahlungsziel');
+      // Massgeblich ist der Formularwert: Er ersetzt beim Speichern eine von n8n vorbefüllte Rechnungsnummer (ebenso Betrag,
+      // Zahlungsziel, Lieferant). Duplikat-Check und Betrugserkennung unten prüfen diesen Wert, nicht den Upload.
       const rechnungsnummer = text(req.body.rechnungsnummer, 'Rechnungsnummer', MAX_LAENGE.rechnungsnummer, 'rechnungsnummer');
       const aktion = text(req.body.aktion, 'Aktion', MAX_LAENGE.kennung, null);
       const typ = text(req.body.typ, 'Typ', MAX_LAENGE.kennung, null);
@@ -531,6 +533,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           return renderFehler(BELEG_KONFLIKT_MELDUNG, 409);
         }
         setKontierung(db, job.id, konto.id);
+        // Überschreibt die Vorbefüllung aus dem Eingang. betrag_vorschlag bleibt unverändert stehen, wird aber nicht mehr
+        // angezeigt: Sobald `betrag` gesetzt ist, gilt der Vorgang als kontiert (services/vorabAngaben.js).
         updateKontierungMetadaten(db, job.id, {
           absender,
           betrag: betrag ? betrag.replace(',', '.') : null,

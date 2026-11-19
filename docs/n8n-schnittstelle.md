@@ -58,7 +58,7 @@ sequenceDiagram
 
 `rechnungsnummer`, `zahlungsziel` und `betrag` füllen nur das Kontierungsformular vor
 und erscheinen in Pool und Aufgabenlisten rot markiert als «automatisch erkannt»;
-die kontierende Person sieht und korrigiert sie dort. Ein ungültiger Wert
+die kontierende Person sieht und überschreibt sie dort bei Bedarf (gespeichert wird der Formularwert; danach nur noch über Ablehnung → Überarbeitung änderbar). Ein ungültiger Wert
 (falsches Format, unmögliches Datum, zu lang, Zeilenumbruch, mehrfach
 gesendet) wird **still verworfen** und führt nie zu `400` – der Upload
 scheitert also nicht an einem schlecht gelesenen Wert. Ein gültiger und ein

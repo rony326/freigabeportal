@@ -120,6 +120,10 @@ export function findJobByDateiHash(db, dateiHash) {
   return db.prepare('SELECT * FROM jobs WHERE datei_hash = ? ORDER BY id LIMIT 1').get(dateiHash) ?? null;
 }
 
+// Dubletten-Check der Kontierung: nur innerhalb desselben Kreditors. Dieselbe Nummer bei einem anderen Lieferanten ist
+// bewusst kein Treffer (jeder Lieferant nummeriert selbst; «1001» o. ä. wäre sonst ein ständiger Fehlalarm). Gefunden
+// werden auch noch nicht kontierte Vorgänge, deren Kreditor (Zuweisungsregel) und Rechnungsnummer (Vorbefüllung durch n8n,
+// services/eingangVorbefuellung.js) schon beim Eingang gesetzt wurden.
 // Abgelehnte Vorgänge werden bewusst weiterhin gefunden — taucht die Rechnungsnummer eines abgelehnten Vorgangs bei einem
 // neuen wieder auf, ist das trotzdem eine Meldung wert, auch wenn es für sich kein Risiko einer Doppelzahlung gibt.
 // Nur 'geloescht' (weich gelöschte) Zeilen sind ausgeschlossen.

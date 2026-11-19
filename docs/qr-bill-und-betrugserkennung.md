@@ -235,7 +235,12 @@ Default zurück:
 Beim Kontieren (normal wie via Aufsplitten) läuft zusätzlich ein zweiter,
 ebenfalls nicht-blockierender Check auf **Kreditor + Rechnungsnummer** —
 unabhängig vom QR-Bill/IBAN-Mechanismus dieser Seite, aber nach demselben
-Muster (Warn-Mail + Audit-Log-Eintrag, blockiert nicht). Details:
+Muster (Warn-Mail + Audit-Log-Eintrag, blockiert nicht). Er vergleicht nur
+innerhalb desselben Lieferanten; dieselbe Nummer bei einem anderen Lieferanten
+ist kein Treffer. Wird eine doppelt eingereichte Rechnung dem falschen
+Lieferanten zugeordnet, greift er daher nicht – dann helfen der Hash-Vergleich
+beim Eingang (bytegleiches PDF) und bei QR-Rechnungen `iban_anderer_kreditor`.
+Details:
 [rechnungs-workflow.md](rechnungs-workflow.md#2-kontierung-status-zugewiesen).
 
 ## Verwaltung der hinterlegten IBANs

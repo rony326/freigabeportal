@@ -99,7 +99,16 @@ flowchart TD
 
 Zusätzlich wird beim Eingang automatisch nach einem Swiss-QR-Bill
 gesucht (siehe [qr-bill-und-betrugserkennung.md](qr-bill-und-betrugserkennung.md))
-und ein Thumbnail gerendert.
+und ein Thumbnail gerendert. Der QR-Code wird nicht nur auf der ersten und
+letzten Seite gesucht, weil n8n das Mailprotokoll als letzte Seite anhängt.
+
+**Vorbefüllung (optional):** n8n kann `rechnungsnummer` und `zahlungsziel`
+mitschicken, z. B. von einem KI-Modell aus dem PDF gelesen. Gültige Werte
+stehen direkt in `jobs.rechnungsnummer`/`jobs.zahlungsziel` und erscheinen in
+der Kontierung vorausgefüllt; ungültige werden still verworfen
+(`src/services/eingangVorbefuellung.js`, Regeln in
+[n8n-schnittstelle.md](n8n-schnittstelle.md)). Verbindlich werden die Werte
+erst mit dem Speichern der Kontierung, das sie wie eine Eingabe von Hand prüft.
 
 ## 1a. Pool-Weiterleitung an Personen
 
@@ -192,7 +201,14 @@ mit), wird ein `freigaben`-Eintrag `rechnungsnummer_duplikat` geschrieben
 und Freigeber 1+2 des gewählten Kontos sowie die kontierende Person per
 Mail informiert (`typ: 'rechnungsnummer-warnung'`, siehe
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md)) —
-die Kontierung wird dadurch nicht blockiert. Schlägt diese Prüfung nicht an, folgt ein
+die Kontierung wird dadurch nicht blockiert. Verglichen wird **nur innerhalb
+desselben Kreditors**: dieselbe Nummer bei zwei verschiedenen Lieferanten löst
+keine Warnung aus, weil jeder Lieferant eigenständig nummeriert (kurze Nummern
+wie «1001» wären sonst ständige Fehlalarme). Mitgezählt werden auch Vorgänge,
+deren Kreditor und Rechnungsnummer schon beim Eingang gesetzt wurden
+(Zuweisungsregel + Vorbefüllung durch n8n), auch wenn sie noch nicht kontiert
+sind — eine doppelt eingereichte Rechnung wird so schon bei der ersten
+Kontierung erkannt. Schlägt diese Prüfung nicht an, folgt ein
 **Doppelscan-Check** (`findMoeglicheDoppelrechnungen`): gleicher Kreditor,
 gleicher Betrag (numerisch) und gleiches Zahlungsziel bei einem Job, der
 höchstens 14 Tage vorher oder nachher eingegangen ist

@@ -162,6 +162,8 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         begruendung: '',
         absender: job.absender || '',
         betrag: job.betrag || (qrInfo ? qrInfo.betrag || '' : ''),
+        // Zahlungsziel/Rechnungsnummer: bei einem neuen Vorgang ggf. schon von n8n vorbefüllt (services/eingangVorbefuellung.js),
+        // sonst aus einer früheren Kontierung. Erst das Speichern unten prüft sie verbindlich.
         zahlungsziel: job.zahlungsziel || '',
         rechnungsnummer: job.rechnungsnummer || '',
         kreditorId: job.kreditor_id ? String(job.kreditor_id) : (qrInfo && qrInfo.vorschlagKreditor ? String(qrInfo.vorschlagKreditor.id) : ''),

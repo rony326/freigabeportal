@@ -1,5 +1,5 @@
 // Maschinenroute `/api/n8n/jobs` (Header `X-API-Key`, Vertrag und Beispiele: docs/n8n-schnittstelle.md und docs/n8n-paperless-archivierung.md): Rechnungseingang aus dem Mail-Workflow und Abholung zum Export nach Bexio/Paperless.
-// Eingang: `POST /` (PDF + quelle/absender/dateiname) → Prüfung, Duplikaterkennung per Datei-Hash, Thumbnail/QR-Erkennung/Text (Prüfung und Analyse im PDF-Worker, B2), Job, Kreditkartenerkennung, Zuweisung per Regel + Mail.
+// Eingang: `POST /` (PDF + quelle/absender/dateiname, optional rechnungsnummer/zahlungsziel als Vorbefüllung, siehe services/eingangVorbefuellung.js) → Prüfung, Duplikaterkennung per Datei-Hash, Thumbnail/QR-Erkennung/Text (Prüfung und Analyse im PDF-Worker, B2), Job, Kreditkartenerkennung, Zuweisung per Regel + Mail.
 // Export: `GET /abholbereit` → `GET /:id/exportnachweis` → `GET /:id/exportdatei/:exportId` → `POST /:id/archivierung-bestaetigen` (Archivquittung); `POST /:id/abholung-bestaetigen` ist die ältere reine Transport-Bestätigung.
 // Bexio: nach dem Mailversand an das Bexio-Eingangspostfach `POST /:id/bexio-versand-bestaetigen` (Versandquittung, services/bexioVersand.js); Nachzügler über `GET /bexio-versand-ausstehend`.
 // Rapporte laufen nie über diese Route (siehe router.param), sondern über /api/n8n/rapporte.

@@ -26,3 +26,18 @@ test('Navigationssymbole sind untereinander eindeutig', () => {
   const namen = punkte.map((p) => p.symbol);
   assert.equal(new Set(namen).size, namen.length);
 });
+
+// Symbole, die Views direkt einbinden (include('_symbol', { name: '…' })), müssen ebenfalls im Sprite stehen – sonst
+// rendert der Browser ein leeres Bild (so geschehen beim Bestätigungs-Haken der KI-Werte, 1.4.7).
+test('jedes in einer View eingebundene Symbol steht im Sprite', async () => {
+  const { readdirSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const wurzel = fileURLToPath(new URL('../../views', import.meta.url));
+  const dateien = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? dateien(join(dir, e.name)) : e.name.endsWith('.ejs') ? [join(dir, e.name)] : []));
+  const namen = new Set();
+  for (const datei of dateien(wurzel)) {
+    for (const m of readFileSync(datei, 'utf8').matchAll(/include\(\s*["'](?:\.\.\/)*_symbol["']\s*,\s*\{\s*name:\s*["']([\w-]+)["']/g)) namen.add(m[1]);
+  }
+  assert.ok(namen.size > 3, 'Symbol-Einbindungen in Views gefunden');
+  for (const name of namen) assert.ok(sprite.includes(`<symbol id="${name}" `), `Symbol fehlt im Sprite: ${name} (in SYMBOLE aufnehmen, dann node scripts/baueSymbole.js)`);
+});

@@ -846,3 +846,25 @@ test('GET /pool: keine eigene Absender-Spalte; Absender klein in der Lieferanten
   assert.doesNotMatch(zeile(mit), /rechnung@regel\.example/);
   db.close();
 });
+
+test('GET /pool Kacheln: keine Absender-Zeile; Absender klein statt Lieferant nur ohne bekannten Lieferanten (wie Tabelle)', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedBuchhaltungPerson(db);
+  const ohne = createJob(db, { eingangAm: '2026-11-19T08:00:00.000Z', quelle: 'lieferant', absender: 'rechnung@unbekannt.example', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  const mit = createJob(db, { eingangAm: '2026-11-19T09:00:00.000Z', quelle: 'lieferant', absender: 'rechnung@regel.example', dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+  db.prepare("UPDATE jobs SET lieferant = 'Regel AG' WHERE id = ?").run(mit);
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  const kachel = (id) => {
+    const start = res.text.indexOf(`id="pool-kachel-${id}"`);
+    return res.text.slice(start, res.text.indexOf('</dl>', start));
+  };
+  assert.doesNotMatch(kachel(mit), /<dt>Absender<\/dt>/);
+  assert.doesNotMatch(kachel(mit), /rechnung@regel\.example/);
+  assert.match(kachel(mit), /<div class="fw-semibold text-break">Regel AG/);
+  assert.match(kachel(ohne), /<small class="text-body-secondary text-break" title="Absender">rechnung@unbekannt\.example<\/small>/);
+  assert.doesNotMatch(kachel(ohne), /<dt>Absender<\/dt>/);
+  db.close();
+});

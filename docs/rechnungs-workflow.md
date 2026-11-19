@@ -121,10 +121,10 @@ schon vor der Kontierung (`src/services/vorabAngaben.js`):
 | Betrag | Kontierung → QR-Code → `betrag` aus dem n8n-Upload |
 | Rechnungsnummer | Kontierung bzw. vorher `rechnungsnummer` aus dem n8n-Upload |
 
-Eine eigene Spalte «Absender» gibt es in der Tabelle nicht mehr: Ist kein
-Lieferant bekannt, steht der Absender klein und grau in der Lieferanten-Zelle
-(wie in den Kacheln). Kontierungsformular und Detailansicht zeigen ihn
-weiterhin, er ist die Grundlage der Zuweisungsregeln.
+Den Absender zeigen Tabelle und Kacheln nicht mehr eigens (keine Spalte, keine
+Kachel-Zeile): Ist kein Lieferant bekannt, steht er klein und grau an der Stelle
+des Lieferanten. Kontierungsformular und Detailansicht zeigen ihn weiterhin, er
+ist die Grundlage der Zuweisungsregeln.
 
 Rot markiert sind nur **KI-Werte**: was n8n beim Eingang mitgeschickt hat
 (Rechnungsnummer, Betrag ohne QR-Code), solange nicht kontiert. Sie erscheinen

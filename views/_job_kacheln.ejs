@@ -11,12 +11,12 @@
         <% } else { %>
           <div class="thumbnail-placeholder kachel-vorschau-leer text-muted small">Keine Vorschau</div>
         <% } %>
-        <div class="fw-semibold text-break"><% if ((job.vorab?.lieferant ?? { wert: job.lieferant }).wert) { %><%- include('_vorab_wert', { angabe: (job.vorab?.lieferant ?? { wert: job.lieferant }) }) %><% } else { %><%= job.absender || '—' %><% } %> <%- include('_kommentar_marke', { jobId: job.id }) %></div>
+        <% /* Wie die Tabelle (_job_table.ejs): Lieferant als Titel; ohne bekannten Lieferanten der Absender klein und grau als
+             einziger Hinweis auf die Herkunft. Eine eigene Absender-Zeile gibt es nicht. */ %>
+        <% const _lieferant = job.vorab?.lieferant ?? { wert: job.lieferant }; %>
+        <div class="fw-semibold text-break"><% if (_lieferant.wert || !job.absender) { %><%- include('_vorab_wert', { angabe: _lieferant }) %><% } else { %><small class="text-body-secondary text-break" title="Absender"><%= job.absender %></small><% } %> <%- include('_kommentar_marke', { jobId: job.id }) %></div>
         <dl class="kachel-angaben small mb-0">
           <dt>Beleg</dt><dd class="text-break"><%- include('_beleg_nr', { jobId: job.id }) %> <%- include('_beleg_name', { job }) %></dd>
-          <% if ((job.vorab?.lieferant ?? { wert: job.lieferant }).wert && job.absender) { %>
-            <dt>Absender</dt><dd class="text-break"><%= job.absender %></dd>
-          <% } %>
           <dt>Quelle</dt><dd><%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %></dd>
           <dt>Eingang</dt><dd><%- include('_zeitpunkt', { wert: job.eingang_am }) %></dd>
           <dt>Konto</dt><dd><%= job.kontonummer || (job.hinweisKonto ? `Hinweis: ${job.hinweisKonto.kontonummer} — ${job.hinweisKonto.bezeichnung}` : '—') %></dd>

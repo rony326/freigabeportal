@@ -3,4 +3,4 @@
      Ohne JS ist es eine normale Checkbox (Bootstrap .btn-check); mit JS (kontierung-ki.js) setzt eine Änderung des Werts den
      Haken selbst und die rote Markierung verschwindet. */ -%>
 <input type="checkbox" class="btn-check" id="bestaetigt-<%= feld %>" name="bestaetigt_<%= feld %>" value="1" autocomplete="off" data-ki-haken="<%= feld %>"<%= bestaetigt ? " checked" : "" %>>
-<label class="btn btn-outline-success ki-haken" for="bestaetigt-<%= feld %>" title="Geprüft – Wert bestätigen"><%- include("_symbol", { name: "check" }) %><span class="visually-hidden">Automatisch erkannten Wert bestätigen</span></label>
+<label class="btn btn-outline-success ki-haken" for="bestaetigt-<%= feld %>" title="Geprüft – Wert bestätigen"><%- include("_symbol", { name: "check-lg" }) %><span class="visually-hidden">Automatisch erkannten Wert bestätigen</span></label>

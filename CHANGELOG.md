@@ -3,6 +3,15 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.8] – 2026-11-19
+
+Wartungs-Release zu 1.4.7. Release Notes: [docs/releases/v1.4.8.md](docs/releases/v1.4.8.md). Keine Migration, keine
+neuen Umgebungsvariablen, keine Änderung an n8n-Schnittstellen.
+
+- Behoben: Der Bestätigungs-Haken für KI-Werte (Kontierung, Aufsplitten) war unsichtbar – das Symbol fehlte im
+  Symbol-Sprite. Jetzt `check-lg`; ein neuer Test prüft jedes in Views eingebundene Symbol gegen den Sprite.
+- Kacheln: Zeile «Absender» entfällt, identisch zur Tabelle (Absender nur klein und grau, wenn kein Lieferant bekannt).
+
 ## [1.4.7] – 2026-11-19
 
 Schlankere Aufgabentabellen, und KI-Werte aus dem Upload müssen in Kontierung und Aufsplitten ausdrücklich bestätigt
@@ -10,7 +19,7 @@ werden; QR-Daten gelten als verlässlich. Release Notes: [docs/releases/v1.4.7.m
 Migration, keine neuen Umgebungsvariablen, keine Änderung an n8n-Schnittstellen.
 
 - Pool und eigene Aufgaben (Tabelle): Spalte «Absender» entfällt. Ohne bekannten Lieferanten steht der Absender klein
-  und grau in der Lieferanten-Zelle, wie bereits in den Kacheln.
+  und grau in der Lieferanten-Zelle.
 - Kontierung: Rechnungsnummer, Zahlungsziel und Betrag aus dem n8n-Upload sind rot umrandet und haben einen grünen
   Haken am Feldrand. Unverändert ohne Haken lehnt der Server das Speichern ab; ein selbst geänderter Wert gilt als
   bestätigt (`src/services/kiBestaetigung.js`, `views/_ki_bestaetigen.ejs`, `public/js/kontierung-ki.js`).

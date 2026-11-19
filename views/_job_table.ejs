@@ -18,7 +18,7 @@
             <td class="text-break"><%- include('_beleg_nr', { jobId: job.id }) %><br><small><%- include('_beleg_name', { job }) %></small></td>
             <td><%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %> <%- include('_kommentar_marke', { jobId: job.id }) %></td>
             <% /* Keine eigene Absender-Spalte: Ist kein Lieferant bekannt (Regel, QR-IBAN, Kontierung), ist der Absender der einzige
-                 Hinweis auf die Herkunft und steht klein in derselben Zelle – wie in den Kacheln (_job_kacheln.ejs). */ %>
+                 Hinweis auf die Herkunft und steht klein in derselben Zelle – gleich wie in den Kacheln (_job_kacheln.ejs). */ %>
             <% const _lieferant = job.vorab?.lieferant ?? { wert: job.lieferant }; %>
             <td><% if (_lieferant.wert || !job.absender) { %><%- include('_vorab_wert', { angabe: _lieferant }) %><% } else { %><small class="text-body-secondary text-break" title="Absender"><%= job.absender %></small><% } %></td>
             <td class="text-break"><%- include('_vorab_wert', { angabe: (job.vorab?.rechnungsnummer ?? { wert: job.rechnungsnummer }) }) %></td>

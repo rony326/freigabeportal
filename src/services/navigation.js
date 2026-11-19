@@ -20,6 +20,8 @@ export const SYMBOLE = [
   'bar-chart-line', 'key', 'tools',
   // Sonstige: Menü, Farbmodus, Neu laden, Tabelle, Kacheln, Empfänger-Kärtchen (Person)
   'list', 'circle-half', 'arrow-clockwise', 'table', 'grid', 'person', 'x-lg', 'question-circle',
+  // Bestätigungs-Haken für KI-Werte in Kontierung und Aufsplitten (views/_ki_bestaetigen.ejs)
+  'check-lg',
 ];
 
 // flag: Schlüssel in adminNav bzw. Portal-Option (null = immer sichtbar)

@@ -121,6 +121,11 @@ schon vor der Kontierung (`src/services/vorabAngaben.js`):
 | Betrag | Kontierung → QR-Code → `betrag` aus dem n8n-Upload |
 | Rechnungsnummer | Kontierung bzw. vorher `rechnungsnummer` aus dem n8n-Upload |
 
+Eine eigene Spalte «Absender» gibt es in der Tabelle nicht mehr: Ist kein
+Lieferant bekannt, steht der Absender klein und grau in der Lieferanten-Zelle
+(wie in den Kacheln). Kontierungsformular und Detailansicht zeigen ihn
+weiterhin, er ist die Grundlage der Zuweisungsregeln.
+
 Automatisch erkannte, noch nicht kontierte Werte (alles ausser dem
 Regel-Lieferanten) erscheinen **rot und gepunktet unterstrichen** mit dem
 Hinweis «Automatisch erkannt – bei der Kontierung prüfen» (auch für

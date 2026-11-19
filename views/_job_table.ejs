@@ -4,7 +4,7 @@
      the section, heading included, when a list is empty) — no empty-state branch needed here. */ %>
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>Vorschau</th><th>Beleg</th><th>Quelle</th><th>Absender</th><th>Lieferant</th><th>Rechnungsnr.</th><th>Konto</th><th class="text-end">Betrag</th><th>Eingang</th><th></th></tr></thead>
+      <thead><tr><th>Vorschau</th><th>Beleg</th><th>Quelle</th><th>Lieferant</th><th>Rechnungsnr.</th><th>Konto</th><th class="text-end">Betrag</th><th>Eingang</th><th></th></tr></thead>
       <tbody>
         <% jobs.forEach((job) => { %>
           <tr id="<%= idPrefix %>-row-<%= job.id %>" data-job-container>
@@ -17,8 +17,10 @@
             </td>
             <td class="text-break"><%- include('_beleg_nr', { jobId: job.id }) %><br><small><%- include('_beleg_name', { job }) %></small></td>
             <td><%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %> <%- include('_kommentar_marke', { jobId: job.id }) %></td>
-            <td><%= job.absender || '—' %></td>
-            <td><%- include('_vorab_wert', { angabe: (job.vorab?.lieferant ?? { wert: job.lieferant }) }) %></td>
+            <% /* Keine eigene Absender-Spalte: Ist kein Lieferant bekannt (Regel, QR-IBAN, Kontierung), ist der Absender der einzige
+                 Hinweis auf die Herkunft und steht klein in derselben Zelle – wie in den Kacheln (_job_kacheln.ejs). */ %>
+            <% const _lieferant = job.vorab?.lieferant ?? { wert: job.lieferant }; %>
+            <td><% if (_lieferant.wert || !job.absender) { %><%- include('_vorab_wert', { angabe: _lieferant }) %><% } else { %><small class="text-body-secondary text-break" title="Absender"><%= job.absender %></small><% } %></td>
             <td class="text-break"><%- include('_vorab_wert', { angabe: (job.vorab?.rechnungsnummer ?? { wert: job.rechnungsnummer }) }) %></td>
             <td><%= job.kontonummer || (job.hinweisKonto ? `Hinweis: ${job.hinweisKonto.kontonummer} — ${job.hinweisKonto.bezeichnung}` : '—') %></td>
             <td class="text-end text-nowrap betrag"><%- include('_vorab_wert', { angabe: (job.vorab?.betrag ?? { wert: job.betrag }) }) %></td>

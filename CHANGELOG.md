@@ -3,6 +3,14 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.7] – 2026-11-19
+
+Die Aufgabentabellen haben keine eigene Spalte «Absender» mehr. Release Notes: [docs/releases/v1.4.7.md](docs/releases/v1.4.7.md).
+Keine Migration, keine neuen Umgebungsvariablen.
+
+- Pool und eigene Aufgaben (Tabelle): Spalte «Absender» entfällt. Ohne bekannten Lieferanten steht der Absender klein
+  und grau in der Lieferanten-Zelle, wie bereits in den Kacheln.
+
 ## [1.4.6] – 2026-11-19
 
 Pool, Aufgaben und Admin-Vorgänge zeigen Lieferant, Rechnungsnummer und Betrag schon vor der Kontierung; automatisch

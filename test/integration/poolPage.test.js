@@ -263,7 +263,8 @@ test('GET /pool shows an em dash for Konto when a Pool job has not been kontiert
 
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   assert.equal(res.status, 200);
-  assert.match(res.text, /<td>—<\/td>\s*<td>/);
+  // Konto-Zelle (direkt vor der Betrag-Zelle) zeigt einen Strich.
+  assert.match(res.text, /<td>—<\/td>\s*<td class="text-end text-nowrap betrag">/);
   db.close();
 });
 
@@ -815,5 +816,26 @@ test('GET /pool zeigt den Lieferanten aus der Zuweisungsregel ohne Ungeprüft-Ma
   const res = await request(app).get('/pool').set('x-test-person-id', '50');
   const zeile = res.text.slice(res.text.indexOf(`id="pool-row-${id}"`), res.text.indexOf('</tr>', res.text.indexOf(`id="pool-row-${id}"`)));
   assert.match(zeile, /<td>Regel AG<\/td>/);
+  db.close();
+});
+
+test('GET /pool: keine eigene Absender-Spalte; Absender klein in der Lieferanten-Zelle nur ohne bekannten Lieferanten', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedBuchhaltungPerson(db);
+  const ohne = createJob(db, { eingangAm: '2026-11-19T08:00:00.000Z', quelle: 'lieferant', absender: 'rechnung@unbekannt.example', dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  const mit = createJob(db, { eingangAm: '2026-11-19T09:00:00.000Z', quelle: 'lieferant', absender: 'rechnung@regel.example', dateiname: 'b.pdf', pdfPfad: '/tmp/b.pdf' });
+  db.prepare("UPDATE jobs SET lieferant = 'Regel AG' WHERE id = ?").run(mit);
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  const zeile = (id) => {
+    const start = res.text.indexOf(`id="pool-row-${id}"`);
+    return res.text.slice(start, res.text.indexOf('</tr>', start));
+  };
+  assert.doesNotMatch(res.text, /<th>Absender<\/th>/);
+  assert.match(zeile(ohne), /<td><small class="text-body-secondary text-break" title="Absender">rechnung@unbekannt\.example<\/small><\/td>/);
+  assert.match(zeile(mit), /<td>Regel AG<\/td>/);
+  assert.doesNotMatch(zeile(mit), /rechnung@regel\.example/);
   db.close();
 });

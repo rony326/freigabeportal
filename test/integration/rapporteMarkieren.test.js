@@ -79,11 +79,11 @@ test('nach dem Markieren fehlt der Rapport in der Kontierungsliste des Markierer
   pool.use(loadNavFlags(t.db, config));
   pool.use('/pool', requireLogin(), createPoolPageRouter({ db: t.db, config }));
   const davor = await request(pool).get('/pool').set('x-test-person-id', '1');
-  assert.match(davor.text, /rapport\.pdf/, 'Testaufbau: vor dem Markieren steht der Job in der Kontierungsliste');
+  assert.match(davor.text, new RegExp(`title="Belegnummer">#${t.jobId}<`), 'Testaufbau: vor dem Markieren steht der Job in der Kontierungsliste');
   assert.equal((await markiere(t, t.jobId, { empfaengerIds: ['2'] })).status, 302);
   const res = await request(pool).get('/pool').set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.doesNotMatch(res.text, /rapport\.pdf/);
+  assert.doesNotMatch(res.text, new RegExp(`title="Belegnummer">#${t.jobId}<`));
   assert.doesNotMatch(res.text, new RegExp(`/kontierung/${t.jobId}\\b`));
   t.db.close();
 });

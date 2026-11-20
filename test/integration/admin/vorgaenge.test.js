@@ -61,19 +61,23 @@ function seed(db) {
   return jobId;
 }
 
+// Die Liste zeigt den Beleg nur als Nummer (#id), nicht mehr mit Dateiname (Version 1.4.11).
+const belegNr = (id) => new RegExp(`title="Belegnummer">#${id}<`);
+
 function stand(text) {
   return text.match(/name="stand" value="([^"]+)"/)[1];
 }
 
 test('Liste: 401 ohne Session, 403 ohne Recht, 200 für Manager und Admin mit zuständiger Person und Prognose', async () => {
   const db = openDatabase(':memory:');
-  seed(db);
+  const jobId = seed(db);
   const app = buildApp(db);
   assert.equal((await request(app).get('/admin/vorgaenge')).status, 401);
   assert.equal((await request(app).get('/admin/vorgaenge').set('x-test-person-id', '77')).status, 403);
   const res = await request(app).get('/admin/vorgaenge').set('x-test-person-id', '55');
   assert.equal(res.status, 200);
-  assert.match(res.text, /rechnung\.pdf/);
+  assert.match(res.text, belegNr(jobId));
+  assert.doesNotMatch(res.text, /rechnung\.pdf/, 'Dateiname steht nicht mehr in der Liste');
   assert.match(res.text, /P1 M/);
   assert.match(res.text, /P3 M/);
   assert.doesNotMatch(res.text, />Umhängen</);
@@ -205,7 +209,7 @@ async function seedRapport(t, { empfaenger = ['2', '3'] } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'vorgaenge-rapport-'));
   const db = openDatabase(':memory:');
   t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
-  seed(db);
+  const rechnungId = seed(db);
   setConfigValue(db, 'modul_rapporte_aktiv', '1');
   setConfigValue(db, 'zeitstempel_tsa_url', '');
   const config = { ...CONFIG, jobsDir: dir, tsaTrustRequired: false };
@@ -225,7 +229,7 @@ async function seedRapport(t, { empfaenger = ['2', '3'] } = {}) {
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, config));
   app.use('/admin/vorgaenge', requirePermission(db, config, 'vorgaenge_einsehen'), createVorgaengeRouter({ db, config, mailer: { async sendMail() {} } }));
-  return { db, app, jobId };
+  return { db, app, jobId, rechnungId };
 }
 
 const ersetzen = (x, kid, body, person = '99') => request(x.app).post(`/admin/vorgaenge/${x.jobId}/rapport/${kid}/ersetzen`).set('x-test-person-id', person).type('form').send(body);
@@ -241,10 +245,11 @@ test('Rapport erscheint mit Art "Rapport" und "1 von 2" im Dashboard, Filter typ
   assert.match(liste.text, /Wartet auf Kenntnisnahme/);
   assert.match(liste.text, /1 von 2/);
   const nurRapport = await request(x.app).get('/admin/vorgaenge?typ=rapport').set('x-test-person-id', '99');
-  assert.match(nurRapport.text, /rapport\.pdf/);
-  assert.doesNotMatch(nurRapport.text, /rechnung\.pdf/);
+  assert.match(nurRapport.text, belegNr(x.jobId));
+  assert.doesNotMatch(nurRapport.text, belegNr(x.rechnungId));
   const nurRechnung = await request(x.app).get('/admin/vorgaenge?art=rechnung').set('x-test-person-id', '99');
-  assert.doesNotMatch(nurRechnung.text, /rapport\.pdf/);
+  assert.match(nurRechnung.text, belegNr(x.rechnungId));
+  assert.doesNotMatch(nurRechnung.text, belegNr(x.jobId));
   const detail = await request(x.app).get(`/admin/vorgaenge/${x.jobId}`).set('x-test-person-id', '99');
   assert.equal(detail.status, 200);
   assert.match(detail.text, /Zur Kenntnis weitergegeben/);

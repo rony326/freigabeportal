@@ -3,6 +3,16 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.11] – 2026-11-20
+
+Listen ohne Dateiname. Release Notes: [docs/releases/v1.4.11.md](docs/releases/v1.4.11.md). Keine Migration, keine
+neuen Umgebungsvariablen, keine Änderung an n8n-Schnittstellen.
+
+- Pool, eigene Aufgaben und Admin «Vorgänge» (Tabelle und Kacheln) zeigen den Beleg nur noch als Nummer (`#15`), ohne
+  PDF-Dateiname. Lieferant, Rechnungsnummer und Betrag stehen in eigenen Spalten. Der Dateiname bleibt im Seitentitel,
+  auf der Vorgangs-Detailseite, im Auswahlfeld «Zuweisen» und in Listen ohne Lieferant (Abgeschlossen, Abgelehnt,
+  Altfälle, Sync).
+
 ## [1.4.10] – 2026-11-19
 
 Unvollständige Kontierung zeigt jetzt einen Hinweis statt nur hochzuscrollen. Release Notes:

@@ -60,7 +60,7 @@
               <tr class="<%= v.haengt ? 'table-danger' : (v.ueberfaellig ? 'table-warning' : '') %>">
                 <td><%= v.eingangAm.slice(0, 10) %><br><small class="text-body-secondary">seit <%= (v.seit || '').slice(0, 10) %></small></td>
                 <td><%= v.artLabel %></td>
-                <td><a href="/admin/vorgaenge/<%= v.id %>"><%- include('../_vorab_wert', { angabe: v.gegenueberAngabe }) %></a> <%- include('../_kommentar_marke', { jobId: v.id }) %><br><%- include('../_beleg_nr', { jobId: v.id }) %> <small class="text-body-secondary"><%= v.dateiname %></small></td>
+                <td><a href="/admin/vorgaenge/<%= v.id %>"><%- include('../_vorab_wert', { angabe: v.gegenueberAngabe }) %></a> <%- include('../_kommentar_marke', { jobId: v.id }) %><br><%- include('../_beleg_nr', { jobId: v.id }) %></td>
                 <td><%- include('../_vorab_wert', { angabe: v.betragAngabe }) %></td>
                 <td><%= v.kontoLabel %></td>
                 <td>

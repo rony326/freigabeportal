@@ -25,7 +25,7 @@ import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createPoolPageRouter } from '../../src/routes/poolPage.js';
-import { divBereiche } from '../helpers/ansichtParitaet.js';
+import { divBereiche, ansichtPaare } from '../helpers/ansichtParitaet.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 
 function buildTestApp(db, mailer = { async sendMail() {} }) {
@@ -206,6 +206,26 @@ test('GET /pool lists an unzugewiesen job in the Pool section with a thumbnail s
   // in the actual page source — this asserts the real escaped form, not the raw URL string.
   assert.match(res.text, /\/downloads\/\d+\?expires=\d+&amp;signature=[0-9a-f]{64}/);
   assert.match(res.text, new RegExp(`data-job-id="${id}"`));
+  db.close();
+});
+
+test('GET /pool zeigt den Beleg in Liste und Kacheln nur als Nummer, ohne Dateiname (Version 1.4.11)', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedBuchhaltungPerson(db);
+  const id = createJob(db, { eingangAm: '2026-08-15T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'scan_0042.pdf', pdfPfad: '/tmp/a.pdf' });
+  const app = buildTestApp(db);
+
+  const res = await request(app).get('/pool').set('x-test-person-id', '50');
+  assert.equal(res.status, 200);
+  const paare = ansichtPaare(res.text);
+  assert.ok(paare.length > 0, 'Pool-Liste wird angezeigt');
+  for (const { tabelle, kacheln } of paare) {
+    for (const bereich of [tabelle, kacheln]) {
+      assert.match(bereich, new RegExp(`title="Belegnummer">#${id}<`));
+      assert.doesNotMatch(bereich, /scan_0042\.pdf/);
+    }
+  }
   db.close();
 });
 

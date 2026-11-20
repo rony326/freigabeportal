@@ -15,7 +15,9 @@
                 <span class="thumbnail-placeholder text-muted">Keine Vorschau</span>
               <% } %>
             </td>
-            <td class="text-break"><%- include('_beleg_nr', { jobId: job.id }) %><br><small><%- include('_beleg_name', { job }) %></small></td>
+            <% /* Beleg nur als Nummer: Lieferant, Rechnungsnr. und Betrag stehen in eigenen Spalten, der Dateiname aus n8n sagt
+                 kaum etwas. Er bleibt im Seitentitel (Kontierung, Freigabe …) und im Vorschau-Link (aria-label). */ %>
+            <td><%- include('_beleg_nr', { jobId: job.id }) %></td>
             <td><%= job.quelle === 'scanner' ? 'Scanner' : job.quelle === 'spesen' ? 'Spesen' : 'Lieferant' %> <%- include('_kommentar_marke', { jobId: job.id }) %></td>
             <% /* Keine eigene Absender-Spalte: Ist kein Lieferant bekannt (Regel, QR-IBAN, Kontierung), ist der Absender der einzige
                  Hinweis auf die Herkunft und steht klein in derselben Zelle – gleich wie in den Kacheln (_job_kacheln.ejs). */ %>

@@ -2,6 +2,8 @@
 
 Stand: 2026-11-26 · Status: Entwurf zur Freigabe
 
+Nachtrag: Veröffentlicht als Version 1.4.12; Anhangsgrenze auf 10 MB gesenkt.
+
 ## Absicht
 
 Wer Spesen einreicht, erfährt heute nur von Ablehnungen. Neu bekommt die einreichende Person eine Bestätigung, sobald ihre
@@ -81,7 +83,8 @@ ist.
 
 Hat eine freigegebene Position keine Kopie und ist ihr Original-PDF bereits gelöscht (typisch: n8n meldet den Versand erst,
 nachdem die Bereinigung gelaufen ist), wird die Abrechnung beim Entscheiden mit Vermerk «keine» abgeschlossen: **keine Mail**,
-Warnung im Server-Log mit der Nummer der Abrechnung. Das verhindert verspätete Bestätigungen ohne Belege (Anti-Ziel). Ist das
+Warnung im Server-Log mit der Nummer der Abrechnung. Ist der Belegspeicher selbst nicht
+verfügbar (Verzeichnis fehlt, nicht lesbar oder leer), bleibt die Abrechnung offen. Das verhindert verspätete Bestätigungen ohne Belege (Anti-Ziel). Ist das
 Original noch da und scheitert nur das Kopieren (Hash weicht ab, Datenträgerfehler), geht die Mail raus, die Position ohne
 Anhang mit Hinweis, und eine Warnung wird protokolliert.
 
@@ -136,7 +139,7 @@ Prüfung den Marker trotzdem (Vermerk «deaktiviert»), damit beim Wiedereinscha
 
 - **Eigene Entscheidung:** `geloescht` zählt wie `abgelehnt` als «nicht durchgekommen».
 - **Eigene Entscheidung:** Schalter mit Standard «an» (Abschnitt 6).
-- **Eigene Entscheidung:** Übersteigen die Anhänge zusammen 15 MB, geht die Mail ohne Anhänge raus, mit dem Hinweis, die
+- **Eigene Entscheidung:** Übersteigen die Anhänge zusammen 10 MB, geht die Mail ohne Anhänge raus, mit dem Hinweis, die
   Belege bei der Finanzverwaltung anzufordern, und `/admin/mails` zeigt eine Warnung. Spesenbelege sind in der Regel klein;
   eine Aufteilung auf mehrere Mails wäre unverhältnismässig.
 - **Eigene Entscheidung:** Keine IBAN in der Mail (Nicht-Ziel), auch nicht maskiert.

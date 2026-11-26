@@ -129,9 +129,21 @@ gelistet noch in den Pool zurückgesetzt.
 **Admin → Betrieb → Sync-Übersicht** listet jeden hängenden Job mit Name/Grund und
 bietet einen Force-Freigeben-Button:
 
-- für `zugewiesen`/`abgelehnt`: vollständiger Reset auf `unzugewiesen`
+- für `zugewiesen`/`abgelehnt` (ohne Spesen): vollständiger Reset auf `unzugewiesen`
   (unbedenklich — es wurde bei diesen Stufen noch keine Freigabe erteilt);
 - für `freigabe2`: **kein** Reset in den Pool (das würde die bereits
   erteilte, protokollierte Freigabe 1 verwerfen) — stattdessen dieselbe
   Admin-Eskalation, die auch ein regulärer SYNC-8-Interessenskonflikt
   auslöst (siehe [rechnungs-workflow.md](rechnungs-workflow.md)).
+
+**Spesen kommen nie in den Pool**, weil sie dort unsichtbar wären und ihr Konto
+verlören; die Abrechnung würde nie erledigt. Eine hängende Spesenposition in
+`zugewiesen` wird gelistet, statt des Buttons steht dort ein Verweis auf
+**Admin → Laufende Vorgänge**; dort wird sie
+[umgehängt](rechnungs-workflow.md#8-admin-eingriff-laufende-vorgänge-umhängen)
+(Rechte `vorgaenge_einsehen` und `workflow_eingreifen`). Die Zielperson braucht
+eine Konto-Rolle und darf weder einreichende Person noch Konfliktmelderin sein.
+Der Server weist ein Freigeben mit 409 ab. In `freigabe2` gilt für Spesen
+dieselbe Admin-Eskalation wie für Rechnungen. Eine Spesenposition, die vor
+Version 1.4.12 in den Pool freigegeben wurde, hat kein Konto mehr und lässt sich
+nicht umhängen; sie muss manuell geklärt werden.

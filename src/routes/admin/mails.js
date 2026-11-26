@@ -13,7 +13,7 @@ export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next
 
   // GET /admin/mails – das Protokoll (neueste zuerst).
   router.get('/', (req, res) => {
-    // Eine Spesen-Bestätigung ohne jeden Anhang (z. B. Belege über 15 MB) oder mit weniger Anhängen als freigegebenen
+    // Eine Spesen-Bestätigung ohne jeden Anhang (z. B. Belege über 10 MB) oder mit weniger Anhängen als freigegebenen
     // Positionen wird markiert.
     const mails = listMailLog(db).map((mail) => {
       if (mail.typ !== 'spesen-bestaetigung') return mail;

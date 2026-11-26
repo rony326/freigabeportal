@@ -355,7 +355,7 @@ Vollständiges Protokoll aller Benachrichtigungen (`mail_log`, siehe
 Versuch und Fehlerdetails. „Erneut versenden“ für `fehlgeschlagen`e Zeilen
 legt eine neue Zeile an (samt den Anhängen der ursprünglichen Mail); „Jetzt erneut versuchen“ versucht eine noch
 eingereihte Zeile sofort, ohne Duplikat. Eine Spesen-Bestätigung ohne jeden
-Anhang (Belege zusammen über 15 MB oder keine Kopie möglich) trägt unter
+Anhang (Belege zusammen über 10 MB oder keine Kopie möglich) trägt unter
 „Typ“ das Abzeichen **Ohne Belege eingereiht**, eine mit weniger Anhängen als
 an Bexio gemeldeten Positionen der Abrechnung das Abzeichen **Nicht alle Belege
 dabei** — dann der Person die fehlenden Belege auf Anfrage anderweitig
@@ -368,7 +368,10 @@ Zeigt den Verlauf der letzten Sync-Läufe, erlaubt das Konfigurieren der
 Sicherheitsschwellen (SYNC-1) (die Empfänger der Fehler-Mails stehen unter [Benachrichtigungen](#benachrichtigungen-adminbenachrichtigungen) → „Sync-Fehler“) und listet **blockierte Rechnungen**
 ("stalled jobs") mit einer Force-Freigeben-Funktion. Abgelehnte
 Spesenpositionen sind endgültig: sie erscheinen dort nicht und lassen sich
-nicht freigeben. Details:
+nicht freigeben. Hängende Spesen in `zugewiesen` werden gelistet, aber nie in
+den Pool freigegeben; die Seite verweist auf
+[Laufende Vorgänge](rechnungs-workflow.md#8-admin-eingriff-laufende-vorgänge-umhängen)
+zum Umhängen. Details:
 [personen-sync.md](personen-sync.md).
 
 ## Abgelehnte Rechnungen (`/admin/abgelehnt`)

@@ -521,7 +521,9 @@ andere Person mit Konto-Rolle übergeben:
 Die bisher zuständige Person verliert den Zugriff. Ausgeschlossen sind die
 aktuell zuständige Person, bei Freigabe 2 die Person mit Freigabe 1 und alle
 Konfliktmelder dieser Stufe, bei Kontierung alle Konfliktmelder bei Freigabe 1,
-bei Spesen die einreichende Person. Abgelehnte Spesen sind nicht umhängbar.
+bei Spesen die einreichende Person. Abgelehnte Spesen sind nicht umhängbar,
+ebenso eine Spesenposition ohne Konto. Hängende Spesen vor Freigabe 2 werden
+nur hier gelöst, nicht über die [Sync-Übersicht](personen-sync.md).
 Die strikte Freigeber1-Prüfung bleibt in Kraft. Jeder Eingriff erzeugt einen
 `freigaben`-Eintrag `admin_umzuweisung` und Mails (`admin-umzuweisung`, immer
 sofort) an neue und bisherige Person.

@@ -253,3 +253,50 @@ test('failure writing audit evidence rolls back all sync settings', async (t) =>
   assert.equal(getConfigValue(db, 'sync_max_deaktivierung_prozent'), '50');
   assert.equal(getConfigValue(db, 'sync_max_deaktivierung_anzahl'), '10');
 });
+
+// Hängende Spesenposition: nie in den Pool (dort unsichtbar), sondern unter «Laufende Vorgänge» umhängen.
+function haengendeSpesen(db, status, inaktiv) {
+  seedDefaults(db);
+  seedAdmin(db);
+  for (const id of ['1', '2', '3', '4', '5']) upsertPerson(db, { id, vorname: 'Person', nachname: id, email: `p${id}@example.org`, gruppen: ['10'], loggedInNow: false });
+  const kontoId = createKonto(db, { kontonummer: '3000', bezeichnung: 'Unterhalt', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const jobId = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle: 'spesen', absender: null, dateiname: 'spesen.pdf', pdfPfad: '/tmp/spesen.pdf' });
+  db.prepare("UPDATE jobs SET status = ?, zugewiesen_an = '1', eingereicht_von = '5', konto_id = ? WHERE id = ?").run(status, kontoId, jobId);
+  db.prepare('UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = ?').run(inaktiv);
+  return { jobId, kontoId };
+}
+
+test('hängende Spesenposition: Verweis auf Laufende Vorgänge statt Freigeben-Knopf, Freigeben wird abgelehnt', async (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  const { jobId, kontoId } = haengendeSpesen(db, 'zugewiesen', '1');
+  const app = buildTestApp(db);
+
+  const seite = await request(app).get('/admin/sync').set('x-test-person-id', '99');
+  assert.match(seite.text, /spesen\.pdf/);
+  assert.match(seite.text, new RegExp(`href="/admin/vorgaenge/${jobId}"`));
+  assert.doesNotMatch(seite.text, new RegExp(`/admin/sync/stalled/${jobId}/freigeben`));
+
+  const vorher = db.prepare('SELECT count(*) AS n FROM audit_ereignisse').get().n;
+  const res = await request(app).post(`/admin/sync/stalled/${jobId}/freigeben`).set('x-test-person-id', '99').type('form').send({ begruendung: 'Person ausgetreten' });
+  assert.equal(res.status, 409);
+  assert.match(res.text, /Spesen.*Laufende Vorgänge/s);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.zugewiesen_an, '1');
+  assert.equal(job.konto_id, kontoId);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM audit_ereignisse').get().n, vorher);
+});
+
+test('hängende Spesenposition in Freigabe 2 wird weiterhin an die Admin-Gruppe eskaliert', async (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  const { jobId } = haengendeSpesen(db, 'freigabe2', '3');
+  const app = buildTestApp(db);
+  const seite = await request(app).get('/admin/sync').set('x-test-person-id', '99');
+  assert.match(seite.text, new RegExp(`/admin/sync/stalled/${jobId}/freigeben`));
+  const res = await request(app).post(`/admin/sync/stalled/${jobId}/freigeben`).set('x-test-person-id', '99').type('form').send({ begruendung: 'Person ausgetreten' });
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, jobId).status, 'freigabe2');
+  assert.equal(getJobById(db, jobId).freigabe2_eskaliert_an_admin, 1);
+});

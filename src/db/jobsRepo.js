@@ -792,7 +792,8 @@ export function getEffectiveFreigeber2Id(job, konto) {
 // ist die handelnde Person zugewiesen_an direkt; bei 'freigabe2' der effektive Freigeber 2, ausser der Vorgang trägt schon
 // das Admin-Eskalationsflag aus SYNC-8 — ein an den Admin geleiteter Vorgang "hängt" nach dieser Definition nie (ein
 // gleichzeitiger Ausfall der gesamten Portal-Admin-Gruppe ist nicht vorgesehen). Eine abgelehnte Spesenposition ist endgültig
-// (kein Überarbeiten-Weg) und hängt deshalb nie; sie darf auch nicht in den Pool zurück, wo Spesen unsichtbar wären.
+// (kein Überarbeiten-Weg) und hängt deshalb nie. Eine zugewiesene Spesenposition kann hängen; sie wird unter Admin → Laufende
+// Vorgänge umgehängt (forceReleaseJob gibt Spesen nie frei).
 // Vorgänge, bei denen die aktuell nötige Person nicht mehr handeln kann (deaktiviert/nicht auflösbar).
 export function listStalledJobs(db) {
   const ergebnisse = [];
@@ -818,7 +819,7 @@ export function listStalledJobs(db) {
 }
 
 // Setzt einen hängenden 'zugewiesen'/'abgelehnt'-Vorgang auf 'unzugewiesen' zurück, damit ihn jede Person neu beanspruchen
-// kann — in diesen Phasen ist noch nichts Unumkehrbares passiert (keine Freigabe 1/2 verbucht), der vollständige Reset
+// kann. Nie für Spesen: Im Pool sind sie unsichtbar und verlören ihr Konto, die Abrechnung würde nie erledigt. In diesen Phasen ist noch nichts Unumkehrbares passiert (keine Freigabe 1/2 verbucht), der vollständige Reset
 // ist also sicher. Löscht dieselben Felder, die releaseJob/wiederOeffnenJob schon löschen.
 // Gibt einen hängenden Vorgang ohne Zutun der Person in den Pool frei (Systemaktion des Personen-Syncs).
 export function forceReleaseJob(db, jobId) {
@@ -832,7 +833,7 @@ export function forceReleaseJob(db, jobId) {
            abgelehnt_von = NULL, ablehnungsgrund = NULL,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
            pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
-       WHERE id = ? AND status IN ('zugewiesen', 'abgelehnt') AND NOT (quelle = 'spesen' AND status = 'abgelehnt')`
+       WHERE id = ? AND status IN ('zugewiesen', 'abgelehnt') AND quelle != 'spesen'`
     )
     .run(jobId);
   return result.changes > 0;

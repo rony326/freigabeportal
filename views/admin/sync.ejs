@@ -62,7 +62,9 @@
               <td><%= eintrag.akteurName %></td>
               <td><%= eintrag.grund === 'inaktiv' ? 'Person deaktiviert' : 'Person in ChurchTools nicht auflösbar' %></td>
               <td>
-                <% if (locals.canIntervene) { %><form method="post" action="/admin/sync/stalled/<%= eintrag.job.id %>/freigeben">
+                <% if (eintrag.job.quelle === 'spesen' && eintrag.job.status !== 'freigabe2') { %>
+                  <span class="small">Spesen: unter <a href="/admin/vorgaenge/<%= eintrag.job.id %>">Laufende Vorgänge</a> umhängen.</span>
+                <% } else if (locals.canIntervene) { %><form method="post" action="/admin/sync/stalled/<%= eintrag.job.id %>/freigeben">
                   <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
                   <input class="form-control form-control-sm" name="begruendung" required maxlength="2000" aria-label="Begruendung" placeholder="Begruendung">
                   <button type="submit" class="btn btn-outline-secondary btn-sm">Freigeben</button>

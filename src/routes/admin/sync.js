@@ -76,7 +76,8 @@ export function createSyncRouter({ db, config = { churchtools: {} }, csrfProtect
     res.redirect('/admin/sync?gespeichert=1');
   });
 
-  // POST /admin/sync/stalled/:jobId/freigeben – gibt einen hängenden Vorgang frei (Pool) bzw. eskaliert ihn an die Admin-Gruppe (Freigabe 2).
+  // POST /admin/sync/stalled/:jobId/freigeben – gibt einen hängenden Vorgang frei (Pool) bzw. eskaliert ihn an die Admin-Gruppe (Freigabe 2);
+  // Spesen vor Freigabe 2 werden abgewiesen (Umhängen unter /admin/vorgaenge).
   router.post('/stalled/:jobId/freigeben', requirePermission(db, config, 'workflow_eingreifen'), csrfProtection, (req, res, next) => {
     const jobId = Number(req.params.jobId);
     const reason = typeof req.body?.begruendung === 'string' ? req.body.begruendung.trim() : '';
@@ -89,6 +90,13 @@ export function createSyncRouter({ db, config = { churchtools: {} }, csrfProtect
       if (!stalled) {
         db.exec('ROLLBACK');
         return res.status(409).render('error', { message: 'Der Vorgang ist nicht mehr blockiert.' });
+      }
+      // Spesen dürfen nie in den Pool (dort unsichtbar); in Freigabe 2 bleibt die Eskalation an die Admin-Gruppe.
+      if (stalled.job.quelle === 'spesen' && stalled.job.status !== 'freigabe2') {
+        db.exec('ROLLBACK');
+        return res.status(409).render('error', {
+          message: 'Spesen-Positionen können nicht in den Pool freigegeben werden. Bitte hänge sie unter «Laufende Vorgänge» an eine andere Person um.',
+        });
       }
       if (!forceReleaseJob(db, jobId)) forceEskalierenFreigabe2AnAdmin(db, jobId);
       db.prepare(`INSERT INTO audit_ereignisse

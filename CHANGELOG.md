@@ -3,9 +3,9 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
-## [1.5.0] – 2026-11-26
+## [1.4.12] – 2026-11-26
 
-Spesen-Bestätigung an die einreichende Person. Release Notes: [docs/releases/v1.5.0.md](docs/releases/v1.5.0.md).
+Spesen-Bestätigung an die einreichende Person. Release Notes: [docs/releases/v1.4.12.md](docs/releases/v1.4.12.md).
 **Datenbank-Migration** (automatisch beim Start, vorher Backup ziehen), keine neuen Umgebungsvariablen. **Vor dem Update
 prüfen:** n8n muss `…/bexio-versand-bestaetigen` vor oder mit dem Update aufrufen (Schnittstelle unverändert); ohne die
 Meldung abgeschlossene Vorgänge bekommen keine Bestätigung, auch nicht bei Nachmeldung nach der PDF-Bereinigung.
@@ -16,7 +16,9 @@ Meldung abgeschlossene Vorgänge bekommen keine Bestätigung, auch nicht bei Nac
 - Neu: Mails können PDF-Anhänge tragen; Zustellung mit Hashprüfung und Wiederholung. Das Mail-Protokoll markiert eine
   Bestätigung ohne oder mit unvollständigen Belegen. Ist ein Beleg schon gelöscht und nicht kopiert, geht keine Mail raus.
 - Geändert: `pdf-bereinigung` holt vor dem Löschen übersehene Bestätigungen nach und räumt Beleg-Kopien auf.
-- Behoben: Abgelehnte Spesen lassen sich nicht mehr über den Personen-Sync in den Pool zurücksetzen.
+- Behoben: Spesen lassen sich nicht mehr über die Sync-Übersicht in den Pool zurücksetzen (dort wären sie unsichtbar);
+  hängende Positionen werden unter «Laufende Vorgänge» umgehängt.
+- Anhänge einer Bestätigung zusammen höchstens 10 MB. Ist der Belegspeicher nicht verfügbar, bleibt die Abrechnung offen.
 
 ## [1.4.11] – 2026-11-20
 

@@ -24,6 +24,8 @@ export function istUmhaengbar(job) {
   // Rapporte haben keine einzelne zuständige Person; Empfänger werden einzeln ersetzt/entfernt.
   if (job.status === 'kenntnisnahme') return false;
   if (job.status === 'abgelehnt' && job.quelle === 'spesen') return false;
+  // Eine Spesenposition ohne Konto (früher über die Sync-Übersicht in den Pool freigegeben) hätte keine Prüfseite.
+  if (job.quelle === 'spesen' && !job.konto_id) return false;
   return true;
 }
 

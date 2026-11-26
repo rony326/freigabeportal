@@ -136,6 +136,11 @@ Entschieden wird je Abrechnung höchstens einmal
 - Schalter **Admin → Einstellungen → Benachrichtigungen → Spesen freigegeben**
   aus → keine Mail, auch nicht nachträglich;
 - einreichende Person ohne Mailadresse → keine Mail (Meldung im Server-Log);
+- Belegspeicher nicht verfügbar (Verzeichnis fehlt, ist nicht lesbar oder ganz
+  leer, z. B. Datenträger nicht eingehängt) → die Abrechnung bleibt offen, eine
+  Warnung steht im Server-Log, `pdf-bereinigung` prüft sie nachts erneut. Ein
+  Speicher, der Dateien enthält, aber nicht die richtigen (falsch eingehängt),
+  wird nicht erkannt;
 - sonst wird die Mail zusammen mit dem Marker in einer Transaktion eingereiht.
 
 **Auslöser:** eine neue Bexio-Versandquittung, eine Ablehnung in
@@ -149,7 +154,7 @@ nie im Digest; scheitert der Versand, wiederholt `mail-zustellung` ihn.
 ([`spesen_beleg_kopien`](datenmodell.md#spesen_beleg_kopien)), nur wenn es dem
 Hash im Exportnachweis entspricht. Der Anhang heisst
 `Spesen-<Abrechnung>-<Position>.pdf`. Sind die Belege zusammen grösser als
-15 MB, geht die Mail ohne Anhänge raus und verweist an die Finanzverwaltung;
+10 MB, geht die Mail ohne Anhänge raus und verweist an die Finanzverwaltung;
 lässt sich das noch vorhandene Original einer Position nicht kopieren (Hash
 weicht ab, Datenträgerfehler), geht der Rest mit einem entsprechenden Hinweis
 mit. Mails ganz ohne oder mit unvollständigen Belegen sind im
@@ -226,8 +231,10 @@ Die gespeicherten Finanzdaten sind bei Zugriffsschutz und Aufbewahrung zu beruec
   Bearbeitungsseite — eine abgelehnte Position bleibt in "Meine Spesen"
   sichtbar (mit Ablehnungsgrund); für eine Korrektur reicht die Person
   neu ein. Die Ablehnung ist **endgültig**: Auch der Personen-Sync listet eine
-  abgelehnte Spesenposition nicht als hängend und kann sie nicht in den Pool
-  zurücksetzen (siehe [personen-sync.md](personen-sync.md)).
+  abgelehnte Spesenposition nicht als hängend. Der Personen-Sync gibt Spesen
+  generell nie in den Pool zurück; eine hängende, noch nicht geprüfte Position
+  wird unter «Laufende Vorgänge» umgehängt (siehe
+  [personen-sync.md](personen-sync.md)).
 - **Keine gemischten Sammelabrechnungen** aus Rechnungs- und
   Spesen-Positionen.
 - **Kein Live-Abruf bei Abholung**: Zahlungsdaten kommen aus dem Freigabe-Snapshot.

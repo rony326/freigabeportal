@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
@@ -251,6 +251,33 @@ test('Kopie-Datei verloren und Original gelöscht → keine Mail', (t) => {
   assert.equal(listMailLog(s.db).length, 0);
 });
 
+// Datenspeicher weg (Verzeichnis fehlt, ist keines oder ein leerer Einhängepunkt): nichts abschliessen, später wiederholen.
+for (const [name, zerstoere] of [
+  ['Belegverzeichnis fehlt', (dir) => rmSync(dir, { recursive: true })],
+  ['Belegverzeichnis ist eine Datei', (dir) => { rmSync(dir, { recursive: true }); writeFileSync(dir, 'x'); }],
+  ['Belegverzeichnis ist leer (nicht eingehängt)', (dir) => { rmSync(dir, { recursive: true }); mkdirSync(dir); }],
+]) {
+  test(`${name} → offen statt «keine», Nachholen klappt nach Rückkehr`, (t) => {
+    const s = setup(t);
+    const warnungen = t.mock.method(console, 'warn', () => {});
+    const p = s.position({ versandt: true });
+    const gesichert = `${s.config.jobsDir}.weg`;
+    renameSync(s.config.jobsDir, gesichert);
+    mkdirSync(s.config.jobsDir);
+    zerstoere(s.config.jobsDir);
+    assert.deepEqual(s.pruefe(), { ergebnis: 'offen' });
+    assert.deepEqual(s.stand(), { bestaetigung_am: null, bestaetigung_vermerk: null });
+    assert.equal(listMailLog(s.db).length, 0);
+    assert.equal(warnungen.mock.callCount(), 1);
+    assert.match(warnungen.mock.calls[0].arguments[0], new RegExp(`Spesen-Bestätigung ${s.abrechnungId}: Belegspeicher`));
+    rmSync(s.config.jobsDir, { recursive: true, force: true });
+    renameSync(gesichert, s.config.jobsDir);
+    const ergebnis = s.pruefe();
+    assert.equal(ergebnis.ergebnis, 'eingereiht');
+    assert.deepEqual(readFileSync(listMailAnhaenge(s.db, ergebnis.mailId)[0].pfad), p.bytes);
+  });
+}
+
 test('Schalter aus → deaktiviert, keine Mail', (t) => {
   const s = setup(t);
   s.position({ versandt: true });
@@ -277,7 +304,7 @@ test('Abrechnung ohne Titel wird mit ihrer Nummer benannt', (t) => {
   assert.match(mail.betreff, new RegExp(`«Nr\\. ${s.abrechnungId}»`));
 });
 
-for (const [name, groesse, anzahl] of [['genau 15 MB → Anhang', 15 * 1024 * 1024, 1], ['Anhänge über 15 MB → Mail ohne Anhänge mit Hinweis', 15 * 1024 * 1024 + 1, 0]]) {
+for (const [name, groesse, anzahl] of [['genau 10 MB → Anhang', 10 * 1024 * 1024, 1], ['Anhänge über 10 MB → Mail ohne Anhänge mit Hinweis', 10 * 1024 * 1024 + 1, 0]]) {
   test(name, (t) => {
     const s = setup(t);
     const p = s.position({ versandt: true });

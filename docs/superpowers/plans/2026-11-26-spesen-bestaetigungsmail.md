@@ -1,5 +1,7 @@
 # Spesen-Bestätigungsmail Implementation Plan
 
+> Nachtrag: Veröffentlicht als Version 1.4.12 (nicht 1.5.0), Anhangsgrenze 10 MB statt 15 MB. Der Plan unten bleibt unverändert.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Die einreichende Person bekommt pro Spesenabrechnung eine Bestätigungsmail mit den gestempelten Belegen, sobald jede Position an Bexio versandt oder abgelehnt/gelöscht ist.

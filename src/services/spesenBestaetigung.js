@@ -6,9 +6,10 @@
 // Die Belege werden je Position nach <jobsDir>/mail-anhaenge kopiert, weil die Originale nach der Aufbewahrungsfrist
 // gelöscht werden, die Abrechnung aber erst später erledigt sein kann. Fehlt einer freigegebenen Position die Kopie und ist
 // auch das Original schon gelöscht (z. B. Versandquittung erst nach der Bereinigung), gibt es keine Mail (Vermerk «keine»).
+// Ist der Belegspeicher selbst nicht verfügbar, bleibt die Abrechnung offen und wird später erneut geprüft.
 
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, statSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { getJobById } from '../db/jobsRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
@@ -22,7 +23,7 @@ import { reiheMailEin, stelleMailZu } from './mailZustellung.js';
 
 const MAIL_TYP = 'spesen-bestaetigung';
 // Obergrenze für alle Anhänge einer Mail zusammen; darüber geht die Mail ohne Anhänge raus.
-const MAX_ANHANG_BYTES = 15 * 1024 * 1024;
+const MAX_ANHANG_BYTES = 10 * 1024 * 1024;
 const NICHT_DURCHGEKOMMEN = new Set(['abgelehnt', 'geloescht']);
 
 // Die Bausteine für %anhang_hinweis% bringen ihre Zeilenumbrüche selbst mit.
@@ -36,6 +37,16 @@ const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 function dateiGroesse(pfad) {
   const stat = statSync(pfad, { throwIfNoEntry: false });
   return stat?.isFile() ? stat.size : null;
+}
+
+// false, wenn das Belegverzeichnis fehlt, kein Verzeichnis ist, nicht gelesen werden kann oder ganz leer ist (typisch für
+// einen nicht eingehängten Datenträger). Dann sagt eine fehlende Datei nichts darüber, ob sie gelöscht wurde.
+function speicherVerfuegbar(jobsDir) {
+  try {
+    return readdirSync(jobsDir).length > 0;
+  } catch {
+    return false;
+  }
 }
 
 // true nur, wenn weder eine Kopie noch das Original da ist, ein Anhang also nie mehr entstehen kann. Andere Fehler beim
@@ -84,7 +95,8 @@ export function sichereBelegKopie(db, config, jobId) {
     writeFileSync(tmp, bytes, { flag: 'wx' });
     renameSync(tmp, pfad);
   } catch (err) {
-    rmSync(tmp, { force: true });
+    // Auch das Aufräumen kann scheitern (z. B. ENOTDIR bei gestörtem Datenspeicher).
+    try { rmSync(tmp, { force: true }); } catch { /* der Tmp-Sweep räumt später auf */ }
     return warnung(err.message);
   }
   db.prepare('INSERT OR IGNORE INTO spesen_beleg_kopien (job_id, pfad, sha256, erstellt_am) VALUES (?, ?, ?, ?)')
@@ -158,6 +170,10 @@ function entscheide(db, config, abrechnungId, jetzt) {
   const abschliessen = (vermerk, ergebnis) => ({ ergebnis: setzeBestaetigung(db, abrechnungId, vermerk, jetzt) ? ergebnis : 'bereits' });
   if (freigegeben.length === 0) return abschliessen('keine', 'keine');
   if (getConfigValue(db, 'spesen_bestaetigung_aktiv') !== '1') return abschliessen('deaktiviert', 'deaktiviert');
+  if (!speicherVerfuegbar(config.jobsDir)) {
+    console.warn(`Spesen-Bestätigung ${abrechnungId}: Belegspeicher nicht verfügbar oder leer, Abrechnung bleibt offen.`);
+    return { ergebnis: 'offen' };
+  }
   const verloren = freigegeben.filter((job) => belegVerloren(db, job));
   if (verloren.length) {
     console.warn(`Spesen-Bestätigung ${abrechnungId}: keine Mail, Beleg bereits gelöscht und keine Kopie vorhanden (Position ${verloren.map((job) => job.id).join(', ')}).`);

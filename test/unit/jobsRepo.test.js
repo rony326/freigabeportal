@@ -2586,7 +2586,7 @@ test('listAbholbereitJobs und confirmAbholung ignorieren typ rapport', () => {
   db.close();
 });
 
-test('abgelehnte Spesenposition ist endgültig: weder hängend noch in den Pool freigebbar; Spesen zugewiesen unverändert', () => {
+test('Spesen kommen nie in den Pool; abgelehnte hängen auch nicht, zugewiesene bleiben als hängend sichtbar', () => {
   const db = openDatabase(':memory:');
   const kontoId = seedKonto(db);
   const anlegen = (quelle, status) => {
@@ -2603,7 +2603,10 @@ test('abgelehnte Spesenposition ist endgültig: weder hängend noch in den Pool 
   assert.equal(forceReleaseJob(db, spesenAbgelehnt), false);
   assert.equal(getJobById(db, spesenAbgelehnt).status, 'abgelehnt');
   assert.equal(getJobById(db, spesenAbgelehnt).konto_id, kontoId);
-  assert.equal(forceReleaseJob(db, spesenZugewiesen), true);
+  assert.equal(forceReleaseJob(db, spesenZugewiesen), false);
+  assert.equal(getJobById(db, spesenZugewiesen).status, 'zugewiesen');
+  assert.equal(getJobById(db, spesenZugewiesen).zugewiesen_an, '1');
+  assert.equal(getJobById(db, spesenZugewiesen).konto_id, kontoId);
   assert.equal(forceReleaseJob(db, rechnungAbgelehnt), true);
   assert.equal(getJobById(db, rechnungAbgelehnt).status, 'unzugewiesen');
   db.close();

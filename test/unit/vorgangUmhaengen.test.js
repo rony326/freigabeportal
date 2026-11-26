@@ -6,9 +6,9 @@ import { createKonto } from '../../src/db/kontenRepo.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { listMailLog } from '../../src/db/mailLogRepo.js';
-import { createJob, getJobById } from '../../src/db/jobsRepo.js';
+import { createJob, getJobById, listStalledJobs } from '../../src/db/jobsRepo.js';
 import { ermittleZustaendigkeit, standToken } from '../../src/services/vorgangZustaendigkeit.js';
-import { listUmhaengenZiele, umhaengeVorgang } from '../../src/services/vorgangUmhaengen.js';
+import { istUmhaengbar, listUmhaengenZiele, umhaengeVorgang } from '../../src/services/vorgangUmhaengen.js';
 
 const CONFIG = { publicBaseUrl: 'https://portal.example.org', churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' } };
 const MAILER = { async sendMail() {} };
@@ -176,5 +176,29 @@ test('Zielperson im Ferienmodus: Mail auch an die Vertretung', async () => {
   await haenge(db, jobId, '5');
   const empfaenger = listMailLog(db).filter((m) => m.typ === 'admin-umzuweisung').map((m) => m.empfaenger).sort();
   assert.deepEqual(empfaenger, ['p5@example.org', 'p6@example.org']);
+  db.close();
+});
+
+test('hängende Spesenposition in Kontierung / Freigabe 1 lässt sich umhängen und hängt danach nicht mehr', async () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seed(db);
+  const jobId = neuerJob(db, { status: 'zugewiesen', kontoId, zugewiesenAn: '1', quelle: 'spesen', extra: { eingereicht_von: '6' } });
+  db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '1'").run();
+  assert.deepEqual(listStalledJobs(db).map((s) => s.job.id), [jobId]);
+  assert.deepEqual(await haenge(db, jobId, '5'), { ok: true });
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'zugewiesen');
+  assert.equal(job.zugewiesen_an, '5');
+  assert.equal(job.konto_id, kontoId);
+  assert.deepEqual(listStalledJobs(db), []);
+  assert.match(listMailLog(db).find((m) => m.empfaenger === 'p5@example.org').text, new RegExp(`/spesen-freigabe1/${jobId}`));
+  db.close();
+});
+
+test('Spesenposition ohne Konto (früher in den Pool freigegeben) ist nicht umhängbar', () => {
+  const db = openDatabase(':memory:');
+  seed(db);
+  const jobId = neuerJob(db, { status: 'unzugewiesen', quelle: 'spesen', extra: { eingereicht_von: '6' } });
+  assert.equal(istUmhaengbar(getJobById(db, jobId)), false);
   db.close();
 });

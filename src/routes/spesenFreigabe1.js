@@ -24,6 +24,7 @@ import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/dow
 import { sendNotification, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from '../services/notify.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { kommentarBereich } from './kommentare.js';
+import { loeseSpesenBestaetigungAus } from '../services/spesenBestaetigung.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 
 export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection = (req, res, next) => next() }) {
@@ -143,6 +144,8 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
           db.exec('ROLLBACK');
           throw err;
         }
+        // War das die letzte offene Position, geht jetzt die Bestätigung zur Abrechnung raus.
+        loeseSpesenBestaetigungAus(db, config, mailer, job.id);
         const einreicher = getPersonById(db, job.eingereicht_von);
         if (einreicher) {
           await sendNotification(db, mailer, {

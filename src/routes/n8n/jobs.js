@@ -25,6 +25,7 @@ import { PdfEingangFehler } from '../../services/pdfFehler.js';
 import { pdfArbeit as standardPdfArbeit, PdfWorkerFehler } from '../../services/pdfArbeit.js';
 import { asyncCallback } from '../../middleware/asyncHandler.js';
 import { leseEingangVorbefuellung } from '../../services/eingangVorbefuellung.js';
+import { sichereBelegKopie, loeseSpesenBestaetigungAus } from '../../services/spesenBestaetigung.js';
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const VALID_QUELLEN = new Set(['scanner', 'lieferant']);
@@ -373,9 +374,20 @@ export function createN8nJobsRouter({ db, config, mailer, pdfArbeit = null }) {
 
   // POST /api/n8n/jobs/:id/bexio-versand-bestaetigen – Versandquittung nach dem Mailversand an Bexio. 201 neu, 200 mit
   // `duplikat: true` bei gleicher message_id; 400 Eingabe, 404 unbekannt/Rapport, 409 nicht exportiert/fremde export_id, 422 Versand nicht erfolgreich.
+  // Bei einer neuen Quittung einer Spesenposition folgt die Beleg-Kopie und ggf. die Bestätigung (services/spesenBestaetigung.js).
   router.post('/:id/bexio-versand-bestaetigen', json({ limit: '8kb' }), (req, res, next) => {
     try {
       const { neu, versand } = bestaetigeBexioVersand(db, Number(req.params.id), req.body);
+      // Spesen: Die Quittung ist gespeichert; nichts hiervon darf sie noch scheitern lassen. Der Beleg wird auch bei offener
+      // oder schon entschiedener Abrechnung gesichert, weil das Original nach der Aufbewahrungsfrist gelöscht wird.
+      if (neu) {
+        try {
+          sichereBelegKopie(db, config, Number(req.params.id));
+        } catch (err) {
+          console.error(`Spesen-Bestätigung: Beleg-Kopie für Position ${req.params.id} fehlgeschlagen`, err);
+        }
+        loeseSpesenBestaetigungAus(db, config, mailer, Number(req.params.id));
+      }
       res.status(neu ? 201 : 200).json({ id: Number(req.params.id), status: 'bexio_versand_bestaetigt', ...(neu ? {} : { duplikat: true }), versand });
     } catch (err) {
       if (err instanceof BexioVersandFehler) return res.status(err.status).json({ error: err.message });

@@ -12,7 +12,12 @@ export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next
 
   // GET /admin/mails – das Protokoll (neueste zuerst).
   router.get('/', (req, res) => {
-    res.render('admin/mails', { mails: listMailLog(db), gespeichert: req.query.gespeichert === '1', zurueckgehalten: req.query.zurueckgehalten === '1' });
+    // Eine Spesen-Bestätigung ohne jeden Anhang (z. B. Belege über 15 MB) wird markiert.
+    const mails = listMailLog(db).map((mail) => ({
+      ...mail,
+      ohneBelege: mail.typ === 'spesen-bestaetigung' && listMailAnhaenge(db, mail.id).length === 0,
+    }));
+    res.render('admin/mails', { mails, gespeichert: req.query.gespeichert === '1', zurueckgehalten: req.query.zurueckgehalten === '1' });
   });
 
   // POST /admin/mails/:id/erneut-versenden – sendet eine protokollierte Mail unverändert (samt Anhängen) nochmals (sofort, nie gebündelt).

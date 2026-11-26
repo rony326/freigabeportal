@@ -27,6 +27,9 @@ import { setupMockTsa, signedTsaResponse } from '../helpers/mockTsa.js';
 import { fetchCsrfToken } from '../helpers/csrf.js';
 import { createChainedTsa } from '../helpers/chainedTsa.js';
 import { ladeTsaNachweis } from '../../src/services/tsaNachweis.js';
+import { listMailLog, listMailAnhaenge } from '../../src/db/mailLogRepo.js';
+import { spesenPosition } from '../helpers/spesenVersand.js';
+import { warteBis } from '../helpers/warteBis.js';
 
 function createStubMailer() {
   const sent = [];
@@ -2062,4 +2065,37 @@ test('S4: GET /freigabe2/:id zeigt bei einer älteren IBAN (15 Tage) keinen Warn
   assert.equal(res.status, 200);
   assert.doesNotMatch(res.text, /id="ibanNeuHinweis"/);
   db.close();
+});
+
+test('Ablehnung der letzten offenen Spesenposition löst Bestätigung aus', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'freigabe2-spesen-bestaetigung-'));
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  for (const id of ['1', '2', '3', '4', '5']) {
+    upsertPerson(db, { id, vorname: `Person${id}`, nachname: 'Muster', email: `p${id}@example.org`, gruppen: [] });
+  }
+  const kontoId = createKonto(db, { kontonummer: '1000', bezeichnung: 'Reisespesen', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '3', stellvertreter2Id: '4' });
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '5', eingereichtAm: '2026-08-31T08:00:00.000Z', titel: null });
+  const jobId = createSpesenPosition(db, {
+    eingangAm: '2026-08-31T08:00:00.000Z', eingereichtVon: '5', kontoId, betrag: '61.75', auslageDatum: '2026-08-20',
+    beschreibung: 'Bahnticket', dateiname: 'ticket.pdf', pdfPfad: join(dir, 'ticket.pdf'), thumbnailPfad: null, spesenabrechnungId,
+    zugewiesenAn: '1', freigabe1EskaliertVon: null, freigabe1Eskalationsgrund: null,
+  });
+  createFreigabe(db, { jobId, personId: '1', rolle: 'freigeber1', zeitpunkt: '2026-08-31T08:10:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null });
+  db.prepare("UPDATE jobs SET status = 'freigabe2' WHERE id = ?").run(jobId);
+  spesenPosition(db, { spesenabrechnungId, eingereichtVon: '5', pdfPfad: join(dir, 'versandt.pdf'), versandt: true });
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, { mailer, trustConfig: { jobsDir: dir } });
+
+  const res = await request(app).post(`/freigabe2/${jobId}`).set('x-test-person-id', '3').type('form')
+    .send({ aktion: 'ablehnen', interessenskonflikt: 'nein', begruendung: 'Privat bezahlt' });
+
+  assert.equal(res.status, 302);
+  const mail = listMailLog(db).find((m) => m.typ === 'spesen-bestaetigung');
+  assert.ok(mail, 'Bestätigung erwartet');
+  assert.equal(mail.empfaenger, 'p5@example.org');
+  assert.match(mail.text, /Privat bezahlt/);
+  assert.equal(listMailAnhaenge(db, mail.id).length, 1);
+  await warteBis(() => mailer.sent.some((m) => m.attachments?.length === 1));
 });

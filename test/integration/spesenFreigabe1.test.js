@@ -11,6 +11,12 @@ import { createSpesenPosition, getJobById } from '../../src/db/jobsRepo.js';
 import { loadCurrentPerson, requireLogin } from '../../src/middleware/roles.js';
 import { loadNavFlags } from '../../src/middleware/nav.js';
 import { createSpesenFreigabe1Router } from '../../src/routes/spesenFreigabe1.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { listMailLog, listMailAnhaenge } from '../../src/db/mailLogRepo.js';
+import { spesenPosition } from '../helpers/spesenVersand.js';
+import { warteBis } from '../helpers/warteBis.js';
 
 function createStubMailer() {
   const sent = [];
@@ -274,4 +280,42 @@ test('spesenFreigabe1: Begründung bei Ablehnung am Feld', async () => {
   assert.match(res.text, /id="sf1begruendung-fehler"/);
   assert.match(res.text, /href="#sf1begruendung"/);
   db.close();
+});
+
+// Zweite, schon an Bexio versandte Position neben der offenen aus seedGrundlagen.
+function mitVersandterPosition(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'spesen-f1-bestaetigung-'));
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const { jobId } = seedGrundlagen(db);
+  const { spesenabrechnung_id: spesenabrechnungId } = getJobById(db, jobId);
+  spesenPosition(db, { spesenabrechnungId, eingereichtVon: '5', pdfPfad: join(dir, 'versandt.pdf'), versandt: true });
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer, { ...testConfig(), jobsDir: dir });
+  const ablehnen = () => request(app).post(`/spesen-freigabe1/${jobId}`).set('x-test-person-id', '1').type('form')
+    .send({ _csrf: 'valid-token', aktion: 'ablehnen', begruendung: 'Beleg unleserlich' });
+  return { db, jobId, mailer, ablehnen };
+}
+
+test('Ablehnung der letzten offenen Spesenposition löst Bestätigung aus', async (t) => {
+  const s = mitVersandterPosition(t);
+  assert.equal((await s.ablehnen()).status, 302);
+  const mail = listMailLog(s.db).find((m) => m.typ === 'spesen-bestaetigung');
+  assert.ok(mail, 'Bestätigung erwartet');
+  assert.equal(mail.empfaenger, 'e@example.org');
+  assert.match(mail.text, /Beleg unleserlich/);
+  assert.equal(listMailAnhaenge(s.db, mail.id).length, 1);
+  await warteBis(() => s.mailer.sent.some((m) => m.attachments?.length === 1));
+});
+
+test('Bestätigungsfehler lässt die Ablehnung trotzdem durch', async (t) => {
+  const s = mitVersandterPosition(t);
+  const fehler = t.mock.method(console, 'error', () => {});
+  s.db.exec('DROP TABLE spesen_beleg_kopien');
+  const res = await s.ablehnen();
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(s.db, s.jobId).status, 'abgelehnt');
+  assert.deepEqual(listMailLog(s.db).map((m) => m.typ), ['ablehnung']);
+  assert.ok(fehler.mock.callCount() >= 1);
 });

@@ -29,6 +29,7 @@ import { kkHinweisFuerJob } from '../services/kkStempel.js';
 import { writeFinalDocument } from '../services/finalDocument.js';
 import { tsaTrustOptions } from '../services/tsaTrust.js';
 import { kommentarBereich } from './kommentare.js';
+import { loeseSpesenBestaetigungAus } from '../services/spesenBestaetigung.js';
 import { listeKommentare } from '../services/kommentare.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { feldFehlerAttr } from '../utils/feldFehler.js';
@@ -295,6 +296,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
           db.exec('ROLLBACK');
           throw err;
         }
+        // Spesen: War das die letzte offene Position, geht jetzt die Bestätigung zur Abrechnung raus.
+        if (job.quelle === 'spesen') loeseSpesenBestaetigungAus(db, config, mailer, job.id);
         if (job.freigabe1_eskaliert_an_admin) {
           const empfaenger = resolveEmpfaenger(db, config, 'gruppe:admin');
           for (const email of empfaenger) {

@@ -21,7 +21,9 @@
               <td><%= mail.versucht_am %></td>
               <td><%= mail.empfaenger %></td>
               <td><%= mail.betreff %></td>
-              <td><%= mail.typ %></td>
+              <td><%= mail.typ %>
+                <% if (mail.ohneBelege) { %><span class="d-block badge text-bg-warning">Ohne Belege eingereiht</span><% } %>
+              </td>
               <td>
                 <% if (mail.status === 'versendet') { %><span class="badge text-bg-success">versendet</span>
                 <% } else if (mail.status === 'fehlgeschlagen') { %><span class="badge text-bg-danger">fehlgeschlagen</span>

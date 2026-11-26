@@ -16,6 +16,10 @@ import { setupMockChurchTools } from '../helpers/mockChurchTools.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 import { fetchCsrfToken } from '../helpers/csrf.js';
 import { ARCHIVE_RETENTION_MS } from '../../src/services/archiveReceipt.js';
+import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
+import { listMailLog, listMailAnhaenge } from '../../src/db/mailLogRepo.js';
+import { sichereBelegKopie, pruefeSpesenBestaetigung } from '../../src/services/spesenBestaetigung.js';
+import { spesenPosition } from '../helpers/spesenVersand.js';
 
 function testConfig(jobsDir) {
   return {
@@ -169,4 +173,70 @@ test('ein quittierter Rapport ist nach 7 Tagen archiviert und seine Datei entfer
   assert.equal(sweep.body.archiviert, 1);
   assert.equal(getJobById(db, jobId).status, 'archiviert');
   assert.equal(existsSync(finalPfad), false);
+});
+
+function spesenSetup(t) {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'pdf-bereinigung-spesen-test-'));
+  t.after(() => { db.close(); rmSync(jobsDir, { recursive: true, force: true }); });
+  const config = { ...testConfig(jobsDir), publicBaseUrl: 'https://portal.example.org' };
+  const app = createApp({ db, config });
+  upsertPerson(db, { id: '1', vorname: 'Anna', nachname: 'Muster', email: 'anna@example.org', gruppen: [], loggedInNow: false });
+  const abrechnung = () => createSpesenabrechnung(db, { eingereichtVon: '1', eingereichtAm: '2026-11-01T10:00:00.000Z', titel: 'Lager' });
+  const position = (spesenabrechnungId, name, versandt = true) =>
+    spesenPosition(db, { spesenabrechnungId, eingereichtVon: '1', pdfPfad: join(jobsDir, `${name}.pdf`), versandt });
+  const lauf = async () => {
+    const res = await request(app).post('/internal/cron/pdf-bereinigung').set('X-Cron-Secret', 'cron-secret');
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return res.body;
+  };
+  const kopien = () => db.prepare('SELECT job_id, pfad FROM spesen_beleg_kopien ORDER BY job_id').all();
+  return { db, config: { jobsDir, publicBaseUrl: 'https://portal.example.org' }, abrechnung, position, lauf, kopien };
+}
+
+test('Kopie bleibt bis zur Mail-Aufbewahrung, danach gelöscht mit Audit', async (t) => {
+  const s = spesenSetup(t);
+  const entschieden = s.abrechnung();
+  const a = s.position(entschieden, 'a');
+  assert.equal(pruefeSpesenBestaetigung(s.db, s.config, entschieden).ergebnis, 'eingereiht');
+  // Zweite, noch offene Abrechnung: ihre Kopie darf nie verschwinden.
+  const offen = s.abrechnung();
+  const b = s.position(offen, 'b');
+  s.position(offen, 'c', false);
+  sichereBelegKopie(s.db, s.config, b.id);
+  const kopieA = s.kopien().find((k) => k.job_id === a.id).pfad;
+  const kopieB = s.kopien().find((k) => k.job_id === b.id).pfad;
+
+  const vorher = await s.lauf();
+  assert.equal(vorher.belegKopienGeloescht, 0);
+  assert.equal(existsSync(kopieA), true, 'solange die Mail im Protokoll steht, bleibt die Kopie');
+
+  s.db.prepare("UPDATE mail_log SET status = 'versendet', versucht_am = '2020-01-01T00:00:00.000Z'").run();
+  const danach = await s.lauf();
+  assert.equal(danach.mailLogGeloescht, 1);
+  assert.equal(danach.belegKopienGeloescht, 1);
+  assert.equal(existsSync(kopieA), false);
+  assert.equal(existsSync(kopieB), true);
+  assert.deepEqual(s.kopien().map((k) => k.job_id), [b.id]);
+  const ereignisse = s.db.prepare("SELECT * FROM audit_ereignisse WHERE aktion = 'datei_geloescht' AND objekt = 'jobs' AND objekt_id = ?").all(String(a.id));
+  assert.equal(ereignisse.length, 1);
+  assert.match(ereignisse[0].nachher, /"dateiart":"mail_anhang"/);
+  assert.equal(ereignisse[0].begruendung, 'Spesen-Bestätigung erledigt');
+  assert.match(s.db.prepare("SELECT details FROM cron_log WHERE job = 'pdf-bereinigung' ORDER BY id DESC").get().details, /Beleg-Kopien gelöscht: 1/);
+});
+
+test('Nachholen im Nachtlauf reiht übersehene Bestätigung ein', async (t) => {
+  const s = spesenSetup(t);
+  const id = s.abrechnung();
+  s.position(id, 'a');
+  const ergebnis = await s.lauf();
+  assert.equal(ergebnis.spesenBestaetigungenNachgeholt, 1);
+  assert.equal(ergebnis.belegKopienGeloescht, 0);
+  const [mail] = listMailLog(s.db);
+  assert.equal(mail.typ, 'spesen-bestaetigung');
+  assert.equal(mail.status, 'eingereiht', 'die Zustellung übernimmt der Job mail-zustellung');
+  assert.equal(listMailAnhaenge(s.db, mail.id).length, 1);
+  assert.equal((await s.lauf()).spesenBestaetigungenNachgeholt, 0);
+  assert.equal(listMailLog(s.db).length, 1);
 });

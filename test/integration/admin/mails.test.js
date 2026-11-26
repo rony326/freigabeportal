@@ -206,3 +206,18 @@ test('Erneut versenden übernimmt Anhänge', async (t) => {
   assert.deepEqual(listMailAnhaenge(db, neu.id), listMailAnhaenge(db, id));
   assert.deepEqual(mailer.sent[0].attachments.map((a) => a.filename), ['a.pdf', 'b.pdf']);
 });
+
+test('GET /admin/mails warnt bei einer Spesen-Bestätigung, die ohne Belege eingereiht wurde', async (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  seedAdmin(db);
+  const mail = { typ: 'spesen-bestaetigung', jobId: null, empfaenger: 'a@example.org', betreff: 'B', text: 'T' };
+  reiheMailEin(db, { ...mail, anhaenge: [{ dateiname: 'Spesen-1-1.pdf', pfad: '/tmp/x.pdf', sha256: 'x' }] });
+  // Andere Mailtypen haben nie Anhänge und bekommen keine Warnung.
+  reiheMailEin(db, { ...mail, typ: 'reminder' });
+  const app = buildTestApp(db, createStubMailer());
+  const seite = async () => (await request(app).get('/admin/mails').set('x-test-person-id', '99')).text;
+  assert.doesNotMatch(await seite(), /Ohne Belege eingereiht/);
+  reiheMailEin(db, mail);
+  assert.equal((await seite()).match(/Ohne Belege eingereiht/g).length, 1);
+});

@@ -12,20 +12,25 @@ import { seedDefaults } from '../../../src/db/adminConfigRepo.js';
 import { requireApiKey } from '../../../src/middleware/apiKey.js';
 import { createN8nJobsRouter } from '../../../src/routes/n8n/jobs.js';
 import { setzeFreigabeSnapshot, freigabeSnapshotsFuerTest } from '../../helpers/freigabeSnapshot.js';
+import { upsertPerson } from '../../../src/db/personenRepo.js';
+import { createSpesenabrechnung } from '../../../src/db/spesenabrechnungenRepo.js';
+import { listMailLog, listMailAnhaenge } from '../../../src/db/mailLogRepo.js';
+import { spesenPosition } from '../../helpers/spesenVersand.js';
+import { warteBis } from '../../helpers/warteBis.js';
 
 // Versandquittung für Bexio (docs/n8n-schnittstelle.md «Versand an Bexio bestätigen»): n8n meldet
 // nach dem Mailversand an das Bexio-Eingangspostfach die Antwort des Mailservers.
 
 const KEY = 'workflow-key';
 
-function setup(t) {
+function setup(t, { mailer } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'bexio-versand-'));
   const db = openDatabase(':memory:');
   seedDefaults(db);
   t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
-  const config = { jobsDir: dir, n8nApiKey: KEY };
+  const config = { jobsDir: dir, n8nApiKey: KEY, publicBaseUrl: 'https://portal.example.org' };
   const app = express();
-  app.use('/api/n8n/jobs', requireApiKey(config), createN8nJobsRouter({ db, config }));
+  app.use('/api/n8n/jobs', requireApiKey(config), createN8nJobsRouter({ db, config, mailer }));
   // Statt des Express-Standards (Stack im Testlog): nur der Status, z. B. 413 bei zu grossem Body.
   app.use((err, req, res, next) => res.status(err.status || 500).json({ error: err.message }));
   function job(name = 'rechnung', groupParent = null) {
@@ -282,4 +287,84 @@ test('bexio-versand-ausstehend liefert höchstens 100 Einträge', async (t) => {
   assert.ok(!erste.some((e) => e.id === id));
   const rest = (await s.ausstehend(erste.at(-1).id)).body;
   assert.equal(rest.length, 5);
+});
+
+// Spesenabrechnung mit Positionen, die exportiert, aber noch nicht an Bexio quittiert sind.
+function spesen(s, anzahl = 1) {
+  upsertPerson(s.db, { id: '1', vorname: 'Anna', nachname: 'Muster', email: 'anna@example.org', gruppen: [] });
+  const spesenabrechnungId = createSpesenabrechnung(s.db, { eingereichtVon: '1', eingereichtAm: '2026-11-01T10:00:00.000Z', titel: 'Lager' });
+  return Array.from({ length: anzahl }, (_, i) => {
+    const position = spesenPosition(s.db, { spesenabrechnungId, eingereichtVon: '1', pdfPfad: join(s.dir, `spesen-original-${i}.pdf`) });
+    return { ...position, quittung: s.quittung({ export_id: `e${position.id}` }, { message_id: `<spesen${i}@mail.example.org>` }) };
+  });
+}
+const kopien = (db) => db.prepare('SELECT job_id FROM spesen_beleg_kopien ORDER BY job_id').all().map((z) => z.job_id);
+const stubMailer = () => {
+  const sent = [];
+  return { sent, async sendMail(mail) { sent.push(mail); } };
+};
+
+test('letzte Spesenposition quittiert → Bestätigung eingereiht, Kopie angelegt', async (t) => {
+  const mailer = stubMailer();
+  const s = setup(t, { mailer });
+  const [a, b] = spesen(s, 2);
+  assert.equal((await s.post(a.id, a.quittung)).status, 201);
+  // Die Abrechnung ist noch offen, der Beleg der quittierten Position aber schon gesichert.
+  assert.deepEqual(kopien(s.db), [a.id]);
+  assert.equal(listMailLog(s.db).length, 0);
+
+  assert.equal((await s.post(b.id, b.quittung)).status, 201);
+  assert.deepEqual(kopien(s.db), [a.id, b.id]);
+  const [mail] = listMailLog(s.db);
+  assert.equal(mail.typ, 'spesen-bestaetigung');
+  assert.equal(listMailAnhaenge(s.db, mail.id).length, 2);
+  await warteBis(() => listMailLog(s.db)[0].status === 'versendet');
+  assert.equal(mailer.sent.length, 1);
+  assert.equal(mailer.sent[0].to, 'anna@example.org');
+  assert.equal(mailer.sent[0].attachments.length, 2);
+});
+
+test('doppelte Quittung (gleiche message_id) → weiterhin eine Mail', async (t) => {
+  const s = setup(t);
+  const [a] = spesen(s);
+  assert.equal((await s.post(a.id, a.quittung)).status, 201);
+  assert.equal((await s.post(a.id, a.quittung)).status, 200);
+  assert.equal((await s.post(a.id, { ...a.quittung, message_id: '<nochmals@mail.example.org>' })).status, 201);
+  const mails = listMailLog(s.db);
+  assert.equal(mails.length, 1);
+  // Ohne Mailer bleibt die Mail für den Job mail-zustellung liegen.
+  assert.equal(mails[0].status, 'eingereiht');
+});
+
+test('neue Quittung sichert den Beleg auch, wenn die Abrechnung schon entschieden ist', async (t) => {
+  const s = setup(t);
+  const [a] = spesen(s);
+  s.db.prepare("UPDATE spesenabrechnungen SET bestaetigung_am = '2026-11-01', bestaetigung_vermerk = 'altbestand'").run();
+  assert.equal((await s.post(a.id, a.quittung)).status, 201);
+  assert.deepEqual(kopien(s.db), [a.id]);
+  assert.equal(listMailLog(s.db).length, 0);
+});
+
+test('Bestätigungsfehler lässt Quittung trotzdem 201 durch', async (t) => {
+  const s = setup(t);
+  const fehler = t.mock.method(console, 'error', () => {});
+  const [a] = spesen(s);
+  // Kopieren (Tabelle fehlt) und Prüfung scheitern beide.
+  s.db.exec('DROP TABLE spesen_beleg_kopien');
+  const res = await s.post(a.id, a.quittung);
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  assert.equal(s.zeilen().length, 1);
+  assert.equal(listMailLog(s.db).length, 0);
+  assert.equal(s.db.isTransaction, false);
+  assert.equal(s.db.prepare('SELECT bestaetigung_am FROM spesenabrechnungen').get().bestaetigung_am, null);
+  assert.equal(fehler.mock.callCount(), 2);
+});
+
+test('SMTP-Fehler bei der Bestätigung berührt die Quittung nicht', async (t) => {
+  const mailer = { async sendMail() { throw new Error('SMTP weg'); } };
+  const s = setup(t, { mailer });
+  const [a] = spesen(s);
+  assert.equal((await s.post(a.id, a.quittung)).status, 201);
+  await warteBis(() => listMailLog(s.db)[0].versuche === 1);
+  assert.equal(listMailLog(s.db)[0].status, 'eingereiht');
 });

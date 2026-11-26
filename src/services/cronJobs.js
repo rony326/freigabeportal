@@ -16,6 +16,7 @@ import { backupDateiname, ENCRYPTED_BACKUP_DATEINAME_PATTERN } from './backup.js
 import { buildEncryptedBackup, publishEncryptedBackup } from './backupEnvelope.js';
 import { deleteBackupWithAudit } from './backupAudit.js';
 import { loescheDateiMitAudit } from './dateiAudit.js';
+import { holeSpesenBestaetigungenNach } from './spesenBestaetigung.js';
 import { pruefeVerwaisteFinaleDateien } from './verwaisteDateien.js';
 import { auditedJob } from './auditOperation.js';
 import { runPersonenSync } from './sync.js';
@@ -356,7 +357,8 @@ async function runRapportErinnerungenJobInternal(db, config, mailer) {
 }
 
 // Job `pdf-bereinigung` (nachts): löscht Dateien archivierter Vorgänge nach der Aufbewahrungsfrist, verworfene Kreditkartenbelege, temporäre
-// Reste und alte Mail-Protokolle und verschiebt verwaiste finale Dokumente in die Quarantäne.
+// Reste und alte Mail-Protokolle und verschiebt verwaiste finale Dokumente in die Quarantäne. Zuerst holt er übersehene Spesen-Bestätigungen
+// nach; nach der Mail-Log-Bereinigung löscht er die nicht mehr gebrauchten Beleg-Kopien.
 export const runPdfBereinigungJob = auditedJob('pdf-bereinigung', runPdfBereinigungJobInternal);
 
 // Loescht eine archivierte Datei mit Audit-Klammer. Scheitert bereits das Absichtsprotokoll, bleibt
@@ -370,8 +372,36 @@ function loescheArchivierteDatei(db, pfad, { objektId, dateiart }) {
   }
 }
 
+// Löscht Beleg-Kopien, deren Abrechnung entschieden ist und auf die keine Mail im Protokoll mehr zeigt (vorher bräuchte sie noch
+// die Zustellung oder «Erneut versenden»). Die Zeile geht erst, wenn die Datei weg ist. @returns {number} Anzahl
+function loescheErledigteBelegKopien(db) {
+  const erledigt = db.prepare(`SELECT k.job_id, k.pfad FROM spesen_beleg_kopien k
+    JOIN jobs j ON j.id = k.job_id JOIN spesenabrechnungen s ON s.id = j.spesenabrechnung_id
+    WHERE s.bestaetigung_am IS NOT NULL AND NOT EXISTS (SELECT 1 FROM mail_anhaenge a WHERE a.pfad = k.pfad)
+    ORDER BY k.job_id`).all();
+  let geloescht = 0;
+  for (const { job_id: jobId, pfad } of erledigt) {
+    try {
+      if (!loescheDateiMitAudit(db, pfad, { objekt: 'jobs', objektId: jobId, dateiart: 'mail_anhang', anlass: 'Spesen-Bestätigung erledigt' })) continue;
+      db.prepare('DELETE FROM spesen_beleg_kopien WHERE job_id = ?').run(jobId);
+      geloescht += 1;
+    } catch (err) {
+      console.error(`Protokollierte Loeschung (mail_anhang) fuer Job ${jobId} nicht ausgefuehrt:`, err.code || 'AUDIT_FEHLER');
+    }
+  }
+  return geloescht;
+}
+
 function runPdfBereinigungJobInternal(db, config) {
   const gestartetAm = new Date().toISOString();
+  // Vor jedem Löschen: Nachholen sichert fehlende Beleg-Kopien aus den Originalen. Die Mails bleiben 'eingereiht' (Job mail-zustellung).
+  let spesenBestaetigungenNachgeholt = 0;
+  try {
+    spesenBestaetigungenNachgeholt = holeSpesenBestaetigungenNach(db, config).eingereiht;
+  } catch (err) {
+    console.error('Nachholen der Spesen-Bestätigungen fehlgeschlagen:', err.message);
+  }
+
   let archiviert = 0;
   try {
     for (const job of listAbgeholtJobs(db)) {
@@ -422,6 +452,13 @@ function runPdfBereinigungJobInternal(db, config) {
     console.error('Bereinigung von mail_log fehlgeschlagen:', err.message);
   }
 
+  let belegKopienGeloescht = 0;
+  try {
+    belegKopienGeloescht = loescheErledigteBelegKopien(db);
+  } catch (err) {
+    console.error('Bereinigung der Spesen-Beleg-Kopien fehlgeschlagen:', err.message);
+  }
+
   // Verworfene Kreditkartenbelege: nach der Frist nur die Dateien löschen, die Zeile bleibt als
   // Nachweis (wer/wann/warum verworfen). Zugeordnete Belege sind Teil eines Buchungsdokuments und
   // werden hier nie angefasst.
@@ -459,13 +496,13 @@ function runPdfBereinigungJobInternal(db, config) {
     console.error('Pruefung verwaister finaler Dateien fehlgeschlagen:', err.message);
   }
 
-  const ergebnis = { status: 'erfolg', archiviert, tmpGeloescht, mailLogGeloescht, kkBelegeGeloescht, quarantaene };
+  const ergebnis = { status: 'erfolg', archiviert, tmpGeloescht, mailLogGeloescht, kkBelegeGeloescht, quarantaene, spesenBestaetigungenNachgeholt, belegKopienGeloescht };
   logCronLauf(db, {
     job: 'pdf-bereinigung',
     gestartetAm,
     beendetAm: new Date().toISOString(),
     status: 'erfolg',
-    details: `Archiviert: ${archiviert}, Tmp gelöscht: ${tmpGeloescht}, Mail-Log bereinigt: ${mailLogGeloescht}, KK-Belege gelöscht: ${kkBelegeGeloescht}, In Quarantäne: ${quarantaene}`,
+    details: `Archiviert: ${archiviert}, Tmp gelöscht: ${tmpGeloescht}, Mail-Log bereinigt: ${mailLogGeloescht}, KK-Belege gelöscht: ${kkBelegeGeloescht}, In Quarantäne: ${quarantaene}, Spesen-Bestätigungen nachgeholt: ${spesenBestaetigungenNachgeholt}, Beleg-Kopien gelöscht: ${belegKopienGeloescht}`,
   });
   return ergebnis;
 }

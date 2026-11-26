@@ -17,7 +17,7 @@ import { jobDocument } from './jobDocument.js';
 import { belegName } from './belegName.js';
 import { zeitpunktAnzeige } from './auditLog.js';
 import { renderBenachrichtigung } from './notify.js';
-import { reiheMailEin } from './mailZustellung.js';
+import { reiheMailEin, stelleMailZu } from './mailZustellung.js';
 
 const MAIL_TYP = 'spesen-bestaetigung';
 // Obergrenze für alle Anhänge einer Mail zusammen; darüber geht die Mail ohne Anhänge raus.
@@ -186,6 +186,24 @@ export function pruefeSpesenBestaetigung(db, config, abrechnungId, { jetzt = Dat
   } catch (err) {
     if (db.isTransaction) db.exec('ROLLBACK');
     throw err;
+  }
+}
+
+/**
+ * Auslöser für die Routen, nach deren Commit (nie in einer offenen Transaktion): prüft die Abrechnung der Position und stellt
+ * eine neu eingereihte Bestätigung im Hintergrund zu. Wirft nie, damit Versandquittung und Ablehnung nicht daran scheitern;
+ * Liegengebliebenes holen die Jobs pdf-bereinigung (Prüfung) und mail-zustellung (Versand) nach.
+ */
+export function loeseSpesenBestaetigungAus(db, config, mailer, jobId) {
+  try {
+    const abrechnungId = abrechnungIdFuerJob(db, jobId);
+    if (abrechnungId === null) return;
+    const { ergebnis, mailId } = pruefeSpesenBestaetigung(db, config, abrechnungId);
+    if (ergebnis !== 'eingereiht' || !mailer) return;
+    stelleMailZu(db, mailer, mailId)
+      .catch((err) => console.error(`Spesen-Bestätigung: Sofortzustellung für Mail ${mailId} fehlgeschlagen, mail-zustellung wiederholt`, err));
+  } catch (err) {
+    console.error(`Spesen-Bestätigung nach Position ${jobId} fehlgeschlagen`, err);
   }
 }
 

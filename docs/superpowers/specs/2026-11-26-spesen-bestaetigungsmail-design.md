@@ -86,8 +86,12 @@ eine Warnung protokolliert.
 - Neue Tabelle `mail_anhaenge` (mail_log_id, dateiname, pfad, sha256); `reiheMailEin` nimmt optional eine Anhangsliste an.
 - Die Zustellung liest die Dateien beim Versuch, prüft den Hash und hängt sie an. Fehlt eine Datei → Versuch scheitert
   mit klarer Fehlermeldung (normaler Wiederholungsweg, sichtbar unter `/admin/mails`).
-- Nach `versendet` werden die Anhangsdateien gelöscht (mit Audit, wie andere Dateilöschungen). Bei `fehlgeschlagen` bleiben
-  sie für die manuelle Wiederholung liegen und fallen unter die bestehende `mail_log`-Aufbewahrung.
+- «Erneut versenden» unter `/admin/mails` legt eine neue `mail_log`-Zeile an; die Anhänge werden dabei mitkopiert (gleiche
+  Dateien), sonst käme die Wiederholung ohne Belege an.
+- Lebensdauer der Kopien: Die `mail_anhaenge`-Zeilen verschwinden mit ihrer `mail_log`-Zeile (bestehende Aufbewahrung
+  `mail_log_aufbewahrung_tage`, Standard 90). Der Job `pdf-bereinigung` löscht eine Kopie (mit Audit, neue Dateiart
+  `mail_anhang`), sobald die Abrechnung entschieden ist (`bestaetigung_am` gesetzt) und keine `mail_anhaenge`-Zeile mehr auf
+  sie zeigt. *(Abweichung vom ersten Entwurf «nach `versendet` löschen», damit erneutes Versenden die Belege noch hat.)*
 - Dateiname im Anhang: lesbar aus Abrechnungstitel und Positionsnummer (Muster `belegName.js`).
 
 ### 4. Mailtyp und Vorlage

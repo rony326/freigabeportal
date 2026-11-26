@@ -72,8 +72,10 @@ function inTransaktion(db, action) {
 }
 
 // Legt die Mail dauerhaft in `mail_log` ab ('eingereiht' für den sofortigen Versand, 'geplant' für den Digest), samt Anhängen
-// ({dateiname, pfad, sha256}) in derselben Transaktion. @returns {number} id
+// ({dateiname, pfad, sha256}) in derselben Transaktion. Anhänge gibt es nur bei sofortigem Versand: `geplant` mit Anhängen wirft,
+// weil der Digest sie still weglassen würde. @returns {number} id
 export function reiheMailEin(db, { typ, jobId, empfaenger, betreff, text, geplant = false, jetzt = Date.now(), anhaenge = [] }) {
+  if (geplant && anhaenge.length) throw new Error('Mails mit Anhängen können nicht für den Digest eingereiht werden.');
   const zeit = iso(jetzt);
   return inTransaktion(db, () => {
     const result = db
@@ -92,15 +94,17 @@ export function reiheMailEin(db, { typ, jobId, empfaenger, betreff, text, geplan
 }
 
 // Liest die Anhänge einer Mail im nodemailer-Format. Wirft, wenn eine Datei nicht lesbar ist oder nicht mehr zum gespeicherten
-// Hash passt. Die Meldung nennt nur den Dateinamen, nie den Pfad (sie landet im Mail-Protokoll).
+// Hash passt. Die Meldung nennt nur den Dateinamen und ggf. den Fehlercode, nie den Pfad (sie landet im Mail-Protokoll).
 async function ladeAnhaenge(db, mailLogId) {
   const anhaenge = [];
   for (const { dateiname, pfad, sha256 } of listMailAnhaenge(db, mailLogId)) {
     let content;
     try {
       content = await readFile(pfad);
-    } catch {
-      throw new Error(`Anhang ${dateiname} fehlt`);
+    } catch (err) {
+      // ENOENT heisst schlicht «fehlt»; jeder andere Code (Rechte, E/A) hilft bei der Fehlersuche.
+      const code = err.code && err.code !== 'ENOENT' ? ` (${err.code})` : '';
+      throw new Error(`Anhang ${dateiname} fehlt${code}`);
     }
     if (createHash('sha256').update(content).digest('hex') !== sha256) {
       throw new Error(`Anhang ${dateiname} stimmt nicht mit dem gespeicherten Hash überein`);

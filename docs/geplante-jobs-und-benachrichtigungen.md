@@ -67,7 +67,7 @@ flowchart LR
 | `sync-personen` | täglich 02:00 (Europe/Zürich) | Geplante Jobs | ja | `sync_log` | ChurchTools-Personen-/Gruppen-Sync — siehe [personen-sync.md](personen-sync.md) |
 | `pool-erinnerungen` | alle 60 Minuten | Geplante Jobs | ja | `cron_log` | Reminder- und Eskalations-Mails für unbeanspruchte Pool-Rechnungen |
 | `freigabe2-erinnerungen` | alle 60 Minuten | Geplante Jobs | ja | `cron_log` | Reminder an den effektiven Freigeber 2 und Übergabe an die Admin-Gruppe für seit langem unbeantwortete `freigabe2`-Jobs |
-| `pdf-bereinigung` | täglich 02:30 | Geplante Jobs | ja | `cron_log` | archiviert abgeholte Jobs, räumt verwaiste `.tmp`-Stempeldateien, abgeschlossene `mail_log`-Einträge und Dateien verworfener Kreditkartenbelege über der Aufbewahrungsfrist auf |
+| `pdf-bereinigung` | täglich 02:30 | Geplante Jobs | ja | `cron_log` | holt übersehene Spesen-Bestätigungen nach, archiviert abgeholte Jobs, räumt verwaiste `.tmp`-Stempeldateien, abgeschlossene `mail_log`-Einträge, nicht mehr gebrauchte Spesen-Beleg-Kopien und Dateien verworfener Kreditkartenbelege über der Aufbewahrungsfrist auf |
 | `zeitstempel-nachholen` | alle 5 Minuten | Geplante Jobs | ja | `cron_log` | wiederholt fehlgeschlagene RFC3161-Stempelversuche |
 | `split-gruppen-nachholen` | alle 15 Minuten | Geplante Jobs | ja | `cron_log` | holt eine noch nicht zusammengeführte Splitgruppe nach (unvollständig oder am TSA gescheitert) |
 | `rapport-erinnerungen` | alle 60 Minuten | Geplante Jobs | ja | `cron_log` | Reminder und einmalige Eskalation für Rapporte, die noch nicht von allen Empfänger:innen zur Kenntnis genommen wurden; holt Abschlüsse nach |
@@ -175,20 +175,34 @@ allen anderen Jobs dieser Liste — unter **Admin → Betrieb → Geplante Jobs*
 
 ### `pdf-bereinigung`
 
-Vier unabhängige Aufräum-Schritte in einem Lauf, jeder mit eigenem
-Fehler-Fangnetz (ein fehlgeschlagener Schritt stoppt die anderen nicht):
+Sechs Schritte in einem Lauf, jeder mit eigenem Fehler-Fangnetz (ein
+fehlgeschlagener Schritt stoppt die anderen nicht):
 
-1. Fuer Jobs im Status `abgeholt` mit Archivquittung und mindestens sieben Tagen
+1. **Spesen-Bestätigungen nachholen** — bewusst vor jedem Löschen: Für jede
+   noch nicht entschiedene Spesenabrechnung werden fehlende Beleg-Kopien der
+   bereits an Bexio gemeldeten Positionen aus den Originalen angelegt (auch
+   wenn die Abrechnung noch offen ist), dann wird geprüft, ob die Abrechnung
+   erledigt ist (siehe
+   [spesen-einreichung.md](spesen-einreichung.md#4-bestätigung-an-die-einreichende-person)).
+   Eine so eingereihte Mail bleibt `eingereiht`; verschickt wird sie vom Job
+   `mail-zustellung`.
+2. Fuer Jobs im Status `abgeholt` mit Archivquittung und mindestens sieben Tagen
    seit Bestaetigung: Hash erneut pruefen, PDF/Thumbnail entfernen, danach Status
    `archiviert`. Ohne Quittung oder bei Hashabweichung bleiben die Dateien erhalten.
    Gruppen-PDFs unterliegen derselben Quittungs- und Wartepflicht.
-2. Verwaiste `.tmp`-Dateien in `JOBS_DIR` löschen, die älter als eine
+3. Verwaiste `.tmp`-Dateien in `JOBS_DIR` löschen, die älter als eine
    Stunde sind (Reste eines abgebrochenen Stempel-Schreibvorgangs).
-3. Abgeschlossene `mail_log`-Einträge (`versendet`/`fehlgeschlagen`)
-   löschen, die älter als die konfigurierte Aufbewahrungsfrist
+4. Abgeschlossene `mail_log`-Einträge (`versendet`/`fehlgeschlagen`) samt
+   ihren Anhangszeilen (`mail_anhaenge`) löschen, die älter als die konfigurierte Aufbewahrungsfrist
    (`mail_log_aufbewahrung_tage`) sind. Noch zuzustellende Zeilen
    (`eingereiht`/`geplant`) werden nie durch die Frist entfernt.
-4. Von jedem **verworfenen** Kreditkartenbeleg, dessen Verwerfen-Zeitpunkt
+5. **Spesen-Beleg-Kopien** löschen (Datei mit Audit-Protokoll, Dateiart
+   `mail_anhang`, dazu die Zeile in `spesen_beleg_kopien`), sobald über die
+   Abrechnung entschieden ist (`bestaetigung_am` gesetzt) **und** keine
+   Anhangszeile mehr auf die Datei zeigt. Solange die Bestätigungsmail im
+   Protokoll steht, bleibt die Kopie also für Zustellung und „Erneut
+   versenden“ erhalten; Kopien offener Abrechnungen werden nie gelöscht.
+6. Von jedem **verworfenen** Kreditkartenbeleg, dessen Verwerfen-Zeitpunkt
    die konfigurierte Frist (`kk_beleg_verworfen_loeschen_tage`, Default 90
    Tage) überschreitet, `pdf_pfad`/`thumbnail_pfad` löschen und
    `datei_geloescht_am` setzen — die Beleg-Zeile selbst und ein
@@ -322,7 +336,8 @@ Wiederholungslauf der persistenten Zustellung
 (`src/services/mailZustellung.js`). Greift fällige Zeilen auf:
 
 - `eingereiht` mit `naechster_versuch_am` in der Vergangenheit — nach einem
-  SMTP-Fehler oder nach einem Prozessneustart;
+  SMTP-Fehler, einem fehlenden oder veränderten Anhang oder nach einem
+  Prozessneustart;
 - `geplant` mit mindestens einem gescheiterten Digest-Versuch.
 
 Die erste Digest-Zustellung bleibt dem täglichen `mail-digest`-Termin
@@ -409,6 +424,14 @@ dauerhaft in `mail_log` gespeichert und durchläuft diese Status:
   das Ergebnis wird nur unter demselben Token gespeichert. Timer, manueller
   Cron-Aufruf, Admin-Klick und Request-Versand versenden dieselbe Zeile
   daher nicht doppelt.
+- **Anhänge:** Eine Mail kann PDF-Anhänge tragen (`mail_anhaenge`, derzeit
+  nur die Spesen-Bestätigung). Bei jedem Versuch wird die Datei neu gelesen
+  und gegen den gespeicherten SHA-256 geprüft. Fehlt sie, ist sie nicht
+  lesbar oder weicht sie ab, geht **nichts** raus: das zählt als gewöhnlicher
+  Fehlversuch mit Wiederholung, nach den ausgeschöpften Versuchen wird die
+  Zeile `fehlgeschlagen`. `fehler_details` nennt den Dateinamen (bei
+  Lesefehlern ausser `ENOENT` zusätzlich den Fehlercode), nie den Pfad.
+  Mails mit Anhängen werden nie für den Digest eingereiht.
 - **Neustart:** Nicht zugestellte Zeilen bleiben erhalten; die Sperre eines
   abgestürzten Prozesses läuft ab und `mail-zustellung` versucht erneut.
 - **Restrisiko (mindestens einmal, nicht genau einmal):** Stürzt der
@@ -470,6 +493,7 @@ gelöschte Personen werden beim Versand still übersprungen.
 | `rechnungsnummer-warnung` | Rechnungsnummer bei Kontierung bereits für denselben Kreditor erfasst |
 | `duplikat-warnung` | Möglicher Doppelscan: gleicher Kreditor, Betrag und Zahlungsziel, Eingang binnen 14 Tagen |
 | `kk-abrechnung-zugewiesen` | Kreditkartenabrechnung (manuell oder automatisch erkannt) einer Karte zugeordnet — geht an die verantwortliche Person |
+| `spesen-bestaetigung` | alle Positionen einer Spesenabrechnung erledigt und mindestens eine freigegeben — an die einreichende Person, mit den gestempelten Belegen als Anhang; **immer sofort**, auf der Seite ein-/ausschaltbar (`spesen_bestaetigung_aktiv`, Standard an). Variablen: `%name%`, `%titel%`, `%eingereicht_am%`, `%positionen%`, `%summe%`, `%nicht_freigegeben%`, `%anhang_hinweis%`, `%portal_url%`, `%portalName%`. Details: [spesen-einreichung.md](spesen-einreichung.md#4-bestätigung-an-die-einreichende-person) |
 | `rapport-zuweisung` | Rapport zur Kenntnis zugeteilt (bzw. Empfänger ersetzt) — an die zugeteilte Person; **folgt** der persönlichen Sofort-/Digest-Wahl; Ferienvertretung wird nicht informiert |
 | `rapport-reminder` | offene Kenntnisnahme länger als `rapport_reminder_stunden` unbestätigt — an die Person selbst, **immer sofort** |
 | `rapport-eskalation` | Rapport länger als `rapport_eskalation_stunden` nicht vollständig bestätigt — an `rapport_eskalation_empfaenger` (leer = Admin-Gruppe), **immer sofort** |
@@ -489,7 +513,8 @@ sofort zugestellten Typen**, die nie warten. Das sind genau die Typen in
 `audit-pruefnummer`, `neues-geraet`, `fehlermeldung`, `testmail`, `reminder`,
 `eskalation`, `freigabe2-reminder`, `freigabe2-eskalation`,
 `rapport-reminder`, `rapport-eskalation`, `kk-beleg-erinnerung`, `sicherheitsalarm`, `duplikat-warnung`,
-`rechnungsnummer-warnung` und `iban-aenderung`. Erinnerungen und Eskalationen sind zeitkritisch
+`rechnungsnummer-warnung`, `iban-aenderung` und `spesen-bestaetigung` (Anhänge
+passen nicht in die Sammelmail). Erinnerungen und Eskalationen sind zeitkritisch
 und dürfen nie eine Woche warten; die Warnungen sind sicherheits- oder
 betriebsrelevant. Alle übrigen Typen (u. a. `zuweisung`, `rapport-zuweisung`, `ablehnung`,
 `kommentar`, `kk-abrechnung-zugewiesen`) folgen der Wahl.

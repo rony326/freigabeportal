@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -320,7 +320,7 @@ test('Fehlender Anhang → Wiederholung mit klarer Meldung', async (t) => {
 
   assert.equal(ergebnis.status, 'eingereiht');
   assert.equal(heil.versuche.length, 0);
-  assert.match(listMailLog(db)[0].fehler_details, /Anhang a\.pdf fehlt/);
+  assert.match(listMailLog(db)[0].fehler_details, /Anhang a\.pdf fehlt \(Versuch/);
   assert.ok(!listMailLog(db)[0].fehler_details.includes(pfad), 'kein absoluter Pfad im Protokoll');
 });
 
@@ -344,4 +344,28 @@ test('Mail und Anhänge werden gemeinsam gespeichert oder gar nicht', (t) => {
   }));
   assert.equal(listMailLog(db).length, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM mail_anhaenge').get().n, 0);
+});
+
+test('Geplante Mail mit Anhängen wird abgelehnt (der Digest würde die Anhänge still verlieren)', (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  assert.throws(() => reiheMailEin(db, {
+    typ: 'reminder', jobId: null, empfaenger: 'x@example.org', betreff: 'B', text: 'T', geplant: true,
+    anhaenge: [{ dateiname: 'a.pdf', pfad: '/tmp/a.pdf', sha256: 'ab' }],
+  }), /Anh[äa]ng/);
+  assert.equal(listMailLog(db).length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM mail_anhaenge').get().n, 0);
+});
+
+test('Anderer Lesefehler beim Anhang nennt den Fehlercode, nie den Pfad', async (t) => {
+  const { db, id, pfad } = mailMitAnhang(t);
+  // Ein Verzeichnis an Stelle der Datei: Lesen scheitert mit EISDIR.
+  rmSync(pfad);
+  mkdirSync(pfad);
+
+  await stelleMailZu(db, mailer(), id);
+
+  const { fehler_details: details } = listMailLog(db)[0];
+  assert.match(details, /Anhang a\.pdf fehlt \(EISDIR\)/);
+  assert.ok(!details.includes(pfad), 'kein absoluter Pfad im Protokoll');
 });

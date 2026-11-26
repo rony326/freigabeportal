@@ -3,6 +3,20 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.5.0] – 2026-11-26
+
+Spesen-Bestätigung an die einreichende Person. Release Notes: [docs/releases/v1.5.0.md](docs/releases/v1.5.0.md).
+**Datenbank-Migration** (automatisch beim Start, vorher Backup ziehen), keine neuen Umgebungsvariablen, keine Änderung
+an n8n-Schnittstellen.
+
+- Neu: Ist eine Spesenabrechnung vollständig erledigt (jede Position an Bexio versandt, abgelehnt oder gelöscht) und
+  mindestens eine freigegeben, bekommt die einreichende Person eine Mail mit den gestempelten Belegen als Anhang.
+  Schalter und Vorlage unter Admin → Benachrichtigungen (Standard: an). Schon erledigte Abrechnungen bekommen nichts.
+- Neu: Mails können PDF-Anhänge tragen; Zustellung mit Hashprüfung und Wiederholung. Das Mail-Protokoll markiert eine
+  Bestätigung ohne Belege.
+- Geändert: `pdf-bereinigung` holt vor dem Löschen übersehene Bestätigungen nach und räumt Beleg-Kopien auf.
+- Behoben: Abgelehnte Spesen lassen sich nicht mehr über den Personen-Sync in den Pool zurücksetzen.
+
 ## [1.4.11] – 2026-11-20
 
 Listen ohne Dateiname. Release Notes: [docs/releases/v1.4.11.md](docs/releases/v1.4.11.md). Keine Migration, keine

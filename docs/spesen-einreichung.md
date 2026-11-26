@@ -108,6 +108,52 @@ Detail-Felder schalten per `job.quelle === 'spesen'` um
 Lieferant/Rechnungsnummer/Zahlungsziel). Rechnungen und Spesen erscheinen
 dadurch gemeinsam in "Meine Freigaben" auf `/pool`.
 
+## 4. Bestätigung an die einreichende Person
+
+Sobald eine Spesenabrechnung vollständig erledigt ist, bekommt die
+einreichende Person **eine** Mail (nicht eine je Position) mit den
+freigegebenen Positionen, deren Total und den gestempelten Belegen als Anhang
+(`src/services/spesenBestaetigung.js`, Mail-Typ `spesen-bestaetigung`). Sie
+sagt, dass die Positionen zur Auszahlung vorbereitet werden; die Auszahlung
+selbst kennt das Portal nicht, die Mail nennt weder Datum noch IBAN.
+Design-Spec:
+[2026-11-26-spesen-bestaetigungsmail-design.md](superpowers/specs/2026-11-26-spesen-bestaetigungsmail-design.md).
+
+| Zustand einer Position | zählt als |
+|---|---|
+| Versand an Bexio gemeldet (Eintrag in `bexio_versand`, siehe [n8n-schnittstelle.md](n8n-schnittstelle.md#versand-an-bexio-bestätigen)) | freigegeben |
+| `abgelehnt` oder `geloescht` | nicht durchgekommen |
+| alles andere (auch `abgeschlossen` oder `abgeholt` ohne Quittung) | offen — die Mail wartet, auch wochenlang |
+
+Entschieden wird je Abrechnung höchstens einmal
+(`spesenabrechnungen.bestaetigung_am`, Vermerk siehe
+[datenmodell.md](datenmodell.md#spesenabrechnungen)):
+
+- keine Position freigegeben → keine Mail (die Ablehnungsmails genügen);
+- Schalter **Admin → Einstellungen → Benachrichtigungen → Spesen freigegeben**
+  aus → keine Mail, auch nicht nachträglich;
+- einreichende Person ohne Mailadresse → keine Mail (Meldung im Server-Log);
+- sonst wird die Mail zusammen mit dem Marker in einer Transaktion eingereiht.
+
+**Auslöser:** eine neue Bexio-Versandquittung, eine Ablehnung in
+Spesen-Freigabe 1 oder Freigabe 2 und nachts der Job
+[`pdf-bereinigung`](geplante-jobs-und-benachrichtigungen.md#pdf-bereinigung),
+der Liegengebliebenes nachholt. Ein Fehler in der Bestätigung
+lässt Quittung oder Ablehnung nie scheitern. Die Mail geht immer sofort raus,
+nie im Digest; scheitert der Versand, wiederholt `mail-zustellung` ihn.
+
+**Anhänge:** Bei jeder neuen Quittung wird das gestempelte End-PDF kopiert
+([`spesen_beleg_kopien`](datenmodell.md#spesen_beleg_kopien)), nur wenn es dem
+Hash im Exportnachweis entspricht. Der Anhang heisst
+`Spesen-<Abrechnung>-<Position>.pdf`. Sind die Belege zusammen grösser als
+15 MB, geht die Mail ohne Anhänge raus und verweist an die Finanzverwaltung;
+fehlt einzelnen Positionen die Kopie, geht der Rest mit einem entsprechenden
+Hinweis mit. Eine Mail ganz ohne Belege ist im
+[Mail-Protokoll](admin-bereich.md#e-mail-protokoll-adminmails) markiert.
+
+**Altbestand:** Abrechnungen, die beim Update schon erledigt waren, wurden
+einmalig als `altbestand` markiert und bekommen keine Mail.
+
 ## Modul-Deaktivierung
 
 `/admin/module` erlaubt es, das gesamte Spesenmodul auszuschalten
@@ -175,7 +221,9 @@ Die gespeicherten Finanzdaten sind bei Zugriffsschutz und Aufbewahrung zu beruec
   Rechnungen (`/abgelehnt/:id/ueberarbeiten`) gibt es für Spesen keine
   Bearbeitungsseite — eine abgelehnte Position bleibt in "Meine Spesen"
   sichtbar (mit Ablehnungsgrund); für eine Korrektur reicht die Person
-  neu ein.
+  neu ein. Die Ablehnung ist **endgültig**: Auch der Personen-Sync listet eine
+  abgelehnte Spesenposition nicht als hängend und kann sie nicht in den Pool
+  zurücksetzen (siehe [personen-sync.md](personen-sync.md)).
 - **Keine gemischten Sammelabrechnungen** aus Rechnungs- und
   Spesen-Positionen.
 - **Kein Live-Abruf bei Abholung**: Zahlungsdaten kommen aus dem Freigabe-Snapshot.

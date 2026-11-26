@@ -241,6 +241,16 @@ und zeigt sie auf der Belegseite (`/zeitstempel-pruefen?jobId=`, Knopf
 nicht gemeldet». Ein Teilbeleg zeigt den Versand seiner Splitgruppe. Eine
 Bexio-API gibt es dabei nicht; die Rückmeldung kommt ausschliesslich von n8n.
 
+**Spesen:** Bei einer Spesenposition (`quelle: "spesen"`) löst eine **neue**
+Quittung (`201`) zusätzlich die
+[Bestätigung an die einreichende Person](spesen-einreichung.md#4-bestätigung-an-die-einreichende-person)
+aus: Das Portal sichert eine Kopie des gestempelten Belegs und verschickt die
+Mail, sobald alle Positionen der Abrechnung erledigt sind. n8n muss dafür
+nichts Neues tun — Aufruf und Antworten bleiben gleich; eine wiederholte
+Meldung (`200`) löst nichts aus, und ein Fehler bei Kopie oder Mail lässt die
+Quittung nie scheitern. Ohne Quittung gilt eine Spesenposition als offen, die
+Bestätigung bleibt dann aus.
+
 > **Grenze:** Die SMTP-Antwort belegt nur, dass der **eigene Mailserver** die
 > Mail angenommen hat (z. B. `250 2.0.0 Ok: queued as …`), **nicht** die
 > Zustellung bei Bexio oder die Verbuchung dort.

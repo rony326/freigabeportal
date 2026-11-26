@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
@@ -224,6 +224,28 @@ test('Kopie bleibt bis zur Mail-Aufbewahrung, danach gelöscht mit Audit', async
   assert.match(ereignisse[0].nachher, /"dateiart":"mail_anhang"/);
   assert.equal(ereignisse[0].begruendung, 'Spesen-Bestätigung erledigt');
   assert.match(s.db.prepare("SELECT details FROM cron_log WHERE job = 'pdf-bereinigung' ORDER BY id DESC").get().details, /Beleg-Kopien gelöscht: 1/);
+});
+
+test('Nachlauf sichert die Beleg-Kopie, bevor er das archivierte Original löscht', async (t) => {
+  const s = spesenSetup(t);
+  const id = s.abrechnung();
+  const a = s.position(id, 'a');
+  // Zweite Position offen: die Abrechnung bleibt unentschieden.
+  s.position(id, 'b', false);
+  s.db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ?").run(a.id);
+  s.db.prepare(`INSERT INTO archiv_quittungen (export_id, dokument_id, task_id, sha256, bestaetigt_am)
+    VALUES (?, '1', 'task', ?, ?)`).run(`e${a.id}`, a.hash, new Date(Date.now() - ARCHIVE_RETENTION_MS - 1000).toISOString());
+  assert.equal(s.kopien().length, 0);
+
+  const ergebnis = await s.lauf();
+
+  assert.equal(ergebnis.archiviert, 1);
+  assert.equal(ergebnis.spesenBestaetigungenNachgeholt, 0);
+  assert.equal(ergebnis.belegKopienGeloescht, 0);
+  assert.equal(existsSync(a.pdfPfad), false, 'das Original ist gelöscht');
+  const [kopie] = s.kopien();
+  assert.equal(kopie.job_id, a.id);
+  assert.deepEqual(readFileSync(kopie.pfad), a.bytes);
 });
 
 test('Nachholen im Nachtlauf reiht übersehene Bestätigung ein', async (t) => {

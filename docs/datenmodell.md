@@ -98,6 +98,8 @@ erDiagram
         text eingereicht_von FK
         text eingereicht_am
         text titel "optional, Freitext"
+        text bestaetigung_am "NULL = noch offen"
+        text bestaetigung_vermerk "versendet | keine | deaktiviert | altbestand"
     }
     jobs {
         int id PK
@@ -221,7 +223,7 @@ erDiagram
     }
     mail_log {
         int id PK
-        text typ "23 mögliche Werte"
+        text typ "26 mögliche Werte"
         int job_id FK
         text empfaenger
         text status "eingereiht | geplant | versendet | fehlgeschlagen"
@@ -327,7 +329,17 @@ Reine Gruppierung für eine Spesen-Sammelabrechnung — kein eigener
 Workflow-Status, keine eigene Freigabe. Jede Position lebt und stirbt als
 unabhängiger `jobs`-Datensatz; diese Tabelle dient nur dazu, der
 einreichenden Person ihre zusammengehörigen Positionen wieder anzuzeigen
-(`titel` optional, freier Text). Details:
+(`titel` optional, freier Text).
+
+Zwei Spalten halten fest, ob über die
+[Bestätigung an die einreichende Person](spesen-einreichung.md#4-bestätigung-an-die-einreichende-person)
+entschieden ist: `bestaetigung_am` (`NULL` = offen; höchstens einmal gesetzt)
+und `bestaetigung_vermerk` — `versendet` (Mail in die Outbox eingereiht; den
+Zustellstand zeigt `mail_log`), `keine` (keine Position freigegeben oder keine
+Mailadresse), `deaktiviert` (Schalter war aus) oder `altbestand` (beim Anlegen
+der Spalten einmalig für schon erledigte Abrechnungen gesetzt: jede Position
+`abgelehnt`, `geloescht`, `abgeholt`, `archiviert` oder mit
+Bexio-Versandquittung). Details:
 [spesen-einreichung.md](spesen-einreichung.md).
 
 ### `kreditkarten`, `kreditkarte_erfasser`, `kk_belege`, `kk_beleg_ereignisse`
@@ -502,6 +514,19 @@ sie ab, gilt das als Fehlversuch mit Wiederholung. `mail_log_id` ist
 würden den Verweis umschreiben). Die Aufbewahrungsfrist löscht die Zeilen
 zusammen mit ihrer Mail. Reine Hilfstabelle ohne Audit-Trigger; Anhänge gibt
 es nur bei sofort versendeten Mails, nicht im Digest.
+
+### `spesen_beleg_kopien`
+Kopie des gestempelten End-PDFs je Spesenposition (`job_id` als
+Primärschlüssel, `pfad` unter `<JOBS_DIR>/mail-anhaenge/`, `sha256`,
+`erstellt_am`) für den Anhang der Bestätigungsmail: Das Original wird nach der
+Aufbewahrungsfrist gelöscht, die Abrechnung kann aber erst später erledigt
+sein. Kopiert wird nur, was byte-genau dem Hash im Exportnachweis entspricht.
+`job_id` ist **absichtlich kein** Foreign Key (spätere Tabellen-Neuaufbauten
+von `jobs` würden den Verweis umschreiben). Der Job `pdf-bereinigung` löscht
+Datei und Zeile, sobald über die Abrechnung entschieden ist und keine
+`mail_anhaenge`-Zeile mehr darauf zeigt. Ohne Audit-Trigger; die Dateilöschung
+selbst steht im Audit-Log (Dateiart `mail_anhang`). Der Offline-Restore passt
+die Pfade beider Tabellen an den Zielspeicher an.
 
 ### `job_loeschungen`
 Protokoll jeder endgültigen Löschung einer abgelehnten Rechnung.

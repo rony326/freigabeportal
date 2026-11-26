@@ -75,6 +75,7 @@ test('drei versandt → eine Mail mit drei Anhängen', (t) => {
   assert.match(mail.text, /- Auslage 1: CHF 0\.10\n- Auslage 2: CHF 0\.20\n- quittung-3\.pdf: CHF 42\.00\n/);
   assert.match(mail.text, /Total: CHF 42\.30\n/);
   assert.match(mail.text, /Belege findest du im Anhang/);
+  assert.match(mail.text, /https:\/\/portal\.example\.org/);
   assert.doesNotMatch(mail.text, /Nicht freigegeben|%/);
   const anhaenge = listMailAnhaenge(s.db, ergebnis.mailId);
   assert.equal(anhaenge.length, 3);
@@ -117,6 +118,8 @@ test('eine Position offen → offen', (t) => {
   assert.deepEqual(s.stand(), { bestaetigung_am: null, bestaetigung_vermerk: null });
   assert.equal(listMailLog(s.db).length, 0);
   assert.equal(s.db.isTransaction, false);
+  // Schon versandte Positionen sind gesichert, bevor ihr Original gelöscht wird.
+  assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM spesen_beleg_kopien').get().n, 1);
 });
 
 test('Abrechnung ohne Positionen oder unbekannte Abrechnung → offen', (t) => {
@@ -141,6 +144,8 @@ test('innerhalb einer laufenden Transaktion wirft die Prüfung, ohne sie abzubre
   assert.throws(() => s.pruefe(), /transaction/i);
   assert.equal(s.db.isTransaction, true);
   s.db.exec('ROLLBACK');
+  // Auch keine Dateiarbeit im Namen der fremden Transaktion.
+  assert.equal(existsSync(join(s.config.jobsDir, 'mail-anhaenge')), false);
 });
 
 test('Fehler beim Einreihen setzt den Marker zurück', (t) => {
@@ -150,6 +155,8 @@ test('Fehler beim Einreihen setzt den Marker zurück', (t) => {
   assert.throws(() => s.pruefe(), /kaputt/);
   assert.equal(s.db.isTransaction, false);
   assert.equal(s.stand().bestaetigung_am, null);
+  // Die Beleg-Kopie entsteht vor der Transaktion und übersteht deren Abbruch.
+  assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM spesen_beleg_kopien').get().n, 1);
   s.db.exec('DROP TRIGGER mail_kaputt');
   assert.equal(s.pruefe().ergebnis, 'eingereiht');
 });

@@ -2585,3 +2585,26 @@ test('listAbholbereitJobs und confirmAbholung ignorieren typ rapport', () => {
   assert.equal(listAbholbereitJobs(db, 0).length, 1);
   db.close();
 });
+
+test('abgelehnte Spesenposition ist endgültig: weder hängend noch in den Pool freigebbar; Spesen zugewiesen unverändert', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const anlegen = (quelle, status) => {
+    const id = createJob(db, { eingangAm: '2026-08-01T00:00:00.000Z', quelle, absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+    db.prepare('UPDATE jobs SET status = ?, zugewiesen_an = ?, konto_id = ? WHERE id = ?').run(status, '1', kontoId, id);
+    return id;
+  };
+  const spesenAbgelehnt = anlegen('spesen', 'abgelehnt');
+  const spesenZugewiesen = anlegen('spesen', 'zugewiesen');
+  const rechnungAbgelehnt = anlegen('scanner', 'abgelehnt');
+  db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '1'").run();
+
+  assert.deepEqual(listStalledJobs(db).map((s) => s.job.id).sort((a, b) => a - b), [spesenZugewiesen, rechnungAbgelehnt]);
+  assert.equal(forceReleaseJob(db, spesenAbgelehnt), false);
+  assert.equal(getJobById(db, spesenAbgelehnt).status, 'abgelehnt');
+  assert.equal(getJobById(db, spesenAbgelehnt).konto_id, kontoId);
+  assert.equal(forceReleaseJob(db, spesenZugewiesen), true);
+  assert.equal(forceReleaseJob(db, rechnungAbgelehnt), true);
+  assert.equal(getJobById(db, rechnungAbgelehnt).status, 'unzugewiesen');
+  db.close();
+});

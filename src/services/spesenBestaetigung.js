@@ -94,14 +94,26 @@ function ablehnungsZeile(job) {
   return grund ? `${positionsZeile(job)} (Grund: ${grund})` : positionsZeile(job);
 }
 
-// Anhänge der freigegebenen Positionen samt passendem Hinweistext. Fehlende Kopien werden nachgeholt.
-function sammleAnhaenge(db, config, abrechnungId, freigegeben) {
+// Dateiarbeit vor der Transaktion: fehlende Kopien der schon versandten Positionen nachholen, damit während des Kopierens
+// keine Schreibsperre gehalten wird. Auch bei noch offener Abrechnung sinnvoll, weil die Originale befristet sind.
+function holeKopienNach(db, config, abrechnungId) {
+  const abrechnung = getSpesenabrechnungById(db, abrechnungId);
+  if (!abrechnung || abrechnung.bestaetigung_am) return;
+  const versandt = db.prepare('SELECT 1 FROM bexio_versand WHERE job_id = ?');
+  for (const job of listPositionen(db, abrechnungId)) {
+    if (versandt.get(job.id)) sichereBelegKopie(db, config, job.id);
+  }
+}
+
+// Anhänge der freigegebenen Positionen (aus den vorhandenen Kopien) samt passendem Hinweistext.
+function sammleAnhaenge(db, abrechnungId, freigegeben) {
   const anhaenge = [];
   let bytes = 0;
   for (const job of freigegeben) {
-    const kopie = sichereBelegKopie(db, config, job.id);
-    if (!kopie) continue;
-    bytes += dateiGroesse(kopie.pfad);
+    const kopie = db.prepare('SELECT pfad, sha256 FROM spesen_beleg_kopien WHERE job_id = ?').get(job.id);
+    const groesse = kopie ? dateiGroesse(kopie.pfad) : null;
+    if (groesse === null) continue;
+    bytes += groesse;
     anhaenge.push({ dateiname: `Spesen-${abrechnungId}-${job.id}.pdf`, pfad: kopie.pfad, sha256: kopie.sha256 });
   }
   if (bytes > MAX_ANHANG_BYTES) {
@@ -139,7 +151,7 @@ function entscheide(db, config, abrechnungId, jetzt) {
   }
   if (!setzeBestaetigung(db, abrechnungId, 'versendet', jetzt)) return { ergebnis: 'bereits' };
 
-  const { anhaenge, hinweis } = sammleAnhaenge(db, config, abrechnungId, freigegeben);
+  const { anhaenge, hinweis } = sammleAnhaenge(db, abrechnungId, freigegeben);
   const { subject, text } = renderBenachrichtigung(db, MAIL_TYP, {
     name: `${person.vorname} ${person.nachname}`,
     titel: einzeilig(abrechnung.titel) || `Nr. ${abrechnungId}`,
@@ -163,6 +175,8 @@ function entscheide(db, config, abrechnungId, jetzt) {
  * @returns {{ergebnis: 'offen'|'bereits'|'keine'|'deaktiviert'|'eingereiht', mailId?: number}}
  */
 export function pruefeSpesenBestaetigung(db, config, abrechnungId, { jetzt = Date.now() } = {}) {
+  // Läuft schon eine fremde Transaktion, wird nichts angefasst; BEGIN wirft dann.
+  if (!db.isTransaction) holeKopienNach(db, config, abrechnungId);
   // Vor dem try: scheitert BEGIN an einer fremden Transaktion, darf diese nicht zurückgerollt werden.
   db.exec('BEGIN IMMEDIATE');
   try {

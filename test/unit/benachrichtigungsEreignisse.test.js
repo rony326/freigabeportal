@@ -70,5 +70,5 @@ test('Spesen-Bestätigung: eigener Bereich, immer sofort, mit Schalter (Standard
   assert.equal(e.empfaengerKey, null);
   assert.equal(e.schalter.key, 'spesen_bestaetigung_aktiv');
   assert.equal(DEFAULTS.spesen_bestaetigung_aktiv, '1');
-  assert.deepEqual(e.variablen.map((v) => v.name), ['name', 'titel', 'eingereicht_am', 'positionen', 'summe', 'nicht_freigegeben', 'anhang_hinweis', 'portalName']);
+  assert.deepEqual(e.variablen.map((v) => v.name), ['name', 'titel', 'eingereicht_am', 'positionen', 'summe', 'nicht_freigegeben', 'anhang_hinweis', 'portal_url', 'portalName']);
 });

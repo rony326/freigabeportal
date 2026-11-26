@@ -119,7 +119,7 @@ test('getVorlage liefert die Standardtexte der Spesen-Bestätigung', () => {
   seedDefaults(db);
   assert.deepEqual(getVorlage(db, 'spesen-bestaetigung'), {
     betreff: 'Freigabeportal: Deine Spesen «%titel%» sind freigegeben',
-    text: 'Hallo %name%\n\nDeine Spesenabrechnung «%titel%» vom %eingereicht_am% ist freigegeben. Die folgenden Positionen werden nun zur Auszahlung vorbereitet:\n\n%positionen%\n\nTotal: CHF %summe%\n%nicht_freigegeben%%anhang_hinweis%\nFreundliche Grüsse\n%portalName%',
+    text: 'Hallo %name%\n\nDeine Spesenabrechnung «%titel%» vom %eingereicht_am% ist freigegeben. Die folgenden Positionen werden nun zur Auszahlung vorbereitet:\n\n%positionen%\n\nTotal: CHF %summe%\n%nicht_freigegeben%%anhang_hinweis%\nZum Freigabeportal: %portal_url%\n\nFreundliche Grüsse\n%portalName%',
   });
   db.close();
 });

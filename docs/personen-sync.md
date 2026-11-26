@@ -122,7 +122,9 @@ den aktuellen Schritt zuständige Person inzwischen deaktiviert oder
 
 Ein `freigabe2`-Job, der bereits an die Admin-Gruppe eskaliert wurde, gilt
 **nicht** als hängend — ein gleichzeitiger Ausfall der gesamten
-`superadmin`-Gruppe ist bewusst nicht abgedeckt.
+`superadmin`-Gruppe ist bewusst nicht abgedeckt. Ebenso nie hängend ist eine
+**abgelehnte Spesenposition**: die Ablehnung ist endgültig, sie wird weder
+gelistet noch in den Pool zurückgesetzt.
 
 **Admin → Betrieb → Sync-Übersicht** listet jeden hängenden Job mit Name/Grund und
 bietet einen Force-Freigeben-Button:

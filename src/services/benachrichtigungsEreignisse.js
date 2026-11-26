@@ -231,6 +231,7 @@ export const EREIGNISSE = [
       // Die beiden folgenden Bausteine sind leer oder bringen ihre Zeilenumbrüche selbst mit.
       v('nicht_freigegeben', 'Nicht freigegebene Positionen', '\nNicht freigegeben:\n- Parkgebühr: CHF 8.00 (Beleg fehlt)\n'),
       v('anhang_hinweis', 'Hinweis zum Anhang', '\nDie gestempelten Belege findest du im Anhang.\n'),
+      v('portal_url', 'Adresse des Portals', 'https://portal.example'),
       PORTAL,
     ],
   }),

@@ -791,12 +791,13 @@ export function getEffectiveFreigeber2Id(job, konto) {
 // ChurchTools nicht mehr auflösbar, beides vom Personen-Sync gesetzt. Geprüft wird je Status: bei 'zugewiesen'/'abgelehnt'
 // ist die handelnde Person zugewiesen_an direkt; bei 'freigabe2' der effektive Freigeber 2, ausser der Vorgang trägt schon
 // das Admin-Eskalationsflag aus SYNC-8 — ein an den Admin geleiteter Vorgang "hängt" nach dieser Definition nie (ein
-// gleichzeitiger Ausfall der gesamten Portal-Admin-Gruppe ist nicht vorgesehen).
+// gleichzeitiger Ausfall der gesamten Portal-Admin-Gruppe ist nicht vorgesehen). Eine abgelehnte Spesenposition ist endgültig
+// (kein Überarbeiten-Weg) und hängt deshalb nie; sie darf auch nicht in den Pool zurück, wo Spesen unsichtbar wären.
 // Vorgänge, bei denen die aktuell nötige Person nicht mehr handeln kann (deaktiviert/nicht auflösbar).
 export function listStalledJobs(db) {
   const ergebnisse = [];
 
-  for (const job of db.prepare("SELECT * FROM jobs WHERE status IN ('zugewiesen', 'abgelehnt')").all()) {
+  for (const job of db.prepare("SELECT * FROM jobs WHERE status IN ('zugewiesen', 'abgelehnt') AND NOT (quelle = 'spesen' AND status = 'abgelehnt')").all()) {
     const akteur = getPersonById(db, job.zugewiesen_an);
     if (!akteur || !akteur.aktiv || akteur.ct_person_unresolved) {
       ergebnisse.push({ job, akteurId: job.zugewiesen_an, grund: !akteur || !akteur.aktiv ? 'inaktiv' : 'nicht_aufloesbar' });
@@ -831,7 +832,7 @@ export function forceReleaseJob(db, jobId) {
            abgelehnt_von = NULL, ablehnungsgrund = NULL,
            reminder_gesendet_at = NULL, eskalation_gesendet_at = NULL,
            pool_rueckgesendet_bemerkung = NULL, pool_rueckgesendet_von = NULL, pool_rueckgesendet_am = NULL
-       WHERE id = ? AND status IN ('zugewiesen', 'abgelehnt')`
+       WHERE id = ? AND status IN ('zugewiesen', 'abgelehnt') AND NOT (quelle = 'spesen' AND status = 'abgelehnt')`
     )
     .run(jobId);
   return result.changes > 0;

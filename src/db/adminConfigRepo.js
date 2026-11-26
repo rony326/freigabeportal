@@ -118,7 +118,7 @@ export const DEFAULTS = {
   mail_vorlage_kommentar_betreff: 'Freigabeportal: Neuer Kommentar zu %jobDateiname% (Vorgang %jobId%)',
   mail_vorlage_kommentar_text: 'Hallo %empfaengerName%,\n\n%verfasserName% hat einen Kommentar zum Vorgang %jobId% (%jobDateiname%) geschrieben:\n\n%kommentarText%\n\nZum Vorgang: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_spesen_bestaetigung_betreff: 'Freigabeportal: Deine Spesen «%titel%» sind freigegeben',
-  mail_vorlage_spesen_bestaetigung_text: 'Hallo %name%\n\nDeine Spesenabrechnung «%titel%» vom %eingereicht_am% ist freigegeben. Die folgenden Positionen werden nun zur Auszahlung vorbereitet:\n\n%positionen%\n\nTotal: CHF %summe%\n%nicht_freigegeben%%anhang_hinweis%\nFreundliche Grüsse\n%portalName%',
+  mail_vorlage_spesen_bestaetigung_text: 'Hallo %name%\n\nDeine Spesenabrechnung «%titel%» vom %eingereicht_am% ist freigegeben. Die folgenden Positionen werden nun zur Auszahlung vorbereitet:\n\n%positionen%\n\nTotal: CHF %summe%\n%nicht_freigegeben%%anhang_hinweis%\nZum Freigabeportal: %portal_url%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_rapport_zuweisung_betreff: 'Freigabeportal: Dokument zur Kenntnisnahme',
   mail_vorlage_rapport_zuweisung_text: 'Hallo %empfaengerName%,\n\n%markiertVon% bittet dich, folgendes Dokument zur Kenntnis zu nehmen: %jobDateiname%\n\nBemerkung: %bemerkung%\n\nBitte im Freigabeportal ansehen und die Kenntnisnahme bestätigen: %link%\n\nFreundliche Grüsse\n%portalName%',
   mail_vorlage_rapport_reminder_betreff: 'Freigabeportal: Dokument wartet auf deine Kenntnisnahme',

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
@@ -18,7 +18,7 @@ import { fetchCsrfToken } from '../helpers/csrf.js';
 import { ARCHIVE_RETENTION_MS } from '../../src/services/archiveReceipt.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import { listMailLog, listMailAnhaenge } from '../../src/db/mailLogRepo.js';
-import { sichereBelegKopie, pruefeSpesenBestaetigung } from '../../src/services/spesenBestaetigung.js';
+import { sichereBelegKopie, loeseSpesenBestaetigungAus, pruefeSpesenBestaetigung } from '../../src/services/spesenBestaetigung.js';
 import { spesenPosition } from '../helpers/spesenVersand.js';
 
 function testConfig(jobsDir) {
@@ -261,4 +261,43 @@ test('Nachholen im Nachtlauf reiht übersehene Bestätigung ein', async (t) => {
   assert.equal(listMailAnhaenge(s.db, mail.id).length, 1);
   assert.equal((await s.lauf()).spesenBestaetigungenNachgeholt, 0);
   assert.equal(listMailLog(s.db).length, 1);
+});
+
+test('späte Versandquittung nach der Bereinigung → keine Mail, Vermerk keine', async (t) => {
+  const s = spesenSetup(t);
+  t.mock.method(console, 'error', () => {});
+  const warnungen = t.mock.method(console, 'warn', () => {});
+  const id = s.abrechnung();
+  // Abgeholt und archivquittiert, aber der Versand an Bexio ist noch nicht gemeldet.
+  const a = s.position(id, 'a', false);
+  s.db.prepare("UPDATE jobs SET status = 'abgeholt' WHERE id = ?").run(a.id);
+  s.db.prepare(`INSERT INTO archiv_quittungen (export_id, dokument_id, task_id, sha256, bestaetigt_am)
+    VALUES (?, '1', 'task', ?, ?)`).run(`e${a.id}`, a.hash, new Date(Date.now() - ARCHIVE_RETENTION_MS - 1000).toISOString());
+  assert.equal((await s.lauf()).archiviert, 1);
+  assert.equal(existsSync(a.pdfPfad), false);
+
+  s.db.prepare(`INSERT INTO bexio_versand (job_id, export_id, empfaenger, message_id, smtp_antwort, gesendet_am, gemeldet_am)
+    VALUES (?, ?, 'b@example.org', '<spaet>', '250', '2026-11-20', '2026-11-20')`).run(a.id, `e${a.id}`);
+  loeseSpesenBestaetigungAus(s.db, s.config, null, a.id);
+
+  assert.equal(listMailLog(s.db).length, 0);
+  assert.equal(s.db.prepare('SELECT bestaetigung_vermerk FROM spesenabrechnungen WHERE id = ?').get(id).bestaetigung_vermerk, 'keine');
+  assert.equal(warnungen.mock.callCount(), 1);
+});
+
+test('Tmp-Sweep räumt auch alte .tmp-Dateien in mail-anhaenge', async (t) => {
+  const s = spesenSetup(t);
+  // Ohne das Unterverzeichnis läuft der Sweep still durch.
+  const fehler = t.mock.method(console, 'error', () => {});
+  assert.equal((await s.lauf()).tmpGeloescht, 0);
+  assert.equal(fehler.mock.callCount(), 0);
+  const dir = join(s.config.jobsDir, 'mail-anhaenge');
+  mkdirSync(dir);
+  const [alt, neu, beleg] = ['alt.pdf.x.tmp', 'neu.pdf.y.tmp', 'spesen-1.pdf'].map((name) => join(dir, name));
+  for (const pfad of [alt, neu, beleg]) writeFileSync(pfad, 'x');
+  const frueher = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  for (const pfad of [alt, beleg]) utimesSync(pfad, frueher, frueher);
+
+  assert.equal((await s.lauf()).tmpGeloescht, 1);
+  assert.deepEqual([alt, neu, beleg].map((pfad) => existsSync(pfad)), [false, true, true]);
 });

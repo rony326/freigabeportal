@@ -130,6 +130,9 @@ Entschieden wird je Abrechnung höchstens einmal
 [datenmodell.md](datenmodell.md#spesenabrechnungen)):
 
 - keine Position freigegeben → keine Mail (die Ablehnungsmails genügen);
+- eine freigegebene Position ohne Beleg-Kopie, deren Original-PDF schon
+  gelöscht ist (z. B. Versandquittung erst nach der Bereinigung) → keine Mail,
+  Vermerk `keine`, Warnung im Server-Log mit der Nummer der Abrechnung;
 - Schalter **Admin → Einstellungen → Benachrichtigungen → Spesen freigegeben**
   aus → keine Mail, auch nicht nachträglich;
 - einreichende Person ohne Mailadresse → keine Mail (Meldung im Server-Log);
@@ -147,8 +150,9 @@ nie im Digest; scheitert der Versand, wiederholt `mail-zustellung` ihn.
 Hash im Exportnachweis entspricht. Der Anhang heisst
 `Spesen-<Abrechnung>-<Position>.pdf`. Sind die Belege zusammen grösser als
 15 MB, geht die Mail ohne Anhänge raus und verweist an die Finanzverwaltung;
-fehlt einzelnen Positionen die Kopie, geht der Rest mit einem entsprechenden
-Hinweis mit. Eine Mail ganz ohne Belege ist im
+lässt sich das noch vorhandene Original einer Position nicht kopieren (Hash
+weicht ab, Datenträgerfehler), geht der Rest mit einem entsprechenden Hinweis
+mit. Mails ganz ohne oder mit unvollständigen Belegen sind im
 [Mail-Protokoll](admin-bereich.md#e-mail-protokoll-adminmails) markiert.
 
 **Altbestand:** Abrechnungen, die beim Update schon erledigt waren, wurden

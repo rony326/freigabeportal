@@ -13,6 +13,8 @@ import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { requirePermission } from '../../../src/middleware/permissions.js';
 import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
+import { createSpesenabrechnung } from '../../../src/db/spesenabrechnungenRepo.js';
+import { spesenPosition } from '../../helpers/spesenVersand.js';
 import { reiheMailEin } from '../../../src/services/mailZustellung.js';
 import { createMailsRouter } from '../../../src/routes/admin/mails.js';
 
@@ -220,4 +222,29 @@ test('GET /admin/mails warnt bei einer Spesen-Bestätigung, die ohne Belege eing
   assert.doesNotMatch(await seite(), /Ohne Belege eingereiht/);
   reiheMailEin(db, mail);
   assert.equal((await seite()).match(/Ohne Belege eingereiht/g).length, 1);
+});
+
+test('GET /admin/mails warnt bei einer Spesen-Bestätigung mit weniger Anhängen als freigegebenen Positionen', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'mail-teilbelege-'));
+  const db = openDatabase(':memory:');
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  seedAdmin(db);
+  const spesenabrechnungId = createSpesenabrechnung(db, { eingereichtVon: '99', eingereichtAm: '2026-11-01T10:00:00.000Z', titel: 'Lager' });
+  const position = (name, versandt) => spesenPosition(db, { spesenabrechnungId, eingereichtVon: '99', pdfPfad: join(dir, `${name}.pdf`), versandt });
+  const a = position('a', true);
+  position('b', true);
+  // Nicht freigegebene Positionen zählen nicht.
+  position('c', false);
+  const anhang = (name) => ({ dateiname: name, pfad: join(dir, name), sha256: 'x' });
+  const mail = { typ: 'spesen-bestaetigung', jobId: a.id, empfaenger: 'a@example.org', betreff: 'B', text: 'T' };
+  reiheMailEin(db, { ...mail, anhaenge: [anhang('1.pdf'), anhang('2.pdf')] });
+  const app = buildTestApp(db, createStubMailer());
+  const seite = async () => (await request(app).get('/admin/mails').set('x-test-person-id', '99')).text;
+  assert.doesNotMatch(await seite(), /Nicht alle Belege dabei|Ohne Belege eingereiht/);
+  reiheMailEin(db, { ...mail, anhaenge: [anhang('1.pdf')] });
+  assert.equal((await seite()).match(/Nicht alle Belege dabei/g).length, 1);
+  reiheMailEin(db, mail);
+  const html = await seite();
+  assert.equal(html.match(/Nicht alle Belege dabei/g).length, 1);
+  assert.equal(html.match(/Ohne Belege eingereiht/g).length, 1);
 });

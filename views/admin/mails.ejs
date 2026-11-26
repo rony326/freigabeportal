@@ -23,6 +23,7 @@
               <td><%= mail.betreff %></td>
               <td><%= mail.typ %>
                 <% if (mail.ohneBelege) { %><div><span class="badge text-bg-warning">Ohne Belege eingereiht</span></div><% } %>
+                <% if (mail.belegeFehlen) { %><div><span class="badge text-bg-warning">Nicht alle Belege dabei</span></div><% } %>
               </td>
               <td>
                 <% if (mail.status === 'versendet') { %><span class="badge text-bg-success">versendet</span>

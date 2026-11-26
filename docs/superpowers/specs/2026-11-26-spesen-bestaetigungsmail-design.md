@@ -77,8 +77,13 @@ Fehler protokollieren; der Nachhol-Durchlauf holt es nach.
 Bei jeder neuen Bexio-Versandquittung einer Spesenposition wird das gestempelte End-PDF (das Exportdokument, dessen Hash im
 Exportnachweis steht) in ein eigenes Verzeichnis kopiert (`<DATA_DIR>/mail-anhaenge/`) und in einer neuen Tabelle vermerkt
 (Job, Pfad, SHA-256). Dadurch hat die Mail ihren Anhang auch dann, wenn die Abrechnung erst nach der 7-Tage-Frist erledigt
-ist. Fehlt das PDF bereits beim Kopieren (sollte nicht vorkommen), wird die Position in der Mail ohne Anhang aufgeführt und
-eine Warnung protokolliert.
+ist.
+
+Hat eine freigegebene Position keine Kopie und ist ihr Original-PDF bereits gelöscht (typisch: n8n meldet den Versand erst,
+nachdem die Bereinigung gelaufen ist), wird die Abrechnung beim Entscheiden mit Vermerk «keine» abgeschlossen: **keine Mail**,
+Warnung im Server-Log mit der Nummer der Abrechnung. Das verhindert verspätete Bestätigungen ohne Belege (Anti-Ziel). Ist das
+Original noch da und scheitert nur das Kopieren (Hash weicht ab, Datenträgerfehler), geht die Mail raus, die Position ohne
+Anhang mit Hinweis, und eine Warnung wird protokolliert.
 
 ### 3. Anhänge in der Mail-Outbox
 
@@ -92,7 +97,8 @@ eine Warnung protokolliert.
   `mail_log_aufbewahrung_tage`, Standard 90). Der Job `pdf-bereinigung` löscht eine Kopie (mit Audit, neue Dateiart
   `mail_anhang`), sobald die Abrechnung entschieden ist (`bestaetigung_am` gesetzt) und keine `mail_anhaenge`-Zeile mehr auf
   sie zeigt. *(Abweichung vom ersten Entwurf «nach `versendet` löschen», damit erneutes Versenden die Belege noch hat.)*
-- Dateiname im Anhang: lesbar aus Abrechnungstitel und Positionsnummer (Muster `belegName.js`).
+- Dateiname im Anhang: `Spesen-<abrechnungId>-<jobId>.pdf`. *(Abweichung vom ersten Entwurf «lesbar aus Abrechnungstitel und
+  Positionsnummer»: die Nummern sind eindeutig und kommen ohne Bereinigung von Freitext für Dateinamen aus.)*
 
 ### 4. Mailtyp und Vorlage
 

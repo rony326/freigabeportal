@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import { istWartungsmodusAktiv } from '../../services/wartungsmodus.js';
 import { listMailLog, getMailLogById, listMailAnhaenge } from '../../db/mailLogRepo.js';
+import { zaehleVersandtePositionenZuJob } from '../../db/spesenabrechnungenRepo.js';
 import { sendRenderedMail } from '../../services/notify.js';
 import { stelleMailZu } from '../../services/mailZustellung.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
@@ -12,11 +13,17 @@ export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next
 
   // GET /admin/mails – das Protokoll (neueste zuerst).
   router.get('/', (req, res) => {
-    // Eine Spesen-Bestätigung ohne jeden Anhang (z. B. Belege über 15 MB) wird markiert.
-    const mails = listMailLog(db).map((mail) => ({
-      ...mail,
-      ohneBelege: mail.typ === 'spesen-bestaetigung' && listMailAnhaenge(db, mail.id).length === 0,
-    }));
+    // Eine Spesen-Bestätigung ohne jeden Anhang (z. B. Belege über 15 MB) oder mit weniger Anhängen als freigegebenen
+    // Positionen wird markiert.
+    const mails = listMailLog(db).map((mail) => {
+      if (mail.typ !== 'spesen-bestaetigung') return mail;
+      const anhaenge = listMailAnhaenge(db, mail.id).length;
+      return {
+        ...mail,
+        ohneBelege: anhaenge === 0,
+        belegeFehlen: anhaenge > 0 && anhaenge < zaehleVersandtePositionenZuJob(db, mail.job_id),
+      };
+    });
     res.render('admin/mails', { mails, gespeichert: req.query.gespeichert === '1', zurueckgehalten: req.query.zurueckgehalten === '1' });
   });
 

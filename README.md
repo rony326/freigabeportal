@@ -228,7 +228,7 @@ Hintergrund-Jobs selbst ein (`src/services/scheduler.js`, gestartet in `src/inde
 | `sync-personen` | täglich, Default 02:00 (Europe/Zürich) | ChurchTools-Personen-/Gruppen-Sync |
 | `pool-erinnerungen` | Intervall, Default alle 60 Min. | Reminder-/Eskalations-Mails für unbeanspruchte Pool-Rechnungen (Schwellen in Stunden, admin-konfigurierbar, Default 24h/48h — separat unter Eskalationszeiten) |
 | `freigabe2-erinnerungen` | Intervall, Default alle 60 Min. | Reminder an den effektiven Freigeber 2 und Übergabe an die Admin-Gruppe für seit langem unbeantwortete `freigabe2`-Jobs |
-| `pdf-bereinigung` | täglich, Default 02:30 (Europe/Zürich) | Archivierung abgeholter Jobs, Aufräumen alter `.tmp`-Stempeldateien, Mail-Log-Retention, Quarantäne verwaister finaler Dateien |
+| `pdf-bereinigung` | täglich, Default 02:30 (Europe/Zürich) | Nachholen übersehener Spesen-Bestätigungen und Beleg-Kopien, Archivierung abgeholter Jobs, Aufräumen alter `.tmp`-Dateien, Mail-Log-Retention, Löschen nicht mehr gebrauchter Spesen-Beleg-Kopien, Quarantäne verwaister finaler Dateien |
 | `zeitstempel-nachholen` | Intervall, Default alle 5 Min. | wiederholt fehlgeschlagene RFC3161-Zeitstempel-Versuche (nur solange die PDF noch lokal vorliegt) |
 | `split-gruppen-nachholen` | Intervall, Default alle 15 Min. | holt die Zusammenführung einer vollständig freigegebenen Splitgruppe nach, wenn sie noch aussteht oder am Zeitstempel gescheitert ist |
 | `rapport-erinnerungen` | Intervall, Default alle 60 Min. | Reminder (72 h) und einmalige Eskalation (168 h) für Rapporte, die noch nicht von allen Empfänger:innen zur Kenntnis genommen wurden |

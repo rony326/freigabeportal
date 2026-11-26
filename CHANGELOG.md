@@ -6,14 +6,15 @@ Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 ## [1.5.0] – 2026-11-26
 
 Spesen-Bestätigung an die einreichende Person. Release Notes: [docs/releases/v1.5.0.md](docs/releases/v1.5.0.md).
-**Datenbank-Migration** (automatisch beim Start, vorher Backup ziehen), keine neuen Umgebungsvariablen, keine Änderung
-an n8n-Schnittstellen.
+**Datenbank-Migration** (automatisch beim Start, vorher Backup ziehen), keine neuen Umgebungsvariablen. **Vor dem Update
+prüfen:** n8n muss `…/bexio-versand-bestaetigen` vor oder mit dem Update aufrufen (Schnittstelle unverändert); ohne die
+Meldung abgeschlossene Vorgänge bekommen keine Bestätigung, auch nicht bei Nachmeldung nach der PDF-Bereinigung.
 
 - Neu: Ist eine Spesenabrechnung vollständig erledigt (jede Position an Bexio versandt, abgelehnt oder gelöscht) und
   mindestens eine freigegeben, bekommt die einreichende Person eine Mail mit den gestempelten Belegen als Anhang.
   Schalter und Vorlage unter Admin → Benachrichtigungen (Standard: an). Schon erledigte Abrechnungen bekommen nichts.
 - Neu: Mails können PDF-Anhänge tragen; Zustellung mit Hashprüfung und Wiederholung. Das Mail-Protokoll markiert eine
-  Bestätigung ohne Belege.
+  Bestätigung ohne oder mit unvollständigen Belegen. Ist ein Beleg schon gelöscht und nicht kopiert, geht keine Mail raus.
 - Geändert: `pdf-bereinigung` holt vor dem Löschen übersehene Bestätigungen nach und räumt Beleg-Kopien auf.
 - Behoben: Abgelehnte Spesen lassen sich nicht mehr über den Personen-Sync in den Pool zurücksetzen.
 

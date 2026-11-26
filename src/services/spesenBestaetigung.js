@@ -4,7 +4,8 @@
 // «nicht durchgekommen» heisst abgelehnt oder gelöscht; alles andere ist offen. Der Marker
 // spesenabrechnungen.bestaetigung_am sorgt für höchstens eine Bestätigung je Abrechnung.
 // Die Belege werden je Position nach <jobsDir>/mail-anhaenge kopiert, weil die Originale nach der Aufbewahrungsfrist
-// gelöscht werden, die Abrechnung aber erst später erledigt sein kann.
+// gelöscht werden, die Abrechnung aber erst später erledigt sein kann. Fehlt einer freigegebenen Position die Kopie und ist
+// auch das Original schon gelöscht (z. B. Versandquittung erst nach der Bereinigung), gibt es keine Mail (Vermerk «keine»).
 
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, statSync } from 'node:fs';
@@ -35,6 +36,20 @@ const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 function dateiGroesse(pfad) {
   const stat = statSync(pfad, { throwIfNoEntry: false });
   return stat?.isFile() ? stat.size : null;
+}
+
+// true nur, wenn weder eine Kopie noch das Original da ist, ein Anhang also nie mehr entstehen kann. Andere Fehler beim
+// Zugriff auf das Original (Rechte, Datenträger) zählen nicht als «gelöscht».
+function belegVerloren(db, job) {
+  const kopie = db.prepare('SELECT pfad FROM spesen_beleg_kopien WHERE job_id = ?').get(job.id);
+  if (kopie && dateiGroesse(kopie.pfad) !== null) return false;
+  const original = jobDocument(job).pdf_pfad;
+  if (!original) return true;
+  try {
+    return dateiGroesse(original) === null;
+  } catch {
+    return false;
+  }
 }
 
 // @returns {number|null} Abrechnung, zu der eine Spesenposition gehört; null für andere Vorgänge
@@ -143,6 +158,11 @@ function entscheide(db, config, abrechnungId, jetzt) {
   const abschliessen = (vermerk, ergebnis) => ({ ergebnis: setzeBestaetigung(db, abrechnungId, vermerk, jetzt) ? ergebnis : 'bereits' });
   if (freigegeben.length === 0) return abschliessen('keine', 'keine');
   if (getConfigValue(db, 'spesen_bestaetigung_aktiv') !== '1') return abschliessen('deaktiviert', 'deaktiviert');
+  const verloren = freigegeben.filter((job) => belegVerloren(db, job));
+  if (verloren.length) {
+    console.warn(`Spesen-Bestätigung ${abrechnungId}: keine Mail, Beleg bereits gelöscht und keine Kopie vorhanden (Position ${verloren.map((job) => job.id).join(', ')}).`);
+    return abschliessen('keine', 'keine');
+  }
   const person = getPersonById(db, abrechnung.eingereicht_von);
   const email = person?.email?.trim();
   if (!email) {

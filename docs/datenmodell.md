@@ -335,8 +335,9 @@ Zwei Spalten halten fest, ob über die
 [Bestätigung an die einreichende Person](spesen-einreichung.md#4-bestätigung-an-die-einreichende-person)
 entschieden ist: `bestaetigung_am` (`NULL` = offen; höchstens einmal gesetzt)
 und `bestaetigung_vermerk` — `versendet` (Mail in die Outbox eingereiht; den
-Zustellstand zeigt `mail_log`), `keine` (keine Position freigegeben oder keine
-Mailadresse), `deaktiviert` (Schalter war aus) oder `altbestand` (beim Anlegen
+Zustellstand zeigt `mail_log`), `keine` (keine Position freigegeben, keine
+Mailadresse, oder der Beleg einer freigegebenen Position war schon gelöscht
+und nicht kopiert), `deaktiviert` (Schalter war aus) oder `altbestand` (beim Anlegen
 der Spalten einmalig für schon erledigte Abrechnungen gesetzt: jede Position
 `abgelehnt`, `geloescht`, `abgeholt`, `archiviert` oder mit
 Bexio-Versandquittung). Details:

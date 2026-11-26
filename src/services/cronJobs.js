@@ -392,6 +392,25 @@ function loescheErledigteBelegKopien(db) {
   return geloescht;
 }
 
+// Löscht liegengebliebene .tmp-Dateien eines Verzeichnisses (ohne Unterverzeichnisse). @returns {number} Anzahl
+function loescheAlteTmpDateien(verzeichnis) {
+  const schwelle = Date.now() - TMP_MAX_ALTER_MS;
+  let geloescht = 0;
+  for (const name of readdirSync(verzeichnis)) {
+    if (!name.endsWith('.tmp')) continue;
+    const pfad = join(verzeichnis, name);
+    try {
+      if (statSync(pfad).mtimeMs < schwelle) {
+        unlinkSync(pfad);
+        geloescht += 1;
+      }
+    } catch (err) {
+      console.error(`Löschen der verwaisten Tmp-Datei ${pfad} fehlgeschlagen:`, err.message);
+    }
+  }
+  return geloescht;
+}
+
 function runPdfBereinigungJobInternal(db, config) {
   const gestartetAm = new Date().toISOString();
   // Vor jedem Löschen: Nachholen sichert fehlende Beleg-Kopien aus den Originalen. Die Mails bleiben 'eingereiht' (Job mail-zustellung).
@@ -426,21 +445,16 @@ function runPdfBereinigungJobInternal(db, config) {
 
   let tmpGeloescht = 0;
   try {
-    const schwelle = Date.now() - TMP_MAX_ALTER_MS;
-    for (const name of readdirSync(config.jobsDir)) {
-      if (!name.endsWith('.tmp')) continue;
-      const pfad = join(config.jobsDir, name);
-      try {
-        if (statSync(pfad).mtimeMs < schwelle) {
-          unlinkSync(pfad);
-          tmpGeloescht += 1;
-        }
-      } catch (err) {
-        console.error(`Löschen der verwaisten Tmp-Datei ${pfad} fehlgeschlagen:`, err.message);
-      }
-    }
+    tmpGeloescht = loescheAlteTmpDateien(config.jobsDir);
   } catch (err) {
     console.error('Tmp-Sweep konnte jobsDir nicht lesen:', err.message);
+  }
+  // Reste abgebrochener Beleg-Kopien (services/spesenBestaetigung.js); das Verzeichnis gibt es erst nach der ersten Kopie.
+  try {
+    const anhangDir = join(config.jobsDir, 'mail-anhaenge');
+    if (existsSync(anhangDir)) tmpGeloescht += loescheAlteTmpDateien(anhangDir);
+  } catch (err) {
+    console.error('Tmp-Sweep konnte mail-anhaenge nicht lesen:', err.message);
   }
 
   let mailLogGeloescht = 0;

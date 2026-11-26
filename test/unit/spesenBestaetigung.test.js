@@ -215,8 +215,9 @@ test('keine Kopie ohne passenden Exportnachweis, für fremde Quellen oder fehlen
 test('fehlende Kopie → Position ohne Anhang, Mail geht trotzdem mit Hinweis', (t) => {
   const s = setup(t);
   s.position({ versandt: true });
-  const weg = s.position({ versandt: true });
-  rmSync(weg.pfad);
+  const veraendert = s.position({ versandt: true });
+  // Original ist noch da, lässt sich aber nicht kopieren (Hash weicht ab).
+  writeFileSync(veraendert.pfad, 'andere Bytes');
   const ergebnis = s.pruefe();
   assert.equal(ergebnis.ergebnis, 'eingereiht');
   assert.equal(listMailAnhaenge(s.db, ergebnis.mailId).length, 1);
@@ -224,6 +225,30 @@ test('fehlende Kopie → Position ohne Anhang, Mail geht trotzdem mit Hinweis', 
   assert.match(mail.text, /- Auslage 2: CHF 10\.00/);
   assert.match(mail.text, /Nicht alle Belege konnten angehängt werden/);
   assert.ok(s.fehler.mock.callCount() >= 1);
+});
+
+test('Kopie fehlt und Original schon gelöscht → keine Mail, Vermerk keine, Warnung', (t) => {
+  const s = setup(t);
+  const warnungen = t.mock.method(console, 'warn', () => {});
+  s.position({ versandt: true });
+  const weg = s.position({ versandt: true });
+  rmSync(weg.pfad);
+  assert.deepEqual(s.pruefe(), { ergebnis: 'keine' });
+  assert.equal(listMailLog(s.db).length, 0);
+  assert.deepEqual(s.stand(), { bestaetigung_am: new Date(JETZT).toISOString(), bestaetigung_vermerk: 'keine' });
+  assert.equal(warnungen.mock.callCount(), 1);
+  assert.match(warnungen.mock.calls[0].arguments[0], new RegExp(`Spesen-Bestätigung ${s.abrechnungId}:`));
+  assert.deepEqual(s.pruefe(), { ergebnis: 'bereits' });
+});
+
+test('Kopie-Datei verloren und Original gelöscht → keine Mail', (t) => {
+  const s = setup(t);
+  t.mock.method(console, 'warn', () => {});
+  const p = s.position({ versandt: true });
+  rmSync(sichereBelegKopie(s.db, s.config, p.id).pfad);
+  rmSync(p.pfad);
+  assert.deepEqual(s.pruefe(), { ergebnis: 'keine' });
+  assert.equal(listMailLog(s.db).length, 0);
 });
 
 test('Schalter aus → deaktiviert, keine Mail', (t) => {

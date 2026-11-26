@@ -237,6 +237,14 @@ Der Mail-Typ `iban-warnung` wurde durch `auffaelligkeiten-warnung` ersetzt;
 alte `mail_vorlage_iban_warnung_*`-Schlüssel bleiben in bestehenden
 Datenbanken ungenutzt liegen.
 
+Das Ereignis „Spesen freigegeben“ (Bereich „Spesen“, Mail-Typ
+`spesen-bestaetigung`, immer sofort, Empfänger ist fest die einreichende
+Person) hat im Block „Wann“ den Schalter **Spesen-Bestätigung an
+Einreichende** (`spesen_bestaetigung_aktiv`, Standard an). Ist er aus, wird
+eine in dieser Zeit erledigte Abrechnung als `deaktiviert` abgehakt — beim
+Wiedereinschalten wird nichts nachgeschickt. Siehe
+[spesen-einreichung.md](spesen-einreichung.md#4-bestätigung-an-die-einreichende-person).
+
 ## Erscheinungsbild (`/admin/erscheinungsbild`)
 
 Corporate-Design-Anpassung: Primär-/Sekundärfarbe, Standard-Theme
@@ -339,14 +347,6 @@ kann hier zusätzlich die additiven Einzelrechte pro Person setzen
 (`POST /admin/personen/:id/berechtigungen`) — siehe
 [auth-und-rechte.md](auth-und-rechte.md).
 
-Das Ereignis „Spesen freigegeben“ (Bereich „Spesen“, Mail-Typ
-`spesen-bestaetigung`, immer sofort, Empfänger ist fest die einreichende
-Person) hat im Block „Wann“ den Schalter **Spesen-Bestätigung an
-Einreichende** (`spesen_bestaetigung_aktiv`, Standard an). Ist er aus, wird
-eine in dieser Zeit erledigte Abrechnung als `deaktiviert` abgehakt — beim
-Wiedereinschalten wird nichts nachgeschickt. Siehe
-[spesen-einreichung.md](spesen-einreichung.md#4-bestätigung-an-die-einreichende-person).
-
 ## E-Mail-Protokoll (`/admin/mails`)
 
 Vollständiges Protokoll aller Benachrichtigungen (`mail_log`, siehe
@@ -355,10 +355,11 @@ Vollständiges Protokoll aller Benachrichtigungen (`mail_log`, siehe
 Versuch und Fehlerdetails. „Erneut versenden“ für `fehlgeschlagen`e Zeilen
 legt eine neue Zeile an (samt den Anhängen der ursprünglichen Mail); „Jetzt erneut versuchen“ versucht eine noch
 eingereihte Zeile sofort, ohne Duplikat. Eine Spesen-Bestätigung ohne jeden
-Anhang (Belege zusammen über 15 MB oder keine Kopie vorhanden) trägt unter
-„Typ“ das Abzeichen **Ohne Belege eingereiht** — dann der Person die Belege auf
-Anfrage anderweitig zukommen lassen. Fehlt nur ein Teil der Belege, erscheint
-kein Abzeichen (der Mailtext weist darauf hin). Semantik und Wiederholungslogik:
+Anhang (Belege zusammen über 15 MB oder keine Kopie möglich) trägt unter
+„Typ“ das Abzeichen **Ohne Belege eingereiht**, eine mit weniger Anhängen als
+an Bexio gemeldeten Positionen der Abrechnung das Abzeichen **Nicht alle Belege
+dabei** — dann der Person die fehlenden Belege auf Anfrage anderweitig
+zukommen lassen. Semantik und Wiederholungslogik:
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail).
 
 ## Personen-Sync (`/admin/sync`)

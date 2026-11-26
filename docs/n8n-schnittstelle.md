@@ -249,7 +249,9 @@ Mail, sobald alle Positionen der Abrechnung erledigt sind. n8n muss dafür
 nichts Neues tun — Aufruf und Antworten bleiben gleich; eine wiederholte
 Meldung (`200`) löst nichts aus, und ein Fehler bei Kopie oder Mail lässt die
 Quittung nie scheitern. Ohne Quittung gilt eine Spesenposition als offen, die
-Bestätigung bleibt dann aus.
+Bestätigung bleibt dann aus. Kommt die Quittung erst, nachdem die Bereinigung
+das PDF gelöscht hat (und gibt es noch keine Kopie), wird auch dann keine
+Bestätigung mehr verschickt.
 
 > **Grenze:** Die SMTP-Antwort belegt nur, dass der **eigene Mailserver** die
 > Mail angenommen hat (z. B. `250 2.0.0 Ok: queued as …`), **nicht** die

@@ -67,7 +67,7 @@ flowchart LR
 | `sync-personen` | täglich 02:00 (Europe/Zürich) | Geplante Jobs | ja | `sync_log` | ChurchTools-Personen-/Gruppen-Sync — siehe [personen-sync.md](personen-sync.md) |
 | `pool-erinnerungen` | alle 60 Minuten | Geplante Jobs | ja | `cron_log` | Reminder- und Eskalations-Mails für unbeanspruchte Pool-Rechnungen |
 | `freigabe2-erinnerungen` | alle 60 Minuten | Geplante Jobs | ja | `cron_log` | Reminder an den effektiven Freigeber 2 und Übergabe an die Admin-Gruppe für seit langem unbeantwortete `freigabe2`-Jobs |
-| `pdf-bereinigung` | täglich 02:30 | Geplante Jobs | ja | `cron_log` | holt übersehene Spesen-Bestätigungen nach, archiviert abgeholte Jobs, räumt verwaiste `.tmp`-Stempeldateien, abgeschlossene `mail_log`-Einträge, nicht mehr gebrauchte Spesen-Beleg-Kopien und Dateien verworfener Kreditkartenbelege über der Aufbewahrungsfrist auf |
+| `pdf-bereinigung` | täglich 02:30 | Geplante Jobs | ja | `cron_log` | holt übersehene Spesen-Bestätigungen nach, archiviert abgeholte Jobs, räumt verwaiste `.tmp`-Dateien, abgeschlossene `mail_log`-Einträge, nicht mehr gebrauchte Spesen-Beleg-Kopien und Dateien verworfener Kreditkartenbelege über der Aufbewahrungsfrist auf |
 | `zeitstempel-nachholen` | alle 5 Minuten | Geplante Jobs | ja | `cron_log` | wiederholt fehlgeschlagene RFC3161-Stempelversuche |
 | `split-gruppen-nachholen` | alle 15 Minuten | Geplante Jobs | ja | `cron_log` | holt eine noch nicht zusammengeführte Splitgruppe nach (unvollständig oder am TSA gescheitert) |
 | `rapport-erinnerungen` | alle 60 Minuten | Geplante Jobs | ja | `cron_log` | Reminder und einmalige Eskalation für Rapporte, die noch nicht von allen Empfänger:innen zur Kenntnis genommen wurden; holt Abschlüsse nach |
@@ -184,14 +184,17 @@ fehlgeschlagener Schritt stoppt die anderen nicht):
    wenn die Abrechnung noch offen ist), dann wird geprüft, ob die Abrechnung
    erledigt ist (siehe
    [spesen-einreichung.md](spesen-einreichung.md#4-bestätigung-an-die-einreichende-person)).
+   Fehlt einer gemeldeten Position die Kopie und ist ihr Original schon
+   gelöscht, wird die Abrechnung ohne Mail abgehakt.
    Eine so eingereihte Mail bleibt `eingereiht`; verschickt wird sie vom Job
    `mail-zustellung`.
 2. Fuer Jobs im Status `abgeholt` mit Archivquittung und mindestens sieben Tagen
    seit Bestaetigung: Hash erneut pruefen, PDF/Thumbnail entfernen, danach Status
    `archiviert`. Ohne Quittung oder bei Hashabweichung bleiben die Dateien erhalten.
    Gruppen-PDFs unterliegen derselben Quittungs- und Wartepflicht.
-3. Verwaiste `.tmp`-Dateien in `JOBS_DIR` löschen, die älter als eine
-   Stunde sind (Reste eines abgebrochenen Stempel-Schreibvorgangs).
+3. Verwaiste `.tmp`-Dateien in `JOBS_DIR` und `JOBS_DIR/mail-anhaenge/`
+   löschen, die älter als eine Stunde sind (Reste eines abgebrochenen Stempel-
+   oder Kopiervorgangs).
 4. Abgeschlossene `mail_log`-Einträge (`versendet`/`fehlgeschlagen`) samt
    ihren Anhangszeilen (`mail_anhaenge`) löschen, die älter als die konfigurierte Aufbewahrungsfrist
    (`mail_log_aufbewahrung_tage`) sind. Noch zuzustellende Zeilen

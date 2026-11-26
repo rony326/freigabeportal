@@ -24,6 +24,17 @@ test('sendMail delivers via the configured transporter', async (t) => {
   assert.equal(captured.text, 'Hallo');
 });
 
+test('attachments werden an nodemailer weitergereicht', async (t) => {
+  let captured;
+  t.mock.method(nodemailer, 'createTransport', () => ({ sendMail: async (mail) => { captured = mail; } }));
+  const mailer = createMailer({ host: 'smtp.example.org', port: 587, user: 'u', pass: 'p', from: 'portal@example.org' });
+  const attachments = [{ filename: 'a.pdf', content: Buffer.from('%PDF'), contentType: 'application/pdf' }];
+
+  await mailer.sendMail({ to: 'person@example.org', subject: 'Test', text: 'Hallo', attachments });
+
+  assert.deepEqual(captured.attachments, attachments);
+});
+
 test('createMailer throws when required SMTP settings are missing', () => {
   assert.throws(() => createMailer({}), /SMTP ist nicht konfiguriert/);
   assert.throws(

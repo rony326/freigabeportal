@@ -1,17 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../src/db/index.js';
 import { seedDefaults, setConfigValue } from '../../src/db/adminConfigRepo.js';
 import { createJob, getJobById } from '../../src/db/jobsRepo.js';
 import { upsertPerson } from '../../src/db/personenRepo.js';
-import { listMailLog, pruneMailLogOlderThan } from '../../src/db/mailLogRepo.js';
+import { listMailLog, listMailAnhaenge, pruneMailLogOlderThan } from '../../src/db/mailLogRepo.js';
 import { runPoolErinnerungenJob, runMailZustellungJob, runMailDigestJob } from '../../src/services/cronJobs.js';
 import { sendNotification } from '../../src/services/notify.js';
-import { reiheMailEin, stelleFaelligeMailsZu, wartezeitNachVersuch, SPERRE_MS } from '../../src/services/mailZustellung.js';
+import { reiheMailEin, stelleMailZu, stelleFaelligeMailsZu, wartezeitNachVersuch, SPERRE_MS } from '../../src/services/mailZustellung.js';
 
 // Regressionen zum Befund "SMTP-Ausfall verbraucht Erinnerungen ohne automatischen
 // Wiederholungsversuch" (docs/review-frischer-blick-2026-09-29.md, Abschnitt 2).
@@ -269,4 +270,78 @@ test('Freigabe-2-Eskalation und ihre Mail werden gemeinsam gespeichert, auch wen
   assert.deepEqual(mails.map((m) => m.status), ['eingereiht', 'eingereiht']);
   for (const m of mails) assert.match(m.text, new RegExp(`https://portal\\.example\\.org/freigabe2/${jobId}\\b`));
   db.close();
+});
+
+// Legt eine PDF-Datei ab und reiht eine Mail mit genau diesem Anhang ein.
+function mailMitAnhang(t, { sha256 = null } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'mail-anhang-'));
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  const bytes = Buffer.from('%PDF-1.4 Beleg \x00\xff', 'latin1');
+  const pfad = join(dir, 'kopie.pdf');
+  writeFileSync(pfad, bytes);
+  const anhang = { dateiname: 'a.pdf', pfad, sha256: sha256 ?? createHash('sha256').update(bytes).digest('hex') };
+  const id = reiheMailEin(db, { typ: 'reminder', jobId: null, empfaenger: 'x@example.org', betreff: 'B', text: 'T', anhaenge: [anhang] });
+  return { db, id, pfad, bytes, anhang };
+}
+
+test('Anhänge werden mit Inhalt zugestellt', async (t) => {
+  const { db, id, bytes, anhang } = mailMitAnhang(t);
+  assert.deepEqual(listMailAnhaenge(db, id), [anhang]);
+  const heil = mailer();
+
+  const ergebnis = await stelleMailZu(db, heil, id);
+
+  assert.equal(ergebnis.status, 'versendet');
+  assert.equal(heil.sent[0].attachments.length, 1);
+  assert.equal(heil.sent[0].attachments[0].filename, 'a.pdf');
+  assert.equal(heil.sent[0].attachments[0].contentType, 'application/pdf');
+  assert.ok(heil.sent[0].attachments[0].content.equals(bytes));
+  assert.equal(listMailLog(db)[0].status, 'versendet');
+});
+
+test('Mails ohne Anhang werden ohne attachments-Schlüssel versendet', async (t) => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  t.after(() => db.close());
+  const id = reiheMailEin(db, { typ: 'reminder', jobId: null, empfaenger: 'x@example.org', betreff: 'B', text: 'T' });
+  const heil = mailer();
+  await stelleMailZu(db, heil, id);
+  assert.deepEqual(Object.keys(heil.sent[0]).sort(), ['subject', 'text', 'to']);
+});
+
+test('Fehlender Anhang → Wiederholung mit klarer Meldung', async (t) => {
+  const { db, id, pfad } = mailMitAnhang(t);
+  rmSync(pfad);
+  const heil = mailer();
+
+  const ergebnis = await stelleMailZu(db, heil, id);
+
+  assert.equal(ergebnis.status, 'eingereiht');
+  assert.equal(heil.versuche.length, 0);
+  assert.match(listMailLog(db)[0].fehler_details, /Anhang a\.pdf fehlt/);
+  assert.ok(!listMailLog(db)[0].fehler_details.includes(pfad), 'kein absoluter Pfad im Protokoll');
+});
+
+test('Veränderter Anhang → Wiederholung', async (t) => {
+  const { db, id } = mailMitAnhang(t, { sha256: '0'.repeat(64) });
+  const heil = mailer();
+
+  const ergebnis = await stelleMailZu(db, heil, id);
+
+  assert.equal(ergebnis.status, 'eingereiht');
+  assert.equal(heil.versuche.length, 0);
+  assert.match(listMailLog(db)[0].fehler_details, /Anhang a\.pdf stimmt nicht mit dem gespeicherten Hash überein/);
+});
+
+test('Mail und Anhänge werden gemeinsam gespeichert oder gar nicht', (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  assert.throws(() => reiheMailEin(db, {
+    typ: 'reminder', jobId: null, empfaenger: 'x@example.org', betreff: 'B', text: 'T',
+    anhaenge: [{ dateiname: 'a.pdf', pfad: '/tmp/a.pdf', sha256: 'ab' }, { dateiname: 'b.pdf', pfad: '/tmp/b.pdf', sha256: null }],
+  }));
+  assert.equal(listMailLog(db).length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM mail_anhaenge').get().n, 0);
 });

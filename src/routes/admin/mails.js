@@ -2,7 +2,7 @@
 
 import { Router } from 'express';
 import { istWartungsmodusAktiv } from '../../services/wartungsmodus.js';
-import { listMailLog, getMailLogById } from '../../db/mailLogRepo.js';
+import { listMailLog, getMailLogById, listMailAnhaenge } from '../../db/mailLogRepo.js';
 import { sendRenderedMail } from '../../services/notify.js';
 import { stelleMailZu } from '../../services/mailZustellung.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
@@ -15,7 +15,7 @@ export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next
     res.render('admin/mails', { mails: listMailLog(db), gespeichert: req.query.gespeichert === '1', zurueckgehalten: req.query.zurueckgehalten === '1' });
   });
 
-  // POST /admin/mails/:id/erneut-versenden – sendet eine protokollierte Mail unverändert nochmals (sofort, nie gebündelt).
+  // POST /admin/mails/:id/erneut-versenden – sendet eine protokollierte Mail unverändert (samt Anhängen) nochmals (sofort, nie gebündelt).
   router.post('/:id/erneut-versenden', csrfProtection, asyncHandler(async (req, res, next) => {
     try {
       // Wartungsmodus: nichts versenden und keine neue Zeile anlegen.
@@ -40,6 +40,7 @@ export function createMailsRouter({ db, mailer, csrfProtection = (req, res, next
         text: eintrag.text,
         typ: eintrag.typ,
         jobId: eintrag.job_id,
+        anhaenge: listMailAnhaenge(db, eintrag.id),
       });
       res.redirect('/admin/mails?gespeichert=1');
     } catch (err) {

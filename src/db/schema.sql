@@ -295,6 +295,18 @@ CREATE TABLE IF NOT EXISTS mail_log (
   versendet_am TEXT
 );
 
+-- PDF-Anhänge einer Mail aus der Outbox: Dateipfad plus Hash, damit beim Versand genau die eingereihte Datei geht (services/mailZustellung.js).
+-- mail_log_id ist bewusst KEIN Fremdschlüssel: Spätere Migrationen bauen mail_log per ALTER TABLE RENAME neu auf, SQLite würde den Verweis dabei auf die
+-- anschliessend gelöschte alte Tabelle umschreiben. Aufgeräumt werden die Zeilen zusammen mit ihrer Mail (pruneMailLogOlderThan).
+CREATE TABLE IF NOT EXISTS mail_anhaenge (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mail_log_id INTEGER NOT NULL,
+  dateiname TEXT NOT NULL,
+  pfad TEXT NOT NULL,
+  sha256 TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS mail_anhaenge_mail_idx ON mail_anhaenge(mail_log_id);
+
 -- job_id ist bewusst KEIN Fremdschlüssel: Der ganze Zweck dieser Tabelle ist, einen Nachweis zu behalten, nachdem die jobs-Zeile, auf die sie sich bezieht,
 -- endgültig gelöscht wurde (siehe loeschenJob). dateiname ist aus demselben Grund hier doppelt abgelegt — er wäre sonst nach dem Löschen des Vorgangs nicht mehr auffindbar.
 CREATE TABLE IF NOT EXISTS job_loeschungen (

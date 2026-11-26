@@ -2,7 +2,7 @@
 
 import nodemailer from 'nodemailer';
 
-// Erstellt den Mailer mit `sendMail({to, subject, text})`. Wirft, wenn SMTP_HOST/USER/PASS/FROM fehlen. Port 465 = implizites TLS.
+// Erstellt den Mailer mit `sendMail({to, subject, text, attachments})` (`attachments` optional, nodemailer-Format {filename, content, contentType}). Wirft, wenn SMTP_HOST/USER/PASS/FROM fehlen. Port 465 = implizites TLS.
 export function createMailer(smtpConfig) {
   if (!smtpConfig.host || !smtpConfig.user || !smtpConfig.pass || !smtpConfig.from) {
     throw new Error('SMTP ist nicht konfiguriert (SMTP_HOST/SMTP_USER/SMTP_PASS/SMTP_FROM fehlen).');
@@ -19,8 +19,8 @@ export function createMailer(smtpConfig) {
   });
 
   return {
-    async sendMail({ to, subject, text }) {
-      await transporter.sendMail({ from: smtpConfig.from, to, subject, text });
+    async sendMail({ to, subject, text, attachments }) {
+      await transporter.sendMail({ from: smtpConfig.from, to, subject, text, ...(attachments ? { attachments } : {}) });
     },
   };
 }

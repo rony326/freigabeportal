@@ -345,7 +345,7 @@ Vollständiges Protokoll aller Benachrichtigungen (`mail_log`, siehe
 [datenmodell.md](datenmodell.md)) mit Volltext, Status (`eingereiht`,
 `geplant`, `versendet`, `fehlgeschlagen`), Anzahl Versuche, nächstem
 Versuch und Fehlerdetails. „Erneut versenden“ für `fehlgeschlagen`e Zeilen
-legt eine neue Zeile an; „Jetzt erneut versuchen“ versucht eine noch
+legt eine neue Zeile an (samt den Anhängen der ursprünglichen Mail); „Jetzt erneut versuchen“ versucht eine noch
 eingereihte Zeile sofort, ohne Duplikat. Semantik und Wiederholungslogik:
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail).
 

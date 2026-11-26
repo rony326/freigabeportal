@@ -43,10 +43,11 @@ export const IMMER_SOFORT_TYPEN = new Set([
 // Die Zeile wird VOR dem SMTP-Aufruf als 'eingereiht' gespeichert (services/mailZustellung.js), ein fehlgeschlagener oder
 // unterbrochener Versand wird also vom Job mail-zustellung mit wachsendem Abstand automatisch wiederholt. Wirft nie; liefert
 // { id, status } mit status 'versendet' | 'eingereiht' (Wiederholung ausstehend) | 'fehlgeschlagen'.
-export async function sendRenderedMail(db, mailer, { to, subject, text, typ, jobId }) {
+// `anhaenge` optional: Array<{dateiname, pfad, sha256}>, wird mit der Mail eingereiht.
+export async function sendRenderedMail(db, mailer, { to, subject, text, typ, jobId, anhaenge }) {
   let id;
   try {
-    id = reiheMailEin(db, { typ, jobId, empfaenger: to, betreff: subject, text });
+    id = reiheMailEin(db, { typ, jobId, empfaenger: to, betreff: subject, text, anhaenge });
   } catch (err) {
     console.error('sendRenderedMail: Mail konnte nicht eingereiht werden', err);
     return { id: null, status: 'fehlgeschlagen', fehler: err.message };

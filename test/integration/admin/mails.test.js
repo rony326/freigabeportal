@@ -1,14 +1,19 @@
 import { test } from 'node:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 import { openDatabase } from '../../../src/db/index.js';
 import { upsertPerson } from '../../../src/db/personenRepo.js';
-import { logMailAttempt, listMailLog } from '../../../src/db/mailLogRepo.js';
+import { logMailAttempt, listMailLog, listMailAnhaenge } from '../../../src/db/mailLogRepo.js';
 import { loadCurrentPerson } from '../../../src/middleware/roles.js';
 import { loadNavFlags } from '../../../src/middleware/nav.js';
 import { requirePermission } from '../../../src/middleware/permissions.js';
 import { setBerechtigungenForPerson } from '../../../src/db/personBerechtigungenRepo.js';
+import { reiheMailEin } from '../../../src/services/mailZustellung.js';
 import { createMailsRouter } from '../../../src/routes/admin/mails.js';
 
 function createStubMailer({ shouldFail = false } = {}) {
@@ -157,7 +162,6 @@ test('GET /admin/mails as a person with only mails_einsehen shows the Mail-Proto
 test('POST /admin/mails/:id/erneut-versenden for an eingereiht row retries that same row immediately instead of creating a duplicate', async () => {
   const db = openDatabase(':memory:');
   seedAdmin(db);
-  const { reiheMailEin } = await import('../../../src/services/mailZustellung.js');
   const id = reiheMailEin(db, { typ: 'reminder', jobId: null, empfaenger: 'x@example.org', betreff: 'B', text: 'T' });
   db.prepare("UPDATE mail_log SET versuche = 2, fehler_details = 'SMTP down', naechster_versuch_am = '2999-01-01T00:00:00.000Z' WHERE id = ?").run(id);
   const mailer = createStubMailer();
@@ -176,4 +180,29 @@ test('POST /admin/mails/:id/erneut-versenden for an eingereiht row retries that 
   assert.equal(rows[0].status, 'versendet');
   assert.equal(rows[0].versuche, 3);
   db.close();
+});
+
+test('Erneut versenden übernimmt Anhänge', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'mail-erneut-'));
+  const db = openDatabase(':memory:');
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  seedAdmin(db);
+  const anhaenge = ['a.pdf', 'b.pdf'].map((dateiname) => {
+    const pfad = join(dir, dateiname);
+    writeFileSync(pfad, dateiname);
+    return { dateiname, pfad, sha256: createHash('sha256').update(dateiname).digest('hex') };
+  });
+  const id = reiheMailEin(db, { typ: 'reminder', jobId: null, empfaenger: 'x@example.org', betreff: 'B', text: 'T', anhaenge });
+  db.prepare("UPDATE mail_log SET status = 'fehlgeschlagen' WHERE id = ?").run(id);
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app).post(`/admin/mails/${id}/erneut-versenden`).set('x-test-person-id', '99');
+
+  assert.equal(res.status, 302);
+  const neu = listMailLog(db)[0];
+  assert.notEqual(neu.id, id);
+  assert.equal(neu.status, 'versendet');
+  assert.deepEqual(listMailAnhaenge(db, neu.id), listMailAnhaenge(db, id));
+  assert.deepEqual(mailer.sent[0].attachments.map((a) => a.filename), ['a.pdf', 'b.pdf']);
 });

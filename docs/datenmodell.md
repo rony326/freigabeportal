@@ -493,6 +493,16 @@ Einreihungszeitpunkt. Die Aufbewahrungsfrist löscht nur `versendet` und
 `fehlgeschlagen`. Details:
 [geplante-jobs-und-benachrichtigungen.md](geplante-jobs-und-benachrichtigungen.md#benachrichtigungen-e-mail).
 
+### `mail_anhaenge`
+PDF-Anhänge einer Mail aus der Outbox: `mail_log_id`, `dateiname` (so heisst
+der Anhang in der Mail), `pfad` und `sha256`. Die Datei wird bei jedem
+Zustellversuch neu gelesen und gegen den Hash geprüft; fehlt sie oder weicht
+sie ab, gilt das als Fehlversuch mit Wiederholung. `mail_log_id` ist
+**absichtlich kein** Foreign Key (spätere Tabellen-Neuaufbauten von `mail_log`
+würden den Verweis umschreiben). Die Aufbewahrungsfrist löscht die Zeilen
+zusammen mit ihrer Mail. Reine Hilfstabelle ohne Audit-Trigger; Anhänge gibt
+es nur bei sofort versendeten Mails, nicht im Digest.
+
 ### `job_loeschungen`
 Protokoll jeder endgültigen Löschung einer abgelehnten Rechnung.
 `job_id` ist **absichtlich kein** Foreign Key: der Sinn dieser Tabelle ist

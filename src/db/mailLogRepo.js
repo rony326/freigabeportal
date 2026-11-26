@@ -21,12 +21,31 @@ export function getMailLogById(db, id) {
   return db.prepare('SELECT * FROM mail_log WHERE id = ?').get(id) ?? null;
 }
 
-// Löscht abgeschlossene Einträge, die älter als der Zeitpunkt sind. @returns {number} Anzahl gelöschter Zeilen
+// Anhänge einer Mail in der Reihenfolge, in der sie eingereiht wurden. @returns {Array<{dateiname, pfad, sha256}>}
+export function listMailAnhaenge(db, mailLogId) {
+  return db
+    .prepare('SELECT dateiname, pfad, sha256 FROM mail_anhaenge WHERE mail_log_id = ? ORDER BY id')
+    .all(mailLogId)
+    .map((zeile) => ({ ...zeile }));
+}
+
+// Löscht abgeschlossene Einträge, die älter als der Zeitpunkt sind, samt ihren Anhangszeilen (die Dateien bleiben liegen).
+// @returns {number} Anzahl gelöschter Mails
 export function pruneMailLogOlderThan(db, isoThreshold) {
   // Nur abgeschlossene Zeilen: 'eingereiht'/'geplant' sind noch zuzustellen und dürfen nie durch
   // die Aufbewahrungsfrist verloren gehen.
-  const result = db.prepare("DELETE FROM mail_log WHERE versucht_am < ? AND status IN ('versendet', 'fehlgeschlagen')").run(isoThreshold);
-  return Number(result.changes);
+  const bedingung = "versucht_am < ? AND status IN ('versendet', 'fehlgeschlagen')";
+  const eigeneTransaktion = !db.isTransaction;
+  if (eigeneTransaktion) db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare(`DELETE FROM mail_anhaenge WHERE mail_log_id IN (SELECT id FROM mail_log WHERE ${bedingung})`).run(isoThreshold);
+    const result = db.prepare(`DELETE FROM mail_log WHERE ${bedingung}`).run(isoThreshold);
+    if (eigeneTransaktion) db.exec('COMMIT');
+    return Number(result.changes);
+  } catch (err) {
+    if (eigeneTransaktion && db.isTransaction) db.exec('ROLLBACK');
+    throw err;
+  }
 }
 
 export function listGeplantMailsGruppiertNachEmpfaenger(db) {

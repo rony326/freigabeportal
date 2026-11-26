@@ -60,3 +60,11 @@ test('missing file is a no-op; audit failure keeps the file; symlinks and direct
   db.exec('ROLLBACK');
   assert.throws(() => loescheDateiMitAudit(db, pfad, { ...opts, dateiart: 'beliebig' }), /Dateiart/);
 });
+
+test('Dateiart mail_anhang ist für die protokollierte Löschung zugelassen', (t) => {
+  const { db, dir } = setup(t);
+  const pfad = join(dir, 'kopie.pdf');
+  writeFileSync(pfad, 'x');
+  assert.equal(loescheDateiMitAudit(db, pfad, { ...opts, dateiart: 'mail_anhang' }), true);
+  assert.equal(existsSync(pfad), false);
+});

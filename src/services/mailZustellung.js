@@ -1,6 +1,8 @@
 // Zustellung der Benachrichtigungen über `mail_log` (Outbox mit Wiederholung) – Funktionsweise im Kommentar direkt unterhalb; Auslöser: Job mail-zustellung.
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { getConfigValue } from '../db/adminConfigRepo.js';
+import { listMailAnhaenge } from '../db/mailLogRepo.js';
 import { getVorlage, renderTemplate } from './mailTemplates.js';
 import { benachrichtigungFuer } from './benachrichtigung.js';
 import { istWartungsmodusAktiv } from './wartungsmodus.js';
@@ -28,6 +30,8 @@ import { istWartungsmodusAktiv } from './wartungsmodus.js';
 //   SMTP-Server die Nachricht angenommen hat, aber bevor 'versendet' gespeichert ist, wird die
 //   Nachricht nach Ablauf der Sperre erneut versendet. SMTP bietet keine Idempotenz, die das
 //   ausschliessen könnte.
+// - Anhänge (mail_anhaenge, nur Einzelmails, nicht im Digest): gespeichert werden Pfad und SHA-256. Die Datei wird bei jedem
+//   Versuch neu gelesen und geprüft; fehlt sie oder stimmt der Hash nicht, zählt das als gewöhnlicher Fehlversuch.
 
 // Dauer der Sperre einer beanspruchten Zeile, Basis und Obergrenze des Wiederholungsabstands, Standard-Höchstzahl der Versuche
 // und Höchstzahl Zeilen je Lauf.
@@ -67,16 +71,43 @@ function inTransaktion(db, action) {
   }
 }
 
-// Legt die Mail dauerhaft in `mail_log` ab ('eingereiht' für den sofortigen Versand, 'geplant' für den Digest). @returns {number} id
-export function reiheMailEin(db, { typ, jobId, empfaenger, betreff, text, geplant = false, jetzt = Date.now() }) {
+// Legt die Mail dauerhaft in `mail_log` ab ('eingereiht' für den sofortigen Versand, 'geplant' für den Digest), samt Anhängen
+// ({dateiname, pfad, sha256}) in derselben Transaktion. @returns {number} id
+export function reiheMailEin(db, { typ, jobId, empfaenger, betreff, text, geplant = false, jetzt = Date.now(), anhaenge = [] }) {
   const zeit = iso(jetzt);
-  const result = db
-    .prepare(
-      `INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am, eingereiht_am, versuche, naechster_versuch_am)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
-    )
-    .run(typ, jobId ?? null, empfaenger, betreff, text, geplant ? 'geplant' : 'eingereiht', zeit, zeit, geplant ? null : zeit);
-  return Number(result.lastInsertRowid);
+  return inTransaktion(db, () => {
+    const result = db
+      .prepare(
+        `INSERT INTO mail_log (typ, job_id, empfaenger, betreff, text, status, versucht_am, eingereiht_am, versuche, naechster_versuch_am)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
+      )
+      .run(typ, jobId ?? null, empfaenger, betreff, text, geplant ? 'geplant' : 'eingereiht', zeit, zeit, geplant ? null : zeit);
+    const id = Number(result.lastInsertRowid);
+    for (const anhang of anhaenge) {
+      db.prepare('INSERT INTO mail_anhaenge (mail_log_id, dateiname, pfad, sha256) VALUES (?, ?, ?, ?)')
+        .run(id, anhang.dateiname, anhang.pfad, anhang.sha256);
+    }
+    return id;
+  });
+}
+
+// Liest die Anhänge einer Mail im nodemailer-Format. Wirft, wenn eine Datei nicht lesbar ist oder nicht mehr zum gespeicherten
+// Hash passt. Die Meldung nennt nur den Dateinamen, nie den Pfad (sie landet im Mail-Protokoll).
+async function ladeAnhaenge(db, mailLogId) {
+  const anhaenge = [];
+  for (const { dateiname, pfad, sha256 } of listMailAnhaenge(db, mailLogId)) {
+    let content;
+    try {
+      content = await readFile(pfad);
+    } catch {
+      throw new Error(`Anhang ${dateiname} fehlt`);
+    }
+    if (createHash('sha256').update(content).digest('hex') !== sha256) {
+      throw new Error(`Anhang ${dateiname} stimmt nicht mit dem gespeicherten Hash überein`);
+    }
+    anhaenge.push({ filename: dateiname, content, contentType: 'application/pdf' });
+  }
+  return anhaenge;
 }
 
 // Beansprucht die Zeilen mit Status `status` unter einer befristeten Sperre. @returns {{token, zeilen}} nur die tatsächlich beanspruchten Zeilen
@@ -133,7 +164,8 @@ export async function stelleMailZu(db, mailer, id, { jetzt = Date.now() } = {}) 
   const zeile = zeilen[0];
   let fehler = null;
   try {
-    await mailer.sendMail({ to: zeile.empfaenger, subject: zeile.betreff, text: zeile.text });
+    const attachments = await ladeAnhaenge(db, zeile.id);
+    await mailer.sendMail({ to: zeile.empfaenger, subject: zeile.betreff, text: zeile.text, ...(attachments.length ? { attachments } : {}) });
   } catch (err) {
     fehler = fehlerText(err);
   }

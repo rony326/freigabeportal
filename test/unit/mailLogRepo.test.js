@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../../src/db/index.js';
 import { createJob } from '../../src/db/jobsRepo.js';
-import { logMailAttempt, listMailLog, getMailLogById, pruneMailLogOlderThan, listGeplantMailsGruppiertNachEmpfaenger } from '../../src/db/mailLogRepo.js';
+import { reiheMailEin } from '../../src/services/mailZustellung.js';
+import { logMailAttempt, listMailAnhaenge, listMailLog, getMailLogById, pruneMailLogOlderThan, listGeplantMailsGruppiertNachEmpfaenger } from '../../src/db/mailLogRepo.js';
 
 test('logMailAttempt inserts a versendet row with all fields, getMailLogById returns it', () => {
   const db = openDatabase(':memory:');
@@ -59,6 +60,22 @@ test('pruneMailLogOlderThan deletes only rows older than the threshold and retur
   const remaining = listMailLog(db);
   assert.equal(remaining.length, 1);
   assert.equal(remaining[0].empfaenger, 'new@example.org');
+  db.close();
+});
+
+test('Aufbewahrung löscht auch Anhangszeilen', () => {
+  const db = openDatabase(':memory:');
+  const anhaenge = [{ dateiname: 'a.pdf', pfad: '/tmp/a.pdf', sha256: 'ab' }];
+  const mail = { typ: 'reminder', jobId: null, empfaenger: 'x@example.org', betreff: 'B', text: 'T', anhaenge };
+  const alt = reiheMailEin(db, { ...mail, jetzt: Date.parse('2020-01-01T00:00:00.000Z') });
+  db.prepare("UPDATE mail_log SET status = 'versendet' WHERE id = ?").run(alt);
+  // Noch zuzustellen: Zeile und Anhang bleiben trotz Alter erhalten.
+  const offen = reiheMailEin(db, { ...mail, jetzt: Date.parse('2020-01-01T00:00:00.000Z') });
+
+  assert.equal(pruneMailLogOlderThan(db, '2025-01-01T00:00:00.000Z'), 1);
+  assert.deepEqual(listMailAnhaenge(db, alt), []);
+  assert.deepEqual(listMailAnhaenge(db, offen), anhaenge);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM mail_anhaenge').get().n, 1);
   db.close();
 });
 

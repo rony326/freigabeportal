@@ -27,12 +27,13 @@ TEILE = [
   ("`CT_CLIENT_SECRET`, `CT_SYNC_SERVICE_TOKEN`", "Gleichzeitig in ChurchTools nachführen.", "Du"),
   ("`CRON_SECRET`, `N8N_API_KEY`, `BACKUP_API_KEY` (optional, muss sich von `N8N_API_KEY` unterscheiden)", "Gleichzeitig in n8n nachführen.", "Du"),
   ("`SMTP_USER` / `SMTP_PASS`", "Bei Verdacht beim Mail-Anbieter erneuern.", "Du"),
-  ("TSA-Zugang (falls verlangt) nur mit `https://`-Adresse; Überwachungsschlüssel im Portal gesetzt.", "Admin → Zeitstempel bzw. Admin → Betrieb → Status.", "Du"),
+  ("TSA-Zugang: mit Benutzername/Passwort nur `https://`-Adresse; ohne Zugangsdaten ist `http://` erlaubt (z. B. `http://timestamp.digicert.com`). Überwachungsschlüssel im Portal gesetzt.", "Admin → Zeitstempel bzw. Admin → Betrieb → Status.", "Du"),
  ]),
- ("3 · Aufspielen", "Der lokale Stand ist 20 Commits weiter als GitHub: Auswertung und Budgets, strengere Sicherheitsrichtlinie (CSP), Korrekturen der Prüfung vom 7. November.", [
-  ("`master` nach GitHub pushen.", "Enthält u. a. die neue Abhängigkeit `read-excel-file` und `qs` 6.16.1.", "Du"),
+ ("3 · Aufspielen", "Stand: Version 1.4.12 (Tag `v1.4.12`). Vorher den Wartungsmodus einschalten (Admin → Betrieb → Wartungsmodus), danach wieder aus.", [
+  ("**Vor oder mit dem Update auf 1.4.12:** n8n ruft `POST /api/n8n/jobs/:id/bexio-versand-bestaetigen` auf.", "Sonst gibt es keine Spesen-Bestätigung, auch nicht nachträglich: Vorgänge, die ohne die Meldung abgeschlossen werden, bekommen keine mehr.", "Du"),
+  ("Wartungsmodus an, Sicherung ziehen.", "Normale Personen sehen eine Wartungsseite, n8n bekommt 503 und versucht es später erneut. Mails werden zurückgehalten.", "Du"),
   ("Infomaniak holt den Stand, **`npm install`** läuft, App startet neu.", "Build-Kommando `npm install`, Start `npm start`. Nur **ein** Prozess pro `DB_PATH` (Prozesssperre).", "Du"),
-  ("App startet ohne Fehler; Datenbank-Migrationen sind durch.", "Log prüfen. Bleibt eine alte Sperre `<DB_PATH>.process-lock` nach einem harten Abbruch liegen: docs/offline-restore.md.", "Du"),
+  ("App startet ohne Fehler; Datenbank-Migrationen sind durch (seit 1.4.0 u. a. Tabelle `bexio_versand`, seit 1.4.6 Spalte `jobs.betrag_vorschlag`, seit 1.4.12 Tabellen `mail_anhaenge` und `spesen_beleg_kopien`).", "Log prüfen. Bleibt eine alte Sperre `<DB_PATH>.process-lock` nach einem harten Abbruch liegen: docs/offline-restore.md.", "Du"),
  ]),
  ("4 · Direkt nach dem Aufspielen: technische Prüfung", "Erst wenn alles grün ist, mit Testenden starten.", [
   ("`GET /healthz` antwortet `{\"status\":\"ok\"}`; mit Header `X-Monitoring-Key` alle Dienste ok.", "Schlüssel unter Admin → Betrieb → Status.", "Du"),
@@ -51,6 +52,10 @@ TEILE = [
   ("Neuer Zweig für **Rapporte**: `/api/n8n/rapporte` holt abgeschlossene Rapporte ab und archiviert sie **nur in Paperless** (kein Bexio).", "Siehe docs/n8n-schnittstelle.md. Rapporte erscheinen nie unter `/api/n8n/jobs`.", "Du"),
   ("Kreditkarten-Beleg-Postfach → `/api/n8n/kk-belege` (falls genutzt).", "", "Du"),
   ("Backup-Abholung mit eigenem `BACKUP_API_KEY` (falls genutzt).", "Liefert `.fpbak`.", "Du"),
+  ("Antwort **503** mit `Retry-After` beim Eingang behandeln (Wartungsmodus oder PDF-Verarbeitung ausgelastet, `pdf_verarbeitung_ausgelastet`): später erneut senden.", "Seit 1.3.0. Nicht als Fehler verwerfen.", "Du"),
+  ("Knoten «PDF herunterladen»: **Response Format «File»**.", "Sonst meldet n8n «Response body is not valid JSON», z. B. wenn während eines Neustarts eine Proxy-Seite antwortet.", "Du"),
+  ("**Versandquittung Bexio**: nach «Send Email» die Antwort des Mailservers an `POST /api/n8n/jobs/:id/bexio-versand-bestaetigen` melden; Nachzügler über `GET /api/n8n/jobs/bexio-versand-ausstehend`.", "Seit 1.4.0. Siehe docs/n8n-schnittstelle.md, Abschnitt «Versand an Bexio bestätigen».", "Du"),
+  ("Optional: KI-Werte beim Eingang mitschicken: `rechnungsnummer`, `zahlungsziel` (`JJJJ-MM-TT`), `betrag`.", "Seit 1.4.5/1.4.6. Ungültige Werte verwirft das Portal still. Im Portal müssen sie bei der Kontierung bestätigt werden.", "Du"),
   ("**Während des Abnahmetests**: Export nach Bexio und Paperless pausieren oder auf ein Testziel umleiten.", "Sonst entstehen echte Buchungen oder Zahlungen aus Testbelegen.", "Du"),
  ]),
  ("6 · Fachliche Einrichtung", "Was das Portal für den echten Betrieb braucht. Vieles zeigt der Assistent unter Admin → Ersteinrichtung an.", [
@@ -68,9 +73,9 @@ TEILE = [
   ("Zeitstempeldienst eingerichtet und Probe erfolgreich (oder bewusst darauf verzichtet).", "Admin → Einstellungen → Zeitstempel.", "Superadmin"),
   ("Audit-Nachweis für die Revision: Empfänger und Versandtag der Prüfnummer.", "Admin → Einstellungen → Zeitstempel (Abschnitt Audit-Nachweis), Prüfseite `/audit-pruefen`.", "Superadmin"),
  ]),
- ("7 · Abnahmetest", "Mit dem Test-Runbook (Stand 7. November 2026, 46 Szenarien).", [
+ ("7 · Abnahmetest", "Mit dem Test-Runbook (Stand 26. November 2026, 54 Szenarien). Block N enthält die Neuerungen seit dem 7. November.", [
   ("Vorbereitung laut Runbook Seite 2–4 erledigt (Testkonten T1–T4, Testlieferanten, Test-Visa, Module, Rechte für A).", "", "Testleitung"),
-  ("Alle 46 Szenarien durchgeführt oder bewusst ausgelassen.", "", "Testleitung"),
+  ("Alle 54 Szenarien durchgeführt oder bewusst ausgelassen.", "", "Testleitung"),
   ("Keine offenen Fehler der Schwere 1.", "Fehlerprotokoll und Admin → Betrieb → Meldungen.", "Testleitung"),
   ("Mindestens ein Ablauf je Person auf echtem Handy/Tablet (PDF-Vorschau, Kamera-Upload, Dunkelmodus).", "", "alle"),
   ("Manuelle Sichtprüfung der neuen Seiten: Auswertung, Budgets, Budget-Import, Rapporte, Audit-Log mit mehreren Seiten.", "Diese Seiten wurden bisher nur automatisch geprüft.", "Testleitung"),
@@ -118,7 +123,7 @@ doc = f'''<!doctype html>
 <style>{css}{extra}</style></head>
 <body>
 <section class="cover">
-  <div class="kicker">Freigabeportal · Stand 7. November 2026</div>
+  <div class="kicker">Freigabeportal · Stand 26. November 2026 · Version 1.4.12</div>
   <h1>Go-Live-Checkliste</h1>
   <p class="lead">Alles, was zwischen dem aktuellen Entwicklungsstand und dem echten Betrieb erledigt sein muss — in der Reihenfolge, in der du es abarbeitest.</p>
   <table class="kv">
@@ -131,8 +136,8 @@ doc = f'''<!doctype html>
   <div class="howto">
     <h4>Stand der Entwicklung</h4>
     <ol>
-      <li>Alle bestellten Funktionen sind fertig und lokal auf <b>master</b> zusammengeführt: 2518 automatische Tests, 36 Browsertests, Responsive-Prüfung ohne Verstösse, <code>npm audit</code> ohne Befund.</li>
-      <li>Sicherheitsprüfung des ganzen Codes am 7. November: keine kritische oder schwere Lücke.</li>
+      <li>Version 1.4.12 (Tag <code>v1.4.12</code>): 3110 automatische Tests, alle bestanden.</li>
+      <li>Sicherheitsprüfungen des ganzen Codes am 7. und 15. November; die Befunde vom 15. November sind mit Version 1.3.0 behoben, einige kleinere Restpunkte sind noch offen.</li>
       <li>Offen sind nur Schritte auf deiner Seite (Server, Geheimnisse, n8n, Einrichtung) und der Abnahmetest mit Menschen.</li>
     </ol>
   </div>

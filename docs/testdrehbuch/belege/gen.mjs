@@ -135,6 +135,9 @@ const ohneQr = [
   ['R4e', '2005', [['Reinigungsmittel', 75.25]], '2026-10-25', 38],
   ['R4f', '2006', [['Büromaterial', 198.7]], '2026-10-25', 40],
   ['R8', '6001', [['Glühbirnen und Sicherungen', 127.6]], '2026-10-26', 42],
+  // R9/R9b: KI-Vorbefüllung (Szenario N-03), falls der n8n-Workflow Rechnungsnummer, Zahlungsziel und Betrag mitschickt
+  ['R9', '2007', [['Lautsprecher-Ständer 2 Stk.', 184.3]], '2026-10-27', 30],
+  ['R9b', '2008', [['Stühle Ersatzteile (Jugend)', 120.0], ['Notenpulte Ersatzteile (Musik)', 95.4]], '2026-10-27', 30],
 ];
 for (const [id, nr, pos, d, z] of ohneQr) {
   save(D_R, `${id}_Testlieferant_Rechnung-${nr}_ohne-QR.pdf`, await rechnung({ kred: TEST, nr, datum: d, ziel: plusTage(d, z), pos }));

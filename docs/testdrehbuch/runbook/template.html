@@ -5,14 +5,14 @@
 
 <!-- ============ Titelblatt ============ -->
 <section class="cover">
-  <div class="kicker">Freigabeportal · Abnahmetest vor dem Launch · Stand 7. November 2026</div>
+  <div class="kicker">Freigabeportal · Abnahmetest · Stand 26. November 2026 (Version 1.4.12)</div>
   <h1>Test-Runbook</h1>
   <p class="lead">Szenarien für 4 bis 5 Personen: Rechnungen, Spesen, Kreditkarten, Rapporte, Auswertung und Budgets, mit Spezialfällen und Checklisten zum Abhaken.</p>
   <table class="kv">
     <tr><th>Testtermin(e)</th><td class="fill"></td></tr>
     <tr><th>Testleitung</th><td class="fill"></td></tr>
     <tr><th>Portal-Version / Datum Aufspielen</th><td class="fill"></td></tr>
-    <tr><th>Umfang</th><td>46 Szenarien in 8 Blöcken · gut 6,5 Stunden, gut auf zwei Termine verteilbar</td></tr>
+    <tr><th>Umfang</th><td>54 Szenarien in 9 Blöcken · gut 7 Stunden (ohne Block N), gut auf zwei Termine verteilbar</td></tr>
   </table>
   <div class="howto">
     <h4>So wird das Runbook benutzt</h4>
@@ -107,13 +107,14 @@
       <tr><td><span class="box"></span></td><td class="mono">R6</td><td>Gutschrift G-4001, CHF 80.00</td><td>R-07</td></tr>
       <tr><td><span class="box"></span></td><td class="mono">R7a, R7b</td><td>QR-Rechnungen 5001/5002 «Zweiter Lieferant GmbH», gleiche IBAN</td><td>S-04</td></tr>
       <tr><td><span class="box"></span></td><td class="mono">R8</td><td>Rechnung 6001, bleibt im Pool liegen</td><td>V-03</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">R9, R9b</td><td>Rechnungen 2007 (CHF 184.30) und 2008 (CHF 215.40, zwei Bereiche) ohne QR-Code, für automatisch erkannte Werte</td><td>N-03</td></tr>
       <tr><td><span class="box"></span></td><td class="mono">RP1, RP2</td><td>Rapport Hauswartung · Rapport Reinigung (keine Rechnungen, nur zur Kenntnis)</td><td>RA-01 – RA-03</td></tr>
       <tr><td colspan="4" class="sub">2_Kreditkarte</td></tr>
       <tr><td><span class="box"></span></td><td class="mono">KB1–KB4</td><td>Kartenquittungen: Bastelshop 45.20 (JPG) · Musikhaus 120.00 (PDF) · Papeterie EUR 31.95 = CHF 30.10 (PNG) · Rückerstattung −15.00 (JPG)</td><td>K-01</td></tr>
       <tr><td><span class="box"></span></td><td class="mono">KK1</td><td>Monatsabrechnung «Test-Visa» Oktober 2026, Karte **** 4242, Total CHF 204.20</td><td>K-02 – K-04</td></tr>
       <tr><td><span class="box"></span></td><td class="mono">KK2</td><td>Normale Rechnung 7001 (wird fälschlich als Abrechnung markiert)</td><td>K-05</td></tr>
       <tr><td colspan="4" class="sub">3_Spesen</td></tr>
-      <tr><td><span class="box"></span></td><td class="mono">SQ1–SQ4</td><td>Spesenquittungen: Bäckerei 38.60 (JPG) · Bahnbillett 24.80 (PDF) · Parkticket 12.00 (PNG) · Blumen 45.00 (JPG)</td><td>SP-01 – SP-04</td></tr>
+      <tr><td><span class="box"></span></td><td class="mono">SQ1–SQ4</td><td>Spesenquittungen: Bäckerei 38.60 (JPG) · Bahnbillett 24.80 (PDF) · Parkticket 12.00 (PNG) · Blumen 45.00 (JPG)</td><td>SP-01 – SP-04, SP-07</td></tr>
       <tr><td><span class="box"></span></td><td class="mono">SQ5, SQ6</td><td>Quittung mit Datum 31.12.2026 · PDF über 20 MB</td><td>SP-05</td></tr>
       <tr><td colspan="4" class="sub">4_Sonderfaelle</td></tr>
       <tr><td><span class="box"></span></td><td class="mono">X1–X4</td><td>Passwortgeschütztes PDF (Passwort «test») · beschädigtes PDF · PDF ~15 MB · Rechnung als JPG-Foto</td><td>S-05</td></tr>
@@ -134,7 +135,7 @@
     <tbody>
       <tr><td>Start</td><td>Rollen verteilen, alle angemeldet, «Problem melden» zeigen. R8 senden und V-03 starten (läuft nebenher).</td><td>15 min</td></tr>
       <tr><td>1 · Rechnungen</td><td>R-01, R-02, R-03, R-07, S-01, S-02, S-03, S-04, S-07, S-08 — zwei Abläufe gleichzeitig möglich</td><td>95 min</td></tr>
-      <tr><td>2 · Spesen</td><td>SP-01 – SP-05, dazu K-01 (Belege vorab)</td><td>50 min</td></tr>
+      <tr><td>2 · Spesen</td><td>SP-01 – SP-05, SP-07, dazu K-01 (Belege vorab)</td><td>65 min</td></tr>
       <tr><td>3 · Kreditkarten</td><td>K-02 – K-07</td><td>50 min</td></tr>
       <tr><td>4 · Sonderfälle</td><td>V-01, R-06, R-04, R-05, R-08, V-02, V-04, V-05, V-07, R-09, SP-06, S-05, S-06</td><td>95 min</td></tr>
       <tr><td>5 · Rapporte</td><td>RA-01 – RA-04 (RA-01 kann schon in Runde 1 starten)</td><td>35 min</td></tr>

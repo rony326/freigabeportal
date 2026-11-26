@@ -111,5 +111,6 @@ Lesen und prüfen nur in `src/config/env.js`, Eintrag in `.env.example` und in d
 | Was darf nach n8n/Paperless exportiert werden? | `services/exportSnapshot.js`, `services/archiveReceipt.js` |
 | Zeitstempel (RFC 3161) | `services/zeitstempel.js`, `tsaTrust.js`, `tsaRevocation.js`, `tsaNachweis.js` |
 | Mails: Vorlage, Einreihen, Zustellung | `services/notify.js`, `mailTemplates.js`, `mailZustellung.js`, `benachrichtigung.js` |
+| Spesen-Bestätigung an Einreichende | `services/spesenBestaetigung.js`, `db/spesenabrechnungenRepo.js` |
 | Sicherung und Wiederherstellung | `services/backup.js`, `backupEnvelope.js`, `offlineRestore.js`, `storageState.js` |
 | Audit | `db/securitySchema.js` (Trigger), `services/auditContext.js`, `zugriffsAudit.js`, `auditExport.js` |

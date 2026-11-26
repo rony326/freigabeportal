@@ -19,6 +19,7 @@ import { createBackupKeyring } from '../helpers/backupKeyring.js';
 import { restoreOffline, rollbackOffline, offlineRestoreStatus } from '../../src/services/offlineRestore.js';
 import { acquireStorageLock, resolveStorageConfig, storagePaths } from '../../src/services/storageState.js';
 import { setzeFreigabeSnapshot } from '../helpers/freigabeSnapshot.js';
+import { reiheMailEin } from '../../src/services/mailZustellung.js';
 
 const restoreModule = new URL('../../src/services/offlineRestore.js', import.meta.url).href;
 const cli = fileURLToPath(new URL('../../src/cli/backupRestore.js', import.meta.url));
@@ -54,6 +55,13 @@ function setup(t) {
   const kkBelegId = createKkBeleg(sourceDb, { hochgeladenVon: '1', quelle: 'web', pdfPfad: join(source.jobsDir, 'kk', 'beleg.pdf'), thumbnailPfad: join(source.jobsDir, 'kk', 'beleg.png'), status: 'offen' });
   const kkGeloeschtId = createKkBeleg(sourceDb, { hochgeladenVon: '1', quelle: 'web', pdfPfad: join(source.jobsDir, 'kk', 'weg.pdf'), status: 'verworfen' });
   markKkBelegDateiGeloescht(sourceDb, kkGeloeschtId);
+  // Kopien der Spesen-Bestätigung (spesen_beleg_kopien) und Mail-Anhänge (mail_anhaenge) speichern absolute Pfade.
+  mkdirSync(join(source.jobsDir, 'mail-anhaenge'));
+  const anhangPfad = join(source.jobsDir, 'mail-anhaenge', 'spesen-7.pdf');
+  writeFileSync(anhangPfad, 'spesen kopie');
+  sourceDb.prepare('INSERT INTO spesen_beleg_kopien (job_id, pfad, sha256, erstellt_am) VALUES (7, ?, ?, ?)').run(anhangPfad, hash('spesen kopie'), '2026-09-27');
+  reiheMailEin(sourceDb, { typ: 'spesen-bestaetigung', jobId: null, empfaenger: 'k@example.org', betreff: 'b', text: 't',
+    anhaenge: [{ dateiname: 'Spesen-1-7.pdf', pfad: anhangPfad, sha256: hash('spesen kopie') }] });
   sourceDb.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run('backup-session', '{}', '2099-01-01');
   const archive = buildEncryptedBackup(sourceDb, source);
   sourceDb.close();
@@ -100,6 +108,10 @@ test('offline restore activates only a complete generation and keeps original fi
     const geloescht = getKkBelegById(db, s.kkGeloeschtId);
     assert.equal(geloescht.pdf_pfad, null);
     assert.equal(geloescht.thumbnail_pfad, null);
+    const erwartet = join(restored.current.jobsDir, 'mail-anhaenge', 'spesen-7.pdf');
+    assert.equal(db.prepare('SELECT pfad FROM spesen_beleg_kopien WHERE job_id = 7').get().pfad, erwartet);
+    assert.deepEqual(db.prepare('SELECT pfad FROM mail_anhaenge').all().map((a) => a.pfad), [erwartet]);
+    assert.equal(readFileSync(erwartet, 'utf8'), 'spesen kopie');
     assert.equal(db.prepare('SELECT count(*) AS n FROM sessions').get().n, 0);
     const audit = db.prepare("SELECT * FROM audit_ereignisse WHERE aktion = 'offline_restore_vorbereitet'").get();
     assert.equal(audit.person_name, s.options.operator);

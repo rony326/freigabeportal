@@ -119,6 +119,13 @@ function restoreOfflineInternal(buffer, config, options) {
               rebase(beleg.pdf_pfad, 'jobs', manifest.quellpfade, current),
               rebase(beleg.thumbnail_pfad, 'jobs', manifest.quellpfade, current), beleg.id);
           }
+          // Spesen-Bestätigung: Beleg-Kopien und die darauf zeigenden Mail-Anhänge (beide unter jobsDir). Ohne Umschreiben
+          // schlüge die Zustellung nach der Wiederherstellung fehl.
+          for (const tabelle of ['mail_anhaenge', 'spesen_beleg_kopien']) {
+            for (const zeile of db.prepare(`SELECT rowid AS zeile_id, pfad FROM ${tabelle}`).all()) {
+              db.prepare(`UPDATE ${tabelle} SET pfad = ? WHERE rowid = ?`).run(rebase(zeile.pfad, 'jobs', manifest.quellpfade, current), zeile.zeile_id);
+            }
+          }
           for (const key of ['branding_logo_pfad', 'branding_logo_dunkel_pfad']) {
             const logo = db.prepare('SELECT value FROM admin_config WHERE key = ?').get(key);
             if (logo?.value) db.prepare('UPDATE admin_config SET value = ? WHERE key = ?').run(rebase(logo.value, 'branding', manifest.quellpfade, current), key);

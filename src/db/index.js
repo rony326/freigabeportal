@@ -1331,8 +1331,9 @@ const SPESENABRECHNUNGEN_TABLE_MIGRATIONS = [
 ];
 
 // Ergänzt die Bestätigungs-Spalten und markiert dabei EINMALIG die schon erledigten Abrechnungen als 'altbestand', damit nach
-// dem Deployment keine Bestätigungen für alte Vorgänge rausgehen. Erledigt = jede Position abgelehnt, gelöscht oder mit
-// Bexio-Versandquittung. Nur beim Anlegen der Spalten (Spalten und Markierung in einer Transaktion): später würde sonst eine
+// dem Deployment keine Bestätigungen für alte Vorgänge rausgehen. Erledigt = jede Position abgelehnt, gelöscht, abgeholt,
+// archiviert oder mit Bexio-Versandquittung. Bewusst weiter als die spätere Erledigt-Prüfung: n8n hat für alte Vorgänge
+// womöglich nie eine Quittung gemeldet und könnte sie nachliefern. Nur beim Anlegen der Spalten (Spalten und Markierung in einer Transaktion): später würde sonst eine
 // Abrechnung, deren Bestätigung gerade fehlschlug, still als Altbestand abgehakt.
 // Läuft NACH migrateSecuritySchema, das die Tabelle bexio_versand anlegt.
 function migrateSpesenBestaetigung(db) {
@@ -1346,7 +1347,7 @@ function migrateSpesenBestaetigung(db) {
       WHERE bestaetigung_am IS NULL
         AND EXISTS (SELECT 1 FROM jobs j WHERE j.spesenabrechnung_id = spesenabrechnungen.id)
         AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.spesenabrechnung_id = spesenabrechnungen.id
-                        AND j.status NOT IN ('abgelehnt','geloescht')
+                        AND j.status NOT IN ('abgelehnt','geloescht','abgeholt','archiviert')
                         AND NOT EXISTS (SELECT 1 FROM bexio_versand b WHERE b.job_id = j.id))`)
       .run(new Date().toISOString());
     db.exec('COMMIT');

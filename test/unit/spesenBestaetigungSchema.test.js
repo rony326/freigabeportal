@@ -60,18 +60,21 @@ test('Migration markiert erledigte Altbestand-Abrechnungen, offene nicht', (t) =
   const alleAbgelehnt = abrechnung(db, 'C', [{ status: 'abgelehnt' }]);
   const ohneQuittung = abrechnung(db, 'D', [{ status: 'abgeschlossen' }]);
   const ohnePositionen = abrechnung(db, 'E', []);
+  // Vor dem Deployment abgeholt bzw. archiviert, aber n8n hat nie eine Versandquittung gemeldet: trotzdem Altbestand.
+  const ohneMeldung = abrechnung(db, 'F', [{ status: 'archiviert' }, { status: 'abgeholt' }]);
+  const teilsAbgeschlossen = abrechnung(db, 'G', [{ status: 'archiviert' }, { status: 'abgeschlossen' }]);
   reiheMailEin(db, { typ: 'zuweisung', jobId: null, empfaenger: 'a@example.org', betreff: 'b', text: 't' });
   db.close();
   aufAltenStand(pfad);
 
   const vorher = new Date().toISOString();
   db = openDatabase(pfad);
-  for (const id of [erledigt, alleAbgelehnt]) {
+  for (const id of [erledigt, alleAbgelehnt, ohneMeldung]) {
     const zeile = stand(db, id);
     assert.equal(zeile.bestaetigung_vermerk, 'altbestand', `Abrechnung ${id}`);
     assert.ok(zeile.bestaetigung_am >= vorher, 'Zeitpunkt der Migration');
   }
-  for (const id of [offen, ohneQuittung, ohnePositionen]) {
+  for (const id of [offen, ohneQuittung, ohnePositionen, teilsAbgeschlossen]) {
     assert.deepEqual(stand(db, id), { bestaetigung_am: null, bestaetigung_vermerk: null }, `Abrechnung ${id}`);
   }
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM mail_log WHERE typ = 'zuweisung'").get().n, 1, 'bestehende Mail bleibt');
@@ -93,12 +96,12 @@ test('Migration läuft auch auf einer Datenbank ohne bexio_versand', (t) => {
   let db = openDatabase(pfad);
   upsertPerson(db, { id: '1', vorname: 'A', nachname: 'B', email: 'a@example.org', gruppen: [] });
   const abgelehnt = abrechnung(db, 'A', [{ status: 'abgelehnt' }]);
-  const abgeholt = abrechnung(db, 'B', [{ status: 'abgeholt' }]);
+  const abgeschlossen = abrechnung(db, 'B', [{ status: 'abgeschlossen' }]);
   db.close();
   aufAltenStand(pfad, { ohneBexioVersand: true });
   db = openDatabase(pfad);
   assert.equal(stand(db, abgelehnt).bestaetigung_vermerk, 'altbestand');
-  assert.equal(stand(db, abgeholt).bestaetigung_vermerk, null);
+  assert.equal(stand(db, abgeschlossen).bestaetigung_vermerk, null);
   db.close();
 });
 

@@ -108,7 +108,9 @@ eine Warnung protokolliert.
 
 Die Migration, die `spesenabrechnungen.bestaetigung_am` anlegt, setzt für alle Abrechnungen, die zu diesem Zeitpunkt schon
 erledigt sind, den Wert auf den Migrationszeitpunkt mit Vermerk «altbestand». Nur Abrechnungen, die nach dem Deployment
-erledigt werden, bekommen eine Mail.
+erledigt werden, bekommen eine Mail. Für diese einmalige Markierung
+gilt eine Position auch ohne Versandquittung als erledigt, wenn sie `abgeholt` oder `archiviert` ist (n8n hat für alte
+Vorgänge womöglich nie gemeldet und könnte nachliefern); `abgeschlossen` ohne Quittung zählt weiterhin als offen.
 
 ### 6. Ein-/Ausschalter
 

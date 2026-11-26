@@ -61,3 +61,14 @@ test('findeEreignis und Sonderfelder', () => {
   assert.equal(findeEreignis('reminder').empfaengerLeerErlaubt, false);
   assert.equal(findeEreignis('sicherheitsalarm').vorlagenTyp, null);
 });
+
+test('Spesen-Bestätigung: eigener Bereich, immer sofort, mit Schalter (Standard an)', () => {
+  const e = findeEreignis('spesen-bestaetigung');
+  assert.equal(e.bereich, 'Spesen');
+  assert.equal(e.vorlagenTyp, 'spesen-bestaetigung');
+  assert.equal(e.sofort, true);
+  assert.equal(e.empfaengerKey, null);
+  assert.equal(e.schalter.key, 'spesen_bestaetigung_aktiv');
+  assert.equal(DEFAULTS.spesen_bestaetigung_aktiv, '1');
+  assert.deepEqual(e.variablen.map((v) => v.name), ['name', 'titel', 'eingereicht_am', 'positionen', 'summe', 'nicht_freigegeben', 'anhang_hinweis', 'portalName']);
+});

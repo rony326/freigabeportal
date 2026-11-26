@@ -1,5 +1,5 @@
 // Admin-Seite "Benachrichtigungen": ein Ereignis pro URL mit den Blöcken Wann (Zeiten/Schwellen),
-// Wer (Zusatzempfänger) und Was (Mail-Vorlage). Ersetzt /admin/eskalation und
+// Wer (Zusatzempfänger) und Was (Mail-Vorlage), bei abschaltbaren Ereignissen mit Ein-/Ausschalter. Ersetzt /admin/eskalation und
 // /admin/mail-einstellungen; die Werte liegen weiter in admin_config.
 import { Router } from 'express';
 import { DEFAULTS, getConfigValue, setConfigValue } from '../../db/adminConfigRepo.js';
@@ -85,7 +85,7 @@ function istAngepasst(db, ereignis) {
   return getConfigValue(db, keys.betreff) !== DEFAULTS[keys.betreff] || getConfigValue(db, keys.text) !== DEFAULTS[keys.text];
 }
 
-// Aktuelle Einstellungen eines Ereignisses (Zeiten/Schwellen, Zusatzempfänger, Vorlage) aus admin_config.
+// Aktuelle Einstellungen eines Ereignisses (Schalter, Zeiten/Schwellen, Zusatzempfänger, Vorlage) aus admin_config.
 function gespeicherteWerte(db, ereignis) {
   const zeit = Object.fromEntries(ereignis.zeitKeys.map(({ key }) => [key, getConfigValue(db, key) ?? DEFAULTS[key] ?? '']));
   let empfaenger = '';
@@ -96,7 +96,8 @@ function gespeicherteWerte(db, ereignis) {
   const vorlage = ereignis.vorlagenTyp
     ? { betreff: getConfigValue(db, vorlagenKeys(ereignis).betreff) ?? '', text: getConfigValue(db, vorlagenKeys(ereignis).text) ?? '' }
     : { betreff: '', text: '' };
-  return { zeit, empfaenger, ...vorlage };
+  const aktiv = ereignis.schalter ? getConfigValue(db, ereignis.schalter.key) === '1' : null;
+  return { aktiv, zeit, empfaenger, ...vorlage };
 }
 
 // Prüft das Formular eines Ereignisses. Liefert die zu speichernden Werte (normalisiert) und Fehler.
@@ -104,6 +105,12 @@ function pruefeFormular(db, ereignis, body) {
   const errors = [];
   const eingabe = { zeit: {}, empfaenger: String(body.empfaenger ?? ''), betreff: String(body.betreff ?? ''), text: String(body.text ?? '') };
   const speichern = {};
+
+  if (ereignis.schalter) {
+    // Eine nicht angehakte Checkbox sendet nichts: fehlt das Feld, ist das Ereignis aus.
+    eingabe.aktiv = body.schalter === '1';
+    speichern[ereignis.schalter.key] = eingabe.aktiv ? '1' : '0';
+  }
 
   for (const { key, label, einheit } of ereignis.zeitKeys) {
     const wert = String(body[`zeit_${key}`] ?? '').trim();

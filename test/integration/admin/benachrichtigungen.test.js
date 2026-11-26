@@ -576,3 +576,35 @@ test('Komfort: gleichnamige aktive Personen stehen mit verschiedenen IDs im Date
   const anna = daten.personen.filter((p) => p.name === 'Anna Keller');
   assert.deepEqual(anna.map((p) => p.id).sort(), ['41', '42']);
 });
+
+test('Spesen-Bestätigung: Schalter ist standardmässig an, lässt sich aus- und einschalten und überlebt das Zurücksetzen', async (t) => {
+  const { db, als } = umgebung(t);
+  const agent = als();
+  const felder = { betreff: DEFAULTS.mail_vorlage_spesen_bestaetigung_betreff, text: DEFAULTS.mail_vorlage_spesen_bestaetigung_text };
+  const kasten = (html) => html.match(/<input[^>]*name="schalter"[^>]*>/)[0];
+
+  const seite = await agent.get('/admin/benachrichtigungen/spesen-bestaetigung');
+  assert.equal(seite.status, 200);
+  assert.match(seite.text, /Spesen-Bestätigung an Einreichende/);
+  assert.match(kasten(seite.text), /checked/);
+
+  // Nicht angehakte Checkbox sendet nichts: aus.
+  assert.equal((await sende(agent, 'spesen-bestaetigung', felder)).status, 302);
+  assert.equal(getConfigValue(db, 'spesen_bestaetigung_aktiv'), '0');
+  assert.doesNotMatch(kasten((await agent.get('/admin/benachrichtigungen/spesen-bestaetigung')).text), /checked/);
+
+  // Fehlerfall: die Eingabe bleibt stehen, gespeichert wird nichts.
+  const fehler = await sende(agent, 'spesen-bestaetigung', { ...felder, betreff: '', schalter: '1' });
+  assert.equal(fehler.status, 400);
+  assert.match(kasten(fehler.text), /checked/);
+  assert.equal(getConfigValue(db, 'spesen_bestaetigung_aktiv'), '0');
+
+  await sende(agent, 'spesen-bestaetigung', felder, '/zuruecksetzen');
+  assert.equal(getConfigValue(db, 'spesen_bestaetigung_aktiv'), '0', 'Zurücksetzen betrifft nur den Text');
+
+  assert.equal((await sende(agent, 'spesen-bestaetigung', { ...felder, schalter: '1' })).status, 302);
+  assert.equal(getConfigValue(db, 'spesen_bestaetigung_aktiv'), '1');
+
+  // Andere Ereignisse haben keinen Schalter.
+  assert.doesNotMatch((await agent.get('/admin/benachrichtigungen/reminder')).text, /name="schalter"/);
+});

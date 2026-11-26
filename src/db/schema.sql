@@ -131,7 +131,11 @@ CREATE TABLE IF NOT EXISTS spesenabrechnungen (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   eingereicht_von TEXT NOT NULL REFERENCES personen(churchtools_person_id),
   eingereicht_am TEXT NOT NULL,
-  titel TEXT
+  titel TEXT,
+  -- Bestätigung an die einreichende Person: gesetzt, sobald über sie entschieden ist (NULL = offen). Vermerk sagt, was daraus wurde.
+  -- Bestehende Datenbanken: migrateSpesenBestaetigung in db/index.js.
+  bestaetigung_am TEXT,
+  bestaetigung_vermerk TEXT CHECK (bestaetigung_vermerk IN ('versendet','keine','deaktiviert','altbestand'))
 );
 
 -- Vorgänge (das Herzstück): Rechnungen, Gutschriften, Rapporte, Spesenpositionen, Kreditkartenabrechnungen und Teilvorgänge einer Aufteilung (aufgesplittet_von).
@@ -278,7 +282,7 @@ CREATE TABLE IF NOT EXISTS freigaben (
 -- Mail-Protokoll und Outbox: jede Benachrichtigung als Zeile mit Status eingereiht / geplant (Digest) / versendet / fehlgeschlagen (services/mailZustellung.js).
 CREATE TABLE IF NOT EXISTS mail_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation', 'auffaelligkeiten-warnung', 'iban-aenderung')),
+  typ TEXT NOT NULL CHECK (typ IN ('zuweisung', 'reminder', 'eskalation', 'ablehnung', 'sync-fehler', 'iban-warnung', 'rechnungsnummer-warnung', 'freigabe2-reminder', 'freigabe2-eskalation', 'kk-abrechnung-zugewiesen', 'kk-beleg-erinnerung', 'kk-beleg-eingegangen', 'sicherheitsalarm', 'admin-umzuweisung', 'duplikat-warnung', 'audit-pruefnummer', 'neues-geraet', 'fehlermeldung', 'testmail', 'kommentar', 'rapport-zuweisung', 'rapport-reminder', 'rapport-eskalation', 'auffaelligkeiten-warnung', 'iban-aenderung', 'spesen-bestaetigung')),
   job_id INTEGER REFERENCES jobs(id),
   empfaenger TEXT NOT NULL,
   betreff TEXT NOT NULL,
@@ -306,6 +310,16 @@ CREATE TABLE IF NOT EXISTS mail_anhaenge (
   sha256 TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS mail_anhaenge_mail_idx ON mail_anhaenge(mail_log_id);
+
+-- Kopie des gestempelten End-PDFs je Spesenposition für den Anhang der Bestätigungsmail: Das Original wird nach der Aufbewahrungsfrist gelöscht,
+-- die Abrechnung kann aber erst später erledigt sein. job_id ist bewusst KEIN Fremdschlüssel: Spätere Migrationen bauen jobs per ALTER TABLE
+-- RENAME neu auf, SQLite würde den Verweis dabei auf die anschliessend gelöschte alte Tabelle umschreiben.
+CREATE TABLE IF NOT EXISTS spesen_beleg_kopien (
+  job_id INTEGER PRIMARY KEY,
+  pfad TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  erstellt_am TEXT NOT NULL
+);
 
 -- job_id ist bewusst KEIN Fremdschlüssel: Der ganze Zweck dieser Tabelle ist, einen Nachweis zu behalten, nachdem die jobs-Zeile, auf die sie sich bezieht,
 -- endgültig gelöscht wurde (siehe loeschenJob). dateiname ist aus demselben Grund hier doppelt abgelegt — er wäre sonst nach dem Löschen des Vorgangs nicht mehr auffindbar.

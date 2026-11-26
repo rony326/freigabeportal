@@ -83,6 +83,12 @@
                 </div>
                 <p class="text-muted small mt-2 mb-0">Die Versandzeit gilt für tägliche und wöchentliche Zusammenfassungen. Erinnerungen, Eskalationen, Warnungen und Sicherheitsmeldungen gehen immer sofort raus.</p>
               <% } else { %>
+                <% if (ereignis.schalter) { %>
+                  <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" role="switch" id="schalter" name="schalter" value="1"<%= werte.aktiv ? ' checked' : '' %>>
+                    <label class="form-check-label" for="schalter"><%= ereignis.schalter.label %></label>
+                  </div>
+                <% } %>
                 <% if (ereignis.zeitKeys.length > 0) { %>
                   <div class="row g-2 mb-2">
                     <% ereignis.zeitKeys.forEach(({ key, label, einheit }) => { const dezimal = einheit === 'Faktor' || einheit === 'CHF'; %>

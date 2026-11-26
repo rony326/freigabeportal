@@ -29,6 +29,7 @@ export const TYP_ZU_KEY_INFIX = {
   'rapport-reminder': 'rapport_reminder',
   'rapport-eskalation': 'rapport_eskalation',
   'iban-aenderung': 'iban_aenderung',
+  'spesen-bestaetigung': 'spesen_bestaetigung',
 };
 
 // Ersetzt jedes `%name%` durch den Wert aus `variablen`; unbekannte Platzhalter bleiben unverändert stehen.

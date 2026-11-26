@@ -113,3 +113,13 @@ test('auffaelligkeiten-warnung hat die Standardtexte; iban-warnung gibt es nicht
   assert.throws(() => getVorlage(db, 'iban-warnung'), /Unbekannter Mail-Vorlagen-Typ/);
   db.close();
 });
+
+test('getVorlage liefert die Standardtexte der Spesen-Bestätigung', () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  assert.deepEqual(getVorlage(db, 'spesen-bestaetigung'), {
+    betreff: 'Freigabeportal: Deine Spesen «%titel%» sind freigegeben',
+    text: 'Hallo %name%\n\nDeine Spesenabrechnung «%titel%» vom %eingereicht_am% ist freigegeben. Die folgenden Positionen werden nun zur Auszahlung vorbereitet:\n\n%positionen%\n\nTotal: CHF %summe%\n%nicht_freigegeben%%anhang_hinweis%\nFreundliche Grüsse\n%portalName%',
+  });
+  db.close();
+});

@@ -3,7 +3,7 @@
 // Die Vorlagen-Texte selbst liegen weiter in admin_config (mail_vorlage_*, siehe mailTemplates.js).
 
 // Gruppen der Seite (Reihenfolge der Abschnitte).
-export const BEREICHE = ['Allgemein', 'Rechnungen', 'Freigabe 2', 'Warnungen', 'Rapporte', 'Kreditkarten', 'System & Sicherheit'];
+export const BEREICHE = ['Allgemein', 'Rechnungen', 'Freigabe 2', 'Warnungen', 'Spesen', 'Rapporte', 'Kreditkarten', 'System & Sicherheit'];
 
 // Variable einer Mail-Vorlage: Name im Platzhalter (%name%), Anzeigename und Beispielwert für die Vorschau.
 const v = (name, label, beispiel) => ({ name, label, beispiel });
@@ -24,6 +24,7 @@ function ereignis(def) {
     empfaengerArt: 'alle',
     zeitKeys: [],
     sofort: false,
+    schalter: null,
     variablen: [],
     ...def,
   };
@@ -31,7 +32,8 @@ function ereignis(def) {
 
 // Alle Ereignisse. Felder: `id`, `bereich`, `titel`, `beschreibung`, `vorlagenTyp` (Mailtyp = Schlüssel der Vorlage, null = fester Text),
 // `automatisch` (Beschreibung der festen Empfänger), `empfaengerKey` (admin_config-Schlüssel der Zusatzempfänger), `empfaengerLeerErlaubt`,
-// `empfaengerArt` ('alle' | 'nurEmail'), `zeitKeys` (einstellbare Fristen/Schwellen), `sofort` (nie gebündelt) und `variablen` (Platzhalter).
+// `empfaengerArt` ('alle' | 'nurEmail'), `zeitKeys` (einstellbare Fristen/Schwellen), `sofort` (nie gebündelt),
+// `schalter` ({ key, label }: Ereignis auf der Seite ein-/ausschaltbar, Wert '1'/'0' in admin_config; null = immer an) und `variablen` (Platzhalter).
 // Neues Ereignis: hier eintragen, `vorlagenTyp` in services/mailTemplates.js (TYP_ZU_KEY_INFIX) und die Vorlage in db/adminConfigRepo.js ergänzen.
 export const EREIGNISSE = [
   ereignis({
@@ -209,6 +211,28 @@ export const EREIGNISSE = [
     automatisch: 'Die kontierende Person und Freigeber 1 und 2 des Kontos.',
     sofort: true,
     variablen: [DATEI, KREDITOR, v('betrag', 'Betrag', '1250.00'), v('zahlungsziel', 'Zahlungsziel', '2026-12-01'), v('tage', 'Zeitfenster in Tagen', '14'), v('dupJobIds', 'Andere Vorgänge', '#12, #15'), LINK, PORTAL],
+  }),
+
+  ereignis({
+    id: 'spesen-bestaetigung',
+    bereich: 'Spesen',
+    titel: 'Spesen freigegeben',
+    beschreibung: 'Bestätigung, sobald alle Positionen einer Spesenabrechnung erledigt sind und mindestens eine freigegeben wurde; mit den gestempelten Belegen als Anhang.',
+    vorlagenTyp: 'spesen-bestaetigung',
+    automatisch: 'Die Person, die die Spesen eingereicht hat.',
+    schalter: { key: 'spesen_bestaetigung_aktiv', label: 'Spesen-Bestätigung an Einreichende' },
+    sofort: true,
+    variablen: [
+      v('name', 'Name', 'Anna Muster'),
+      v('titel', 'Titel der Abrechnung', 'Lagerwochenende'),
+      v('eingereicht_am', 'Eingereicht am', '02.11.2026'),
+      v('positionen', 'Freigegebene Positionen', '- Bahnbillett: CHF 42.00'),
+      v('summe', 'Total in CHF', '42.00'),
+      // Die beiden folgenden Bausteine sind leer oder bringen ihre Zeilenumbrüche selbst mit.
+      v('nicht_freigegeben', 'Nicht freigegebene Positionen', '\nNicht freigegeben:\n- Parkgebühr: CHF 8.00 (Beleg fehlt)\n'),
+      v('anhang_hinweis', 'Hinweis zum Anhang', '\nDie gestempelten Belege findest du im Anhang.\n'),
+      PORTAL,
+    ],
   }),
 
   ereignis({

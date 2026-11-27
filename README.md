@@ -18,11 +18,11 @@ in [`docs/`](docs/README.md).
 
 ## Version
 
-Aktuelle Version: **1.4.12** (2026-11-26).
+Aktuelle Version: **1.4.14** (2026-11-27).
 Änderungen je Version: [`CHANGELOG.md`](CHANGELOG.md), ausführliche
-Release Notes in [`docs/releases/`](docs/releases/v1.4.12.md). Die
+Release Notes in [`docs/releases/`](docs/releases/v1.4.14.md). Die
 Fusszeile im Portal zeigt den laufenden Stand per `git describe` (Tag
-`v1.4.12` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
+`v1.4.14` bzw. Tag plus Commit), `/healthz` mit Überwachungsschlüssel die
 Version aus `package.json`.
 
 ## Setup (lokal)
@@ -144,7 +144,9 @@ Sperren: [Offline-Wiederherstellung](docs/offline-restore.md).
 
 - **Deployment-Methode**: Git (dieses Repository), nicht ZIP/SFTP.
 - **Ausführungsordner**: Repository-Root (dort liegt `package.json`).
-- **Build-Kommando**: `npm install` (kein separater Build-Schritt nötig).
+- **Build-Kommando**: `npm ci` (kein separater Build-Schritt nötig). Nicht
+  `npm install`: das kann `package-lock.json` auf dem Server ändern, worauf
+  das nächste `git pull` abbricht.
 - **Start-Kommando**: `npm start`.
 - **Node.js-Version**: ≥22.23.4 (siehe `engines` in `package.json`) — `node:sqlite`
   braucht mindestens 22.13.0, 22.23.4 schliesst zusätzlich bekannte

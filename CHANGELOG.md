@@ -3,6 +3,14 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.14] – 2026-11-27
+
+Nur Doku und Versionsnummer. Release Notes: [docs/releases/v1.4.14.md](docs/releases/v1.4.14.md). Keine Migration,
+keine neuen Umgebungsvariablen.
+
+- Behoben: Die Fusszeile zeigte nach 1.4.13 einen Commit-Zusatz, weil der Tag nicht auf dem letzten Commit lag.
+- Geändert: Doku und Kommentare auf Stand 1.4.13 nachgezogen; empfohlenes Build-Kommando ist `npm ci`.
+
 ## [1.4.13] – 2026-11-27
 
 Fünf Rückmeldungen aus dem Test. Release Notes: [docs/releases/v1.4.13.md](docs/releases/v1.4.13.md). Keine Migration,

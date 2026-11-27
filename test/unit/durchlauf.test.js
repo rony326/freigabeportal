@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import ejs from 'ejs';
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import {
   leseKonfiguration, leseArgumente, parseKonfigText, pruefeZielUrl, zahlungszielAb, testRechnungsnummer,
 } from '../../scripts/durchlauf/konfiguration.js';
@@ -314,8 +314,11 @@ test('Testbelege: Standardfälle vorschlagen, Sonderfälle nicht', () => {
   assert.deepEqual(belegVorschlaege([]), []);
 });
 
-test('Testbelege: die vorgeschlagene IBAN-Endung passt zur IBAN des Testlieferanten in gen.mjs', () => {
-  const gen = readFileSync(new URL('../../docs/testdrehbuch/belege/gen.mjs', import.meta.url), 'utf8');
+// docs/testdrehbuch/ liegt nur lokal (nicht in Git): ohne die Datei wird die Prüfung übersprungen.
+const GEN_MJS = new URL('../../docs/testdrehbuch/belege/gen.mjs', import.meta.url);
+
+test('Testbelege: die vorgeschlagene IBAN-Endung passt zur IBAN des Testlieferanten in gen.mjs', { skip: !existsSync(GEN_MJS) && 'docs/testdrehbuch/ nur lokal vorhanden' }, () => {
+  const gen = readFileSync(GEN_MJS, 'utf8');
   const bban = /const IBAN_TEST = ibanCH\('(\d+)'\)/.exec(gen)[1];
   const vorlage = readFileSync(new URL('../../.env.durchlauf.example', import.meta.url), 'utf8');
   assert.match(vorlage, new RegExp(`R4…: ${bban.slice(-4)}\\)`));

@@ -10,3 +10,6 @@ docs/anleitung/
 # Durchlauf-Test (docs/durchlauf-test.md): Konfiguration und gespeicherte Sitzungen
 .env.durchlauf
 .durchlauf/
+
+# Testdrehbuch, Go-Live-Checkliste und Testbelege: nur lokal
+docs/testdrehbuch/

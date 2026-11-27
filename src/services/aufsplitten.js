@@ -18,7 +18,7 @@ import { getKreditorById } from '../db/kreditorenRepo.js';
 import { listKreditorIbansByKreditor } from '../db/kreditorIbanRepo.js';
 import { sendeAuffaelligkeitenWarnung } from './auffaelligkeitenWarnung.js';
 import { ibanBefund } from './betrugspruefung.js';
-import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from './notify.js';
+import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger, freigabe2AnAdminGrund } from './notify.js';
 
 // teilPosition landet später wörtlich auf der gemeinsamen Stempelseite der Splitgruppe
 // (stampGruppenDokument, pdfStamp.js), die mit pdf-lib's Helvetica-Standardfont gezeichnet wird —
@@ -38,6 +38,19 @@ import { sendNotification, sendNotificationMitVertretung, resolveEmpfaenger, FRE
 // schon in PDF-Texten verwendet werden).
 // Erlaubte Zeichen für das Positionsfeld einer Aufteilungszeile (WinAnsi-sicher, siehe Begründung oben).
 export const POSITION_PATTERN = /^[\u0020-\u007E\u00A0-\u00FFŒœŠšŽžŸ–—]*$/;
+
+// Versandkosten gleichmässig auf `anzahl` Teile verteilen (in Rappen): jeder Anteil abgerundet, der Rest geht an den letzten Teil.
+export function verteileVersandkosten(versandRappen, anzahl) {
+  const anteil = Math.floor(versandRappen / anzahl);
+  return Array.from({ length: anzahl }, (_, i) => (i === anzahl - 1 ? versandRappen - anteil * (anzahl - 1) : anteil));
+}
+
+// Position eines Teils mit Hinweis auf den enthaltenen Versandanteil (WinAnsi-sicher wie POSITION_PATTERN); ohne Anteil unverändert.
+export function positionMitVersand(position, anteilRappen) {
+  if (!anteilRappen) return position;
+  const hinweis = `inkl. Versand ${(anteilRappen / 100).toFixed(2)}`;
+  return position ? `${position} (${hinweis})` : hinweis;
+}
 
 // Kopiert die Quelldatei unter einem neuen, eindeutigen Namen nach `jobsDir`. @returns {string} Pfad der Kopie
 export function neuerDateipfad(jobsDir, quelldatei) {
@@ -267,8 +280,9 @@ export function erzeugeTeilJobs(db, { job, teile, konten, person, ip, begruendun
 export async function benachrichtigeNachAufsplitten(db, mailer, config, { job, ergebnis, person }) {
   for (const { id: kindId, konto } of ergebnis.selbstFreigegeben) {
     const kindJob = getJobById(db, kindId);
-    // Splitkinder haben keinen eigenen Konfliktverlauf, abschliessenFreigabe1 lässt sie deshalb
-    // nie an die Admin-Gruppe gehen. Geprüft wird trotzdem wie in kontierung.js/spesenFreigabe1.js.
+    // Splitkinder haben keinen eigenen Konfliktverlauf, abschliessenFreigabe1 gibt sie aber an die
+    // Admin-Gruppe, wenn die aufsplittende Person auch Freigeber 2 des Kontos ist und keine
+    // Stellvertretung 2 übernehmen kann (Vier-Augen-Umleitung).
     if (kindJob.freigabe2_eskaliert_an_admin) {
       for (const email of resolveEmpfaenger(db, config, 'gruppe:admin')) {
         await sendNotification(db, mailer, {
@@ -278,7 +292,7 @@ export async function benachrichtigeNachAufsplitten(db, mailer, config, { job, e
           variablen: {
             empfaengerName: 'Portal-Admin-Team',
             jobDateiname: kindJob.dateiname,
-            grund: FREIGABE2_AN_ADMIN_GRUND,
+            grund: freigabe2AnAdminGrund(kindJob),
             link: `${config.publicBaseUrl}/freigabe2/${kindJob.id}`,
           },
         });

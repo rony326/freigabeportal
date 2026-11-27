@@ -11,7 +11,7 @@ import { createKonto } from '../../src/db/kontenRepo.js';
 import { setQrDaten, updateKontierungMetadaten } from '../../src/db/jobsRepo.js';
 import { createKreditor } from '../../src/db/kreditorenRepo.js';
 import { createKreditorIban } from '../../src/db/kreditorIbanRepo.js';
-import { createJob, setKontierung, getJobById, eskalierenFreigabe2, ablehnenJob, createSplitJob, createSpesenPosition, listAbholbereitJobs } from '../../src/db/jobsRepo.js';
+import { createJob, setKontierung, getJobById, eskalierenFreigabe2, abschliessenFreigabe1, ablehnenJob, createSplitJob, createSpesenPosition, listAbholbereitJobs } from '../../src/db/jobsRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { buildAuditLog } from '../../src/services/auditLog.js';
@@ -2098,4 +2098,27 @@ test('Ablehnung der letzten offenen Spesenposition löst Bestätigung aus', asyn
   assert.match(mail.text, /Privat bezahlt/);
   assert.equal(listMailAnhaenge(db, mail.id).length, 1);
   await warteBis(() => mailer.sent.some((m) => m.attachments?.length === 1));
+});
+
+test('GET /freigabe2/:id erklärt der Stellvertretung die Vier-Augen-Umleitung', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  createFreigabe(db, { jobId: id, personId: '3', rolle: 'freigeber1', zeitpunkt: '2026-11-27T08:30:00.000Z', ip: '1.2.3.4', interessenskonflikt: false, kommentar: null, eskaliertVon: null, vertretungFuer: '1' });
+  abschliessenFreigabe1(db, id);
+  const res = await request(buildTestApp(db)).get(`/freigabe2/${id}`).set('x-test-person-id', '4');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Diese Freigabe 2 wurde an dich weitergeleitet, weil Person3 Muster bereits Freigabe 1 erteilt hat \(Vier-Augen-Prinzip\)\./);
+  db.close();
+});
+
+test('GET /freigabe2/:id nach Konflikt-Eskalation zeigt keinen Vier-Augen-Hinweis', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { id } = await seedFreigabe2Job(db, { pdfPfad: '/tmp/a.pdf' });
+  eskalierenFreigabe2(db, id, { eskaliertVon: '3', grund: 'Befangen' });
+  const res = await request(buildTestApp(db)).get(`/freigabe2/${id}`).set('x-test-person-id', '4');
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(res.text, /weitergeleitet, weil/);
+  db.close();
 });

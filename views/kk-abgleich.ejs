@@ -195,7 +195,7 @@
     });
     document.getElementById('gesamtbetrag').addEventListener('input', updateSummen);
     // Rename each line's file input to zeileDatei_<i> right before submit, matching the line's
-    // position -- same trick as kontierung-aufsplitten.ejs (teilBeleg_<i>).
+    // position -- same trick as public/js/aufsplitten-assistent.js (teilBeleg_<i>).
     document.getElementById('kk-abgleich-form').addEventListener('submit', function () {
       zeilenEl.querySelectorAll('.zeile').forEach(function (zeile, i) {
         var input = zeile.querySelector('.zeile-datei');

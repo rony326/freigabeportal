@@ -85,7 +85,7 @@ test('createApp stellt belegName für alle Views bereit', () => {
 
 // Seitenköpfe und Admin-Listen: die Nummer muss dort stehen, wo der Beleg bearbeitet wird.
 test('Seitenköpfe und Admin-Vorgänge zeigen die Belegnummer über _beleg_nr', () => {
-  const views = ['kontierung', 'freigabe2', 'spesen-freigabe1', 'kk-abgleich', 'abgelehnt', 'kontierung-aufsplitten',
+  const views = ['kontierung', 'freigabe2', 'spesen-freigabe1', 'kk-abgleich', 'abgelehnt',
     'admin/vorgang-detail', 'admin/vorgaenge-liste', 'admin/_vorgaenge_kacheln', '_job_kacheln', '_job_table'];
   for (const v of views) {
     const src = readFileSync(new URL(`../../views/${v}.ejs`, import.meta.url), 'utf8');

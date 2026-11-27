@@ -89,7 +89,7 @@ export function createSpesenRouter({ db, config, mailer, csrfProtection = (req, 
           const auslageDaten = liste(req.body.posAuslageDatum, 'Auslage-Datum', MAX_LAENGE.kennung);
           const beschreibungen = liste(req.body.posBeschreibung, 'Verwendungszweck', MAX_LAENGE.text);
 
-          // Das Beleg-Eingabefeld jeder Zeile wird von der Seite selbst unmittelbar vor dem Absenden in einen positionsbezogenen Feldnamen (posBeleg_<i>) umbenannt — derselbe Kniff, den kontierung-aufsplitten.ejs für seine eigene optionale Datei je Zeile nutzt;
+          // Das Beleg-Eingabefeld jeder Zeile wird von der Seite selbst unmittelbar vor dem Absenden in einen positionsbezogenen Feldnamen (posBeleg_<i>) umbenannt — derselbe Kniff, den public/js/aufsplitten-assistent.js für seine eigene optionale Datei je Zeile nutzt;
           // hier nötig, weil ein einfacher gemeinsamer Feldname sich still verschöbe, sobald das <input type="file"> irgendeiner Zeile gar nichts absendet.
           const belegByIndex = new Map();
           for (const file of req.files || []) {

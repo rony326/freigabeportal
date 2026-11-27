@@ -721,32 +721,55 @@ h1 .beleg-nr {
   }
 }
 
-/* Aufsplitten / Positionszeilen: Beschriftungen nur bei Kartenansicht (unter 1200 px) sichtbar,
-   darüber stehen die Zeilen wie bisher als Tabelle mit Platzhaltern. */
+/* Aufsplitten-Assistent (schmale Spalte neben dem Beleg): jede Teil-Zeile ein Kasten mit
+   gestapelten, sichtbar beschrifteten Feldern. */
 .zeile-beschriftung {
   display: block;
   font-size: .875em;
   margin-bottom: .25rem;
 }
-@media (min-width: 1200px) {
-  .zeile-beschriftung {
-    position: absolute !important;
-    width: 1px !important;
-    height: 1px !important;
-    padding: 0 !important;
-    margin: -1px !important;
-    overflow: hidden !important;
-    clip: rect(0, 0, 0, 0) !important;
-    white-space: nowrap !important;
-    border: 0 !important;
+.teil-zeile {
+  margin-inline: 0;
+  margin-top: 0; /* sonst frisst der negative Gutter-Rand von .row g-2 den Abstand darüber */
+  padding: .25rem .25rem .75rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+}
+
+/* Bedienelemente des Assistenten am Handy/Tablet mindestens 44 px hoch (die allgemeine .btn-sm-Regel weiter unten
+   verkleinert Knöpfe sonst wieder auf 36 px; die id gewinnt unabhängig von der Reihenfolge). */
+@media (pointer: coarse), (max-width: 991.98px) {
+  #aufsplitten-bereich .btn {
+    --bs-btn-padding-y: max(.25rem, calc(22px - .75em - 1px));
+    min-height: 44px;
+  }
+  #aufsplitten-bereich .form-control,
+  #aufsplitten-bereich .form-select {
+    min-height: 44px;
+  }
+  /* «Konflikt»: die ganze Beschriftung ist die Klickfläche. */
+  #aufsplitten-bereich .teil-konflikt .form-check-label {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  #aufsplitten-bereich .teil-konflikt .form-check-input {
+    margin-top: 0;
   }
 }
-@media (max-width: 1199.98px) {
-  .teil-zeile {
-    margin-inline: 0;
-    padding: .75rem .25rem;
-    border: 1px solid var(--bs-border-color);
-    border-radius: var(--bs-border-radius);
+
+/* Offener Assistent ab 992 px: der Beleg läuft beim Scrollen mit, unter der klebenden Kopfzeile samt Testmodus-Band
+   (--portal-oben-hoehe, public/js/portal.js), und ist so hoch, dass er auch über dem Seitenfuss ganz passt (!important: die Höhe
+   steht als style am iframe, views/_beleg_umschalter.ejs). */
+@media (min-width: 992px) {
+  .beleg-umschalter:has(#aufsplitten-bereich:not(.d-none)) .beleg-umschalter-beleg > .d-lg-block {
+    position: sticky;
+    top: calc(var(--portal-oben-hoehe, 0px) + 1rem);
+  }
+  .beleg-umschalter:has(#aufsplitten-bereich:not(.d-none)) .pdf-preview {
+    height: min(85vh, calc(100vh - var(--portal-oben-hoehe, 0px) - 7rem)) !important;
+    display: block;
   }
 }
 
@@ -1075,4 +1098,43 @@ html[data-schrift="sehr-gross"] { font-size: 125%; }
 .ki-banner-link {
   color: inherit;
   font-weight: normal;
+}
+
+/* Freigabe 2: Abweichung bei den Zahlungsdaten (IBAN/Betrag/QR). Die Bestätigung muss auffallen, sie wurde
+   als schlichte Checkbox-Zeile oft übersehen (Rückmeldung 2026-11-27). */
+.zahlung-mit-abweichung {
+  border-color: var(--bs-warning) !important;
+  border-width: 2px !important;
+}
+.zahlung-abweichung {
+  border: 2px solid var(--bs-warning);
+  border-left-width: 6px;
+  border-radius: var(--bs-border-radius);
+  background: var(--bs-warning-bg-subtle);
+  color: var(--bs-warning-text-emphasis);
+  padding: .75rem 1rem;
+}
+.zahlung-abweichung-titel {
+  font-weight: 700;
+}
+.zahlung-abweichung .form-check-label {
+  font-weight: 600;
+}
+.zahlung-abweichung .form-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 .75rem;
+  padding-left: 0;
+}
+.zahlung-abweichung .form-check > .invalid-feedback {
+  flex: 0 0 100%;
+}
+.zahlung-abweichung .form-check .form-check-input {
+  float: none;
+  flex: none;
+  margin: 0;
+  width: 1.5em;
+  height: 1.5em;
+  border: 2px solid var(--bs-warning-text-emphasis);
 }

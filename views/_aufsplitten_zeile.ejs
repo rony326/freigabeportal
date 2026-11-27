@@ -1,0 +1,36 @@
+<%# Eine Teil-Zeile des Aufsplitten-Assistenten, gestapelt für die schmale Spalte. Parameter: teil { kontoId, betrag,
+    position, interessenskonflikt }, alleKonten, maxLen. Auch als Vorlage für neue Zeilen (public/js/aufsplitten-assistent.js):
+    deshalb ohne id. data-eigenes-konto: Konten, bei denen ein Interessenskonflikt zählt (`konten`, wie auf dem Server).
+    Das Konflikt-Kästchen und die Beleg-Auswahl haben absichtlich keinen Namen (siehe Skript). %>
+<div class="row g-2 mb-3 align-items-end teil-zeile">
+  <div class="col-12">
+    <label class="d-block mb-0"><span class="zeile-beschriftung">Konto</span>
+    <select class="form-select" name="teilKontoId">
+      <option value="">— Konto wählen —</option>
+      <% alleKonten.forEach((k) => { %>
+        <option value="<%= k.id %>" data-buchungsart="<%= k.buchungsart %>"<%= konten.some((eigenes) => eigenes.id === k.id) ? ' data-eigenes-konto' : '' %> <%= String(k.id) === teil.kontoId ? 'selected' : '' %>><%= k.kontonummer %> — <%= k.bezeichnung %></option>
+      <% }) %>
+    </select></label>
+  </div>
+  <div class="col-12 col-sm-6">
+    <label class="d-block mb-0"><span class="zeile-beschriftung">Teilbetrag ohne Versand</span>
+    <input type="text" inputmode="decimal" class="form-control" name="teilBetrag" value="<%= teil.betrag %>" placeholder="z.B. 61.75"></label>
+  </div>
+  <div class="col-12 col-sm-6">
+    <label class="d-block mb-0"><span class="zeile-beschriftung">Position</span>
+    <input type="text" class="form-control" name="teilPosition" maxlength="<%= maxLen.einzeilig %>" value="<%= teil.position || '' %>" placeholder="z.B. Pos. 2"></label>
+  </div>
+  <div class="col-12">
+    <label class="d-block mb-0 small">Beleg für diese Zeile <span class="text-muted">(optional, z.B. Einzelbeleg zu einer Kreditkartenabrechnung — PDF, PNG oder JPEG)</span>
+    <input type="file" class="form-control form-control-sm mt-1 teil-beleg-input" accept="application/pdf,image/png,image/jpeg"></label>
+  </div>
+  <div class="col-6">
+    <div class="form-check teil-konflikt mb-0">
+      <label class="form-check-label"><input type="checkbox" class="form-check-input konflikt-checkbox" <%= teil.interessenskonflikt ? 'checked' : '' %>> <span class="small">Konflikt</span></label>
+      <input type="hidden" name="teilInteressenskonflikt" value="<%= teil.interessenskonflikt ? 'true' : 'false' %>">
+    </div>
+  </div>
+  <div class="col-6 text-end">
+    <button type="button" class="btn btn-outline-danger btn-sm zeile-entfernen">Entfernen</button>
+  </div>
+</div>

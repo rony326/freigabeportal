@@ -117,7 +117,7 @@
       // Rename each row's file input to a positional fieldname right before submit, matching
       // current DOM order — native <input type="file"> with nothing selected is omitted
       // entirely from the multipart body, so positional array alignment (req.files vs.
-      // posKontoId[i]) can't be relied on otherwise. Same trick as kontierung-aufsplitten.ejs.
+      // posKontoId[i]) can't be relied on otherwise. Same trick as public/js/aufsplitten-assistent.js.
       var form = document.querySelector('form[action="/spesen"]');
       if (form) {
         form.addEventListener('submit', function () {

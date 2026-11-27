@@ -11,7 +11,7 @@
           <dt>Abgelehnt von</dt><dd><%= job.abgelehntVonPerson ? `${job.abgelehntVonPerson.vorname} ${job.abgelehntVonPerson.nachname}` : 'Unbekannt' %></dd>
           <dt>Eingang</dt><dd><%- include('../_zeitpunkt', { wert: job.eingang_am }) %></dd>
         </dl>
-        <div class="mt-auto"><a href="/admin/abgelehnt/<%= job.id %>" class="btn btn-outline-danger btn-sm">Löschen</a></div>
+        <div class="mt-auto"><%- include('_abgelehnt_aktionen', { job }) %></div>
       </div>
     </div>
   <% }) %>

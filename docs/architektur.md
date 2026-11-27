@@ -436,9 +436,9 @@ Bootstrap:
 | unter 576 px (Handy) | Kopfzeile zweizeilig (Menü, Titel, Knöpfe; darunter Reiter Portal/Admin — ohne Admin-Reiter entfällt die zweite Zeile), Testmodus-Band scrollt mit statt oben zu kleben, Filterzeilen einspaltig |
 | 576 / 768 px | Feldgruppen zweispaltig ab 576 (`col-12 col-sm-6`); 768–991 px Tablet-Stufe: Formulare auf mittlere Breite begrenzt |
 | unter 992 px | Seitenleiste als Offcanvas hinter dem Menüknopf ☰; Listen standardmässig als Kacheln; PDF-Seiten mit Umschalter "Beleg / Formular" (Vorschaubild spaltenbreit, höchstens 420 px) |
-| unter 1200 px | `.stapel-tabelle` (Admin → Personen, Betrieb → Status) zeigt jede Zeile als Karte (`data-label` als Beschriftung; Einzelrechte zwei-, ab 768 px dreispaltig); Aufsplitten-Zeilen als Karten |
+| unter 1200 px | `.stapel-tabelle` (Admin → Personen, Betrieb → Status) zeigt jede Zeile als Karte (`data-label` als Beschriftung; Einzelrechte zwei-, ab 768 px dreispaltig) |
 | ab 992 px | Seitenleiste fest links, PDF eingebettet neben dem Formular |
-| ab 1200 px | Desktop-Darstellung wie vor dem Responsive-Durchgang (z. B. Aufsplitten-Zeilen als Tabelle statt Karten) |
+| ab 1200 px | Desktop-Darstellung wie vor dem Responsive-Durchgang (z. B. `.stapel-tabelle` als Tabelle statt Karten) |
 
 - **Touch-Ziele** (`@media (pointer: coarse)` in `portal.css`): auf
   Touch-Geräten sind Knöpfe, Felder, Auswahllisten, Menüpunkte, Reiter und
@@ -446,15 +446,17 @@ Bootstrap:
   bleibt alles unverändert — auch auf breiten Bildschirmen entscheidet das
   Eingabegerät, nicht die Breite.
 - **Beleg / Formular** (`views/_beleg_umschalter.ejs`,
-  `public/js/belegUmschalter.js`) auf Kontierung, Aufsplitten, KK-Abgleich,
+  `public/js/belegUmschalter.js`) auf Kontierung (auch mit offenem
+  Aufsplitten-Assistenten), KK-Abgleich,
   Freigabe 2 und Spesen-Freigabe 1: unter 992 px zeigen zwei Knöpfe
   entweder das Formular (vorgewählt) oder den Beleg. Statt eingebettetem PDF
   (iOS scrollt es nicht zuverlässig) gibt es das Vorschaubild
   (`/downloads/:jobId/thumbnail`) und den Knopf "PDF öffnen" →
   `GET /downloads/:jobId/oeffnen` (neuer Tab, leitet auf eine frisch
   signierte URL um). Das iframe lädt unter 992 px gar nicht; ab 992 px wie
-  bisher mit "Vorschau neu laden" (`/downloads/:jobId/refresh-url`). Im
-  Kontierungs-Modal eingebettet zeigt Aufsplitten keinen Umschalter. Ohne
+  bisher mit "Vorschau neu laden" (`/downloads/:jobId/refresh-url`). Bei
+  offenem Aufsplitten-Assistenten läuft der eingebettete Beleg ab 992 px beim
+  Scrollen mit (`portal.css`). Ohne
   JavaScript stehen Beleg und Formular untereinander. Im Pool öffnet das
   Vorschaubild unter 992 px das PDF im neuen Tab, ab 992 px den Dialog.
 - **Prüfung**: `npm run test:responsive` (Playwright, nicht Teil von

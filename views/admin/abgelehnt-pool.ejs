@@ -1,0 +1,24 @@
+<%- include('../_seite_anfang', { titel: 'Zurück in den Pool' }) %>
+    <div class="seitenkopf">
+      <h1 class="seitenkopf-titel">Zurück in den Pool: <%- include('../_beleg_name', { job }) %> <%- include('../_beleg_nr', { jobId: job.id }) %></h1>
+    </div>
+    <p class="text-muted">Ablehnungsgrund: <%= job.ablehnungsgrund %></p>
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-danger">
+        <ul class="mb-0"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+      </div>
+    <% } %>
+    <div class="alert alert-info">
+      Die Rechnung startet neu: Konto, Zuweisung und Ablehnung werden zurückgesetzt, und sie erscheint wieder im Pool zur Kontierung.
+      <% if (bisher) { %><%= bisher.vorname %> <%= bisher.nachname %> muss sie nicht mehr überarbeiten<% if (mailAngekuendigt) { %> und wird per Mail informiert<% } %>.<% } %>
+    </div>
+    <form method="post" action="/admin/abgelehnt/<%= job.id %>/pool" class="col-12 col-md-8 col-lg-6">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <div class="mb-3">
+        <label class="form-label" for="begruendung">Begründung (mindestens <%= minLaenge %> Zeichen)</label>
+        <textarea class="form-control" id="begruendung" name="begruendung" minlength="<%= minLaenge %>" maxlength="<%= maxLen.text %>" required><%= begruendung %></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary">Zurück in den Pool legen</button>
+      <a href="/admin/abgelehnt" class="btn btn-outline-secondary">Abbrechen</a>
+    </form>
+<%- include('../_seite_ende') %>

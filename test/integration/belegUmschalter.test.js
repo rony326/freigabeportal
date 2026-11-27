@@ -20,14 +20,14 @@ async function seite(pfad, als) {
   return res.text();
 }
 
-// Formularseiten: Umschalter + Formularspalte. einbetten: ab 992 px eingebettetes PDF (wie bisher).
+// Formularseiten: Umschalter + Formularspalte, ab 992 px eingebettetes PDF.
 const FORMULARSEITEN = [
-  { name: 'Kontierung', pfad: (ids) => `/kontierung/${ids.anna}`, als: 'test-1', job: 'anna', iframe: 'kontierung-preview-frame', einbetten: true },
-  { name: 'Freigabe 2', pfad: (ids) => `/freigabe2/${ids.freigabe2}`, als: 'test-2', job: 'freigabe2', iframe: 'freigabe2-preview-frame', einbetten: true },
-  { name: 'Spesen-Freigabe 1', pfad: (ids) => `/spesen-freigabe1/${ids.spesen}`, als: 'test-1', job: 'spesen', iframe: 'spesen-freigabe1-preview-frame', einbetten: true },
-  { name: 'KK-Abgleich', pfad: (ids) => `/kontierung/${ids.kkAbrechnung}/kk-abgleich`, als: 'test-1', job: 'kkAbrechnung', iframe: 'kontierung-preview-frame', einbetten: true, ohneThumbnail: true },
-  // Aufsplitten hatte nie ein eingebettetes PDF: ab 992 px bleibt es so, darunter kommt der Beleg dazu.
-  { name: 'Aufsplitten', pfad: (ids) => `/kontierung/${ids.anna}/aufsplitten`, als: 'test-1', job: 'anna', einbetten: false },
+  { name: 'Kontierung', pfad: (ids) => `/kontierung/${ids.anna}`, als: 'test-1', job: 'anna', iframe: 'kontierung-preview-frame' },
+  { name: 'Freigabe 2', pfad: (ids) => `/freigabe2/${ids.freigabe2}`, als: 'test-2', job: 'freigabe2', iframe: 'freigabe2-preview-frame' },
+  { name: 'Spesen-Freigabe 1', pfad: (ids) => `/spesen-freigabe1/${ids.spesen}`, als: 'test-1', job: 'spesen', iframe: 'spesen-freigabe1-preview-frame' },
+  { name: 'KK-Abgleich', pfad: (ids) => `/kontierung/${ids.kkAbrechnung}/kk-abgleich`, als: 'test-1', job: 'kkAbrechnung', iframe: 'kontierung-preview-frame', ohneThumbnail: true },
+  // Aufsplitten ist der Assistent auf der Kontierungsseite: derselbe Beleg, dasselbe Verhalten.
+  { name: 'Aufsplitten', pfad: (ids) => `/kontierung/${ids.anna}?aufsplitten=1`, als: 'test-1', job: 'anna', iframe: 'kontierung-preview-frame' },
 ];
 
 for (const s of FORMULARSEITEN) {
@@ -63,12 +63,8 @@ for (const s of FORMULARSEITEN) {
     // Formularspalte ist markiert, damit der Umschalter sie ausblenden kann.
     assert.match(html, /<div class="col-lg-\d+ beleg-umschalter-formular"/);
 
-    if (s.einbetten) {
-      // Desktop wie bisher: eingebettetes PDF, src erst per Skript (nur ab 992 px).
-      assert.match(html, new RegExp(`<div class="d-none d-lg-block">\\s*<iframe id="${s.iframe}" data-preview-url="/downloads/${id}\\?expires=\\d+&amp;signature=[0-9a-f]{64}" src="" class="w-100 rounded pdf-preview"`));
-    } else {
-      assert.doesNotMatch(html, /<iframe[^>]*pdf-preview/);
-    }
+    // Desktop wie bisher: eingebettetes PDF, src erst per Skript (nur ab 992 px).
+    assert.match(html, new RegExp(`<div class="d-none d-lg-block">\\s*<iframe id="${s.iframe}" data-preview-url="/downloads/${id}\\?expires=\\d+&amp;signature=[0-9a-f]{64}" src="" class="w-100 rounded pdf-preview"`));
     assert.match(html, /<script src="\/js\/belegUmschalter\.js\?v=[^"]+" defer><\/script>/);
   });
 }
@@ -102,4 +98,6 @@ test('belegUmschalter.js: iframe lädt nur ab 992 px, Auffrischen wie bisher üb
   assert.match(skript, /setAttribute\('aria-pressed'/);
   assert.match(skript, /classList\.add\('js-aktiv'\)/);
   assert.match(skript, /removeAttribute\('hidden'\)/);
+  // Keine Portalseite steht mehr in einem iframe (früher: Aufsplitten-Popup) – kein Sonderfall dafür.
+  assert.doesNotMatch(skript, /window\.top/);
 });

@@ -190,9 +190,10 @@ Server (`brauchtManuelleIbanPruefung`).
 Die Aufsplitten-Route (`POST /kontierung/:id/aufsplitten`, siehe
 [rechnungs-workflow.md](rechnungs-workflow.md#5-aufsplitten-status-zugewiesen--aufgesplittet))
 zeigt dasselbe Prüf-Popup wie die Kontierung, aber **einmal für die ganze
-Rechnung**: Der Lieferant ist ein **Pflichtfeld** im Aufsplitten-Formular (es
-gibt keinen Lieferanten pro Zeile). Vorgewählt ist der im Kontierungsformular
-gewählte (`?kreditorId=`), sonst der am Beleg (`job.kreditor_id`); angeboten und
+Rechnung**: Der Lieferant ist ein **Pflichtfeld** in Schritt 1 des
+Aufsplitten-Assistenten (es gibt keinen Lieferanten pro Zeile). Beim Öffnen wird
+der im Kontierungsformular gewählte übernommen; sonst ist der am Beleg
+(`job.kreditor_id`) vorgewählt, sonst der Vorschlag aus dem QR-Code. Angeboten und
 angenommen werden nur aktive, vollständige Lieferanten (`listKreditorenWaehlbar`).
 Pool-Belege haben meist noch keinen Lieferanten am Beleg — ohne dieses Feld liefe
 die Prüfung ins Leere. Der gewählte Lieferant wird vor dem Anlegen der Kinder am

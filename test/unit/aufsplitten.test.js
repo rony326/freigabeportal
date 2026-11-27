@@ -5,10 +5,11 @@ import { upsertPerson, getPersonById } from '../../src/db/personenRepo.js';
 import { createKonto, getKontoById, listKontenForPerson } from '../../src/db/kontenRepo.js';
 import { createJob, claimJob, getJobById, markJobAufgesplittet } from '../../src/db/jobsRepo.js';
 import { listFreigabenByJob } from '../../src/db/freigabenRepo.js';
+import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { mkdtempSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { erzeugeTeilJobs, bereiteTeilDateienVor } from '../../src/services/aufsplitten.js';
+import { erzeugeTeilJobs, bereiteTeilDateienVor, verteileVersandkosten, positionMitVersand, benachrichtigeNachAufsplitten } from '../../src/services/aufsplitten.js';
 import { buildPdfFixture } from '../helpers/pdfFixture.js';
 
 function setup() {
@@ -92,3 +93,53 @@ test('bereiteTeilDateienVor removes the files it already created when a later Te
   assert.deepEqual(readdirSync(dir).sort(), ['rechnung.pdf', 'rechnung.png']);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('verteileVersandkosten teilt gleichmässig in Rappen, der Rest geht an den letzten Teil', () => {
+  assert.deepEqual(verteileVersandkosten(1000, 3), [333, 333, 334]);
+  assert.deepEqual(verteileVersandkosten(2, 3), [0, 0, 2]);
+  assert.deepEqual(verteileVersandkosten(0, 2), [0, 0]);
+});
+
+test('positionMitVersand ergänzt die Position nur bei einem Versandanteil grösser 0', () => {
+  assert.equal(positionMitVersand('Pos. 2', 335), 'Pos. 2 (inkl. Versand 3.35)');
+  assert.equal(positionMitVersand(null, 335), 'inkl. Versand 3.35');
+  assert.equal(positionMitVersand('Pos. 2', 0), 'Pos. 2');
+  assert.equal(positionMitVersand(null, 0), null);
+});
+
+// Beide Gründe für die Admin-Gruppe: Vier-Augen-Umleitung (neutraler Text) und erklärter Interessenskonflikt.
+for (const [name, grund, muster, nichtMuster] of [
+  ['Vier-Augen-Umleitung', null, /Vier-Augen-Prinzip/, /Interessenskonflikt/],
+  ['Interessenskonflikt', 'Befangen', /Interessenskonflikt erklärt/, /Vier-Augen/],
+]) {
+  test(`benachrichtigeNachAufsplitten: Admin-Mail passt zum Grund (${name})`, async () => {
+    const { db, eigen, jobId } = setup();
+    seedDefaults(db);
+    upsertPerson(db, { id: '9', vorname: 'Super', nachname: 'Admin', email: 'sa@example.org', gruppen: ['20'] });
+    db.prepare("UPDATE konten SET freigeber2_id = '1', stellvertreter2_id = '1' WHERE id = ?").run(eigen);
+    const job = getJobById(db, jobId);
+    db.exec('BEGIN');
+    markJobAufgesplittet(db, jobId);
+    const ergebnis = erzeugeTeilJobs(db, {
+      job,
+      teile: [{ konto: getKontoById(db, eigen), betrag: '10.00', interessenskonflikt: false, position: null, pdfPfad: '/tmp/a.pdf', thumbnailPfad: null, belegSeitenzahl: null }],
+      konten: listKontenForPerson(db, '1'),
+      person: getPersonById(db, '1'),
+      ip: '::1',
+      begruendung: '',
+      fremdKontoModus: 'pool',
+      istVertretung: false,
+    });
+    db.exec('COMMIT');
+    const kindId = ergebnis.selbstFreigegeben[0].id;
+    if (grund) db.prepare('UPDATE jobs SET freigabe2_eskalationsgrund = ? WHERE id = ?').run(grund, kindId);
+    const sent = [];
+    const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20' }, publicBaseUrl: 'https://portal.example.org' };
+    await benachrichtigeNachAufsplitten(db, { async sendMail(mail) { sent.push(mail); } }, config, { job, ergebnis, person: getPersonById(db, '1') });
+    const mail = sent.find((m) => m.to === 'sa@example.org');
+    assert.ok(mail);
+    assert.match(mail.text, muster);
+    assert.doesNotMatch(mail.text, nichtMuster);
+    db.close();
+  });
+}

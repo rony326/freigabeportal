@@ -8,7 +8,7 @@ import { createKreditor } from '../../src/db/kreditorenRepo.js';
 import { kreditorOhneIbanPflicht } from '../helpers/kreditor.js';
 import { createFreigabe, listFreigabenByJob } from '../../src/db/freigabenRepo.js';
 import { createSpesenabrechnung } from '../../src/db/spesenabrechnungenRepo.js';
-import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, assignJobToPerson, listPoolRuecklaeufer, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, sendJobBackToGroup, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, listFreigabe2JobsForReminder, markFreigabe2ReminderGesendet, listFreigabe2JobsForEskalation, markFreigabe2EskalationGesendet, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByKreditorUndRechnungsnummer, findMoeglicheDoppelrechnungen, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben, weiterleitenAnEchtenFreigeber1, markiereJobAlsKkAbrechnung, hebeKkMarkierungAuf, setKkAbrechnungKopfdaten, hatZugewieseneKkAbrechnungFuer } from '../../src/db/jobsRepo.js';
+import { findMatchingZuweisungsregel, createJob, getJobById, findJobByDateiHash, listPoolJobs, claimJob, assignJobToPerson, listPoolRuecklaeufer, listAbholbereitJobs, confirmAbholung, setThumbnailPfad, setKontierung, updateKontierungMetadaten, eskalierenFreigabe1, abschliessenFreigabe1, eskalierenFreigabe2, abschliessenFreigabe2, releaseJob, sendJobBackToGroup, listZugewiesenJobsForPerson, listFreigabe2JobsForPerson, getEffectiveFreigeber2Id, ablehnenJob, wiederOeffnenJob, listAbgelehntJobsForPerson, listAlleAbgelehntenJobs, loeschenJob, listPoolJobsForReminder, markReminderGesendet, listPoolJobsForEskalation, markEskalationGesendet, listAbgeholtJobs, archivierenJob, eskalierenFreigabe1AnAdmin, eskalierenFreigabe2AnAdmin, listStalledJobs, forceReleaseJob, forceEskalierenFreigabe2AnAdmin, listFreigabe2JobsForReminder, markFreigabe2ReminderGesendet, listFreigabe2JobsForEskalation, markFreigabe2EskalationGesendet, markJobAufgesplittet, createSplitJob, listSplitKinder, listAdminEskalierteKontierungen, listAdminEskalierteFreigaben, markZeitstempelGesetzt, listAbgeschlossenJobsForPerson, countZeitstempelUeberfaellig, listZeitstempelAusstehendJobs, setQrDaten, pruefeSplitGruppenVollstaendigkeit, markGruppeExportiert, listAbholbereitGruppen, istGruppenElternjob, confirmGruppenAbholung, listSplitGruppenAusstehend, findJobsByKreditorUndRechnungsnummer, findMoeglicheDoppelrechnungen, createSpesenPosition, listSpesenFreigabe1JobsForPerson, listSpesenForEinreicher, listAdminEskalierteSpesenFreigaben, weiterleitenAnEchtenFreigeber1, markiereJobAlsKkAbrechnung, hebeKkMarkierungAuf, setKkAbrechnungKopfdaten, hatZugewieseneKkAbrechnungFuer, VIER_AUGEN_UMLEITUNG_PRAEFIX, istVierAugenUmleitung } from '../../src/db/jobsRepo.js';
 import { createKreditkarte } from '../../src/db/kreditkartenRepo.js';
 
 function seedKonto(db) {
@@ -581,6 +581,142 @@ test('abschliessenFreigabe1 preserves freigabe1_eskaliert_an_admin when set, so 
   assert.equal(job.freigabe1_eskaliert_an_admin, 1, 'the conflict-of-interest flag survives Freigabe 1 completion, so rework cycles stay admin-gated');
   db.close();
 });
+
+// Rückmeldung 2026-11-27: Freigeber 2 vertritt im Ferienmodus Freigeber 1 und erteilt Freigabe 1 — Freigabe 2 darf
+// dann nicht bei ihm hängen bleiben (Vier-Augen-Sperre in freigabe2.js), sondern geht an die Stellvertretung 2.
+test('abschliessenFreigabe1 leitet Freigabe 2 an Stellvertretung 2 um, wenn Freigeber 2 schon Freigabe 1 erteilt hat', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-11-27T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  setKontierung(db, jobId, kontoId);
+  createFreigabe(db, { jobId, personId: '3', rolle: 'freigeber1', zeitpunkt: new Date().toISOString(), ip: '1.2.3.4', interessenskonflikt: false, vertretungFuer: '1' });
+  abschliessenFreigabe1(db, jobId);
+  const job = getJobById(db, jobId);
+  assert.equal(job.status, 'freigabe2');
+  assert.equal(job.freigabe2_eskaliert_an_admin, 0);
+  assert.equal(job.freigabe2_eskaliert_von, '3');
+  assert.match(job.freigabe2_eskalationsgrund, /Vier-Augen/);
+  assert.equal(getEffectiveFreigeber2Id(job, { freigeber2_id: '3', stellvertreter2_id: '4' }), '4');
+  // Kein Konflikt-Eintrag: es wurde keiner erklärt.
+  assert.equal(listFreigabenByJob(db, jobId).filter((f) => f.rolle === 'freigabe2_eskalation').length, 0);
+  db.close();
+});
+
+test('abschliessenFreigabe1 gibt Freigabe 2 an die Admin-Gruppe, wenn auch Stellvertretung 2 ausgeschlossen ist', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  db.prepare("UPDATE konten SET stellvertreter2_id = '3' WHERE id = ?").run(kontoId);
+  const jobId = createJob(db, { eingangAm: '2026-11-27T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  setKontierung(db, jobId, kontoId);
+  createFreigabe(db, { jobId, personId: '3', rolle: 'freigeber1', zeitpunkt: new Date().toISOString(), ip: '1.2.3.4', interessenskonflikt: false, vertretungFuer: '1' });
+  abschliessenFreigabe1(db, jobId);
+  const job = getJobById(db, jobId);
+  assert.equal(job.freigabe2_eskaliert_an_admin, 1);
+  assert.match(job.freigabe2_eskalationsgrund, /Stellvertretung ausgeschlossen/);
+  db.close();
+});
+
+test('abschliessenFreigabe1 lässt Freigabe 2 beim Freigeber 2, wenn jemand anderes Freigabe 1 erteilt hat', () => {
+  const db = openDatabase(':memory:');
+  const kontoId = seedKonto(db);
+  const jobId = createJob(db, { eingangAm: '2026-11-27T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  setKontierung(db, jobId, kontoId);
+  createFreigabe(db, { jobId, personId: '1', rolle: 'freigeber1', zeitpunkt: new Date().toISOString(), ip: '1.2.3.4', interessenskonflikt: false });
+  abschliessenFreigabe1(db, jobId);
+  const job = getJobById(db, jobId);
+  assert.equal(job.freigabe2_eskaliert_von, null);
+  assert.equal(job.freigabe2_eskaliert_an_admin, 0);
+  db.close();
+});
+
+// Die Vier-Augen-Umleitung gilt nur für die Runde, in der die Sperre greift (Schlussprüfung 1.4.13).
+const KONTO_ROLLEN = { freigeber2_id: '3', stellvertreter2_id: '4' };
+
+function kontierterJob(db, kontoId) {
+  const jobId = createJob(db, { eingangAm: '2026-11-27T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, jobId, '1');
+  setKontierung(db, jobId, kontoId);
+  return jobId;
+}
+
+function freigabe1Durch(db, jobId, personId) {
+  createFreigabe(db, { jobId, personId, rolle: 'freigeber1', zeitpunkt: new Date().toISOString(), ip: '1.2.3.4', interessenskonflikt: false });
+  abschliessenFreigabe1(db, jobId);
+}
+
+function ablehnenUndUeberarbeiten(db, jobId) {
+  assert.equal(ablehnenJob(db, jobId, { abgelehntVon: '4', grund: 'Betrag falsch' }), true);
+  assert.equal(wiederOeffnenJob(db, jobId, '1'), true);
+}
+
+for (const [name, stellvertreter2, anAdmin] of [['Stellvertretung 2', '4', 0], ['Admin-Gruppe', '3', 1]]) {
+  test(`Vier-Augen-Umleitung (${name}) gilt nicht für die nächste Runde nach Ablehnung und Überarbeitung`, () => {
+    const db = openDatabase(':memory:');
+    const kontoId = seedKonto(db);
+    db.prepare('UPDATE konten SET stellvertreter2_id = ? WHERE id = ?').run(stellvertreter2, kontoId);
+    const jobId = kontierterJob(db, kontoId);
+    freigabe1Durch(db, jobId, '3');
+    assert.equal(getJobById(db, jobId).freigabe2_eskaliert_an_admin, anAdmin);
+    assert.ok(getJobById(db, jobId).freigabe2_eskalationsgrund.startsWith(VIER_AUGEN_UMLEITUNG_PRAEFIX));
+
+    ablehnenUndUeberarbeiten(db, jobId);
+    freigabe1Durch(db, jobId, '1');
+
+    const job = getJobById(db, jobId);
+    assert.equal(job.freigabe2_eskaliert_von, null);
+    assert.equal(job.freigabe2_eskalationsgrund, null);
+    assert.equal(job.freigabe2_eskaliert_an_admin, 0);
+    assert.equal(getEffectiveFreigeber2Id(job, { freigeber2_id: '3', stellvertreter2_id: stellvertreter2 }), '3');
+    db.close();
+  });
+}
+
+for (const grund of ['Befangen', 'Selbsteinreichung durch Freigeber2']) {
+  test(`eine frühere Eskalation («${grund}») überlebt Ablehnung und Überarbeitung`, () => {
+    const db = openDatabase(':memory:');
+    const kontoId = seedKonto(db);
+    const jobId = kontierterJob(db, kontoId);
+    freigabe1Durch(db, jobId, '1');
+    eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund });
+    ablehnenUndUeberarbeiten(db, jobId);
+    freigabe1Durch(db, jobId, '1');
+
+    const job = getJobById(db, jobId);
+    assert.equal(job.freigabe2_eskaliert_von, '3');
+    assert.equal(job.freigabe2_eskalationsgrund, grund);
+    assert.equal(job.freigabe2_eskaliert_an_admin, 0);
+    assert.equal(getEffectiveFreigeber2Id(job, KONTO_ROLLEN), '4');
+    db.close();
+  });
+
+  test(`Vier-Augen-Umleitung über eine frühere Eskalation («${grund}») hinaus: danach gilt wieder nur die frühere`, () => {
+    const db = openDatabase(':memory:');
+    const kontoId = seedKonto(db);
+    const jobId = kontierterJob(db, kontoId);
+    freigabe1Durch(db, jobId, '1');
+    eskalierenFreigabe2(db, jobId, { eskaliertVon: '3', grund });
+    ablehnenUndUeberarbeiten(db, jobId);
+    // Stellvertretung 2 erteilt diesmal Freigabe 1: nur diese Runde geht an die Admin-Gruppe.
+    freigabe1Durch(db, jobId, '4');
+    let job = getJobById(db, jobId);
+    assert.equal(job.freigabe2_eskaliert_an_admin, 1);
+    assert.equal(job.freigabe2_eskaliert_von, '3', 'die frühere Eskalation wird nicht überschrieben');
+    assert.ok(job.freigabe2_eskalationsgrund.startsWith(grund));
+    assert.equal(istVierAugenUmleitung(job), true);
+
+    ablehnenUndUeberarbeiten(db, jobId);
+    freigabe1Durch(db, jobId, '1');
+    job = getJobById(db, jobId);
+    assert.equal(job.freigabe2_eskaliert_an_admin, 0);
+    assert.equal(job.freigabe2_eskaliert_von, '3');
+    assert.equal(job.freigabe2_eskalationsgrund, grund);
+    assert.equal(getEffectiveFreigeber2Id(job, KONTO_ROLLEN), '4');
+    db.close();
+  });
+}
 
 test('weiterleitenAnEchtenFreigeber1 reassigns zugewiesen_an without touching status or escalation fields', () => {
   const db = openDatabase(':memory:');

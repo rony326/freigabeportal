@@ -11,6 +11,9 @@
             <% if (typeof kkHinweis !== 'undefined' && kkHinweis) { %>
               <div class="alert <%= kkHinweis.startsWith('Kreditkartenbeleg') ? 'alert-info' : 'alert-warning' %> py-2"><%= kkHinweis %></div>
             <% } %>
+            <% if (locals.vierAugenUmleitung) { %>
+              <div class="alert alert-info py-2">Diese Freigabe 2 wurde an <%= job.freigabe2_eskaliert_an_admin ? 'die Admin-Gruppe' : 'dich' %> weitergeleitet, weil <%= freigeber1Person.vorname %> <%= freigeber1Person.nachname %> bereits Freigabe 1 erteilt hat (Vier-Augen-Prinzip).</div>
+            <% } %>
             <%- include('_auffaelligkeiten_bestaetigt', { kasten: locals.auffaelligkeitenBestaetigt }) %>
             <%- include('_iban_alter_hinweis', { hinweis: locals.ibanAlterHinweis }) %>
             <div class="entscheidung">
@@ -51,7 +54,8 @@
                 <p class="text-muted">Zahlung: keine maschinenlesbaren Zahlungsdaten — die Zahlung wird manuell erfasst.</p>
               <% } %>
               <% if (paymentReview) { %>
-                <div class="border rounded p-2 mb-3" id="zahlungsdatenPruefung">
+                <% const hatZahlungshinweise = (paymentReview.hinweise || []).length > 0; %>
+                <div class="border rounded p-2 mb-3<%= hatZahlungshinweise ? ' zahlung-mit-abweichung' : '' %>" id="zahlungsdatenPruefung">
                   <h2 class="h5">Zahlungsdaten</h2>
                   <% const daten = paymentReview.daten || {}; %>
                   <% if (paymentReview.art === 'spesen') { %>
@@ -68,22 +72,27 @@
                     <% if (daten.betrag) { %><p class="mb-1"><strong>QR-Betrag:</strong> <%= daten.betrag %> <%= daten.waehrung || '' %></p><% } %>
                     <% if (paymentReview.abgleich !== 'abweichung') { %><p class="mb-1"><strong>IBAN-Abgleich:</strong> <%= { uebereinstimmung: 'bei diesem Lieferanten hinterlegt', abweichung: 'NICHT bei diesem Lieferanten hinterlegt', keine_iban_hinterlegt: 'keine IBAN beim Lieferanten hinterlegt', kein_lieferant: 'kein Lieferant zugeordnet' }[paymentReview.abgleich] || paymentReview.abgleich %></p><% } %>
                   <% } %>
-                  <% (paymentReview.hinweisTexte || []).forEach((text) => { %>
-                    <div class="alert alert-warning py-2 my-2"><%= text %></div>
-                  <% }) %>
+                  <% if (hatZahlungshinweise) { %>
+                    <% /* Rückmeldung 2026-11-27: Die Bestätigung der Abweichung ging als schlichte Zeile unter der normalen
+                         Bestätigung leicht vergessen — jetzt als eigener, farbig umrandeter Kasten direkt bei den Hinweisen. */ %>
+                    <div class="zahlung-abweichung my-2" role="group" aria-labelledby="zahlungAbweichungTitel">
+                      <p class="zahlung-abweichung-titel mb-1" id="zahlungAbweichungTitel">Abweichung — bitte klären und bestätigen</p>
+                      <ul class="mb-2">
+                        <% (paymentReview.hinweisTexte || []).forEach((text) => { %><li><%= text %></li><% }) %>
+                      </ul>
+                      <div class="form-check">
+                        <input class="form-check-input<%= ff.zahlungshinweiseBestaetigt ? ' is-invalid' : '' %>" type="checkbox" name="zahlungshinweise_bestaetigt" id="zahlungshinweiseBestaetigt" value="ja"<%- ffAttr(ff, 'zahlungshinweiseBestaetigt') %>>
+                        <label class="form-check-label" for="zahlungshinweiseBestaetigt">Ich habe die Abweichung geklärt</label>
+<% if (ff.zahlungshinweiseBestaetigt) { %><div class="invalid-feedback d-block" id="zahlungshinweiseBestaetigt-fehler"><%= ff.zahlungshinweiseBestaetigt %></div><% } %>
+                      </div>
+                    </div>
+                  <% } %>
                   <input type="hidden" name="zahlungsdaten_stand" value="<%= paymentReview.fingerprint %>">
                   <div class="form-check">
                     <input class="form-check-input<%= ff.zahlungsdatenBestaetigt ? ' is-invalid' : '' %>" type="checkbox" name="zahlungsdaten_bestaetigt" id="zahlungsdatenBestaetigt" value="ja"<%- ffAttr(ff, 'zahlungsdatenBestaetigt') %>>
                     <label class="form-check-label" for="zahlungsdatenBestaetigt"><%= paymentReview.art === 'spesen' ? 'IBAN, Kontoinhaber, Betrag und Konto geprüft' : paymentReview.art === 'qr_rechnung' ? 'Zahlungsempfänger, IBAN, Referenz, Betrag und Konto geprüft' : 'Zahlung wird manuell erfasst; Konto und Betrag geprüft' %></label>
 <% if (ff.zahlungsdatenBestaetigt) { %><div class="invalid-feedback d-block" id="zahlungsdatenBestaetigt-fehler"><%= ff.zahlungsdatenBestaetigt %></div><% } %>
                   </div>
-                  <% if ((paymentReview.hinweise || []).length > 0) { %>
-                    <div class="form-check">
-                      <input class="form-check-input<%= ff.zahlungshinweiseBestaetigt ? ' is-invalid' : '' %>" type="checkbox" name="zahlungshinweise_bestaetigt" id="zahlungshinweiseBestaetigt" value="ja"<%- ffAttr(ff, 'zahlungshinweiseBestaetigt') %>>
-                      <label class="form-check-label" for="zahlungshinweiseBestaetigt">Die oben genannten Abweichungen wurden geklärt</label>
-<% if (ff.zahlungshinweiseBestaetigt) { %><div class="invalid-feedback d-block" id="zahlungshinweiseBestaetigt-fehler"><%= ff.zahlungshinweiseBestaetigt %></div><% } %>
-                    </div>
-                  <% } %>
                 </div>
               <% } %>
               <%- include('_konflikt_frage', { praefix: 'f2', values }) %>

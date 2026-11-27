@@ -6,7 +6,7 @@ import { personHasRole } from '../middleware/roles.js';
 import { Router } from 'express';
 import { readFileSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { getJobById, eskalierenFreigabe2, eskalierenFreigabe2AnAdmin, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id, markZeitstempelGesetzt } from '../db/jobsRepo.js';
+import { getJobById, eskalierenFreigabe2, eskalierenFreigabe2AnAdmin, abschliessenFreigabe2, ablehnenJob, getEffectiveFreigeber2Id, istVierAugenUmleitung, markZeitstempelGesetzt } from '../db/jobsRepo.js';
 import { getKontoById } from '../db/kontenRepo.js';
 import { getSpesenabrechnungById } from '../db/spesenabrechnungenRepo.js';
 import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalationsText } from '../services/eskalationsZiel.js';
@@ -133,6 +133,8 @@ export function createFreigabe2Router({ db, config, mailer, csrfProtection = (re
       maxLen: MAX_LAENGE,
       zahlungsart,
       job,
+      // Erklärt, warum der Vorgang nicht beim Freigeber 2 des Kontos liegt; nach einem Umhängen durch den Admin gilt dessen Zuweisung.
+      vierAugenUmleitung: istVierAugenUmleitung(job) && !job.freigabe2_umgeleitet_an,
       konto,
       freigabe1,
       freigeber1Person,

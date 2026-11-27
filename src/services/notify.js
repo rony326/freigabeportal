@@ -9,14 +9,23 @@ import { getConfigValue } from '../db/adminConfigRepo.js';
 import { getAktivenVertreter } from './vertretung.js';
 import { reiheMailEin, stelleMailZu } from './mailZustellung.js';
 import { benachrichtigungFuer } from './benachrichtigung.js';
+import { istVierAugenUmleitung } from '../db/jobsRepo.js';
 
 const GRUPPE_BUCHHALTUNG_TOKEN = 'gruppe:buchhaltung';
 const GRUPPE_ADMIN_TOKEN = 'gruppe:admin';
 
 // Grund der "Freigabe 2 wartet"-Mail, wenn abschliessenFreigabe1 den Vorgang an die Admin-Gruppe
 // gegeben hat, weil die effektive Freigabe-2-Person bereits einen Interessenskonflikt erklärt hat.
-export const FREIGABE2_AN_ADMIN_GRUND =
+const FREIGABE2_AN_ADMIN_GRUND =
   'Eine Rechnung wartet auf Freigabe 2 und wurde an die Portal-Admin-Gruppe übergeben, da die zuständige Freigabe-2-Person für diese Rechnung bereits einen Interessenskonflikt erklärt hat.';
+// Dasselbe nach einer Vier-Augen-Umleitung: hier hat niemand einen Konflikt erklärt.
+const FREIGABE2_AN_ADMIN_VIER_AUGEN_GRUND =
+  'Eine Rechnung wartet auf Freigabe 2 und wurde an die Portal-Admin-Gruppe übergeben, da die für Freigabe 2 zuständige Person bereits Freigabe 1 erteilt hat (Vier-Augen-Prinzip) und keine Stellvertretung übernehmen kann.';
+
+// Text der Admin-Mail, passend zur Eskalationsbegründung des Vorgangs.
+export function freigabe2AnAdminGrund(job) {
+  return istVierAugenUmleitung(job) ? FREIGABE2_AN_ADMIN_VIER_AUGEN_GRUND : FREIGABE2_AN_ADMIN_GRUND;
+}
 
 // Typen, die nie auf den Digest warten -- unabhängig von der persönlichen Bündelung
 // (services/benachrichtigung.js). sync-fehler (ChurchTools-Ausfall) und auffaelligkeiten-warnung

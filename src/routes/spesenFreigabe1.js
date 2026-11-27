@@ -21,7 +21,7 @@ import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss, adminEskalation
 import { createFreigabe, istKonfliktmelder } from '../db/freigabenRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
-import { sendNotification, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from '../services/notify.js';
+import { sendNotification, resolveEmpfaenger, freigabe2AnAdminGrund } from '../services/notify.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { kommentarBereich } from './kommentare.js';
 import { loeseSpesenBestaetigungAus } from '../services/spesenBestaetigung.js';
@@ -271,7 +271,7 @@ export function createSpesenFreigabe1Router({ db, config, mailer, csrfProtection
             variablen: {
               empfaengerName: 'Portal-Admin-Team',
               jobDateiname: job.dateiname,
-              grund: FREIGABE2_AN_ADMIN_GRUND,
+              grund: freigabe2AnAdminGrund(aktualisierterJob),
               link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
             },
           });

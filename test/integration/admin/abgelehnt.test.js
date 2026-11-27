@@ -19,7 +19,7 @@ import { createAdminAbgelehntRouter } from '../../../src/routes/admin/abgelehnt.
 import { buildPdfFixture } from '../../helpers/pdfFixture.js';
 import { freigabeSnapshotsFuerTest } from '../../helpers/freigabeSnapshot.js';
 
-function buildTestApp(db) {
+function buildTestApp(db, { mailer } = {}) {
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', new URL('../../../views', import.meta.url).pathname);
@@ -35,7 +35,7 @@ function buildTestApp(db) {
   const config = { churchtools: { groupIdBuchhaltung: '10', groupIdAdmin: '20', groupIdManager: '30' } };
   app.use(loadCurrentPerson(db));
   app.use(loadNavFlags(db, config));
-  app.use('/admin/abgelehnt', requirePermission(db, config, 'abgelehnt_verwalten'), createAdminAbgelehntRouter({ db }));
+  app.use('/admin/abgelehnt', requirePermission(db, config, 'abgelehnt_verwalten'), createAdminAbgelehntRouter({ db, config, mailer }));
   return app;
 }
 
@@ -314,3 +314,84 @@ test('deleting the last blocking abgelehnt sibling of an otherwise complete Spli
   rmSync(dir, { recursive: true, force: true });
   db.close();
 });
+
+// Rückmeldung 2026-11-27: abgelehnte Rechnung durch die Administration zurück in den Pool.
+test('POST /admin/abgelehnt/:id/pool legt die Rechnung zurück in den Pool (mit Verlauf und Audit)', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'abgelehnt-pool-'));
+  seedAdmin(db);
+  const { id } = seedAbgelehntJob(db, dir);
+  const app = buildTestApp(db);
+
+  const seite = await request(app).get('/admin/abgelehnt').set('x-test-person-id', '99');
+  assert.match(seite.text, new RegExp(`/admin/abgelehnt/${id}/pool`));
+
+  const kurz = await request(app).post(`/admin/abgelehnt/${id}/pool`).set('x-test-person-id', '99').type('form').send({ begruendung: 'kurz' });
+  assert.equal(kurz.status, 400);
+  assert.equal(getJobById(db, id).status, 'abgelehnt');
+
+  const res = await request(app).post(`/admin/abgelehnt/${id}/pool`).set('x-test-person-id', '99').type('form').send({ begruendung: 'Rechnung ist doch korrekt, neu kontieren' });
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, '/admin/abgelehnt?pool=1');
+  const job = getJobById(db, id);
+  assert.equal(job.status, 'unzugewiesen');
+  assert.equal(job.zugewiesen_an, null);
+  assert.equal(job.konto_id, null);
+  assert.equal(job.abgelehnt_von, null);
+  const eintrag = listFreigabenByJob(db, id).at(-1);
+  assert.equal(eintrag.rolle, 'admin_umzuweisung');
+  assert.equal(eintrag.person_id, '99');
+  assert.match(eintrag.kommentar, /zurück in den Pool/);
+  const audit = db.prepare("SELECT * FROM audit_ereignisse WHERE aktion = 'workflow_eingriff' AND objekt_id = ?").get(String(id));
+  assert.ok(audit);
+
+  // Zweiter Versuch: nicht mehr abgelehnt.
+  const nochmal = await request(app).post(`/admin/abgelehnt/${id}/pool`).set('x-test-person-id', '99').type('form').send({ begruendung: 'Rechnung ist doch korrekt, neu kontieren' });
+  assert.equal(nochmal.status, 404);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('POST /admin/abgelehnt/:id/pool weist abgelehnte Spesen ab', async () => {
+  const db = openDatabase(':memory:');
+  const dir = mkdtempSync(join(tmpdir(), 'abgelehnt-pool-spesen-'));
+  seedAdmin(db);
+  const { id } = seedAbgelehntJob(db, dir);
+  db.prepare("UPDATE jobs SET quelle = 'spesen' WHERE id = ?").run(id);
+  const app = buildTestApp(db);
+  const seite = await request(app).get('/admin/abgelehnt').set('x-test-person-id', '99');
+  assert.doesNotMatch(seite.text, new RegExp(`/admin/abgelehnt/${id}/pool`));
+  const res = await request(app).post(`/admin/abgelehnt/${id}/pool`).set('x-test-person-id', '99').type('form').send({ begruendung: 'Rechnung ist doch korrekt, neu kontieren' });
+  assert.equal(res.status, 409);
+  assert.equal(getJobById(db, id).status, 'abgelehnt');
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// Die Bestätigungsseite verspricht eine Mail nur, wenn die Route auch eine verschickt.
+for (const [name, mitMailer, vorbereiten, versprochen] of [
+  ['aktive Person', true, () => {}, true],
+  ['inaktive Person', true, (db) => db.prepare("UPDATE personen SET aktiv = 0 WHERE churchtools_person_id = '1'").run(), false],
+  ['handelnde Administration', true, (db, id) => db.prepare("UPDATE jobs SET zugewiesen_an = '99' WHERE id = ?").run(id), false],
+  ['ohne Mailversand', false, () => {}, false],
+]) {
+  test(`/admin/abgelehnt/:id/pool kündigt die Mail passend an (${name}), auch nach einem Eingabefehler`, async () => {
+    const db = openDatabase(':memory:');
+    const dir = mkdtempSync(join(tmpdir(), 'abgelehnt-pool-mail-'));
+    seedAdmin(db);
+    const { id } = seedAbgelehntJob(db, dir);
+    vorbereiten(db, id);
+    const sent = [];
+    const app = buildTestApp(db, { mailer: mitMailer ? { async sendMail(mail) { sent.push(mail); } } : null });
+    const seite = await request(app).get(`/admin/abgelehnt/${id}/pool`).set('x-test-person-id', '99');
+    const fehler = await request(app).post(`/admin/abgelehnt/${id}/pool`).set('x-test-person-id', '99').type('form').send({ begruendung: 'kurz' });
+    assert.equal(seite.status, 200);
+    assert.equal(fehler.status, 400);
+    for (const res of [seite, fehler]) {
+      assert.match(res.text, /muss sie nicht mehr überarbeiten/);
+      assert.equal(/wird per Mail informiert/.test(res.text), versprochen);
+    }
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+}

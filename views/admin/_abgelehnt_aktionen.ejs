@@ -1,0 +1,3 @@
+<% /* Aktionen je abgelehnter Rechnung (Tabelle und Kacheln). Spesen und Kreditkartenabrechnungen können nicht in den Pool. */ %>
+<% if (job.quelle !== 'spesen' && !job.kreditkarte_id) { %><a href="/admin/abgelehnt/<%= job.id %>/pool" class="btn btn-outline-primary btn-sm me-1">Zurück in den Pool</a><% } %>
+<a href="/admin/abgelehnt/<%= job.id %>" class="btn btn-outline-danger btn-sm">Löschen</a>

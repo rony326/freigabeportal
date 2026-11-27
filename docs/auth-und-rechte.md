@@ -185,6 +185,9 @@ Bereiche, Startwerte). Vergebbar sind:
   `zeitstempel_verwalten`, `backup_verwalten`, `module_verwalten`, `dateiquarantaene_verwalten`
 - `wartungsmodus_schalten`: Wartungsmodus ein-/ausschalten
 
+Für «Zurück in den Pool» bei abgelehnten Rechnungen (`/admin/abgelehnt/:id/pool`) genügt `abgelehnt_verwalten`;
+`workflow_eingreifen` ist dafür nicht nötig.
+
 Dazu ein **festes** Recht: `gruppenrechte_verwalten` (Gruppenrechte-Seite, Einzelrechte vergeben). Es hängt
 allein an der Mitgliedschaft in `superadmin`, ist nicht abschaltbar und weder anderen Gruppen noch als
 Einzelrecht vergebbar — Schutz vor dem Aussperren.

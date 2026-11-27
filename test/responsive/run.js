@@ -5,7 +5,7 @@
 // (menue), Testmodus-Band höchstens 30 % hoch und Inhalt erreichbar (band), PDF-Seiten mit
 // Beleg/Formular-Umschalter (pdf: true in seiten.js) laden unter 992 px weder PDF.js-Viewer noch
 // signiertes PDF, ab 992 px ist das eingebettete PDF geladen (iframe). Dialoge (modal: in seiten.js)
-// werden über ihren Knopf geöffnet und samt iframe-Dokument geprüft (modal). Das ✕ einer Meldung
+// werden über ihren Knopf geöffnet und geprüft (modal). Das ✕ einer Meldung
 // (.alert .btn-close) liegt in seiner Meldung, bei kompakten Meldungen mittig (schliessen). Text in
 // farbig hinterlegten Tabellenzeilen (überfällig/hängt) hat ≥ 4.5:1 Kontrast (kontrast). Ab 1200 px
 // passt die Dateiauswahl ("Datei auswählen | Keine ausgewählt") ungekürzt in ihr Feld (text).
@@ -314,7 +314,7 @@ async function pruefeMenue(page, optionen) {
 
 // PDF-Seiten (Beleg/Formular-Umschalter): unter 992 px kein eingebettetes PDF (keine Anfrage an
 // Viewer oder signiertes PDF, auch nicht nach dem Umschalten auf "Beleg"), ab 992 px ist das
-// iframe geladen (src gesetzt) — sofern die Seite eines hat (Aufsplitten hat keins).
+// iframe geladen (src gesetzt) — sofern die Seite eines hat.
 async function pruefePdf(page, b, pdfAnfragen) {
   if (b.breite < MENUE_BIS) {
     const knopf = page.locator('[data-beleg-ansicht="beleg"]');
@@ -334,9 +334,8 @@ async function pruefePdf(page, b, pdfAnfragen) {
   return [{ art: 'iframe', selektor: 'iframe.pdf-preview', masse: `src nicht gesetzt ab ${MENUE_BIS} px ("${src.slice(0, 40)}")` }];
 }
 
-// Dialog (seite.modal): über den Knopf öffnen, dann im offenen Dialog Touch/Text/Überlappung, ob
-// der Schliessen-Knopf frei liegt (z. B. nicht unter dem Testmodus-Band) und — mit iframe — das
-// iframe-Dokument wie eine eigene Seite prüfen, ohne Beleg/Formular-Umschalter (eingebettet).
+// Dialog (seite.modal): über den Knopf öffnen, dann im offenen Dialog Touch/Text/Überlappung und ob
+// der Schliessen-Knopf frei liegt (z. B. nicht unter dem Testmodus-Band).
 async function pruefeModal(page, m, optionen) {
   const verstoesse = [];
   try {
@@ -361,23 +360,6 @@ async function pruefeModal(page, m, optionen) {
     return oben && (oben === knopf || knopf.contains(oben)) ? '' : `verdeckt von ${oben ? oben.tagName.toLowerCase() + (oben.className ? `.${String(oben.className).split(' ')[0]}` : '') : 'nichts'}`;
   }, m.modal);
   if (frei) verstoesse.push({ art: 'modal', selektor: `${m.modal} .btn-close`, masse: frei });
-  if (m.iframe) {
-    try {
-      const handle = await page.waitForSelector(`${m.iframe}[src]:not([src=""])`, { timeout: 5000 });
-      const frame = await handle.contentFrame();
-      await frame.waitForLoadState('load', { timeout: 15000 });
-      await frame.waitForSelector('main', { timeout: 15000 });
-      await page.waitForTimeout(100);
-      verstoesse.push(...(await frame.evaluate(pruefeImBrowser, optionen)).map((v) => ({ ...v, selektor: `iframe ${v.selektor}` })));
-      const umschalter = await frame.evaluate(() => {
-        const k = document.querySelector('.beleg-umschalter-knoepfe');
-        return Boolean(k && k.checkVisibility({ checkVisibilityCSS: true }) && k.getBoundingClientRect().height > 1);
-      });
-      if (umschalter) verstoesse.push({ art: 'modal', selektor: 'iframe .beleg-umschalter-knoepfe', masse: 'Umschalter im eingebetteten Dokument sichtbar' });
-    } catch (err) {
-      verstoesse.push({ art: 'modal', selektor: m.iframe, masse: `lädt nicht (${String(err.message).split('\n')[0].slice(0, 80)})` });
-    }
-  }
   return verstoesse;
 }
 

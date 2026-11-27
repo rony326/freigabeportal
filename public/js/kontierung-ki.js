@@ -5,8 +5,10 @@
 (function () {
   document.querySelectorAll('[data-ki-feld]').forEach(function (feld) {
     var name = feld.getAttribute('data-ki-feld');
-    var haken = document.querySelector('[data-ki-haken="' + name + '"]');
-    var hinweis = document.querySelector('[data-ki-hinweis="' + name + '"]');
+    // Je Formular: Kontierung und Aufsplitten-Assistent haben auf derselben Seite je eigene Haken.
+    var form = feld.form;
+    var haken = form && form.querySelector('[data-ki-haken="' + name + '"]');
+    var hinweis = form && form.querySelector('[data-ki-hinweis="' + name + '"]');
     if (!haken) return;
     var original = feld.getAttribute('data-ki-wert') || '';
     var vonHand = haken.checked;

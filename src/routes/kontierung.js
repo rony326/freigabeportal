@@ -51,7 +51,7 @@ import { createFreigabe } from '../db/freigabenRepo.js';
 import { istRapportModulAktiv, listRapportEmpfaengerKandidaten, markiereRapport, hebeRapportAuf } from '../services/rapporte.js';
 import { buildSignedDownloadUrl, PDF_PREVIEW_TTL_SECONDS } from '../services/downloadUrl.js';
 import { getPersonById } from '../db/personenRepo.js';
-import { sendNotification, sendeNotificationsImHintergrund, sendNotificationMitVertretung, resolveEmpfaenger, FREIGABE2_AN_ADMIN_GRUND } from '../services/notify.js';
+import { sendNotification, sendeNotificationsImHintergrund, sendNotificationMitVertretung, resolveEmpfaenger, freigabe2AnAdminGrund } from '../services/notify.js';
 import { istAktiveVertretungFuer } from '../services/vertretung.js';
 import { buildAuditLog } from '../services/auditLog.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
@@ -70,6 +70,8 @@ import {
   bereiteTeilDateienVor,
   erzeugeTeilJobs,
   benachrichtigeNachAufsplitten,
+  verteileVersandkosten,
+  positionMitVersand,
   alleKindIds,
 } from '../services/aufsplitten.js';
 import { asyncCallback, asyncHandler } from '../middleware/asyncHandler.js';
@@ -139,17 +141,52 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     return { rapportModulAktiv: aktiv, rapportEmpfaengerKandidaten: aktiv ? listRapportEmpfaengerKandidaten(db) : [] };
   }
 
-  // GET /kontierung/:id – das Kontierungsformular (Vorschau, vorbelegte Werte aus QR/Eingang, Verlauf, Kommentare); Kreditkartenabrechnungen leiten in den Abgleich um.
-  router.get('/:id', (req, res) => {
-    const job = loadAuthorizedJob(req, res);
-    if (!job) return;
-    if (job.kreditkarte_id) return res.redirect(`/kontierung/${job.id}/kk-abgleich`);
-    const konten = ladeKontenFuerJob(req, job);
+  // Eine aufgesplittete Rechnung hat genau einen Typ für alle Teile — eine Mischung aus Rechnung
+  // und Gutschrift innerhalb eines Belegs gibt es nicht. Unbekannte Werte gelten als Rechnung,
+  // wie in der normalen Kontierung.
+  const normalisiereTyp = (typ) => (typ === 'gutschrift' ? 'gutschrift' : 'rechnung');
+
+  // View-Local `split`: der Aufsplitten-Assistent in der rechten Spalte der Kontierungsseite (views/_aufsplitten_assistent.ejs).
+  // Ohne `abweichend` der Ausgangszustand (geschlossen, vorbelegt aus dem Vorgang); `abweichend` trägt die Eingaben eines
+  // abgesendeten Formulars. Muss bei jedem Rendern von views/kontierung.ejs gesetzt sein.
+  function splitAnsicht(job, qrInfo, abweichend = {}) {
+    const typ = abweichend.typ ?? normalisiereTyp(job.typ);
+    const kreditorId = abweichend.kreditorId
+      ?? String(job.kreditor_id || (qrInfo && qrInfo.vorschlagKreditor ? qrInfo.vorschlagKreditor.id : ''));
+    const gewaehlterKreditor = listKreditorenWaehlbar(db).find((k) => String(k.id) === kreditorId) || null;
+    return {
+      offen: Boolean(abweichend.offen),
+      schritt: abweichend.schritt || 1,
+      gesamtbetrag: abweichend.gesamtbetrag ?? (job.betrag || job.qr_betrag || job.betrag_vorschlag || ''),
+      versandkosten: abweichend.versandkosten || '',
+      teile: abweichend.teile ?? [
+        { kontoId: '', betrag: '', interessenskonflikt: false },
+        { kontoId: '', betrag: '', interessenskonflikt: false },
+      ],
+      begruendung: abweichend.begruendung || '',
+      typ,
+      errors: abweichend.errors || [],
+      kiHinweise: abweichend.kiHinweise || [],
+      // KI-Werte aus dem n8n-Upload (services/kiBestaetigung.js): Rechnungsnummer und Zahlungsziel gehen an alle Teile, deshalb
+      // stehen sie im Assistenten zur Bestätigung; ohne KI-Werte erscheinen sie nicht (Teile übernehmen den Stand des Belegs).
+      rechnungsangaben: abweichend.rechnungsangaben || { rechnungsnummer: job.rechnungsnummer || '', zahlungsziel: job.zahlungsziel || '', bestaetigt: {} },
+      values: { kreditorId, ibanEndung: abweichend.ibanEndung || '', pruefBemerkung: abweichend.pruefBemerkung || '' },
+      lieferantFehler: Boolean(abweichend.lieferantFehler),
+      // Ohne QR-Code steht der IBAN-Kasten immer im Formular; sichtbar und Pflicht nur, wenn der
+      // gewählte Lieferant eine IBAN braucht und Typ Rechnung gewählt ist (kontierung-iban.js).
+      ibanKasten: !job.qr_iban,
+      ibanKastenSichtbar: !job.qr_iban && Boolean(gewaehlterKreditor) && brauchtManuelleIbanPruefung(job, gewaehlterKreditor, typ),
+      auffaelligkeiten: abweichend.auffaelligkeiten || null,
+    };
+  }
+
+  // Alle Locals der Kontierungsseite im Ausgangszustand (GET /:id); das Aufsplitten rendert darauf seinen offenen Assistenten.
+  function kontierungLocals(req, job) {
     const qrInfo = buildQrInfo(db, job);
-    res.render('kontierung', {
+    return {
       job,
       kiFelder: kiFelder(job),
-      konten,
+      konten: ladeKontenFuerJob(req, job),
       alleKonten: listKonten(db),
       kreditoren: listKreditorenWaehlbar(db),
       ...lieferantAnsicht(req),
@@ -179,7 +216,18 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       feldFehlerAttr,
       auditLog: buildAuditLog(db, job.id),
       kommentarBereich: kommentarBereich(db, config, req.currentPerson, job, `/kontierung/${job.id}`),
-    });
+      split: splitAnsicht(job, qrInfo),
+    };
+  }
+
+  // GET /kontierung/:id – das Kontierungsformular (Vorschau, vorbelegte Werte aus QR/Eingang, Verlauf, Kommentare); `?aufsplitten=1` zeigt statt des Formulars den Aufsplitten-Assistenten; Kreditkartenabrechnungen leiten in den Abgleich um.
+  router.get('/:id', (req, res) => {
+    const job = loadAuthorizedJob(req, res);
+    if (!job) return;
+    if (job.kreditkarte_id) return res.redirect(`/kontierung/${job.id}/kk-abgleich`);
+    const locals = kontierungLocals(req, job);
+    locals.split.offen = req.query.aufsplitten === '1';
+    res.render('kontierung', locals);
   });
 
   // POST /kontierung/lieferanten – legt einen neuen Lieferanten an (per fetch() aus der Kontierung; Recht `kreditoren_verwalten`, IBAN-Pflicht je Zahlungsart).
@@ -236,6 +284,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           : await markiereRapport(db, config, mailer, { job, person: req.currentPerson, empfaengerIds, bemerkung, ip: req.ip });
         if (ergebnis.ok) return res.redirect('/pool');
         if (ergebnis.status !== 400) return res.status(ergebnis.status).render('error', { message: ergebnis.fehler });
+        const qrInfo = buildQrInfo(db, job);
         return res.status(400).render('kontierung', {
           job,
           konten: ladeKontenFuerJob(req, job),
@@ -247,10 +296,11 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           kkKarten: getConfigValue(db, 'modul_kreditkarten_aktiv') === '1' ? listKreditkarten(db) : [],
           ...rapportAnsicht(job),
           values: { kontoId: '', typ: 'rapport', interessenskonflikt: '', begruendung: '', absender: job.absender || '', betrag: '', zahlungsziel: '', rechnungsnummer: '', kreditorId: '', rapportEmpfaengerIds: empfaengerIds, rapportBemerkung: bemerkung },
-          qrInfo: buildQrInfo(db, job),
+          qrInfo,
           errors: [ergebnis.fehler],
           auditLog: buildAuditLog(db, job.id),
           auffaelligkeitenBestaetigt: auffaelligkeitenKasten(db, job.id),
+          split: splitAnsicht(job, qrInfo),
         });
       }
       const konten = ladeKontenFuerJob(req, job);
@@ -312,6 +362,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           auditLog: buildAuditLog(db, job.id),
           auffaelligkeiten,
           auffaelligkeitenBestaetigt: auffaelligkeitenKasten(db, job.id),
+          split: splitAnsicht(job, qrInfo),
         });
       };
 
@@ -796,7 +847,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
         }
       } else {
         // abschliessenFreigabe1 kann den Vorgang an die Admin-Gruppe gegeben haben (effektive
-        // Freigabe-2-Person hat für diese Rechnung bereits einen Konflikt erklärt): neu lesen.
+        // Freigabe-2-Person hat bereits einen Konflikt erklärt oder Freigabe 1 erteilt): neu lesen.
         const jobNachFreigabe1 = getJobById(db, job.id);
         if (jobNachFreigabe1.freigabe2_eskaliert_an_admin) {
           for (const email of resolveEmpfaenger(db, config, 'gruppe:admin')) {
@@ -807,7 +858,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
               variablen: {
                 empfaengerName: 'Portal-Admin-Team',
                 jobDateiname: job.dateiname,
-                grund: FREIGABE2_AN_ADMIN_GRUND,
+                grund: freigabe2AnAdminGrund(jobNachFreigabe1),
                 link: `${config.publicBaseUrl}/freigabe2/${job.id}`,
               },
             });
@@ -976,63 +1027,34 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
     );
   }
 
-  // Rendert das Aufsplitten-Formular (Zeilen, Gesamtbetrag, Typ, Lieferant, Fehler, optional Prüf-Popup).
+  // Rendert die Kontierungsseite mit offenem Aufsplitten-Assistenten (Zeilen, Gesamtbetrag, Typ, Lieferant, Fehler, optional
+  // Prüf-Popup). `extra.schritt`: Schritt, in dem der Assistent startet.
   function renderAufsplittenForm(req, res, status, job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors, typ, extra = {}) {
-    const kreditoren = listKreditorenWaehlbar(db);
-    const kreditorId = extra.kreditorId || '';
-    const gewaehlterKreditor = kreditoren.find((k) => String(k.id) === kreditorId) || null;
-    // KI-Werte aus dem n8n-Upload (services/kiBestaetigung.js): Rechnungsnummer und Zahlungsziel gehen an alle Teile, deshalb
-    // stehen sie hier zur Bestätigung im Formular; ohne KI-Werte erscheinen sie nicht (Teile übernehmen den Stand des Belegs).
-    const angaben = extra.rechnungsangaben || { rechnungsnummer: job.rechnungsnummer || '', zahlungsziel: job.zahlungsziel || '', bestaetigt: {} };
-    // Offene KI-Bestätigungen als eigenes Banner oberhalb der Ansicht, nicht in der roten Fehlerliste (views/_ki_banner.ejs).
+    // Frisch gelesen: Das Kontierungsformular daneben und die KI-Felder zeigen den gespeicherten Stand – das übergebene Objekt
+    // trägt beim 503 schon den noch nicht gespeicherten Gesamtbetrag.
+    const gespeichert = getJobById(db, job.id);
+    const locals = kontierungLocals(req, gespeichert);
+    // Offene KI-Bestätigungen als eigenes Banner, nicht in der roten Fehlerliste (views/_ki_banner.ejs).
     const { hinweise: kiHinweise, uebrige } = trenneKiHinweise(errors);
-    res.status(status).render('kontierung-aufsplitten', {
-      job, konten, alleKonten, gesamtbetrag, teile, begruendung, errors: uebrige, kiHinweise, typ, kreditoren,
-      kiFelder: kiFelder(job),
-      rechnungsangaben: angaben,
-      // Ohne QR-Code steht der IBAN-Kasten immer im Formular; sichtbar und Pflicht nur, wenn der
-      // gewählte Lieferant eine IBAN braucht und Typ Rechnung gewählt ist (kontierung-iban.js).
-      ibanKasten: !job.qr_iban,
-      ibanKastenSichtbar: !job.qr_iban && Boolean(gewaehlterKreditor) && brauchtManuelleIbanPruefung(job, gewaehlterKreditor, typ),
-      lieferantFehler: Boolean(extra.lieferantFehler),
-      values: { kreditorId, ibanEndung: extra.ibanEndung || '', pruefBemerkung: extra.pruefBemerkung || '' },
-      auffaelligkeiten: extra.auffaelligkeiten || null,
+    res.status(status).render('kontierung', {
+      ...locals,
+      konten,
+      alleKonten,
+      split: splitAnsicht(gespeichert, locals.qrInfo, {
+        ...extra, offen: true, gesamtbetrag, teile, begruendung, typ, errors: uebrige, kiHinweise, kreditorId: extra.kreditorId || '',
+      }),
     });
   }
 
-  // Eine aufgesplittete Rechnung hat genau einen Typ für alle Teile — eine Mischung aus Rechnung
-  // und Gutschrift innerhalb eines Belegs gibt es nicht. Unbekannte Werte gelten als Rechnung,
-  // wie in der normalen Kontierung.
-  const normalisiereTyp = (typ) => (typ === 'gutschrift' ? 'gutschrift' : 'rechnung');
-
-  // GET /kontierung/:id/aufsplitten – das Aufsplitten-Formular; Betrag, Typ und Lieferant können aus dem Kontierungsformular per Query vorbelegt werden.
+  // GET /kontierung/:id/aufsplitten – früher eine eigene Seite; leitet auf die Kontierung mit offenem Assistenten.
   router.get('/:id/aufsplitten', (req, res) => {
     const job = loadAuthorizedJob(req, res);
     if (!job) return;
     if (sperreKkAbrechnung(job, res)) return;
-    const konten = ladeKontenFuerJob(req, job);
-    // Das eigene Betragsfeld des Kontierungsformulars (schon vorbelegt aus der ursprünglichen Rechnung — QR-erkannt oder zuvor gespeichert) wird beim Öffnen des Aufsplitten-Popups als ?betrag=... mitgegeben, damit ein dort getippter, aber noch nicht gespeicherter Wert hier erscheint, statt auf das zurückzufallen, was am Vorgang gespeichert ist (oder fehlt).
-    const queryBetrag = typeof req.query.betrag === 'string' && BETRAG_PATTERN.test(req.query.betrag) ? req.query.betrag : null;
-    // Wie beim Betrag: ein im Kontierungsformular gewählter, noch nicht gespeicherter Typ kommt
-    // als ?typ=... mit und hat Vorrang vor dem gespeicherten.
-    const typ = normalisiereTyp(req.query.typ === 'gutschrift' || req.query.typ === 'rechnung' ? req.query.typ : job.typ);
-    // Und der im Kontierungsformular gewählte Lieferant (?kreditorId=...), sonst der am Beleg.
-    // renderAufsplittenForm wählt ihn nur vor, wenn er wählbar ist.
-    const queryKreditorId = typeof req.query.kreditorId === 'string' && /^\d+$/.test(req.query.kreditorId) ? req.query.kreditorId : null;
-    // Rechnungsnummer/Zahlungsziel und Haken aus dem noch nicht gespeicherten Kontierungsformular, sonst Stand des Belegs.
-    const queryText = (name, max) => (typeof req.query[name] === 'string' && req.query[name].length <= max ? req.query[name] : null);
-    const rechnungsangaben = {
-      rechnungsnummer: queryText('rechnungsnummer', MAX_LAENGE.rechnungsnummer) ?? (job.rechnungsnummer || ''),
-      zahlungsziel: queryText('zahlungsziel', MAX_LAENGE.kennung) ?? (job.zahlungsziel || ''),
-      bestaetigt: hakenAusBody(req.query),
-    };
-    renderAufsplittenForm(req, res, 200, job, konten, listKonten(db), queryBetrag || job.betrag || job.qr_betrag || job.betrag_vorschlag || '', [
-      { kontoId: '', betrag: '', interessenskonflikt: false },
-      { kontoId: '', betrag: '', interessenskonflikt: false },
-    ], '', [], typ, { rechnungsangaben, kreditorId: queryKreditorId || (job.kreditor_id ? String(job.kreditor_id) : '') });
+    res.redirect(`/kontierung/${job.id}?aufsplitten=1`);
   });
 
-  // POST /kontierung/:id/aufsplitten – prüft die Zeilen (Konto, Betrag, Typ, Position, Beleg, Lieferant), verlangt Summe = Gesamtbetrag, zeigt ggf. das Prüf-Popup, führt Dateiarbeit, Aufsplitten (services/aufsplitten.js) und Mails aus.
+  // POST /kontierung/:id/aufsplitten – prüft die Zeilen (Konto, Betrag, Typ, Position, Beleg, Lieferant), verlangt Summe der Teile = Gesamtbetrag abzüglich Versandkosten (diese werden gleichmässig auf die Teile verteilt), zeigt ggf. das Prüf-Popup, führt Dateiarbeit, Aufsplitten (services/aufsplitten.js) und Mails aus.
   router.post('/:id/aufsplitten', zustaendigkeitVorUpload((req, res) => loadAuthorizedJob(req, res)), (req, res, next) => {
     mitAuditKontext(begrenzeUploadGroesse(uploadBeleg.any()))(req, res, asyncCallback(next, async (uploadErr) => {
     // csrfProtection läuft, nachdem multer den multipart-Body (inklusive des Felds _csrf) geparst hat — jede frühere Ausführung hätte req.body noch leer und lehnte jede legitime Einreichung ab.
@@ -1047,28 +1069,35 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
 
       // Prüfung 2026-11-15 (S8, B3): Textfelder als einzelner, getrimmter Text lesen. Die Teilzeilen sind bewusst Listen
       // (mehrfach benannte Felder); ihre einzelnen Einträge müssen aber wieder Text sein. Begründung nur aus Leerzeichen gilt als leer.
+      // Startschritt des Assistenten bei Ablehnung: 1, sobald ein Fehler die Rechnungsangaben betrifft (Gesamtbetrag,
+      // Versandkosten, Lieferant, IBAN-Endung, Zahlungsziel, KI-Bestätigung), sonst 2 (Teile).
       const eingabeFehler = [];
-      const text = (wert, feld, max) => {
+      let startSchritt = 2;
+      const text = (wert, feld, max, schritt = 2) => {
         const gelesen = leseText(wert, { max, feld });
-        if (gelesen.fehler) eingabeFehler.push(gelesen.fehler);
+        if (gelesen.fehler) {
+          eingabeFehler.push(gelesen.fehler);
+          if (schritt === 1) startSchritt = 1;
+        }
         return gelesen.wert;
       };
       const liste = (wert, feld, max) => [].concat(wert ?? []).map((eintrag) => text(eintrag, feld, max));
-      const gesamtbetrag = text(req.body.gesamtbetrag, 'Gesamtbetrag', MAX_LAENGE.betrag);
+      const gesamtbetrag = text(req.body.gesamtbetrag, 'Gesamtbetrag', MAX_LAENGE.betrag, 1);
+      const versandkosten = text(req.body.versandkosten, 'Versandkosten', MAX_LAENGE.betrag, 1);
       const kontoIds = liste(req.body.teilKontoId, 'Konto', MAX_LAENGE.kennung);
       const betraege = liste(req.body.teilBetrag, 'Betrag', MAX_LAENGE.betrag);
       const konflikte = liste(req.body.teilInteressenskonflikt, 'Interessenskonflikt', MAX_LAENGE.kennung);
       const positionen = liste(req.body.teilPosition, 'Position', MAX_LAENGE.einzeilig);
       const begruendung = text(req.body.begruendung, 'Begründung', MAX_LAENGE.text);
       const typ = normalisiereTyp(typeof req.body.typ === 'string' ? req.body.typ : '');
-      const kreditorIdEingabe = text(req.body.kreditorId, 'Lieferant', MAX_LAENGE.kennung);
+      const kreditorIdEingabe = text(req.body.kreditorId, 'Lieferant', MAX_LAENGE.kennung, 1);
       const ibanEndung = normalizeIban(typeof req.body.ibanEndung === 'string' ? req.body.ibanEndung : '');
       const pruefBemerkung = (typeof req.body.pruefBemerkung === 'string' ? req.body.pruefBemerkung.trim() : '').slice(0, PRUEF_BEMERKUNG_MAX);
       // Nur bei KI-Werten stehen Rechnungsnummer/Zahlungsziel im Formular; sonst bleibt der Stand des Belegs unberührt.
       const ki = kiFelder(job);
       const mitRechnungsangaben = Boolean(ki.rechnungsnummer || ki.zahlungsziel);
       const rechnungsangaben = mitRechnungsangaben
-        ? { rechnungsnummer: text(req.body.rechnungsnummer, 'Rechnungsnummer', MAX_LAENGE.rechnungsnummer), zahlungsziel: text(req.body.zahlungsziel, 'Zahlungsziel', MAX_LAENGE.kennung), bestaetigt: hakenAusBody(req.body) }
+        ? { rechnungsnummer: text(req.body.rechnungsnummer, 'Rechnungsnummer', MAX_LAENGE.rechnungsnummer, 1), zahlungsziel: text(req.body.zahlungsziel, 'Zahlungsziel', MAX_LAENGE.kennung, 1), bestaetigt: hakenAusBody(req.body) }
         : { rechnungsnummer: job.rechnungsnummer || '', zahlungsziel: job.zahlungsziel || '', bestaetigt: hakenAusBody(req.body) };
       const teileEingabe = kontoIds.map((kontoId, i) => ({
         kontoId,
@@ -1078,24 +1107,38 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       }));
 
       const errors = [...new Set(eingabeFehler)];
+      const fehlerInSchritt1 = (meldung) => { errors.push(meldung); startSchritt = 1; };
       if (uploadErr) {
         errors.push(uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Ein Beleg darf höchstens 20 MB gross sein.' : 'Fehler beim Datei-Upload.');
       }
       if (!gesamtbetrag || !BETRAG_PATTERN.test(gesamtbetrag)) {
-        errors.push('Bitte einen gültigen Gesamtbetrag erfassen (z.B. 200.00).');
+        fehlerInSchritt1('Bitte einen gültigen Gesamtbetrag erfassen (z.B. 200.00).');
+      }
+      // Beträge in ganzen Rappen (keine Gleitkomma-Abweichungen). Leere Versandkosten gelten als 0.
+      const inRappen = (betrag) => Math.round(Number(betrag.replace(',', '.')) * 100);
+      let versandRappen = 0;
+      if (versandkosten) {
+        if (!BETRAG_PATTERN.test(versandkosten)) {
+          fehlerInSchritt1('Bitte gültige Versandkosten erfassen (z.B. 9.50).');
+        } else {
+          versandRappen = inRappen(versandkosten);
+          if (BETRAG_PATTERN.test(gesamtbetrag) && versandRappen >= inRappen(gesamtbetrag)) {
+            fehlerInSchritt1('Die Versandkosten müssen kleiner als der Gesamtbetrag sein.');
+          }
+        }
       }
       if (teileEingabe.filter((t) => t.kontoId || t.betrag).length < 2) {
         errors.push('Mindestens zwei Teilbeträge sind nötig, um aufzusplitten.');
       }
       if (mitRechnungsangaben && rechnungsangaben.zahlungsziel && !ZAHLUNGSZIEL_PATTERN.test(rechnungsangaben.zahlungsziel)) {
-        errors.push('Zahlungsziel ist kein gültiges Datum.');
+        fehlerInSchritt1('Zahlungsziel ist kein gültiges Datum.');
       }
       // KI-Werte nicht unbesehen an die Teile weitergeben: unverändert nur mit Haken (wie in der Kontierung).
       for (const feld of fehlendeBestaetigungen(ki, { ...rechnungsangaben, betrag: gesamtbetrag }, req.body)) {
-        errors.push(bestaetigungsMeldung(feld));
+        fehlerInSchritt1(bestaetigungsMeldung(feld));
       }
 
-      // Der Browser benennt das Dateifeld jeder Zeile beim Absenden in teilBeleg_<i> um, passend zur aktuellen Position dieser Zeile — siehe kontierung-aufsplitten.ejs. Unten gegen aufgeloesteTeile über originalIndex abgeglichen, nicht über die Array-Position, da dort leere Zeilen herausgefiltert werden.
+      // Der Browser benennt das Dateifeld jeder Zeile beim Absenden in teilBeleg_<i> um, passend zur aktuellen Position dieser Zeile — siehe public/js/aufsplitten-assistent.js. Unten gegen aufgeloesteTeile über originalIndex abgeglichen, nicht über die Array-Position, da dort leere Zeilen herausgefiltert werden.
       const teilBelegByIndex = new Map();
       for (const file of req.files || []) {
         const match = /^teilBeleg_(\d+)$/.exec(file.fieldname);
@@ -1149,24 +1192,25 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       let jobKreditor = null;
       let lieferantFehler = false;
       if (!gefundenerKreditor || !gefundenerKreditor.aktiv) {
-        errors.push('Bitte einen gültigen Lieferanten aus der Liste auswählen.');
+        fehlerInSchritt1('Bitte einen gültigen Lieferanten aus der Liste auswählen.');
         lieferantFehler = true;
       } else if (!istKreditorVollstaendig(db, gefundenerKreditor)) {
-        errors.push('Dieser Lieferant hat noch keine IBAN. Bitte melde dich bei der Administration.');
+        fehlerInSchritt1('Dieser Lieferant hat noch keine IBAN. Bitte melde dich bei der Administration.');
         lieferantFehler = true;
       } else {
         jobKreditor = gefundenerKreditor;
       }
       const ibanManuellNoetig = Boolean(jobKreditor) && brauchtManuelleIbanPruefung(job, jobKreditor, typ);
       if (ibanManuellNoetig && !IBAN_ENDUNG_PATTERN.test(ibanEndung)) {
-        errors.push(IBAN_ENDUNG_FEHLER);
+        fehlerInSchritt1(IBAN_ENDUNG_FEHLER);
       }
 
       if (errors.length === 0) {
-        const summe = aufgeloesteTeile.reduce((sum, t) => sum + Number(t.betrag), 0);
-        const original = Number(gesamtbetrag.replace(',', '.'));
-        if (Math.abs(summe - original) > 0.005) {
-          errors.push(`Die Summe der Teilbeträge (${summe.toFixed(2)}) muss dem Gesamtbetrag (${original.toFixed(2)}) entsprechen.`);
+        const summe = aufgeloesteTeile.reduce((sum, t) => sum + inRappen(t.betrag), 0);
+        const netto = inRappen(gesamtbetrag) - versandRappen;
+        if (summe !== netto) {
+          const ziel = versandRappen > 0 ? 'Gesamtbetrag abzüglich Versandkosten' : 'Gesamtbetrag';
+          errors.push(`Die Summe der Teilbeträge (${(summe / 100).toFixed(2)}) muss dem ${ziel} (${(netto / 100).toFixed(2)}) entsprechen.`);
         }
       }
 
@@ -1179,7 +1223,7 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       }
 
       if (errors.length > 0) {
-        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors, typ, { rechnungsangaben, kreditorId: kreditorIdEingabe, lieferantFehler, ibanEndung, pruefBemerkung });
+        return renderAufsplittenForm(req, res, 400, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, errors, typ, { schritt: startSchritt, rechnungsangaben, versandkosten, kreditorId: kreditorIdEingabe, lieferantFehler, ibanEndung, pruefBemerkung });
       }
 
       // Prüf-Popup wie bei der Kontierung (Spec B6), aber einmal für die ganze Rechnung: gegen den
@@ -1198,7 +1242,9 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
           label: `Einen Beleg für Zeile ${index + 1} hast du noch nicht gespeichert. Bitte wähle ihn hier nochmals aus, bevor du speicherst.`,
         }));
         return renderAufsplittenForm(req, res, 200, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, [], typ, {
+          schritt: 3,
           rechnungsangaben,
+          versandkosten,
           kreditorId: kreditorIdEingabe,
           ibanEndung,
           pruefBemerkung,
@@ -1209,16 +1255,24 @@ export function createKontierungRouter({ db, config, mailer, csrfProtection = (r
       // Auch am Elternvorgang gespeichert, obwohl er gleich ausser Dienst geht: Dort war vielleicht nie ein Betrag gespeichert (genau diese Lücke schliesst das Feld Gesamtbetrag), und sein eigener Datensatz soll den echten Gesamtbetrag zeigen, auf dem das Aufsplitten beruhte, statt leer zu bleiben.
       job.betrag = gesamtbetrag.replace(',', '.');
 
+      // Erst hier, nach allen Prüfungen: jeder Teil bekommt seinen Versandanteil (Betrag = netto + Anteil, Hinweis in der
+      // Position). teileEingabe für ein erneutes Anzeigen des Formulars behält die erfassten Nettowerte.
+      const anteile = verteileVersandkosten(versandRappen, aufgeloesteTeile.length);
+      const teileMitVersand = aufgeloesteTeile.map((teil, i) => ({
+        ...teil,
+        betrag: ((inRappen(teil.betrag) + anteile[i]) / 100).toFixed(2),
+        position: positionMitVersand(teil.position, anteile[i]),
+      }));
       // Datei-I/O (auch das asynchrone Zusammenführen des Belegs) passiert vor der Datenbanktransaktion unten — siehe bereiteTeilDateienVor in services/aufsplitten.js.
       // B2, Etappe 4: Belege werden dabei im PDF-Worker angehängt. Bei einer Störung hat bereiteTeilDateienVor seine Kopien schon
       // entfernt; das Formular kommt mit 503 zurück, nichts ist aufgesplittet.
       let vorbereiteteTeile;
       try {
-        vorbereiteteTeile = await bereiteTeilDateienVor(config, job, aufgeloesteTeile);
+        vorbereiteteTeile = await bereiteTeilDateienVor(config, job, teileMitVersand);
       } catch (err) {
         if (!(err instanceof PdfWorkerFehler)) throw err;
         antworteSpaeterErneut(res, err, 'Aufsplitten');
-        return renderAufsplittenForm(req, res, 503, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, [PDF_VORUEBERGEHEND_MELDUNG], typ, { rechnungsangaben, kreditorId: kreditorIdEingabe, ibanEndung, pruefBemerkung });
+        return renderAufsplittenForm(req, res, 503, job, konten, alleKonten, gesamtbetrag, teileEingabe, begruendung, [PDF_VORUEBERGEHEND_MELDUNG], typ, { schritt: 3, rechnungsangaben, versandkosten, kreditorId: kreditorIdEingabe, ibanEndung, pruefBemerkung });
       }
 
       let ergebnis;

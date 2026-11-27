@@ -3,6 +3,26 @@
 Alle nennenswerten Änderungen am Freigabeportal. Versionierung nach
 [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.13] – 2026-11-27
+
+Fünf Rückmeldungen aus dem Test. Release Notes: [docs/releases/v1.4.13.md](docs/releases/v1.4.13.md). Keine Migration,
+keine neuen Umgebungsvariablen, keine Änderung an n8n-Schnittstellen.
+
+- Behoben: Vertritt Freigeber 2 im Ferienmodus Freigeber 1 und erteilt Freigabe 1, blieb Freigabe 2 bei ihm hängen
+  (Vier-Augen-Sperre). Sie geht jetzt sofort an die Stellvertretung 2, ist diese ausgeschlossen an die Admin-Gruppe.
+  Die Umleitung gilt nur für diese Runde (nach Ablehnung und Überarbeitung wird neu entschieden); Admin-Mail,
+  Kennzeichen «Vier-Augen-Umleitung» und ein Hinweis in Freigabe 2 nennen den richtigen Grund.
+- Neu: Admin → Abgelehnte Rechnungen hat je Rechnung «Zurück in den Pool» (Begründung Pflicht, Verlauf + Audit, Mail an
+  die bisher zuständige Person). Nicht für Spesen und Kreditkartenabrechnungen.
+- Verbessert: In Freigabe 2 steht die Bestätigung einer Zahlungs-Abweichung (IBAN, Betrag, QR) jetzt in einem
+  farbig umrandeten Kasten direkt bei den Hinweisen, mit grösserer Checkbox.
+- Verbessert: Aufsplitten als Assistent neben dem Beleg. Drei Schritte («Rechnung», «Teile», «Prüfen») ersetzen auf der
+  Kontierungsseite das Formular, der Beleg bleibt sichtbar, der offene Restbetrag läuft mit. Popup und eigene Seite
+  entfallen; `GET /kontierung/:id/aufsplitten` leitet auf `?aufsplitten=1` weiter.
+- Neu: Feld «Versandkosten» beim Aufsplitten. Teilbeträge werden ohne Versand erfasst, jeder Teil bekommt den gleichen
+  Anteil (auf Rappen abgerundet, Rest an den letzten Teil), die Position erhält «(inkl. Versand x.xx)».
+- Geändert: `docs/testdrehbuch/` liegt nur noch lokal und ist nicht mehr Teil des Repositorys.
+
 ## [1.4.12] – 2026-11-26
 
 Spesen-Bestätigung an die einreichende Person. Release Notes: [docs/releases/v1.4.12.md](docs/releases/v1.4.12.md).

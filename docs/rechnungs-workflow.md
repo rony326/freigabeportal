@@ -156,10 +156,11 @@ Ablehnen und Rapport prüfen keine KI-Haken. Der Hakenstatus bleibt beim
 erneuten Anzeigen nach einem Fehler und im Prüf-Popup erhalten. Nach der Kontierung
 (Überarbeitung nach Ablehnung) ist nichts mehr zu bestätigen.
 **Aufsplitten:** Da die Teile Rechnungsnummer und Zahlungsziel übernehmen,
-zeigt das Aufsplitten-Formular diese beiden Felder bei KI-Werten mit demselben
-Haken (vorbelegt aus dem Kontierungsformular samt gesetzter Haken), dazu den
-Gesamtbetrag; die bestätigten oder korrigierten Werte gehen an den
-Elternvorgang und alle Teile.
+zeigt Schritt 1 des Aufsplitten-Assistenten (Abschnitt 5) diese beiden Felder
+bei KI-Werten mit demselben Haken, dazu den Gesamtbetrag mit seinem Haken
+(beim Öffnen aus dem Kontierungsformular übernommen, samt gesetzter Haken);
+die bestätigten oder korrigierten Werte gehen an den Elternvorgang und alle
+Teile.
 
 **Korrigieren:** Die erkannten Werte sind nur vorausgefüllt. Im
 Kontierungsformular lassen sich Rechnungsnummer, Zahlungsziel, Betrag und
@@ -296,6 +297,28 @@ harter Zusatz-Check verhindert, dass dieselbe Person, die Freigabe 1
 erteilt hat, auch Freigabe 2 erteilen kann (Vier-Augen-Prinzip, siehe
 [auth-und-rechte.md](auth-und-rechte.md)).
 
+Damit ein Vorgang an dieser Sperre nicht hängen bleibt, prüft
+`abschliessenFreigabe1` direkt nach Freigabe 1: Ist die Person, die Freigabe 1
+erteilt hat, zugleich der effektive Freigeber 2 (typisch: Freigeber 2 vertritt
+Freigeber 1 im Ferienmodus), geht Freigabe 2 sofort an die **Stellvertretung 2**
+(`freigabe2_eskaliert_von`, Grund «Freigeber 2 hat bereits Freigabe 1
+erteilt»). Ist auch diese ausgeschlossen (fehlt, inaktiv, hat Freigabe 1
+erteilt, Konflikt erklärt) oder war Freigabe 2 schon umgeleitet, geht der
+Vorgang an die Admin-Gruppe. Es entsteht kein Konflikt-Eintrag.
+
+Die Umleitung gilt **nur für die Runde, in der die Sperre greift**. Erkannt
+wird sie am Anfang der Begründung (`VIER_AUGEN_UMLEITUNG_PRAEFIX`):
+`abschliessenFreigabe1` nimmt sie zuerst zurück (Ablehnung → Überarbeitung →
+Freigabe 1 durch jemand anderen: Freigabe 2 liegt wieder beim Freigeber 2) und
+prüft dann neu. Eskalationen wegen Interessenskonflikt oder Selbsteinreichung
+bleiben bestehen, auch wenn eine Umleitung auf ihnen aufsetzte (deren Grund
+steht dann hinter dem früheren, durch « — » getrennt).
+
+Die umgeleitete Person sieht in Freigabe 2 einen Hinweis, warum der Vorgang
+bei ihr liegt. Mail an die Admin-Gruppe und das Kennzeichen unter «Laufende
+Vorgänge» («Vier-Augen-Umleitung» statt «Interessenskonflikt») richten sich
+nach der Begründung.
+
 Freigabe 2 zeigt die kontierten Angaben (Rechnungsnummer, Zahlungsziel,
 Betrag, Konto) nur an und kann sie nicht ändern. Eine falsche Angabe wird per
 Ablehnung zur Überarbeitung an die Kontierung zurückgegeben.
@@ -420,14 +443,66 @@ Was Anwender bei den Schritten sehen:
 > [kreditkarten-belege.md](kreditkarten-belege.md).
 
 Für Sammelrechnungen/Kreditkartenabrechnungen, die auf mehrere Konten
-verteilt werden müssen (`GET/POST /kontierung/:id/aufsplitten`):
+verteilt werden müssen. Das Aufsplitten ist ein **Assistent auf der
+Kontierungsseite** (`views/_aufsplitten_assistent.ejs`,
+`public/js/aufsplitten-assistent.js`): «Weitere Aktionen» → «Rechnung
+aufsplitten» ersetzt rechts das Kontierungsformular (samt Verlauf und
+Kommentaren), der Beleg bleibt links stehen und läuft ab 992 px beim Scrollen
+mit; darunter gilt der Umschalter «Beleg / Formular». Eine eigene Seite und
+ein Popup gibt es dafür nicht: `GET /kontierung/:id/aufsplitten` prüft die
+Zuständigkeit und leitet auf `/kontierung/:id?aufsplitten=1` (offener
+Assistent) um; abgesendet wird einmal am Schluss an
+`POST /kontierung/:id/aufsplitten`.
 
-1. Die Person wählt den **Typ** (Rechnung/Gutschrift, vorbelegt aus dem
-   Kontierungsformular bzw. dem gespeicherten `typ`) und gibt den
+### Die drei Schritte
+
+| Schritt | Inhalt | «Weiter» erst, wenn |
+|---|---|---|
+| 1. Rechnung | Typ, Lieferant, Gesamtbetrag, Versandkosten (optional), bei KI-Werten Rechnungsnummer/Zahlungsziel, ohne QR-Code ggf. die letzten 4 Zeichen der IBAN | Pflichtfelder gültig, KI-Haken gesetzt, Versandkosten kleiner als der Gesamtbetrag |
+| 2. Teile | je Teil Konto, «Teilbetrag ohne Versand», Position, Beleg, «Konflikt»; laufende Anzeige «Verteilt X von Y – offen Z» (bzw. «Z zu viel»), Y = Gesamtbetrag − Versandkosten; Begründung | mindestens zwei Teile mit Konto und Betrag, nichts offen und nichts zu viel; Begründung bei einem Konflikt auf einem eigenen Konto |
+| 3. Prüfen | je Teil Konto, Teilbetrag ohne Versand, Versandanteil, Total; Summe gegenüber dem Gesamtbetrag | Knopf «Aufsplitten» |
+
+«Zurück» und «Weiter» stehen oben im Schritt-Kopf («Schritt n von 3») und am
+Ende von Schritt 1 und 2; Eingaben bleiben beim Wechseln erhalten, Enter in
+einem Eingabefeld wirkt wie «Weiter». Beim ersten Öffnen werden aus dem
+Kontierungsformular nur Typ, Gesamtbetrag und Lieferant übernommen, bei
+automatisch erkannten Werten auch Rechnungsnummer, Zahlungsziel und die
+KI-Haken — nicht Konto, Begründung und Beleg. «Abbrechen» zeigt wieder
+das Kontierungsformular mit dessen unveränderten Eingaben, ohne die Seite neu
+zu laden. Lehnt der Server das Absenden ab, kommt die Kontierungsseite mit
+offenem Assistenten und allen Eingaben zurück: in Schritt 1, wenn ein Fehler
+die Angaben zur Rechnung betrifft, sonst in Schritt 2, beim Prüf-Popup und bei
+einer PDF-Störung (503) in Schritt 3. Belegdateien müssen neu gewählt werden,
+angelegt wird dabei nichts. Ohne JavaScript stehen alle drei Schritte
+untereinander.
+
+### Versandkosten
+
+- Freiwilliges Feld, leer = 0, gleiches Zahlenformat wie die Beträge; sie
+  müssen kleiner als der Gesamtbetrag sein.
+- **Gesamtbetrag = Summe der Teilbeträge + Versandkosten**, geprüft in ganzen
+  Rappen. Die Teilbeträge werden also **ohne Versand** erfasst.
+- Jeder Teil bekommt den gleichen Anteil (Versandkosten ÷ Anzahl Teile, auf
+  Rappen abgerundet), der Rest geht an den **letzten Teil**. Die Höhe des
+  Teilbetrags spielt keine Rolle. Beispiel: 10.00 auf drei Teile ergibt
+  3.33, 3.33 und 3.34.
+- Der gespeicherte Betrag eines Teils ist Teilbetrag + Anteil. Ist der Anteil
+  grösser als 0, wird die Position ergänzt: «Pos. 2 (inkl. Versand 3.33)»,
+  ohne eigene Position «inkl. Versand 3.33».
+- Gilt für Rechnung und Gutschrift gleich. Verbindlich rechnet der Server
+  (`verteileVersandkosten`, `positionMitVersand` in
+  `src/services/aufsplitten.js`); die Anzeige im Browser ist eine Vorschau.
+  Die Versandkosten selbst werden nicht als eigenes Feld gespeichert.
+- Der Kreditkarten-Abgleich kennt das Feld nicht.
+
+### Was beim Absenden passiert
+
+1. Die Person hat den **Typ** (Rechnung/Gutschrift, vorbelegt aus dem
+   Kontierungsformular bzw. dem gespeicherten `typ`), den
    Gesamtbetrag und mindestens zwei Teile
    (Konto + Betrag, optional eine Freitext-**Position auf der Rechnung**
-   wie "Pos. 3", optional eigener Beleg pro Teil) ein; die Summe der Teile
-   muss dem Gesamtbetrag entsprechen (Toleranz 0.005). Der Typ wird auf
+   wie "Pos. 3", optional eigener Beleg pro Teil) erfasst; die Summe der Teile
+   muss dem Gesamtbetrag abzüglich Versandkosten entsprechen. Der Typ wird auf
    dem Ursprungs-Job und auf jedem Teil-Job gespeichert — eine Mischung
    innerhalb eines Belegs gibt es nicht. Der Typ des Ursprungs-Jobs ist
    massgeblich für die Zahlungsart der Splitgruppe.
@@ -648,5 +723,7 @@ umgeschrieben (`zugewiesen_an`, `konten.freigeber1_id`/`freigeber2_id` bleiben u
   Person ist
 - beide Aufgaben erscheinen im `/pool`-Dashboard des Stellvertreters, zusätzlich zu dessen eigenen
 - die abwesende Person behält währenddessen ihren eigenen Zugriff unverändert
+- erteilt die Vertretung Freigabe 1 und ist sie selbst Freigeber 2 des Kontos, geht Freigabe 2
+  automatisch an die Stellvertretung 2 bzw. die Admin-Gruppe (siehe Abschnitt 3)
 
 Details zur Autorisierung: [auth-und-rechte.md](auth-und-rechte.md#ferienmodus--additive-abwesenheits-stellvertretung).

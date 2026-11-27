@@ -160,12 +160,31 @@ test('B2 Etappe 4: Aufsplitten mit Zeilen-Beleg – gestörter Worker → 503, k
       const vorher = stand(t);
       const res = await mitPdfStoerung(art, async () => aufsplitten(t, await mitMarke(['Quittung'], 'LANGSAM_ANHAENGEN')));
       pruefe503(res);
-      assert.match(res.text, /120\.00/, 'die Zeilen bleiben im Formular');
+      assert.match(res.text, /name="teilBetrag" value="120\.00"/, 'die Zeilen bleiben im Formular');
+      assert.match(res.text, /id="aufsplitten-bereich"[^>]*data-start-schritt="3"/, 'zurück zum letzten Schritt');
       assert.deepEqual(stand(t), vorher, art);
       assert.equal(t.sent.length, 0);
     } finally {
       t.cleanup();
     }
+  }
+});
+
+test('Aufsplitten – 503: Versandkosten und noch zu bestätigende KI-Werte bleiben im Formular', async () => {
+  const t = await setup();
+  try {
+    // Noch nie kontiert: Rechnungsnummer und Zahlungsziel stammen aus dem Eingang und stehen deshalb im Assistenten.
+    t.db.prepare('UPDATE jobs SET betrag = NULL WHERE id = ?').run(t.jobId);
+    const beleg = await mitMarke(['Quittung'], 'LANGSAM_ANHAENGEN');
+    const res = await mitPdfStoerung('zeitlimit', async () => aufsplitten(t, beleg)
+      .field('versandkosten', '0.00').field('rechnungsnummer', 'RE-1-neu').field('zahlungsziel', '2026-09-01').field('bestaetigt_zahlungsziel', '1'));
+    pruefe503(res);
+    assert.match(res.text, /name="versandkosten" value="0\.00"/);
+    assert.match(res.text, /id="split-rechnungsnummer"[^>]*value="RE-1-neu"/);
+    assert.match(res.text, /id="split-zahlungsziel"[^>]*value="2026-09-01"/);
+    assert.match(res.text, /id="split-bestaetigt-zahlungsziel"[^>]*checked/);
+  } finally {
+    t.cleanup();
   }
 });
 

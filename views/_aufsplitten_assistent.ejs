@@ -1,0 +1,150 @@
+<%# Aufsplitten-Assistent in der rechten Spalte der Kontierungsseite (views/kontierung.ejs), neben dem Beleg. Ersetzt dort das
+    Kontierungsformular (#kontierung-bereich): geöffnet über [data-aufsplitten-oeffnen] (?aufsplitten=1) oder nach einem
+    abgelehnten Absenden. Verhalten: public/js/aufsplitten-assistent.js. Ohne Skript stehen alle drei Schritte untereinander.
+    Alle ids beginnen mit split- (ausser aufsplitten-form, gesamtbetrag, versandkosten, teile-container, zeile-hinzufuegen),
+    weil das Kontierungsformular auf derselben Seite steht.
+    Parameter: split (routes/kontierung.js, splitAnsicht), job, kreditoren, alleKonten, kiFelder, maxLen. %>
+<div id="aufsplitten-bereich" class="<%= split.offen ? '' : 'd-none' %>" data-start-schritt="<%= split.schritt %>">
+  <div class="card">
+    <div class="card-body">
+      <h2 class="h5" id="split-ueberschrift" tabindex="-1">Rechnung aufsplitten</h2>
+      <%# Die Banner-Links zeigen auf die Felder des Assistenten, nicht auf die gleichnamigen des Kontierungsformulars. %>
+      <%- include('_ki_banner', { hinweise: split.kiHinweise.map((h) => ({ ...h, feld: h.feld === 'betrag' ? 'gesamtbetrag' : `split-${h.feld}` })) }) %>
+      <%# Wird von public/js/kontierung-pflicht.js gefüllt, wenn vor dem Absenden Pflichtfelder fehlen oder KI-Haken offen sind. %>
+      <div class="alert alert-warning ki-banner py-2" role="alert" tabindex="-1" data-pflicht-banner="aufsplitten-form" hidden></div>
+      <% if (split.errors.length > 0) { %>
+        <div class="alert alert-danger" role="alert">
+          <ul class="mb-0"><% split.errors.forEach((error) => { %><li><%= error %></li><% }) %></ul>
+        </div>
+      <% } %>
+      <% if (split.auffaelligkeiten) { %><%- include('_auffaelligkeiten_modal', { auffaelligkeiten: split.auffaelligkeiten, values: split.values, formId: 'aufsplitten-form' }) %><% } %>
+
+      <form id="aufsplitten-form" method="post" action="/kontierung/<%= job.id %>/aufsplitten" enctype="multipart/form-data" data-pflicht-pruefung>
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <%# Schritt-Kopf, nur mit Skript (public/js/aufsplitten-assistent.js zeigt ihn an). %>
+        <div id="split-kopf" class="mb-3" hidden>
+          <div class="d-flex align-items-center justify-content-between gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="split-zurueck" data-split-zurueck>Zurück</button>
+            <span id="split-schritt-anzeige" class="small text-muted">Schritt 1 von 3</span>
+            <button type="button" class="btn btn-primary btn-sm" id="split-weiter" data-split-weiter>Weiter</button>
+          </div>
+        </div>
+        <% const ki = locals.kiFelder || {}; const angaben = split.rechnungsangaben; const haken = angaben.bestaetigt || {};
+           // KI-Werte (services/kiBestaetigung.js): rot, bis bestätigt; data-ki-* für kontierung-ki.js, wie in kontierung.ejs.
+           const kiKlasse = (feld) => ki[feld] && !haken[feld] ? ' feld-erkannt' : '';
+           // `hilfe`: id eines Hilfetextes, der zusätzlich (oder ohne KI-Wert allein) das Feld beschreibt.
+           const kiAttr = (feld, hilfe) => {
+             const beschreibung = [ki[feld] ? `split-${feld}-ki-hinweis` : '', hilfe || ''].filter(Boolean).join(' ');
+             return (ki[feld] ? ` data-ki-feld="${feld}" data-ki-wert="${String(ki[feld]).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"` : '')
+               + (beschreibung ? ` aria-describedby="${beschreibung}"` : '');
+           }; %>
+
+        <section data-schritt="1" aria-labelledby="split-schritt-1-titel">
+          <h3 class="h6 fw-semibold" id="split-schritt-1-titel" tabindex="-1">1. Rechnung</h3>
+          <div class="mb-3">
+            <span class="form-label d-block">Typ</span>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="typ" id="split-typRechnung" value="rechnung" <%= split.typ !== 'gutschrift' ? 'checked' : '' %>>
+              <label class="form-check-label" for="split-typRechnung">Rechnung</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="typ" id="split-typGutschrift" value="gutschrift" <%= split.typ === 'gutschrift' ? 'checked' : '' %>>
+              <label class="form-check-label" for="split-typGutschrift">Gutschrift</label>
+            </div>
+            <div class="form-text">Gilt für alle Teile gemeinsam. Die Konto-Auswahl zeigt nur Konten, die zum Typ passen.</div>
+            <div class="form-text text-warning" id="split-konto-typ-hinweis" data-konto-typ-hinweis role="status" aria-live="polite" hidden>Ein gewähltes Konto passt nicht zum Typ – bitte neu wählen.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="split-kreditorId">Lieferant</label>
+            <%# Pflicht: geprüft (IBAN, Name, Beträge) wird gegen diesen Lieferanten, und alle Teile übernehmen ihn. Nur wählbare (aktiv, vollständig). %>
+            <select class="form-select<%= split.lieferantFehler ? ' is-invalid' : '' %>" id="split-kreditorId" name="kreditorId" required<%- split.lieferantFehler ? ' aria-invalid="true"' : '' %>>
+              <option value="">— wählen —</option>
+              <% kreditoren.forEach((d) => { %>
+                <option value="<%= d.id %>" data-iban-pflicht="<%= d.zahlungsart === 'ueberweisung' || d.zahlungsart === 'dauerauftrag' ? '1' : '0' %>" <%= String(d.id) === split.values.kreditorId ? 'selected' : '' %>><%= d.name %></option>
+              <% }) %>
+            </select>
+            <div class="form-text">Gilt für alle Teile gemeinsam.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="gesamtbetrag">Gesamtbetrag</label>
+            <div class="<%= ki.betrag ? 'input-group' : '' %>">
+              <input type="text" inputmode="decimal" class="form-control<%= kiKlasse('betrag') %>" id="gesamtbetrag" name="gesamtbetrag" value="<%= split.gesamtbetrag %>" placeholder="z.B. 200.00" required<%- kiAttr('betrag', 'split-gesamtbetrag-hinweis') %>>
+              <% if (ki.betrag) { %><%- include('_ki_bestaetigen', { praefix: 'split-', feld: 'betrag', bestaetigt: Boolean(haken.betrag) }) %><% } %>
+            </div>
+            <% if (ki.betrag) { %><div class="form-text ki-hinweis" id="split-betrag-ki-hinweis" data-ki-hinweis="betrag"<%= haken.betrag ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
+            <div class="form-text" id="split-gesamtbetrag-hinweis">Teilbeträge und Versandkosten müssen zusammen diese Summe ergeben.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="versandkosten">Versandkosten <span class="text-muted">(optional)</span></label>
+            <input type="text" inputmode="decimal" class="form-control" id="versandkosten" name="versandkosten" value="<%= split.versandkosten %>" placeholder="z.B. 9.50" aria-describedby="split-versandkosten-hinweis">
+            <div class="form-text" id="split-versandkosten-hinweis">Wird gleichmässig auf alle Teile verteilt.</div>
+          </div>
+          <% if (ki.rechnungsnummer || ki.zahlungsziel) { %>
+            <%# Gehen an alle Teile: nur bei KI-Werten hier zur Bestätigung, sonst übernehmen die Teile den Stand des Belegs. %>
+            <div class="mb-3">
+              <label class="form-label" for="split-rechnungsnummer">Rechnungsnummer</label>
+              <div class="input-group">
+                <input type="text" class="form-control<%= kiKlasse('rechnungsnummer') %>" id="split-rechnungsnummer" name="rechnungsnummer" value="<%= angaben.rechnungsnummer %>" maxlength="<%= maxLen.rechnungsnummer %>"<%- kiAttr('rechnungsnummer') %>>
+                <% if (ki.rechnungsnummer) { %><%- include('_ki_bestaetigen', { praefix: 'split-', feld: 'rechnungsnummer', bestaetigt: Boolean(haken.rechnungsnummer) }) %><% } %>
+              </div>
+              <% if (ki.rechnungsnummer) { %><div class="form-text ki-hinweis" id="split-rechnungsnummer-ki-hinweis" data-ki-hinweis="rechnungsnummer"<%= haken.rechnungsnummer ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="split-zahlungsziel">Zahlungsziel</label>
+              <div class="input-group">
+                <input type="date" class="form-control<%= kiKlasse('zahlungsziel') %>" id="split-zahlungsziel" name="zahlungsziel" value="<%= angaben.zahlungsziel %>"<%- kiAttr('zahlungsziel') %>>
+                <% if (ki.zahlungsziel) { %><%- include('_ki_bestaetigen', { praefix: 'split-', feld: 'zahlungsziel', bestaetigt: Boolean(haken.zahlungsziel) }) %><% } %>
+              </div>
+              <% if (ki.zahlungsziel) { %><div class="form-text ki-hinweis" id="split-zahlungsziel-ki-hinweis" data-ki-hinweis="zahlungsziel"<%= haken.zahlungsziel ? ' hidden' : '' %>>Automatisch erkannt – bitte prüfen und mit dem Haken bestätigen oder korrigieren.</div><% } %>
+            </div>
+          <% } %>
+          <% if (split.ibanKasten) { %>
+            <%# Gleicher Kasten wie auf der Kontierung, aber nur einmal: der Lieferant gilt für alle Teile. Die hinterlegte IBAN wird nie angezeigt. Sichtbarkeit: kontierung-iban.js. %>
+            <div class="alert alert-warning<%= split.ibanKastenSichtbar ? '' : ' d-none' %>" id="split-iban-manuell-kasten" data-iban-kasten>
+              <h4 class="h6 alert-heading fw-semibold">Kein QR-Code: IBAN bitte von Hand prüfen</h4>
+              <p class="mb-2">Auf dieser Rechnung wurde kein QR-Code erkannt. Lies auf der Rechnung die IBAN des Lieferanten ab und gib die letzten 4 Zeichen ein. Die hinterlegte IBAN siehst du hier bewusst nicht.</p>
+              <label class="form-label" for="split-ibanEndung">Letzte 4 Zeichen der IBAN</label>
+              <input type="text" class="form-control w-auto" id="split-ibanEndung" name="ibanEndung" value="<%= split.values.ibanEndung %>" maxlength="9" autocomplete="off" spellcheck="false"<%= split.ibanKastenSichtbar ? ' required' : '' %>>
+            </div>
+          <% } %>
+          <%# Wie im Schritt-Kopf, für lange Schritte auch unten; nur mit Skript sichtbar. %>
+          <div data-split-fuss hidden>
+            <div class="d-flex justify-content-end mb-3">
+              <button type="button" class="btn btn-primary btn-sm" id="split-weiter-unten-1" data-split-weiter>Weiter</button>
+            </div>
+          </div>
+        </section>
+
+        <section data-schritt="2" aria-labelledby="split-schritt-2-titel" class="border-top pt-3">
+          <h3 class="h6 fw-semibold" id="split-schritt-2-titel" tabindex="-1">2. Teile</h3>
+          <p>Jede Zeile wird zu einer eigenständigen Rechnung mit eigenem Konto und Teilbetrag. Zahlungsziel, Absender und Rechnungsnummer werden übernommen, der gewählte Lieferant gilt für alle Teile. Für Konten, bei denen du Freigeber oder Stellvertretung bist, gilt Freigabe 1 automatisch als durch dich erteilt — ausser du kreuzt "Konflikt" an, dann geht der Teil direkt an deine Stellvertretung. Für andere Konten landet der Teil unzugewiesen im Pool mit einem Hinweis für die zuständige Person. Das Kästchen "Konflikt" ist nur relevant, wenn du bei diesem Konto selbst Freigeber oder Stellvertretung bist.</p>
+          <div id="teile-container">
+            <% split.teile.forEach((teil) => { %><%- include('_aufsplitten_zeile', { teil }) %><% }) %>
+          </div>
+          <template id="split-zeile-vorlage"><%- include('_aufsplitten_zeile', { teil: { kontoId: '', betrag: '', position: '', interessenskonflikt: false } }) %></template>
+          <%# Laufende Restanzeige (public/js/aufsplitten-assistent.js). %>
+          <div id="split-stand" class="fw-semibold mb-2" aria-live="polite"></div>
+          <button type="button" id="zeile-hinzufuegen" class="btn btn-outline-secondary btn-sm mb-3">+ Teilbetrag hinzufügen</button>
+          <div class="mb-3">
+            <label class="form-label" for="split-begruendung">Begründung <span class="text-muted">(bei mind. einem Interessenskonflikt Pflicht)</span></label>
+            <textarea class="form-control" id="split-begruendung" name="begruendung" maxlength="<%= maxLen.text %>"><%= split.begruendung %></textarea>
+          </div>
+          <div data-split-fuss hidden>
+            <div class="d-flex justify-content-between gap-2 mb-3">
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="split-zurueck-unten-2" data-split-zurueck>Zurück</button>
+              <button type="button" class="btn btn-primary btn-sm" id="split-weiter-unten-2" data-split-weiter>Weiter</button>
+            </div>
+          </div>
+        </section>
+
+        <section data-schritt="3" aria-labelledby="split-schritt-3-titel" class="border-top pt-3">
+          <h3 class="h6 fw-semibold" id="split-schritt-3-titel" tabindex="-1">3. Prüfen</h3>
+          <div id="split-zusammenfassung"></div>
+          <button type="submit" class="btn btn-primary mb-3" data-pflicht-pruefen>Aufsplitten</button>
+        </section>
+
+        <div><a href="/kontierung/<%= job.id %>" class="btn btn-outline-secondary" data-aufsplitten-abbrechen>Abbrechen</a></div>
+      </form>
+    </div>
+  </div>
+</div>

@@ -6,7 +6,7 @@ import { createKonto } from '../../src/db/kontenRepo.js';
 import { createKreditor } from '../../src/db/kreditorenRepo.js';
 import { seedDefaults } from '../../src/db/adminConfigRepo.js';
 import { createFreigabe } from '../../src/db/freigabenRepo.js';
-import { createJob } from '../../src/db/jobsRepo.js';
+import { createJob, VIER_AUGEN_UMLEITUNG_PRAEFIX } from '../../src/db/jobsRepo.js';
 import { listLaufendeVorgaenge } from '../../src/services/vorgaengeUebersicht.js';
 
 function seed(db) {
@@ -113,5 +113,22 @@ test('admin-eskalierte Freigabe 2 ist nie überfällig', () => {
   const { kontoA } = seed(db);
   job(db, { name: 'esk', status: 'freigabe2', konto_id: kontoA, freigabe2_seit: '2020-01-01T00:00:00.000Z', freigabe2_eskaliert_an_admin: 1 });
   assert.equal(listLaufendeVorgaenge(db)[0].ueberfaellig, false);
+  db.close();
+});
+
+test('Kennzeichen Freigabe 2: Vier-Augen-Umleitung statt Interessenskonflikt, nach der Eskalationsbegründung', () => {
+  const db = openDatabase(':memory:');
+  const { kontoA } = seed(db);
+  const vierAugen = `${VIER_AUGEN_UMLEITUNG_PRAEFIX}, z. B. als Ferienvertretung)`;
+  const felder = { status: 'freigabe2', zugewiesen_an: '1', konto_id: kontoA, freigabe2_eskaliert_von: '3' };
+  job(db, { ...felder, name: 'umgeleitet', freigabe2_eskalationsgrund: vierAugen });
+  job(db, { ...felder, name: 'admin', freigabe2_eskalationsgrund: `${vierAugen} — Stellvertretung ausgeschlossen (ist nicht mehr aktiv)`, freigabe2_eskaliert_an_admin: 1 });
+  job(db, { ...felder, name: 'beides', freigabe2_eskalationsgrund: `Befangen — ${vierAugen}`, freigabe2_eskaliert_an_admin: 1 });
+  job(db, { ...felder, name: 'konflikt', freigabe2_eskalationsgrund: 'Befangen' });
+  const v = Object.fromEntries(listLaufendeVorgaenge(db).map((x) => [x.dateiname, x.kennzeichen]));
+  assert.deepEqual(v['umgeleitet.pdf'], ['Vier-Augen-Umleitung']);
+  assert.deepEqual(v['admin.pdf'], ['Admin-Eskalation', 'Vier-Augen-Umleitung']);
+  assert.deepEqual(v['beides.pdf'], ['Admin-Eskalation', 'Interessenskonflikt', 'Vier-Augen-Umleitung']);
+  assert.deepEqual(v['konflikt.pdf'], ['Interessenskonflikt']);
   db.close();
 });

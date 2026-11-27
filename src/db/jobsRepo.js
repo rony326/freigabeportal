@@ -18,6 +18,7 @@ import { getKontoById } from './kontenRepo.js';
 import { getPersonById } from './personenRepo.js';
 import { listZuweisungsregeln } from './zuweisungsregelnRepo.js';
 import { getKreditorById, istKreditorVollstaendig } from './kreditorenRepo.js';
+import { ausschlussGrundFuerEskalationsziel, grundMitAusschluss } from '../services/eskalationsZiel.js';
 
 // Wiederverwendet von listZugewiesenJobsForPerson/listFreigabe2JobsForPerson/listAbgelehntJobsForPerson weiter unten:
 // trifft jede Person, deren aktiver Ferienmodus (heute liegt zwischen ferienmodus_von..ferienmodus_bis) den gebundenen
@@ -362,9 +363,35 @@ export function weiterleitenAnEchtenFreigeber1(db, jobId, freigeber1Id) {
   db.prepare('UPDATE jobs SET zugewiesen_an = ? WHERE id = ?').run(freigeber1Id, jobId);
 }
 
+// Anfang der Begründung einer Vier-Augen-Umleitung (leiteFreigabe2BeiVierAugenSperreUm) -- zum Schreiben und Wiedererkennen.
+// Anders als ein Konflikt gilt die Umleitung nur für die Runde, in der die Sperre greift. Setzt sie auf eine frühere
+// Eskalation auf (Konflikt, Selbsteinreichung), steht sie hinter deren Begründung, durch VIER_AUGEN_NACHSATZ getrennt.
+export const VIER_AUGEN_UMLEITUNG_PRAEFIX = 'Freigeber 2 hat bereits Freigabe 1 erteilt (Vier-Augen-Prinzip';
+const VIER_AUGEN_NACHSATZ = ` — ${VIER_AUGEN_UMLEITUNG_PRAEFIX}`;
+
+// true, wenn die aktuelle Freigabe-2-Zuständigkeit (auch) aus einer Vier-Augen-Umleitung stammt.
+export function istVierAugenUmleitung(job) {
+  const grund = job.freigabe2_eskalationsgrund;
+  return Boolean(grund) && (grund.startsWith(VIER_AUGEN_UMLEITUNG_PRAEFIX) || grund.includes(VIER_AUGEN_NACHSATZ));
+}
+
+// Nimmt die Vier-Augen-Umleitung einer früheren Runde zurück; eine darunter liegende Eskalation bleibt, wie sie war.
+function hebeVierAugenUmleitungAuf(db, jobId) {
+  const job = getJobById(db, jobId);
+  if (!job || !istVierAugenUmleitung(job)) return;
+  const frueher = job.freigabe2_eskalationsgrund.startsWith(VIER_AUGEN_UMLEITUNG_PRAEFIX)
+    ? null
+    : job.freigabe2_eskalationsgrund.split(VIER_AUGEN_NACHSATZ)[0];
+  db.prepare(
+    'UPDATE jobs SET freigabe2_eskaliert_von = ?, freigabe2_eskalationsgrund = ?, freigabe2_eskaliert_an_admin = 0 WHERE id = ?'
+  ).run(frueher === null ? null : job.freigabe2_eskaliert_von, frueher, jobId);
+}
+
 // Schliesst Freigabe 1 ab: Status → 'freigabe2', Uhr für Erinnerung/Eskalation startet. Ist die für Freigabe 2
 // zuständige Person schon als befangen bekannt, geht der Vorgang gleich an die Admin-Gruppe.
 export function abschliessenFreigabe1(db, jobId) {
+  // Zuerst: eine Vier-Augen-Umleitung der letzten Runde verfällt, die Prüfungen unten entscheiden neu.
+  hebeVierAugenUmleitungAuf(db, jobId);
   // freigabe1_eskaliert_an_admin wird hier bewusst NICHT zurückgesetzt (Korrektur aus Batch 4 — eine frühere Version dieser
   // Funktion löschte es). Ein erklärter Interessenskonflikt gehört zur Rechnung, nicht zu einem Kontierungsversuch: Lehnt
   // Freigabe 2 den Vorgang später aus einem anderen Grund ab und er wird über wiederOeffnenJob wieder geöffnet, muss die
@@ -395,6 +422,41 @@ export function abschliessenFreigabe1(db, jobId) {
            AND f.person_id = ${EFFEKTIVER_FREIGEBER2_SQL}
        )`
   ).run(jobId);
+  leiteFreigabe2BeiVierAugenSperreUm(db, jobId);
+}
+
+// Vier-Augen-Sackgasse vermeiden (Rückmeldung 2026-11-27): Hat die Person, die gerade Freigabe 1 erteilt hat, auch
+// Freigabe 2 zu erteilen — typisch, wenn Freigeber 2 des Kontos im Ferienmodus Freigeber 1 vertritt —, sperrt
+// freigabe2.js sie (Vier-Augen-Prinzip) und der Vorgang bliebe liegen. Dann sofort an die Stellvertretung 2 umleiten,
+// darf auch diese nicht freigeben, an die Admin-Gruppe — dieselbe Kette wie bei einem Interessenskonflikt, aber ohne
+// Konflikt-Eintrag in freigaben (es ist keiner erklärt worden). Die Aufrufer lesen den Job danach neu und
+// benachrichtigen über getEffectiveFreigeber2Id bzw. die Admin-Gruppe. Gilt nur für diese Runde
+// (hebeVierAugenUmleitungAuf).
+function leiteFreigabe2BeiVierAugenSperreUm(db, jobId) {
+  const job = getJobById(db, jobId);
+  if (!job || job.status !== 'freigabe2' || job.freigabe2_eskaliert_an_admin) return;
+  const konto = getKontoById(db, job.konto_id);
+  if (!konto) return;
+  const freigabe1 = db
+    .prepare("SELECT person_id FROM freigaben WHERE job_id = ? AND rolle = 'freigeber1' ORDER BY id DESC LIMIT 1")
+    .get(jobId);
+  const effektiv = getEffectiveFreigeber2Id(job, konto);
+  if (!freigabe1 || !effektiv || freigabe1.person_id !== effektiv) return;
+  const grund = `${VIER_AUGEN_UMLEITUNG_PRAEFIX}, z. B. als Ferienvertretung)`;
+  const sv2Ausschluss = job.freigabe2_eskaliert_von || job.freigabe2_umgeleitet_an
+    ? 'Stellvertretung 2 bzw. Umleitung bereits ausgeschöpft'
+    : ausschlussGrundFuerEskalationsziel(db, job, { stufe: 2, zielId: konto.stellvertreter2_id, meldenderId: effektiv });
+  if (job.freigabe2_eskaliert_von) {
+    // Die frühere Eskalation nicht überschreiben: Sie gilt auch in der nächsten Runde.
+    eskalierenFreigabe2AnAdmin(db, jobId, {
+      eskaliertVon: job.freigabe2_eskaliert_von,
+      grund: `${job.freigabe2_eskalationsgrund} — ${grundMitAusschluss(grund, sv2Ausschluss)}`,
+    });
+  } else if (sv2Ausschluss) {
+    eskalierenFreigabe2AnAdmin(db, jobId, { eskaliertVon: effektiv, grund: grundMitAusschluss(grund, sv2Ausschluss) });
+  } else {
+    eskalierenFreigabe2(db, jobId, { eskaliertVon: effektiv, grund });
+  }
 }
 
 // Freigabe 2 wegen Interessenskonflikt an die Stellvertretung 2 übergeben (Uhr startet neu, siehe Kommentar).

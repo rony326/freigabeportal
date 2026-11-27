@@ -319,3 +319,27 @@ test('Bestätigungsfehler lässt die Ablehnung trotzdem durch', async (t) => {
   assert.deepEqual(listMailLog(s.db).map((m) => m.typ), ['ablehnung']);
   assert.ok(fehler.mock.callCount() >= 1);
 });
+
+test('POST /spesen-freigabe1/:id: Admin-Mail nach Vier-Augen-Umleitung nennt keinen Interessenskonflikt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const { jobId, kontoId } = seedGrundlagen(db);
+  upsertPerson(db, { id: '9', vorname: 'Super', nachname: 'Admin', email: 'sa@example.org', gruppen: ['20'] });
+  db.prepare("UPDATE konten SET freigeber2_id = '1', stellvertreter2_id = '1' WHERE id = ?").run(kontoId);
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/spesen-freigabe1/${jobId}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ _csrf: 'valid-token', interessenskonflikt: 'nein', aktion: 'freigeben' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, jobId).freigabe2_eskaliert_an_admin, 1);
+  const mail = mailer.sent.find((m) => m.to === 'sa@example.org');
+  assert.ok(mail, 'die Admin-Gruppe wird benachrichtigt');
+  assert.match(mail.text, /Vier-Augen-Prinzip/);
+  assert.doesNotMatch(mail.text, /Interessenskonflikt/);
+  db.close();
+});

@@ -38,8 +38,8 @@ Tabelle `spesenabrechnungen` für die Sammelabrechnung. Details:
 ## 1. Einreichung (`/spesen/neu`, `src/routes/spesen.js`)
 
 Formular mit mindestens einer, dynamisch hinzufügbaren Positionszeile
-(gleiches Zeilen-Klonen/Entfernen-Muster wie die bestehende
-Aufsplitten-Seite). Pro Zeile: Konto (jedes aktive, keine
+(gleiches Zeilen-Klonen/Entfernen-Muster wie im
+Aufsplitten-Assistenten). Pro Zeile: Konto (jedes aktive, keine
 Rollen-Einschränkung), Betrag, Auslage-Datum (nicht in der Zukunft),
 Verwendungszweck, Beleg (PDF/PNG/JPEG, Pflicht, max. 20 MB, Bilder höchstens
 40 Megapixel (alle Belege einer Einreichung zusammen höchstens 60 MB; die Seite nennt diese Grenzen), Magic-Byte-

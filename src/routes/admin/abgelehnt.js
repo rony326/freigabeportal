@@ -1,14 +1,18 @@
 // Admin → Abgelehnte Rechnungen (`/admin/abgelehnt`, Recht `abgelehnt_verwalten`, docs/admin-bereich.md): Liste aller abgelehnten Vorgänge und endgültiges (weiches) Löschen mit Begründung. Wer eine Rechnung selbst abgelehnt hat, darf sie nicht löschen.
 
 import { Router } from 'express';
-import { getJobById, listAlleAbgelehntenJobs, loeschenJob } from '../../db/jobsRepo.js';
+import { getJobById, listAlleAbgelehntenJobs, loeschenJob, forceReleaseJob } from '../../db/jobsRepo.js';
+import { createFreigabe } from '../../db/freigabenRepo.js';
+import { sendNotification } from '../../services/notify.js';
+import { MIN_BEMERKUNG_LAENGE } from '../../services/vorgangUmhaengen.js';
+import { leseText, MAX_LAENGE } from '../../utils/eingabe.js';
 import { getPersonById } from '../../db/personenRepo.js';
 import { logJobLoeschung } from '../../db/jobLoeschungenRepo.js';
 import { kommentarInfoFuer } from '../../services/kommentare.js';
 import { pruefeUndFinalisiereSplitGruppe } from '../../services/splitGruppenExport.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 
-export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, res, next) => next() }) {
+export function createAdminAbgelehntRouter({ db, config, mailer = null, csrfProtection = (req, res, next) => next() }) {
   const router = Router();
 
   // GET /admin/abgelehnt – Liste.
@@ -17,8 +21,107 @@ export function createAdminAbgelehntRouter({ db, config, csrfProtection = (req, 
       ...job,
       abgelehntVonPerson: getPersonById(db, job.abgelehnt_von),
     }));
-    res.render('admin/abgelehnt-liste', { jobs, kommentarInfo: kommentarInfoFuer(db, config, req.currentPerson, jobs.map((j) => j.id)), gespeichert: req.query.gespeichert === '1' });
+    res.render('admin/abgelehnt-liste', { jobs, kommentarInfo: kommentarInfoFuer(db, config, req.currentPerson, jobs.map((j) => j.id)), gespeichert: req.query.gespeichert === '1', imPool: req.query.pool === '1' });
   });
+
+  // Zurück in den Pool (Rückmeldung 2026-11-27): Die Administration bringt eine abgelehnte Rechnung wieder in Umlauf,
+  // ohne dass die zugewiesene Person sie zuerst überarbeiten muss. Echter Neustart wie die Pool-Rückgabe aus der
+  // Kontierung (forceReleaseJob: Konto, Zuweisung, Eskalationen und Ablehnung werden zurückgesetzt). Spesen sind
+  // ausgenommen — eine abgelehnte Spesenposition ist endgültig und hätte im Pool keine Prüfseite.
+  function ladePoolKandidat(req, res) {
+    const job = getJobById(db, Number(req.params.id));
+    if (!job || job.status !== 'abgelehnt') {
+      res.status(404).render('error', { message: 'Diese Rechnung ist nicht (mehr) abgelehnt oder existiert nicht.' });
+      return null;
+    }
+    if (job.quelle === 'spesen') {
+      res.status(409).render('error', { message: 'Abgelehnte Spesen-Positionen sind endgültig und können nicht in den Pool zurückgelegt werden.' });
+      return null;
+    }
+    // Wie bei der Pool-Rückgabe aus der Kontierung: Kreditkartenabrechnungen laufen über den Abgleich.
+    if (job.kreditkarte_id) {
+      res.status(409).render('error', { message: 'Diese Abrechnung ist einer Kreditkarte zugeordnet und wird über den Abgleich bearbeitet.' });
+      return null;
+    }
+    return job;
+  }
+
+  // Wer bekommt nach «Zurück in den Pool» eine Mail? Gilt für den Versand und die Ankündigung auf der Bestätigungsseite.
+  function wirdInformiert(bisher, admin) {
+    return Boolean(mailer && bisher && bisher.aktiv && bisher.churchtools_person_id !== admin.churchtools_person_id);
+  }
+
+  function zeigePoolSeite(req, res, status, job, errors, begruendung) {
+    const bisher = getPersonById(db, job.zugewiesen_an);
+    res.status(status).render('admin/abgelehnt-pool', {
+      job, errors, begruendung, maxLen: MAX_LAENGE, minLaenge: MIN_BEMERKUNG_LAENGE, bisher, mailAngekuendigt: wirdInformiert(bisher, req.currentPerson),
+    });
+  }
+
+  // GET /admin/abgelehnt/:id/pool – Bestätigungsseite mit Begründung.
+  router.get('/:id/pool', (req, res) => {
+    const job = ladePoolKandidat(req, res);
+    if (!job) return;
+    zeigePoolSeite(req, res, 200, job, [], '');
+  });
+
+  // POST /admin/abgelehnt/:id/pool – legt die Rechnung zurück in den Pool (Verlaufseintrag + Audit), informiert die bisher zuständige Person.
+  router.post('/:id/pool', csrfProtection, asyncHandler(async (req, res) => {
+    const job = ladePoolKandidat(req, res);
+    if (!job) return;
+    const gelesen = leseText(req.body.begruendung, { max: MAX_LAENGE.text, feld: 'Begründung' });
+    const begruendung = gelesen.wert || '';
+    const bisher = getPersonById(db, job.zugewiesen_an);
+    const fehler = gelesen.fehler || (begruendung.length < MIN_BEMERKUNG_LAENGE ? `Bitte eine Begründung mit mindestens ${MIN_BEMERKUNG_LAENGE} Zeichen angeben.` : null);
+    if (fehler) {
+      return zeigePoolSeite(req, res, 400, job, [fehler], begruendung);
+    }
+    const admin = req.currentPerson;
+    const adminName = `${admin.vorname} ${admin.nachname}`;
+    db.exec('BEGIN');
+    try {
+      if (!forceReleaseJob(db, job.id)) {
+        db.exec('ROLLBACK');
+        return res.status(409).render('error', { message: 'Diese Rechnung wurde inzwischen bereits anderweitig bearbeitet.' });
+      }
+      const zeitpunkt = new Date().toISOString();
+      createFreigabe(db, {
+        jobId: job.id,
+        personId: admin.churchtools_person_id,
+        rolle: 'admin_umzuweisung',
+        zeitpunkt,
+        ip: req.ip,
+        interessenskonflikt: false,
+        kommentar: `Abgelehnte Rechnung zurück in den Pool gelegt: ${begruendung}`,
+        eskaliertVon: null,
+        vorherZustaendig: job.zugewiesen_an,
+      });
+      db.prepare(`INSERT INTO audit_ereignisse
+        (zeitpunkt, person_id, person_name, objekt, objekt_id, aktion, begruendung)
+        VALUES (?, ?, ?, 'jobs', ?, 'workflow_eingriff', ?)`).run(
+        zeitpunkt, admin.churchtools_person_id, adminName, String(job.id), `Abgelehnte Rechnung zurück in den Pool: ${begruendung}`);
+      db.exec('COMMIT');
+    } catch (err) {
+      if (db.isTransaction) db.exec('ROLLBACK');
+      throw err;
+    }
+    if (wirdInformiert(bisher, admin)) {
+      await sendNotification(db, mailer, {
+        to: bisher.email,
+        typ: 'admin-umzuweisung',
+        jobId: job.id,
+        variablen: {
+          empfaengerName: `${bisher.vorname} ${bisher.nachname}`,
+          jobDateiname: job.dateiname,
+          adminName,
+          bemerkung: begruendung,
+          grund: `${adminName} hat eine abgelehnte Rechnung, die bei dir zur Überarbeitung lag, zurück in den Pool gelegt. Du musst dafür nichts mehr tun.`,
+          link: `${config.publicBaseUrl}/pool`,
+        },
+      });
+    }
+    res.redirect('/admin/abgelehnt?pool=1');
+  }));
 
   // GET /admin/abgelehnt/:id – Bestätigungsseite zum Löschen (403 bei Selbstablehnung).
   router.get('/:id', (req, res) => {

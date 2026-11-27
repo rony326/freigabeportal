@@ -15,6 +15,12 @@
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schliessen"></button>
       </div>
     <% } %>
+    <% if (locals.imPool) { %>
+      <div class="alert alert-success alert-dismissible fade show" role="alert">
+        Die Rechnung liegt wieder im Pool.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schliessen"></button>
+      </div>
+    <% } %>
     <% if (jobs.length === 0) { %>
       <p>Keine abgelehnten Rechnungen.</p>
     <% } else { %>
@@ -30,7 +36,7 @@
                 <td><%= job.ablehnungsgrund %></td>
                 <td><%= job.abgelehntVonPerson ? `${job.abgelehntVonPerson.vorname} ${job.abgelehntVonPerson.nachname}` : 'Unbekannt' %></td>
                 <td><%- include('../_zeitpunkt', { wert: job.eingang_am }) %></td>
-                <td><a href="/admin/abgelehnt/<%= job.id %>" class="btn btn-outline-danger btn-sm">Löschen</a></td>
+                <td class="text-nowrap"><%- include('_abgelehnt_aktionen', { job }) %></td>
               </tr>
             <% }) %>
           </tbody>

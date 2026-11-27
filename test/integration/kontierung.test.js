@@ -1670,7 +1670,221 @@ async function seedJobMitEchtemPdf(db, jobsDir, { betrag = '200.00' } = {}) {
   return { id, kontoId, pdfPfad };
 }
 
-test('GET /kontierung/:id/aufsplitten works even when the job has no Betrag yet, with an empty Gesamtbetrag field to fill in', async () => {
+// --- Aufsplitten-Assistent auf der Kontierungsseite (neben dem Beleg) ---
+
+// Ausschnitt der Seite: nur das Formular des Assistenten (inkl. Zeilenvorlage) – das Kontierungsformular hat gleich benannte Felder.
+function splitFormular(html) {
+  const i = html.indexOf('<form id="aufsplitten-form"');
+  assert.ok(i > -1, 'aufsplitten-form fehlt');
+  return html.slice(i, html.indexOf('</form>', i));
+}
+
+const startSchritt = (html) => html.match(/id="aufsplitten-bereich"[^>]*data-start-schritt="(\d)"/)?.[1];
+const klasseVon = (html, id) => {
+  const tag = html.match(new RegExp(`<div[^>]*id="${id}"[^>]*>`));
+  assert.ok(tag, `#${id} fehlt`);
+  return tag[0].match(/class="([^"]*)"/)?.[1] ?? '';
+};
+
+test('GET /kontierung/:id/aufsplitten leitet auf die Kontierung mit offenem Assistenten', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const res = await request(buildTestAppMitDateien(db, createStubMailer(), jobsDir)).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.location, `/kontierung/${id}?aufsplitten=1`);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('GET /kontierung/:id enthält Beleg, Kontierungsformular und ausgeblendeten Assistenten', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+
+  const zu = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.equal(zu.status, 200);
+  assert.match(zu.text, /id="kontierung-preview-frame"/);
+  assert.match(zu.text, /<form id="kontierung-form"/);
+  assert.match(zu.text, /<form id="aufsplitten-form"[^>]*action="\/kontierung\/\d+\/aufsplitten"/);
+  assert.doesNotMatch(zu.text, /aufsplitten-modal|aufsplitten-frame/);
+  assert.match(klasseVon(zu.text, 'aufsplitten-bereich'), /\bd-none\b/);
+  assert.doesNotMatch(klasseVon(zu.text, 'kontierung-bereich'), /\bd-none\b/);
+  assert.match(zu.text, new RegExp(`<a class="dropdown-item" href="/kontierung/${id}\\?aufsplitten=1" data-aufsplitten-oeffnen>Rechnung aufsplitten</a>`));
+  assert.match(splitFormular(zu.text), new RegExp(`<a href="/kontierung/${id}"[^>]*data-aufsplitten-abbrechen`));
+  assert.match(splitFormular(zu.text), /name="_csrf"/);
+  for (const n of ['1', '2', '3']) assert.match(splitFormular(zu.text), new RegExp(`<section[^>]*data-schritt="${n}"`));
+  assert.match(splitFormular(zu.text), /<template id="split-zeile-vorlage">[\s\S]*teil-zeile[\s\S]*<\/template>/);
+  assert.match(splitFormular(zu.text), /name="versandkosten"/);
+  assert.match(splitFormular(zu.text), /Wird gleichmässig auf alle Teile verteilt\./);
+  assert.match(splitFormular(zu.text), /Teilbetrag ohne Versand/);
+  assert.match(splitFormular(zu.text), /id="split-zusammenfassung"/);
+  assert.match(zu.text, /src="\/js\/aufsplitten-assistent\.js/);
+
+  const offen = await request(app).get(`/kontierung/${id}?aufsplitten=1`).set('x-test-person-id', '1');
+  assert.equal(offen.status, 200);
+  assert.match(klasseVon(offen.text, 'kontierung-bereich'), /\bd-none\b/);
+  assert.doesNotMatch(klasseVon(offen.text, 'aufsplitten-bereich'), /\bd-none\b/);
+  assert.equal(startSchritt(offen.text), '1');
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('Aufsplitten-Assistent: Schritt-Kopf, Restanzeige, Schritt-Titel als h3, Hilfetext des Gesamtbetrags verknüpft, eigene Konten markiert', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = seedMitKiWerten(db);
+  const res = await request(buildTestApp(db, createStubMailer())).get(`/kontierung/${id}?aufsplitten=1`).set('x-test-person-id', '1');
+  const form = splitFormular(res.text);
+  // Ohne Skript bleibt der Schritt-Kopf verborgen.
+  assert.match(form, /<div id="split-kopf"[^>]* hidden>/);
+  assert.match(form, /<button type="button"[^>]*id="split-zurueck"/);
+  assert.match(form, /<button type="button"[^>]*id="split-weiter"/);
+  // Dieselben Knöpfe am Ende von Schritt 1 und 2, ebenfalls erst mit Skript sichtbar.
+  for (const knopf of ['split-weiter-unten-1', 'split-zurueck-unten-2', 'split-weiter-unten-2']) {
+    assert.match(form, new RegExp(`<div data-split-fuss hidden>(?:(?!</section>)[\\s\\S])*<button type="button"[^>]*id="${knopf}"`), knopf);
+  }
+  assert.match(form, /id="split-stand"[^>]*aria-live="polite"/);
+  for (const n of ['1', '2', '3']) assert.match(form, new RegExp(`<h3 class="h6[^"]*" id="split-schritt-${n}-titel" tabindex="-1">`));
+  assert.match(form, /id="gesamtbetrag"[^>]*aria-describedby="split-betrag-ki-hinweis split-gesamtbetrag-hinweis"/);
+  assert.match(form, /id="split-gesamtbetrag-hinweis">Teilbeträge und Versandkosten müssen/);
+  db.close();
+});
+
+test('Aufsplitten-Zeilen: nur Konten, bei denen ein Konflikt zählt, tragen data-eigenes-konto', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const fremd = createKonto(db, { kontonummer: '7777', bezeichnung: 'Fremdes Konto', freigeber1Id: '3', stellvertreter1Id: '4', freigeber2Id: '1', stellvertreter2Id: '2' });
+  const res = await request(buildTestAppMitDateien(db, createStubMailer(), jobsDir)).get(`/kontierung/${id}?aufsplitten=1`).set('x-test-person-id', '1');
+  const vorlage = res.text.match(/<template id="split-zeile-vorlage">([\s\S]*?)<\/template>/)[1];
+  assert.match(vorlage, new RegExp(`<option value="${kontoId}"[^>]* data-eigenes-konto`));
+  assert.doesNotMatch(vorlage.match(new RegExp(`<option value="${fremd}"[^>]*>`))[0], /data-eigenes-konto/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('jede id auf der Kontierungsseite ist eindeutig (mit KI-Feldern, ohne QR-Code, Assistent zu und offen)', async () => {
+  const db = openDatabase(':memory:');
+  const { id } = seedMitKiWerten(db);
+  setConfigValue(db, 'modul_kreditkarten_aktiv', '1');
+  setConfigValue(db, 'modul_rapporte_aktiv', '1');
+  setBerechtigungenForPerson(db, '1', ['kreditoren_verwalten']);
+  const app = buildTestApp(db, createStubMailer());
+  for (const pfad of [`/kontierung/${id}`, `/kontierung/${id}?aufsplitten=1`]) {
+    const res = await request(app).get(pfad).set('x-test-person-id', '1');
+    assert.equal(res.status, 200);
+    const ohneVorlagen = res.text.replace(/<template[\s\S]*?<\/template>/g, '');
+    const ids = [...ohneVorlagen.matchAll(/\sid="([^"]*)"/g)].map((m) => m[1]);
+    assert.ok(ids.includes('split-bestaetigt-rechnungsnummer') && ids.includes('bestaetigt-rechnungsnummer'));
+    assert.ok(ids.includes('split-iban-manuell-kasten') && ids.includes('iban-manuell-kasten'));
+    assert.deepEqual(ids.filter((x, i) => ids.indexOf(x) !== i), [], pfad);
+    // Jede Verknüpfung auf eine id (label for, aria-describedby) zeigt auf ein vorhandenes Element.
+    for (const m of ohneVorlagen.matchAll(/\s(?:for|aria-describedby)="([^"]+)"/g)) {
+      for (const ziel of m[1].split(' ')) assert.ok(ids.includes(ziel) || /-suche$/.test(ziel), `${pfad}: Verweis auf fehlende id ${ziel}`);
+    }
+  }
+  db.close();
+});
+
+test('POST /kontierung/:id/aufsplitten: Fehler in den Rechnungsangaben → Kontierungsseite mit offenem Assistenten in Schritt 1, Eingaben erhalten', async () => {
+  for (const [name, extra, meldung] of [
+    ['Gesamtbetrag', { gesamtbetrag: 'abc' }, /Bitte einen gültigen Gesamtbetrag erfassen/],
+    ['Versandkosten', { versandkosten: '-5' }, /Bitte gültige Versandkosten erfassen/],
+    ['Versandkosten zu hoch', { versandkosten: '500.00' }, /Die Versandkosten müssen kleiner als der Gesamtbetrag sein/],
+    ['Versandkosten als Liste', { versandkosten: ['1', '2'] }, /genau einen Text/],
+    ['Lieferant', { kreditorId: '' }, /Bitte einen gültigen Lieferanten/],
+  ]) {
+    const db = openDatabase(':memory:');
+    seedDefaults(db);
+    const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+    const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+    const res = await request(buildTestAppMitDateien(db, createStubMailer(), jobsDir)).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form')
+      .send({ kreditorId: splitLieferant(db), gesamtbetrag: '200.00', versandkosten: '7.50', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['111.11', '81.39'], teilPosition: ['Pos. A', 'Pos. B'], begruendung: 'Notiz zum Splitten', ...extra });
+    assert.equal(res.status, 400, name);
+    assert.match(res.text, meldung, name);
+    assert.equal(startSchritt(res.text), '1', name);
+    assert.match(klasseVon(res.text, 'kontierung-bereich'), /\bd-none\b/, name);
+    assert.doesNotMatch(klasseVon(res.text, 'aufsplitten-bereich'), /\bd-none\b/, name);
+    assert.match(res.text, /id="kontierung-preview-frame"/, name);
+    const form = splitFormular(res.text);
+    assert.match(form, /name="teilBetrag" value="111\.11"/, name);
+    assert.match(form, /name="teilBetrag" value="81\.39"/, name);
+    assert.match(form, /value="Pos\. B"/, name);
+    assert.match(form, />Notiz zum Splitten<\/textarea>/, name);
+    if (!Array.isArray(extra.versandkosten)) assert.match(form, new RegExp(`name="versandkosten" value="${extra.versandkosten ?? '7.50'}"`), name);
+    // Die Fehler gehören zum Assistenten: nicht auch noch in der (ausgeblendeten) Kontierung.
+    const kontierungBereich = res.text.slice(res.text.indexOf('id="kontierung-bereich"'), res.text.indexOf('id="aufsplitten-bereich"'));
+    assert.match(kontierungBereich, /<form id="kontierung-form"/, name);
+    assert.doesNotMatch(kontierungBereich, /alert-danger/, name);
+    assert.equal(listSplitKinder(db, id).length, 0, name);
+    db.close();
+    rmSync(jobsDir, { recursive: true, force: true });
+  }
+});
+
+test('POST /kontierung/:id/aufsplitten: Zahlungsziel- und KI-Fehler → Schritt 1', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedSplitMitKiWerten(db, jobsDir);
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+  const basis = { kreditorId: splitLieferant(db), gesamtbetrag: '100.00', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'], rechnungsnummer: 'KI-88', bestaetigt_betrag: '1', bestaetigt_rechnungsnummer: '1' };
+  for (const extra of [{ zahlungsziel: 'morgen' }, { zahlungsziel: '2026-12-31' }]) {
+    const res = await request(app).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form').send({ ...basis, ...extra });
+    assert.equal(res.status, 400);
+    assert.equal(startSchritt(res.text), '1', extra.zahlungsziel);
+  }
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten: fehlende IBAN-Endung → Schritt 1', async () => {
+  const { form, senden, aufraeumen } = await splitPopupAufbau({ qr: false });
+  const res = await senden(form);
+  assert.equal(res.status, 400);
+  assert.equal(startSchritt(res.text), '1');
+  aufraeumen();
+});
+
+test('POST /kontierung/:id/aufsplitten: falsche Summe → Schritt 2, Teile und Versandkosten erhalten', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const res = await request(buildTestAppMitDateien(db, createStubMailer(), jobsDir)).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form')
+    .send({ kreditorId: splitLieferant(db), gesamtbetrag: '200.00', versandkosten: '10,00', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['120.00', '80.00'] });
+  assert.equal(res.status, 400);
+  assert.equal(startSchritt(res.text), '2');
+  assert.match(splitFormular(res.text), /name="versandkosten" value="10,00"/);
+  assert.match(splitFormular(res.text), /name="teilBetrag" value="120\.00"/);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+});
+
+test('POST /kontierung/:id/aufsplitten: Prüf-Popup → Schritt 3; Versandkosten bleiben und gelten beim bestätigten Absenden', async () => {
+  const { db, id, form, senden, aufraeumen } = await splitPopupAufbau();
+  const mitVersand = { ...form, versandkosten: '10.00', teilBetrag: ['110.00', '80.00'] };
+  const popup = await senden(mitVersand);
+  assert.equal(popup.status, 200);
+  assert.equal(startSchritt(popup.text), '3');
+  assert.match(klasseVon(popup.text, 'kontierung-bereich'), /\bd-none\b/);
+  assert.match(popup.text, /name="auffaelligkeitenHash" form="aufsplitten-form"/);
+  assert.equal(popup.text.split('id="auffaelligkeiten-modal"').length - 1, 1);
+  assert.match(popup.text, /src="\/js\/auffaelligkeiten\.js/);
+  const versand = splitFormular(popup.text).match(/name="versandkosten" value="([^"]*)"/)[1];
+  assert.equal(versand, '10.00');
+  // Wie der Browser: das neu angezeigte Formular samt Hash absenden.
+  const res = await senden({ ...mitVersand, versandkosten: versand, auffaelligkeitenHash: hashAusAntwort(popup.text) });
+  assert.equal(res.status, 302);
+  assert.deepEqual(listSplitKinder(db, id).sort((a, b) => a.id - b.id).map((k) => k.betrag), ['115.00', '85.00']);
+  aufraeumen();
+});
+
+test('GET /kontierung/:id: Gesamtbetrag des Assistenten ist leer, wenn der Vorgang noch keinen Betrag hat', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
@@ -1679,7 +1893,7 @@ test('GET /kontierung/:id/aufsplitten works even when the job has no Betrag yet,
   claimJob(db, id, '1');
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
 
-  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
   assert.match(res.text, /name="gesamtbetrag"/);
   assert.match(res.text, /id="gesamtbetrag"[^>]*value=""/);
@@ -1687,14 +1901,14 @@ test('GET /kontierung/:id/aufsplitten works even when the job has no Betrag yet,
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('GET /kontierung/:id/aufsplitten pre-fills Gesamtbetrag from the job when one is already set', async () => {
+test('GET /kontierung/:id: Gesamtbetrag des Assistenten ist aus dem Vorgang vorbelegt', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
 
-  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
   assert.match(res.text, /name="teilKontoId"/);
   assert.match(res.text, /name="teilBetrag"/);
@@ -1703,35 +1917,18 @@ test('GET /kontierung/:id/aufsplitten pre-fills Gesamtbetrag from the job when o
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('GET /kontierung/:id/aufsplitten prefers a betrag query param (the not-yet-saved Kontierung-Betrag) over the job\'s saved Betrag', async () => {
+test('GET /kontierung/:id: Gesamtbetrag des Assistenten aus QR-Betrag bzw. n8n-Vorschlag, wenn noch keiner gespeichert ist', async () => {
   const db = openDatabase(':memory:');
-  seedDefaults(db);
-  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
-  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
-  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
-
-  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).query({ betrag: '250.00' }).set('x-test-person-id', '1');
-  assert.equal(res.status, 200);
-  assert.match(res.text, /id="gesamtbetrag"[^>]*value="250\.00"/);
+  const { id } = seedMitKiWerten(db);
+  const app = buildTestApp(db, createStubMailer());
+  const seite = () => request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.match((await seite()).text, /id="gesamtbetrag"[^>]*value="50\.00"/);
+  setQrDaten(db, id, { qrIban: 'CH4431999123000889012', qrBetrag: '75.00' });
+  assert.match((await seite()).text, /id="gesamtbetrag"[^>]*value="75\.00"/);
   db.close();
-  rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('GET /kontierung/:id/aufsplitten ignores a malformed betrag query param, falling back to the job\'s saved Betrag', async () => {
-  const db = openDatabase(':memory:');
-  seedDefaults(db);
-  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
-  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
-  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
-
-  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).query({ betrag: '<script>' }).set('x-test-person-id', '1');
-  assert.equal(res.status, 200);
-  assert.match(res.text, /id="gesamtbetrag"[^>]*value="200\.00"/);
-  db.close();
-  rmSync(jobsDir, { recursive: true, force: true });
-});
-
-test('GET /kontierung/:id/aufsplitten lists every active Konto, not just this person\'s own, and offers an Interessenskonflikt checkbox per Zeile plus a shared Begründung field', async () => {
+test('GET /kontierung/:id: der Assistent bietet jedes aktive Konto an, je Zeile ein Konflikt-Kästchen und eine gemeinsame Begründung', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
@@ -1740,9 +1937,9 @@ test('GET /kontierung/:id/aufsplitten lists every active Konto, not just this pe
   createKonto(db, { kontonummer: '4200', bezeichnung: 'Kinderbereich', freigeber1Id: '5', stellvertreter1Id: '5', freigeber2Id: '5', stellvertreter2Id: '5' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
 
-  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, /4200 — Kinderbereich/, 'a Konto this person has no role on must still be selectable');
+  assert.match(splitFormular(res.text), /4200 — Kinderbereich/, 'a Konto this person has no role on must still be selectable');
   assert.match(res.text, /class="[^"]*konflikt-checkbox/);
   assert.match(res.text, /name="teilInteressenskonflikt"/);
   assert.match(res.text, /name="begruendung"/);
@@ -1821,36 +2018,22 @@ test('POST /kontierung/:id/aufsplitten persists teilPosition as rechnungspositio
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('GET /kontierung/:id/aufsplitten offers a Typ choice (Rechnung/Gutschrift), Rechnung preselected by default', async () => {
+test('GET /kontierung/:id: der Assistent offers a Typ choice (Rechnung/Gutschrift), Rechnung preselected by default', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
 
-  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, /name="typ"[^>]*value="rechnung"[^>]*checked/);
-  assert.doesNotMatch(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
+  assert.match(splitFormular(res.text), /name="typ"[^>]*value="rechnung"[^>]*checked/);
+  assert.doesNotMatch(splitFormular(res.text), /name="typ"[^>]*value="gutschrift"[^>]*checked/);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('GET /kontierung/:id/aufsplitten preselects Gutschrift from the typ query param (the not-yet-saved Kontierung-Typ)', async () => {
-  const db = openDatabase(':memory:');
-  seedDefaults(db);
-  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
-  const { id } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
-  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
-
-  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).query({ typ: 'gutschrift' }).set('x-test-person-id', '1');
-  assert.equal(res.status, 200);
-  assert.match(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
-  db.close();
-  rmSync(jobsDir, { recursive: true, force: true });
-});
-
-test('GET /kontierung/:id/aufsplitten preselects Gutschrift when the job is already saved as Gutschrift', async () => {
+test('GET /kontierung/:id: der Assistent preselects Gutschrift when the job is already saved as Gutschrift', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
@@ -1858,9 +2041,9 @@ test('GET /kontierung/:id/aufsplitten preselects Gutschrift when the job is alre
   db.prepare("UPDATE jobs SET typ = 'gutschrift' WHERE id = ?").run(id);
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
 
-  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
+  assert.match(splitFormular(res.text), /name="typ"[^>]*value="gutschrift"[^>]*checked/);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
 });
@@ -1924,7 +2107,7 @@ test('POST /kontierung/:id/aufsplitten keeps the Gutschrift selection when the f
     .send({ kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'gutschrift', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '30.00'] });
 
   assert.equal(res.status, 400);
-  assert.match(res.text, /name="typ"[^>]*value="gutschrift"[^>]*checked/);
+  assert.match(splitFormular(res.text), /name="typ"[^>]*value="gutschrift"[^>]*checked/);
   assert.equal(listSplitKinder(db, id).length, 0);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
@@ -2188,6 +2371,72 @@ test('POST /kontierung/:id/aufsplitten rejects Teilbeträge that do not sum to t
   assert.equal(listSplitKinder(db, id).length, 0);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
+});
+
+// Versandkosten (Aufsplitten-Assistent, 2026-11-27): Teilbeträge ohne Versand, der Server verteilt ihn gleichmässig.
+async function splitteMitVersand(felder) {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
+  const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '200.00' });
+  const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
+  const res = await request(app)
+    .post(`/kontierung/${id}/aufsplitten`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kreditorId: splitLieferant(db), teilKontoId: felder.teilBetrag.map((b) => (b ? String(kontoId) : '')), ...felder });
+  const kinder = listSplitKinder(db, id).sort((a, b) => a.id - b.id);
+  const eltern = getJobById(db, id);
+  db.close();
+  rmSync(jobsDir, { recursive: true, force: true });
+  return { res, kinder, eltern };
+}
+
+test('POST /kontierung/:id/aufsplitten: versandkosten wird gleichmässig auf die Teile verteilt', async () => {
+  const { res, kinder, eltern } = await splitteMitVersand({
+    gesamtbetrag: '210.00', versandkosten: '10,00', teilBetrag: ['120.00', '80.00'], teilPosition: ['Pos. 1', ''],
+  });
+  assert.equal(res.status, 302);
+  assert.deepEqual(kinder.map((k) => k.betrag), ['125.00', '85.00']);
+  assert.deepEqual(kinder.map((k) => k.rechnungsposition), ['Pos. 1 (inkl. Versand 5.00)', 'inkl. Versand 5.00']);
+  assert.equal(eltern.betrag, '210.00');
+});
+
+test('POST /kontierung/:id/aufsplitten: Rundungsrest der Versandkosten geht an den letzten Teil, leere Zeile zählt nicht', async () => {
+  const { res, kinder } = await splitteMitVersand({
+    gesamtbetrag: '40.00', versandkosten: '10.00', teilBetrag: ['10.00', '', '10.00', '10.00'],
+  });
+  assert.equal(res.status, 302);
+  assert.deepEqual(kinder.map((k) => k.betrag), ['13.33', '13.33', '13.34']);
+});
+
+test('POST /kontierung/:id/aufsplitten: Teilbeträge 0.10 und 0.20 ergeben trotz Gleitkomma 0.30', async () => {
+  const { res, kinder } = await splitteMitVersand({ gesamtbetrag: '0.30', teilBetrag: ['0.10', '0.20'] });
+  assert.equal(res.status, 302);
+  assert.deepEqual(kinder.map((k) => k.betrag), ['0.10', '0.20']);
+  assert.deepEqual(kinder.map((k) => k.rechnungsposition), [null, null]);
+});
+
+test('POST /kontierung/:id/aufsplitten: ungültige Versandkosten werden abgewiesen, nichts angelegt', async () => {
+  for (const [versandkosten, meldung] of [
+    ['abc', /Bitte gültige Versandkosten erfassen \(z\.B\. 9\.50\)\./],
+    ['-5', /Bitte gültige Versandkosten erfassen \(z\.B\. 9\.50\)\./],
+    ['210.00', /Die Versandkosten müssen kleiner als der Gesamtbetrag sein\./],
+  ]) {
+    const { res, kinder, eltern } = await splitteMitVersand({ gesamtbetrag: '210.00', versandkosten, teilBetrag: ['120.00', '80.00'] });
+    assert.equal(res.status, 400, versandkosten);
+    assert.match(res.text, meldung, versandkosten);
+    assert.equal(kinder.length, 0, versandkosten);
+    assert.equal(eltern.status, 'zugewiesen', versandkosten);
+  }
+});
+
+test('POST /kontierung/:id/aufsplitten: Summe ohne Versand passt nicht zum Gesamtbetrag abzüglich Versandkosten', async () => {
+  const { res, kinder, eltern } = await splitteMitVersand({ gesamtbetrag: '210.00', versandkosten: '10.00', teilBetrag: ['130.00', '80.00'] });
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Die Summe der Teilbeträge \(210\.00\) muss dem Gesamtbetrag abzüglich Versandkosten \(200\.00\) entsprechen\./);
+  assert.equal(kinder.length, 0);
+  assert.equal(eltern.status, 'zugewiesen');
 });
 
 test('POST /kontierung/:id/aufsplitten rejects a missing or invalid Gesamtbetrag, nothing persisted', async () => {
@@ -2572,20 +2821,20 @@ async function splitPopupAufbau({ qr = true, zahlungsart = 'ueberweisung', iban 
   return { db, app, id, kontoId, kreditorId, zweitesKontoId, mailer, form, senden, aufraeumen };
 }
 
-test('GET /kontierung/:id/aufsplitten zeigt ohne QR-Code bei einem Überweisungs-Lieferanten ein Feld für die letzten 4 Zeichen der IBAN, ohne die hinterlegte IBAN', async () => {
+test('GET /kontierung/:id: der Assistent zeigt ohne QR-Code bei einem Überweisungs-Lieferanten ein Feld für die letzten 4 Zeichen der IBAN, ohne die hinterlegte IBAN', async () => {
   const { app, id, aufraeumen } = await splitPopupAufbau({ qr: false, iban: 'CH9300762011623852957' });
-  const res = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
+  const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, /id="iban-manuell-kasten"/);
-  assert.match(res.text, /name="ibanEndung"/);
+  assert.match(res.text, /id="split-iban-manuell-kasten"/);
+  assert.match(splitFormular(res.text), /name="ibanEndung"/);
   assert.doesNotMatch(res.text, /name="ibanEndung_\d+"/, 'nur ein Feld, nicht eins pro Zeile');
-  assert.doesNotMatch(res.text, /2957|CH93/, 'die hinterlegte IBAN erscheint nie, auch nicht teilweise');
+  assert.doesNotMatch(splitFormular(res.text), /2957|CH93/, 'die hinterlegte IBAN erscheint nie, auch nicht teilweise');
   aufraeumen();
 });
 
-test('GET /kontierung/:id/aufsplitten zeigt mit QR-Code kein IBAN-Feld, bei Lastschrift-Lieferant nur verborgen und nicht Pflicht', async () => {
+test('GET /kontierung/:id: der Assistent zeigt mit QR-Code kein IBAN-Feld, bei Lastschrift-Lieferant nur verborgen und nicht Pflicht', async () => {
   const mitQr = await splitPopupAufbau({ qr: true });
-  const res = await request(mitQr.app).get(`/kontierung/${mitQr.id}/aufsplitten`).set('x-test-person-id', '1');
+  const res = await request(mitQr.app).get(`/kontierung/${mitQr.id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
   assert.doesNotMatch(res.text, /name="ibanEndung"/);
   mitQr.aufraeumen();
@@ -2593,10 +2842,10 @@ test('GET /kontierung/:id/aufsplitten zeigt mit QR-Code kein IBAN-Feld, bei Last
   // Ohne QR-Code steht der Kasten im Formular, damit er beim Wechsel auf einen Überweisungs-
   // Lieferanten erscheinen kann (kontierung-iban.js); für den vorgewählten Lastschrift-Lieferanten verborgen.
   const lastschrift = await splitPopupAufbau({ qr: false, zahlungsart: 'lastschrift' });
-  const res2 = await request(lastschrift.app).get(`/kontierung/${lastschrift.id}/aufsplitten`).set('x-test-person-id', '1');
+  const res2 = await request(lastschrift.app).get(`/kontierung/${lastschrift.id}`).set('x-test-person-id', '1');
   assert.equal(res2.status, 200);
-  assert.match(res2.text, /class="alert alert-warning d-none" id="iban-manuell-kasten"/);
-  assert.doesNotMatch(res2.text, /name="ibanEndung"[^>]*required/);
+  assert.match(res2.text, /class="alert alert-warning d-none" id="split-iban-manuell-kasten"/);
+  assert.doesNotMatch(splitFormular(res2.text), /name="ibanEndung"[^>]*required/);
   assert.match(res2.text, /src="\/js\/kontierung-iban\.js/);
   lastschrift.aufraeumen();
 });
@@ -2615,7 +2864,7 @@ test('POST /kontierung/:id/aufsplitten mit fremder QR-IBAN und ohne Bestätigung
   assert.match(res.text, /name="auffaelligkeitenHash" form="aufsplitten-form"/);
   assert.match(res.text, /name="pruefBemerkung" form="aufsplitten-form"/);
   assert.match(res.text, /type="submit" form="aufsplitten-form" class="btn btn-danger"[^>]*>Geprüft, trotzdem speichern/);
-  assert.doesNotMatch(res.text, /form="kontierung-form"/);
+  assert.doesNotMatch(res.text, /name="(auffaelligkeitenHash|pruefBemerkung)" form="kontierung-form"/);
   assert.match(res.text, /name="teilBetrag" value="120\.00"/, 'Zeilenwerte bleiben erhalten');
   assert.match(res.text, /src="\/js\/auffaelligkeiten\.js/);
   assert.equal(getJobById(db, id).status, 'zugewiesen');
@@ -3493,7 +3742,7 @@ test('a Ferienmodus-Stellvertreter can aufsplitten the absent person\'s job; eac
   setFerienmodus(db, '1', { von: '2000-01-01', bis: '2999-01-01', stellvertreterId: '2' });
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
 
-  const getRes = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '2');
+  const getRes = await request(app).get(`/kontierung/${id}?aufsplitten=1`).set('x-test-person-id', '2');
   assert.equal(getRes.status, 200);
 
   const res = await request(app)
@@ -3656,6 +3905,7 @@ test('kontierung: Nebenaktionen im Menü Weitere Aktionen', async () => {
   for (const text of ['Zurück in den Pool legen', 'An Gruppe zurücksenden', 'Rechnung aufsplitten', 'Als Kreditkartenabrechnung übergeben']) {
     assert.ok(menue[0].includes(text), `${text} im Menü`);
   }
+  assert.ok(menue[0].includes(`href="/kontierung/${id}?aufsplitten=1" data-aufsplitten-oeffnen`));
   assert.ok(!html.includes('Vorgangsnummer:'));
   assert.match(html, /<button[^>]*id="ablehnen-btn"[^>]*btn-outline-danger/);
   assert.doesNotMatch(html, /<button[^>]*value="kontieren"[^>]*btn-sm/);
@@ -4032,36 +4282,24 @@ test('Kontierung mit deaktiviertem Lieferanten → Feldfehler, nichts gespeicher
   db.close();
 });
 
-test('GET /kontierung/:id/aufsplitten bietet nur wählbare Lieferanten an; ?kreditorId hat Vorrang vor dem Lieferanten am Beleg', async () => {
+test('GET /kontierung/:id: der Assistent bietet nur wählbare Lieferanten an, vorgewählt ist der Lieferant am Beleg', async () => {
   const { createKreditor, deactivateKreditor } = await import('../../src/db/kreditorenRepo.js');
-  const { db, app, id, kreditorId, aufraeumen } = await splitPopupAufbau();
-  const anderer = kreditorOhneIbanPflicht(db, { name: 'Andere AG' });
+  const { app, id, db, kreditorId, aufraeumen } = await splitPopupAufbau();
+  kreditorOhneIbanPflicht(db, { name: 'Andere AG' });
   const unvollstaendig = createKreditor(db, { name: 'Ohne IBAN AG', kontoId: null, zahlungsart: 'ueberweisung' });
   const inaktiv = kreditorOhneIbanPflicht(db, { name: 'Alte AG' });
   deactivateKreditor(db, inaktiv);
 
-  const standard = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
-  assert.equal(standard.status, 200);
-  assert.match(standard.text, /<select[^>]*name="kreditorId"[^>]*required/);
-  assert.match(standard.text, new RegExp(`<option value="${kreditorId}"[^>]*selected`), 'vorgewählt: Lieferant am Beleg');
-  assert.match(standard.text, /Andere AG/);
-  assert.doesNotMatch(standard.text, /Ohne IBAN AG/);
-  assert.doesNotMatch(standard.text, /Alte AG/);
-  assert.doesNotMatch(standard.text, new RegExp(`value="${unvollstaendig}"`));
-
-  const mitQuery = await request(app).get(`/kontierung/${id}/aufsplitten`).query({ kreditorId: String(anderer) }).set('x-test-person-id', '1');
-  assert.match(mitQuery.text, new RegExp(`<option value="${anderer}"[^>]*selected`));
-  assert.doesNotMatch(mitQuery.text, new RegExp(`<option value="${kreditorId}"[^>]*selected`));
-  aufraeumen();
-});
-
-test('Kontierungsseite gibt den gewählten Lieferanten an das Aufsplitten-Popup weiter', async () => {
-  const { db, app, id, aufraeumen } = await splitPopupAufbau();
   const res = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
   assert.equal(res.status, 200);
-  assert.match(res.text, /'kreditorId=' \+ encodeURIComponent\(/);
+  const form = splitFormular(res.text);
+  assert.match(form, /<select[^>]*name="kreditorId"[^>]*required/);
+  assert.match(form, new RegExp(`<option value="${kreditorId}"[^>]*selected`), 'vorgewählt: Lieferant am Beleg');
+  assert.match(form, /Andere AG/);
+  assert.doesNotMatch(form, /Ohne IBAN AG/);
+  assert.doesNotMatch(form, /Alte AG/);
+  assert.doesNotMatch(form, new RegExp(`value="${unvollstaendig}"`));
   aufraeumen();
-  void db;
 });
 
 // Ein Splitkind trägt den QR-Betrag der ganzen Rechnung: ihn mit dem Teilbetrag zu vergleichen,
@@ -4256,14 +4494,14 @@ test('Aufsplitten: Zeile mit nicht passendem Konto wird abgelehnt, nichts gespei
   rmSync(jobsDir, { recursive: true, force: true });
 });
 
-test('GET /kontierung/:id/aufsplitten: Konto-Optionen tragen data-buchungsart und der Filter-Skript ist eingebunden', async () => {
+test('GET /kontierung/:id: Konto-Optionen des Assistenten tragen data-buchungsart und der Filter-Skript ist eingebunden', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedJobMitDateien(db, jobsDir, { betrag: '100.00' });
   db.prepare("UPDATE konten SET buchungsart = 'rechnung' WHERE id = ?").run(kontoId);
-  const res = await request(buildTestAppMitDateien(db, createStubMailer(), jobsDir)).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
-  assert.match(res.text, new RegExp(`<option value="${kontoId}"[^>]*data-buchungsart="rechnung"`));
+  const res = await request(buildTestAppMitDateien(db, createStubMailer(), jobsDir)).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.match(splitFormular(res.text), new RegExp(`<option value="${kontoId}"[^>]*data-buchungsart="rechnung"`));
   assert.match(res.text, /kontierung-konto-filter\.js/);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
@@ -4440,10 +4678,10 @@ test('Aufsplitten: KI-Werte müssen bestätigt werden, bevor die Teile sie über
   const basis = { kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'rechnung', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'], rechnungsnummer: 'KI-88', zahlungsziel: '2026-12-31' };
   const senden = (extra) => request(app).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form').send({ ...basis, ...extra });
 
-  const formular = await request(app).get(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1');
-  assert.match(formular.text, /id="bestaetigt-rechnungsnummer"/);
-  assert.match(formular.text, /id="bestaetigt-zahlungsziel"/);
-  assert.match(formular.text, /id="bestaetigt-betrag"/);
+  const formular = await request(app).get(`/kontierung/${id}`).set('x-test-person-id', '1');
+  assert.match(formular.text, /id="split-bestaetigt-rechnungsnummer"/);
+  assert.match(formular.text, /id="split-bestaetigt-zahlungsziel"/);
+  assert.match(formular.text, /id="split-bestaetigt-betrag"/);
 
   const abgelehnt = await senden({});
   assert.equal(abgelehnt.status, 400);
@@ -4478,17 +4716,23 @@ test('Kontierung: offene KI-Bestätigungen stehen als ruhiges Banner unter «Que
   db.close();
 });
 
-test('Aufsplitten: offene KI-Bestätigungen als ruhiges Banner oberhalb der Ansicht, nicht in der roten Fehlerliste', async () => {
+test('Aufsplitten: offene KI-Bestätigungen als ruhiges Banner über dem Assistenten, nicht in der roten Fehlerliste', async () => {
   const db = openDatabase(':memory:');
   seedDefaults(db);
   const jobsDir = mkdtempSync(join(tmpdir(), 'split-test-'));
   const { id, kontoId } = seedSplitMitKiWerten(db, jobsDir);
   const app = buildTestAppMitDateien(db, createStubMailer(), jobsDir);
   const res = await request(app).post(`/kontierung/${id}/aufsplitten`).set('x-test-person-id', '1').type('form')
-    .send({ kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'rechnung', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'], rechnungsnummer: 'KI-88', zahlungsziel: '2026-12-31', bestaetigt_betrag: '1' });
+    .send({ kreditorId: splitLieferant(db), gesamtbetrag: '100.00', typ: 'rechnung', teilKontoId: [String(kontoId), String(kontoId)], teilBetrag: ['60.00', '40.00'], rechnungsnummer: 'KI-88', zahlungsziel: '2026-12-31' });
   assert.equal(res.status, 400);
+  const bereich = res.text.indexOf('id="aufsplitten-bereich"');
   const banner = res.text.indexOf('data-ki-banner');
-  assert.ok(banner > 0 && banner < res.text.indexOf('class="row g-3 beleg-umschalter"'));
+  assert.ok(banner > bereich && banner < res.text.indexOf('<form id="aufsplitten-form"'));
+  assert.equal(res.text.split('data-ki-banner').length - 1, 1);
+  const bannerHtml = res.text.slice(banner, res.text.indexOf('</div>', banner));
+  assert.match(bannerHtml, /<a href="#split-rechnungsnummer"/);
+  assert.match(bannerHtml, /<a href="#split-zahlungsziel"/);
+  assert.match(bannerHtml, /<a href="#gesamtbetrag"/);
   assert.doesNotMatch(res.text, /alert-danger[\s\S]{0,200}automatisch erkannt/);
   db.close();
   rmSync(jobsDir, { recursive: true, force: true });
@@ -4504,5 +4748,37 @@ test('Kontierungsformular: Platz für die Pflichtfeld-Prüfung im Browser unter 
   assert.match(res.text, /<form id="kontierung-form"[^>]*data-pflicht-pruefung/);
   assert.match(res.text, /value="kontieren"[^>]*data-pflicht-pruefen|data-pflicht-pruefen[^>]*value="kontieren"/);
   assert.match(res.text, /kontierung-pflicht\.js/);
+  // Je Formular ein eigenes Banner (public/js/kontierung-pflicht.js).
+  assert.match(res.text, /data-pflicht-banner="kontierung-form"/);
+  assert.match(res.text, /data-pflicht-banner="aufsplitten-form"/);
+  assert.match(res.text, /<form id="aufsplitten-form"[^>]*data-pflicht-pruefung/);
+  db.close();
+});
+
+// Schlussprüfung 1.4.13: die Mail an die Admin-Gruppe darf bei der Vier-Augen-Umleitung keinen Interessenskonflikt behaupten.
+test('POST /kontierung/:id: Admin-Mail nach Vier-Augen-Umleitung nennt das Vier-Augen-Prinzip, keinen Interessenskonflikt', async () => {
+  const db = openDatabase(':memory:');
+  seedDefaults(db);
+  seedKontoAndPersonen(db);
+  upsertPerson(db, { id: '99', vorname: 'Admina', nachname: 'Portal', email: 'admin@example.org', gruppen: ['20'], loggedInNow: false });
+  const kontoId = createKonto(db, { kontonummer: '3100', bezeichnung: 'Eng', freigeber1Id: '1', stellvertreter1Id: '2', freigeber2Id: '1', stellvertreter2Id: '1' });
+  const kreditorId = kreditorOhneIbanPflicht(db, { name: 'Muster AG', kontoId: null });
+  const id = createJob(db, { eingangAm: '2026-11-27T08:00:00.000Z', quelle: 'scanner', absender: null, dateiname: 'a.pdf', pdfPfad: '/tmp/a.pdf' });
+  claimJob(db, id, '1');
+  const mailer = createStubMailer();
+  const app = buildTestApp(db, mailer);
+
+  const res = await request(app)
+    .post(`/kontierung/${id}`)
+    .set('x-test-person-id', '1')
+    .type('form')
+    .send({ kontoId: String(kontoId), kreditorId: String(kreditorId), absender: 'Muster AG', rechnungsnummer: 'RE-1', betrag: '100.00', zahlungsziel: '2026-12-01', interessenskonflikt: 'nein', begruendung: '' });
+
+  assert.equal(res.status, 302);
+  assert.equal(getJobById(db, id).freigabe2_eskaliert_an_admin, 1);
+  const mail = mailer.sent.find((m) => m.to === 'admin@example.org');
+  assert.ok(mail, 'die Admin-Gruppe wird benachrichtigt');
+  assert.match(mail.text, /bereits Freigabe 1 erteilt hat \(Vier-Augen-Prinzip\) und keine Stellvertretung übernehmen kann/);
+  assert.doesNotMatch(mail.text, /Interessenskonflikt/);
   db.close();
 });

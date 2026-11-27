@@ -3,7 +3,7 @@
 
 import { getKontoById } from '../db/kontenRepo.js';
 import { getKreditorById } from '../db/kreditorenRepo.js';
-import { listStalledJobs } from '../db/jobsRepo.js';
+import { listStalledJobs, istVierAugenUmleitung, VIER_AUGEN_UMLEITUNG_PRAEFIX } from '../db/jobsRepo.js';
 import { getPersonById } from '../db/personenRepo.js';
 import { getConfigValue } from '../db/adminConfigRepo.js';
 import { listFreigabenByJob } from '../db/freigabenRepo.js';
@@ -98,12 +98,17 @@ function istUeberfaellig(db, job, jetzt) {
   return false;
 }
 
-// Kennzeichen für die Anzeige (Rückläufer, Admin-Eskalation, Interessenskonflikt, umgeleitet).
+// Kennzeichen für die Anzeige (Rückläufer, Admin-Eskalation, Interessenskonflikt, Vier-Augen-Umleitung, umgeleitet).
 function kennzeichenVon(job) {
   const liste = [];
   if (job.status === 'unzugewiesen' && job.pool_rueckgesendet_bemerkung) liste.push('Rückläufer');
   if ((job.status === 'freigabe2' && job.freigabe2_eskaliert_an_admin) || (job.status !== 'freigabe2' && job.freigabe1_eskaliert_an_admin)) liste.push('Admin-Eskalation');
-  if ((job.status === 'freigabe2' && job.freigabe2_eskaliert_von) || (job.status === 'zugewiesen' && job.freigabe1_eskaliert_von)) liste.push('Interessenskonflikt');
+  // Freigabe 2: Das Kennzeichen folgt der Begründung -- eine Vier-Augen-Umleitung ist kein Konflikt. Setzt sie auf
+  // eine frühere Eskalation auf, werden beide genannt.
+  const vierAugen = job.status === 'freigabe2' && istVierAugenUmleitung(job);
+  const nurVierAugen = vierAugen && job.freigabe2_eskalationsgrund.startsWith(VIER_AUGEN_UMLEITUNG_PRAEFIX);
+  if ((job.status === 'freigabe2' && job.freigabe2_eskaliert_von && !nurVierAugen) || (job.status === 'zugewiesen' && job.freigabe1_eskaliert_von)) liste.push('Interessenskonflikt');
+  if (vierAugen) liste.push('Vier-Augen-Umleitung');
   if (job.status === 'freigabe2' && job.freigabe2_umgeleitet_an) liste.push('umgeleitet');
   return liste;
 }

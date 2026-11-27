@@ -86,7 +86,7 @@ test('a 3-Konten Aufsplitten flow exports one combined document and retains file
 
   const app = createApp({ db, config });
   const p1Agent = await loginAs(app, client, { id: 1, vorname: 'Freigeber', nachname: 'Eins', email: 'f1@example.org', gruppen: ['10'] });
-  const aufsplittenToken = await fetchCsrfToken(p1Agent, `/kontierung/${jobId}/aufsplitten`);
+  const aufsplittenToken = await fetchCsrfToken(p1Agent, `/kontierung/${jobId}?aufsplitten=1`);
   const aufsplittenRes = await p1Agent
     .post(`/kontierung/${jobId}/aufsplitten`)
     .type('form')

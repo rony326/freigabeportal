@@ -168,16 +168,15 @@ test('404-Fehlerseite ohne Session: Status 404, container-xxl, keine Seitenleist
   db.close();
 });
 
-test('Aufsplitten-View (iframe im Modal) rendert ohne Kopfleiste und ohne Footer', async () => {
+test('Aufsplitten-Assistent steht auf der Kontierungsseite im normalen Seitengerüst (kein iframe-Dokument mehr)', async () => {
   const db = openDatabase(':memory:');
   const jobId = seedKontierungsJob(db);
   const agent = await loginBuchhaltung(db);
-  const res = await agent.get(`/kontierung/${jobId}/aufsplitten`);
+  const res = await agent.get(`/kontierung/${jobId}?aufsplitten=1`);
   assert.equal(res.status, 200);
-  assert.doesNotMatch(res.text, /portal-kopf/);
-  assert.doesNotMatch(res.text, /<footer/);
-  assert.doesNotMatch(res.text, /portal-seitenleiste/);
-  assert.match(res.text, /<main class="container-xxl py-3">/);
+  assert.match(res.text, /portal-kopf/);
+  assert.match(res.text, /<footer/);
+  assert.match(res.text, /<form id="aufsplitten-form"/);
   assert.equal(anzahl(res.text, 'bootstrap.min.css'), 1);
   db.close();
 });
@@ -274,10 +273,13 @@ test('Seitenaufbau-Sweep: keine View enthält <h1 class="h3"', () => {
 test('Seitenaufbau-Sweep: Unterüberschriften sind einheitlich h2.h5 (auch in Partials)', () => {
   const alle = [viewsDir, adminViewsDir].flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.ejs')).map((f) => join(dir, f)));
   for (const datei of alle) {
-    const inhalt = readFileSync(datei, 'utf8');
+    let inhalt = readFileSync(datei, 'utf8');
     for (const h2 of inhalt.match(/<h2\b[^>]*>/g) || []) {
       assert.match(h2, /^<h2 class="h5[ "]/, `${datei}: ${h2} ist nicht h2.h5`);
     }
+    // Ausnahme Aufsplitten-Assistent: unter «Rechnung aufsplitten» sind die Schritt-Titel echte Unterebenen (h3, der
+    // IBAN-Kasten in Schritt 1 darunter h4), gleich gross wie Fliesstext-Überschriften (.h6).
+    if (datei.endsWith('_aufsplitten_assistent.ejs')) inhalt = inhalt.replace(/<h[34] class="h6[ "]/g, '<geprueft ');
     assert.doesNotMatch(inhalt, /<h[346]\b/, `${datei}: Überschrift h3/h4/h6 statt h2.h5`);
   }
 });

@@ -38,7 +38,7 @@ test('Responsive-Seitenliste: keine veralteten Einträge, Ausnahmen begründet, 
 
 test('Responsive-Seitenliste: Detailseiten und Fehlerzustände sind dabei', () => {
   const views = new Set(SEITEN.map((s) => s.view));
-  for (const v of ['kontierung', 'freigabe2', 'spesen-freigabe1', 'abgelehnt', 'kk-abgleich', 'kontierung-aufsplitten',
+  for (const v of ['kontierung', 'freigabe2', 'spesen-freigabe1', 'abgelehnt', 'kk-abgleich',
     'admin/vorgang-detail', 'zeitstempel-pruefen', 'kommentar-fehler', 'meine-benachrichtigungen', 'testmodus-postfach']) {
     assert.ok(views.has(v), `Detailseite ${v} fehlt`);
   }

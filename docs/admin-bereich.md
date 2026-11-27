@@ -381,6 +381,15 @@ endgültig zu löschen (Soft-Delete + Protokoll) — mit eingebautem
 Selbstschutz gegen Löschung durch den eigenen Ablehner. Siehe
 [rechnungs-workflow.md](rechnungs-workflow.md#4-ablehnung-überarbeitung-löschung).
 
+**Zurück in den Pool** (`GET/POST /admin/abgelehnt/:id/pool`): bringt eine
+abgelehnte Rechnung ohne Überarbeitung wieder in Umlauf. Begründung Pflicht
+(mind. 10 Zeichen); Konto, Zuweisung, Eskalationen und Ablehnung werden
+zurückgesetzt (`forceReleaseJob`), der Vorgang erscheint wieder im Pool.
+Verlaufseintrag `admin_umzuweisung`, Audit-Ereignis `workflow_eingriff`, Mail an
+die bisher zuständige Person (nicht, wenn sie inaktiv ist oder selbst handelt;
+die Bestätigungsseite kündigt die Mail nur an, wenn sie verschickt wird). Nicht für Spesen (Ablehnung endgültig) und
+Kreditkartenabrechnungen (laufen über den Abgleich).
+
 ## Altfälle (`/admin/altfaelle`)
 
 Abgeschlossene, noch nicht an n8n übergebene Belege und Splitgruppen ohne

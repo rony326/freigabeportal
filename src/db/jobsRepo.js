@@ -6,6 +6,8 @@
 //   unzugewiesen (Pool) → zugewiesen (Kontierung) → freigabe2 → abgeschlossen → abgeholt (n8n) → archiviert
 //   Seitenwege: abgelehnt (mit Wiederöffnen), aufgesplittet (Elternvorgang einer Aufteilung), kenntnisnahme (Rapport),
 //   geloescht (weich gelöscht, Datei bleibt). 'zugewiesen' trägt die Stufe Freigabe 1, 'freigabe2' die Stufe Freigabe 2.
+//   Zurück in den Pool: aus 'zugewiesen' durch die zuständige Person (releaseJob); aus 'zugewiesen'/'abgelehnt' durch
+//   Personen-Sync oder Administration (forceReleaseJob).
 //
 // Konventionen:
 //   - Übergangsfunktionen liefern `true`/`false` (oder null), wenn die WHERE-Bedingung auf den Status keine Zeile traf –
@@ -388,7 +390,9 @@ function hebeVierAugenUmleitungAuf(db, jobId) {
 }
 
 // Schliesst Freigabe 1 ab: Status → 'freigabe2', Uhr für Erinnerung/Eskalation startet. Ist die für Freigabe 2
-// zuständige Person schon als befangen bekannt, geht der Vorgang gleich an die Admin-Gruppe.
+// zuständige Person schon als befangen bekannt, geht der Vorgang gleich an die Admin-Gruppe. Hat sie selbst gerade
+// Freigabe 1 erteilt, wird für diese Runde umgeleitet (leiteFreigabe2BeiVierAugenSperreUm). Die Freigabe-1-Zeile in
+// `freigaben` muss deshalb VOR diesem Aufruf geschrieben sein.
 export function abschliessenFreigabe1(db, jobId) {
   // Zuerst: eine Vier-Augen-Umleitung der letzten Runde verfällt, die Prüfungen unten entscheiden neu.
   hebeVierAugenUmleitungAuf(db, jobId);
@@ -880,10 +884,11 @@ export function listStalledJobs(db) {
   return ergebnisse;
 }
 
-// Setzt einen hängenden 'zugewiesen'/'abgelehnt'-Vorgang auf 'unzugewiesen' zurück, damit ihn jede Person neu beanspruchen
+// Setzt einen 'zugewiesen'/'abgelehnt'-Vorgang auf 'unzugewiesen' zurück, damit ihn jede Person neu beanspruchen
 // kann. Nie für Spesen: Im Pool sind sie unsichtbar und verlören ihr Konto, die Abrechnung würde nie erledigt. In diesen Phasen ist noch nichts Unumkehrbares passiert (keine Freigabe 1/2 verbucht), der vollständige Reset
 // ist also sicher. Löscht dieselben Felder, die releaseJob/wiederOeffnenJob schon löschen.
-// Gibt einen hängenden Vorgang ohne Zutun der Person in den Pool frei (Systemaktion des Personen-Syncs).
+// Gibt einen Vorgang ohne Zutun der zugewiesenen Person in den Pool frei. Aufrufer: Sync-Übersicht für hängende Vorgänge
+// (routes/admin/sync.js) und «Zurück in den Pool» bei abgelehnten Rechnungen (routes/admin/abgelehnt.js).
 export function forceReleaseJob(db, jobId) {
   const result = db
     .prepare(

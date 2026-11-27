@@ -1,6 +1,7 @@
 // Freigabe 2 (`/freigabe2/:id`, docs/rechnungs-workflow.md): die zweite Person (Freigeber 2 des Kontos, deren Stellvertretung, bei Admin-Eskalation ein Superadmin) gibt die Rechnung frei, lehnt ab oder meldet einen Interessenskonflikt.
 // Beim Freigeben: Zahlungsdaten bestätigen (Spesen live aus ChurchTools, QR-Rechnungen aus dem Eingangsscan), Freigabe-Snapshot einfrieren, Stempelseite anhängen, RFC3161-Zeitstempel setzen (ausserhalb der Transaktion) und Splitgruppen zusammenführen.
-// Vier-Augen-Prinzip und Selbstfreigabe-Sperren: siehe `loadAuthorized`.
+// Vier-Augen-Prinzip und Selbstfreigabe-Sperren: siehe `loadAuthorized`. Damit ein Vorgang an der Vier-Augen-Sperre nicht liegen bleibt,
+// leitet schon der Abschluss von Freigabe 1 um (db/jobsRepo.js, `abschliessenFreigabe1`); die Seite nennt dann den Grund.
 
 import { personHasRole } from '../middleware/roles.js';
 import { Router } from 'express';

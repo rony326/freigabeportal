@@ -382,7 +382,11 @@ Die zentrale Tabelle — eine Zeile pro Rechnung/Beleg/Spesen-Position.
 `status` ist eine von zwölf Werten (State Machine, siehe
 [rechnungs-workflow.md](rechnungs-workflow.md)). Die vielen
 `*_eskaliert_*`-Spalten protokollieren Interessenskonflikt-Eskalationen
-getrennt für Freigabe 1 und Freigabe 2. `aufgesplittet_von` verweist auf
+getrennt für Freigabe 1 und Freigabe 2. Die Freigabe-2-Spalten tragen auch die
+Vier-Augen-Umleitung nach Freigabe 1 (erkennbar am Anfang bzw. Nachsatz in
+`freigabe2_eskalationsgrund`; sie gilt nur für eine Runde, siehe
+[rechnungs-workflow.md](rechnungs-workflow.md#3-freigabe-2-status-freigabe2)).
+`aufgesplittet_von` verweist auf
 den ursprünglichen Job, wenn diese Zeile aus einer Aufsplittung entstand —
 der Elternjob bleibt (Status `aufgesplittet`) als historische Referenz
 erhalten. Die `qr_*`-Spalten cachen die beim Eingang aus dem Swiss-QR-Bill
@@ -491,6 +495,7 @@ Die Rollen `iban_manuell_geprueft` (manuelle 4-Zeichen-Kontrolle ohne QR-Code, E
 `kommentar`) und `auffaelligkeiten_bestaetigt` (Prüf-Popup bestätigt) sind neu.
 
 `vorher_zustaendig`/`ziel_person_id` sind nur bei `rolle = 'admin_umzuweisung'` gesetzt (vorher zuständige Person — `NULL` bei Pool/Admin-Gruppe — und Zielperson).
+Dieselbe Rolle protokolliert «Zurück in den Pool» bei abgelehnten Rechnungen; dort ist `ziel_person_id` `NULL` und der Kommentar beginnt mit «Abgelehnte Rechnung zurück in den Pool gelegt».
 
 ### `mail_log`
 Persistente Warteschlange und Protokoll jeder Benachrichtigung, inkl.

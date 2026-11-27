@@ -1,4 +1,6 @@
-// Admin → Abgelehnte Rechnungen (`/admin/abgelehnt`, Recht `abgelehnt_verwalten`, docs/admin-bereich.md): Liste aller abgelehnten Vorgänge und endgültiges (weiches) Löschen mit Begründung. Wer eine Rechnung selbst abgelehnt hat, darf sie nicht löschen.
+// Admin → Abgelehnte Rechnungen (`/admin/abgelehnt`, Recht `abgelehnt_verwalten`, docs/admin-bereich.md): Liste aller abgelehnten Vorgänge, «Zurück in den Pool»
+// (Neustart ohne Überarbeitung; nicht für Spesen und Kreditkartenabrechnungen) und endgültiges (weiches) Löschen, beides mit Begründung. Wer eine Rechnung selbst abgelehnt
+// hat, darf sie nicht löschen; in den Pool zurücklegen darf er sie, weil das umkehrbar ist. Mount: app.js unter /admin/abgelehnt.
 
 import { Router } from 'express';
 import { getJobById, listAlleAbgelehntenJobs, loeschenJob, forceReleaseJob } from '../../db/jobsRepo.js';

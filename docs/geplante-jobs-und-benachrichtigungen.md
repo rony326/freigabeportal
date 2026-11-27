@@ -501,7 +501,7 @@ gelöschte Personen werden beim Versand still übersprungen.
 | `rapport-reminder` | offene Kenntnisnahme länger als `rapport_reminder_stunden` unbestätigt — an die Person selbst, **immer sofort** |
 | `rapport-eskalation` | Rapport länger als `rapport_eskalation_stunden` nicht vollständig bestätigt — an `rapport_eskalation_empfaenger` (leer = Admin-Gruppe), **immer sofort** |
 | `kk-beleg-erinnerung` | seit langem offener Kreditkartenbeleg/-entwurf bzw. noch nicht abgeglichene Kreditkartenabrechnung (Job `kk-beleg-erinnerungen`, siehe oben) |
-| `admin-umzuweisung` | Admin hat einen laufenden Vorgang umgehängt; an die neue Person (plus deren Ferienvertretung) und die bisherige; **immer sofort** wie `sync-fehler`/`auffaelligkeiten-warnung`/`kk-beleg-eingegangen` |
+| `admin-umzuweisung` | Admin hat einen laufenden Vorgang umgehängt; an die neue Person (plus deren Ferienvertretung) und die bisherige. Ebenso, wenn eine abgelehnte Rechnung zurück in den Pool gelegt wurde (nur an die bisher zugewiesene Person); **immer sofort** wie `sync-fehler`/`auffaelligkeiten-warnung`/`kk-beleg-eingegangen` |
 | `kk-beleg-eingegangen` | per Mail eingereichter Kreditkartenbeleg als Entwurf angelegt — **immer sofort**, unabhängig von der persönlichen Wahl (Link zum Vervollständigen soll nicht bis zum nächsten Digest warten) |
 | `neues-geraet` | Anmeldung von einem für die Person noch unbekannten Gerät (Cookie `fp_geraet`) — an die Person selbst, **immer sofort**; siehe [betrieb-und-nutzung.md](betrieb-und-nutzung.md) |
 | `kommentar` | neuer Kommentar an einem Vorgang — an Beteiligte und Erwähnte (nicht an den Schreiber); folgt der persönlichen Wahl; Details und Links: [kommentare.md](kommentare.md) |

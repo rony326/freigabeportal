@@ -67,6 +67,7 @@ stateDiagram-v2
     freigabe2 --> abgelehnt: bei Freigabe 2 ablehnen
 
     abgelehnt --> zugewiesen: überarbeiten (wiederOeffnenJob)
+    abgelehnt --> unzugewiesen: Admin legt zurück in den Pool\n(nicht für Spesen/Kreditkartenabrechnungen)
     abgelehnt --> geloescht: Admin löscht endgültig\n(nicht durch den eigenen Ablehner)
     unzugewiesen --> zugewiesen: Admin hängt um\n(/admin/vorgaenge)
     zugewiesen --> zugewiesen: Admin hängt um
@@ -405,7 +406,10 @@ Was Anwender bei den Schritten sehen:
   KK-Abrechnung übergeben – Letzteres als Dialog) stehen unter
   „Weitere Aktionen“.
 - **Freigabe 2:** Ein Entscheidungsblock zeigt Betrag (gross hervorgehoben),
-  Lieferant und Konto; eine IBAN-Abweichung ist rot hervorgehoben.
+  Lieferant und Konto; eine IBAN-Abweichung ist rot hervorgehoben. Hinweise zu
+  den Zahlungsdaten (IBAN, QR-Betrag, ungültiger QR-Code) stehen mit der
+  zugehörigen Bestätigung «Ich habe die Abweichung geklärt» in einem gelben
+  Kasten «Abweichung — bitte klären und bestätigen».
 - **Aufgabenliste:** Abschnitte mit Zähler, Spalte/Kachelwert „Betrag“,
   Begriff „Lieferant“. Ganze Kacheln sind klickbar; der Vorschau-Dialog
   öffnet über das Vorschaubild.
@@ -421,6 +425,13 @@ Was Anwender bei den Schritten sehen:
   der die Rechnung zum Zeitpunkt der Ablehnung zugewiesen war (bzw. bei
   Admin-Eskalation: `superadmin`), kann sie zurück auf `zugewiesen`
   setzen und erneut kontieren.
+- **Zurück in den Pool** (`GET/POST /admin/abgelehnt/:id/pool`, Recht
+  `abgelehnt_verwalten`): Die Administration bringt eine abgelehnte Rechnung
+  ohne Überarbeitung wieder in Umlauf. Begründung Pflicht (mindestens 10
+  Zeichen); Konto, Zuweisung, Eskalationen und Ablehnung werden zurückgesetzt.
+  Verlaufseintrag `admin_umzuweisung`, Audit-Ereignis `workflow_eingriff`, Mail
+  an die bisher zugewiesene Person (nicht an inaktive und nicht an die handelnde
+  Person selbst). Nicht für Spesen und Kreditkartenabrechnungen.
 - **Endgültige Löschung** (`POST /admin/abgelehnt/:id/loeschen`,
   Recht `abgelehnt_verwalten`): nur für Rechnungen im Status `abgelehnt`,
   mit Pflicht-Begründung und Bestätigungs-Checkbox. **Selbstschutz**: wer

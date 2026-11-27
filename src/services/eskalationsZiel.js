@@ -1,4 +1,5 @@
-// Eskalation bei Interessenskonflikt: Prüfung, ob die Stellvertretung als Ziel in Frage kommt, und die passenden Texte (docs/rechnungs-workflow.md).
+// Eskalation an die Stellvertretung: Prüfung, ob sie als Ziel in Frage kommt, und die passenden Texte (docs/rechnungs-workflow.md).
+// Genutzt bei Interessenskonflikten, bei der Selbsteinreichung von Spesen und bei der Vier-Augen-Umleitung nach Freigabe 1 (db/jobsRepo.js).
 
 import { getPersonById } from '../db/personenRepo.js';
 import { listFreigabenByJob, listKonfliktmelder } from '../db/freigabenRepo.js';

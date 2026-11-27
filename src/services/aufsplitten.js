@@ -2,6 +2,8 @@
 // nutzt dieselbe Mechanik, docs/kreditkarten-belege.md). Aus einem Elternvorgang werden eigenständige Teilvorgänge mit eigener
 // Datei und eigener Freigabekette. Ablauf in der Route: 1) `bereiteTeilDateienVor` (Dateien, VOR der Transaktion),
 // 2) in der Transaktion `markJobAufgesplittet` + `erzeugeTeilJobs`, 3) nach dem Commit `benachrichtigeNachAufsplitten`.
+// Versandkosten (nur Aufsplitten aus der Kontierung): `verteileVersandkosten` und `positionMitVersand` rechnen den gleichen
+// Anteil je Teil aus, bevor die Dateien vorbereitet werden.
 
 import { mkdirSync, copyFileSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';

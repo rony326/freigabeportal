@@ -248,6 +248,11 @@ erteilt hat — unabhängig davon, was zum Zeitpunkt der Konto-Zuweisung
 galt (Konto-Rollen können sich zwischendurch geändert haben, oder eine
 Person hat sowohl Buchhaltungs- als auch Superadmin-Rolle).
 
+Damit ein Vorgang an dieser Sperre nicht liegen bleibt (z. B. wenn Freigeber 2
+als Ferienvertretung Freigabe 1 erteilt hat), leitet das Portal Freigabe 2 beim
+Abschluss von Freigabe 1 an die Stellvertretung 2 bzw. die Admin-Gruppe um,
+siehe [rechnungs-workflow.md](rechnungs-workflow.md#3-freigabe-2-status-freigabe2).
+
 **Interessenskonflikt-Sperre, hart erzwungen**: Ebenso prüfen Freigabe 2
 (`loadAuthorized` in `src/routes/freigabe2.js`), Kontierung
 (`ladeKontierbarenJob` in `src/services/kontierungZugriff.js`) und

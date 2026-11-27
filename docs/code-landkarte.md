@@ -106,6 +106,9 @@ Lesen und prüfen nur in `src/config/env.js`, Eintrag in `.env.example` und in d
 | Wer darf was (Rollen, Rechte)? | `middleware/roles.js`, `middleware/permissions.js`, `services/berechtigungKatalog.js` |
 | Wer darf diesen Vorgang bearbeiten? | `services/kontierungZugriff.js`, `routes/freigabe2.js` (`loadAuthorized`), `services/jobAuthorization.js` |
 | Status-Übergänge eines Vorgangs | `db/jobsRepo.js` (Kopfkommentar listet den Lebenslauf) |
+| Wann wird Freigabe 2 umgeleitet (Konflikt, Vier-Augen)? | `db/jobsRepo.js` (`abschliessenFreigabe1`), `services/eskalationsZiel.js`, `services/notify.js` (`freigabe2AnAdminGrund`) |
+| Aufsplitten und Versandkosten | `routes/kontierung.js` (`POST /:id/aufsplitten`, `splitAnsicht`), `services/aufsplitten.js`, `views/_aufsplitten_assistent.ejs`, `_aufsplitten_zeile.ejs`, `public/js/aufsplitten-assistent.js` |
+| Abgelehnte Rechnungen: zurück in den Pool, löschen | `routes/admin/abgelehnt.js` |
 | Was ist bei einer Rechnung auffällig? | `services/betrugspruefung.js`, `services/paymentApproval.js` |
 | Was wird beim Rechnungseingang ausgelesen/vorbefüllt? | `routes/n8n/jobs.js`, `services/qrBillScan.js` (QR-Code, Seitenreihenfolge), `services/eingangVorbefuellung.js` (Rechnungsnummer/Zahlungsziel/Betrag von n8n), `services/vorabAngaben.js` (Anzeige in Listen vor der Kontierung), `services/kiBestaetigung.js` (Bestätigungspflicht für KI-Werte), `public/js/kontierung-pflicht.js` (Pflichtfelder/KI-Haken vor dem Absenden) |
 | Was darf nach n8n/Paperless exportiert werden? | `services/exportSnapshot.js`, `services/archiveReceipt.js` |
